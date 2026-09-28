@@ -1,34 +1,26 @@
 #!/usr/bin/env python3
-"""``edit(timeline)``: a roll over a timeline, with no multitrack under it.
+"""``edit(timeline)``: a timeline's events on a roll, edited note by note.
 
-The same gesture that edits a track's notes in the multitrack, over a
-`clausters.seq.Timeline` a script filled -- no arrangement, no document, no
-track. Until now the only way to write a roll's edit back was an aggregate's
-member list, which needs a tree to be a member *of*; this is the timeline
-itself.
+A `clausters.seq.Timeline` is code -- events, patterns, routines, other
+timelines -- and a roll edits data. So ``edit`` renders the timeline first
+(`clausters.seq.Timeline.render_events`) and opens the events it produced: a
+`clausters.seq.EventSequence`, in the timeline's beats with its tempo map, each
+event with an id of its own. The editor edits that sequence in place, and the
+timeline is left as it was.
 
 What to do in the window: **drag a note** to move it, **drag its edge** to
-resize, **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back. The
-notes are the timeline's, so playing it after an edit plays what was drawn --
-and so does editing it while it plays: a note moved ahead of the line sounds
-where it lands, one moved behind the line is not played again, and the notes
-already passed are not played twice.
+resize, **Shift and drag it up or down** to change its velocity (drawn as the
+note's fill), **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back.
 
-**The lane under the grid is the timeline's OSC markers**, and it is edited the
-same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step back.
-A marker is matched back to its item by its **label**, which is the address it
-sends, so the message survives the drag -- print it with ``read_back()``. Adding
-one *there* is refused and says why, because a marker is the message it sends
-and the lane has no way to type an address: add it here in the script instead.
+**The lane under the grid is the sequence's OSC markers**, and it is edited the
+same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
+by its **label**, the address it sends, so the message survives the drag. Adding
+one *there* is refused and says why: the lane has no way to type an address.
 
-**Nothing here drives a loop.** ``edit`` opens the window and the host's event
-loop delivers each gesture to the timeline, so playing it after an edit plays
-what was drawn without a step in between.
-
-**A note keeps what the roll cannot draw.** Order is the only identity the
-payload carries, so the i-th note's own `clausters.seq.Event` is *edited* rather
-than rebuilt from the five numbers a roll can say -- which is what keeps the
-instrument, and everything else the author put on it.
+**A note keeps what the roll cannot draw.** Every note on the roll carries the
+id of its event, so an edit names the note it touched: its instrument, its
+amplitude and anything else the author put on it stay, and removing one note
+leaves every other note its own.
 
 Run it as a script, or step through the cells::
 
@@ -51,9 +43,9 @@ from clausters.seq.event import Event
 # %% [markdown]
 # ## A timeline, filled the ordinary way
 #
-# Beats and events. The `instrument` on the last one is the point of the second
-# cell below: the roll cannot draw it, and editing must not lose it -- and so are
-# the marker's arguments, which the lane draws even less of.
+# Beats and events. The `instrument` and `amp` on the last one are what the
+# roll cannot draw and editing must not lose -- and so are the marker's
+# arguments.
 
 # %%
 timeline = Timeline([
@@ -67,66 +59,60 @@ timeline = Timeline([
 # %% [markdown]
 # ## One verb
 #
-# A `Timeline` opens as a `clausters.gui.editing.NotesEditor` -- one `pianoroll`
-# widget, the crate's ``events`` vocabulary, and the timeline's own editing
-# context.
+# The timeline is rendered into the events it plays, and those open as a
+# `clausters.gui.editing.NotesEditor`: one roll, each note with its id.
 
 # %%
 # `activate` is what makes this session the **ambient** one, and the free-standing
-# verbs are what need it: `play(timeline)` below resolves its server
-# from here, the way `edit` resolves its host. Building a session does not claim
-# that role -- a page or a script may hold several.
+# verbs are what need it: `play` below resolves its server from here, the way
+# `edit` resolves its host.
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 editor = edit(timeline,
               sample_rate=session.server.query_info().nominal_sample_rate,
               title="notes")
+notes = editor.sequence        # what the roll edits, in place
 
 
 # %% [markdown]
 # ## Play what was drawn
 #
-# The timeline is the one the script holds, so playing it needs nothing from the
-# editor: `clausters.seq.Timeline` plays itself, on a clock of its own.
+# The sequence is concrete data, so it plays as the events it holds: a timeline
+# of them, on the sequence's own tempo map.
 
 # %%
 def play():
-    """Play the timeline as it now stands.
-
-    The **free-standing** verb, not `clausters.Session.play`: that one plays an
-    event *pattern*, and this is a timeline. `clausters.play` dispatches on what
-    the structure is -- the same question `clausters.gui.edit` asked to open this
-    window -- and a `clausters.seq.Timeline` plays itself, on a clock of its own
-    and the ambient session's server.
-    """
-    clausters.play(timeline)
+    """Play the sequence as it now stands."""
+    played = Timeline(list(notes))
+    played.map = notes.tempo_map
+    clausters.play(played)
 
 
 # %% [markdown]
 # ## What a roll cannot say
 #
-# Five numbers per note -- start, length, pitch, velocity, channel. The
-# instrument, the amp and anything else the author wrote are none of them, and
-# they are still there after an edit.
+# Five numbers per note -- start, length, pitch, velocity, channel -- and the
+# id that names its event. The instrument, the amp and anything else the author
+# wrote are none of them, and they are still there after an edit.
 
 # %%
 def read_back():
-    """Every note as it now stands, with what the roll never drew."""
-    for beat, item in timeline:
+    """Every event as it now stands, with its id and what the roll never drew."""
+    for id, beat, item in notes.entries():
         if item.get("type") == "osc":
-            print(f"  {beat:5.2f}  osc {item['addr']}   {list(item['args'])}")
+            print(f"  #{id:<3} {beat:5.2f}  osc {item['addr']}   {list(item['args'])}")
             continue
         extra = {k: v for k, v in dict(item).items()
-                 if k not in ("midinote", "dur", "sustain", "velocity", "type")}
-        print(f"  {beat:5.2f}  midinote {item.midinote():5.1f}   {extra}")
+                 if k in ("instrument", "amp", "velocity")}
+        print(f"  #{id:<3} {beat:5.2f}  midinote {item.midinote():5.1f}   {extra}")
 
 
 # %%
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
-    print("edit the notes; space plays nothing here -- call play(). Close when done.")
+    print("edit the notes; call play() to hear them. Close when done.")
     editor.wait()
-    print("the timeline, as it was left:")
+    print("the sequence, as it was left:")
     read_back()
 
 

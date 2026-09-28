@@ -29,6 +29,7 @@ import type { Editing } from "./context.ts";
 import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
+import { Timeline } from "../../seq/timeline.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { MultitrackEditorOptions } from "./multitrack.ts";
 import type { AudioEditorOptions } from "./audio.ts";
@@ -61,6 +62,13 @@ export interface EditOptions {
     app?: Application | null;
     /** The host to open on. Absent: the ambient one, booted if it has to be. */
     host?: GuiHost;
+    /**
+     * **A timeline's own**, ignored by every other structure: the beat its
+     * render stops at, for one that does not end on its own. A timeline is
+     * opened by rendering it into an `EventSequence`, which the editor's
+     * `sequence` then holds; the timeline is not changed.
+     */
+    until?: number;
     /** The element the window's canvas takes the box of. Absent: one of its own. */
     stage?: Stage | null;
     /**
@@ -115,8 +123,7 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
             ...rest,
         }) as unknown as Editor<never>;
     }
-    if (isEvents(structure)) {
-        // No `tempo`: a timeline holds its own map, and the editor reads it.
+    if (isEvents(structure) && !(structure instanceof Timeline)) {
         return new NotesEditor(structure, {
             sampleRate: sampleRate || 48_000,
             ...rest,
@@ -131,8 +138,8 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     }
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
-            "`edit` opens a Buffer (its samples), an Automation (its curve), a " +
-            "Timeline (its notes) or a Multitrack (the multitrack).",
+            "`edit` opens a Buffer (its samples), an Automation (its curve), an " +
+            "EventSequence or a Timeline (its notes) or a Multitrack (the multitrack).",
     );
 }
 
@@ -158,7 +165,13 @@ export async function edit(
     structure: unknown,
     options: EditOptions = {},
 ): Promise<Editor<never>> {
-    const editor = editorFor(structure, options);
+    // **A timeline is rendered, and the roll edits what it produced**: the
+    // events, as concrete data in the timeline's beats with its map. The
+    // timeline itself is code and is left as it was; the sequence is the
+    // editor's `sequence`.
+    const { until, ...rest } = options;
+    const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
+    const editor = editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
     }

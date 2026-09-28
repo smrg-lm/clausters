@@ -1,352 +1,207 @@
 /**
- * Editing a **timeline of events**: the roll, with no multitrack under it.
+ * Editing an event sequence on a roll: the notes editor (mirrors
+ * `clausters/gui/editing/events.py`).
  *
- * A `Timeline` a page filled is edited by the same gesture that edits a track's
- * notes in the multitrack, and until now the only way to write one back was an
- * aggregate's `SetMembers` -- which needs a tree to be a member *of*. This is that
- * gesture over the timeline itself: the crate's `events` vocabulary, one
- * `pianoroll`, and the object the caller already holds written in place.
+ * What it opens is an `EventSequence` -- events as concrete data, each with an
+ * id -- and it edits that sequence **in place**: the editor in the shared crate
+ * (the `openNotes` member of `EditingCore`) holds the very sequence the page's
+ * handle names, so every edit is read back through the handle and there is
+ * nothing to write back. `edit` opens a `Timeline` by rendering it first
+ * (`Timeline.renderEvents`): the roll edits the events the timeline produced,
+ * never the timeline.
  *
- * **What an event is stays the client's.** The crate carries an event's `data`
- * and never reads it, so an `Event` travels whole and comes back whole -- the
- * pitch, the length, the instrument and whatever else the author put on it. What
- * the roll can say about a note is five numbers; what the note *is* is more than
- * that, and an edit that rebuilt one from the five would drop the rest.
+ * **The editor is the crate's**: the window, the notes with their ids, what
+ * each gesture does to the sequence, the entry it leaves and the corrections it
+ * answers with. What is here is what a language owns -- the socket, and handing
+ * the crate the window it is open in.
  *
  * @module
  */
 
-import { EVENTS, domainEdit } from "../../document.ts";
-import { Event as SeqEvent } from "../../seq/event.ts";
-import { Timeline, itemData, itemFromData } from "../../seq/timeline.ts";
-import { flatNotes, flatOsc, window as guiWindow } from "../guidef.ts";
+import { EVENTS } from "../../document.ts";
+import type { TempoMap } from "../../base/time.ts";
+import { EventSequence } from "../../seq/sequence.ts";
+import { Timeline } from "../../seq/timeline.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
+import type { Answer } from "./echo.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { plain } from "./samples.ts";
 import { View } from "./view.ts";
 
-/** One note, as the roll draws it. */
-export type Note = [start: number, dur: number, pitch: number, velocity: number, channel: number];
-
-/** One event as the crate holds it. */
-export interface CrateEvent {
-    at: number;
-    data?: Record<string, unknown>;
+/** What one turn of the core came to. */
+interface Outcome {
+    turn?: string;
+    changed?: boolean;
+    answer?: Answer;
 }
 
 /**
- * One item's data as a string two of them can be compared by -- key order is the
- * serializer's business and not a difference between two items.
+ * A sequence's vocabulary, the crate's `events`. A step is applied by the crate
+ * to the sequence it shares, so there is nothing here to carry out.
  */
-function stable(data: unknown): string {
-    return JSON.stringify(sorted(data));
-}
-
-/** `value` with every object's keys in one order, however deep. */
-function sorted(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(sorted);
-    if (value === null || typeof value !== "object") return value;
-    const held = value as Record<string, unknown>;
-    return Object.keys(held)
-        .sort()
-        .map((key) => [key, sorted(held[key])]);
-}
-
-/**
- * The label the roll's OSC lane draws for an item, or `null` when the item is
- * not one of that lane's -- an `"osc"` event labels with its address, a `"midi"` one
- * with a short tag.
- */
-function labelOf(item: unknown): string | null {
-    const kind = item instanceof SeqEvent ? item.get("type") : undefined;
-    if (kind === "osc") return String((item as SeqEvent).get("addr"));
-    if (kind === "midi") return "midi";
-    return null;
-}
-
-/**
- * A timeline's vocabulary: the crate's `events`, with each item's own parameters
- * carried in its `data`.
- *
- * **Every item is an event here, not only the notes.** A timeline holds OSC
- * markers and raw MIDI beside its notes, the roll draws them in a lane of their
- * own, and the crate is explicit that an event's `data` is the client's and that
- * a lane of markers is one of the things this domain is for. So the state is the
- * whole timeline and the two lanes are two *gestures* over it -- which is what
- * makes a marker dragged in the roll an edit with an inverse, instead of a
- * picture that quietly stops agreeing with the data.
- */
-export class NotesDomain extends Domain<Timeline> {
-    override readonly name = EVENTS;
+export class NotesDomain extends Domain<EventSequence> {
+    readonly name = EVENTS;
     override readonly ingested = true;
 
-    /**
-     * What a beat is worth on the view's axis. The roll draws in timeline
-     * samples and a timeline is in beats, so the crossing happens in the
-     * reading -- the editor's bridge is what supplies this.
-     */
-    unitsPerBeat = 1.0;
-
-    /**
-     * Whether a note may be written back onto this timeline. A roll over what a
-     * **generator** produced is a rendering of an algorithm, so there is
-     * nothing to write it onto -- the view says so with the widget's own
-     * `notesEditable`, and this is the second half of it, for a host that does
-     * not read the prop.
-     */
-    editable = true;
-
-    /**
-     * The report, the timeline it is over, and the axis it was drawn on.
-     *
-     * **The whole timeline travels, not the lane the gesture drew.** Both lanes
-     * state a whole-list intent, so a payload that named only the notes would be
-     * an edit that deletes every marker -- and the reading needs the untouched
-     * lane in hand to carry it through.
-     */
-    override request(
-        structure: Timeline,
-        _tag: string,
-        values: readonly unknown[],
-    ): Record<string, unknown> {
-        return {
-            values: [...values],
-            state: this.state(structure),
-            unitsPerBeat: this.unitsPerBeat || 1.0,
-            editable: this.editable,
-        };
+    /** The crate reads the inverse off the sequence it holds. */
+    current(_structure: EventSequence, _payload: unknown): unknown {
+        return null;
     }
 
-    /**
-     * The timeline as the crate holds it -- every item, notes and markers alike,
-     * since both are edited through this vocabulary.
-     */
-    state(structure: Timeline): CrateEvent[] {
-        const out: CrateEvent[] = [];
-        for (const [beat, item] of structure) {
-            const data = itemData(item);
-            if (data !== null) out.push({ at: Number(beat), data: plain(data) });
-        }
-        return out;
-    }
-
-    current(structure: Timeline, payload: unknown): unknown {
-        return domainEdit(this.name, this.state(structure), payload)?.current ?? null;
-    }
-
-    project(structure: Timeline, payload: unknown): boolean {
-        const edited = domainEdit(this.name, this.state(structure), payload);
-        if (edited === undefined || !edited.applied) return false;
-        // **What this build cannot describe is kept.** An item that is neither
-        // an event nor a marker never entered the state, so it is held aside and
-        // put back rather than rebuilt from a description nobody wrote.
-        const others = [...structure].filter(([, item]) => itemData(item) === null);
-        // **An item the edit did not change is the same object**, matched by
-        // what it says rather than by where it sits -- so a marker the notes
-        // gesture never touched, and a note that only moved, come out the other
-        // side as themselves, keeping whatever the JSON seam cannot carry (a
-        // message's arguments, an event's resolved server). Only what the
-        // gesture actually rewrote is built from its description.
-        const held: [string, unknown][] = [];
-        for (const [, item] of structure) {
-            const data = itemData(item);
-            if (data !== null) held.push([stable(plain(data)), item]);
-        }
-        const rebuilt: [number, unknown][] = [];
-        // The state is the crate's sequence: its events under "events", each
-        // with the id it now carries.
-        for (const event of (edited.state as { events?: CrateEvent[] }).events ?? []) {
-            const data = event.data ?? {};
-            const key = stable(data);
-            const was = held.findIndex(([heldKey, item]) => item !== null && heldKey === key);
-            let item: unknown;
-            if (was >= 0) {
-                item = held[was][1];
-                held[was] = [key, null];
-            } else {
-                item = itemFromData(data);
-            }
-            rebuilt.push([Number(event.at ?? 0), item]);
-        }
-        // **One step, not a clear and a rebuild.** Same call as the Python
-        // client's, in the same place -- see `Timeline.replace` for what a
-        // half-rebuilt timeline costs the client whose loop has a thread.
-        structure.replace([...rebuilt, ...others]);
-        return true;
+    /** The crate applied the step to the sequence it shares with the page. */
+    project(_structure: EventSequence, _payload: unknown): boolean {
+        return false;
     }
 }
 
-/** One `pianoroll`: the timeline's notes on the beat grid. */
-export class NotesView extends View<Timeline> {
-    build(editor: Editor<Timeline>): GuiNode {
-        // The pitch window the roll fits to its notes is the crate's, and so is
-        // saying **before the hand tries** that a roll over what a generator
-        // produced has nothing to write onto -- the widget refuses the press
-        // instead of offering a drag it will unwind.
-        const editable = !(editor.domain instanceof NotesDomain) || editor.domain.editable;
-        return guiWindow(
-            { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "pianoroll", "roll", editor.structure, {
-                notes: flatNotes(drawn(editor)),
-                osc: flatOsc(markers(editor)),
-                ruler: "beats",
-                // The ruler draws the timeline's beats through the timeline's
-                // map: configuration of the ruler, read from the data it shows.
-                tempo_map: editor.structure.map.dump(),
-                sample_rate: editor.sampleRate,
-                editable,
-            }),
-            ...editor.extra,
-        );
+/** The roll: one `notes` widget, composed by the crate. */
+export class NotesView extends View<EventSequence> {
+    build(editor: Editor<EventSequence>): GuiNode {
+        const wid = this.widget(editor, "notes", editor.structure);
+        const ed = editor as NotesEditor;
+        ed.syncCore();
+        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
+        // **A page's own widgets are its objects**, so they are appended here
+        // rather than composed in the crate.
+        tree.children = [...(tree.children ?? []), ...editor.extra];
+        return tree;
     }
 
-    override props(editor: Editor<Timeline>): Record<string, PropValue> {
-        // **Both lanes**: a correction is what the widget should be drawing, and
-        // a refused marker is answered by the markers as they still are. The
-        // ruler's map goes with them, so a tempo edited on the timeline redraws.
-        return {
-            notes: flatNotes(drawn(editor)) as PropValue,
-            osc: flatOsc(markers(editor)) as PropValue,
-            tempo_map: editor.structure.map.dump(),
-        };
+    override props(editor: Editor<EventSequence>, widgetId: number): Record<string, PropValue> {
+        return (editor as NotesEditor).coreCall("props", { widget: widgetId }) as Record<
+            string,
+            PropValue
+        >;
     }
 }
 
-/**
- * A timeline on screen, editable back into the `Timeline` the caller already
- * holds.
- */
-export class NotesEditor extends Editor<Timeline> {
-    constructor(timeline: Timeline, options: NotesEditorOptions) {
+/** An event sequence on a roll, edited note by note, in place. */
+export class NotesEditor extends Editor<EventSequence> {
+    /** This editor's member in its editing context. */
+    private readonly member: number;
+    /** Whether a hand may edit the notes (`false` for a rendering). */
+    readonly editable: boolean;
+
+    constructor(sequence: EventSequence, options: NotesEditorOptions) {
         const domain = new NotesDomain();
-        domain.editable = options.editable ?? true;
-        super(timeline, { title: "Notes", ...options, domain, view: new NotesView() });
-        // The bridge is the editor's, so the domain reads it from here rather
-        // than keeping a second one.
-        domain.unitsPerBeat = this.unitsPerBeat;
+        super(sequence, { title: "Notes", ...options, domain, view: new NotesView() });
+        this.editable = options.editable ?? true;
+        const opened = this.editing.openNotes(
+            `sequence:${keyOfSequence(sequence)}`,
+            sequence,
+            {
+                rate: this.sampleRate,
+                editable: this.editable,
+                title: this.title,
+                w: this.size[0],
+                h: this.size[1],
+            },
+            domain,
+        );
+        this.member = opened.member;
+        this.structureId = opened.identity;
+    }
+
+    /** The sequence the roll edits -- the one the editor was opened over. */
+    get sequence(): EventSequence {
+        return this.structure;
+    }
+
+    /** The sequence's own tempo map, which the roll's axis is drawn through. */
+    override tempoMap(): TempoMap | null {
+        return this.structure.tempoMap;
+    }
+
+    /**
+     * One verb of this editor's member, through the context.
+     *
+     * @internal
+     */
+    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return this.editing.member(this.member, verb, args);
+    }
+
+    /**
+     * Hand the crate the window it is open in and the chrome.
+     *
+     * @internal
+     */
+    syncCore(): void {
+        this.coreCall("sync", {
+            window: this.windowId,
+            rate: this.sampleRate,
+            editable: this.editable,
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+        });
+    }
+
+    // ---- the crate's turns ----
+
+    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
+        this.syncCore();
+        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const outcome = (turned.outcome ?? {}) as Outcome;
+        if (outcome.turn === "closed") return this.closedWindow();
+        if (outcome.turn === "step") {
+            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
+            this.echo.send(outcome.answer);
+            return stepped;
+        }
+        return this.take(outcome);
+    }
+
+    /** One `/gui_event` payload, with the stamp already taken off. */
+    protected override route(args: readonly unknown[]): boolean {
+        this.syncCore();
+        const [wid, tag, ...values] = args;
+        const turned = this.editing.event(
+            this.member,
+            "/gui_event",
+            plain([wid, 0, 0, tag, ...values]) as unknown[],
+        );
+        return this.take((turned.outcome ?? {}) as Outcome);
+    }
+
+    /** Answers the host with what a turn came to; whether the sequence changed. */
+    private take(outcome: Outcome): boolean {
+        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        const changed = outcome.changed === true;
+        if (changed) {
+            this.dirty = true;
+            this.editing.changed();
+        }
+        this.echo.send(outcome.answer);
+        return changed;
     }
 }
 
 /** {@link NotesEditor}'s options: the generic ones plus whether it writes. */
-export interface NotesEditorOptions extends GenericEditorOptions<Timeline> {
-    /**
-     * Whether a note may be written back. `false` for a roll over what a
-     * forward-only generator produced.
-     */
+export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> {
+    /** `false` for a roll a hand may look at and not edit: the notes of a rendering. */
     editable?: boolean;
 }
 
-/**
- * The timeline's OSC (and raw MIDI) items as `[timeUnits, label]` pairs -- the
- * roll's OSC lane. An `"osc"` event labels with its address, a `"midi"` one with a
- * short tag.
- *
- * The label is the whole of what the lane can say -- the message's arguments are
- * not drawn -- which is why a marker moved or removed there is matched back to
- * its item **by label** and one added there is refused: the address is what a
- * marker sends, and the lane has no way to type one.
- */
-function markers(editor: Editor<Timeline>): [number, string][] {
-    const out: [number, string][] = [];
-    for (const [beat, item] of editor.structure) {
-        const label = labelOf(item);
-        if (label !== null) out.push([editor.beatsToUnits(Number(beat)), label]);
+/** The number a sequence's structure key is made of: one per handle. */
+const keys = new WeakMap<EventSequence, number>();
+let nextKey = 0;
+function keyOfSequence(sequence: EventSequence): number {
+    let key = keys.get(sequence);
+    if (key === undefined) {
+        key = ++nextKey;
+        keys.set(sequence, key);
     }
-    return out;
+    return key;
 }
 
 /**
- * The timeline's notes as the roll draws them: `[start, dur, pitch, velocity,
- * channel]` in timeline samples.
+ * Whether `edit` opens this in the notes editor: an event sequence, or a
+ * timeline, which it renders into one.
  */
-function drawn(editor: Editor<Timeline>): Note[] {
-    const out: Note[] = [];
-    for (const [beat, item] of editor.structure) {
-        const pitch = pitchOf(item);
-        if (pitch === null) continue;
-        const event = item as SeqEvent;
-        const at = editor.beatsToUnits(Number(beat));
-        out.push([
-            at,
-            editor.beatsToUnits(Number(beat) + lengthOf(event)) - at,
-            pitch,
-            velocityOf(event),
-            Math.trunc(Number(event.get("channel") ?? 0)),
-        ]);
-    }
-    return out;
-}
-
-/**
- * How long a note **sounds**, in beats -- `Event.sustain`, which is
- * `dur * legato` when nothing set one outright.
- *
- * That is what a roll draws and what a drag on a note's edge sets, so reading
- * the explicit key alone would draw an articulated note at its grid length and
- * hand the edit-back a number the hand never saw.
- */
-function lengthOf(event: SeqEvent): number {
-    try {
-        return Number(event.sustain());
-    } catch {
-        const value = event.get("dur");
-        return value === null || value === undefined ? 1.0 : Number(value);
-    }
-}
-
-/**
- * The MIDI pitch of a timeline item, or `null` when it carries none -- an OSC
- * marker, a rest, anything that is not an event.
- */
-function pitchOf(item: unknown): number | null {
-    if (!(item instanceof SeqEvent) || (item.get("type") ?? "note") !== "note") return null;
-    try {
-        return Number(item.midinote());
-    } catch {
-        return null;
-    }
-}
-
-/**
- * The MIDI velocity of a note: an explicit `velocity`, else the linear `amp`
- * mapped onto the velocity range, else the default.
- */
-function velocityOf(event: SeqEvent): number {
-    const vel = event.get("velocity");
-    if (vel !== null && vel !== undefined) {
-        return Math.max(0, Math.min(127, Math.trunc(Number(vel))));
-    }
-    const amp = event.get("amp");
-    if (amp !== null && amp !== undefined) {
-        return Math.max(1, Math.min(127, Math.round(Number(amp) * 127)));
-    }
-    return 100;
-}
-
-/**
- * An event's parameters as plain JSON-able data -- what is not, travels as the
- * name that answers for it, which is the rule the document already follows for a
- * clang's configuration.
- */
-function plain(value: unknown): never;
-function plain(value: Record<string, unknown>): Record<string, unknown>;
-function plain(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map((v) => plain(v as Record<string, unknown>));
-    if (value !== null && typeof value === "object") {
-        const out: Record<string, unknown> = {};
-        for (const [key, held] of Object.entries(value)) {
-            out[key] = plain(held as Record<string, unknown>);
-        }
-        return out;
-    }
-    if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value;
-    const name = (value as { name?: unknown }).name;
-    return typeof name === "string" && name ? name : null;
-}
-
-/** Whether `edit` should open this as a roll. */
-export function isEvents(structure: unknown): structure is Timeline {
-    return structure instanceof Timeline;
+export function isEvents(structure: unknown): structure is EventSequence | Timeline {
+    return structure instanceof EventSequence || structure instanceof Timeline;
 }

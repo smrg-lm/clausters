@@ -33,6 +33,7 @@
  */
 
 import { EditingCore } from "../../core/clausters_core_web.js";
+import type { EventSequence } from "../../seq/sequence.ts";
 
 /**
  * The version an unedited context is at. One rather than zero, because zero is
@@ -273,6 +274,30 @@ export class Editing {
         const opened = { member: Number(answer.member), identity: Number(answer.structure) };
         this.handlers.set(opened.member, { structure, handler });
         if (!this.structures.has(structure)) this.structures.set(structure, opened);
+        return opened;
+    }
+
+    /**
+     * **Open a notes editor over `sequence`** -- an `EventSequence`, which the
+     * editor then edits in place -- as the structure `key` names, and answer its
+     * member and identity. Throws with the crate's reason when it refuses.
+     */
+    openNotes(
+        key: string,
+        sequence: EventSequence,
+        request: Record<string, unknown>,
+        handler: StepHandler | null,
+    ): { member: number; identity: number } {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        const answer = JSON.parse(
+            this.#core.openNotes(sequence.seq, JSON.stringify({ key, ...request })),
+        ) as Record<string, unknown>;
+        if (typeof answer.error === "string" || answer.member === undefined) {
+            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
+        }
+        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
+        this.handlers.set(opened.member, { structure: sequence, handler });
+        if (!this.structures.has(sequence)) this.structures.set(sequence, opened);
         return opened;
     }
 

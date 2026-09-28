@@ -658,7 +658,11 @@ pub unsafe extern "C" fn clausters_multitrack_plan(
 /// **A sequence of events** (`clausters_document::events::EventSequence`): what
 /// a notes editor edits and what a timeline renders into. Free it with
 /// [`clausters_document_sequence_free`].
-pub struct FfiEventSequence(Mutex<clausters_document::EventSequence>);
+///
+/// Shared, because a notes editor opened on it
+/// ([`crate::apps::clausters_apps_editing_open_notes`]) edits this very
+/// sequence: the handle and the editor are two holders of one structure.
+pub struct FfiEventSequence(pub(crate) clausters_apps::notes::Shared);
 
 /// A sequence read from `json` (the sequence, or a bare list of events), or an
 /// empty one when `json` is null. Null when the JSON will not read.
@@ -678,7 +682,9 @@ pub unsafe extern "C" fn clausters_document_sequence_new(
         },
         None => clausters_document::EventSequence::default(),
     };
-    Box::into_raw(Box::new(FfiEventSequence(Mutex::new(sequence))))
+    Box::into_raw(Box::new(FfiEventSequence(std::sync::Arc::new(Mutex::new(
+        sequence,
+    )))))
 }
 
 /// Frees a sequence from [`clausters_document_sequence_new`] (null is a no-op).

@@ -56,8 +56,11 @@ opens, which is why the curve row below names three unrelated types:
 |---|---|---|---|
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
-| a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
+| an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+
+**An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
+
 
 **A `Buffer` opens in the audio editor**, `clausters.gui.editing.AudioEditor`.
 It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and

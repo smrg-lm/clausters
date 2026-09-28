@@ -607,16 +607,14 @@ test("a page and a roll walk one order", {
     const step = () =>
         (score.sheet().staves as { voices: { items: { pitches: { step: string }[] }[] }[] }[])[0]
             .voices[0].items[0].pitches[0].step;
-    const pitches = () => [...timeline].map(([, item]) => (item as Event).midinote());
+    // The roll edits the sequence the timeline rendered into, by id.
+    const notes = (editor as unknown as { sequence: Iterable<[number, Event]> }).sequence;
+    const pitches = () => [...notes].map(([, item]) => item.midinote());
 
     assert.ok(score.apply({ op: "transpose", semitones: 2 }));
-    const payload = editor.domain?.payload(
-        timeline as never,
-        "notes",
-        [0.0, 24_000, 67, 100, 0],
-    );
-    const reach = editor as unknown as { edit(p: unknown, label: string): boolean };
-    assert.ok(reach.edit(payload, "edit the notes"));
+    const wid = (editor.view!.build(editor).children as { id: number }[])[0]!.id;
+    const reach = editor as unknown as { route(args: unknown[]): boolean };
+    assert.ok(reach.route([wid, "notes", 1, 0.0, 24_000, 67, 13, 0]));
     assert.deepEqual([step(), pitches()], ["d", [67]]);
 
     // Undone from the *roll's* window, in the order the hand made them.

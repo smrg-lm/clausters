@@ -19,44 +19,43 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(timeline)</code>: a roll over a timeline, with no
-multitrack under it.
+      <div id="note"><code>edit(timeline)</code>: a timeline's events on a
+roll, edited note by note.
 
-The same gesture that edits a track's notes in the multitrack, over a
-<code>Timeline</code> the page filled -- no arrangement, no document, no track.
-Until now the only way to write a roll's edit back was an aggregate's member
-list, which needs a tree to be a member <i>of</i>; this is the timeline itself.
+A <code>Timeline</code> is code -- events, patterns, routines, other timelines
+-- and a roll edits data. So <code>edit</code> renders the timeline first
+(<code>Timeline.renderEvents</code>) and opens the events it produced: an
+<code>EventSequence</code>, in the timeline's beats with its tempo map, each
+event with an id of its own. The editor edits that sequence in place, and the
+timeline is left as it was.
 
-<b>Drag a note</b> to move it, <b>drag its edge</b> to resize, <b>Ctrl+click</b>
-to add or remove one, <b>Ctrl+Z</b> to step back. Then press play: the notes are
-the timeline's, so what sounds is what was drawn -- and so does editing it while
-it plays: a note moved ahead of the line sounds where it lands, one moved behind
-the line is not played again, and the notes already passed are not played twice.
+<b>Drag a note</b> to move it, <b>drag its edge</b> to resize, <b>Shift and
+drag it up or down</b> to change its velocity (drawn as the note's fill),
+<b>Ctrl+click</b> to add or remove one, <b>Ctrl+Z</b> to step back.
 
-<b>The lane under the grid is the timeline's OSC markers</b>, and it is edited
-the same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step
-back. A marker is matched back to its item by its <b>label</b>, which is the
-address it sends, so the message survives the drag -- press the read-back button
-to see it. Adding one <i>there</i> is refused and says why, because a marker is
-the message it sends and the lane has no way to type an address: add it in the
-page instead.
+<b>The lane under the grid is the sequence's OSC markers</b>, edited the same
+way: drag one to move it, Ctrl+click one to remove it. A marker is matched by
+its <b>label</b>, the address it sends, so the message survives the drag. Adding
+one <i>there</i> is refused and says why: the lane has no way to type an
+address.
 
-<b>A note keeps what the roll cannot draw.</b> Order is the only identity the
-payload carries, so the i-th note's own <code>Event</code> is <i>edited</i>
-rather than rebuilt from the five numbers a roll can say -- which is what keeps
-the instrument, and everything else the author put on it.</div>
+<b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
+id of its event, so an edit names the note it touched: its instrument, its
+amplitude and anything else the author put on it stay, and removing one note
+leaves every other note its own.</div>
 
       <button id="run">open the roll</button>
       <div id="stage"></div>
-      <button id="play" disabled>play the timeline</button>
+      <button id="play" disabled>play the notes</button>
       <button id="read" disabled>what the roll never drew</button>
       <pre id="log"></pre>
     </main>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_notes.py, call for
-      call: the same four events, the same `edit`, the same play, and the same
-      read-back showing what five numbers cannot say.
+      call: the same events, the same `edit`, the same play of the sequence,
+      and the same read-back showing each event's id and what the roll never
+      drew.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped.
@@ -72,9 +71,8 @@ the instrument, and everything else the author put on it.</div>
       const log = (line) => { $("log").textContent += line + "\n"; };
 
       // A timeline, filled the ordinary way: beats and events. The `instrument`
-      // on the last one is the point of the read-back button -- the roll cannot
-      // draw it, and editing must not lose it -- and so are the marker's
-      // arguments, which the lane draws even less of.
+      // and `amp` on the last one are what the roll cannot draw and editing
+      // must not lose -- and so are the marker's arguments.
       const timeline = new Timeline([
         [0.0, new Event({ midinote: 60, dur: 1.0 })],
         [1.0, new Event({ midinote: 64, dur: 1.0 })],
@@ -84,60 +82,56 @@ the instrument, and everything else the author put on it.</div>
       ]);
 
       let session = null;
+      let notes = null; // what the roll edits, in place
 
-      /** Every note as it now stands, with what the roll never drew. */
+      /** Every event as it now stands, with its id and what the roll never drew. */
       function readBack() {
-        const drawn = ["midinote", "dur", "sustain", "velocity", "type"];
-        for (const [beat, item] of timeline) {
+        for (const [id, beat, item] of notes.entries()) {
           if (item.get("type") === "osc") {
-            log(`  ${beat.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
+            log(`  #${id} ${beat.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
             continue;
           }
           const extra = Object.fromEntries(
-            Object.entries(item.props).filter(([k]) => !drawn.includes(k)));
-          log(`  ${beat.toFixed(2)}  midinote ${item.midinote()}   ${JSON.stringify(extra)}`);
+            Object.entries(item.props).filter(([k]) => ["instrument", "amp", "velocity"].includes(k)));
+          log(`  #${id} ${beat.toFixed(2)}  midinote ${item.midinote()}   ${JSON.stringify(extra)}`);
         }
       }
 
       async function run() {
         $("run").disabled = true;
         // `activate` is what makes this session the **ambient** one, and the
-        // free-standing verbs are what need it: `play(timeline)` below resolves
-        // its server from here, the way `edit` resolves its host.
-        // Building a session does not claim that role -- a page may hold
-        // several.
+        // free-standing verbs are what need it: `play` below resolves its
+        // server from here, the way `edit` resolves its host.
         session = (await Session.embed()).activate();
         await session.gui();
 
-        // One verb. A `Timeline` opens as a NotesEditor -- one `pianoroll`
-        // widget, the crate's `events` vocabulary, and the timeline's own
-        // editing context.
+        // One verb. The timeline is rendered into the events it plays, and
+        // those open as a NotesEditor: one roll, each note with its id.
         const editor = await gui.edit(timeline, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "notes",
           stage: $("stage"),
         });
-        log("edit the notes; press play to hear the timeline as it stands");
+        notes = editor.sequence;
+        log("edit the notes; press play to hear them as they stand");
 
         $("play").disabled = false;
-        // The timeline is the one the page holds, so playing it needs nothing
-        // from the editor.
-        // The **free-standing** verb, not `session.play`: that one plays an
-        // event *pattern*, and this is a timeline. `play` dispatches on what the
-        // structure is -- the same question `edit` asked to open this window --
-        // and a `Timeline` plays itself, on a clock of its own and the ambient
-        // session's server.
-        $("play").onclick = () => play(timeline);
+        // The sequence is concrete data, so it plays as the events it holds: a
+        // timeline of them, on the sequence's own tempo map.
+        $("play").onclick = () => {
+          const played = new Timeline([...notes]);
+          played.map = notes.tempoMap;
+          play(played);
+        };
 
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen, and prints what was drawn when it
         // closes. Here nothing exits and nothing may block, so the same verb is
         // a promise.
         editor.wait().then(() => {
-          log("the timeline, as it was left:");
+          log("the sequence, as it was left:");
           readBack();
         });
-
         $("read").disabled = false;
         $("read").onclick = () => readBack();
       }

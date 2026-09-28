@@ -38,7 +38,13 @@ interface Written {
  * an event by.
  */
 export class EventSequence {
-    private readonly seq: JsEventSequence;
+    /**
+     * The sequence itself, in the shared crate -- what a notes editor opened
+     * over this handle edits in place.
+     *
+     * @internal
+     */
+    readonly seq: JsEventSequence;
 
     /**
      * @param events `[beat, event]` pairs.

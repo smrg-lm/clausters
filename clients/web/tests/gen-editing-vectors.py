@@ -114,8 +114,10 @@ def gestures(multitrack, sources):
     lanes[5] = 0.25
     points = list(props["points"])
     points[len(points) - 3] = 0.75
+    # A sequence with no tempo map is one beat a second, so `rate` is the
+    # units a beat is on the roll's axis.
     timeline = [{"at": 0.0, "data": {"midinote": 60, "instrument": "bell"}},
-                {"at": 1.0, "data": {"osc": "/cue", "args": [1]}}]
+                {"at": 1.0, "data": {"type": "osc", "addr": "/cue", "args": [1]}}]
     multitrack_request = {"state": multitrack, "rate": 48000.0,
                      "sources": sources}
     return [
@@ -128,14 +130,14 @@ def gestures(multitrack, sources):
         ("an inverse that does not cover the write", "samples", "draw",
          {"values": [0, 4, [0.5, 0.25], [0.0]]}),
         ("a note moved, keeping what the roll cannot draw", "events", "notes",
-         {"values": [960.0, 480.0, 64, 100, 0], "state": timeline,
-          "unitsPerBeat": 480.0, "editable": True}),
+         {"values": [1, 960.0, 480.0, 64, 100, 0], "state": timeline,
+          "rate": 480.0, "editable": True}),
         ("a marker dragged, matched by its label", "events", "osc",
          {"values": [1440.0, "/cue"], "state": timeline,
-          "unitsPerBeat": 480.0, "editable": True}),
+          "rate": 480.0, "editable": True}),
         ("a marker the roll invented, refused out loud", "events", "osc",
          {"values": [1440.0, "/cue", 1920.0, ""], "state": timeline,
-          "unitsPerBeat": 480.0, "editable": True}),
+          "rate": 480.0, "editable": True}),
         ("a box dragged four seconds along", "multitrack", "clips",
          {"values": clips, **multitrack_request}),
         ("a fader moved", "multitrack", "lanes",

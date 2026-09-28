@@ -1581,6 +1581,18 @@ impl JsEditing {
     pub fn call(&mut self, request: &str) -> String {
         clausters_apps::editing::call_json(&mut self.0, request)
     }
+
+    /// Opens a notes editor over `sequence`, which it then edits in place --
+    /// the C ABI's `clausters_apps_editing_open_notes`. `request` carries the
+    /// `key` and what the editor is built from.
+    #[wasm_bindgen(js_name = openNotes)]
+    pub fn open_notes(&mut self, sequence: &JsEventSequence, request: &str) -> String {
+        let key = serde_json::from_str::<serde_json::Value>(request)
+            .ok()
+            .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+            .unwrap_or_default();
+        self.0.open_notes(&key, sequence.0.clone(), request)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -2377,7 +2389,7 @@ impl JsDocument {
 /// verb through one JSON door, as the C ABI's `clausters_document_sequence_*`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub struct JsEventSequence(clausters_document::EventSequence);
+pub struct JsEventSequence(clausters_apps::notes::Shared);
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -2386,17 +2398,19 @@ impl JsEventSequence {
     /// empty for an empty string.
     #[wasm_bindgen(constructor)]
     pub fn new(json: &str) -> Result<JsEventSequence, JsError> {
-        if json.is_empty() {
-            return Ok(Self(clausters_document::EventSequence::default()));
-        }
-        serde_json::from_str(json)
-            .map(Self)
-            .map_err(|e| JsError::new(&format!("not a sequence of events: {e}")))
+        let sequence = if json.is_empty() {
+            clausters_document::EventSequence::default()
+        } else {
+            serde_json::from_str(json)
+                .map_err(|e| JsError::new(&format!("not a sequence of events: {e}")))?
+        };
+        Ok(Self(std::sync::Arc::new(std::sync::Mutex::new(sequence))))
     }
 
     /// One verb, as `clausters_document::events::call_json` answers it.
     pub fn call(&mut self, request: &str) -> String {
-        clausters_document::events::call_json(&mut self.0, request)
+        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        clausters_document::events::call_json(&mut held, request)
     }
 }
 

@@ -7,13 +7,15 @@ read back is the edit that was drawn, and a window composing two structures
 undoes across both in the order the edits were made.
 """
 
+import json
+
 import pytest
 
 from clausters import TempoMap
 
 from clausters.gui import edit
 from clausters.gui.editing import Editing, NotesEditor, PointsEditor
-from clausters.seq import Timeline
+from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf
 from clausters.seq.event import Event as SeqEvent
 
@@ -211,40 +213,48 @@ def test_a_resend_of_the_curve_is_not_an_edit():
     assert editor.can_undo is False
 
 
-# ---- a timeline ----
+# ---- an event sequence, and a timeline rendered into one ----
 
-def test_a_roll_edits_the_timeline_the_caller_holds():
+def _roll(tempo=TEMPO):
+    """A timeline at ``tempo``, opened: its rendered sequence is what the roll
+    edits."""
     timeline = a_timeline()
-    timeline.map = TempoMap(TEMPO)
+    timeline.map = TempoMap(tempo)
     editor = edit(timeline, sample_rate=SR, open=False)
+    return timeline, editor
+
+
+def test_a_timeline_opens_as_the_events_it_renders_and_is_left_as_it_was():
+    timeline, editor = _roll()
     _host, wid = opened(editor)
-
     assert editor.apply("/gui_event", [wid, 1, 0, "notes",
-                                       0.0, BEAT, 67, 100, 0,
-                                       2 * BEAT, BEAT, 72, 100, 0]) is True
-    played = [(beat, event.midinote()) for beat, event in timeline]
-    assert played == [(0.0, 67.0), (2.0, 72.0)]
+                                       1, 0.0, BEAT, 67, 13, 0,
+                                       2, 2 * BEAT, BEAT, 72, 13, 0]) is True
+    assert [(beat, e["midinote"]) for beat, e in editor.sequence] == [(0.0, 67), (2.0, 72)]
+    # The timeline is code, and the roll edited what it produced.
+    assert [(beat, event.midinote()) for beat, event in timeline] == [(0.0, 60.0), (1.0, 64.0)]
     assert editor.undo() is True
-    assert [(beat, event.midinote()) for beat, event in timeline] == \
-        [(0.0, 60.0), (1.0, 64.0)]
+    assert [(beat, e["midinote"]) for beat, e in editor.sequence] == [(0.0, 60.0), (1.0, 64.0)]
 
 
-def test_a_rolls_ruler_reads_the_timelines_own_map():
-    # The editor holds no tempo: the roll's axis takes the timeline's map, and
-    # a tempo written on the timeline afterwards is what a resync sends.
-    timeline = a_timeline()
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
+def test_a_sequence_is_edited_in_place_by_id():
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell")),
+                         (1.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = edit(seq, sample_rate=SR, open=False)
+    _host, wid = opened(editor)
+    # Note 1 is gone and note 2 moved: order is no identity, so note 2 keeps
+    # its own keys and the one removed is the one named.
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 2, 2 * BEAT, BEAT, 65, 13, 0])
+    assert [(id, beat, e["midinote"]) for id, beat, e in seq.entries()] == [(2, 2.0, 65)]
+
+
+def test_a_rolls_ruler_reads_the_sequences_own_map():
+    _timeline, editor = _roll()
     tree = editor.view.build(editor)
     roll = next(node for node in _walk(tree) if node.get("type") == "notes")
-    assert roll["axes"]["x"]["tempo_map"] == timeline.map.dump()
-    assert "tempo" not in roll["axes"]["x"]
-    assert editor.units_per_beat == BEAT
-
-    timeline.map.push(1.0, 4.0)
-    props = editor.view.props(editor, 0)
-    assert props["tempo_map"] == timeline.map.dump()
-    assert editor.beats_to_units(2.0) == BEAT + SR / 4.0
+    assert json.loads(roll["axes"]["x"]["tempo_map"]) == json.loads(TempoMap(TEMPO).dump())
+    assert roll["note_ids"] == [1, 2]
+    assert roll["notes"][:5] == [0.0, BEAT * 0.8, 60.0, 13.0, 0.0]
 
 
 def _walk(node):
@@ -254,35 +264,41 @@ def _walk(node):
 
 
 def test_a_note_keeps_what_the_roll_cannot_draw():
-    # Order is the only identity the payload carries, so the i-th note's own
-    # event is edited rather than rebuilt from the five numbers.
-    timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell"))])
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell"))],
+                        tempo_map=TempoMap(TEMPO))
+    editor = edit(seq, sample_rate=SR, open=False)
     _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 65, 100, 0])
-    _beat, event = next(iter(timeline))
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 65, 13, 0])
+    _beat, event = next(iter(seq))
     assert event.get("instrument") == "bell"
     assert event.midinote() == 65.0
+
+
+def test_a_note_the_hand_made_gets_an_id_and_the_roll_is_told():
+    _timeline, editor = _roll()
+    host, wid = opened(editor)
+    editor.apply("/gui_event", [wid, 1, 0, "notes",
+                                1, 0.0, BEAT * 0.8, 60, 13, 0,
+                                2, BEAT, BEAT * 0.8, 64, 13, 0,
+                                0, 3 * BEAT, BEAT, 67, 90, 0])
+    assert [id for id, _b, _e in editor.sequence.entries()] == [1, 2, 3]
+    _seq, corrections, _reason = host.acks[-1]
+    assert corrections[0][1]["note_ids"] == [1, 2, 3]
 
 
 def test_what_the_roll_does_not_draw_is_kept():
     from clausters.seq.timeline import OscItem
 
     timeline = a_timeline()
-    marker = OscItem("/mark")
-    timeline.add(3.0, marker)
+    timeline.add(3.0, OscItem("/mark"))
     timeline.map = TempoMap(TEMPO)
     editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
-    assert any(item is marker for _beat, item in timeline), \
-        "a rebuilt timeline would have dropped it"
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0])
+    assert [e.get("type", "note") for _b, e in editor.sequence] == ["note", "osc"]
 
 
-def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
-    # The lane the roll draws and nobody answered: a marker slid in the OSC
-    # lane is an edit of the timeline, with an inverse like any other.
+def test_a_marker_dragged_in_the_roll_moves_it():
     from clausters.seq.timeline import OscItem
 
     timeline = a_timeline()
@@ -291,60 +307,36 @@ def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
     editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
-    at = [(beat, item) for beat, item in timeline if item.get("type") == "osc"]
-    assert at == [(1.5, at[0][1])], "the marker moved, and it is the same item"
+    at = [(beat, e) for beat, e in editor.sequence if e.get("type") == "osc"]
+    assert at[0][0] == 1.5
     assert at[0][1]["args"] == [7], "the message it sends is not the lane's to lose"
     assert editor.undo_label == "edit the markers"
     assert editor.undo() is True
-    assert [beat for beat, item in timeline if item.get("type") == "osc"] == [3.0]
+    assert [beat for beat, e in editor.sequence if e.get("type") == "osc"] == [3.0]
 
 
 def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
-    # Matched by label rather than by order, so removing one does not hand the
-    # next one's message to the wrong marker.
     from clausters.seq.timeline import OscItem
 
-    timeline = Timeline([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
-                         (2.0, OscItem("/c", 3))])
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
+    seq = EventSequence([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
+                         (2.0, OscItem("/c", 3))], tempo_map=TempoMap(TEMPO))
+    editor = edit(seq, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
-    assert [(item["addr"], item["args"]) for _beat, item in timeline] == \
-        [("/a", [1]), ("/c", [3])]
+    assert [(e["addr"], e["args"]) for _b, e in seq] == [("/a", [1]), ("/c", [3])]
 
 
 def test_a_marker_added_in_the_roll_is_refused_and_says_why():
-    # A marker is the message it sends and the lane cannot type one, so the
-    # gesture is answered rather than half-applied: the reason, and the markers
-    # as they still are.
     from clausters.seq.timeline import OscItem
 
-    timeline = Timeline([(0.0, OscItem("/a"))])
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
+    seq = EventSequence([(0.0, OscItem("/a"))], tempo_map=TempoMap(TEMPO))
+    editor = edit(seq, sample_rate=SR, open=False)
     host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) \
-        is False
-    assert len(timeline) == 1
-    seq, corrections, reason = host.acks[-1]
-    # The sentence is the crate's and names no language: it is one string
-    # now, so a script cannot be told to type a page's spelling of `add`.
-    assert seq == 1 and "a marker is the message it sends" in (reason or "")
+    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) is False
+    assert len(seq) == 1
+    seq_, corrections, reason = host.acks[-1]
+    assert seq_ == 1 and "a marker is the message it sends" in (reason or "")
     assert corrections and corrections[0][1]["osc"] == [0.0, "/a"]
-
-
-def test_the_notes_gesture_does_not_move_the_markers():
-    from clausters.seq.timeline import OscItem
-
-    timeline = a_timeline()
-    timeline.add(3.0, OscItem("/hit"))
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
-    assert [(beat, item.get("type", "note")) for beat, item in timeline] == \
-        [(0.0, "note"), (3.0, "osc")]
 
 
 # ---- the acceptance the track was opened with ----
@@ -370,21 +362,21 @@ def test_edit_called_twice_gives_two_windows_and_one_stack():
 def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     # The composed case: two structures, one editing context, one order.
     context = Editing()
-    curve, timeline = a_curve(), a_timeline()
+    curve = a_curve()
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     curve_editor = edit(curve, sample_rate=SR, context=context, open=False)
-    timeline.map = TempoMap(TEMPO)
-    roll = edit(timeline, sample_rate=SR, context=context, open=False)
+    roll = edit(seq, sample_rate=SR, context=context, open=False)
     _ch, curve_wid = opened(curve_editor)
     _rh, roll_wid = opened(roll)
 
     curve_editor.apply("/gui_event", [curve_wid, 1, 0, "points",
                                       0.0, 300.0, 1, 0.0, 2.0, 900.0, 1, 0.0])
-    roll.apply("/gui_event", [roll_wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
+    roll.apply("/gui_event", [roll_wid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0])
     assert context.undo_label == "edit the notes"
 
     # The notes go back first: one pile, walked in the order the edits landed.
     assert roll.undo() is True
-    assert [event.midinote() for _b, event in timeline] == [60.0, 64.0]
+    assert [e.midinote() for _b, e in seq] == [60.0]
     assert curve.to_points()[1] == pytest.approx(300.0), "the curve has not moved yet"
     assert curve_editor.undo() is True
     assert curve.to_points()[1] == pytest.approx(200.0)
@@ -416,15 +408,15 @@ def test_a_catalogue_view_is_described_by_the_crate_and_not_by_this_client():
         _native.view_props("pianoroll", {"notes": "sixty"})
 
 
-def test_a_timeline_with_a_marker_still_draws_its_notes():
+def test_a_sequence_with_a_marker_still_draws_its_notes():
     # The marker lane is `time label` pairs, and a label is text: typed as
-    # numbers alone, one `OscItem` refused the whole roll and the window opened
+    # numbers alone, one marker refused the whole roll and the window opened
     # with nothing on it.
     from clausters.seq.timeline import OscItem
 
-    timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
                          (3.0, OscItem("/mark", 1, "cue"))])
-    editor = NotesEditor(timeline, sample_rate=SR)
+    editor = NotesEditor(seq, sample_rate=SR)
     roll = editor.view.build(editor)["children"][0]
     assert roll["type"] == "notes"
     assert len(roll["notes"]) == 5, "the one note is on the roll"

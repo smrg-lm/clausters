@@ -116,6 +116,22 @@ class Editing:
         self._structures.setdefault(id(structure), (structure, member, identity))
         return member, identity
 
+    def open_notes(self, key: str, sequence, request: dict, handler) -> tuple:
+        """**Open a notes editor over ``sequence``** -- a
+        `clausters.seq.EventSequence`, which the editor then edits in place --
+        as the structure ``key`` names, and answer its ``(member, identity)``.
+
+        Raises:
+            ValueError: the crate refused the request, with its reason.
+        """
+        answer = self.core.open_notes(sequence._seq, key=str(key), **request)
+        if "error" in answer or "member" not in answer:
+            raise ValueError(answer.get("error", "the context opened nothing"))
+        member, identity = int(answer["member"]), int(answer["structure"])
+        self._handlers[member] = (sequence, handler)
+        self._structures.setdefault(id(sequence), (sequence, member, identity))
+        return member, identity
+
     def identity(self, structure, domain: str, applier=None) -> int:
         """This structure's identity in the order, joining it as an **external
         member** on first ask, with **what can put an edit back onto it**.

@@ -21,6 +21,7 @@ import { unwatch } from "../src/base/log.ts";
 import { Bpf } from "../src/defs/ugens/index.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
@@ -206,159 +207,121 @@ test("a resend of the curve is not an edit", async () => {
     assert.equal(editor.canUndo, false);
 });
 
-// ---- a timeline ----
+// ---- an event sequence, and a timeline rendered into one ----
 
-test("a roll's ruler reads the timeline's own map", async () => {
-    // The editor holds no tempo: the roll's axis takes the timeline's map, and a
-    // tempo written on the timeline afterwards is what a resync sends.
+/** A timeline at `tempo`, opened: its rendered sequence is what the roll edits. */
+async function aRoll(tempo = TEMPO): Promise<{ timeline: Timeline; editor: NotesEditor }> {
     const timeline = aTimeline();
-    timeline.map = new TempoMap(TEMPO);
-    const editor = (await edit(timeline, { sampleRate: SR, open: false })) as NotesEditor;
-    const walk = (node: GuiNode): GuiNode[] =>
-        [node, ...((node.children ?? []) as GuiNode[]).flatMap(walk)];
-    const roll = walk(editor.view!.build(editor)).find((node) => node.type === "notes")!;
-    const x = (roll.axes as { x: Record<string, unknown> }).x;
-    assert.equal(x.tempo_map, timeline.map.dump());
-    assert.equal(x.tempo, undefined);
-    assert.equal(editor.unitsPerBeat, BEAT);
+    timeline.map = new TempoMap(tempo);
+    const editor = (await edit(timeline, { sampleRate: SR, open: false })) as unknown as NotesEditor;
+    return { timeline, editor };
+}
 
-    timeline.map.push(1.0, 4.0);
-    const props = editor.view!.props(editor, 0);
-    assert.equal(props.tempo_map, timeline.map.dump());
-    assert.equal(editor.beatsToUnits(2.0), BEAT + SR / 4.0);
+const midinotes = (seq: EventSequence): [number, unknown][] =>
+    [...seq].map(([beat, e]) => [beat, e.get("midinote")]);
+
+test("a timeline opens as the events it renders and is left as it was", async () => {
+    const { timeline, editor } = await aRoll();
+    const { wid } = await opened(editor);
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "notes",
+        1, 0.0, BEAT, 67, 13, 0,
+        2, 2 * BEAT, BEAT, 72, 13, 0]), true);
+    assert.deepEqual(midinotes(editor.sequence), [[0, 67], [2, 72]]);
+    // The timeline is code, and the roll edited what it produced.
+    assert.deepEqual([...timeline].map(([beat, e]) => [beat, (e as SeqEvent).midinote()]), [[0, 60], [1, 64]]);
+    assert.equal(editor.undo(), true);
+    assert.deepEqual(midinotes(editor.sequence), [[0, 60], [1, 64]]);
 });
 
-test("a roll edits the timeline the caller holds", async () => {
-    const timeline = aTimeline();
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
+test("a sequence is edited in place by id", async () => {
+    const seq = new EventSequence([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })],
+        [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const editor = await edit(seq, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
+    // Note 1 is gone and note 2 moved: order is no identity, so note 2 keeps
+    // its own keys and the one removed is the one named.
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 2, 2 * BEAT, BEAT, 65, 13, 0]);
+    assert.deepEqual(seq.entries().map(([id, beat, e]) => [id, beat, e.get("midinote")]), [[2, 2, 65]]);
+});
 
-    assert.equal(
-        editor.apply("/gui_event", [wid, 1, 0, "notes",
-            0.0, BEAT, 67, 100, 0, 2 * BEAT, BEAT, 72, 100, 0]),
-        true,
-    );
-    const played = [...timeline].map(([beat, event]) => [beat, (event as SeqEvent).midinote()]);
-    assert.deepEqual(played, [[0.0, 67], [2.0, 72]]);
-    assert.equal(editor.undo(), true);
-    assert.deepEqual(
-        [...timeline].map(([beat, event]) => [beat, (event as SeqEvent).midinote()]),
-        [[0.0, 60], [1.0, 64]],
-    );
+test("a roll's ruler reads the sequence's own map", async () => {
+    const { editor } = await aRoll();
+    const roll = (editor.view!.build(editor).children as GuiNode[])[0] as unknown as Record<string, any>;
+    assert.deepEqual(JSON.parse(roll.axes.x.tempo_map), JSON.parse(new TempoMap(TEMPO).dump()));
+    assert.deepEqual(roll.note_ids, [1, 2]);
+    assert.deepEqual(roll.notes.slice(0, 5), [0, BEAT * 0.8, 60, 13, 0]);
 });
 
 test("a note keeps what the roll cannot draw", async () => {
-    // Order is the only identity the payload carries, so the i-th note's own
-    // event is edited rather than rebuilt from the five numbers.
-    const timeline = new Timeline([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })],
-    ]);
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
+    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const editor = await edit(seq, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 65, 100, 0]);
-    const [, event] = [...timeline][0] as [number, SeqEvent];
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 65, 13, 0]);
+    const [[, event]] = [...seq];
     assert.equal(event.get("instrument"), "bell");
     assert.equal(event.midinote(), 65);
 });
 
-test("what the roll does not draw is kept", async () => {
-    const timeline = aTimeline();
-    const marker = OscItem("/mark");
-    timeline.add(3.0, marker);
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
-    const { wid } = await opened(editor);
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
-    assert.ok(
-        [...timeline].some(([, item]) => item === marker),
-        "a rebuilt timeline would have dropped it",
-    );
+test("a note the hand made gets an id and the roll is told", async () => {
+    const { editor } = await aRoll();
+    const { host, wid } = await opened(editor);
+    editor.apply("/gui_event", [wid, 1, 0, "notes",
+        1, 0.0, BEAT * 0.8, 60, 13, 0,
+        2, BEAT, BEAT * 0.8, 64, 13, 0,
+        0, 3 * BEAT, BEAT, 67, 90, 0]);
+    assert.deepEqual(editor.sequence.entries().map(([id]) => id), [1, 2, 3]);
+    const [, corrections] = host.acks.at(-1)!;
+    assert.deepEqual(corrections[0]![1].note_ids, [1, 2, 3]);
 });
 
-test("a marker dragged in the roll moves it on the timeline", async () => {
-    // The lane the roll draws and nobody answered: a marker slid in the OSC
-    // lane is an edit of the timeline, with an inverse like any other.
+test("what the roll does not draw is kept", async () => {
+    const timeline = aTimeline();
+    timeline.add(3.0, OscItem("/mark"));
+    timeline.map = new TempoMap(TEMPO);
+    const editor = (await edit(timeline, { sampleRate: SR, open: false })) as unknown as NotesEditor;
+    const { wid } = await opened(editor);
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0]);
+    assert.deepEqual([...editor.sequence].map(([, e]) => e.get("type") ?? "note"), ["note", "osc"]);
+});
+
+test("a marker dragged in the roll moves it", async () => {
     const timeline = aTimeline();
     timeline.add(3.0, OscItem("/hit", 7));
     timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
+    const editor = (await edit(timeline, { sampleRate: SR, open: false })) as unknown as NotesEditor;
     const { wid } = await opened(editor);
-
     assert.equal(editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"]), true);
-    const isOsc = (item: unknown) => (item as SeqEvent).get("type") === "osc";
-    const at = [...timeline].filter(([, item]) => isOsc(item));
-    assert.equal(at.length, 1);
-    assert.equal(at[0][0], 1.5, "the marker moved");
-    assert.deepEqual(
-        (at[0][1] as SeqEvent).get("args"),
-        [7],
-        "the message it sends is not the lane's to lose",
-    );
+    const at = [...editor.sequence].filter(([, e]) => e.get("type") === "osc");
+    assert.equal(at[0]![0], 1.5);
+    assert.deepEqual(at[0]![1].get("args"), [7], "the message it sends is not the lane's to lose");
     assert.equal(editor.undoLabel, "edit the markers");
     assert.equal(editor.undo(), true);
-    assert.deepEqual(
-        [...timeline].filter(([, i]) => isOsc(i)).map(([beat]) => beat),
-        [3.0],
-    );
+    assert.deepEqual([...editor.sequence].filter(([, e]) => e.get("type") === "osc").map(([b]) => b), [3]);
 });
 
 test("a marker removed in the roll leaves its neighbours theirs", async () => {
-    // Matched by label rather than by order, so removing one does not hand the
-    // next one's message to the wrong marker.
-    const timeline = new Timeline([
-        [0.0, OscItem("/a", 1)],
-        [1.0, OscItem("/b", 2)],
-        [2.0, OscItem("/c", 3)],
-    ]);
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
+    const seq = new EventSequence([
+        [0.0, OscItem("/a", 1)], [1.0, OscItem("/b", 2)], [2.0, OscItem("/c", 3)],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const editor = await edit(seq, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
-
-    assert.equal(
-        editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"]),
-        true,
-    );
-    assert.deepEqual(
-        [...timeline].map(([, item]) => [(item as SeqEvent).get("addr"), (item as SeqEvent).get("args")]),
-        [["/a", [1]], ["/c", [3]]],
-    );
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"]), true);
+    assert.deepEqual([...seq].map(([, e]) => [e.get("addr"), e.get("args")]), [["/a", [1]], ["/c", [3]]]);
 });
 
 test("a marker added in the roll is refused and says why", async () => {
-    // A marker is the message it sends and the lane cannot type one, so the
-    // gesture is answered rather than half-applied: the reason, and the markers
-    // as they still are.
-    const timeline = new Timeline([[0.0, OscItem("/a")]]);
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
+    const seq = new EventSequence([[0.0, OscItem("/a")]], { tempoMap: new TempoMap(TEMPO) });
+    const editor = await edit(seq, { sampleRate: SR, open: false });
     const { host, wid } = await opened(editor);
-
-    assert.equal(
-        editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]),
-        false,
-    );
-    assert.equal([...timeline].length, 1);
-    const [seq, corrections, reason] = host.acks[host.acks.length - 1];
-    assert.equal(seq, 1);
-    // The sentence is the crate's and names no language: it is one string
-    // now, so a page cannot be told to type a script's spelling of `add`.
-    assert.ok(String(reason).includes("a marker is the message it sends"));
-    assert.deepEqual(corrections[0][1].osc, [0.0, "/a"]);
-});
-
-test("the notes gesture does not move the markers", async () => {
-    const timeline = aTimeline();
-    timeline.add(3.0, OscItem("/hit"));
-    timeline.map = new TempoMap(TEMPO);
-    const editor = await edit(timeline, { sampleRate: SR, open: false });
-    const { wid } = await opened(editor);
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
-    assert.deepEqual(
-        [...timeline].map(([beat, item]) => [beat, (item as SeqEvent).get("type") ?? "note"]),
-        [[0.0, "note"], [3.0, "osc"]],
-    );
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]), false);
+    assert.equal(seq.length, 1);
+    const [stamp, corrections, reason] = host.acks.at(-1)!;
+    assert.equal(stamp, 1);
+    assert.match(reason ?? "", /a marker is the message it sends/);
+    assert.deepEqual(corrections[0]![1].osc, [0, "/a"]);
 });
 
 // ---- the acceptance the track was opened with ----
@@ -384,21 +347,21 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     // The composed case: two structures, one editing context, one order.
     const context = new Editing();
     const curve = aCurve();
-    const timeline = aTimeline();
+    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
     const curveEditor = await edit(curve, { sampleRate: SR, context, open: false });
-    timeline.map = new TempoMap(TEMPO);
-    const roll = await edit(timeline, { sampleRate: SR, context, open: false });
+    const roll = await edit(seq, { sampleRate: SR, context, open: false });
     const { wid: curveWid } = await opened(curveEditor);
     const { wid: rollWid } = await opened(roll);
 
     curveEditor.apply("/gui_event", [curveWid, 1, 0, "points",
         0.0, 300.0, 1, 0.0, 2.0, 900.0, 1, 0.0]);
-    roll.apply("/gui_event", [rollWid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
+    roll.apply("/gui_event", [rollWid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0]);
     assert.equal(context.undoLabel, "edit the notes");
 
     // The notes go back first: one pile, walked in the order the edits landed.
     assert.equal(roll.undo(), true);
-    assert.deepEqual([...timeline].map(([, e]) => (e as SeqEvent).midinote()), [60, 64]);
+    assert.deepEqual([...seq].map(([, e]) => e.midinote()), [60]);
     assert.equal(curve.toPoints()[1], 300.0, "the curve has not moved yet");
     assert.equal(curveEditor.undo(), true);
     assert.equal(curve.toPoints()[1], 200.0);
@@ -445,16 +408,16 @@ test("a catalogue view is described by the crate and not by this client", async 
     );
 });
 
-test("a timeline with a marker still draws its notes", async () => {
+test("a sequence with a marker still draws its notes", async () => {
     // The marker lane is `time label` pairs, and a label is text: typed as
-    // numbers alone, one `OscItem` refused the whole roll and the window opened
+    // numbers alone, one marker refused the whole roll and the window opened
     // with nothing on it.
     await loadCore();
-    const timeline = new Timeline([
+    const seq = new EventSequence([
         [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
         [3.0, OscItem("/mark", 1, "cue")],
     ]);
-    const editor = new NotesEditor(timeline, { sampleRate: SR });
+    const editor = new NotesEditor(seq, { sampleRate: SR });
     const roll = (editor.view!.build(editor).children as GuiNode[])[0] as unknown as Record<string, unknown>;
     assert.equal(roll.type, "notes");
     assert.equal((roll.notes as number[]).length, 5, "the one note is on the roll");

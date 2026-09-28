@@ -105,6 +105,59 @@ pub unsafe extern "C" fn clausters_apps_editing_call(
     n
 }
 
+/// **Opens a notes editor over a sequence the caller holds**: `sequence` is a
+/// handle from `clausters_document_sequence_new`, which the editor then edits in
+/// place -- the script reads every edit through that same handle. `request` is
+/// `{"key", ...}` with what `clausters_apps::notes::editor::new_json` reads; the
+/// answer is `{"member", "structure"}`. Sizes with a null `out` and fills with a
+/// second call, and opens once across the two (a later call with the same
+/// request hands the answer over).
+///
+/// # Safety
+/// `e` and `sequence` must be live handles, `request` readable for
+/// `request_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_open_notes(
+    e: *mut FfiEditing,
+    sequence: *mut crate::document::FfiEventSequence,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both are live or null.
+    let (Some(handle), Some(sequence)) = (unsafe { e.as_ref() }, unsafe { sequence.as_ref() })
+    else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    let asked = format!("openNotes {request}");
+    let answer = match pending.take() {
+        Some((was, answer)) if was == asked => answer,
+        _ => {
+            let key = serde_json::from_str::<serde_json::Value>(&request)
+                .ok()
+                .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+                .unwrap_or_default();
+            editing.open_notes(&key, sequence.0.clone(), &request)
+        }
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((asked, answer));
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +171,66 @@ mod tests {
             clausters_apps_editing_call(e, request.as_ptr(), request.len(), buf.as_mut_ptr(), n)
         };
         String::from_utf8(buf[..wrote].to_vec()).unwrap()
+    }
+
+    /// **A notes editor opened over a sequence handle edits that sequence**:
+    /// what a gesture does is read back through the handle.
+    #[test]
+    fn a_notes_editor_edits_the_handle_it_was_opened_over() {
+        use crate::document::{clausters_document_sequence_call, clausters_document_sequence_new};
+        let json = r#"[{"at": 0.0, "data": {"midinote": 60, "sustain": 1.0}}]"#;
+        let seq = unsafe { clausters_document_sequence_new(json.as_ptr(), json.len()) };
+        let e = clausters_apps_editing_new();
+        let request = r#"{"key": "s", "rate": 100.0}"#;
+        let n = unsafe {
+            clausters_apps_editing_open_notes(
+                e,
+                seq,
+                request.as_ptr(),
+                request.len(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        let mut buf = vec![0u8; n];
+        unsafe {
+            clausters_apps_editing_open_notes(
+                e,
+                seq,
+                request.as_ptr(),
+                request.len(),
+                buf.as_mut_ptr(),
+                n,
+            )
+        };
+        assert!(
+            String::from_utf8(buf)
+                .unwrap()
+                .starts_with(r#"{"member":0"#)
+        );
+        call(
+            e,
+            r#"{"verb": "member", "member": 0, "call": {"verb": "window", "widget": 40}}"#,
+        );
+        let turned = call(
+            e,
+            r#"{"verb": "event", "member": 0, "addr": "/gui_event",
+                "args": [40, 1, 0, "notes", 1, 0.0, 100.0, 72.0, 13.0, 0.0]}"#,
+        );
+        assert!(turned.contains("\"changed\":true"), "{turned}");
+        let ask = r#"{"verb": "event", "id": 1}"#;
+        let n = unsafe {
+            clausters_document_sequence_call(seq, ask.as_ptr(), ask.len(), std::ptr::null_mut(), 0)
+        };
+        let mut buf = vec![0u8; n];
+        unsafe {
+            clausters_document_sequence_call(seq, ask.as_ptr(), ask.len(), buf.as_mut_ptr(), n)
+        };
+        assert!(String::from_utf8(buf).unwrap().contains("\"midinote\":72"));
+        unsafe {
+            clausters_apps_editing_free(e);
+            crate::document::clausters_document_sequence_free(seq);
+        }
     }
 
     /// **A verb runs once across the sizing call and the filling one**: two

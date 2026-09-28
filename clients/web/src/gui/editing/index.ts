@@ -58,7 +58,7 @@ export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
 export { NotesDomain, NotesEditor, NotesView } from "./events.ts";
-export type { CrateEvent, NotesEditorOptions, Note } from "./events.ts";
+export type { NotesEditorOptions } from "./events.ts";
 export {
     MultitrackDomain,
     MultitrackEditor,

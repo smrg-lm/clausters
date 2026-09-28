@@ -821,6 +821,7 @@
     "tag": "notes",
     "request": {
       "values": [
+        1,
         960.0,
         480.0,
         64,
@@ -838,14 +839,15 @@
         {
           "at": 1.0,
           "data": {
-            "osc": "/cue",
+            "type": "osc",
+            "addr": "/cue",
             "args": [
               1
             ]
           }
         }
       ],
-      "unitsPerBeat": 480.0,
+      "rate": 480.0,
       "editable": true
     },
     "intake": {
@@ -854,22 +856,25 @@
         {
           "events": [
             {
-              "at": 2.0,
-              "data": {
-                "instrument": "bell",
-                "midinote": 64,
-                "sustain": 1.0,
-                "velocity": 100
-              }
-            },
-            {
               "at": 1.0,
               "data": {
+                "addr": "/cue",
                 "args": [
                   1
                 ],
-                "osc": "/cue"
-              }
+                "type": "osc"
+              },
+              "id": 2
+            },
+            {
+              "at": 2.0,
+              "data": {
+                "instrument": "bell",
+                "midinote": 64.0,
+                "sustain": 1.0,
+                "velocity": 100.0
+              },
+              "id": 1
             }
           ],
           "intent": "setevents"
@@ -898,14 +903,15 @@
         {
           "at": 1.0,
           "data": {
-            "osc": "/cue",
+            "type": "osc",
+            "addr": "/cue",
             "args": [
               1
             ]
           }
         }
       ],
-      "unitsPerBeat": 480.0,
+      "rate": 480.0,
       "editable": true
     },
     "intake": {
@@ -918,16 +924,19 @@
               "data": {
                 "instrument": "bell",
                 "midinote": 60
-              }
+              },
+              "id": 1
             },
             {
               "at": 3.0,
               "data": {
+                "addr": "/cue",
                 "args": [
                   1
                 ],
-                "osc": "/cue"
-              }
+                "type": "osc"
+              },
+              "id": 2
             }
           ],
           "intent": "setevents"
@@ -958,14 +967,15 @@
         {
           "at": 1.0,
           "data": {
-            "osc": "/cue",
+            "type": "osc",
+            "addr": "/cue",
             "args": [
               1
             ]
           }
         }
       ],
-      "unitsPerBeat": 480.0,
+      "rate": 480.0,
       "editable": true
     },
     "intake": {

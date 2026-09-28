@@ -34,6 +34,7 @@ updates both. That is not a feature of this verb -- it is what asking the data f
 its history means, and `edit` inherits it for free.
 """
 
+from ...seq.timeline import Timeline
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
@@ -47,8 +48,11 @@ def edit(structure, *, sample_rate: float = 0.0,
     Args:
         structure: what to edit -- a `clausters.defs.Buffer` (in the audio
             editor, which edits a copy and writes it back on `save`), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
-            `clausters.multitrack.Automation`), a `clausters.seq.Timeline`
-            (its notes) or a `clausters.multitrack.Multitrack` (the multitrack).
+            `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
+            (its notes, in place), a `clausters.seq.Timeline` (rendered into a
+            sequence first -- ``until=`` bounds one that does not end -- which
+            the editor's ``sequence`` then holds; the timeline is not changed)
+            or a `clausters.multitrack.Multitrack` (the multitrack).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
             take knows its own and needs none.
         host: the `clausters.gui.host.GuiHost` to open on; ``None`` -- the
@@ -76,7 +80,8 @@ def edit(structure, *, sample_rate: float = 0.0,
         open editor until its window closes, so ``edit(curve)`` on its own is a
         complete program. Reading the edited data is done on the structure that
         was passed in, which *is* the edited one -- except a buffer, which the
-        audio editor writes back when it is saved.
+        audio editor writes back when it is saved, and a timeline, whose
+        rendered events are the editor's ``sequence``.
 
     Raises:
         TypeError: for something none of the three domains reads, naming what
@@ -89,7 +94,12 @@ def edit(structure, *, sample_rate: float = 0.0,
         editor = PointsEditor(structure, sample_rate=sample_rate or 48_000.0,
                               **options)
     elif is_events(structure):
-        # No `tempo`: a timeline holds its own map, and the editor reads it.
+        # **A timeline is rendered, and the roll edits what it produced**: the
+        # events, as concrete data in the timeline's beats with its map. The
+        # timeline itself is code and is left as it was; the sequence is the
+        # editor's `sequence`.
+        if isinstance(structure, Timeline):
+            structure = structure.render_events(until=options.pop("until", None))
         editor = NotesEditor(structure, sample_rate=sample_rate or 48_000.0,
                              **options)
     elif is_multitrack(structure):
@@ -100,7 +110,7 @@ def edit(structure, *, sample_rate: float = 0.0,
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
             f"(its samples), a curve -- anything with to_points/set_points -- "
-            f"a Timeline (its notes) "
+            f"an EventSequence or a Timeline (its notes) "
             f"or a Multitrack (the multitrack)."
         )
     if open:

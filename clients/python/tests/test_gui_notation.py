@@ -246,15 +246,17 @@ def test_a_page_and_a_roll_walk_one_order():
                   context=Editing.of(s), open=False)
 
     s.transpose(nid, -2)
-    payload = editor.domain.payload(timeline, "notes", [0.0, 24_000.0, 67, 100, 0])
-    editor._edit(payload, "edit the notes")
-    assert (_pitches(s)[0], _midinotes(timeline)) == (57, [67.0])
+    # The roll edits the sequence the timeline rendered into, by id.
+    wid = editor.view.build(editor)["children"][0]["id"]
+    editor._route([wid, "notes", 1, 0.0, 24_000.0, 67, 13, 0])
+    notes = editor.sequence
+    assert (_pitches(s)[0], _midinotes(notes)) == (57, [67.0])
 
     # Undone from the *roll's* window, in the order the hand made them.
     assert editor.undo() is True
-    assert (_pitches(s)[0], _midinotes(timeline)) == (57, [72.0])
+    assert (_pitches(s)[0], _midinotes(notes)) == (57, [72.0])
     assert editor.undo() is True
-    assert (_pitches(s)[0], _midinotes(timeline)) == (60, [72.0])
+    assert (_pitches(s)[0], _midinotes(notes)) == (60, [72.0])
 
     # And from the score's side it is the same pile, walked the same way.
     assert s.redo() is True

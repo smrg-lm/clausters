@@ -576,8 +576,11 @@ binding it, which is where the picture gets its single owner. See
 for itself.** `clausters.gui.edit` dispatches on what the structure holds —
 `AudioEditor` over a `Buffer` and a `waveform`, `PointsEditor` over a curve
 (anything answering `to_points`/`set_points`: a `Bpf`, an `Env`, a
-`multitrack.Automation`) and a `bpf`, `NotesEditor` over a `Timeline` and a
-`pianoroll` —
+`multitrack.Automation`) and a `bpf`, `NotesEditor` over an `EventSequence`
+(a `Timeline` is rendered into one first) and a `pianoroll` —
+the notes editor, like the audio and the multitrack editors, being the shared
+crate's application (`clausters_apps::notes`), which edits the sequence the
+script's handle names in place —
 and each is the generic `Editor` with a `Domain` and a `View` in it and nothing
 else. The inverse is the crate's, through `clausters_domain_edit`: the state
 goes in with the payload and comes back as what the structure now is *plus* what

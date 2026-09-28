@@ -486,13 +486,25 @@ opened it.
     `velocity` option in both clients' `pianoroll`. The axis stays MIDI notes,
     which is the domain the host already drew; a domain the host reads
     arrives with the Hz one, X3.12.)*
-  - ⬜ **X3.7 - `clausters-apps::notes`**: the window, the conversation with the
+  - ✅ **X3.7 - `clausters-apps::notes`**: the window, the conversation with the
     edit vocabulary by id (move through the domain, trim, split, join, quantize,
     transpose, level, add, delete, duplicate), a member of `Editing`, the doors,
     both clients as handles, the standalone host. `edit(timeline)` with its new
     behaviour, the books, `edit_notes` rewritten. `NotesDomain`, `NotesView`,
     `NotesEditor`, the whole-list intake and each client's note reading
     (`_pitch`, `_length`, `_velocity`) are deleted.
+    *(Shipped 2026-09-28: `NotesEditor` a member of `Editing`
+    (`Member::Notes`, `openNotes`, `Effect::Notes`), editing the sequence it
+    shares with the client's handle through `Arc<Mutex>` -- opened over the
+    handle by `clausters_apps_editing_open_notes` / `EditingCore.openNotes`;
+    both clients' `NotesEditor` a thin handle, `edit(timeline)` rendering
+    first, and `edit_notes` rewritten in both. The vocabulary by id is the
+    roll's gestures through `notes::intake` (move, trim, level, add, delete,
+    and split/join/quantize as the roll's own keys report them); a transpose
+    or a duplicate as a verb of the editor waits for a use. The standalone
+    host reaches the editor with X3.9, where a notes region opens it: the
+    `--session` host opens only the multitrack today, the audio editor
+    included.)*
   - ⬜ **X3.8 - Its own playback**: a transport of its own (as
     `AUDIO_EDITOR_TRANSPORT`), the Event → OSC render in Rust on
     `/sched_atTransport`, an edit re-planned while it sounds (`/sched_clear

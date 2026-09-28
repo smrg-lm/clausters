@@ -490,7 +490,10 @@ pub use time::*;
 /// **v73 a sequence of events.** `clausters_document_sequence_new`, `_free` and
 /// `_call`: the document's `EventSequence`, every verb through one JSON door.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 73;
+/// **v74 the notes editor.** `clausters_apps_editing_open_notes` opens one over
+/// a sequence handle, and the context's `openNotes` verb over data.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 74;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

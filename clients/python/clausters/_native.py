@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 73
+CORE_ABI_VERSION = 74
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -369,6 +369,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_call.restype = ctypes.c_size_t
+    lib.clausters_apps_editing_open_notes.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_editing_open_notes.restype = ctypes.c_size_t
     lib.clausters_apps_samples_measures.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -1926,8 +1930,10 @@ class EditingCore:
     """**An editing context** (`clausters_apps_editing_*`): one undo order over
     every editor opened in it.
 
-    Every verb crosses through `call`, as JSON: ``openMultitrack`` and
-    ``openAudio`` open an editor under a key and answer its ``member``,
+    Every verb crosses through `call`, as JSON: ``openMultitrack``,
+    ``openAudio`` and ``openNotes`` open an editor under a key and answer its
+    ``member`` (a notes editor over a sequence the caller holds opens through
+    `open_notes`, and edits that sequence),
     ``external`` takes in a structure the crate does not apply, ``event`` reads
     and records a member's message, ``step`` walks the history, ``record``
     takes an external member's entry, ``member`` reaches one editor's own verbs,
@@ -1955,6 +1961,17 @@ class EditingCore:
         body = json.dumps({"verb": verb, **args}).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def open_notes(self, sequence: "SequenceHandle", **request) -> dict:
+        """Open a notes editor over ``sequence``, which it then edits in place
+        (`clausters_apps_editing_open_notes`): ``{"member", "structure"}``."""
+        if not self._handle:
+            return {}
+        body = json.dumps(request).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_open_notes,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                             as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 
 

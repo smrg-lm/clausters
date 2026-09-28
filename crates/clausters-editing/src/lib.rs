@@ -70,10 +70,12 @@ use crate::intake::Intake;
 ///
 /// - `values` -- the report, always.
 /// - `state` -- the structure as its vocabulary holds it. The multitrack for
-///   `multitrack`, the timeline for `events`; the other two read the gesture
+///   `multitrack`, the sequence for `events`; the other two read the gesture
 ///   alone.
-/// - `unitsPerBeat`, `editable` -- a roll's axis, and whether what it draws can
-///   be written onto at all.
+/// - `rate`, `domain`, `editable` -- for `events`, the roll's axis (the
+///   sequence's beats through its tempo map, `rate` units a second), its Y
+///   domain (MIDI notes when absent), and whether what it draws can be written
+///   onto at all ([`notes::intake`]).
 /// - `rate`, `defaultBpm`, `sources` -- a multitrack's axis and its buffer table, the
 ///   same three [`multitrack::props_json`] takes.
 ///
@@ -96,19 +98,27 @@ pub fn intake_json(domain: &str, tag: &str, request: &str) -> String {
             points::intake(tag, &flat)
         }
         SAMPLES => samples::intake(tag, values),
-        EVENTS => events::intake(
-            request
+        EVENTS => {
+            let sequence: clausters_document::EventSequence = request
                 .get("state")
-                .and_then(Value::as_array)
-                .unwrap_or(&empty),
-            tag,
-            values,
-            number("unitsPerBeat", 1.0),
-            request
-                .get("editable")
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-        ),
+                .and_then(|s| serde_json::from_value(s.clone()).ok())
+                .unwrap_or_default();
+            let domain: notes::YDomain = request
+                .get("domain")
+                .and_then(|d| serde_json::from_value(d.clone()).ok())
+                .unwrap_or_default();
+            if request.get("editable").and_then(Value::as_bool) == Some(false) {
+                Intake::nothing()
+            } else {
+                notes::intake(
+                    &sequence,
+                    tag,
+                    values,
+                    &notes::Axis::of(&sequence, number("rate", 1.0)),
+                    &domain,
+                )
+            }
+        }
         MULTITRACK => multitrack::intake_value(
             request.get("state").unwrap_or(&Value::Null),
             tag,

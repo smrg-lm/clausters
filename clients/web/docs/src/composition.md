@@ -55,7 +55,7 @@ why the curve row below names three unrelated types:
 |---|---|---|---|
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
-| a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
+| an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 
 **A `Buffer` opens in the audio editor**, `editing.AudioEditor`.

@@ -39,6 +39,8 @@ use clausters_editing::conversation::Answer;
 
 use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
+use crate::notes::Shared;
+use crate::notes::editor::{self as notes, NotesEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -55,6 +57,8 @@ pub enum Member {
     Multitrack(Box<MultitrackEditor>),
     /// An audio editor over a take made of parts.
     Audio(Box<AudioEditor>),
+    /// A notes editor over an event sequence it shares with its holder.
+    Notes(Box<NotesEditor>),
     /// A structure the crate does not apply: the context records and walks for
     /// it, and hands its legs back to be applied.
     External {
@@ -68,6 +72,7 @@ impl Member {
         match self {
             Member::Multitrack(_) => MULTITRACK.into(),
             Member::Audio(_) => audio::DOMAIN.into(),
+            Member::Notes(_) => notes::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
         }
     }
@@ -88,6 +93,8 @@ pub enum Outcome {
     Multitrack(multitrack::Outcome),
     /// An audio editor's.
     Audio(audio::Outcome),
+    /// A notes editor's.
+    Notes(notes::Outcome),
 }
 
 impl Outcome {
@@ -95,6 +102,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.turn,
             Outcome::Audio(o) => o.turn,
+            Outcome::Notes(o) => o.turn,
         }
     }
 
@@ -102,6 +110,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.record.as_ref(),
             Outcome::Audio(o) => o.record.as_ref(),
+            Outcome::Notes(o) => o.record.as_ref(),
         }
     }
 
@@ -109,6 +118,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.changed,
             Outcome::Audio(o) => o.changed,
+            Outcome::Notes(o) => o.changed,
         }
     }
 
@@ -116,6 +126,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.version,
             Outcome::Audio(o) => o.version,
+            Outcome::Notes(o) => o.version,
         }
     }
 
@@ -123,6 +134,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => (o.seq, o.redo),
             Outcome::Audio(o) => (o.seq, o.redo),
+            Outcome::Notes(o) => (o.seq, o.redo),
         }
     }
 
@@ -130,6 +142,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.answer = Some(answer),
             Outcome::Audio(o) => o.answer = Some(answer),
+            Outcome::Notes(o) => o.answer = Some(answer),
         }
     }
 }
@@ -191,6 +204,16 @@ pub enum Effect {
         member: MemberId,
         /// The steps, in the JSON a runner walks.
         steps: Value,
+    },
+    /// A notes editor applied the step to the sequence it shares: its holder
+    /// reads the change through its own handle, and there is nothing to carry
+    /// out but the corrections.
+    #[serde(rename_all = "camelCase")]
+    Notes {
+        /// The member.
+        member: MemberId,
+        /// Whether the sequence changed.
+        applied: bool,
     },
     /// Payloads an external member applies, in order.
     #[serde(rename_all = "camelCase")]
@@ -580,6 +603,7 @@ impl Editing {
         let mut outcome = match &mut seat.member {
             Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
             Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
+            Member::Notes(editor) => Outcome::Notes(editor.event(event, version)),
             Member::External { .. } => return None,
         };
         if let Some(record) = outcome.record().cloned() {
@@ -606,6 +630,9 @@ impl Editing {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
                     Member::Audio(editor) => {
+                        outcome.answer(editor.acknowledge(seq, version, reason));
+                    }
+                    Member::Notes(editor) => {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
                     Member::External { .. } => {}
@@ -676,6 +703,21 @@ impl Editing {
                             out.effects.push(Effect::Audio { member, steps });
                         }
                     }
+                    // One structure, one sequence: every notes editor over it
+                    // shares the sequence, so the first applies the step and
+                    // the rest are corrected.
+                    Member::Notes(editor) if !written => {
+                        written = true;
+                        let mut done = false;
+                        for payload in payloads {
+                            done |= editor.apply(&payload.0);
+                        }
+                        applied |= done;
+                        out.effects.push(Effect::Notes {
+                            member,
+                            applied: done,
+                        });
+                    }
                     Member::External { .. } if !written => {
                         written = true;
                         applied |= !payloads.is_empty();
@@ -717,6 +759,7 @@ impl Editing {
             let answer = match &mut seat.member {
                 Member::Multitrack(editor) => editor.resync_all(version),
                 Member::Audio(editor) => editor.resync_all(version),
+                Member::Notes(editor) => editor.resync_all(version),
                 Member::External { .. } => continue,
             };
             if answer != Answer::Silent {
@@ -763,6 +806,10 @@ struct RecordedLeg {
 /// - `resident` -- `bytes`, or `null` for none: the most of those kept in
 ///   memory; past it the oldest go to disk (a turn's and a step's `stored`).
 ///   Answers `{}`.
+/// - `openNotes` -- `key`, `sequence` (the sequence as data, which the
+///   editor then holds alone -- a caller that shares one opens it with
+///   [`Editing::open_notes`]) and what a notes editor is built from
+///   (`clausters_apps::notes::editor::new_json`): `{"member", "structure"}`.
 /// - `external` -- `key`, `domain`: `{"member", "structure"}`.
 /// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
 /// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
@@ -802,6 +849,11 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             Ok(editor) => joined(editing, &key, Member::Audio(Box::new(editor))),
             Err(error) => json!({ "error": error }).to_string(),
         },
+        "openNotes" => {
+            let request = request.to_string();
+            let editor = notes::new_json(notes::shared_of(&request), &request);
+            joined(editing, &key, Member::Notes(Box::new(editor)))
+        }
         "bytes" => {
             editing.set_bytes(get(&request, "bytes").as_u64());
             "{}".into()
@@ -868,6 +920,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                     multitrack::call_json(editor, &call.to_string())
                 }
                 Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
+                Some(Member::Notes(editor)) => notes::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             }
         }
@@ -881,6 +934,21 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         })
         .to_string(),
         _ => "{}".into(),
+    }
+}
+
+impl Editing {
+    /// **Opens a notes editor over `sequence`**, shared with the caller -- the
+    /// door a binding's sequence handle opens through, so the editor edits the
+    /// very sequence the script holds. `request` is what
+    /// [`notes::new_json`] reads; the answer is the `openNotes` one.
+    pub fn open_notes(&mut self, key: &str, sequence: Shared, request: &str) -> String {
+        let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
+        if let Some(map) = request.as_object_mut() {
+            map.insert("version".into(), json!(self.version));
+        }
+        let editor = notes::new_json(sequence, &request.to_string());
+        joined(self, key, Member::Notes(Box::new(editor)))
     }
 }
 
@@ -925,6 +993,65 @@ mod tests {
             duration: 2.0,
         });
         region
+    }
+
+    /// **A notes editor edits the sequence its holder shares**, and an undo
+    /// through the context puts it back there.
+    #[test]
+    fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
+        use clausters_document::EventSequence;
+        use clausters_document::events::Event as SeqEvent;
+        use std::sync::{Arc, Mutex};
+
+        let sequence = Arc::new(Mutex::new(EventSequence::new(vec![SeqEvent::new(
+            0.0,
+            json!({"midinote": 60, "sustain": 1.0, "amp": 0.1}),
+        )])));
+        let mut editing = Editing::new();
+        let opened: Value = serde_json::from_str(&editing.open_notes(
+            "seq",
+            sequence.clone(),
+            r#"{"rate": 100.0}"#,
+        ))
+        .unwrap();
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        call_json(
+            &mut editing,
+            &json!({"verb": "member", "member": member, "call": {"verb": "window", "widget": 40}})
+                .to_string(),
+        );
+        let moved = vec![
+            json!(1),
+            json!(50.0),
+            json!(100.0),
+            json!(67.0),
+            json!(13.0),
+            json!(0.0),
+        ];
+        let turned = editing
+            .event(member, &event(40, 1, "notes", moved))
+            .unwrap();
+        assert!(turned.outcome.changed());
+        assert_eq!(
+            sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+            json!(67.0)
+        );
+        let stepped = editing.step(Direction::Undo);
+        assert!(stepped.stepped);
+        assert!(matches!(
+            stepped.effects[0],
+            Effect::Notes { applied: true, .. }
+        ));
+        assert_eq!(sequence.lock().unwrap().get(1).unwrap().at.0, 0.0);
+        assert_eq!(
+            sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+            json!(60)
+        );
+        assert!(editing.step(Direction::Redo).stepped);
+        assert_eq!(
+            sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+            json!(67.0)
+        );
     }
 
     /// A multitrack of one track holding box 12, drawn by widget 40 in window 39.
