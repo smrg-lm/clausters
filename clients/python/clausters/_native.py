@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 74
+CORE_ABI_VERSION = 75
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -306,6 +306,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_audio_playback_call.restype = ctypes.c_size_t
+    lib.clausters_editing_notes_playback_new.restype = ctypes.c_void_p
+    lib.clausters_editing_notes_playback_new.argtypes = [ctypes.c_int32]
+    lib.clausters_editing_notes_playback_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_notes_playback_free.restype = None
+    lib.clausters_editing_notes_playback_call.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_notes_playback_call.restype = ctypes.c_size_t
     # A sequence of events (ABI v73): a handle and one JSON door.
     lib.clausters_document_sequence_new.restype = ctypes.c_void_p
     lib.clausters_document_sequence_new.argtypes = [u8p_early, ctypes.c_size_t]
@@ -1747,6 +1756,46 @@ class AudioEditorPlayback:
         raw = size_then_fill(lib().clausters_editing_audio_playback_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body),
                              ctypes.c_void_p(ids._handle))
+        answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        return answer
+
+
+class NotesPlayback:
+    """**The notes editor, as it is playing**
+    (`clausters_editing_notes_playback_*`): a sequence's events planned onto a
+    transport of its own, every verb answering steps -- ``play``, ``replan``,
+    ``resume``, ``pause``, ``stop``, ``close``, ``setRolling`` and the query
+    ``state``.
+
+    Args:
+        transport: the transport it plays on; ``None`` for the crate's own.
+    """
+
+    def __init__(self, *, transport: "int | None" = None):
+        self._handle = lib().clausters_editing_notes_playback_new(
+            -1 if transport is None else int(transport))
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the bookkeeping. Not the nodes: ``close`` answers the steps that
+        free those."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_editing_notes_playback_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, sequence: "SequenceHandle", ids: "IdSpaces", **args) -> dict:
+        """One verb over ``sequence``, allocating from ``ids``: its answer.
+        `ValueError` for a refusal."""
+        if not self._handle:
+            return {"steps": []}
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_editing_notes_playback_call,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                             as_u8(body), len(body), ctypes.c_void_p(ids._handle))
         answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
         if "error" in answer:
             raise ValueError(answer["error"])

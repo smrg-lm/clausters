@@ -37,6 +37,10 @@ pub struct Outcome {
     pub changed: bool,
     /// The version after the turn.
     pub version: i64,
+    /// What the space bar asks of the playback: `{"looping"}`, when it was
+    /// pressed over the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub play: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -244,6 +248,30 @@ impl Converse for NotesEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         self.gesture(widget, tag, values, out)
+    }
+
+    /// **The space bar over the window is a play**, the window's own verb
+    /// (the window says `plays`): what it asks of the playback, with the loop
+    /// switch the host sends beside it.
+    fn window_verb(
+        &mut self,
+        message: &conversation::Message,
+        args: &[Value],
+        out: &mut Outcome,
+    ) -> bool {
+        if message.addr != "/gui_event" || !message.is_window || message.tag != "play" {
+            return false;
+        }
+        out.turn = Kind::Route;
+        let looping = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
+        out.play = Some(json!({ "looping": looping }));
+        out.answer = Some(conversation::answer(
+            message.seq,
+            out.version,
+            None,
+            Vec::new(),
+        ));
+        true
     }
 }
 

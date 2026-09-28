@@ -505,10 +505,19 @@ opened it.
     host reaches the editor with X3.9, where a notes region opens it: the
     `--session` host opens only the multitrack today, the audio editor
     included.)*
-  - ⬜ **X3.8 - Its own playback**: a transport of its own (as
+  - ✅ **X3.8 - Its own playback**: a transport of its own (as
     `AUDIO_EDITOR_TRANSPORT`), the Event → OSC render in Rust on
     `/sched_atTransport`, an edit re-planned while it sounds (`/sched_clear
     "transport" <id>` already exists), and a MIDI destination.
+    *(Shipped 2026-09-28: `clausters_editing::notes_playback`, on
+    `NOTES_EDITOR_TRANSPORT` (3), its doors, and both clients' `play`,
+    `pause`, `resume`, `stop` and `playing` on the editor, the space bar
+    included -- the window says `plays`. A replan after every edit and every
+    step keeps the releases of what is sounding. The caller hands in the
+    transport's clock, since steps cannot read a reply. A MIDI destination
+    plays through the client's clock (`play(destination=MidiServer)`), the
+    server having no MIDI output; an edit is heard there from the next play.
+    A blob in a step that is not samples -- a bundle -- now travels as hex.)*
   - ⬜ **X3.9 - The notes region in the multitrack**: an `EventSequence` source
     through `Content::Window`, drawn in the box and edited in the roll opened on
     it (unlike audio, `X1.10`, here the two interoperate), sounding on the

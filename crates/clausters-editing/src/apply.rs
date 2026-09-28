@@ -494,8 +494,9 @@ pub(crate) fn transport_command(transport: i32, addr: &str, args: Vec<OscType>) 
 /// **The steps as JSON**, for a client that walks them in its own language.
 ///
 /// `{"send": {"addr", "args"}}` with each argument tagged by its OSC type --
-/// `{"i": n}`, `{"f": x}`, `{"s": "..."}`, and `{"b": [x, ...]}` for a blob of
-/// little-endian `f32`, which the client packs; `{"await": {"command",
+/// `{"i": n}`, `{"f": x}`, `{"s": "..."}`, `{"h": n}` for an `int64`,
+/// `{"b": [x, ...]}` for a blob of little-endian `f32`, which the client
+/// packs, and `{"x": "hex"}` for a blob of any other bytes; `{"await": {"command",
 /// "index"}}`; `{"sync": id}`.
 pub fn steps_json(steps: &[Step]) -> Value {
     Value::Array(
@@ -562,6 +563,12 @@ pub fn arg_from_json(arg: &Value) -> Option<OscType> {
     if let Some(v) = arg.get("s") {
         return Some(OscType::String(v.as_str()?.to_string()));
     }
+    if let Some(v) = arg.get("x").and_then(Value::as_str) {
+        let bytes = (0..v.len() / 2)
+            .map(|i| u8::from_str_radix(v.get(2 * i..2 * i + 2)?, 16).ok())
+            .collect::<Option<Vec<u8>>>()?;
+        return Some(OscType::Blob(bytes));
+    }
     let samples: Vec<f32> = arg
         .get("b")?
         .as_array()?
@@ -578,9 +585,18 @@ pub fn arg_json(arg: &OscType) -> Value {
         OscType::Float(v) => json!({ "f": v }),
         OscType::String(v) => json!({ "s": v }),
         OscType::Long(v) => json!({ "h": v }),
-        OscType::Blob(bytes) => json!({
-            "b": clausters_core::osc::blob_samples(bytes).collect::<Vec<_>>()
-        }),
+        // A blob of samples travels as its numbers, which is what a fill is.
+        // Anything else -- a bundle `/sched_atTransport` carries -- goes as its
+        // bytes, in hex: four bytes read as an `f32` can be a NaN or an
+        // infinity, which JSON has no number for.
+        OscType::Blob(bytes) => {
+            let samples: Vec<f32> = clausters_core::osc::blob_samples(bytes).collect();
+            if bytes.len() % 4 == 0 && samples.iter().all(|s| s.is_finite()) {
+                json!({ "b": samples })
+            } else {
+                json!({ "x": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>() })
+            }
+        }
         other => json!({ "s": format!("{other:?}") }),
     }
 }

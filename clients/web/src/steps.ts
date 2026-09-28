@@ -15,7 +15,13 @@ import type { MsgArg } from "./base/osc.ts";
 import type { Server } from "./defs/server/index.ts";
 
 /** One argument of a step, tagged as the crate encoded it. */
-export type StepArg = { i: number } | { h: number } | { f: number } | { s: string } | { b: number[] };
+export type StepArg =
+    | { i: number }
+    | { h: number }
+    | { f: number }
+    | { s: string }
+    | { b: number[] }
+    | { x: string };
 
 /** **One step**, as the crate states it. */
 export type Step =
@@ -93,6 +99,12 @@ export function stepArg(arg: StepArg): MsgArg {
     if ("h" in arg) return ["h", BigInt(arg.h)];
     if ("f" in arg) return ["f", arg.f];
     if ("b" in arg) return new Uint8Array(Float32Array.from(arg.b).buffer);
+    if ("x" in arg) {
+        // A blob of bytes that are not samples -- a bundle -- in hex.
+        const bytes = new Uint8Array(arg.x.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(arg.x.slice(2 * i, 2 * i + 2), 16);
+        return bytes;
+    }
     return arg.s;
 }
 

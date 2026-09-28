@@ -493,7 +493,10 @@ pub use time::*;
 /// **v74 the notes editor.** `clausters_apps_editing_open_notes` opens one over
 /// a sequence handle, and the context's `openNotes` verb over data.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 74;
+/// **v75 the notes editor's playback.** `clausters_editing_notes_playback_new`,
+/// `_free` and `_call`. A blob in a step that is not samples travels as
+/// `{"x": hex}`. **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 75;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -94,3 +94,18 @@ fn a_roll_that_cannot_be_edited_refuses_and_says_why() {
     };
     assert!(reason.unwrap().contains("rendering"));
 }
+
+#[test]
+fn the_space_bar_over_the_window_asks_for_a_play() {
+    let mut e = editor(shared());
+    let out = e.event(
+        &Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(39), json!(3), json!(0), json!("play"), json!(0)],
+        },
+        1,
+    );
+    assert_eq!(out.turn, Kind::Route);
+    assert_eq!(out.play, Some(json!({"looping": false})));
+    assert!(e.window(40)["plays"].as_bool().unwrap());
+}

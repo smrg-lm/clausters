@@ -73,6 +73,8 @@ def step_arg(arg: dict):
         return float(arg["f"])
     if "b" in arg:
         return array("f", arg["b"]).tobytes()
+    if "x" in arg:
+        return bytes.fromhex(arg["x"])
     return str(arg["s"])
 
 

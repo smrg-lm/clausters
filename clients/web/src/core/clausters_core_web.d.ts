@@ -454,6 +454,23 @@ export class MultitrackPlayback {
 }
 
 /**
+ * JS face: the notes editor as it is playing, every verb through one JSON door
+ * over the sequence it plays -- the C ABI's `clausters_editing_notes_playback_*`.
+ */
+export class NotesPlayback {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb over `sequence`, allocating from `ids`.
+     */
+    call(sequence: JsEventSequence, request: string, ids: IdSpaces): string;
+    /**
+     * A playback on `transport`; negative for the crate's own.
+     */
+    constructor(transport: number);
+}
+
+/**
  * A built min/max peak pyramid, the JS face of
  * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
  * drawn from, so the drawing costs the width of the window rather than the
@@ -1735,6 +1752,7 @@ export interface InitOutput {
     readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_jseventsequence_free: (a: number, b: number) => void;
     readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
+    readonly __wbg_notesplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -1851,6 +1869,8 @@ export interface InitOutput {
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly multitrackplayback_transport: (a: number) => number;
     readonly node_id_partition: (a: number) => [number, number, number];
+    readonly notesplayback_call: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly notesplayback_new: (a: number) => number;
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
     readonly osc_encode_bundle: (a: number, b: any) => [number, number, number, number];

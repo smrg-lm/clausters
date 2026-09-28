@@ -11,6 +11,10 @@ timeline is left as it was.
 What to do in the window: **drag a note** to move it, **drag its edge** to
 resize, **Shift and drag it up or down** to change its velocity (drawn as the
 note's fill), **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back.
+**The space bar plays and pauses** -- the editor's own playback, on a transport
+of its own -- and an edit while it plays is heard at once: a note moved ahead
+of the line sounds where it lands, and a note already sounding ends as it
+would have.
 
 **The lane under the grid is the sequence's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
@@ -34,7 +38,6 @@ It self-launches the audio server and the GUI host: this one plays.
 # %%
 import sys
 
-import clausters
 from clausters import Session
 from clausters.gui import edit
 from clausters.seq import OscItem, Timeline
@@ -77,15 +80,13 @@ notes = editor.sequence        # what the roll edits, in place
 # %% [markdown]
 # ## Play what was drawn
 #
-# The sequence is concrete data, so it plays as the events it holds: a timeline
-# of them, on the sequence's own tempo map.
+# The editor plays the sequence it edits, on its own transport -- the space bar
+# in the window is the same verb.
 
 # %%
 def play():
-    """Play the sequence as it now stands."""
-    played = Timeline(list(notes))
-    played.map = notes.tempo_map
-    clausters.play(played)
+    """Play the sequence as it now stands, from the position cursor."""
+    editor.play()
 
 
 # %% [markdown]
@@ -110,7 +111,7 @@ def read_back():
 # %%
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
-    print("edit the notes; call play() to hear them. Close when done.")
+    print("edit the notes; the space bar plays them. Close when done.")
     editor.wait()
     print("the sequence, as it was left:")
     read_back()

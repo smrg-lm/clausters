@@ -1728,6 +1728,38 @@ impl JsAudioEditorPlayback {
     }
 }
 
+/// JS face: the notes editor as it is playing, every verb through one JSON door
+/// over the sequence it plays -- the C ABI's `clausters_editing_notes_playback_*`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = NotesPlayback)]
+pub struct JsNotesPlayback(clausters_editing::notes_playback::NotesPlayback);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = NotesPlayback)]
+impl JsNotesPlayback {
+    /// A playback on `transport`; negative for the crate's own.
+    #[wasm_bindgen(constructor)]
+    pub fn new(transport: i32) -> JsNotesPlayback {
+        use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
+        JsNotesPlayback(NotesPlayback::new(if transport < 0 {
+            NOTES_EDITOR_TRANSPORT
+        } else {
+            transport
+        }))
+    }
+
+    /// One verb over `sequence`, allocating from `ids`.
+    pub fn call(
+        &mut self,
+        sequence: &JsEventSequence,
+        request: &str,
+        ids: &mut JsIdSpaces,
+    ) -> String {
+        let held = sequence.0.lock().unwrap_or_else(|e| e.into_inner());
+        clausters_editing::notes_playback::call_json(&mut self.0, &held, request, &mut ids.0)
+    }
+}
+
 /// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps (JSON).
 #[cfg(target_arch = "wasm32")]

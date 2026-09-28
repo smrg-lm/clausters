@@ -61,6 +61,8 @@ opens, which is why the curve row below names three unrelated types:
 
 **An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
+**It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window. An edit while it plays is heard at once -- the plan is written again from where the transport stands -- and a note already sounding ends as it would have. `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output.
+
 
 **A `Buffer` opens in the audio editor**, `clausters.gui.editing.AudioEditor`.
 It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and

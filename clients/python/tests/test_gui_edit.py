@@ -17,6 +17,8 @@ from clausters.gui import edit
 from clausters.gui.editing import Editing, NotesEditor, PointsEditor
 from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf
+from clausters.defs import Server
+from clausters.base import OscNrtInterface
 from clausters.seq.event import Event as SeqEvent
 
 SR = 48_000.0
@@ -461,3 +463,66 @@ def test_the_axis_is_held_rather_than_refitted_under_the_hand():
     wider = editor.draw()["children"][0]["axes"]["y"]
     assert wider["max"] > band["max"] and wider["min"] == band["min"]
     assert editor.draw()["children"][0]["duration"] == pytest.approx(4.0)
+
+
+# ---- the notes editor plays ----
+
+class _PlayingServer(Server):
+    """A server whose transport answers and whose commands are recorded."""
+
+    def __init__(self):
+        super().__init__(interface=OscNrtInterface())
+        self.latency = 0.1
+        self.sent = []
+        self.state = {"playing": False, "transport_sample": 1000, "position_sample": 0}
+
+    def transport_at(self, transport):
+        return self
+
+    def transport_state(self, timeout=None):
+        return dict(self.state)
+
+    def query_info(self, *_a, **_kw):
+        class Info:
+            nominal_sample_rate = 100.0
+        return Info()
+
+    def send_msg(self, addr, *args):
+        self.sent.append((addr, args))
+        if addr == "/transport_play":
+            self.state["playing"] = True
+
+    def request(self, addr, *args, timeout=None, expect=None, match=None):
+        self.send_msg(addr, *args)
+        return "/done", [addr]
+
+    def planned(self):
+        return [int(args[1].value if hasattr(args[1], "value") else args[1])
+                for addr, args in self.sent if addr == "/sched_atTransport"]
+
+
+def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = NotesEditor(seq, sample_rate=SR, server=server)
+    _host, wid = opened(editor)
+    editor.play()
+    addrs = [addr for addr, _ in server.sent]
+    assert "/transport_group" in addrs and addrs[-1] == "/transport_play"
+    # Two notes, each a start and a release, on the transport's clock from
+    # 1000 with ten samples of latency: beat 0 at 1010, beat 2 at 1110.
+    assert sorted(server.planned())[0] == 1010
+    assert 1110 in server.planned()
+    assert editor.playing
+
+    # An edit while it sounds is planned again from where the transport is.
+    server.sent.clear()
+    server.state.update(transport_sample=1020, position_sample=20)
+    editor.apply("/gui_event", [wid, 1, 0, "notes",
+                                1, 0.0, BEAT * 0.8, 60, 13, 0,
+                                2, 3 * BEAT, BEAT * 0.8, 67, 13, 0])
+    assert server.sent[0][0] == "/sched_clear"
+    assert 1160 in server.planned(), "the note moved to beat 3 is heard where it lands"
+    editor.stop()
+    assert "/group_freeAll" in [addr for addr, _ in server.sent]

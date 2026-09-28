@@ -31,7 +31,11 @@ timeline is left as it was.
 
 <b>Drag a note</b> to move it, <b>drag its edge</b> to resize, <b>Shift and
 drag it up or down</b> to change its velocity (drawn as the note's fill),
-<b>Ctrl+click</b> to add or remove one, <b>Ctrl+Z</b> to step back.
+<b>Ctrl+click</b> to add or remove one, <b>Ctrl+Z</b> to step back. <b>The
+space bar plays and pauses</b> -- the editor's own playback, on a transport of
+its own -- and an edit while it plays is heard at once: a note moved ahead of
+the line sounds where it lands, and a note already sounding ends as it would
+have.
 
 <b>The lane under the grid is the sequence's OSC markers</b>, edited the same
 way: drag one to move it, Ctrl+click one to remove it. A marker is matched by
@@ -64,7 +68,7 @@ leaves every other note its own.</div>
       /examples/editors/edit-notes.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, play } from "../../dist/index.js";
+      import { Session, gui } from "../../dist/index.js";
       import { Event, OscItem, Timeline } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -116,13 +120,9 @@ leaves every other note its own.</div>
         log("edit the notes; press play to hear them as they stand");
 
         $("play").disabled = false;
-        // The sequence is concrete data, so it plays as the events it holds: a
-        // timeline of them, on the sequence's own tempo map.
-        $("play").onclick = () => {
-          const played = new Timeline([...notes]);
-          played.map = notes.tempoMap;
-          play(played);
-        };
+        // The editor plays the sequence it edits, on its own transport -- the
+        // space bar in the window is the same verb.
+        $("play").onclick = () => editor.play();
 
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen, and prints what was drawn when it

@@ -517,6 +517,90 @@ pub unsafe extern "C" fn clausters_editing_audio_playback_call(
     }
 }
 
+/// **The notes editor, as it is playing**
+/// (`clausters_editing::notes_playback::NotesPlayback`): its structure and its
+/// plan on its own transport. Free it with
+/// [`clausters_editing_notes_playback_free`].
+pub struct FfiNotesPlayback(std::sync::Mutex<clausters_editing::notes_playback::NotesPlayback>);
+
+/// A new notes playback on `transport` -- negative for the crate's own,
+/// `NOTES_EDITOR_TRANSPORT`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_editing_notes_playback_new(transport: i32) -> *mut FfiNotesPlayback {
+    use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
+    let transport = if transport < 0 {
+        NOTES_EDITOR_TRANSPORT
+    } else {
+        transport
+    };
+    Box::into_raw(Box::new(FfiNotesPlayback(std::sync::Mutex::new(
+        NotesPlayback::new(transport),
+    ))))
+}
+
+/// Frees a playback created by [`clausters_editing_notes_playback_new`] (null
+/// is a no-op). The bookkeeping, not the nodes: `close` answers the steps that
+/// free those.
+///
+/// # Safety
+/// `p` must be a pointer from `clausters_editing_notes_playback_new`, not yet
+/// freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_notes_playback_free(p: *mut FfiNotesPlayback) {
+    if !p.is_null() {
+        // SAFETY: caller guarantees `p` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(p) });
+    }
+}
+
+/// **One verb of the notes playback**, as JSON
+/// (`clausters_editing::notes_playback::call_json`), over the sequence
+/// `sequence` names: `{"steps": [...]}`, a query's own object, or
+/// `{"error": ...}`. Allocates from `ids`. Sizes with a null `out` and fills
+/// with a second call; only the call that fills changes anything.
+///
+/// # Safety
+/// `p`, `sequence` and `ids` null or live, `request` null or readable for
+/// `request_len` bytes, `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_notes_playback_call(
+    p: *mut FfiNotesPlayback,
+    sequence: *mut crate::document::FfiEventSequence,
+    request: *const u8,
+    request_len: usize,
+    ids: *mut crate::registry::FfiIdSpaces,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(playback), Some(sequence), Some(spaces)) = (
+        unsafe { p.as_ref() },
+        unsafe { sequence.as_ref() },
+        unsafe { ids.as_ref() },
+    ) else {
+        return 0;
+    };
+    let (Ok(mut held), Ok(mut spaces), Ok(sequence)) =
+        (playback.0.lock(), spaces.0.lock(), sequence.0.lock())
+    else {
+        return 0;
+    };
+    let (mut next, mut next_ids) = (held.clone(), spaces.clone());
+    let answer =
+        clausters_editing::notes_playback::call_json(&mut next, &sequence, &request, &mut next_ids);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
+            *held = next;
+            *spaces = next_ids;
+        })
+    }
+}
+
 /// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps. Free it with
 /// [`clausters_editing_playback_free`].

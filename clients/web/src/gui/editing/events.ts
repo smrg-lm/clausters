@@ -15,13 +15,24 @@
  * answers with. What is here is what a language owns -- the socket, and handing
  * the crate the window it is open in.
  *
+ * **It sounds through a playback of its own** (the crate's `NotesPlayback`):
+ * the sequence planned onto the notes editor's own transport, so playing it
+ * never moves a multitrack, and planned again after every edit while it sounds
+ * -- a note moved ahead of the line is heard where it lands, and what is
+ * sounding keeps its release. The space bar over the window plays and pauses.
+ *
  * @module
  */
 
 import { EVENTS } from "../../document.ts";
+import { NotesPlayback as CorePlayback, StepRunner } from "../../core/clausters_core_web.js";
+import type { Server } from "../../defs/server/index.ts";
+import { resolveServer } from "../../defs/wire.ts";
+import { runSteps } from "../../steps.ts";
 import type { TempoMap } from "../../base/time.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import { Timeline } from "../../seq/timeline.ts";
+import type { PlayDestination } from "../../seq/timeline.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Answer } from "./echo.ts";
@@ -36,6 +47,74 @@ interface Outcome {
     turn?: string;
     changed?: boolean;
     answer?: Answer;
+    play?: { looping: boolean };
+}
+
+/**
+ * **What sounds the notes editors of one server** -- the crate's playback and
+ * the steps it answers, carried out on that server. One per server, since the
+ * editors on it share one transport: the one played last is the one that
+ * sounds.
+ */
+class NotesPlayback {
+    static readonly #of = new WeakMap<Server, NotesPlayback>();
+
+    static of(server: Server): NotesPlayback {
+        let found = NotesPlayback.#of.get(server);
+        if (found === undefined) {
+            found = new NotesPlayback(server);
+            NotesPlayback.#of.set(server, found);
+        }
+        return found;
+    }
+
+    readonly #native = new CorePlayback(-1);
+    readonly #runner = new StepRunner();
+    readonly #ready: Promise<void>;
+    /** The engine's sample rate. */
+    rate = 48_000;
+    /** The transport it plays on -- the crate's word for it. */
+    readonly transport: number;
+    /** The sequence the plan on the transport is of, if any. */
+    planned: EventSequence | null = null;
+    readonly server: Server;
+
+    private constructor(server: Server) {
+        this.server = server;
+        this.transport = Number(
+            JSON.parse(this.#native.call(new EventSequence().seq, JSON.stringify({ verb: "state" }), server.ids))
+                .transport,
+        );
+        this.#ready = (async () => {
+            // Node ids come back on their `/node_end`, which only a registered
+            // client hears.
+            await server.notify(true);
+            this.rate = (await server.queryInfo()).nominalSampleRate;
+        })();
+    }
+
+    /** The transport as the engine has it. */
+    async state(): Promise<{ playing: boolean; transportSample: number; positionSample: number }> {
+        const state = await this.server.transportAt(this.transport).transportState();
+        return {
+            playing: state.playing,
+            transportSample: Number(state.transportSample),
+            positionSample: Number(state.positionSample),
+        };
+    }
+
+    /** One verb over `sequence`, its steps carried out. */
+    async call(verb: string, sequence: EventSequence, args: Record<string, unknown> = {}): Promise<void> {
+        await this.#ready;
+        const answer = JSON.parse(this.#native.call(
+            sequence.seq,
+            JSON.stringify({ verb, rate: this.rate, latency: this.server.latency, ...args }),
+            this.server.ids,
+        )) as Record<string, unknown>;
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
+        const steps = answer.steps as unknown[] | undefined;
+        if (steps !== undefined && steps.length > 0) await runSteps(this.server, this.#runner, steps);
+    }
 }
 
 /**
@@ -84,11 +163,18 @@ export class NotesEditor extends Editor<EventSequence> {
     private readonly member: number;
     /** Whether a hand may edit the notes (`false` for a rendering). */
     readonly editable: boolean;
+    /** The server it plays on, resolved when it first plays. */
+    #server: Server | null;
+    /** The playback work in flight, chained so each lands in order. */
+    #work: Promise<void> = Promise.resolve();
+    /** The timeline a play to a destination of its own (a MIDI port) runs. */
+    #elsewhere: Timeline | null = null;
 
     constructor(sequence: EventSequence, options: NotesEditorOptions) {
         const domain = new NotesDomain();
         super(sequence, { title: "Notes", ...options, domain, view: new NotesView() });
         this.editable = options.editable ?? true;
+        this.#server = options.server ?? null;
         const opened = this.editing.openNotes(
             `sequence:${keyOfSequence(sequence)}`,
             sequence,
@@ -140,6 +226,120 @@ export class NotesEditor extends Editor<EventSequence> {
         });
     }
 
+    // ---- playing it ----
+
+    get #playback(): NotesPlayback {
+        this.#server ??= resolveServer(null) as unknown as Server;
+        return NotesPlayback.of(this.#server);
+    }
+
+    /**
+     * **Plays the sequence** from `beat` -- or from the position cursor, or the
+     * start -- on the notes editor's own transport.
+     *
+     * `destination` is for a MIDI port (a `MidiServer`): the server has no MIDI
+     * output, so the events are played on this page's clock to that destination
+     * instead, each as the MIDI messages the core renders it to, and an edit is
+     * heard from the next play.
+     */
+    async play(beat?: number, destination?: PlayDestination): Promise<this> {
+        const start = beat ?? this.cursor ?? 0;
+        if (destination !== undefined) {
+            const played = new Timeline([...this.structure]);
+            const map = this.structure.tempoMap;
+            if (map !== null) played.map = map;
+            played.play({ at: start, destination });
+            this.#elsewhere = played;
+            return this;
+        }
+        const playback = this.#playback;
+        const { transportSample } = await playback.state();
+        await playback.call("play", this.structure, { from: start, clock: transportSample });
+        playback.planned = this.structure;
+        return this;
+    }
+
+    /** Pauses where it stands: a `resume` carries the notes and the plan on. */
+    async pause(): Promise<this> {
+        if (this.#elsewhere !== null) {
+            this.#elsewhere.pause();
+            return this;
+        }
+        await this.#playback.call("pause", this.structure);
+        return this;
+    }
+
+    /** Rolls again from where it paused. */
+    async resume(): Promise<this> {
+        if (this.#elsewhere !== null) {
+            this.#elsewhere.play();
+            return this;
+        }
+        await this.#playback.call("resume", this.structure);
+        return this;
+    }
+
+    /** Stops, frees what sounds, and goes back to where it started. */
+    async stop(): Promise<this> {
+        if (this.#elsewhere !== null) {
+            this.#elsewhere.stop();
+            this.#elsewhere = null;
+            return this;
+        }
+        const playback = this.#playback;
+        await playback.call("stop", this.structure, { back: this.cursor ?? 0 });
+        playback.planned = null;
+        return this;
+    }
+
+    /**
+     * Whether the sequence is sounding, as the engine answers. A method here,
+     * the reference client's property: asking the engine is a round trip, and a
+     * page awaits one.
+     */
+    async playing(): Promise<boolean> {
+        if (this.#server === null) return false;
+        const playing = (await this.#playback.state()).playing;
+        await this.#playback.call("setRolling", this.structure, { rolling: playing });
+        return playing;
+    }
+
+    /**
+     * The sequence changed while its plan is on the transport: writes it again
+     * from where the transport stands, so the edit is heard now.
+     */
+    #replan(): void {
+        if (this.#server === null) return;
+        const playback = this.#playback;
+        if (playback.planned !== this.structure) return;
+        this.#work = this.#work.then(async () => {
+            const state = await playback.state();
+            await playback.call("replan", this.structure, {
+                position: state.positionSample,
+                clock: state.transportSample,
+            });
+        });
+        this.#work.catch(() => {});
+    }
+
+    /**
+     * Waits for the playback work an edit or a key started.
+     *
+     * @internal
+     */
+    async settled(): Promise<void> {
+        await this.#work;
+    }
+
+    /**
+     * A history step landed: the window is corrected, and a sequence that is
+     * sounding is planned again, so the undo is heard.
+     */
+    override reflectStep(): void {
+        super.reflectStep();
+        this.#replan();
+    }
+
     // ---- the crate's turns ----
 
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
@@ -174,6 +374,15 @@ export class NotesEditor extends Editor<EventSequence> {
         if (changed) {
             this.dirty = true;
             this.editing.changed();
+            this.#replan();
+        }
+        if (outcome.play !== undefined) {
+            // The space bar: a sounding sequence pauses, a silent one plays.
+            this.#work = this.#work.then(async () => {
+                if (await this.playing()) await this.pause();
+                else await this.play();
+            });
+            this.#work.catch(() => {});
         }
         this.echo.send(outcome.answer);
         return changed;
@@ -184,6 +393,8 @@ export class NotesEditor extends Editor<EventSequence> {
 export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> {
     /** `false` for a roll a hand may look at and not edit: the notes of a rendering. */
     editable?: boolean;
+    /** The server it plays on; absent, the ambient one when it first plays. */
+    server?: Server | null;
 }
 
 /** The number a sequence's structure key is made of: one per handle. */

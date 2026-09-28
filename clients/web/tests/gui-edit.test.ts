@@ -22,6 +22,8 @@ import { Bpf } from "../src/defs/ugens/index.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
+import { Server } from "../src/defs/server/index.ts";
+import { ScoreConnection } from "../src/base/connection.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
@@ -493,4 +495,72 @@ test("the editing trace is silent until it is watched", async () => {
     assert.ok(printed.includes("event "), printed);
     assert.ok(printed.includes("record ["), printed);
     assert.ok(printed.includes("ack "), printed);
+});
+
+// ---- the notes editor plays ----
+
+/** A server whose transport answers and whose commands are recorded. */
+class PlayingServer extends Server {
+    sent: [string, unknown[]][] = [];
+    state = { playing: false, transportSample: 1000, positionSample: 0 };
+
+    constructor() {
+        super({ connection: new ScoreConnection() });
+        this.latency = 0.1;
+    }
+    override transportAt(): Server {
+        return this;
+    }
+    override async transportState(): Promise<never> {
+        return { ...this.state } as never;
+    }
+    override async queryInfo(): Promise<never> {
+        return { nominalSampleRate: 100 } as never;
+    }
+    override async notify(): Promise<void> {}
+    override sendMsg(addr: string, ...args: unknown[]): void {
+        this.sent.push([addr, args]);
+        if (addr === "/transport_play") this.state.playing = true;
+    }
+    override async request(addr: string, args: unknown[] = []): Promise<never> {
+        this.sendMsg(addr, ...args);
+        return { addr: "/done", args: [addr] } as never;
+    }
+    planned(): number[] {
+        return this.sent
+            .filter(([addr]) => addr === "/sched_atTransport")
+            .map(([, args]) => Number((args[1] as [string, bigint])[1]));
+    }
+}
+
+test("the notes editor plays on its own transport and hears an edit", async () => {
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const editor = new NotesEditor(seq, { sampleRate: SR, server });
+    const { wid } = await opened(editor);
+    await editor.play();
+    const addrs = server.sent.map(([addr]) => addr);
+    assert.ok(addrs.includes("/transport_group"));
+    assert.equal(addrs.at(-1), "/transport_play");
+    // Two notes, each a start and a release, on the transport's clock from
+    // 1000 with ten samples of latency: beat 0 at 1010, beat 2 at 1110.
+    assert.equal(Math.min(...server.planned()), 1010);
+    assert.ok(server.planned().includes(1110));
+    assert.equal(await editor.playing(), true);
+
+    // An edit while it sounds is planned again from where the transport is.
+    server.sent = [];
+    server.state.transportSample = 1020;
+    server.state.positionSample = 20;
+    editor.apply("/gui_event", [wid, 1, 0, "notes",
+        1, 0.0, BEAT * 0.8, 60, 13, 0,
+        2, 3 * BEAT, BEAT * 0.8, 67, 13, 0]);
+    await editor.settled();
+    assert.equal(server.sent[0]![0], "/sched_clear");
+    assert.ok(server.planned().includes(1160), "the note moved to beat 3 is heard where it lands");
+    await editor.stop();
+    assert.ok(server.sent.map(([addr]) => addr).includes("/group_freeAll"));
 });
