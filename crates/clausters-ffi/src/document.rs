@@ -722,7 +722,7 @@ pub unsafe extern "C" fn clausters_document_sequence_call(
     };
     // Only an edit changes the sequence, and it runs on a copy so the sizing
     // pass leaves nothing behind; a read answers from the sequence itself.
-    if !request.contains("\"apply\"") {
+    if !clausters_document::events::mutates(&request) {
         let answer = clausters_document::events::call_json(&mut sequence, &request);
         // SAFETY: forwarded from this function's own contract.
         return unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) };

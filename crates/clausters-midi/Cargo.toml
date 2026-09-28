@@ -28,3 +28,6 @@ midir = { version = "0.11", optional = true }
 midi2 = { version = "0.11.1", features = ["utility", "ump-stream"] }
 # Pure-Rust Standard MIDI File reader/writer, no system dependency.
 midly = "0.5"
+# The reader's answer over the C ABI: a file as plain data, JSON like every
+# other door that hands a structure back.
+serde_json = "1"

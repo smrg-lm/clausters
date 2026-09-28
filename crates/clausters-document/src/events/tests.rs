@@ -202,3 +202,42 @@ fn coalescing_is_per_verb_and_event() {
         Some(EVENTS.into())
     );
 }
+
+#[test]
+fn a_sequence_goes_to_midi_and_back() {
+    let mut sequence = EventSequence::new(vec![
+        Event::new(
+            0.0,
+            json!({"midinote": 60, "velocity": 100, "sustain": 1.0}),
+        ),
+        Event::new(
+            1.0,
+            json!({"type": "midi", "midicmd": "cc", "cc": 7, "value": 99}),
+        ),
+        Event::new(2.0, json!({"type": "osc", "addr": "/x"})),
+    ]);
+    sequence.tempo_map = Some(TempoMap::new(4.0));
+    let (events, tempo) = sequence.to_midi(96);
+    assert_eq!(
+        events,
+        vec![
+            (0, vec![0x90, 60, 100]),
+            (96, vec![0x80, 60, 0]),
+            (96, vec![0xB0, 7, 99]),
+        ],
+        "the osc event has no MIDI spelling"
+    );
+    assert_eq!(tempo, vec![(0, 250_000)]);
+
+    let back = EventSequence::from_midi(96, &events, &tempo).unwrap();
+    assert_eq!(back.events.len(), 2);
+    assert_eq!(back.events[0].data.0["sustain"], json!(1.0));
+    assert_eq!(back.tempo_map, Some(TempoMap::new(4.0)));
+    let untimed = EventSequence::from_midi(96, &events, &[]).unwrap();
+    assert_eq!(
+        untimed.tempo_map,
+        Some(TempoMap::new(2.0)),
+        "a file's default 120"
+    );
+    assert!(mutates(r#"{"verb":"loadmidi"}"#) && !mutates(r#"{"verb":"midi"}"#));
+}

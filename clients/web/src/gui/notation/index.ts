@@ -40,6 +40,7 @@ export {
     fromTimeline,
     sheetFromNotes,
     sheetFromTimeline,
+    toSequence,
     toTimeline,
 } from "./mei.ts";
 export type { MeiOptions, PlaybackOptions, Slot } from "./mei.ts";

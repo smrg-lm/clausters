@@ -13,9 +13,12 @@
 // this object is a handle to it, so every client edits the same structure and
 // a notes editor opened on it edits it in place, with no copy to write back.
 
-import { JsEventSequence } from "../core/clausters_core_web.js";
-import { requireCore } from "../base/core.ts";
+import { JsEventSequence, event_of_midi as coreEventOfMidi } from "../core/clausters_core_web.js";
+import { midiReadSmf, midiWriteSmfTempo, requireCore } from "../base/core.ts";
+import { Moment } from "../base/moment.ts";
+import type { TempoClock } from "../base/clock.ts";
 import { TempoMap } from "../base/time.ts";
+import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
 
@@ -159,9 +162,187 @@ export class EventSequence {
         this.apply({ intent: "set", id, key, value });
     }
 
+    // ---- MIDI files ----
+
+    /**
+     * The sequence as a Standard MIDI File, at `ppq` ticks per beat: every
+     * event's MIDI messages -- a note as its on and off, a `"midi"` event as its
+     * message -- and the tempo map as the file's tempo. An `"osc"` event has no
+     * MIDI spelling and is left out; a tempo ramp is written as the step at its
+     * breakpoint, since a file's tempo only steps.
+     */
+    toSmf(ppq = 480): Uint8Array {
+        const written = this.call("midi", { ppq }) as {
+            events: [number, number[]][];
+            tempo: [number, number][];
+        };
+        const ticks = Uint32Array.from(written.events, ([tick]) => tick);
+        const msgs = new Uint8Array(3 * written.events.length);
+        written.events.forEach(([, bytes], i) => msgs.set(bytes.slice(0, 3), 3 * i));
+        return midiWriteSmfTempo(
+            ticks,
+            msgs,
+            ppq,
+            Uint32Array.from(written.tempo, ([tick]) => tick),
+            Uint32Array.from(written.tempo, ([, micros]) => micros),
+        );
+    }
+
+    /**
+     * The sequence a Standard MIDI File holds: its notes -- each note-on with the
+     * note-off that closes it -- and its other messages as `"midi"` events, in
+     * beats, with the file's tempo as the tempo map (its default 120 quarter
+     * notes a minute when it states none).
+     */
+    static fromSmf(data: Uint8Array): EventSequence {
+        const read = JSON.parse(midiReadSmf(data));
+        if (read.error) throw new Error(read.error);
+        const sequence = new EventSequence();
+        sequence.call("loadmidi", { ppq: read.ppq, events: read.events, tempo: read.tempo });
+        return sequence;
+    }
+
     toString(): string {
         return `EventSequence(${this.length} events)`;
     }
+}
+
+/**
+ * A destination that keeps what plays instead of sounding it: each event at
+ * the beat it plays on, in the beats of the structure being rendered.
+ *
+ * It stands where a `Server` would -- an event plays on it through
+ * `playEvent`, a raw OSC message through `sendBundle` or `sendMsg`, raw MIDI
+ * through `sendMessage` -- and records each one as the event it is, with no
+ * node, no latency and no server behind it.
+ */
+class Recorder {
+    readonly events: [number, Record<string, unknown>][] = [];
+
+    /**
+     * The beat it is, in the rendered structure's beats, and the function that
+     * carries a beat of the clock it was stamped on there: a child timeline
+     * plays in its own beats, and a sequence is in its root's.
+     */
+    private now(delay = 0): [number, number, (beat: number) => number] {
+        const moment = Moment.current();
+        const clock = moment.clock as unknown as { rootBeat?: (beat: number) => number } | null;
+        const toRoot = typeof clock?.rootBeat === "function"
+            ? (beat: number) => clock.rootBeat!(beat)
+            : (beat: number) => beat;
+        const local = moment.beat + delay;
+        return [toRoot(local), local, toRoot];
+    }
+
+    playEvent(event: Event): number | null {
+        const [at, local, toRoot] = this.now();
+        const keys = event.keysData();
+        delete keys.node;
+        delete keys.server;
+        if ((keys.type ?? "note") === "note") {
+            // How long it sounds, in the root's beats as well.
+            keys.sustain = toRoot(local + event.sustain()) - at;
+        }
+        this.events.push([at, keys]);
+        return null;
+    }
+
+    sendBundle(messages: readonly TimedMessage[], { delayBeats = 0 }: { delayBeats?: number } = {}): void {
+        const [at] = this.now(delayBeats);
+        for (const [addr, ...args] of messages) {
+            this.events.push([at, { type: "osc", addr: String(addr), args }]);
+        }
+    }
+
+    sendMsg(addr: string, ...args: unknown[]): void {
+        this.sendBundle([[addr, ...args] as TimedMessage]);
+    }
+
+    sendMessage(message: ArrayLike<number>): void {
+        this.events.push([this.now()[0], JSON.parse(coreEventOfMidi(Uint8Array.from(message)))]);
+    }
+}
+
+/**
+ * Plays `start(recorder, clock)` on an offline session's clock and answers what
+ * played as a sequence. `until` bounds it, in the clock's beats; with none it
+ * runs until nothing is due, and an endless source is refused rather than run
+ * forever.
+ */
+async function rendered(
+    start: (recorder: Recorder, clock: TempoClock) => (() => unknown) | null,
+    until: number | undefined,
+    tempoMap: TempoMap | null,
+): Promise<EventSequence> {
+    const { Session } = await import("../session.ts");
+    const { MAX_BOUNCED_EVENTS } = await import("../render.ts");
+    const session = await Session.nrt();
+    const recorder = new Recorder();
+    session.use(() => {
+        const stop = start(recorder, session.clock);
+        try {
+            session.clock.render(until, {
+                maxSteps: until === undefined ? MAX_BOUNCED_EVENTS : undefined,
+            });
+        } catch (error) {
+            if (until !== undefined) throw error;
+            throw new Error(
+                `renderEvents: it did not end after ${MAX_BOUNCED_EVENTS} events -- `
+                    + "pass until to bound it",
+            );
+        } finally {
+            stop?.();
+        }
+    });
+    const data: Record<string, unknown> = {
+        events: recorder.events.map(([at, keys]) => ({ at, data: keys })),
+    };
+    if (tempoMap) data.tempo_map = JSON.parse(tempoMap.dump());
+    return EventSequence.fromData(data);
+}
+
+/** What `renderTimeline` needs of a `Timeline`. @internal */
+interface Rendered {
+    readonly transport: unknown;
+    readonly map: TempoMap;
+    play(options: { at?: number; destination?: never }): unknown;
+    stop(): unknown;
+}
+
+/** `Timeline.renderEvents`. @internal */
+export function renderTimeline(timeline: Rendered, until?: number): Promise<EventSequence> {
+    if (timeline.transport !== null) {
+        throw new Error(
+            "renderEvents plays a timeline on its own clock: take it off the transport "
+                + "(timeline.transport = null) first",
+        );
+    }
+    // The session's clock runs at one beat a second, so the timeline's beats
+    // reach it as the seconds its own map makes of them.
+    const bound = until === undefined ? undefined : timeline.map.secsAt(until);
+    return rendered(
+        (recorder) => {
+            timeline.play({ at: 0, destination: recorder as never });
+            return () => timeline.stop();
+        },
+        bound,
+        timeline.map,
+    );
+}
+
+/** `EventPattern.renderEvents`. @internal */
+export function renderPattern(
+    pattern: { play(destination: never, options: { clock: TempoClock }): { stop?: () => unknown } },
+    until?: number,
+): Promise<EventSequence> {
+    return rendered(
+        (recorder, clock) => {
+            const player = pattern.play(recorder as never, { clock });
+            return player.stop ? () => player.stop!() : null;
+        },
+        until,
+        null,
+    );
 }
 
 /** An event's keys as the document stores them. */

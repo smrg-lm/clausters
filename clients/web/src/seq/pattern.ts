@@ -96,6 +96,20 @@ export abstract class EventPattern<T = Event> extends Pattern<T> {
     ): EventStreamPlayer {
         return playEvents(this as Pattern<unknown>, destination, options);
     }
+
+    /**
+     * **Renders the pattern into the events it plays**: an `EventSequence` in
+     * the pattern's beats, each event as it played -- its derived keys written
+     * in, at the beat it fell on. The render goes one way (see
+     * `Timeline.renderEvents`), and is asynchronous for the reason given there.
+     *
+     * @param until stop at this beat. Required for an endless pattern, which is
+     *     otherwise refused after `MAX_BOUNCED_EVENTS` events.
+     */
+    async renderEvents(until?: number): Promise<import("./sequence.ts").EventSequence> {
+        const { renderPattern } = await import("./sequence.ts");
+        return renderPattern(this as never, until);
+    }
 }
 
 /** Whether every element of a list pattern is an event pattern. */

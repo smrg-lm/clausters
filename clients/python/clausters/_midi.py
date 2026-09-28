@@ -15,12 +15,13 @@ cdylib has not been built yet.
 """
 
 import ctypes
+import json
 import os
 from array import array
 
 from . import _libpath
 
-MIDI_ABI_VERSION = 2
+MIDI_ABI_VERSION = 3
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _MIDI_NAMES = ("libclausters_midi.so", "libclausters_midi.dylib", "clausters_midi.dll")
@@ -60,6 +61,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         fn.restype = u8p
         fn.argtypes = writer_argtypes
     lib.clausters_midi_free.argtypes = [u8p, ctypes.c_size_t]
+    lib.clausters_midi_write_smf_tempo.restype = u8p
+    lib.clausters_midi_write_smf_tempo.argtypes = [
+        u32p, u8p, ctypes.c_size_t, ctypes.c_uint16, u32p, u32p, ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.clausters_midi_read_smf.restype = u8p
+    lib.clausters_midi_read_smf.argtypes = [u8p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
     # Live I/O (only present if the cdylib was built with `--features live`).
     if hasattr(lib, "clausters_midi_output_open"):
         lib.clausters_midi_output_open.restype = ctypes.c_void_p
@@ -119,6 +127,58 @@ def _write(writer, events, ppq: int) -> bytes:
 def write_smf(events, ppq: int) -> bytes:
     """Standard MIDI File (`.mid`) bytes from timed channel-voice events."""
     return _write(lib().clausters_midi_write_smf, events, ppq)
+
+
+def _taken(ptr, out_len) -> bytes:
+    """The bytes of a buffer the library allocated, freed once read."""
+    if not ptr:
+        raise RuntimeError("MIDI call returned null")
+    try:
+        return bytes(ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint8 * out_len.value)).contents)
+    finally:
+        lib().clausters_midi_free(ptr, out_len.value)
+
+
+def write_smf_tempo(events, ppq: int, tempo) -> bytes:
+    """Standard MIDI File bytes from timed channel-voice events and the file's
+    tempo: ``(tick, microseconds per quarter note)`` marks."""
+    events, tempo = list(events), list(tempo)
+    ticks = array("I", (int(t) & 0xFFFFFFFF for t, _ in events))
+    msgs = bytearray(3 * len(events))
+    for i, (_, message) in enumerate(events):
+        b = bytes(message)[:3]
+        msgs[3 * i : 3 * i + len(b)] = b
+    t_ticks = array("I", (int(t) for t, _ in tempo))
+    t_micros = array("I", (int(m) for _, m in tempo))
+    u32p = ctypes.POINTER(ctypes.c_uint32)
+    u8p = ctypes.POINTER(ctypes.c_uint8)
+
+    def ptr32(a):
+        return ctypes.cast(a.buffer_info()[0], u32p) if len(a) else None
+
+    msgs_ptr = (ctypes.cast((ctypes.c_uint8 * len(msgs)).from_buffer(msgs), u8p)
+                if msgs else None)
+    out_len = ctypes.c_size_t(0)
+    ptr = lib().clausters_midi_write_smf_tempo(ptr32(ticks), msgs_ptr, len(events), int(ppq),
+                                               ptr32(t_ticks), ptr32(t_micros), len(tempo),
+                                               ctypes.byref(out_len))
+    return _taken(ptr, out_len)
+
+
+def read_smf(data: bytes) -> dict:
+    """A Standard MIDI File as plain data: ``{"ppq", "events": [[tick,
+    [bytes]]], "tempo": [[tick, micros]]}``. `ValueError` for bytes that are
+    not one."""
+    data = bytes(data)
+    u8p = ctypes.POINTER(ctypes.c_uint8)
+    buf = (ctypes.c_uint8 * len(data)).from_buffer_copy(data) if data else None
+    out_len = ctypes.c_size_t(0)
+    ptr = lib().clausters_midi_read_smf(ctypes.cast(buf, u8p) if buf else None, len(data),
+                                        ctypes.byref(out_len))
+    answer = json.loads(_taken(ptr, out_len))
+    if "error" in answer:
+        raise ValueError(answer["error"])
+    return answer
 
 
 def write_clip(events, ppq: int) -> bytes:

@@ -372,6 +372,34 @@ export class Timeline {
     }
 
     /**
+     * **Renders the timeline into the events it plays**: an `EventSequence`, in
+     * this timeline's beats, with its tempo map.
+     *
+     * The timeline is played offline against a destination that keeps what
+     * plays instead of sounding it -- every item runs as it would on a server
+     * (an event, a pattern's events, a child timeline in its own beats, a
+     * routine's messages) and each becomes the concrete event it produced,
+     * placed at the beat it played on. A note's `sustain` is written in this
+     * timeline's beats too.
+     *
+     * **It goes one way.** The sequence holds what the timeline produced, not
+     * the timeline: a generator, a nested structure, a tempo curve inside a
+     * child are gone from it, and nothing rebuilds the timeline from the
+     * sequence. It is what a notes editor edits.
+     *
+     * Asynchronous where the reference client's is not: the offline session it
+     * plays in is made with `await` here.
+     *
+     * @param until stop at this beat. Required for a timeline that does not end
+     *     on its own -- a loop, an endless pattern -- which is otherwise refused
+     *     after `MAX_BOUNCED_EVENTS` events.
+     */
+    async renderEvents(until?: number): Promise<import("./sequence.ts").EventSequence> {
+        const { renderTimeline } = await import("./sequence.ts");
+        return renderTimeline(this as never, until);
+    }
+
+    /**
      * The timeline's logical length, in its own beats: the beat of the last
      * item (0 when empty), **extended by any child that lasts longer**.
      *

@@ -281,6 +281,75 @@ impl EventSequence {
             .fold(0.0, f64::max)
     }
 
+    /// The sequence as the MIDI a file holds, at `ppq` ticks per beat: every
+    /// event's messages at their ticks (`render::midi`, on channel 0 unless an
+    /// event says otherwise), and the tempo as Set Tempo marks. An OSC event has
+    /// no MIDI spelling and is left out. A tempo ramp is written as the step at
+    /// its breakpoint -- a file's tempo only steps.
+    pub fn to_midi(&self, ppq: u16) -> Midi {
+        let tick = |beat: f64| (beat * f64::from(ppq)).round().max(0.0) as u32;
+        let mut events = Vec::new();
+        for event in &self.events {
+            let Ok(messages) = render::midi(&event.keys(), 0) else {
+                continue;
+            };
+            for m in messages {
+                events.push((tick(event.at.0 + m.at), m.bytes));
+            }
+        }
+        // Stable, so an event's own messages keep their order at one tick.
+        events.sort_by_key(|(t, _)| *t);
+        let tempo = self
+            .tempo_map
+            .as_ref()
+            .map(|map| {
+                map.breakpoints()
+                    .iter()
+                    .map(|b| (tick(b.beats), (1e6 / b.tempo).round() as u32))
+                    .collect()
+            })
+            .unwrap_or_default();
+        (events, tempo)
+    }
+
+    /// The sequence a MIDI file holds, at `ppq` ticks per beat: its notes and
+    /// messages paired into events (`render::from_midi_messages`), and its
+    /// tempo marks as the tempo map -- or the format's own 120 quarter notes a
+    /// minute when it states none.
+    ///
+    /// # Errors
+    /// A tempo mark the tempo map refuses.
+    pub fn from_midi(
+        ppq: u16,
+        events: &[(u32, Vec<u8>)],
+        tempo: &[(u32, u32)],
+    ) -> Result<Self, String> {
+        let beat = |tick: u32| f64::from(tick) / f64::from(ppq.max(1));
+        let messages: Vec<(f64, Vec<u8>)> =
+            events.iter().map(|(t, b)| (beat(*t), b.clone())).collect();
+        let points: Vec<clausters_core::tempomap::Breakpoint> = if tempo.is_empty() {
+            vec![(0, 500_000)]
+        } else {
+            tempo.to_vec()
+        }
+        .iter()
+        .map(|&(t, micros)| clausters_core::tempomap::Breakpoint {
+            beats: beat(t),
+            tempo: 1e6 / f64::from(micros.max(1)),
+            curve: clausters_core::tempomap::Curve::Step,
+        })
+        .collect();
+        let tempo_map =
+            TempoMap::from_breakpoints(&points).map_err(|e| format!("the file's tempo: {e:?}"))?;
+        let events = render::from_midi_messages(&messages)
+            .into_iter()
+            .map(|(at, keys)| Event::new(at, Value::Object(keys)))
+            .collect();
+        let mut sequence = Self::new(events);
+        sequence.tempo_map = Some(tempo_map);
+        Ok(sequence)
+    }
+
     /// The edit that puts the sequence back as it is now.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::Restore {
@@ -378,6 +447,10 @@ impl EventSequence {
     }
 }
 
+/// A sequence as a MIDI file holds it: the messages at their ticks, and the
+/// tempo marks as `(tick, microseconds per quarter note)`.
+pub type Midi = (Vec<(u32, Vec<u8>)>, Vec<(u32, u32)>);
+
 fn no_event(id: u64) -> String {
     format!("the sequence holds no event {id}")
 }
@@ -446,12 +519,20 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 /// - `"state"`: the sequence, whole.
 /// - `"len"`: `{"len": n}`.
 /// - `"duration"`: `{"duration": beats}`, where the last event stops sounding.
+/// - `"midi"` with `ppq`: `{"events": [[tick, [bytes]]], "tempo": [[tick,
+///   micros]]}` -- what a file writer takes ([`EventSequence::to_midi`]).
+/// - `"loadmidi"` with `ppq`, `events` and `tempo` as a reader gives them: the
+///   sequence becomes the one the file holds ([`EventSequence::from_midi`]),
+///   answering `{"len": n}`.
 /// - `"event"` with `id`: the event, or `null`.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
 ///   edit -- plus `"id"` for an add, or `{"error"}` when refused.
 ///
 /// A request that does not read answers `{"error": ...}`.
+///
+/// [`mutates`] says which requests change the sequence, for a door that has to
+/// keep a sizing pass from changing anything.
 pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
     let Ok(request) = serde_json::from_str::<Value>(request) else {
         return json!({"error": "the request is not JSON"}).to_string();
@@ -460,6 +541,46 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
         Some("state") => serde_json::to_value(&*sequence).unwrap_or(Value::Null),
         Some("len") => json!({"len": sequence.events.len()}),
         Some("duration") => json!({"duration": sequence.duration()}),
+        Some("midi") => {
+            let ppq = request.get("ppq").and_then(Value::as_u64).unwrap_or(480) as u16;
+            let (events, tempo) = sequence.to_midi(ppq);
+            json!({"events": events.iter().map(|(t, b)| json!([t, b])).collect::<Vec<_>>(), "tempo": tempo})
+        }
+        Some("loadmidi") => {
+            let ppq = request.get("ppq").and_then(Value::as_u64).unwrap_or(480) as u16;
+            let pairs = |key: &str| -> Vec<Value> {
+                request
+                    .get(key)
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            };
+            let events: Vec<(u32, Vec<u8>)> = pairs("events")
+                .iter()
+                .filter_map(|e| {
+                    let tick = e.get(0)?.as_u64()? as u32;
+                    let bytes = e
+                        .get(1)?
+                        .as_array()?
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .map(|b| b as u8)
+                        .collect();
+                    Some((tick, bytes))
+                })
+                .collect();
+            let tempo: Vec<(u32, u32)> = pairs("tempo")
+                .iter()
+                .filter_map(|m| Some((m.get(0)?.as_u64()? as u32, m.get(1)?.as_u64()? as u32)))
+                .collect();
+            match EventSequence::from_midi(ppq, &events, &tempo) {
+                Ok(read) => {
+                    *sequence = read;
+                    json!({"len": sequence.events.len()})
+                }
+                Err(error) => json!({ "error": error }),
+            }
+        }
         Some("event") => {
             let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
             serde_json::to_value(sequence.get(id)).unwrap_or(Value::Null)
@@ -487,6 +608,15 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
         other => json!({"error": format!("no sequence verb {other:?}")}),
     };
     answer.to_string()
+}
+
+/// Whether `request` is a verb that changes the sequence (`apply`,
+/// `loadmidi`). Every other verb reads.
+pub fn mutates(request: &str) -> bool {
+    serde_json::from_str::<Value>(request)
+        .ok()
+        .and_then(|r| r.get("verb").and_then(Value::as_str).map(str::to_owned))
+        .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi"))
 }
 
 #[cfg(test)]

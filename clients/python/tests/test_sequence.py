@@ -70,3 +70,57 @@ def test_the_data_round_trips_ids_and_all():
 def test_a_refused_edit_says_why():
     with pytest.raises(ValueError, match="no event 9"):
         _sequence().remove(9)
+
+
+def test_a_sequence_goes_to_a_midi_file_and_back():
+    seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0)),
+                         (1.5, Event(midinote=64, velocity=80, sustain=0.5, channel=2))],
+                        tempo_map=TempoMap(4.0))
+    data = seq.to_smf(ppq=96)
+    assert data[:4] == b"MThd"
+    back = EventSequence.from_smf(data)
+    assert [(beat, e["midinote"], e["velocity"], e["sustain"], e.get("channel"))
+            for beat, e in back] == [(0.0, 60, 100, 1.0, None), (1.5, 64, 80, 0.5, 2)]
+    assert back.tempo_map.secs_at(4.0) == pytest.approx(1.0)
+    with pytest.raises(ValueError, match="not a MIDI file"):
+        EventSequence.from_smf(b"nope")
+
+
+def test_a_timeline_renders_into_the_events_it_plays():
+    from clausters.seq import OscItem, Pbind, Pseq, Timeline
+
+    child = Timeline([(0.0, Event(midinote=72, dur=1.0, legato=1.0))], tempo=4.0)
+    tl = Timeline([(0.0, Event(degree=0, dur=1.0, legato=0.5)),
+                   (1.0, Pbind(midinote=Pseq([62, 64]), dur=0.5)),
+                   (2.0, OscItem("/cue", 1)),
+                   (3.0, child)], tempo=2.0)
+    seq = tl.render_events()
+    got = [(beat, e.get("type", "note"), e.get("midinote"), e.get("addr")) for beat, e in seq]
+    assert got == [(0.0, "note", 60.0, None), (1.0, "note", 62, None),
+                   (1.5, "note", 64, None), (2.0, "osc", None, "/cue"),
+                   (3.0, "note", 72, None)]
+    # The child's note lasts one of its beats: half a beat of the parent's.
+    assert seq.get(seq.entries()[-1][0])[1]["sustain"] == pytest.approx(0.5)
+    assert seq.tempo_map.secs_at(2.0) == pytest.approx(1.0), "the timeline's map rides along"
+    assert tl.render_events(until=1.2).__len__() == 2
+
+
+def test_a_pattern_renders_into_the_events_it_plays():
+    from clausters.seq import Pbind, Pn, Pseq
+
+    seq = Pbind(degree=Pseq([0, 2, 4]), dur=0.5).render_events()
+    assert [(beat, e["degree"]) for beat, e in seq] == [(0.0, 0), (0.5, 2), (1.0, 4)]
+    assert len(Pbind(degree=Pn(0)).render_events(until=3.5)) == 4
+
+
+def test_a_score_reads_into_a_sequence_and_a_sequence_engraves():
+    from clausters.gui import notation
+    from clausters.seq import OscItem
+
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)), (1.0, Event(midinote=64, dur=1.0)),
+                         (1.5, OscItem("/cue"))])
+    sheet = notation.sheet_from_timeline(seq)
+    back = notation.to_sequence(sheet)
+    assert [(beat, e["midinote"], e["dur"]) for beat, e in back] == [(0.0, 60, 1.0),
+                                                                      (1.0, 64, 1.0)], \
+        "the osc event has no pitch, so no note on the page"

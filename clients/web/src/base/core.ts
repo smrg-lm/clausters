@@ -21,7 +21,9 @@ import initCore, {
     WidgetIds,
     graph_bus_reserved,
     midiWriteClip,
+    midiReadSmf,
     midiWriteSmf,
+    midiWriteSmfTempo,
     node_id_partition,
 } from "../core/clausters_core_web.js";
 
@@ -31,7 +33,7 @@ export { IdSpaces, Registry, WidgetIds, coreShareOf };
 // re-exports: they take and return flat bytes, so there is nothing to convert
 // at the boundary -- and a page writing a `.mid` writes the same bytes the
 // Python client does, which is the whole reason they are not a TS function.
-export { midiWriteClip, midiWriteSmf };
+export { midiReadSmf, midiWriteClip, midiWriteSmf, midiWriteSmfTempo };
 
 let loaded: Promise<void> | null = null;
 let ready = false;

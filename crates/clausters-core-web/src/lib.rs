@@ -3369,6 +3369,42 @@ pub fn midi_write_smf(ticks: &[u32], msgs: &[u8], ppq: u16) -> Result<Vec<u8>, J
     Ok(clausters_midi::write_smf(&midi_events(ticks, msgs)?, ppq))
 }
 
+/// [`midi_write_smf`] with the file's tempo: marks at `tempo_ticks`, each
+/// `tempo_micros` microseconds per quarter note.
+///
+/// JS face: `midiWriteSmfTempo(Uint32Array, Uint8Array, ppq, Uint32Array,
+/// Uint32Array) -> Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiWriteSmfTempo)]
+pub fn midi_write_smf_tempo(
+    ticks: &[u32],
+    msgs: &[u8],
+    ppq: u16,
+    tempo_ticks: &[u32],
+    tempo_micros: &[u32],
+) -> Result<Vec<u8>, JsError> {
+    let tempo: Vec<clausters_midi::TempoMark> = tempo_ticks
+        .iter()
+        .zip(tempo_micros)
+        .map(|(&tick, &micros)| clausters_midi::TempoMark { tick, micros })
+        .collect();
+    Ok(clausters_midi::write_smf_with_tempo(
+        &midi_events(ticks, msgs)?,
+        ppq,
+        &tempo,
+    ))
+}
+
+/// A Standard MIDI File as JSON: `{"ppq", "events": [[tick, [bytes]]],
+/// "tempo": [[tick, micros]]}` or `{"error"}`.
+///
+/// JS face: `midiReadSmf(Uint8Array) -> string`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiReadSmf)]
+pub fn midi_read_smf(bytes: &[u8]) -> String {
+    clausters_midi::read_smf_json(bytes)
+}
+
 /// MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
 /// velocities at 16-bit resolution.
 ///

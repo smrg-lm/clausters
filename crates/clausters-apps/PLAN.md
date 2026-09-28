@@ -455,8 +455,16 @@ opened it.
     whole list without ids still reads and takes the ids of the events it
     matches, so today's roll keeps working until X3.5. Playing a sequence,
     writing it to `.mid` and opening it with `edit` are X3.3, X3.7 and X3.8.)*
-  - ⬜ **X3.3 - The conversions**: `render_events`; `.mid` (write from the
+  - ✅ **X3.3 - The conversions**: `render_events`; `.mid` (write from the
     sequence; read); `Score` ↔ sequence.
+    *(Shipped 2026-09-27: `Timeline.render_events` and
+    `EventPattern.render_events` play offline against a destination that
+    records, in the root's beats with the timeline's map; `to_smf` /
+    `from_smf` over `clausters-midi`'s new tempo writer and reader, the pairing
+    of note-ons with their note-offs in the core; `notation.to_sequence`, and
+    `sheet_from_timeline` reads a sequence. A tempo ramp goes to a file as the
+    step at its breakpoint. `renderEvents` is asynchronous in the web client,
+    whose offline session is.)*
   - ⬜ **X3.4 - The shared conversation turn** ("Each editor writes the
     conversation's turn again", Found by use): the notes editor would be its
     third copy.

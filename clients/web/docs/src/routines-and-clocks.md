@@ -98,7 +98,7 @@ new seq.Pbind({
 }).play(server, { clock });
 ```
 
-Beside them, an `EventSequence` holds events as concrete data — each with an id, in beats, with the tempo map that times them — as a handle to the document's own structure, which is what a notes editor edits.
+Beside them, an `EventSequence` holds events as concrete data — each with an id, in beats, with the tempo map that times them — as a handle to the document's own structure, which is what a notes editor edits. A timeline or an event pattern becomes one by rendering it, `await timeline.renderEvents()` (asynchronous here, since the offline session it plays in is), and a sequence goes to a MIDI file and back with `toSmf()` and `EventSequence.fromSmf(bytes)`.
 
 What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns, why only an event pattern plays and a value pattern renders to its values — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters, the sequence included.
 

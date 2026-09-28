@@ -402,6 +402,7 @@ dependencies = [
  "midi2",
  "midir",
  "midly",
+ "serde_json",
 ]
 
 [[package]]

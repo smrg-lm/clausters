@@ -521,7 +521,8 @@ writers live in `clausters-midi`, a cdylib of its own with its own ABI counter,
 because the Python client loads them separately and because half that crate
 (`live`, a virtual OS port over midir) has no business inside the core's door.
 The left column is therefore empty on both rows and the C symbols are named here
-instead: `clausters_midi_write_smf` and `clausters_midi_write_clip`, argument for
+instead: `clausters_midi_write_smf`, `clausters_midi_write_smf_tempo`,
+`clausters_midi_write_clip` and `clausters_midi_read_smf`, argument for
 argument the same call.
 
 What a page needs is exactly the half that is pure Rust. It has no virtual port
@@ -535,6 +536,8 @@ the whole point of a shared core is not having one.
 |---|---|---|
 | — | `midi_write_smf` | `idiom` — `clausters-midi`'s `clausters_midi_write_smf`, not `clausters-ffi`'s, so this table's left column cannot name it. Same flat arguments (n ticks, 3n bytes, ppq); C returns a malloc'd buffer freed by `clausters_midi_free`, wasm returns the bytes and JS sees it as `midiWriteSmf` |
 | — | `midi_write_clip` | `idiom` — `clausters_midi_write_clip` on the same terms, `midiWriteClip` in JS |
+| — | `midi_write_smf_tempo` | `idiom` — `clausters_midi_write_smf_tempo`: the writer with the file's tempo marks, as two flat arrays (ticks, microseconds per quarter); `midiWriteSmfTempo` in JS |
+| — | `midi_read_smf` | `idiom` — `clausters_midi_read_smf`: a file read back as JSON, which C hands over in a malloc'd buffer and wasm as a string; `midiReadSmf` in JS |
 
 ## The shared-memory segment
 

@@ -48,7 +48,7 @@ reading that turns it back into sound (`to_notes`, `interpretation`) -- and
 from .engraver import Score, engrave, page_json, svg_to_display_list
 from .mei import (
     from_notes, from_timeline, sheet_from_notes, sheet_from_timeline,
-    to_timeline,
+    to_sequence, to_timeline,
 )
 from .sheet import (
     add_spanner, apply, concat, delete, header, insert, insert_measures,
@@ -107,6 +107,7 @@ __all__ = [
     "to_mei",
     "to_notes",
     "to_timeline",
+    "to_sequence",
     "to_voice",
     "playhead_sync",
     "transpose",

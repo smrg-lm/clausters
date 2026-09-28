@@ -1338,6 +1338,14 @@ export function meiToSheet(mei: string): string;
 export function mel_to_hz(mel: number): number;
 
 /**
+ * A Standard MIDI File as JSON: `{"ppq", "events": [[tick, [bytes]]],
+ * "tempo": [[tick, micros]]}` or `{"error"}`.
+ *
+ * JS face: `midiReadSmf(Uint8Array) -> string`.
+ */
+export function midiReadSmf(bytes: Uint8Array): string;
+
+/**
  * MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
  * velocities at 16-bit resolution.
  *
@@ -1352,6 +1360,15 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
  * JS face: `midiWriteSmf(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
  */
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
+
+/**
+ * [`midi_write_smf`] with the file's tempo: marks at `tempo_ticks`, each
+ * `tempo_micros` microseconds per quarter note.
+ *
+ * JS face: `midiWriteSmfTempo(Uint32Array, Uint8Array, ppq, Uint32Array,
+ * Uint32Array) -> Uint8Array`.
+ */
+export function midiWriteSmfTempo(ticks: Uint32Array, msgs: Uint8Array, ppq: number, tempo_ticks: Uint32Array, tempo_micros: Uint32Array): Uint8Array;
 
 /**
  * JS face: MIDI note -> `[degree, alter]`; `spelling` below zero is flat.
@@ -1801,8 +1818,10 @@ export interface InitOutput {
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
     readonly mel_to_hz: (a: number) => number;
+    readonly midiReadSmf: (a: number, b: number) => [number, number];
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly midiWriteSmfTempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly midinote_to_degree: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackNames: (a: number, b: number) => [number, number];
@@ -1953,8 +1972,10 @@ export interface InitOutput {
     readonly widgetids_inUse: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
+    readonly clausters_midi_read_smf: (a: number, b: number, c: number) => number;
     readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly clausters_midi_write_smf: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_smf_tempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

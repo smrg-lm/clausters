@@ -23,6 +23,7 @@
 
 import { NOTATION_KEYS, Event as SeqEvent } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
+import { EventSequence } from "../../seq/sequence.ts";
 import type { Interpretation, Sheet } from "./sheet.ts";
 import { fromVoice, toMei, toNotes } from "./sheet.ts";
 
@@ -117,13 +118,14 @@ export function fromNotes(
 }
 
 /**
- * Engrave a `seq.Timeline` into an MEI string.
+ * Engrave a `seq.Timeline` -- or an `EventSequence`, read the same way -- into an
+ * MEI string.
  *
  * The timeline's placements become the score's rhythm: events **sharing a beat**
  * are written as one chord, a gap between a group's written end and the next
  * onset becomes a rest, and a gap before the first onset is a leading rest.
- * Items that carry no pitch (an `OscItem`) are skipped, as are rest events
- * (they read as silence, i.e. a gap).
+ * Events that carry no pitch (an `"osc"` or `"midi"` one) are skipped, as are
+ * rest events (they read as silence, i.e. a gap).
  *
  * Each group is written for its **shortest** `dur` (one layer, so it is clamped
  * never to overrun the next onset -- the model holds several voices already, and
@@ -201,6 +203,30 @@ export function toTimeline(
     { instruments, interp, event = {} }: PlaybackOptions = {},
 ): Timeline {
     const out = new Timeline();
+    for (const [beat, note] of played(score, { instruments, interp, event })) out.add(beat, note);
+    return out;
+}
+
+/**
+ * Reads a sheet into an `EventSequence`: the same events {@link toTimeline}
+ * reads, as concrete data a notes editor edits -- each with an id, in beats.
+ * Everything `toTimeline` says about what comes with a note, and what does not
+ * survive the trip, holds here too; a sequence goes back to a page through
+ * {@link sheetFromTimeline}, which reads one as it reads a timeline.
+ */
+export function toSequence(score: Sheet, options: PlaybackOptions = {}): EventSequence {
+    return new EventSequence(played(score, options));
+}
+
+/**
+ * Each sounding note of the sheet as `[onset, Event]`: the written value as
+ * `dur`, the heard one as `sustain`, and the marks it was written with.
+ */
+function played(
+    score: Sheet,
+    { instruments, interp, event = {} }: PlaybackOptions,
+): [number, SeqEvent][] {
+    const out: [number, SeqEvent][] = [];
     for (const note of toNotes(score, interp)) {
         const fields: Record<string, unknown> = {
             ...event,
@@ -216,7 +242,7 @@ export function toTimeline(
         }
         const instrument = instrumentFor(instruments, note.staff);
         if (instrument !== undefined) fields.instrument = instrument;
-        out.add(note.t, new SeqEvent(fields));
+        out.push([note.t, new SeqEvent(fields)]);
     }
     return out;
 }
@@ -319,8 +345,9 @@ function voiceFromTimeline(
 ): Slot[] {
     const groups = new Map<number, SeqEvent[]>();
     for (const [beat, item] of timeline) {
-        // Skip what has no pitch (a raw OSC item) or is silence (a rest).
-        if (!(item instanceof SeqEvent) || item.get("type") === "rest") continue;
+        // Only a note: a raw OSC or MIDI message has no pitch, and a rest is
+        // silence.
+        if (!(item instanceof SeqEvent) || (item.get("type") ?? "note") !== "note") continue;
         const at = Number(beat);
         const group = groups.get(at);
         if (group === undefined) groups.set(at, [item]);

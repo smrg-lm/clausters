@@ -490,6 +490,64 @@ pub fn from_midi(bytes: &[u8]) -> Map<String, Value> {
     keys
 }
 
+/// MIDI messages in beats as the events they play: a note-on and the note-off
+/// that closes it (the earliest one open on that channel and key) become one
+/// note -- `midinote`, `velocity`, `sustain` and `dur` (its length, both), and
+/// `channel` when it is not 0;
+/// every other message becomes the `midi` event [`from_midi`] reads. A note
+/// still open when the messages end sounds to the last of them, and a note-off
+/// with nothing open is dropped. The answer is in the order of the events'
+/// beats, a note placed at its note-on.
+#[must_use]
+pub fn from_midi_messages(messages: &[(f64, Vec<u8>)]) -> Vec<(f64, Map<String, Value>)> {
+    let end = messages.iter().map(|(at, _)| *at).fold(0.0, f64::max);
+    // (index in `out`, beat) of each open note, per (channel, key), oldest first.
+    let mut open: std::collections::HashMap<(u8, u8), std::collections::VecDeque<(usize, f64)>> =
+        std::collections::HashMap::new();
+    let mut out: Vec<(f64, Map<String, Value>)> = Vec::new();
+    // A note read off the wire is written for as long as it sounds: `dur` is
+    // what a page engraves it as, `sustain` what plays.
+    let close = |out: &mut Vec<(f64, Map<String, Value>)>, index: usize, from: f64, to: f64| {
+        let length: Value = (to - from).max(0.0).into();
+        out[index].1.insert("sustain".into(), length.clone());
+        out[index].1.insert("dur".into(), length);
+    };
+    for (at, bytes) in messages {
+        let status = bytes.first().copied().unwrap_or(0);
+        let (kind, channel) = (status & 0xF0, status & 0x0F);
+        let key = bytes.get(1).copied().unwrap_or(0) & 0x7F;
+        let velocity = bytes.get(2).copied().unwrap_or(0) & 0x7F;
+        let is_on = kind == 0x90 && bytes.len() == 3 && velocity > 0;
+        let is_off = (kind == 0x80 || kind == 0x90) && bytes.len() == 3 && !is_on;
+        if is_on {
+            let mut keys = Map::new();
+            keys.insert("midinote".into(), f64::from(key).into());
+            keys.insert("velocity".into(), f64::from(velocity).into());
+            if channel != 0 {
+                keys.insert("channel".into(), f64::from(channel).into());
+            }
+            out.push((*at, keys));
+            open.entry((channel, key))
+                .or_default()
+                .push_back((out.len() - 1, *at));
+        } else if is_off {
+            if let Some((index, from)) = open.get_mut(&(channel, key)).and_then(|q| q.pop_front()) {
+                close(&mut out, index, from, *at);
+            }
+        } else {
+            out.push((*at, from_midi(bytes)));
+        }
+    }
+    for queue in open.into_values() {
+        for (index, from) in queue {
+            close(&mut out, index, from, end);
+        }
+    }
+    // Stable: events at one beat keep the order their messages came in.
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,6 +625,39 @@ mod tests {
         assert_eq!(midi(&on_channel, 3).unwrap()[0].bytes[0], 0x99);
         assert!(midi(&keys(json!({"type": "osc", "addr": "/x"})), 0).is_err());
         assert!(midi(&keys(json!({"type": "rest"})), 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn midi_messages_pair_into_notes() {
+        let msgs = vec![
+            (0.0, vec![0x90, 60, 100]),
+            (0.5, vec![0x91, 64, 90]),
+            (1.0, vec![0x90, 60, 0]),
+            (1.0, vec![0xB0, 7, 99]),
+            (2.0, vec![0x80, 62, 0]),
+        ];
+        let events = from_midi_messages(&msgs);
+        assert_eq!(events.len(), 3, "a stray note-off is dropped");
+        assert_eq!(events[0].0, 0.0);
+        assert_eq!(events[0].1["midinote"], 60.0);
+        assert_eq!(events[0].1["sustain"], 1.0);
+        assert_eq!(events[1].1["channel"], 1.0);
+        assert_eq!(
+            events[1].1["sustain"], 1.5,
+            "open at the end: to the last message"
+        );
+        assert_eq!(events[2].1["midicmd"], "cc");
+        // And back: each note renders to the on and off it came from.
+        let note = &events[0].1;
+        let back = midi(note, 0).unwrap();
+        assert_eq!(back[0].bytes, vec![0x90, 60, 100]);
+        assert_eq!(
+            back[1],
+            MidiMessage {
+                at: 1.0,
+                bytes: vec![0x80, 60, 0]
+            }
+        );
     }
 
     #[test]

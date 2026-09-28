@@ -66,6 +66,21 @@ class EventPattern(Pattern):
     every element is one: it resolves its class when it is built.
     """
 
+    def render_events(self, until: "float | None" = None):
+        """**Render the pattern into the events it plays**: a
+        `clausters.seq.EventSequence` in the pattern's beats, each event as it
+        played -- its derived keys written in, at the beat it fell on. The
+        render goes one way (see `clausters.seq.Timeline.render_events`).
+
+        Args:
+            until: stop at this beat. Required for an endless pattern, which
+                is otherwise refused after
+                `clausters.render.MAX_BOUNCED_EVENTS` events.
+        """
+        from .sequence import render_pattern
+
+        return render_pattern(self, until)
+
     def play(self, clock=None, server=None, quant=None):
         """Play this event pattern on ``clock``, sending to ``server``.
 

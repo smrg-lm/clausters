@@ -29,7 +29,10 @@ use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEv
 /// v2 added the live virtual MIDI **input** port (`clausters_midi_input_*`) for
 /// the client's responder layer; the v1 surface (file writers + live output)
 /// is unchanged.
-pub const MIDI_ABI_VERSION: u32 = 2;
+///
+/// v3 added the tempo to a written file (`clausters_midi_write_smf_tempo`) and
+/// the reader (`clausters_midi_read_smf`); the v2 surface is unchanged.
+pub const MIDI_ABI_VERSION: u32 = 3;
 
 /// One timed MIDI event: an absolute `tick` (in the file's PPQ time base) and
 /// up to three raw channel-voice bytes (`status`, `data1`, `data2`). The byte
@@ -86,16 +89,52 @@ pub fn parse_note(bytes: &[u8]) -> Option<NoteEvent> {
     }
 }
 
+/// A tempo change in a file: from `tick` on, `micros` microseconds per quarter
+/// note (the Set Tempo meta event's own unit).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TempoMark {
+    pub tick: u32,
+    pub micros: u32,
+}
+
 /// Builds a type-0 Standard MIDI File from `events` at `ppq` ticks per quarter
 /// note. Events are sorted by tick (a stable sort keeps same-tick order, e.g. a
 /// note-off before a re-triggered note-on); malformed status bytes are skipped.
 pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
-    let mut events: Vec<TimedMessage> = events.to_vec();
-    events.sort_by_key(|e| e.tick);
+    write_smf_with_tempo(events, ppq, &[])
+}
 
-    let mut track: Track = Vec::with_capacity(events.len() + 1);
+/// [`write_smf`], with the file's tempo: a Set Tempo event at each mark, ahead
+/// of the events at the same tick. With no marks a reader assumes the format's
+/// 120 quarter notes a minute.
+pub fn write_smf_with_tempo(events: &[TimedMessage], ppq: u16, tempo: &[TempoMark]) -> Vec<u8> {
+    enum Item<'a> {
+        Tempo(u32),
+        Message(&'a TimedMessage),
+    }
+    let mut items: Vec<(u32, Item)> = tempo
+        .iter()
+        .map(|m| (m.tick, Item::Tempo(m.micros.clamp(1, 0x00FF_FFFF))))
+        .chain(events.iter().map(|e| (e.tick, Item::Message(e))))
+        .collect();
+    // Stable, so a tempo mark stays ahead of the events at its tick and the
+    // events keep their order among themselves.
+    items.sort_by_key(|(tick, _)| *tick);
+
+    let mut track: Track = Vec::with_capacity(items.len() + 1);
     let mut last_tick = 0u32;
-    for ev in &events {
+    for (tick, item) in &items {
+        let ev = match item {
+            Item::Tempo(micros) => {
+                track.push(TrackEvent {
+                    delta: tick.saturating_sub(last_tick).into(),
+                    kind: TrackEventKind::Meta(MetaMessage::Tempo((*micros).into())),
+                });
+                last_tick = *tick;
+                continue;
+            }
+            Item::Message(ev) => *ev,
+        };
         let Some(n) = data_len(ev.bytes[0]) else {
             continue;
         };
@@ -122,6 +161,67 @@ pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
     smf.write(&mut out)
         .expect("writing SMF to a Vec cannot fail");
     out
+}
+
+/// What a Standard MIDI File holds, as plain data: its resolution, every
+/// channel-voice message at its absolute tick (all tracks merged, in order),
+/// and its tempo changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadSmf {
+    pub ppq: u16,
+    pub events: Vec<(u32, Vec<u8>)>,
+    pub tempo: Vec<TempoMark>,
+}
+
+/// Reads a Standard MIDI File: the channel-voice messages of every track at
+/// their absolute ticks, merged in tick order (a track's own order kept among
+/// equal ticks), and the Set Tempo events. System, SysEx and the other meta
+/// events are left out.
+///
+/// # Errors
+/// A file that does not parse, or one timed in SMPTE frames rather than ticks
+/// per quarter note -- a beat has no meaning in it.
+pub fn read_smf(bytes: &[u8]) -> Result<ReadSmf, String> {
+    let smf = Smf::parse(bytes).map_err(|e| format!("not a MIDI file: {e}"))?;
+    let Timing::Metrical(ppq) = smf.header.timing else {
+        return Err("a MIDI file timed in SMPTE frames has no beats to read".into());
+    };
+    let mut events: Vec<(u32, usize, Vec<u8>)> = Vec::new();
+    let mut tempo = Vec::new();
+    let mut order = 0usize;
+    for track in &smf.tracks {
+        let mut tick = 0u32;
+        for event in track {
+            tick = tick.saturating_add(event.delta.as_int());
+            match event.kind {
+                TrackEventKind::Midi { channel, message } => {
+                    let mut out = Vec::with_capacity(3);
+                    if (LiveEvent::Midi { channel, message })
+                        .write(&mut out)
+                        .is_ok()
+                    {
+                        events.push((tick, order, out));
+                        order += 1;
+                    }
+                }
+                TrackEventKind::Meta(MetaMessage::Tempo(micros)) => tempo.push(TempoMark {
+                    tick,
+                    micros: micros.as_int(),
+                }),
+                _ => {}
+            }
+        }
+    }
+    events.sort_by_key(|(tick, order, _)| (*tick, *order));
+    tempo.sort_by_key(|m| m.tick);
+    Ok(ReadSmf {
+        ppq: ppq.as_int(),
+        events: events
+            .into_iter()
+            .map(|(tick, _, bytes)| (tick, bytes))
+            .collect(),
+        tempo,
+    })
 }
 
 // ---- MIDI 2.0 Clip File (SMF2CLIP) ----
@@ -292,6 +392,84 @@ pub unsafe extern "C" fn clausters_midi_write_clip(
         return std::ptr::null_mut();
     };
     leak_bytes(write_clip(&events, ppq), out_len)
+}
+
+/// [`clausters_midi_write_smf`] with the file's tempo: `tn` marks, each an
+/// absolute tick in `tempo_ticks` and microseconds per quarter note in
+/// `tempo_micros` (either null with `tn == 0`).
+///
+/// # Safety
+/// As [`clausters_midi_write_smf`], and `tempo_ticks`/`tempo_micros` readable
+/// for `tn` `u32`s each.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_midi_write_smf_tempo(
+    ticks: *const u32,
+    msgs: *const u8,
+    n: usize,
+    ppq: u16,
+    tempo_ticks: *const u32,
+    tempo_micros: *const u32,
+    tn: usize,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let events = (unsafe { collect_events(ticks, msgs, n) }).unwrap_or_default();
+    let tempo: Vec<TempoMark> = if tempo_ticks.is_null() || tempo_micros.is_null() || tn == 0 {
+        Vec::new()
+    } else {
+        // SAFETY: caller guarantees the ranges.
+        let (t, m) = unsafe {
+            (
+                std::slice::from_raw_parts(tempo_ticks, tn),
+                std::slice::from_raw_parts(tempo_micros, tn),
+            )
+        };
+        t.iter()
+            .zip(m)
+            .map(|(&tick, &micros)| TempoMark { tick, micros })
+            .collect()
+    };
+    leak_bytes(write_smf_with_tempo(&events, ppq, &tempo), out_len)
+}
+
+/// Reads a Standard MIDI File ([`read_smf`]) and answers it as JSON in a
+/// malloc'd buffer (its length in `out_len`, freed with
+/// [`clausters_midi_free`]): `{"ppq", "events": [[tick, [bytes]]], "tempo":
+/// [[tick, micros]]}`, or `{"error": ...}`.
+///
+/// # Safety
+/// `data` must be readable for `len` bytes and `out_len` a valid `*mut usize`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_midi_read_smf(
+    data: *const u8,
+    len: usize,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let bytes = if data.is_null() {
+        &[][..]
+    } else {
+        // SAFETY: caller guarantees the range.
+        unsafe { std::slice::from_raw_parts(data, len) }
+    };
+    leak_bytes(read_smf_json(bytes).into_bytes(), out_len)
+}
+
+/// [`read_smf`] as the JSON its doors answer.
+pub fn read_smf_json(bytes: &[u8]) -> String {
+    match read_smf(bytes) {
+        Ok(read) => serde_json::json!({
+            "ppq": read.ppq,
+            "events": read.events.iter().map(|(t, b)| serde_json::json!([t, b])).collect::<Vec<_>>(),
+            "tempo": read.tempo.iter().map(|m| [m.tick, m.micros]).collect::<Vec<_>>(),
+        }),
+        Err(error) => serde_json::json!({ "error": error }),
+    }
+    .to_string()
 }
 
 /// Frees a buffer returned by [`clausters_midi_write_smf`].
@@ -679,5 +857,44 @@ mod tests {
         let via_abi = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
         unsafe { clausters_midi_free(ptr, len) };
         assert_eq!(direct, via_abi);
+    }
+
+    /// A file written with a tempo reads back as it was written: the messages
+    /// at their ticks and the tempo marks, ahead of the notes at their tick.
+    #[test]
+    fn a_written_file_reads_back_with_its_tempo() {
+        let events = [
+            note_on(0, 1, 60, 100),
+            TimedMessage {
+                tick: 48,
+                bytes: [0xB1, 7, 99],
+            },
+            note_off(96, 1, 60),
+        ];
+        let tempo = [
+            TempoMark {
+                tick: 0,
+                micros: 500_000,
+            },
+            TempoMark {
+                tick: 96,
+                micros: 250_000,
+            },
+        ];
+        let read = read_smf(&write_smf_with_tempo(&events, 96, &tempo)).unwrap();
+        assert_eq!(read.ppq, 96);
+        assert_eq!(read.tempo, tempo);
+        assert_eq!(
+            read.events,
+            vec![
+                (0, vec![0x91, 60, 100]),
+                (48, vec![0xB1, 7, 99]),
+                (96, vec![0x81, 60, 0]),
+            ]
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&read_smf_json(&write_smf(&events, 96))).unwrap();
+        assert_eq!(json["events"][1], serde_json::json!([48, [0xB1, 7, 99]]));
+        assert!(read_smf(b"not a file").is_err());
     }
 }

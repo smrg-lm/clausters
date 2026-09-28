@@ -151,6 +151,16 @@ seq.add(3.0, {"midinote": 67})            # its new id
 
 An edit names its event **by id**, never by position: removing a note leaves every other note its own, and an id is never handed out twice. `apply` takes an edit in the sequence's vocabulary and answers the edit that puts it back, which is what an undo is. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
 
+**A timeline becomes a sequence by rendering it.** `timeline.render_events()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until=` bounds a timeline that does not end on its own. An event pattern renders the same way, `Pbind(...).render_events()`.
+
+```python
+seq = timeline.render_events(until=16)      # what the timeline played, as data
+```
+
+**It goes one way.** The sequence holds what the timeline produced, not the timeline: a generator, a nested timeline, a tempo curve inside a child are gone from it, and nothing rebuilds the timeline from the sequence. The two coexist — the timeline is the code, the sequence what it made — and the sequence is what a notes editor edits.
+
+A sequence also goes to a **MIDI file** and back: `seq.to_smf(ppq=480)` is the file's bytes, every note as its note-on and note-off and the tempo map as the file's tempo, and `EventSequence.from_smf(data)` reads one, pairing each note-on with the note-off that closes it. An `"osc"` event has no MIDI spelling and is left out of a file, and a tempo ramp is written as the step at its breakpoint, since a file's tempo only steps. From a **score**, `notation.to_sequence(sheet)` reads the same events `to_timeline` does, and `notation.sheet_from_timeline(seq)` engraves a sequence as it does a timeline.
+
 ## On a server's transport
 
 A timeline plays **either** on its own clock **or** on a server's transport, and the mode is a property of the timeline:

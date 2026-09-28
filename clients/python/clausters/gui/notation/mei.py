@@ -71,12 +71,13 @@ def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
 
 def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
                   key: str = "C", beat_unit: int = 4) -> str:
-    """Engrave a `clausters.seq.timeline.Timeline` into an MEI string.
+    """Engrave a `clausters.seq.timeline.Timeline` -- or a
+    `clausters.seq.EventSequence`, read the same way -- into an MEI string.
 
     The timeline's placements become the score's rhythm: events **sharing a
     beat** are written as one chord, a gap between a group's written end and the
     next onset becomes a rest, and a gap before the first onset is a leading
-    rest. Non-`Event` items (`OscItem`/`MidiItem`, which carry no pitch) are
+    rest. Events that carry no pitch (an ``"osc"`` or ``"midi"`` one) are
     skipped, as are rest events (they read as silence, i.e. a gap).
 
     Each group is written for its **shortest** ``dur`` (one layer, so it is
@@ -142,10 +143,33 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     -- none of them can ride an event, and they are the reason a score is a
     score rather than a list of notes.
     """
-    from ...seq.event import Event
     from ...seq.timeline import Timeline
 
     out = Timeline()
+    for beat, event in _played(score, instruments, interp, event_keys):
+        out.add(beat, event)
+    return out
+
+
+def to_sequence(score, *, instruments=None, interp: dict | None = None,
+                **event_keys):
+    """Read a sheet into a `clausters.seq.EventSequence`: the same events
+    `to_timeline` reads, as concrete data a notes editor edits -- each with an
+    id, in beats. Everything `to_timeline` says about what comes with a note,
+    and what does not survive the trip, holds here too; a sequence goes back to
+    a page through `sheet_from_timeline`, which reads one as it reads a
+    timeline."""
+    from ...seq.sequence import EventSequence
+
+    return EventSequence(_played(score, instruments, interp, event_keys))
+
+
+def _played(score, instruments, interp, event_keys) -> list:
+    """Each sounding note of the sheet as ``(onset, Event)``: the written value
+    as ``dur``, the heard one as ``sustain``, and the marks it was written with."""
+    from ...seq.event import Event
+
+    out = []
     for note in sheet.to_notes(score, interp):
         event = dict(event_keys)
         event.update(midinote=note["pitch"], dur=note["dur"],
@@ -158,7 +182,7 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
         instrument = _instrument(instruments, note["staff"])
         if instrument is not None:
             event["instrument"] = instrument
-        out.add(note["t"], Event(event))
+        out.append((note["t"], Event(event)))
     return out
 
 
@@ -246,8 +270,9 @@ def _voice_from_timeline(timeline, beat_unit: int) -> list:
     between them with rests."""
     groups: dict[float, list] = {}
     for beat, item in timeline:
-        # skip what has no pitch (raw OSC/MIDI items) or is silence (a rest)
-        if not hasattr(item, "midinote") or item.get("type") == "rest":
+        # only a note: a raw OSC or MIDI message has no pitch, and a rest is
+        # silence
+        if not hasattr(item, "midinote") or item.get("type", "note") != "note":
             continue
         groups.setdefault(float(beat), []).append(item)
 
