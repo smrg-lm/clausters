@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use clausters_core::tempomap::TempoMap;
 
 fn sequence() -> EventSequence {
     EventSequence::new(vec![
@@ -35,7 +36,7 @@ fn applied(sequence: &EventSequence, intake: &Intake) -> EventSequence {
 
 #[test]
 fn a_roll_draws_each_note_with_its_id_where_it_sounds() {
-    let p = project(&sequence(), &YDomain::midi(), 100.0);
+    let p = project(&sequence(), &YDomain::midi(), &Axis::constant(100.0));
     assert_eq!(p.note_ids, vec![1, 2, 4]);
     assert_eq!(&p.notes[0..5], &[0.0, 100.0, 60.0, 13.0, 0.0]);
     assert!(
@@ -49,14 +50,20 @@ fn a_roll_draws_each_note_with_its_id_where_it_sounds() {
 #[test]
 fn an_untouched_report_changes_nothing() {
     let seq = sequence();
-    let p = project(&seq, &YDomain::midi(), 100.0);
+    let p = project(&seq, &YDomain::midi(), &Axis::constant(100.0));
     let values: Vec<Value> = p
         .note_ids
         .iter()
         .zip(p.notes.chunks(5))
         .flat_map(|(id, n)| std::iter::once(json!(id)).chain(n.iter().map(|v| json!(v))))
         .collect();
-    let intake = intake(&seq, "notes", &values, 100.0, &YDomain::midi());
+    let intake = intake(
+        &seq,
+        "notes",
+        &values,
+        &Axis::constant(100.0),
+        &YDomain::midi(),
+    );
     let mut next = seq.clone();
     let intent: EventsIntent = serde_json::from_value(intake.payloads[0].clone()).unwrap();
     assert!(
@@ -76,7 +83,13 @@ fn removing_a_note_leaves_its_neighbours_theirs() {
     ]);
     let next = applied(
         &seq,
-        &intake(&seq, "notes", &values, 100.0, &YDomain::midi()),
+        &intake(
+            &seq,
+            "notes",
+            &values,
+            &Axis::constant(100.0),
+            &YDomain::midi(),
+        ),
     );
     assert!(next.get(1).is_none());
     assert_eq!(next.get(2).unwrap().data.0["amp"], json!(0.4));
@@ -93,7 +106,13 @@ fn a_moved_note_writes_its_key_with_coherence() {
     ]);
     let next = applied(
         &seq,
-        &intake(&seq, "notes", &values, 100.0, &YDomain::midi()),
+        &intake(
+            &seq,
+            "notes",
+            &values,
+            &Axis::constant(100.0),
+            &YDomain::midi(),
+        ),
     );
     let moved = next.get(2).unwrap();
     assert_eq!(moved.at.0, 1.5);
@@ -118,7 +137,13 @@ fn a_new_note_and_a_new_velocity() {
     ]);
     let next = applied(
         &seq,
-        &intake(&seq, "notes", &values, 100.0, &YDomain::midi()),
+        &intake(
+            &seq,
+            "notes",
+            &values,
+            &Axis::constant(100.0),
+            &YDomain::midi(),
+        ),
     );
     let first = next.get(1).unwrap();
     assert_eq!(first.data.0["velocity"], json!(100.0));
@@ -136,11 +161,31 @@ fn a_new_note_and_a_new_velocity() {
 fn a_roll_in_hz_reads_and_writes_the_frequency() {
     let seq = sequence();
     let domain = YDomain::hz(20.0, 20000.0);
-    let p = project(&seq, &domain, 1.0);
+    let p = project(&seq, &domain, &Axis::constant(1.0));
     assert!((p.notes[2] - 261.625_565_300_598_6).abs() < 1e-6);
     let values = report(&[(2, 1.0, 0.5, 880.0, 51.0, 0.0)]);
-    let next = applied(&seq, &intake(&seq, "notes", &values, 1.0, &domain));
+    let next = applied(
+        &seq,
+        &intake(&seq, "notes", &values, &Axis::constant(1.0), &domain),
+    );
     assert!((next.get(2).unwrap().data.0["midinote"].as_f64().unwrap() - 81.0).abs() < 1e-9);
+}
+
+/// A tempo that changes along the sequence moves where each beat is drawn, and
+/// a drag is read back through the same map.
+#[test]
+fn the_axis_is_the_tempo_map() {
+    let mut seq = sequence();
+    seq.tempo_map = Some(TempoMap::new(2.0));
+    let axis = Axis::of(&seq, 100.0);
+    let p = project(&seq, &YDomain::midi(), &axis);
+    assert_eq!(&p.notes[0..2], &[0.0, 50.0], "a beat is half a second");
+    let values = report(&[(1, 100.0, 50.0, 60.0, 13.0, 0.0)]);
+    let next = applied(
+        &seq,
+        &intake(&seq, "notes", &values, &axis, &YDomain::midi()),
+    );
+    assert_eq!(next.get(1).unwrap().at.0, 2.0);
 }
 
 #[test]
@@ -152,7 +197,7 @@ fn a_marker_moves_by_its_label_and_a_new_one_is_refused() {
             &seq,
             "osc",
             &[json!(250.0), json!("/cue")],
-            100.0,
+            &Axis::constant(100.0),
             &YDomain::midi(),
         ),
     );
@@ -161,7 +206,7 @@ fn a_marker_moves_by_its_label_and_a_new_one_is_refused() {
         &seq,
         "osc",
         &[json!(250.0), json!("/cue"), json!(10.0), json!("")],
-        100.0,
+        &Axis::constant(100.0),
         &YDomain::midi(),
     );
     assert!(refused.refusal.is_some());

@@ -21,8 +21,9 @@
 //! # The wire
 //!
 //! - `notes`: flat quintuples `start dur y velocity channel`, in the view's
-//!   units (`units_per_beat` of them to a beat), as the roll has always drawn
-//!   them -- `y` in the domain's key.
+//!   units -- an [`Axis`]: the sequence's beats through its tempo map to
+//!   seconds, and seconds to the samples the roll counts -- as the roll has
+//!   always drawn them, `y` in the domain's key.
 //! - `note_ids`: the id of each, in the same order.
 //! - A `notes` report comes back as sextuples, `id start dur y velocity channel`,
 //!   the whole lane as the hand left it.
@@ -34,6 +35,7 @@ use serde_json::{Map, Value, json};
 
 use clausters_core::event::amp_of_velocity;
 use clausters_core::event::render::{self, Type};
+use clausters_core::tempomap::TempoMap;
 use clausters_document::events::{Event, EventSequence, EventsIntent};
 use clausters_document::{Beat, Opaque};
 
@@ -137,6 +139,50 @@ impl YDomain {
     }
 }
 
+/// **Where a beat is on the roll's axis**: through the tempo map to seconds,
+/// and seconds times the rate the roll counts in. A tempo that changes along
+/// the sequence is what makes this a map and not a factor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Axis {
+    /// The beat-to-second map.
+    pub map: TempoMap,
+    /// View units a second: the sample rate the roll's axis reads.
+    pub rate: f64,
+}
+
+impl Axis {
+    /// The axis a sequence is drawn on: its own tempo map (one beat a second
+    /// when it states none) at `rate` units a second.
+    pub fn of(sequence: &EventSequence, rate: f64) -> Self {
+        Self {
+            map: sequence
+                .tempo_map
+                .clone()
+                .unwrap_or_else(|| TempoMap::new(1.0)),
+            rate: if rate > 0.0 { rate } else { 1.0 },
+        }
+    }
+
+    /// A constant axis of `units` a beat -- one beat a second, `units` a
+    /// second.
+    pub fn constant(units: f64) -> Self {
+        Self {
+            map: TempoMap::new(1.0),
+            rate: if units > 0.0 { units } else { 1.0 },
+        }
+    }
+
+    /// A beat, on the axis.
+    pub fn units(&self, beat: f64) -> f64 {
+        self.map.secs_at(beat) * self.rate
+    }
+
+    /// A place on the axis, as a beat.
+    pub fn beat(&self, units: f64) -> f64 {
+        self.map.beats_at(units / self.rate)
+    }
+}
+
 /// What a roll over a sequence draws.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Projection {
@@ -150,17 +196,12 @@ pub struct Projection {
 
 /// **What a roll draws of a sequence**: every event the domain places, as a
 /// note, and every raw message as a marker.
-pub fn project(sequence: &EventSequence, domain: &YDomain, units_per_beat: f64) -> Projection {
-    let units = if units_per_beat == 0.0 {
-        1.0
-    } else {
-        units_per_beat
-    };
+pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Projection {
     let mut out = Projection::default();
     for event in &sequence.events {
         let keys = event.keys();
         if let Some(label) = label_of(&event.data.0) {
-            out.osc.push(json!(event.at.0 * units));
+            out.osc.push(json!(axis.units(event.at.0)));
             out.osc.push(json!(label));
             continue;
         }
@@ -168,9 +209,11 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, units_per_beat: f64) 
             continue;
         };
         let level = render::level_of(&keys);
+        let start = axis.units(event.at.0);
+        let end = axis.units(event.at.0 + render::sustain_of(&keys).max(0.0));
         out.notes.extend([
-            event.at.0 * units,
-            render::sustain_of(&keys).max(0.0) * units,
+            start,
+            end - start,
             y,
             level.velocity(),
             keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0),
@@ -190,23 +233,18 @@ fn same(a: f64, b: f64) -> bool {
 /// `setevents` naming every event by id, under the gesture's label.
 ///
 /// `tag` is the lane the hand touched (`notes` or `osc`), `values` its report,
-/// `units_per_beat` what a beat is worth on the view's axis. The lane the hand
-/// did not touch is carried through untouched.
+/// `axis` where the roll drew the beats. The lane the hand did not touch is
+/// carried through untouched.
 pub fn intake(
     sequence: &EventSequence,
     tag: &str,
     values: &[Value],
-    units_per_beat: f64,
+    axis: &Axis,
     domain: &YDomain,
 ) -> Intake {
-    let units = if units_per_beat == 0.0 {
-        1.0
-    } else {
-        units_per_beat
-    };
     let events = match tag {
-        "notes" => notes(sequence, values, units, domain),
-        "osc" => match markers(sequence, values, units) {
+        "notes" => notes(sequence, values, axis, domain),
+        "osc" => match markers(sequence, values, axis) {
             Some(events) => events,
             None => {
                 return Intake::refused(
@@ -230,7 +268,7 @@ pub fn intake(
 /// event its id names -- only the keys the roll changed, each with its family's
 /// coherence -- a note with no id as a new event, a note that is no longer
 /// reported removed, and everything that is not a note of this domain kept.
-fn notes(sequence: &EventSequence, values: &[Value], units: f64, domain: &YDomain) -> Vec<Event> {
+fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDomain) -> Vec<Event> {
     let drawn =
         |event: &Event| domain.value(&event.keys()).is_some() && label_of(&event.data.0).is_none();
     let mut out: Vec<Event> = sequence
@@ -241,8 +279,9 @@ fn notes(sequence: &EventSequence, values: &[Value], units: f64, domain: &YDomai
         .collect();
     for sextuple in groups(values, SEXTUPLE) {
         let id = number(&sextuple[0]).max(0.0) as u64;
-        let at = number(&sextuple[1]) / units;
-        let length = number(&sextuple[2]) / units;
+        let start = number(&sextuple[1]);
+        let at = axis.beat(start);
+        let length = axis.beat(start + number(&sextuple[2])) - at;
         let y = number(&sextuple[3]);
         let velocity = number(&sextuple[4]).round();
         let channel = number(&sextuple[5]).round();
@@ -301,7 +340,7 @@ fn notes(sequence: &EventSequence, values: &[Value], units: f64, domain: &YDomai
 /// as the lane now holds them -- or `None` when the gesture added one that has
 /// no message to send. A marker is matched by its label, then by order among
 /// the ones that share it.
-fn markers(sequence: &EventSequence, values: &[Value], units: f64) -> Option<Vec<Event>> {
+fn markers(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Option<Vec<Event>> {
     let held: Vec<&Event> = sequence
         .events
         .iter()
@@ -322,7 +361,7 @@ fn markers(sequence: &EventSequence, values: &[Value], units: f64) -> Option<Vec
             .position(|(i, e)| !taken[i] && label_of(&e.data.0).as_deref() == Some(&label))?;
         taken[i] = true;
         out.push(Event {
-            at: Beat(time / units),
+            at: Beat(axis.beat(time)),
             ..held[i].clone()
         });
     }
