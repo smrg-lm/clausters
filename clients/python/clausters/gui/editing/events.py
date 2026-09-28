@@ -14,10 +14,12 @@ answers with. What is here is what a language owns -- the socket, and handing
 the crate the window it is open in.
 
 **It sounds through a playback of its own** (the crate's ``NotesPlayback``): the
-sequence planned onto the notes editor's own transport, so playing it never
-moves a multitrack, and planned again after every edit while it sounds -- a
-note moved ahead of the line is heard where it lands, and what is sounding
-keeps its release. The space bar over the window plays and pauses.
+sequence is the data of an event lane on the notes editor's own transport, so
+playing it never moves a multitrack, and the server plays it by the
+transport's position -- a pause, a stop and a locate are the transport's. An
+edit sends the lane its new data, so a note moved ahead of the line is heard
+where it lands, and what is sounding keeps its release. The space bar over the
+window plays and pauses.
 """
 
 import weakref
@@ -79,7 +81,7 @@ class _NotesPlayback:
         # client hears.
         server._ensure_recycler()
         self._rate = None
-        #: The sequence the plan on the transport is of, if any.
+        #: The sequence the lane holds, if any: the one played last.
         self.planned = None
         #: The transport it plays on -- the crate's word for it.
         self.transport_id = int(self._native.call(
@@ -98,9 +100,7 @@ class _NotesPlayback:
     def call(self, verb: str, sequence, **args) -> dict:
         """One verb over ``sequence``, its steps carried out."""
         answer = self._native.call(verb, sequence._seq, self.server.ids,
-                                   rate=self.rate,
-                                   latency=float(getattr(self.server, "latency", 0.1)),
-                                   **args)
+                                   rate=self.rate, **args)
         steps = answer.get("steps")
         if steps:
             run_steps(self.server, self._runner, steps)
@@ -185,13 +185,12 @@ class NotesEditor(Editor):
             self._elsewhere = played
             return self
         playback = self._playback
-        clock = int(playback.state()["transport_sample"])
-        playback.call("play", self.structure, **{"from": start, "clock": clock})
+        playback.call("play", self.structure, **{"from": start})
         playback.planned = self.structure
         return self
 
     def pause(self) -> "NotesEditor":
-        """Pause where it stands: a `resume` carries the notes and the plan on."""
+        """Pause where it stands: a `resume` carries the notes on."""
         if self._elsewhere is not None:
             self._elsewhere.pause()
             return self
@@ -214,7 +213,6 @@ class NotesEditor(Editor):
             return self
         playback = self._playback
         playback.call("stop", self.structure, back=float(self.cursor or 0.0))
-        playback.planned = None
         return self
 
     @property
@@ -228,23 +226,20 @@ class NotesEditor(Editor):
         return playing
 
     def reflect_step(self) -> None:
-        """A history step landed: the window is corrected, and a sequence that
-        is sounding is planned again, so the undo is heard."""
+        """A history step landed: the window is corrected, and the lane takes
+        the sequence again, so the undo is heard."""
         super().reflect_step()
-        self._replan()
+        self._update()
 
-    def _replan(self) -> None:
-        """The sequence changed while its plan is on the transport: write it
-        again from where the transport stands, so the edit is heard now."""
+    def _update(self) -> None:
+        """The sequence changed: when it is what the lane holds, the lane takes
+        it again, and the server plays it on from where the position is."""
         if self._server is None:
             return
         playback = self._playback
         if playback.planned is not self.structure:
             return
-        state = playback.state()
-        playback.call("replan", self.structure,
-                      position=int(state["position_sample"]),
-                      clock=int(state["transport_sample"]))
+        playback.call("update", self.structure)
 
     # ---- the crate's turns ----
 
@@ -277,7 +272,7 @@ class NotesEditor(Editor):
         if changed:
             self.dirty = True
             self._editing.changed()
-            self._replan()
+            self._update()
         if outcome.get("play") is not None:
             # The space bar: a sounding sequence pauses, a silent one plays.
             if self.playing:

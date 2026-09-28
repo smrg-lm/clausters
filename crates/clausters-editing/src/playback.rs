@@ -32,6 +32,7 @@ use serde_json::{Value, json};
 
 use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_json};
 use crate::instance::Instance;
+use crate::notes_playback::Placed;
 
 /// **One multitrack, as it is playing.**
 #[derive(Debug, Clone)]
@@ -54,6 +55,9 @@ pub struct MultitrackPlayback {
     end_sent: Option<(i64, i64)>,
     /// The transport's ramp last sent, in samples.
     fade_sent: Option<i64>,
+    /// **The event lane the boxes over sequences play from**, once made: the
+    /// tracks' group, whose id it takes, so its notes freeze with the tracks.
+    lane: Option<i32>,
 }
 
 impl MultitrackPlayback {
@@ -70,7 +74,59 @@ impl MultitrackPlayback {
             mark: 0.0,
             end_sent: None,
             fade_sent: None,
+            lane: None,
         }
+    }
+
+    /// **What the boxes over sequences play**, as the event lane's data on the
+    /// multitrack's transport: `placed` is `crate::multitrack::placed_notes`,
+    /// in seconds of the multitrack, and the server plays it by the position --
+    /// a locate, the loop and a stop are the transport's. The lane is made the
+    /// first time there is something to play, in the tracks' group, and sent
+    /// its data again on every call; a multitrack that never had notes makes
+    /// nothing. Its notes sound through their own `out`, outside the tracks'
+    /// strips, and a track's mute and solo decide what is placed at all.
+    pub fn notes(&mut self, placed: &[Placed]) -> Vec<Step> {
+        let Some(group) = self.applier.node(crate::instance::TRACKS) else {
+            return Vec::new();
+        };
+        if placed.is_empty() && self.lane.is_none() {
+            return Vec::new();
+        }
+        let mut steps = Vec::new();
+        if self.lane != Some(group) {
+            // A tracks' group made again is a new lane.
+            steps.extend(self.free_lane());
+            steps.extend(transport_command(
+                "/lane_new",
+                vec![OscType::Int(group), OscType::Int(group)],
+            ));
+            self.lane = Some(group);
+        }
+        let data = crate::notes_playback::data(placed, self.rate).to_string();
+        steps.push(send(
+            "/lane_set",
+            vec![OscType::Int(group), OscType::String(data)],
+        ));
+        steps.push(Step::AwaitDone {
+            command: "/lane_set".into(),
+            index: None,
+        });
+        steps
+    }
+
+    /// Frees the lane, when there is one: its notes are released.
+    fn free_lane(&mut self) -> Vec<Step> {
+        let Some(lane) = self.lane.take() else {
+            return Vec::new();
+        };
+        vec![
+            send("/lane_free", vec![OscType::Int(lane)]),
+            Step::AwaitDone {
+                command: "/lane_free".into(),
+                index: None,
+            },
+        ]
     }
 
     /// **Makes what sounds be what the multitrack says**: the plan at `rate`, the
@@ -215,8 +271,10 @@ impl MultitrackPlayback {
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         self.rolling = false;
         self.fade_sent = None;
+        let mut steps = self.free_lane();
         let ops = self.instance.teardown();
-        self.applier.apply(ops, ids)
+        steps.extend(self.applier.apply(ops, ids)?);
+        Ok(steps)
     }
 
     /// Says whether the transport is rolling, when the caller learned it from
@@ -303,6 +361,16 @@ pub fn sync_json(
     };
     let table = crate::instance::sources_table(sources);
     answer_json(playback.sync(&multitrack, rate, &table, gain, ids))
+}
+
+/// [`MultitrackPlayback::notes`] over JSON: the placed notes as
+/// `crate::multitrack::placed_notes` answers them, `[{"start", "end",
+/// "keys"}]`.
+pub fn notes_json(playback: &mut MultitrackPlayback, placed: &str) -> String {
+    match serde_json::from_str::<Vec<Placed>>(placed) {
+        Ok(placed) => answer_json(Ok(playback.notes(&placed))),
+        Err(e) => json!({ "error": format!("not placed notes: {e}") }).to_string(),
+    }
 }
 
 /// [`MultitrackPlayback::meters`] as JSON: `[{"track", "bus", "channels"}]`.
@@ -487,6 +555,42 @@ mod tests {
         assert!(!playback.rolling());
         playback.set_rolling(true);
         assert!(playback.cue(1.0).is_empty(), "another client rolled it");
+    }
+
+    /// **The boxes over sequences play from one lane in the tracks' group**,
+    /// made the first time there are notes and sent its data after that; a
+    /// close frees it.
+    #[test]
+    fn the_notes_are_a_lane_in_the_tracks_group() {
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        let mut ids = spaces();
+        playback
+            .sync(&multitrack(), 48_000.0, &HashMap::new(), 1.0, &mut ids)
+            .unwrap();
+        assert!(playback.notes(&[]).is_empty(), "no notes, no lane");
+        let note = Placed {
+            start: 1.0,
+            end: 1.5,
+            keys: serde_json::from_value(json!({"midinote": 60})).unwrap(),
+        };
+        let steps = playback.notes(std::slice::from_ref(&note));
+        assert_eq!(addrs(&steps), ["/lane_new", "/lane_set"]);
+        let group = playback.applier.node(crate::instance::TRACKS).unwrap();
+        let Step::Send(made) = &steps[0] else {
+            panic!("a send");
+        };
+        assert_eq!(
+            made.args,
+            vec![
+                OscType::Int(MULTITRACK_TRANSPORT),
+                OscType::Int(group),
+                OscType::Int(group)
+            ]
+        );
+        let again = playback.notes(&[note]);
+        assert_eq!(addrs(&again), ["/lane_set"], "made once");
+        let closed = addrs(&playback.close(&mut ids).unwrap());
+        assert_eq!(closed[0], "/lane_free");
     }
 
     /// The JSON doors answer steps with 64-bit samples, and an error for what

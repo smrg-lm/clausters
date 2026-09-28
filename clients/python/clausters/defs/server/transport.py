@@ -180,6 +180,49 @@ class ServerTransport:
             raise CommandError(f"/transport_follow failed: {args}")
         return self
 
+    def lane_new(self, lane: int, target, timeout: "float | None" = None):
+        """Make **event lane** ``lane`` on this transport (``/lane_new``): notes
+        and messages the transport plays by its position, as a reader plays a
+        take -- a locate moves them, a loop plays them again on every pass, a
+        stop holds them, with nothing sent per pass. ``lane`` is an id the
+        caller picks, like a buffer's; its notes are made at the tail of
+        ``target`` (a `clausters.defs.node.Group` or its raw id), which should
+        be the group this transport governs, so a pause freezes them. An
+        existing lane of that id is freed first."""
+        addr, args = self.request("/lane_new", self.transport_id, int(lane),
+                                  _target_id(target),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/lane_new failed: {args}")
+        return self
+
+    def lane_set(self, lane: int, data: dict, timeout: "float | None" = None):
+        """Replace event lane ``lane``'s data whole (``/lane_set``):
+        ``{"notes": [[start, end, def, {control: value}, "gate" | "free"],
+        ...], "messages": [[position, address, *args], ...]}``, every position
+        a sample of the transport's position. A note is released at ``end`` by
+        ``gate 0`` or by a free; a message is a command the server takes in a
+        timed bundle, run as written. What sounds
+        keeps its release, and the new data is heard from where the position
+        is. The notes editor's playback writes it from a
+        `clausters.seq.EventSequence`."""
+        import json
+
+        addr, args = self.request("/lane_set", int(lane), json.dumps(data),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/lane_set failed: {args}")
+        return self
+
+    def lane_free(self, lane: int, timeout: "float | None" = None):
+        """Free event lane ``lane`` (``/lane_free``): what it queued is dropped
+        and the notes it is sounding are released."""
+        addr, args = self.request("/lane_free", int(lane),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/lane_free failed: {args}")
+        return self
+
     def sched_at_transport(self, target: int, *messages):
         """Schedule ``packet`` at an absolute sample on the **transport** axis
         (``/sched_atTransport``), the counterpart of ``/sched_at``'s device axis.

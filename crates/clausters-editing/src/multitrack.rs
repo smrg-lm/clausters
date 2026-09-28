@@ -613,6 +613,53 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out
 }
 
+/// **What the boxes over a sequence play**, placed in seconds of the
+/// multitrack: every event a box's window reads, at the box's place plus its
+/// distance from the window's start (a second of the sequence, through its
+/// own tempo map, read at the box's playrate). A note that runs past the box
+/// is released where the box ends, and a box that is muted, or on a track the
+/// mixer's rule silences, plays nothing.
+pub fn placed_notes(
+    multitrack: &Multitrack,
+    sources: &dyn Buffers,
+) -> Vec<crate::notes_playback::Placed> {
+    let mut out = Vec::new();
+    for box_ in picture::boxes(multitrack) {
+        let silent = box_.muted
+            || multitrack
+                .tracks
+                .iter()
+                .find(|t| t.id == box_.row)
+                .is_none_or(|t| nodes::track_mute(multitrack, t) > 0.0);
+        if silent {
+            continue;
+        }
+        let Some(sequence) = box_.source.and_then(|s| sources.sequence(s)) else {
+            continue;
+        };
+        let rate = if box_.playrate > 0.0 {
+            box_.playrate
+        } else {
+            1.0
+        };
+        let (position, length) = (box_.position.0, box_.length.0);
+        for event in crate::notes_playback::placed(&sequence) {
+            let from = (event.start - box_.start) / rate;
+            if from < 0.0 || from >= length {
+                continue;
+            }
+            let to = ((event.end - box_.start) / rate).min(length);
+            out.push(crate::notes_playback::Placed {
+                start: position + from,
+                end: position + to.max(from),
+                keys: event.keys,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.start.total_cmp(&b.start));
+    out
+}
+
 /// **The notes each box over a sequence draws**, as the flat `box start dur
 /// pitch velocity channel` sextuples the widget takes: every note of the
 /// sequence the box's window reads, placed in the box's own frames -- the
@@ -626,24 +673,22 @@ pub fn notes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         let Some(sequence) = box_.source.and_then(|s| look.sources.sequence(s)) else {
             continue;
         };
-        let axis = crate::notes::Axis::of(&sequence, 1.0);
         let rate = if box_.playrate > 0.0 {
             box_.playrate
         } else {
             1.0
         };
         let name = box_.region.0.to_string();
-        for event in &sequence.events {
-            let keys = event.keys();
+        for event in crate::notes_playback::placed(&sequence) {
+            let keys = event.keys;
             let Some(pitch) = domain.value(&keys) else {
                 continue;
             };
-            let from = (axis.units(event.at.0) - box_.start) / rate;
+            let from = (event.start - box_.start) / rate;
             if from < 0.0 || from >= box_.length.0 {
                 continue;
             }
-            let sustain = clausters_core::event::render::sustain_of(&keys).max(0.0);
-            let to = (axis.units(event.at.0 + sustain) - box_.start) / rate;
+            let to = (event.end - box_.start) / rate;
             let level = clausters_core::event::render::level_of(&keys);
             out.extend([
                 json!(name),
@@ -1139,6 +1184,64 @@ mod tests {
             sources: &empty,
         };
         assert!(notes(&multitrack, &look).is_empty());
+    }
+
+    /// **What a box over a sequence plays is placed on the timeline**: at the
+    /// box's place plus the note's distance from the window's start, released
+    /// where the box ends when the note runs past it -- and nothing at all from
+    /// a muted track.
+    #[test]
+    fn a_box_over_a_sequence_places_what_it_plays() {
+        struct One(SourceId, clausters_document::EventSequence);
+        impl Buffers for One {
+            fn bufnum(&self, _source: SourceId) -> i64 {
+                -1
+            }
+            fn taken(&self) -> Vec<SourceId> {
+                vec![self.0]
+            }
+            fn source(&self, _bufnum: i64) -> Option<SourceId> {
+                None
+            }
+            fn sequence(&self, source: SourceId) -> Option<clausters_document::EventSequence> {
+                (source == self.0).then(|| self.1.clone())
+            }
+        }
+        let source = SourceId(9);
+        let note = |at: f64| {
+            clausters_document::events::Event::new(at, json!({"midinote": 60, "sustain": 1.0}))
+        };
+        // Before the window, inside it, and running past the box's end.
+        let sequence =
+            clausters_document::EventSequence::new(vec![note(0.0), note(2.0), note(4.5)]);
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        region.content = Content::Window {
+            window: SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source,
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 1.0,
+                duration: 8.0,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let held = One(source, sequence);
+        let placed = placed_notes(&multitrack, &held);
+        // The box sits at 4 s and lasts 4 s; its window starts 1 s in.
+        let spans: Vec<(f64, f64)> = placed.iter().map(|p| (p.start, p.end)).collect();
+        assert_eq!(spans, vec![(5.0, 6.0), (7.5, 8.0)]);
+
+        multitrack.tracks[0].muted = true;
+        assert!(
+            placed_notes(&multitrack, &held).is_empty(),
+            "a muted track places nothing"
+        );
     }
 
     /// **A box over a source written at another rate says so, and its window

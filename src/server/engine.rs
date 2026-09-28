@@ -51,6 +51,10 @@ const REPLY_FIFO_CAPACITY: usize = 2048;
 /// Pre-allocated capacity of the scheduled-bundle queue; bundles beyond it
 /// are rejected (shipped back through the garbage FIFO).
 const SCHED_CAPACITY: usize = 1024;
+/// Pre-allocated capacity of each transport's **lane queue**: the event-lane
+/// entries fed ahead of its position. An entry beyond it is handed back, and
+/// the feed offers it again on a later turn.
+pub const LANE_CAPACITY: usize = 1024;
 
 /// Commands are built **completely** on the network thread (including boxed
 /// synths and pre-reserved group child lists); applying them on the audio
@@ -212,6 +216,28 @@ pub enum Cmd {
     ClearSched {
         only: Option<usize>,
     },
+    /// **One entry of an event lane**, fed ahead of the transport's position:
+    /// `start` runs when the position of transport `transport` reaches
+    /// `position`, and `release`, when it holds anything, goes onto that
+    /// transport's clock queue `length` samples later -- a note's end. Built
+    /// on the network thread like any bundle; kept sorted by position.
+    LaneEntry {
+        transport: usize,
+        position: u64,
+        tag: LaneTag,
+        start: Vec<Cmd>,
+        release: Vec<Cmd>,
+        length: u64,
+    },
+    /// Drops every entry lane `lane` has on transport `transport`'s lane
+    /// queue, handing each back. With `release`, the releases of the notes it
+    /// started run now; without, they stay where they fall -- what an edit of
+    /// the lane's data wants.
+    ClearLane {
+        transport: usize,
+        lane: i32,
+        release: bool,
+    },
     /// `/node_ugenCmd`: a typed command addressed to one UGen instance inside a synth.
     /// The payload is inline (no heap), so applying it allocates nothing.
     UGenCommand {
@@ -273,6 +299,17 @@ pub enum Garbage {
     /// one: a clear drops what a client asked to drop, and reporting it as a
     /// rejection made a re-cue look like an overflow.
     RejectedBundle(Vec<Cmd>),
+    /// **A lane entry leaving the engine**: `fired` when the position reached
+    /// it (its `start` is then the drained shell and its release is on the
+    /// clock queue), or handed back unrun -- cleared, or the lane queue full
+    /// -- with every command still in it, so the network side forgets the
+    /// nodes it would have made.
+    LaneSpent {
+        tag: LaneTag,
+        start: Vec<Cmd>,
+        release: Vec<Cmd>,
+        fired: bool,
+    },
     /// A transport reached its end mark and stopped there, so whoever
     /// mirrors the rolling state learns it without polling. Not garbage, and
     /// carried here for the reason a rejection is: it is the one FIFO the
@@ -302,6 +339,29 @@ struct ScheduledBundle {
 struct ScheduledBundleT {
     time: TransportSample,
     cmds: Vec<Cmd>,
+    /// The event lane whose note this releases, when it is one: a locate
+    /// runs it at once, and a client's `/sched_clear` leaves it standing.
+    lane: Option<i32>,
+}
+
+/// **Which event and which data** a lane entry comes from: the lane, the
+/// generation of its data (bumped by every `/lane_set`) and the event's index
+/// in it. The network thread keeps what it has queued by this, and learns an
+/// entry was spent by it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LaneTag {
+    pub lane: i32,
+    pub generation: u32,
+    pub event: u32,
+}
+
+/// An event-lane entry on a transport's lane queue ([`Cmd::LaneEntry`]).
+struct LaneEntryT {
+    position: u64,
+    tag: LaneTag,
+    start: Vec<Cmd>,
+    release: Vec<Cmd>,
+    length: u64,
 }
 
 /// One transport, as the audio thread holds it.
@@ -338,6 +398,12 @@ struct TransportState {
     /// nothing here can fall due, and nothing here is rewritten. Pre-allocated
     /// like the device queue, to the same capacity.
     sched: Vec<ScheduledBundleT>,
+    /// **Its event lanes' entries**, sorted by the position they fire on
+    /// (stable among equals), fed ahead of the position by the network thread.
+    /// Keyed by position and not by clock, so a locate or a wrap needs nothing
+    /// re-stamped: an entry fires when the position reaches it, and one the
+    /// position jumped over waits for it to come back.
+    lanes: Vec<LaneEntryT>,
     /// Where inside the current block its frozen run began, if it is stopped
     /// -- scratch for [`Engine::process_block`], `None` outside it.
     frozen_from: Option<usize>,
@@ -426,6 +492,8 @@ enum Due {
     Transport(usize),
     /// A bundle of the device queue.
     Device,
+    /// An entry of transport `k`'s lane queue: its position reached.
+    Lane(usize),
 }
 
 /// What a transport's next edge is, when it is due.
@@ -453,6 +521,7 @@ impl TransportState {
             looping: None,
             end: None,
             sched: Vec::with_capacity(SCHED_CAPACITY),
+            lanes: Vec::with_capacity(LANE_CAPACITY),
             frozen_from: None,
             fade_len: 0,
             fade: Ramp::level(0.0),
@@ -602,7 +671,9 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::SetBuffer { .. }
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
-        | Cmd::ClearSched { .. } => [None, None],
+        | Cmd::ClearSched { .. }
+        | Cmd::LaneEntry { .. }
+        | Cmd::ClearLane { .. } => [None, None],
         // A nested bundle classifies itself when it is applied, against the
         // tree and the frozen total of that moment; deciding for it here would
         // only duplicate that, at a time when it is not yet due.
@@ -790,6 +861,10 @@ pub struct Engine {
     /// The transports, sized at boot (`--transports`) and never grown.
     /// Transport 0 is the one a server has always had.
     transports: Vec<TransportState>,
+    /// **Lane releases to run now** -- taken off a clock queue by a locate or
+    /// a cleared lane, and run once the command that took them is done.
+    /// Pre-allocated to a queue's capacity, so taking them never allocates.
+    released: Vec<ScheduledBundleT>,
     /// Block-accurate mirror of each transport's clocks and position for the
     /// network thread, indexed like `transports`.
     transport_clocks: Arc<[TransportClocks]>,
@@ -963,6 +1038,7 @@ pub fn engine_pair_full(
         transports: (0..limits.transports)
             .map(|_| TransportState::new())
             .collect(),
+        released: Vec::with_capacity(SCHED_CAPACITY),
         transport_clocks: Arc::clone(&transport_clocks),
         cursor: 0,
         sched: Vec::with_capacity(SCHED_CAPACITY),
@@ -1192,6 +1268,7 @@ impl Engine {
             match due {
                 Due::Edge(k, edge) => self.cross_edge(k, edge, offset),
                 Due::Transport(k) => self.apply_due_bundle(Some(k), offset),
+                Due::Lane(k) => self.apply_due_lane(k),
                 Due::Device => self.apply_due_bundle(None, offset),
             }
         }
@@ -1287,6 +1364,43 @@ impl Engine {
             (Some(_), None) => true,
             (Some((_, w)), Some(q)) => w < q,
         };
+        // **A lane entry is due when the position reaches it**, the way a
+        // loop's end is: the first entry at or after where a rolling transport
+        // stands, projected through its anchor. One behind the position is not
+        // due -- it waits for a locate or a wrap to bring the position back.
+        // It yields to an edge and to a bundle on the same sample, so a wrap
+        // lands first and the entry is looked for again from the loop's start.
+        let lane_due = self
+            .transports
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.rolling)
+            .filter_map(|(i, t)| {
+                let now = t.at(here);
+                let position = t.position.at(now).get();
+                let next = t
+                    .lanes
+                    .get(t.lanes.partition_point(|e| e.position < position))?;
+                let due = t
+                    .position
+                    .reaching(TransportPosition::new(next.position), now)
+                    .unwrap_or(now)
+                    .to_device(t.frozen_total)
+                    .get();
+                Some((i, due.max(here)))
+            })
+            .min_by_key(|&(_, due)| due)
+            .filter(|&(_, due)| due < block_end);
+        let first = match (take_edge, edge_due, queue_due) {
+            (true, Some((_, w)), _) => Some(w),
+            (false, _, q) => q,
+            _ => None,
+        };
+        if let Some((k, due)) = lane_due
+            && first.is_none_or(|f| due < f)
+        {
+            return Some((due, Due::Lane(k)));
+        }
         if take_edge {
             return edge_due.map(|((k, edge), due)| (due, Due::Edge(k, edge)));
         }
@@ -1360,11 +1474,61 @@ impl Engine {
             }
             if let Some(back) = back {
                 t.position = PositionAnchor::located(TransportPosition::new(back), t.at(here));
+                // Going back is a jump, and releases what the lanes sounded.
+                take_releases(&mut t.sched, &mut self.released, None);
             }
             if ended {
                 self.push_garbage(Garbage::TransportEnded { transport: k });
             }
+            self.run_released();
         }
+    }
+
+    /// **The lane entry transport `k`'s position has reached**, run: its start
+    /// now, and its release onto the transport's clock queue a note's length
+    /// later -- or at once, when that queue is full, since a note cut short is
+    /// better than one that never ends.
+    fn apply_due_lane(&mut self, k: usize) {
+        let here = self.device_here();
+        let t = &mut self.transports[k];
+        let now = t.at(here);
+        let position = t.position.at(now).get();
+        let i = t.lanes.partition_point(|e| e.position < position);
+        if i >= t.lanes.len() {
+            return;
+        }
+        let mut entry = t.lanes.remove(i);
+        let release = std::mem::take(&mut entry.release);
+        if !release.is_empty() {
+            if t.sched.len() < t.sched.capacity() {
+                let at = now.saturating_add(entry.length);
+                let pos = t.sched.partition_point(|b| b.time <= at);
+                t.sched.insert(
+                    pos,
+                    ScheduledBundleT {
+                        time: at,
+                        cmds: release,
+                        lane: Some(entry.tag.lane),
+                    },
+                );
+            } else if self.released.len() < self.released.capacity() {
+                self.released.push(ScheduledBundleT {
+                    time: now,
+                    cmds: release,
+                    lane: Some(entry.tag.lane),
+                });
+            }
+        }
+        for cmd in entry.start.drain(..) {
+            self.apply(cmd);
+        }
+        self.run_released();
+        self.push_garbage(Garbage::LaneSpent {
+            tag: entry.tag,
+            start: entry.start,
+            release: Vec::new(),
+            fired: true,
+        });
     }
 
     /// The bundle due on sample `offset`, from `transport`'s queue or the
@@ -1664,6 +1828,9 @@ impl Engine {
                                 )
                             }
                         }
+                        // **A jump releases what the lanes were sounding**, as
+                        // a DAW does: those notes belong where the position was.
+                        take_releases(&mut t.sched, &mut self.released, None);
                     }
                 }
                 Cmd::TransportLoop { transport, span } => {
@@ -1732,7 +1899,14 @@ impl Engine {
                             // Sorted insert, after equal times, exactly as the
                             // device queue does.
                             let pos = t.sched.partition_point(|b| b.time <= at);
-                            t.sched.insert(pos, ScheduledBundleT { time: at, cmds });
+                            t.sched.insert(
+                                pos,
+                                ScheduledBundleT {
+                                    time: at,
+                                    cmds,
+                                    lane: None,
+                                },
+                            );
                         }
                     } else if self.sched.len() == self.sched.capacity() {
                         sink.push(Garbage::RejectedBundle(cmds));
@@ -1754,11 +1928,82 @@ impl Engine {
                             sink.push(Garbage::SpentBundle(bundle.cmds));
                         }
                     }
+                    // A lane's releases are the server's and stay: dropping one
+                    // would leave its note sounding for good.
                     for (i, t) in self.transports.iter_mut().enumerate() {
                         if only.is_none_or(|k| k == i) {
-                            for bundle in t.sched.drain(..) {
-                                sink.push(Garbage::SpentBundle(bundle.cmds));
+                            let mut j = 0;
+                            while j < t.sched.len() {
+                                if t.sched[j].lane.is_some() {
+                                    j += 1;
+                                } else {
+                                    let bundle = t.sched.remove(j);
+                                    sink.push(Garbage::SpentBundle(bundle.cmds));
+                                }
                             }
+                        }
+                    }
+                }
+                Cmd::LaneEntry {
+                    transport,
+                    position,
+                    tag,
+                    start,
+                    release,
+                    length,
+                } => {
+                    let Some(t) = self.transports.get_mut(transport) else {
+                        sink.push(Garbage::LaneSpent {
+                            tag,
+                            start,
+                            release,
+                            fired: false,
+                        });
+                        return;
+                    };
+                    if t.lanes.len() == t.lanes.capacity() {
+                        sink.push(Garbage::LaneSpent {
+                            tag,
+                            start,
+                            release,
+                            fired: false,
+                        });
+                    } else {
+                        let pos = t.lanes.partition_point(|e| e.position <= position);
+                        t.lanes.insert(
+                            pos,
+                            LaneEntryT {
+                                position,
+                                tag,
+                                start,
+                                release,
+                                length,
+                            },
+                        );
+                    }
+                }
+                Cmd::ClearLane {
+                    transport,
+                    lane,
+                    release,
+                } => {
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        let mut j = 0;
+                        while j < t.lanes.len() {
+                            if t.lanes[j].tag.lane == lane {
+                                let entry = t.lanes.remove(j);
+                                sink.push(Garbage::LaneSpent {
+                                    tag: entry.tag,
+                                    start: entry.start,
+                                    release: entry.release,
+                                    fired: false,
+                                });
+                            } else {
+                                j += 1;
+                            }
+                        }
+                        if release {
+                            take_releases(&mut t.sched, &mut self.released, Some(lane));
                         }
                     }
                 }
@@ -1782,6 +2027,25 @@ impl Engine {
                 }
             }
         }
+        self.run_released();
+    }
+
+    /// Runs the lane releases a locate or a cleared lane took off a clock
+    /// queue, each bundle's shell leaving through the garbage FIFO.
+    fn run_released(&mut self) {
+        if self.released.is_empty() {
+            return;
+        }
+        // Taken out and put back rather than drained in place, since running
+        // a command needs `&mut self`; neither step allocates.
+        let mut released = std::mem::take(&mut self.released);
+        for mut bundle in released.drain(..) {
+            for cmd in bundle.cmds.drain(..) {
+                self.apply(cmd);
+            }
+            self.push_garbage(Garbage::SpentBundle(bundle.cmds));
+        }
+        self.released = released;
     }
 
     fn flush_pending_garbage(&mut self) {
@@ -1790,6 +2054,27 @@ impl Engine {
                 self.pending_garbage.push(g);
                 break;
             }
+        }
+    }
+}
+
+/// Moves the lane releases of `sched` -- every lane's, or `lane`'s alone --
+/// into `released`, to be run at once. Allocation-free: `released` has a
+/// queue's capacity, and what would not fit stays where it was.
+fn take_releases(
+    sched: &mut Vec<ScheduledBundleT>,
+    released: &mut Vec<ScheduledBundleT>,
+    lane: Option<i32>,
+) {
+    let mut j = 0;
+    while j < sched.len() {
+        let theirs = sched[j]
+            .lane
+            .is_some_and(|l| lane.is_none_or(|want| want == l));
+        if theirs && released.len() < released.capacity() {
+            released.push(sched.remove(j));
+        } else {
+            j += 1;
         }
     }
 }

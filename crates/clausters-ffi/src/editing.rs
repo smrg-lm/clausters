@@ -738,6 +738,34 @@ pub unsafe extern "C" fn clausters_editing_playback_sync(
     }
 }
 
+/// **What the multitrack's notes regions play**, as its event lane's data:
+/// `placed` is the JSON the multitrack editor's `notes` verb answers under
+/// `placed`. Answers the steps (`{"steps": [...]}` or `{"error": "..."}`),
+/// sizing with a null `out` and filling with a second call.
+///
+/// # Safety
+/// `p` null or live, `placed` null or readable for `placed_len` bytes, `out`
+/// null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_notes(
+    p: *mut FfiPlayback,
+    placed: *const u8,
+    placed_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(placed) = (unsafe { crate::out::text(placed, placed_len) }) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_verb(p, out, out_cap, |pb| {
+            clausters_editing::playback::notes_json(pb, &placed)
+        })
+    }
+}
+
 /// The steps that roll the transport.
 ///
 /// # Safety

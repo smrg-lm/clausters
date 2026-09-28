@@ -61,12 +61,7 @@ impl OscServer {
         // The position is read from the engine and the loop from here: the
         // first moves every block and only the audio thread knows it, the
         // second only changes when a client sets it.
-        let clock = self.handle.current_transport_samples(k);
-        let position_sample = match t.pending_locate {
-            // Not yet applied: no block has run since it was sent.
-            Some((position, sent_at)) if clock <= sent_at => position as i64,
-            _ => self.handle.current_transport_position(k) as i64,
-        };
+        let position_sample = self.transport_position(k) as i64;
         let (loop_start, loop_end) = t.loop_span.unwrap_or((0, 0));
         let (end, back) = match t.end_mark {
             Some((end, back)) => (end, back.unwrap_or(-1)),
@@ -127,6 +122,7 @@ impl OscServer {
             position,
         })?;
         self.transports[k].pending_locate = Some((position, from));
+        self.lanes_jumped(k);
         Ok(())
     }
 
@@ -371,6 +367,7 @@ impl OscServer {
             span: span.map(|(s, e)| s as u64..e as u64),
         })?;
         self.transports[k].loop_span = span;
+        self.lanes_jumped(k);
         self.changed(from, "/transport_loop", k)
     }
 
@@ -451,6 +448,8 @@ impl OscServer {
         };
         t.playing = false;
         t.pending_locate = None;
+        // A pass that went back to its mark jumped there.
+        self.lanes_jumped(k);
         self.broadcast_transport(k);
     }
 

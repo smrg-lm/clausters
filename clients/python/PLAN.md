@@ -4846,6 +4846,16 @@ work, where a pending item reads as done.)*
 
 ## Future directions (a design that is not a fix)
 
+- ⬜ **A timeline of concrete events could play from an event lane**
+  *(noted 2026-09-28, closing `PLAN.md` `T8`)*. A `Timeline` on a transport
+  stamps its plan on the transport's clock and re-cues it after every locate
+  (`timelines.md`), which is right for what is generated as it plays — a
+  pattern, a routine — and is the transport's own work for items that are
+  data: events and OSC items. Those could be a lane's data
+  (`Timeline.render_events` already makes them a sequence), leaving the plan to
+  what only code can say. Whether a timeline splits its items that way, and
+  what a mixed one does at a locate, is the design.
+
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(named 2026-09-03 by the user, reading the window/copy question above: "crear
   una nueva secuencia a partir de un clip o un segmento de un clip clonado, ahí

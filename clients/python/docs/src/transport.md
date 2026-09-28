@@ -122,7 +122,7 @@ Sampled back to back, the two clients return the same next-bar sample — that e
 
 The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/position state** — enough to lock clients to the same bars, tempo, and rolling playhead. The rest of a DAW's transport is intentionally not here:
 
-- **The server owns the time and broadcasts transport *control*; it does not sequence.** It holds the grid, the rolling state and the position, and pushes changes; which note sounds when is each client's own plan, stamped on the transport's clock (`/sched_atTransport`) or on the device's (`/sched_at`) — see [Timelines](timelines.md).
+- **The server owns the time and broadcasts transport *control*.** It holds the grid, the rolling state and the position, and pushes changes. What it plays by itself is **concrete data**: a take through a reader, and notes and messages through an **event lane** (`server.lane_new`, `lane_set`, `lane_free`), which the transport plays by its position as a reader plays a take — the notes editor sounds that way. What is generated as it plays — a pattern, a routine — is each client's own plan, stamped on the transport's clock (`/sched_atTransport`) or on the device's (`/sched_at`) — see [Timelines](timelines.md).
 - **One grid per server, last-writer-wins.** There is a single shared transport; whoever calls `set_transport` most recently defines it. Several conductors are a coordination choice you make, not something the server arbitrates. (Multiple independently named transports on one server were considered and deferred.)
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
 - **No server-side recording or arrangement.** The timeline lives in the client; the server holds only the position, the rolling state and the grid, not the notes.
@@ -207,6 +207,21 @@ continues the frozen sound.
 
 `freeze.py` in the examples freezes a generative texture and resumes
 it, which is the way to hear the difference between continuing and restarting.
+
+## Event lanes: notes the transport plays by its position
+
+A scheduled bundle rides the transport's **clock**, which never jumps, so a plan stamped on it has to be written again after every locate. Notes that are **data** — a roll's, a notes region's — have a better home: an **event lane**, which holds them at samples of the transport's **position** and is played by the server the way a reader plays a take. A locate moves them, a loop plays them again on every pass, a stop holds them, and nothing is sent per pass.
+
+```python
+server.lane_new(7, governed)       # lane 7 on this transport, notes made in `governed`
+server.lane_set(7, {"notes": [[0, 24_000, "default", {"freq": 440.0}, "gate"]],
+                    "messages": [[12_000, "/bus_set", 100, 1.0]]})
+server.transport_play()
+server.lane_set(7, new_data)       # an edit: heard from where the position is
+server.lane_free(7)
+```
+
+Every position is a sample of the transport; a note is released at its end by `gate 0` or by a free, and a message is a command the server takes in a timed bundle, run as written. A new `lane_set` keeps the release of whatever is sounding; a locate releases it, as a DAW does on a jump. The notes editor plays this way — its sequence is its lane's data — and so do a multitrack's notes regions.
 
 ## Several transports
 

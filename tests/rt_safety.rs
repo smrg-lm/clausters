@@ -1993,3 +1993,98 @@ fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
         }
     });
 }
+
+/// Same guardian for **event lanes**: an entry inserted in position order, the
+/// block cut where the position reaches it, its start run and its release
+/// moved onto the clock queue, a loop's wrap firing it again, a locate taking
+/// the releases off to run them at once, and a lane cleared -- none of it
+/// allocates. Both lane queues are pre-allocated like the clock queues.
+#[test]
+fn event_lanes_do_not_allocate_on_the_audio_thread() {
+    use clausters::server::engine::LaneTag;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    handle
+        .send(Cmd::AddGroup {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(0..640),
+        })
+        .ok()
+        .unwrap();
+    let def = Arc::new(compile(default_spec()).unwrap());
+    for i in 0..8u32 {
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0, SEED_STRIDE));
+        synth.set_control(1, 0.01);
+        let id = 1000 + i as i32;
+        handle
+            .send(Cmd::LaneEntry {
+                transport: 0,
+                position: u64::from(i) * 71 + 5, // never on a block boundary
+                tag: LaneTag {
+                    lane: 1,
+                    generation: 0,
+                    event: i,
+                },
+                start: vec![Cmd::AddSynth {
+                    id,
+                    target: 100,
+                    action: AddAction::Tail,
+                    synth,
+                    usage: Default::default(),
+                }],
+                release: vec![Cmd::FreeNode { id }],
+                length: 90,
+            })
+            .ok()
+            .unwrap();
+    }
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..8 {
+            engine.process_block(&mut out);
+        }
+    });
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 300,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::ClearLane {
+            transport: 0,
+            lane: 1,
+            release: true,
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..8 {
+            engine.process_block(&mut out);
+        }
+    });
+}

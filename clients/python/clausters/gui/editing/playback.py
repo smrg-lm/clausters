@@ -126,6 +126,14 @@ class Playback:
         self._run(self._instance.sync(
             self.editor.structure.write(), bridge.rate,
             bridge.sources.table(), self.gain, self.server.ids))
+        # **The notes regions play from the transport's event lane**: what the
+        # boxes over bound sequences read, placed by the editor's core and
+        # handed to the lane, which the server plays by the position.
+        self.editor._sync_core()
+        placed = self.editor._call("notes").get("placed") or []
+        steps = self._instance.notes(placed)
+        if steps:
+            self._run(steps)
 
     def _run(self, steps: list) -> None:
         """Carry the steps out through the crate's runner.

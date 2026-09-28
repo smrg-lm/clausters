@@ -424,6 +424,7 @@ sits over it.
 | `clausters_editing_playback_new` | `JsMultitrackPlayback.new` | `idiom` — C hands back an opaque pointer, wasm a class; **one multitrack as it is playing** — its instance, its applier and its transport, answering every verb as steps. It takes only the chunk a fill may carry: the transport's group, made at the top and following the transport, with the multitrack inside it and its tracks' group governed, is the same for every endpoint |
 | `clausters_editing_playback_free` | `JsMultitrackPlayback` `Drop` | `idiom` — wasm frees by `Drop`, C needs an explicit `_free`; the bookkeeping, not the nodes |
 | `clausters_editing_playback_sync` | `JsMultitrackPlayback.sync` | `idiom` — the steps that make what sounds be what the multitrack says, allocating from the client's id spaces; C sizes and fills (changing the playback and the spaces only on the fill) where wasm returns the string |
+| `clausters_editing_playback_notes` | `JsMultitrackPlayback.notes` | `idiom` — the notes regions as the event lane's data, as steps; C sizes and fills where wasm returns the string |
 | `clausters_editing_playback_play` | `JsMultitrackPlayback.play` | `idiom` — the steps that roll the transport |
 | `clausters_editing_playback_pause` | `JsMultitrackPlayback.pause` | `idiom` — the steps that freeze the multitrack and zero its meters |
 | `clausters_editing_playback_stop` | `JsMultitrackPlayback.stop` | `idiom` — the steps that halt and go back to the mark |

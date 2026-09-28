@@ -16,10 +16,12 @@
  * the crate the window it is open in.
  *
  * **It sounds through a playback of its own** (the crate's `NotesPlayback`):
- * the sequence planned onto the notes editor's own transport, so playing it
- * never moves a multitrack, and planned again after every edit while it sounds
- * -- a note moved ahead of the line is heard where it lands, and what is
- * sounding keeps its release. The space bar over the window plays and pauses.
+ * the sequence is the data of an event lane on the notes editor's own
+ * transport, so playing it never moves a multitrack, and the server plays it
+ * by the transport's position -- a pause, a stop and a locate are the
+ * transport's. An edit sends the lane its new data, so a note moved ahead of
+ * the line is heard where it lands, and what is sounding keeps its release.
+ * The space bar over the window plays and pauses.
  *
  * @module
  */
@@ -75,7 +77,7 @@ class NotesPlayback {
     rate = 48_000;
     /** The transport it plays on -- the crate's word for it. */
     readonly transport: number;
-    /** The sequence the plan on the transport is of, if any. */
+    /** The sequence the lane holds, if any: the one played last. */
     planned: EventSequence | null = null;
     readonly server: Server;
 
@@ -94,13 +96,9 @@ class NotesPlayback {
     }
 
     /** The transport as the engine has it. */
-    async state(): Promise<{ playing: boolean; transportSample: number; positionSample: number }> {
+    async state(): Promise<{ playing: boolean }> {
         const state = await this.server.transportAt(this.transport).transportState();
-        return {
-            playing: state.playing,
-            transportSample: Number(state.transportSample),
-            positionSample: Number(state.positionSample),
-        };
+        return { playing: state.playing };
     }
 
     /** One verb over `sequence`, its steps carried out. */
@@ -108,7 +106,7 @@ class NotesPlayback {
         await this.#ready;
         const answer = JSON.parse(this.#native.call(
             sequence.seq,
-            JSON.stringify({ verb, rate: this.rate, latency: this.server.latency, ...args }),
+            JSON.stringify({ verb, rate: this.rate, ...args }),
             this.server.ids,
         )) as Record<string, unknown>;
         if (typeof answer.error === "string") throw new RangeError(answer.error);
@@ -253,13 +251,12 @@ export class NotesEditor extends Editor<EventSequence> {
             return this;
         }
         const playback = this.#playback;
-        const { transportSample } = await playback.state();
-        await playback.call("play", this.structure, { from: start, clock: transportSample });
+        await playback.call("play", this.structure, { from: start });
         playback.planned = this.structure;
         return this;
     }
 
-    /** Pauses where it stands: a `resume` carries the notes and the plan on. */
+    /** Pauses where it stands: a `resume` carries the notes on. */
     async pause(): Promise<this> {
         if (this.#elsewhere !== null) {
             this.#elsewhere.pause();
@@ -288,7 +285,6 @@ export class NotesEditor extends Editor<EventSequence> {
         }
         const playback = this.#playback;
         await playback.call("stop", this.structure, { back: this.cursor ?? 0 });
-        playback.planned = null;
         return this;
     }
 
@@ -305,20 +301,14 @@ export class NotesEditor extends Editor<EventSequence> {
     }
 
     /**
-     * The sequence changed while its plan is on the transport: writes it again
-     * from where the transport stands, so the edit is heard now.
+     * The sequence changed: when it is what the lane holds, the lane takes it
+     * again, and the server plays it on from where the position is.
      */
-    #replan(): void {
+    #update(): void {
         if (this.#server === null) return;
         const playback = this.#playback;
         if (playback.planned !== this.structure) return;
-        this.#work = this.#work.then(async () => {
-            const state = await playback.state();
-            await playback.call("replan", this.structure, {
-                position: state.positionSample,
-                clock: state.transportSample,
-            });
-        });
+        this.#work = this.#work.then(() => playback.call("update", this.structure));
         this.#work.catch(() => {});
     }
 
@@ -332,12 +322,12 @@ export class NotesEditor extends Editor<EventSequence> {
     }
 
     /**
-     * A history step landed: the window is corrected, and a sequence that is
-     * sounding is planned again, so the undo is heard.
+     * A history step landed: the window is corrected, and the lane takes the
+     * sequence again, so the undo is heard.
      */
     override reflectStep(): void {
         super.reflectStep();
-        this.#replan();
+        this.#update();
     }
 
     // ---- the crate's turns ----
@@ -374,7 +364,7 @@ export class NotesEditor extends Editor<EventSequence> {
         if (changed) {
             this.dirty = true;
             this.editing.changed();
-            this.#replan();
+            this.#update();
         }
         if (outcome.play !== undefined) {
             // The space bar: a sounding sequence pauses, a silent one plays.

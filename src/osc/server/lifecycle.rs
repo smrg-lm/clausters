@@ -127,6 +127,7 @@ impl OscServer {
             faust_drained: 0,
             pending_syncs: Vec::new(),
             transports,
+            lanes: Default::default(),
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_stream_buses: crate::osc::DEFAULT_MAX_STREAM_BUSES,
@@ -392,6 +393,7 @@ impl OscServer {
     /// overviews a write left stale. One turn of [`Self::run`] and of
     /// [`Self::step`] both end their serving with it.
     fn pump_subscriptions(&mut self) {
+        self.feed_lanes();
         self.pump_streams();
         self.pump_tap_streams();
         self.pump_buffer_streams();
@@ -517,14 +519,19 @@ impl OscServer {
                 }
                 Garbage::FreedBuffer(_) => {}
                 Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
-                Garbage::SpentBundle(_) => {
-                    // The executed shell of a timed bundle, or one a
-                    // `/sched_clear` dropped: nothing to say, the heap is freed
-                    // by dropping it here.
+                Garbage::SpentBundle(cmds) => {
+                    // The executed shell of a timed bundle (empty), or one a
+                    // `/sched_clear` dropped with its commands still in it:
+                    // the nodes those would have made never existed.
+                    self.forget_unrun(&cmds);
                 }
-                Garbage::RejectedBundle(_) => {
+                Garbage::RejectedBundle(cmds) => {
                     warn!("engine rejected a timed bundle (schedule queue full)");
+                    self.forget_unrun(&cmds);
                 }
+                Garbage::LaneSpent {
+                    tag, start, fired, ..
+                } => self.lane_spent(tag, &start, fired),
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID. The rejected
@@ -655,6 +662,9 @@ impl OscServer {
         // loop. So it shortens the tick exactly as a stream does; see
         // `NOTIFY_INTERVAL`.
         let notify = (!self.clients.is_empty()).then_some(NOTIFY_INTERVAL);
+        // A lane is fed from this loop, so while one exists the loop turns at
+        // the same cadence (`lanes::LOOKAHEAD_SECS` is well above it).
+        let lanes = (!self.lanes.is_empty()).then_some(NOTIFY_INTERVAL);
         let timeout = self
             .streams
             .iter()
@@ -662,6 +672,7 @@ impl OscServer {
             .chain(self.tap_streams.iter().map(|s| s.pace.period))
             .chain(self.buffer_streams.iter().map(|s| s.pace.period))
             .chain(notify)
+            .chain(lanes)
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
         let Some(socket) = &self.socket else {

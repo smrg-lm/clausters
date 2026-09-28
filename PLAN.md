@@ -522,7 +522,7 @@ Cargo feature: every build has both clocks and both queues.
   `docs/sample-clock.md`, both clients' builders and the GUI host's head
   clock, in the same pass.
 
-- ⬜ **T8 — The transport plays event lanes** *(opened 2026-09-28 by the
+- ✅ **T8 — The transport plays event lanes** *(done 2026-09-28; opened the same day by the
   user, out of the notes editor: "Pianoroll con midi/osc events debería correr
   con el transport del servidor, de lo contrario estaríamos duplicando
   funcionalidad. Pianoroll contiene datos concretos de la misma manera que los
@@ -586,6 +586,30 @@ Cargo feature: every build has both clocks and both queues.
   `tests/rt_safety.rs` stays green. **The packages move together**:
   `docs/schemas.md`, `docs/sample-clock.md`, both clients' builders, and the
   crate's playbacks moved onto it in the same pass.
+
+  **Shipped as that shape, with the open points settled** *(the user approved
+  the proposal, 2026-09-28)*. `/lane_new <transport> <lane> <target>`,
+  `/lane_set <lane> <json>` (`{"notes": [[start, end, def, {controls},
+  "gate"|"free"]], "messages": [[position, address, args...]]}`, in samples)
+  and `/lane_free <lane>`; a lane's id is the client's. One change from the
+  shape above, found writing it: **the engine's lane queue is keyed by
+  position, not by clock** — the network thread learns where the transport
+  stands once per block, so feeding the clock queue would land every jump up
+  to a block off. The engine cuts the block where the position reaches an
+  entry, as it does at a loop's end, and a fired note's release goes onto the
+  clock queue a note's length later. A jump (a locate, a pass going back to
+  its mark) releases what the lanes sound; a wrap does not. A client's
+  `/sched_clear` leaves a lane's releases standing. The feed keeps half a
+  second built and the loop turns every 10 ms while a lane exists. What comes
+  back unrun is forgotten on the network side, which fixed the same mirror
+  leak for a cleared `/sched_atTransport` bundle. The acceptance's render is
+  the pulled server (`tests/lanes.rs`), where the feed and the blocks run in a
+  fixed order and every assertion is a sample; an NRT **score** has no lanes.
+  The notes editor's playback is a lane on its transport (`update` replaces
+  `replan`, and no client asks for a clock), the multitrack's notes regions
+  are one lane in its tracks' group (`MultitrackPlayback::notes`, the editor's
+  `notes` verb), core ABI 76. `docs/decisions.md` has the reasoning and
+  `examples/event_lane.py` is the manual test.
 
 Open, not blocking:
 

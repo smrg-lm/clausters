@@ -1,41 +1,47 @@
-//! **How the notes editor is played**: a sequence's events planned onto a
-//! transport of its own, and planned again when the sequence is edited while it
-//! sounds.
+//! **How the notes editor is played**: a sequence's events as the data of an
+//! event lane on a transport of its own, which the server plays by its
+//! position.
 //!
 //! Like the audio editor's ([`crate::audio_playback`]) it sends nothing: every
 //! verb answers [`Step`]s, and the caller sends them. What it plays is the
 //! event sequence the caller hands every verb, so the notes editor and its
 //! playback read the one sequence the script's handle names.
 //!
-//! # A plan on the transport's clock
+//! # The transport plays it
 //!
-//! The editor's structure is a group that follows [`NOTES_EDITOR_TRANSPORT`]
-//! and a group inside it that the transport governs: a pause freezes the notes
-//! with the queue, and a resume carries both on. A play clears that transport's
-//! queue, locates it, and writes every event from the start beat as a bundle on
-//! the transport's **clock** (`/sched_atTransport`): a note as its `/synth_new`
-//! in the governed group and its release, both rendered by the core
-//! (`clausters_core::event::render::synth`); a raw OSC event as its message. The
-//! clock does not jump, so the caller hands in where it stands (the
-//! `transportSample` of a `/transport_query`) and every bundle is stamped from
-//! there, `latency` ahead so nothing arrives late.
+//! A roll holds concrete data, as a clip of audio does, so it plays the way a
+//! take does: on the server's transport, by its position. The editor's
+//! structure is a group that follows [`NOTES_EDITOR_TRANSPORT`], a group
+//! inside it that the transport governs, and an **event lane** on that
+//! transport whose notes are made in the governed group (`/lane_new`). The
+//! lane takes the governed group's id as its own: one lane per playback, alive
+//! as long as the group is. A play writes the sequence as the lane's data
+//! ([`data`]), sets the transport's end mark at the sequence's end going back
+//! to where the pass began, locates and rolls; a pause, a resume, a stop and a
+//! loop are then the transport's, with nothing planned here.
 //!
-//! # An edit is heard while it plays
+//! **An edit is heard while it plays** because [`NotesPlayback::update`] sends
+//! the lane its new data: the server feeds it again from where the position
+//! is, and what sounds keeps its release. No clock is asked for and nothing is
+//! re-stamped.
 //!
-//! [`NotesPlayback::replan`] clears the queue and writes the plan again from
-//! where the transport stands, beginning `latency` before it so an onset
-//! stamped and not yet sounded goes back on its sample. **What is sounding
-//! keeps its release**: the playback keeps each note it planned, and a replan
-//! sends back the release of every note already started, on its own sample.
-//! The transport's end mark follows the sequence's length, so a pass stops
-//! where the last note does.
+//! # Placed events and lane data
+//!
+//! What a lane holds is events **placed** on a transport's axis ([`Placed`]),
+//! in seconds: [`placed`] places a sequence through its own tempo map, and a
+//! multitrack places each sequence its boxes read at the box's place on the
+//! timeline (`crate::multitrack::placed_notes`). [`data`] writes placed events
+//! as the lane's JSON, each note rendered by the core
+//! (`clausters_core::event::render::synth`), so a note's def, its controls and
+//! how it is released are the core's reading of its keys.
 
 use clausters_core::event::render::{self, Arg, Type};
-use clausters_core::ids::{IdError, IdSpaces, Space};
-use clausters_core::osc::{self, OscMessage, OscPacket, OscTime, OscType};
+use clausters_core::ids::{IdError, IdSpaces};
+use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::EventSequence;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 
 use crate::apply::{Applier, Endpoint, Step};
 use crate::instance::Op;
@@ -44,20 +50,114 @@ use crate::instance::Op;
 /// never moves a multitrack (0), an audio editor (1) or the host's monitor (2).
 pub const NOTES_EDITOR_TRANSPORT: i32 = 3;
 
-/// How far ahead of the transport a plan is stamped, in seconds, when the
-/// caller says nothing: the round trip a bundle has to make.
-pub const LATENCY: f64 = 0.1;
-
 const EDITOR: &str = "notes";
 const GOVERNED: &str = "notes/transport";
 
-/// One note the playback planned: its node, and the samples of the transport's
-/// clock it starts and is released on.
-#[derive(Clone, Debug, PartialEq)]
-struct Planned {
-    start: i64,
-    end: i64,
-    release: OscMessage,
+/// **One event placed on a transport's axis**: where it starts and, for a
+/// note, where it is released, in seconds of that axis, and its keys.
+///
+/// What a lane's data is written from, so it is written once for every axis an
+/// event is heard on: the notes editor places a sequence through its own tempo
+/// map ([`placed`]), and a multitrack places each sequence its boxes read at
+/// the box's place on the timeline.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Placed {
+    /// Where it starts, in seconds of the axis.
+    pub start: f64,
+    /// Where a note is released, in seconds of the axis.
+    pub end: f64,
+    /// Its keys.
+    pub keys: Map<String, Value>,
+}
+
+/// **A sequence placed on its own axis**: every event at the second its tempo
+/// map puts it (one beat a second when it states none), a note released at
+/// the second its sustain ends.
+pub fn placed(sequence: &EventSequence) -> Vec<Placed> {
+    let map = map(sequence);
+    sequence
+        .events
+        .iter()
+        .map(|event| {
+            let keys = event.keys();
+            let sustain = render::sustain_of(&keys).max(0.0);
+            Placed {
+                start: map.secs_at(event.at.0),
+                end: map.secs_at(event.at.0 + sustain),
+                keys,
+            }
+        })
+        .collect()
+}
+
+/// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
+/// a second: `{"notes": [[start, end, def, {controls}, "gate"|"free"]],
+/// "messages": [[position, address, args...]]}`. A note is what the core
+/// renders its keys to -- the def, `freq`, `amp` and every other numeric key,
+/// released by `gate 0` when its def is gated and by a free otherwise; an OSC
+/// event is its message. A rest sounds nothing, and a MIDI event has no OSC
+/// spelling.
+pub fn data(placed: &[Placed], rate: f64) -> Value {
+    let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
+    let mut notes = Vec::new();
+    let mut messages = Vec::new();
+    for event in placed {
+        match Type::of(&event.keys) {
+            Type::Note => {
+                let Some(synth) = render::synth(&event.keys, 0) else {
+                    continue;
+                };
+                // `/synth_new def id addAction target name value ...`
+                let def = match synth.start.get(1) {
+                    Some(Arg::Str(def)) => def.clone(),
+                    _ => continue,
+                };
+                let mut controls = Map::new();
+                for pair in synth.start.get(5..).unwrap_or_default().chunks(2) {
+                    if let [Arg::Str(name), value] = pair {
+                        let value = match value {
+                            Arg::Float(f) => f64::from(*f),
+                            Arg::Int(i) => f64::from(*i),
+                            Arg::Str(_) => continue,
+                        };
+                        controls.insert(name.clone(), json!(value));
+                    }
+                }
+                let release = match synth.release.first() {
+                    Some(Arg::Str(addr)) if addr == "/node_set" => "gate",
+                    _ => "free",
+                };
+                notes.push(json!([
+                    sample(event.start),
+                    sample(event.end.max(event.start)),
+                    def,
+                    controls,
+                    release
+                ]));
+            }
+            Type::Osc => {
+                let addr = event
+                    .keys
+                    .get("addr")
+                    .and_then(Value::as_str)
+                    .unwrap_or("/");
+                let mut message = vec![json!(sample(event.start)), json!(addr)];
+                if let Some(args) = event.keys.get("args").and_then(Value::as_array) {
+                    message.extend(args.iter().cloned());
+                }
+                messages.push(Value::Array(message));
+            }
+            Type::Rest | Type::Midi => {}
+        }
+    }
+    json!({"notes": notes, "messages": messages})
+}
+
+fn map(sequence: &EventSequence) -> TempoMap {
+    sequence
+        .tempo_map
+        .clone()
+        .unwrap_or_else(|| TempoMap::new(1.0))
 }
 
 /// **The notes editor, as it is playing.**
@@ -66,19 +166,10 @@ pub struct NotesPlayback {
     applier: Applier,
     transport: i32,
     rolling: bool,
-    planned: Vec<Planned>,
-}
-
-/// Where a plan is written from: the transport's clock and the beat that
-/// stands on it, the engine's rate and the latency.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct At {
-    /// The transport's clock (`transportSample`) when the caller asked.
-    pub clock: i64,
-    /// The engine's sample rate.
-    pub rate: f64,
-    /// How far ahead a bundle is stamped, in seconds.
-    pub latency: f64,
+    /// The lane, once it is made: the governed group's id.
+    lane: Option<i32>,
+    /// The sample a pass goes back to: where the last play began.
+    back: i64,
 }
 
 impl NotesPlayback {
@@ -88,7 +179,8 @@ impl NotesPlayback {
             applier: Applier::new(Endpoint::default()),
             transport,
             rolling: false,
-            planned: Vec::new(),
+            lane: None,
+            back: 0,
         }
     }
 
@@ -108,24 +200,18 @@ impl NotesPlayback {
         self.rolling = rolling;
     }
 
-    fn map(sequence: &EventSequence) -> TempoMap {
-        sequence
-            .tempo_map
-            .clone()
-            .unwrap_or_else(|| TempoMap::new(1.0))
-    }
-
     fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
         crate::apply::transport_command(self.transport, addr, args)
     }
 
-    /// The editor's structure, the first time: the group that follows the
-    /// transport and the governed group inside it.
+    /// The editor's structure and its lane, the first time: the group that
+    /// follows the transport, the governed group inside it, and the lane whose
+    /// notes are made there.
     fn structure(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
-        if self.applier.node(GOVERNED).is_some() {
+        if self.lane.is_some() {
             return Ok(Vec::new());
         }
-        self.applier.apply(
+        let mut steps = self.applier.apply(
             vec![
                 Op::Follow {
                     handle: EDITOR.into(),
@@ -138,169 +224,72 @@ impl NotesPlayback {
                 },
             ],
             ids,
+        )?;
+        let Some(group) = self.applier.node(GOVERNED) else {
+            return Ok(steps);
+        };
+        steps.extend(self.command("/lane_new", vec![OscType::Int(group), OscType::Int(group)]));
+        self.lane = Some(group);
+        Ok(steps)
+    }
+
+    /// The lane's data, from `sequence` at `rate`.
+    fn lane_set(&self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+        let Some(lane) = self.lane else {
+            return Vec::new();
+        };
+        let data = data(&placed(sequence), rate).to_string();
+        vec![
+            crate::apply::send("/lane_set", vec![OscType::Int(lane), OscType::String(data)]),
+            Step::AwaitDone {
+                command: "/lane_set".into(),
+                index: None,
+            },
+        ]
+    }
+
+    /// The end mark at the sequence's end, going back to `back` (a sample).
+    fn end_mark(&self, sequence: &EventSequence, back: i64, rate: f64) -> Vec<Step> {
+        let end = (map(sequence).secs_at(sequence.duration()) * rate).round() as i64;
+        self.command(
+            "/transport_end",
+            vec![OscType::Long(end.max(back)), OscType::Long(back)],
         )
     }
 
-    /// Every sounding note freed and the transport's queue cleared: what a play
-    /// and a stop start from.
-    fn silence(&mut self) -> Vec<Step> {
-        self.planned.clear();
-        let mut steps = vec![crate::apply::send(
-            "/sched_clear",
-            vec![
-                OscType::String("transport".into()),
-                OscType::Int(self.transport),
-            ],
-        )];
-        if let Some(group) = self.applier.node(GOVERNED) {
-            steps.push(crate::apply::send(
-                "/group_freeAll",
-                vec![OscType::Int(group)],
-            ));
-        }
-        steps
-    }
-
-    /// **Plays `sequence` from beat `from`**: whatever sounded is freed, the
-    /// queue cleared, the transport located at `from` with its end mark at the
-    /// sequence's end (going back to `from`), every event from there planned,
-    /// and the transport rolled.
+    /// **Plays `sequence` from beat `from`**: the lane takes the sequence, the
+    /// transport's loop is cleared and its end mark set at the sequence's end
+    /// (going back to `from`), and the transport is located at `from` and
+    /// rolled.
     pub fn play(
         &mut self,
         sequence: &EventSequence,
         from: f64,
-        at: At,
+        rate: f64,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
         let mut steps = self.structure(ids)?;
-        steps.extend(self.silence());
-        let map = Self::map(sequence);
-        let sample = |beat: f64| (map.secs_at(beat) * at.rate).round() as i64;
+        steps.extend(self.lane_set(sequence, rate));
+        let from = (map(sequence).secs_at(from.max(0.0)) * rate).round() as i64;
+        self.back = from;
         steps.extend(self.command("/transport_loop", vec![]));
-        steps.extend(self.command(
-            "/transport_end",
-            vec![
-                OscType::Long(sample(sequence.duration().max(from))),
-                OscType::Long(sample(from)),
-            ],
-        ));
-        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(sample(from))]));
-        steps.extend(self.plan(sequence, from, from, at, ids)?);
+        steps.extend(self.end_mark(sequence, from, rate));
+        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(from)]));
         self.rolling = true;
         steps.extend(self.command("/transport_play", vec![]));
         Ok(steps)
     }
 
-    /// **The sequence changed while it plays** (or while it is paused with a
-    /// plan): the queue is cleared and the plan written again from `position`,
-    /// the transport's position sample, which stands on `at.clock`. The
-    /// releases of the notes already sounding are sent back on their own
-    /// samples, and the end mark follows the sequence's new length.
-    pub fn replan(
-        &mut self,
-        sequence: &EventSequence,
-        position: i64,
-        at: At,
-        ids: &mut IdSpaces,
-    ) -> Result<Vec<Step>, IdError> {
-        let map = Self::map(sequence);
-        let secs = position as f64 / at.rate;
-        let beat = map.beats_at(secs.max(0.0));
-        let since = map.beats_at((secs - at.latency).max(0.0));
-        let sounding: Vec<Planned> = self
-            .planned
-            .iter()
-            .filter(|p| p.start <= at.clock && p.end > at.clock)
-            .cloned()
-            .collect();
-        let mut steps = vec![crate::apply::send(
-            "/sched_clear",
-            vec![
-                OscType::String("transport".into()),
-                OscType::Int(self.transport),
-            ],
-        )];
-        self.planned = sounding;
-        for p in &self.planned {
-            steps.push(self.stamped(p.end, vec![p.release.clone()]));
+    /// **The sequence changed**: the lane takes it again, and the end mark
+    /// follows its new end, still going back to where the last play began.
+    /// Nothing before the first play: there is no lane yet.
+    pub fn update(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+        if self.lane.is_none() {
+            return Vec::new();
         }
-        let end = (map.secs_at(sequence.duration().max(beat)) * at.rate).round() as i64;
-        steps.extend(self.command(
-            "/transport_end",
-            vec![OscType::Long(end), OscType::Long(position)],
-        ));
-        steps.extend(self.plan(sequence, beat, since, at, ids)?);
-        Ok(steps)
-    }
-
-    /// Writes every event from beat `since` onto the transport's clock, the
-    /// beat `from` standing on `at.clock`.
-    fn plan(
-        &mut self,
-        sequence: &EventSequence,
-        from: f64,
-        since: f64,
-        at: At,
-        ids: &mut IdSpaces,
-    ) -> Result<Vec<Step>, IdError> {
-        let map = Self::map(sequence);
-        let base = map.secs_at(from);
-        let clock = |beat: f64| {
-            at.clock + ((map.secs_at(beat) - base + at.latency) * at.rate).round() as i64
-        };
-        let group = self.applier.node(GOVERNED).unwrap_or(0);
-        let mut steps = Vec::new();
-        for event in sequence.events.iter().filter(|e| e.at.0 >= since) {
-            let mut keys = event.keys();
-            match Type::of(&keys) {
-                Type::Note => {
-                    keys.insert("target".into(), json!(group));
-                    keys.insert("add_action".into(), json!(1));
-                    let node = ids.alloc(Space::Nodes, 1)? as i32;
-                    let Some(synth) = render::synth(&keys, node) else {
-                        continue;
-                    };
-                    let (start, end) = (
-                        clock(event.at.0),
-                        clock(event.at.0 + synth.sustain.max(0.0)),
-                    );
-                    let release = message(&synth.release);
-                    steps.push(self.stamped(start, vec![message(&synth.start)]));
-                    steps.push(self.stamped(end, vec![release.clone()]));
-                    self.planned.push(Planned {
-                        start,
-                        end,
-                        release,
-                    });
-                }
-                Type::Osc => {
-                    let addr = keys.get("addr").and_then(Value::as_str).unwrap_or("/");
-                    let args = keys
-                        .get("args")
-                        .and_then(Value::as_array)
-                        .map(|a| a.iter().map(osc_arg).collect())
-                        .unwrap_or_default();
-                    steps.push(self.stamped(clock(event.at.0), vec![osc::message(addr, args)]));
-                }
-                // A rest sounds nothing, and a MIDI message has no OSC spelling.
-                Type::Rest | Type::Midi => {}
-            }
-        }
-        Ok(steps)
-    }
-
-    /// `messages` as one bundle on the transport's clock at `sample`.
-    fn stamped(&self, sample: i64, messages: Vec<OscMessage>) -> Step {
-        let bundle = osc::bundle(OscTime::from((0, 1)), messages);
-        let bytes = osc::encode(&OscPacket::Bundle(bundle)).unwrap_or_default();
-        crate::apply::send(
-            "/sched_atTransport",
-            vec![
-                OscType::Int(self.transport),
-                OscType::Long(sample),
-                OscType::Blob(bytes),
-            ],
-        )
+        let mut steps = self.lane_set(sequence, rate);
+        steps.extend(self.end_mark(sequence, self.back, rate));
+        steps
     }
 
     /// Rolls the transport again from where it stands.
@@ -309,30 +298,34 @@ impl NotesPlayback {
         self.command("/transport_play", vec![])
     }
 
-    /// Pauses where it stands: the notes freeze with the queue, and a resume
-    /// carries both on.
+    /// Pauses where it stands: the notes freeze with the governed group, and a
+    /// resume carries them on.
     pub fn pause(&mut self) -> Vec<Step> {
         self.rolling = false;
         self.command("/transport_stop", vec![])
     }
 
-    /// **Stops and goes back to beat `back`**: the notes are freed, the queue
-    /// cleared, and the transport located there.
+    /// **Stops and goes back to beat `back`**: the transport stops and is
+    /// located there, which releases what the lane was sounding.
     pub fn stop(&mut self, sequence: &EventSequence, back: f64, rate: f64) -> Vec<Step> {
         let mut steps = self.pause();
-        steps.extend(self.silence());
-        let sample = (Self::map(sequence).secs_at(back) * rate).round() as i64;
+        let sample = (map(sequence).secs_at(back.max(0.0)) * rate).round() as i64;
         steps.extend(self.command("/transport_locateSample", vec![OscType::Long(sample)]));
         steps
     }
 
-    /// Frees what the playback made, and the transport's marks.
+    /// Frees what the playback made: the lane (its notes released), the
+    /// transport's end mark and the groups.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
-        if self.applier.node(GOVERNED).is_none() {
+        let Some(lane) = self.lane.take() else {
             return Ok(Vec::new());
-        }
+        };
         let mut steps = self.pause();
-        steps.extend(self.silence());
+        steps.push(crate::apply::send("/lane_free", vec![OscType::Int(lane)]));
+        steps.push(Step::AwaitDone {
+            command: "/lane_free".into(),
+            index: None,
+        });
         steps.extend(self.command("/transport_end", vec![]));
         steps.extend(self.applier.apply(
             vec![Op::Free {
@@ -345,43 +338,12 @@ impl NotesPlayback {
     }
 }
 
-/// A rendered message's arguments as the OSC types they are.
-fn message(args: &[Arg]) -> OscMessage {
-    let mut args = args.iter();
-    let addr = match args.next() {
-        Some(Arg::Str(addr)) => addr.clone(),
-        _ => "/".into(),
-    };
-    osc::message(
-        addr,
-        args.map(|a| match a {
-            Arg::Str(s) => OscType::String(s.clone()),
-            Arg::Int(i) => OscType::Int(*i),
-            Arg::Float(f) => OscType::Float(*f),
-        })
-        .collect(),
-    )
-}
-
-/// An OSC event's argument as the wire types it: an integer, a float, a
-/// string; anything else as its text.
-fn osc_arg(value: &Value) -> OscType {
-    match value {
-        Value::Number(n) if n.is_i64() => OscType::Int(n.as_i64().unwrap_or(0) as i32),
-        Value::Number(n) => OscType::Float(n.as_f64().unwrap_or(0.0) as f32),
-        Value::String(s) => OscType::String(s.clone()),
-        Value::Bool(b) => OscType::Int(i32::from(*b)),
-        other => OscType::String(other.to_string()),
-    }
-}
-
 /// **The playback's verbs as JSON**, one door for every binding. The sequence
 /// played is handed in; a request `{"verb": ...}` answers `{"steps": [...]}`, a
 /// query's own object, or `{"error": ...}`.
 ///
-/// - `play` -- `from` (a beat), `clock`, `rate`, `latency`
-/// - `replan` -- `position` (the transport's position sample), `clock`,
-///   `rate`, `latency`
+/// - `play` -- `from` (a beat), `rate`
+/// - `update` -- `rate`
 /// - `resume`, `pause`, `stop` (`back`, a beat; `rate`), `close`
 /// - `setRolling` -- `rolling`
 /// - `state` -- `{"transport", "rolling"}`
@@ -396,23 +358,14 @@ pub fn call_json(
     };
     let number =
         |key: &str, default: f64| request.get(key).and_then(Value::as_f64).unwrap_or(default);
-    let at = At {
-        clock: request.get("clock").and_then(Value::as_i64).unwrap_or(0),
-        rate: number("rate", 48_000.0),
-        latency: number("latency", LATENCY),
-    };
+    let rate = number("rate", 48_000.0);
     let answer = |steps: Result<Vec<Step>, IdError>| crate::playback::answer_json(steps);
     match request.get("verb").and_then(Value::as_str).unwrap_or("") {
-        "play" => answer(playback.play(sequence, number("from", 0.0), at, ids)),
-        "replan" => answer(playback.replan(
-            sequence,
-            request.get("position").and_then(Value::as_i64).unwrap_or(0),
-            at,
-            ids,
-        )),
+        "play" => answer(playback.play(sequence, number("from", 0.0), rate, ids)),
+        "update" => answer(Ok(playback.update(sequence, rate))),
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
-        "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), at.rate))),
+        "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), rate))),
         "close" => answer(playback.close(ids)),
         "setRolling" => {
             playback.set_rolling(

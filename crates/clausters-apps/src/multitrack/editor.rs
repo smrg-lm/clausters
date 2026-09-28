@@ -490,6 +490,19 @@ impl MultitrackEditor {
         conversation::answer(0, version, None, corrections)
     }
 
+    /// **What the boxes over its bound sequences play**, placed in seconds of
+    /// the multitrack (`clausters_editing::multitrack::placed_notes`): what
+    /// the multitrack's playback hands its event lane.
+    pub fn placed_notes(&self) -> Vec<clausters_editing::notes_playback::Placed> {
+        let table = Table {
+            buffers: &self.sources,
+            lengths: &self.lengths,
+            segments: &self.segments,
+            sequences: &self.sequences,
+        };
+        projection::placed_notes(&self.multitrack, &table)
+    }
+
     /// The window over the editor's state, handed to `f`.
     fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
         let tempo = projection::tempo_map(&self.multitrack);
@@ -837,6 +850,8 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
 /// - `window` -- `widget`, `ruler`: the window, as a GuiDef.
 /// - `setWindow` -- `window` (an id or `null`).
 /// - `props` -- `widget`.
+/// - `notes` -- `{"placed": [...]}`, what the boxes over bound sequences play
+///   ([`MultitrackEditor::placed_notes`]).
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: an [`Applied`].
 /// - `resync`, `settle`, `announce` -- `version`: an [`Answer`].
@@ -889,6 +904,7 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             "{}".into()
         }
         "props" => Value::Object(editor.props(int(&get("widget")) as i32)).to_string(),
+        "notes" => json!({ "placed": editor.placed_notes() }).to_string(),
         "event" => {
             let event = Event {
                 addr: get("addr").as_str().unwrap_or_default().to_string(),

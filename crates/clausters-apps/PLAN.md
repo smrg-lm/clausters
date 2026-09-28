@@ -526,9 +526,11 @@ opened it.
     Future directions).
     *(Drawn and edited 2026-09-28: a region over a sequence source draws the
     notes its window reads, a notes editor over the same handle edits what it
-    draws, and a session's table holds one (`Source.events`). **Sounding waits
-    on `T8`** (`PLAN.md`), the event lane on the transport; the standalone
-    host is left as well.)*
+    draws, and a session's table holds one (`Source.events`). They sound from
+    one event lane on the multitrack's transport (`PLAN.md`, `T8`), outside
+    the tracks' strips: a note's own `out`, with the track's mute and solo and
+    the box's mute deciding what is placed. Left: the standalone host, and an
+    example that shows a notes region.)*
   - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
   - ⬜ **X3.12 - The Hz domain.**
@@ -1030,7 +1032,7 @@ Every entry carries a checkbox.
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
 
-- ⬜ **The notes editor's playback does the transport's work** *(found
+- ✅ **The notes editor's playback does the transport's work** *(found
   2026-09-28, writing `X3.9`'s sound; the user: "Pianoroll con midi/osc events
   debería correr con el transport del servidor, de lo contrario estaríamos
   duplicando funcionalidad")*. `X3.8` stamps every event on the transport's
@@ -1041,6 +1043,9 @@ wrong.
   audio does, so it plays on the server's transport: `PLAN.md`, `T8`, the
   event lane, which the notes editor and the multitrack's notes regions move
   onto. `clausters_editing::notes_playback` is what goes.
+  **Fixed 2026-09-28 by `T8`**: the playback is an event lane on its
+  transport, an edit is the lane's new data (`update`), and nothing asks for
+  the transport's clock.
 
 - ✅ **The play cursor of a take at another rate than the engine's runs
   ahead** *(found building X7, 2026-09-24)*. The audio editor's playback

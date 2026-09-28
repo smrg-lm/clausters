@@ -400,6 +400,11 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/group_sortMode", OscServer::handle_via_translate),
     ("/group_tail", OscServer::handle_via_translate),
+    ("/lane_free", |s, _, m, f| {
+        s.handle_lane_free(Args::new(m), f)
+    }),
+    ("/lane_new", |s, _, m, f| s.handle_lane_new(Args::new(m), f)),
+    ("/lane_set", |s, _, m, f| s.handle_lane_set(Args::new(m), f)),
     ("/midi_bind", |s, addr, m, f| {
         s.handle_via_translate(addr, m, f)?;
         s.persist_bindings();

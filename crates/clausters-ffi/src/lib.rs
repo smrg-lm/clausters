@@ -496,7 +496,14 @@ pub use time::*;
 /// **v75 the notes editor's playback.** `clausters_editing_notes_playback_new`,
 /// `_free` and `_call`. A blob in a step that is not samples travels as
 /// `{"x": hex}`. **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 75;
+/// **v76 the transport plays event lanes.** The notes editor's playback is an
+/// event lane on its transport: `clausters_editing_notes_playback_call`'s
+/// `replan` verb is gone (an edit is `update`, and nothing asks for the
+/// transport's clock). New: `clausters_editing_playback_notes`, the
+/// multitrack's notes regions as its lane's data, and
+/// `clausters_apps_editing_bind_sequence`, a multitrack member's source bound
+/// to a sequence handle. **Not additive** -- a verb went.
+pub const CORE_ABI_VERSION: u32 = 76;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

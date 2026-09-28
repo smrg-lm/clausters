@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 75
+CORE_ABI_VERSION = 76
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -330,6 +330,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_playback_sync.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_notes.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_playback_notes.restype = ctypes.c_size_t
     for name in ("play", "pause", "meters"):
         fn = getattr(lib, f"clausters_editing_playback_{name}")
         fn.argtypes = [ctypes.c_void_p, u8p_early, ctypes.c_size_t]
@@ -1640,6 +1644,13 @@ class MultitrackPlayback:
                            as_u8(table), len(table), float(gain),
                            ctypes.c_void_p(ids._handle))
 
+    def notes(self, placed: list) -> list:
+        """The steps that give the multitrack's notes regions to its event lane:
+        ``placed`` is what the multitrack editor's ``notes`` verb answers under
+        ``placed`` (`clausters_editing_playback_notes`)."""
+        body = json.dumps(placed).encode("utf-8")
+        return self._steps(lib().clausters_editing_playback_notes, as_u8(body), len(body))
+
     def play(self) -> list:
         """The steps that roll the transport."""
         return self._steps(lib().clausters_editing_playback_play)
@@ -1768,10 +1779,10 @@ class AudioEditorPlayback:
 
 class NotesPlayback:
     """**The notes editor, as it is playing**
-    (`clausters_editing_notes_playback_*`): a sequence's events planned onto a
-    transport of its own, every verb answering steps -- ``play``, ``replan``,
-    ``resume``, ``pause``, ``stop``, ``close``, ``setRolling`` and the query
-    ``state``.
+    (`clausters_editing_notes_playback_*`): a sequence's events as the data of
+    an event lane on a transport of its own, every verb answering steps --
+    ``play``, ``update``, ``resume``, ``pause``, ``stop``, ``close``,
+    ``setRolling`` and the query ``state``.
 
     Args:
         transport: the transport it plays on; ``None`` for the crate's own.

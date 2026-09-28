@@ -9074,3 +9074,39 @@ there.
 freezes on its own sample, as it always has, so a transport that asks for
 nothing -- the multitrack's, a script's -- behaves exactly as before, and an
 application whose output reads the level asks for its own.
+
+## An event lane is keyed by the position and fed from the network thread
+
+*2026-09-28.* A roll holds concrete data, as a clip of audio does, so it plays
+on the transport the way a take does (`PLAN.md`, T8). The notes editor had
+played by stamping every event on the transport's **clock** and planning the
+whole sequence again from the client on every play, locate and edit — the
+transport's own work done a second time outside it, and wrong across a loop,
+since the clock does not wrap.
+
+**A lane cannot live where a reader does.** A reader is a UGen, so the audio
+thread runs it; a note is a node, and a node is built on the network thread,
+because the audio thread never allocates. So the lane's data lives on the
+network thread, which keeps the stretch just ahead of the position built on
+the engine, and the engine only fires what is already built.
+
+**The engine's lane queue is keyed by position, not by clock.** Feeding the
+clock queue, as a client does with `/sched_atTransport`, would need the
+position->clock mapping at the moment of a locate, and the network thread
+learns where the transport stands only once per block — every jump would land
+the plan up to a block off. Keyed by position, the engine does the mapping
+itself, exactly as it finds a loop's end: an entry is due when the position
+reaches it, so a locate and a wrap need nothing re-stamped, and an entry the
+position jumped over waits for it to come back. A note's **release** is the one
+thing on the clock: when the start fires, its release goes onto the clock queue
+a note's length later, so a note rings its length whatever the position does —
+except across a jump, which releases what the lanes sound, as a DAW does.
+
+**Ids.** A lane plays again and again, so a note's node id cannot be in the
+data: the server mints one per pass from its auto range, and what comes back
+unrun through the garbage FIFO is forgotten there — which also fixed the same
+leak for a client's cleared `/sched_atTransport` bundles, whose nodes had
+stayed in the mirror. A lane's own id is the client's; a playback that owns one
+lane gives it the id of the group it plays into, which is unique among a
+client's ids and lives exactly as long as the lane, so no new id space was
+added for it.

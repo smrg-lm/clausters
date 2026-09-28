@@ -1813,6 +1813,12 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.play()))
     }
 
+    /// What the multitrack's notes regions play, as its event lane's data --
+    /// the C ABI's `clausters_editing_playback_notes`.
+    pub fn notes(&mut self, placed: &str) -> String {
+        clausters_editing::playback::notes_json(&mut self.0, placed)
+    }
+
     /// The steps that freeze the multitrack and zero its meters.
     pub fn pause(&mut self) -> String {
         clausters_editing::playback::answer_json(Ok(self.0.pause()))

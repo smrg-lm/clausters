@@ -517,6 +517,23 @@ test("the end mark stops a rolling transport and goes back", { skip: !hasServer 
     });
 });
 
+test("an event lane is made on its transport, set and freed", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        const one = server.transportAt(1);
+        const governed = new Group({ server });
+        await one.transportGroup(governed);
+        await one.laneNew(7, governed);
+        await server.laneSet(7, { notes: [[0, 4_800, "default", { freq: 440 }, "gate"]] });
+        await one.transportPlay();
+        await sleep(50);
+        await one.transportStop();
+        await server.laneFree(7);
+        await assert.rejects(server.laneSet(7, {}), CommandError, "a freed lane is not there");
+        await one.transportGroup(null);
+        governed.free();
+    });
+});
+
 test("each transport rolls on its own, addressed through transportAt", {
     skip: !hasServer,
 }, async () => {

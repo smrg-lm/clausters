@@ -474,7 +474,7 @@ class _PlayingServer(Server):
         super().__init__(interface=OscNrtInterface())
         self.latency = 0.1
         self.sent = []
-        self.state = {"playing": False, "transport_sample": 1000, "position_sample": 0}
+        self.state = {"playing": False}
 
     def transport_at(self, transport):
         return self
@@ -496,9 +496,12 @@ class _PlayingServer(Server):
         self.send_msg(addr, *args)
         return "/done", [addr]
 
-    def planned(self):
-        return [int(args[1].value if hasattr(args[1], "value") else args[1])
-                for addr, args in self.sent if addr == "/sched_atTransport"]
+    def lane(self):
+        """The note starts of the last `/lane_set`, in samples."""
+        import json
+
+        data = [json.loads(str(args[1])) for addr, args in self.sent if addr == "/lane_set"]
+        return [note[0] for note in data[-1]["notes"]] if data else None
 
 
 def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
@@ -509,20 +512,20 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     _host, wid = opened(editor)
     editor.play()
     addrs = [addr for addr, _ in server.sent]
-    assert "/transport_group" in addrs and addrs[-1] == "/transport_play"
-    # Two notes, each a start and a release, on the transport's clock from
-    # 1000 with ten samples of latency: beat 0 at 1010, beat 2 at 1110.
-    assert sorted(server.planned())[0] == 1010
-    assert 1110 in server.planned()
+    assert "/transport_group" in addrs and "/lane_new" in addrs
+    assert addrs[-1] == "/transport_play"
+    assert "/sched_atTransport" not in addrs, "the transport plays it, nothing is stamped"
+    # The two notes as the lane's data, at 100 samples a second and two beats
+    # a second: beat 0 at 0, beat 2 at 100.
+    assert server.lane() == [0, 100]
     assert editor.playing
 
-    # An edit while it sounds is planned again from where the transport is.
+    # An edit is the lane's new data, and no clock is asked for.
     server.sent.clear()
-    server.state.update(transport_sample=1020, position_sample=20)
     editor.apply("/gui_event", [wid, 1, 0, "notes",
                                 1, 0.0, BEAT * 0.8, 60, 13, 0,
                                 2, 3 * BEAT, BEAT * 0.8, 67, 13, 0])
-    assert server.sent[0][0] == "/sched_clear"
-    assert 1160 in server.planned(), "the note moved to beat 3 is heard where it lands"
+    assert server.sent[0][0] == "/lane_set"
+    assert server.lane() == [0, 150], "the note moved to beat 3 is heard where it lands"
     editor.stop()
-    assert "/group_freeAll" in [addr for addr, _ in server.sent]
+    assert "/transport_locateSample" in [addr for addr, _ in server.sent]

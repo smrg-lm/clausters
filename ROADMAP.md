@@ -185,12 +185,6 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
-- ⬜ **`T8` — the transport plays event lanes** *(`PLAN.md`, T track)*, taken
-  now and before `X3.9` sounds: the notes editor and the multitrack's notes
-  regions play from it, and the notes editor's clock-stamped playback goes
-  (`crates/clausters-apps/PLAN.md`, Found by use, "The notes editor's playback
-  does the transport's work").
-
 - ⬜ **The applications after the multitrack, `X2`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:

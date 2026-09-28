@@ -527,6 +527,25 @@ def test_the_end_mark_is_set_cleared_and_read_back():
     assert srv.transport_state()["end"] is None
 
 
+def test_an_event_lane_is_made_on_its_transport_set_and_freed():
+    import json
+
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    two = srv.transport_at(2)
+    iface.queue_reply("/done", "/lane_new")
+    two.lane_new(7, 400)
+    assert iface.sent[-1] == ("/lane_new", [2, 7, 400]), "the transport first"
+    data = {"notes": [[0, 4800, "default", {"freq": 440.0}, "gate"]]}
+    iface.queue_reply("/done", "/lane_set")
+    srv.lane_set(7, data)
+    addr, args = iface.sent[-1]
+    assert addr == "/lane_set" and args[0] == 7 and json.loads(args[1]) == data
+    iface.queue_reply("/done", "/lane_free")
+    srv.lane_free(7)
+    assert iface.sent[-1] == ("/lane_free", [7])
+
+
 def test_transport_at_names_its_transport_and_reads_only_its_replies():
     iface = _FakeInterface()
     srv = Server(interface=iface)

@@ -594,8 +594,10 @@ impl Renderer {
                     self.translator.release_node_id(id);
                     crate::server::engine::report_rejected(id, why, "nrt render");
                 }
+                // A score has no lanes: nothing here sends one an entry.
                 Garbage::FreedGroup { .. }
                 | Garbage::FreedBuffer(_)
+                | Garbage::LaneSpent { .. }
                 | Garbage::TransportEnded { .. } => {}
             }
         }

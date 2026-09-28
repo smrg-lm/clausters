@@ -52,6 +52,7 @@ use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
 mod async_pipes;
 mod commands;
 mod dispatch;
+mod lanes;
 mod lifecycle;
 mod overviews;
 mod streams;
@@ -291,6 +292,9 @@ pub struct OscServer {
     /// Each transport's network-side state -- its grid, its rolling state, its
     /// bindings -- indexed by transport id and sized at boot (`--transports`).
     transports: Vec<Transport>,
+    /// **The event lanes** (`/lane_new`), by id: what each holds and what of
+    /// it is on the engine's lane queue. See [`lanes`].
+    lanes: std::collections::HashMap<i32, lanes::Lane>,
     /// `/server_errorMode` mode: post command failures to the server console. The `/fail`
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).

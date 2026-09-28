@@ -242,6 +242,53 @@ export class ServerTransport {
     }
 
     /**
+     * Makes **event lane** `lane` on this transport (`/lane_new`): notes and
+     * messages the transport plays by its position, as a reader plays a take
+     * -- a locate moves them, a loop plays them again on every pass, a stop
+     * holds them, with nothing sent per pass. `lane` is an id the caller
+     * picks, like a buffer's; its notes are made at the tail of `target`,
+     * which should be the group this transport governs, so a pause freezes
+     * them. An existing lane of that id is freed first.
+     */
+    async laneNew(this: Server, lane: number, target: NodeLike, timeout?: number): Promise<Server> {
+        await this.command(
+            "/lane_new",
+            [["i", this.transportId], ["i", Math.trunc(lane)], ["i", nodeId(target)]],
+            timeout,
+        );
+        return this;
+    }
+
+    /**
+     * Replaces event lane `lane`'s data whole (`/lane_set`): `{notes: [[start,
+     * end, def, {control: value}, "gate" | "free"], ...], messages:
+     * [[position, address, ...args], ...]}`, every position a sample of the
+     * transport's position. A note is released at `end` by `gate 0` or by a
+     * free; a message is a command the server takes in a timed bundle, run as
+     * written. What sounds keeps its release, and
+     * the new data is heard from where the position is.
+     * The notes editor's playback writes it from an `EventSequence`.
+     */
+    async laneSet(
+        this: Server,
+        lane: number,
+        data: Record<string, unknown>,
+        timeout?: number,
+    ): Promise<Server> {
+        await this.command("/lane_set", [["i", Math.trunc(lane)], ["s", JSON.stringify(data)]], timeout);
+        return this;
+    }
+
+    /**
+     * Frees event lane `lane` (`/lane_free`): what it queued is dropped and the
+     * notes it is sounding are released.
+     */
+    async laneFree(this: Server, lane: number, timeout?: number): Promise<Server> {
+        await this.command("/lane_free", [["i", Math.trunc(lane)]], timeout);
+        return this;
+    }
+
+    /**
      * Has `group` **follow** the transport (`/transport_follow`), or ends that
      * with `null`.
      *
