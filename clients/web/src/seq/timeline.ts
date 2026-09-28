@@ -678,6 +678,15 @@ class ClockView {
         return this.node.player.schedTransport;
     }
 
+    /**
+     * What the server hands each bundle it queues on the transport to, so a
+     * re-cue can send back the releases of what is sounding; `null` off a
+     * transport.
+     */
+    get schedKeep(): ((sample: number, messages: readonly TimedMessage[]) => void) | null {
+        return this.node.player.schedKeep;
+    }
+
     get tempo(): number {
         return this.node.timeline.map.tempoAt(this.beats());
     }
@@ -780,6 +789,7 @@ interface TreeDriver {
     readonly clock: TempoClock | null;
     readonly schedAxis: ((secs: number) => number) | null;
     readonly schedTransport: number;
+    readonly schedKeep: ((sample: number, messages: readonly TimedMessage[]) => void) | null;
     rootSecs(beat: number): number;
     rootBeat(secs: number): number;
     render(node: TimelineNode, beat: number, item: unknown): void;
@@ -982,6 +992,14 @@ class TimelineNode {
  * (`schedClear("transport")`) and re-plans from the new position, `latency`
  * ahead so nothing regenerated is late.
  *
+ * **Clearing the queue keeps what is sounding.** The queue holds the releases
+ * of the nodes already started as well as the onsets still to come, and
+ * dropping a release leaves its note on forever. So every bundle the plan
+ * queues is kept here, and a re-cue -- a locate, a conductor's locate, an edit
+ * -- sends back the ones that only address nodes already started, on their own
+ * samples: the transport's clock does not jump, so a release is due where it
+ * always was.
+ *
  * **Its verbs are queued, not awaited.** The transport's commands are requests,
  * and a page waits for an answer instead of blocking on one, so each verb goes
  * onto one chain in the order it was called and `refresh` is what settles with
@@ -1020,6 +1038,17 @@ export class TransportPlayer implements TreeDriver {
     private cued: number | null = null;
     private following: OscFunc | null = null;
     private chain: Promise<unknown> = Promise.resolve();
+    /**
+     * `[sample, messages, started]` for every bundle queued on the transport,
+     * `started` once it is known to address only nodes that are already
+     * sounding. What a re-cue sends back.
+     */
+    private queued: [number, readonly TimedMessage[], boolean][] = [];
+    /**
+     * Whether the transport's queue holds a plan: written by a play or a
+     * re-cue, kept by a pause, gone after a locate that re-plans nothing.
+     */
+    private planned = false;
 
     /**
      * The server whose transport this plays on, held rather than read from the
@@ -1063,6 +1092,14 @@ export class TransportPlayer implements TreeDriver {
     get schedTransport(): number {
         return this.server.transportId;
     }
+
+    /**
+     * What a `Server` hands every bundle it queues on the transport to, with
+     * the sample it was stamped on.
+     */
+    readonly schedKeep = (sample: number, messages: readonly TimedMessage[]): void => {
+        this.queued.push([Math.round(sample), messages, false]);
+    };
 
     get running(): boolean {
         return this.reported.playing;
@@ -1137,11 +1174,12 @@ export class TransportPlayer implements TreeDriver {
         this.queue(async () => {
             const rate = await this.rateOf();
             const sample = Math.round((this.timeline.transportAt + this.rootSecs(beat)) * rate);
-            this.server.schedClear("transport");
+            this.clear(Number((await this.server.transportState()).transportSample));
             await this.server.transportLocateSample(sample);
             this.reported = { ...this.reported, positionSample: sample };
             this.cued = sample;
             if (cue && this.reported.playing) await this.plan(beat);
+            else this.planned = false;
         });
     }
 
@@ -1166,10 +1204,61 @@ export class TransportPlayer implements TreeDriver {
     }
 
     /**
-     * Nothing yet: a plan on the transport is written whole when it is cued, so
-     * an edit is heard from the next play or locate.
+     * The plan changed under a queue that holds it: write it again from where
+     * the transport is, rolling or paused.
+     *
+     * The walk starts `latency` earlier than the position, since an onset just
+     * behind the position was stamped `latency` ahead of it and has not
+     * sounded yet: clearing the queue took it, and the re-plan puts it back on
+     * the same sample. What was sounding keeps its release (see the class),
+     * and an onset the transport has passed is not recovered -- the clock
+     * player's rule for an edit.
      */
-    edited(): void {}
+    edited(): void {
+        this.queue(async () => {
+            if (!this.planned) return;
+            const rate = await this.rateOf();
+            const state = await this.server.transportState();
+            const secs = Math.max(this.timelineSecs(Number(state.positionSample)), 0);
+            const lead = Math.max(secs - this.server.latency, 0);
+            this.clear(Number(state.transportSample));
+            await this.plan(this.rootBeat(secs), this.rootBeat(lead), [
+                Number(state.transportSample),
+                rate,
+            ]);
+        });
+    }
+
+    /**
+     * Clears the transport's queue and sends back the releases of the nodes
+     * already sounding, on their own samples; `now` is the transport's clock.
+     */
+    private clear(now: number): void {
+        this.server.schedClear("transport");
+        // A node id may ride tagged (`["i", id]`), so ids are compared by value.
+        const id = (arg: MsgArg | undefined): unknown =>
+            Array.isArray(arg) ? arg[1] : arg;
+        const started = new Set<unknown>();
+        for (const [sample, messages] of this.queued) {
+            if (sample > now) continue;
+            for (const m of messages) {
+                if (m[0] === "/synth_new" && m.length > 2) started.add(id(m[2]));
+            }
+        }
+        const kept: [number, readonly TimedMessage[], boolean][] = [];
+        for (const [sample, messages, known] of this.queued) {
+            if (sample <= now) continue;
+            if (known || messages.every(
+                (m) => m.length > 1 && m[0] !== "/synth_new" && started.has(id(m[1])),
+            )) {
+                kept.push([sample, messages, true]);
+            }
+        }
+        this.queued = kept;
+        for (const [sample, messages] of kept) {
+            this.server.sendSchedTransport(sample, messages, this.schedTransport);
+        }
+    }
 
     render(node: TimelineNode, beat: number, item: unknown): void {
         if (item instanceof Routine || item instanceof Pattern) {
@@ -1198,15 +1287,22 @@ export class TransportPlayer implements TreeDriver {
      * The walk is the clock player's -- the same nodes, the same entry rule, the
      * same units -- with the waiting taken out: there is no time to pass here,
      * since every item names a sample of a clock the engine is running.
+     * `at` is the beat the transport's clock stands on at `clock` (a
+     * `[transportSample, rate]` asked for when not given); `since`, where the
+     * walk starts, is `at` unless an edit asks for the onsets just behind it
+     * too.
      */
-    private async plan(at: number): Promise<void> {
-        const rate = await this.rateOf();
-        const state = await this.server.transportState();
-        this.stamp = [Number(state.transportSample), this.rootSecs(at), rate];
+    private async plan(at: number, since = at, clock?: [number, number]): Promise<void> {
+        const [base, rate] = clock ?? [
+            Number((await this.server.transportState()).transportSample),
+            await this.rateOf(),
+        ];
+        this.stamp = [base, this.rootSecs(at), rate];
+        this.planned = true;
         const stub = { clock: null as unknown, logicalBeat: 0 };
         const previous = setCurrentRoutine(stub as unknown as Stream);
         try {
-            this.root = new TimelineNode(this, this.timeline, 0, at);
+            this.root = new TimelineNode(this, this.timeline, 0, since);
             this.finished = false;
             for (;;) {
                 const due = this.root.nextDue();
@@ -1285,8 +1381,9 @@ export class TransportPlayer implements TreeDriver {
         // The engine does not clear the queue on a locate (a client's own does),
         // so the re-cue is the pair: clear what was queued for where we were,
         // and plan again from where it says.
+        const now = Number(msg[7]);
         this.queue(async () => {
-            this.server.schedClear("transport");
+            this.clear(now);
             await this.plan(this.rootBeat(Math.max(this.timelineSecs(position), 0)));
         });
     }
@@ -1315,6 +1412,7 @@ export class TimelinePlayer implements TreeDriver {
      */
     readonly schedAxis = null;
     readonly schedTransport = 0;
+    readonly schedKeep = null;
     destination: PlayDestination | null = null;
     loop: [number, number] | null = null;
     mark = 0;

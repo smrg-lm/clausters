@@ -557,6 +557,13 @@ class _ClockView:
         return self._node.player.sched_transport
 
     @property
+    def sched_keep(self):
+        """What the server hands each bundle it queues on the transport to,
+        so a re-cue can send back the releases of what is sounding; ``None``
+        off a transport."""
+        return self._node.player.sched_keep
+
+    @property
     def tempo(self):
         return self._node.timeline._map.tempo_at(self.beats())
 
@@ -770,6 +777,14 @@ class _TransportPlayer:
     map, so a pause holds the queue with the sound. A locate clears the
     transport queue (`sched_clear("transport")`) and re-plans from the new
     position, `latency` ahead so nothing regenerated is late.
+
+    **Clearing the queue keeps what is sounding.** The queue holds the
+    releases of the nodes already started as well as the onsets still to come,
+    and dropping a release leaves its note on forever. So every bundle the plan
+    queues is kept here, and a re-cue -- a locate, a conductor's locate, an edit
+    -- sends back the ones that only address nodes already started, on their own
+    samples: the transport's clock does not jump, so a release is due where it
+    always was.
     """
 
     #: What cannot be planned from a position: a routine and a pattern are
@@ -800,6 +815,16 @@ class _TransportPlayer:
         #: `clausters.gui.PlayheadSync` reads the transport: asking is a round trip
         #: and reading a position is not.
         self._reported = {"playing": False, "position_sample": 0}
+        #: ``[sample, messages, started]`` for every bundle queued on the
+        #: transport, ``started`` once it is known to address only nodes that
+        #: are already sounding. What a re-cue sends back.
+        self._queued = []
+        #: Whether the transport's queue holds a plan: written by a play or a
+        #: re-cue, kept by a pause, gone after a locate that re-plans nothing.
+        self._planned = False
+        #: A re-cue from an edit, a broadcast and a verb may land on three
+        #: threads, and each one clears and rewrites the same queue.
+        self._lock = threading.RLock()
 
     # the root's axis, as the clock player's
     def root_secs(self, beat):
@@ -829,6 +854,15 @@ class _TransportPlayer:
     @property
     def sched_transport(self):
         return getattr(self.server, "transport_id", 0)
+
+    @property
+    def sched_keep(self):
+        """What a `clausters.defs.Server` hands every bundle it queues on the
+        transport to, with the sample it was stamped on."""
+        return self._keep
+
+    def _keep(self, sample, messages):
+        self._queued.append([int(sample), tuple(messages), False])
 
     @property
     def server(self):
@@ -897,13 +931,16 @@ class _TransportPlayer:
         self._held = beat
         server = self.server
         rate = self._rate()
-        server.sched_clear("transport")
-        sample = int(round((self.timeline.transport_at + self.root_secs(beat)) * rate))
-        server.transport_locate_sample(sample)
-        self._reported["position_sample"] = sample
-        self._cued = sample
-        if cue and self._reported.get("playing"):
-            self._plan(beat)
+        with self._lock:
+            self._clear(self._state())
+            sample = int(round((self.timeline.transport_at + self.root_secs(beat)) * rate))
+            server.transport_locate_sample(sample)
+            self._reported["position_sample"] = sample
+            self._cued = sample
+            if cue and self._reported.get("playing"):
+                self._plan(beat)
+            else:
+                self._planned = False
         return self
 
     def halt(self):
@@ -962,8 +999,9 @@ class _TransportPlayer:
         # The engine does not clear the queue on a locate (a client's own does),
         # so the re-cue is the pair: clear what was queued for where we were,
         # and plan again from where it says.
-        self.server.sched_clear("transport")
-        self._plan(self.root_beat(max(position / rate - self.timeline.transport_at, 0.0)))
+        with self._lock:
+            self._clear(self._reported)
+            self._plan(self.root_beat(max(position / rate - self.timeline.transport_at, 0.0)))
 
     def release(self, node):
         """Nothing is owned here: a plan holds no routines, and what is queued
@@ -971,9 +1009,46 @@ class _TransportPlayer:
         self.owned = []
 
     def edited(self):
-        """Nothing yet: a plan on the transport is written whole when it is
-        cued, so an edit is heard from the next play or locate."""
+        """The plan changed under a queue that holds it: write it again from
+        where the transport is, rolling or paused.
+
+        The walk starts `latency` earlier than the position, since an onset
+        just behind the position was stamped `latency` ahead of it and has not
+        sounded yet: clearing the queue took it, and the re-plan puts it back
+        on the same sample. What was sounding keeps its release (see the
+        class), and an onset the transport has passed is not recovered -- the
+        clock player's rule for an edit."""
+        with self._lock:
+            if not self._planned:
+                return self
+            state = self._state()
+            secs = max(self._timeline_secs(state), 0.0)
+            self._clear(state)
+            lead = max(secs - getattr(self.server, "latency", 0.0), 0.0)
+            self._plan(self.root_beat(secs), since=self.root_beat(lead), state=state)
         return self
+
+    def _clear(self, state):
+        """Clear the transport's queue and send back the releases of the nodes
+        already sounding, on their own samples."""
+        server = self.server
+        server.sched_clear("transport")
+        now = int(state.get("transport_sample", 0))
+        started = set()
+        for sample, messages, _known in self._queued:
+            if sample <= now:
+                started.update(m[2] for m in messages if len(m) > 2 and m[0] == "/synth_new")
+        kept = []
+        for entry in self._queued:
+            sample, messages, known = entry
+            if sample <= now:
+                continue
+            if known or all(len(m) > 1 and m[0] != "/synth_new" and m[1] in started
+                            for m in messages):
+                kept.append([sample, messages, True])
+        self._queued = kept
+        for sample, messages, _known in kept:
+            server._send_sched_transport(sample, messages, self.sched_transport)
 
     def render(self, node, beat, item):
         from .pattern import Pattern
@@ -993,21 +1068,25 @@ class _TransportPlayer:
         finally:
             me.clock, me._logical_beat = saved
 
-    def _plan(self, at):
+    def _plan(self, at, since=None, state=None):
         """Write the whole tree from ``at`` onto the transport's clock.
 
         The walk is the clock player's -- the same nodes, the same entry rule,
         the same units -- with the waiting taken out: there is no time to pass
         here, since every item names a sample of a clock the engine is running.
+        ``at`` is the beat the transport's clock stands on in ``state`` (asked
+        for when not given); ``since``, where the walk starts, is ``at`` unless
+        an edit asks for the onsets just behind it too.
         """
-        state = self._state()
+        state = self._state() if state is None else state
         rate = self._rate()
         base = state["transport_sample"] / rate
         self._stamp = (base * rate, self.root_secs(at), rate)
+        self._planned = True
         stub = _PlanMoment()
         previous, main.current_routine = main.current_routine, stub
         try:
-            self.root = _Node(self, self.timeline, 0.0, float(at))
+            self.root = _Node(self, self.timeline, 0.0, float(at if since is None else since))
             self.finished = False
             while True:
                 due = self.root.next_due()
@@ -1041,6 +1120,7 @@ class _Player:
     #: `/sched_at` under a sample timebase): there is no transport to name.
     sched_axis = None
     sched_transport = 0
+    sched_keep = None
 
     def __init__(self, timeline):
         self.timeline = timeline

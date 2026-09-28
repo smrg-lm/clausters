@@ -1971,7 +1971,9 @@ from the frame the line is at, one dragged away goes quiet as the hand lifts it
 
 **Where it stands, 2026-09-27:** the port landed with `C54`'s `Timeline` half,
 in the same commit and with the same eleven tests; what both still wait on is
-written in `C54` ("Where it stands").
+written in `C54` ("Where it stands"). The transport half -- an edit heard on a
+server transport, and a re-cue that keeps the releases of what is sounding --
+landed in both on the same day, with the same four tests.
 
 
 ## Parity gaps carried from the Python client

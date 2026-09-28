@@ -320,13 +320,21 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   child follows its entry -- eleven tests each side, and checked live with
   edits from another thread (one onset per note under 4000 edits) and with the
   server's output recorded. What is not done is the by-ear pass over
-  `editors/edit_notes`: the roll's write-back changes every note's amplitude
-  (`crates/clausters-apps/PLAN.md`, Found by use, "A roll's edit sends every
-  note at its velocity's amplitude"), which is `X3`'s, so this milestone's
-  acceptance waits on it. The **multitrack's roll lane** its acceptance names
-  does not exist any more -- the multitrack plays audio regions only, and a
-  region of notes is the score's road in -- and a timeline on a **server
-  transport** still hears an edit only from the next play or locate.
+  `editors/edit_notes`, which waited on the roll's write-back changing every
+  note's amplitude (`crates/clausters-apps/PLAN.md`, Found by use, "A roll's
+  edit sends every note at its velocity's amplitude") -- fixed 2026-09-27 in
+  the host, so the pass can be made. The **multitrack's roll lane** its
+  acceptance names does not exist any more -- the multitrack plays audio
+  regions only, and a region of notes is the score's road in.
+
+  A timeline on a **server transport** hears an edit too, since 2026-09-27:
+  the plan is written again from where the transport stands, rolling or
+  paused, from `latency` behind it so an onset already stamped and not yet
+  sounded goes back on its sample. The same change made every re-cue -- an
+  edit, a locate, a conductor's locate -- keep the releases of what is
+  sounding: `sched_clear("transport")` took them with the onsets, and a note
+  that was on at a locate never ended. The player keeps what it queued and
+  sends those releases back on their own samples. Four tests each side.
 
 
 - ✅ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.

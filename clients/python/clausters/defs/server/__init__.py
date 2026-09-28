@@ -420,8 +420,14 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             # transport clock, so a pause freezes the queue with the souce and
             # a locate clears it (`sched_clear("transport")`). It is asked
             # first because it is the one axis a caller states outright.
-            self._send_sched_transport(axis(when.secs() + self.latency), messages,
+            sample = axis(when.secs() + self.latency)
+            self._send_sched_transport(sample, messages,
                                        getattr(when.clock, "sched_transport", 0))
+            # The player keeps what it queued: a re-cue clears the queue and
+            # sends back the releases of the nodes already sounding.
+            keep = getattr(when.clock, "sched_keep", None)
+            if keep is not None:
+                keep(sample, messages)
             return
 
         if getattr(self.interface, "time_mode", "unix") == "score":

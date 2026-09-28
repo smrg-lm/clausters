@@ -250,3 +250,75 @@ def test_with_no_destination_the_items_go_to_the_transports_server():
     tl.transport = server
     tl.play(at=0.0)                                   # no destination named
     assert server.onsets() == [0.0, 0.5, 1.0, 1.5]
+
+
+def _rolled_to(server, secs):
+    """The transport ``secs`` into the pass: its clock and its position moved
+    together, as a rolling transport's do."""
+    server.state["transport_sample"] = BASE + int(secs * SR)
+    server.state["position_sample"] = int(secs * SR)
+
+
+def test_an_edit_while_rolling_re_plans_from_where_the_transport_is():
+    server = TransportServer()
+    tl = _timeline()
+    tl.transport = server
+    tl.play(at=0.0, destination=server)
+    _rolled_to(server, 1.2)                           # beat 2.4
+    server.calls.clear()
+    server.interface.score.bundles.clear()
+
+    tl.add(2.3, OscItem("/b"))                        # just behind the position
+
+    assert server.calls[0] == ("clear", "transport")
+    # The plan is written again on the samples the first one used: the item
+    # at beat 3 stays at 1.5 s, and the new one a tenth of a beat behind the
+    # position -- stamped `latency` ahead, so not yet sounded -- is planned
+    # too, at 1.15 s. The item at beat 2, a full latency behind, has sounded.
+    assert server.onsets() == [1.15, 1.5]
+
+
+def test_an_edit_before_any_play_plans_nothing():
+    server = TransportServer()
+    tl = _timeline()
+    tl.transport = server
+    tl.add(1.0, OscItem("/b"))
+    assert server.planned() == []
+
+
+def test_an_edit_while_paused_rewrites_the_frozen_queue():
+    server = TransportServer()
+    tl = _timeline()
+    tl.transport = server
+    tl.play(at=0.0, destination=server)
+    _rolled_to(server, 0.55)
+    tl.pause()
+    server.interface.score.bundles.clear()
+
+    tl.add(2.5, OscItem("/b"))
+    # From the paused position on, with the new item among them and the onset
+    # at half a second, which the pause froze before it sounded; a resume
+    # carries the rewritten queue on.
+    assert server.onsets() == [0.5, 1.0, 1.25, 1.5]
+
+
+def test_a_re_cue_keeps_the_release_of_what_is_sounding():
+    """A note that started before the re-cue is still sounding, and its
+    release is in the queue the re-cue clears: it is sent back, on its own
+    sample, or the note would never end."""
+    server = TransportServer()
+    tl = Timeline([(0, Event(instrument="default", dur=4.0, legato=1.0, target=7))],
+                  tempo=RATE)
+    tl.transport = server
+    tl.play(at=0.0, destination=server)
+    assert server.onsets() == [0.0, 2.0]              # the onset, the release
+    _rolled_to(server, 1.0)                           # sounding
+    server.interface.score.bundles.clear()
+
+    tl.add(3.0, OscItem("/b"))
+    assert server.onsets() == [1.5, 2.0]
+
+    # A locate keeps it too: the transport's clock does not jump.
+    server.interface.score.bundles.clear()
+    tl.locate(6.0)
+    assert server.onsets() == [2.0]

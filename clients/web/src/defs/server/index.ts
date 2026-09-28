@@ -862,6 +862,7 @@ export class Server {
         const scheduler = when.clock as {
             schedAxis?: ((secs: number) => number) | null;
             schedTransport?: number;
+            schedKeep?: ((sample: number, messages: readonly TimedMessage[]) => void) | null;
         } | null;
         const axis = scheduler?.schedAxis;
         if (axis) {
@@ -870,11 +871,11 @@ export class Server {
             // transport clock, so a pause freezes the queue with the sound and
             // a locate clears it (`schedClear("transport")`). It is asked
             // first because it is the one axis a caller states outright.
-            this.sendSchedTransport(
-                axis(when.secs() + this.latency),
-                messages,
-                scheduler?.schedTransport ?? 0,
-            );
+            const sample = axis(when.secs() + this.latency);
+            this.sendSchedTransport(sample, messages, scheduler?.schedTransport ?? 0);
+            // The player keeps what it queued: a re-cue clears the queue and
+            // sends back the releases of the nodes already sounding.
+            scheduler?.schedKeep?.(sample, messages);
             return;
         }
         if (this.scoring) {
@@ -927,8 +928,10 @@ export class Server {
      * `/sched_atTransport` without waiting for its `/done`: a plan is many
      * bundles, and a round trip each would pace the planning by the network
      * (`schedAtTransport` is the awaiting spelling).
+     *
+     * @internal
      */
-    private sendSchedTransport(
+    sendSchedTransport(
         sample: number,
         messages: readonly TimedMessage[],
         transport = 0,

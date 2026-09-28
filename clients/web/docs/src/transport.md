@@ -57,6 +57,8 @@ timeline.transport = server;
 
 From then on `timeline.play`, `pause`, `stop` and `locate` are the transport's own commands, and the timeline plans its items onto the transport's clock (`/sched_atTransport`) from the position it is at — so the conductor's `transportPlay()` rolls it, `transportStop()` freezes it with its queue, and `transportLocateSample(sample)` seeks it, alongside every other client on the same transport. A locate somebody else sent arrives as a broadcast and the plan is written again from where it says; `timeline.transport = null` gives the timeline back its own clock.
 
+An edit to the timeline is heard while it rolls, and while it is paused: the plan is written again from where the transport stands, starting `latency` earlier so an onset stamped just before the edit and not yet sounded goes back on its sample. **What is sounding keeps its release** through any re-cue — an edit, a locate, a conductor's locate — since the timeline keeps what it queued and sends back the releases of the notes already started, on their own samples.
+
 The subscription is an [`OscFunc`](responders.md) on the server's receiver, as in the Python client — with the receiver a page already has (its connection to the server) rather than a socket opened for the purpose. Anything else that wants to react to a conductor puts its own responder on the same `/transport_query.reply`.
 
 **The verbs are queued rather than awaited**, where the reference client's block: the transport's commands are requests, so each verb goes onto one chain and `await timeline.refresh()` settles with it and reads the position back.
