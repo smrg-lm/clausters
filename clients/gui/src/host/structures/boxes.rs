@@ -500,7 +500,17 @@ pub fn move_block<P: Placements + ?Sized>(
                     ..b
                 },
             );
-            p.set_row(*i, (snap_row(*r, step) + dr).clamp(lo, hi));
+            // The delta is what snaps, not the row: a row that sits off the
+            // grid -- a note with a bend -- keeps how far off it is, and it is
+            // its step, not the bend, that is held inside the rows.
+            let moved = *r + dr;
+            let row = if step > 0.0 {
+                let on = snap_row(moved, step);
+                on.clamp(lo, hi) + (moved - on)
+            } else {
+                moved.clamp(lo, hi)
+            };
+            p.set_row(*i, row);
         }
     }
 }

@@ -53,8 +53,9 @@ pub enum Vertical {
         domain: (f32, f32),
         window: (f64, f64),
     },
-    /// A roll's pitch window: the `lo`/`hi` its rows are drawn over.
-    Pitch { lo: f32, hi: f32 },
+    /// A roll's pitch axis: the window its rows -- or its line -- are drawn
+    /// over.
+    Pitch(crate::host::graphics::pianoroll::Pitches),
 }
 
 /// The x range a sample span covers in `body`, or `None` when it covers no
@@ -104,13 +105,14 @@ pub fn bands(
     };
     match vertical {
         Vertical::Whole => whole,
-        Vertical::Pitch { lo, hi } => {
-            // A pitch axis is discrete: the band covers the *rows* it holds, so
-            // it runs from the top edge of the highest to the bottom edge of the
-            // lowest -- half a row past each centre, which is where the row is
-            // drawn from.
-            let y = |p: f64| crate::host::graphics::pianoroll::pitch_to_y(p as f32, lo, hi, body);
-            clipped(body, y(max + 0.5), y(min - 0.5))
+        Vertical::Pitch(axis) => {
+            // On the keys the band covers the *rows* it holds, so it runs from
+            // the top edge of the highest to the bottom edge of the lowest --
+            // half a row past each centre, which is where the row is drawn
+            // from. On a line it covers the pitches themselves.
+            let half = if axis.is_line() { 0.0 } else { 0.5 };
+            let y = |p: f64| axis.y(p as f32, body).clamp(body.y, body.y + body.h);
+            clipped(body, y(max + half), y(min - half))
                 .map(|band| vec![band])
                 .unwrap_or_default()
         }
@@ -262,7 +264,7 @@ mod tests {
     /// top of the highest to the bottom of the lowest, not their centres.
     #[test]
     fn a_pitch_restriction_covers_the_rows_it_holds() {
-        let vertical = Vertical::Pitch { lo: 60.0, hi: 71.0 };
+        let vertical = Vertical::Pitch(crate::host::graphics::pianoroll::Pitches::rows(60.0, 71.0));
         let whole = bands(BODY, 1, None, vertical);
         let band = bands(BODY, 1, Some((62.0, 63.0)), vertical);
         assert_eq!(whole, vec![(0.0, 100.0)]);

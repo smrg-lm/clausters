@@ -28,7 +28,11 @@ and **L** loops it (with no range, L loops every note); an Alt click still
 toggles the note it lands on. **The wheel over the keyboard scrolls through the octaves**
 -- every MIDI note, and in the hertz window up to 20 kHz -- and **Ctrl** with
 it zooms; the roll opens on the notes. In hertz a note is a bar of one height
-whatever the zoom, and the line through it is its frequency.
+whatever the zoom, centred on the line of its frequency, and a drag lands on a
+round frequency -- finer as you zoom in. On the keys a note moved in hertz sits
+on its nearest key, the line inside the box its bend off that key; dragging it
+there transposes by semitones and keeps the bend, and a note past MIDI 127 is
+a strip at the top edge.
 
 **A second window shows the same notes in hertz** -- the same sequence, the
 roll's vertical axis a frequency on a log scale, ruled in round frequencies. A

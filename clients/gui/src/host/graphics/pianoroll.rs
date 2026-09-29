@@ -95,6 +95,109 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
     body.x as f64 + (s - nav.start) / nav.len.max(1.0) * body.w as f64
 }
 
+/// **A roll's vertical axis**: the pitch window `[lo, hi]` and what a note is
+/// on it.
+///
+/// **Rows** are the keys: a note is a semitone band, the window shows every
+/// whole row `lo..=hi` -- so the pixels span `[lo - 0.5, hi + 0.5]` and the
+/// extreme rows draw in full -- and a note sits on the row of its **nearest
+/// key**, with whatever it is off that key drawn inside the box as a line at its
+/// exact pitch: the bend a MIDI note-on needs beside the key to sound it. A
+/// **line** is a continuous axis (hertz): the window is the pixels, edge to
+/// edge, and a note is a bar of a fixed height centred on its exact pitch,
+/// since a row means nothing there and a bar that grew with the zoom would
+/// hide where its frequency is.
+///
+/// Both map a pitch and a pixel linearly -- a log frequency is a linear pitch
+/// -- so the two rolls over one sequence draw a note at the same height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pitches {
+    /// The lowest pitch of the window.
+    pub lo: f32,
+    /// The highest.
+    pub hi: f32,
+    /// A line's bar height in pixels; `None` for rows.
+    pub bar: Option<f32>,
+}
+
+impl Pitches {
+    /// Semitone rows over `[lo, hi]`: the keys.
+    pub fn rows(lo: f32, hi: f32) -> Self {
+        Self { lo, hi, bar: None }
+    }
+
+    /// A continuous axis over `[lo, hi]`, a note a bar `bar` pixels high.
+    pub fn line(lo: f32, hi: f32, bar: f32) -> Self {
+        Self {
+            lo,
+            hi,
+            bar: Some(bar),
+        }
+    }
+
+    /// Whether this is a continuous axis.
+    pub fn is_line(&self) -> bool {
+        self.bar.is_some()
+    }
+
+    /// How far past each end of the window the pixels reach, in pitch.
+    fn pad(&self) -> f32 {
+        if self.is_line() { 0.0 } else { 0.5 }
+    }
+
+    /// The pitch the grid's height spans.
+    pub fn span(&self) -> f32 {
+        let span = self.hi - self.lo + 2.0 * self.pad();
+        if self.is_line() {
+            span.max(1e-3)
+        } else {
+            span.max(1.0)
+        }
+    }
+
+    /// A pitch's y pixel, **unclamped**: outside the window it maps above or
+    /// below `grid`, and whatever is drawn there is cut, not slid back in.
+    pub fn y(&self, pitch: f32, grid: Rect) -> f32 {
+        grid.y + (self.hi + self.pad() - pitch) * grid.h / self.span()
+    }
+
+    /// The pitch a y pixel is, clamped into the pixels the grid shows -- the
+    /// inverse of [`Self::y`], so a drop lands where it is drawn, down to the
+    /// grid's very edges.
+    pub fn pitch(&self, y: f32, grid: Rect) -> f32 {
+        let frac = ((y - grid.y) / grid.h.max(f32::EPSILON)).clamp(0.0, 1.0);
+        self.hi + self.pad() - frac * self.span()
+    }
+
+    /// Where a note of `pitch` is placed: the row of its nearest key, or its
+    /// own pitch on a line.
+    pub fn anchor(&self, pitch: f32) -> f32 {
+        if self.is_line() { pitch } else { pitch.round() }
+    }
+
+    /// Whether any of a note of `pitch` can show: a row within a whole row of
+    /// the window, since half of it is enough; a line's bar is cut where it
+    /// leaves ([`visible_band`]).
+    pub fn visible(&self, pitch: f32) -> bool {
+        self.is_line() || {
+            let key = self.anchor(pitch);
+            key > self.lo - 1.0 && key < self.hi + 1.0
+        }
+    }
+
+    /// **How tall a note is drawn and grabbed**: a row, or a line's bar. The
+    /// floor wins over the ceiling: a note never collapses below `NOTE_MIN_H`,
+    /// and a grid shorter than one bar cuts it (`visible_band`) rather than
+    /// shrinking it -- written as a `clamp` this inverted its own range on such
+    /// a grid and panicked.
+    pub fn note_height(&self, grid: Rect) -> f32 {
+        self.bar
+            .unwrap_or(grid.h / self.span())
+            .min(grid.h)
+            .max(NOTE_MIN_H)
+    }
+}
+
 /// **The roll's vertical axis**: one band per semitone of the window
 /// `[lo, hi]`, the top band being pitch `hi`.
 ///
@@ -113,23 +216,7 @@ pub fn bands(lo: f32, hi: f32, grid: Rect) -> Bands {
 
 /// The height in pixels of one semitone row over the pitch window `[lo, hi]`.
 pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
-    let rows = (hi - lo + 1.0).max(1.0);
-    grid.h / rows
-}
-
-/// **How tall a note is drawn and grabbed**: a semitone row of the pitch
-/// window `[lo, hi]`, or `bar` pixels when it is given -- a roll on a
-/// continuous axis (hertz), where a row means nothing and a note that grew
-/// with the zoom would hide where its frequency is.
-///
-/// The floor wins over the ceiling: a note never collapses below
-/// `NOTE_MIN_H`, and a grid shorter than one bar cuts it (`visible_band`)
-/// rather than shrinking it. Written as a `clamp` this inverted its own range
-/// on such a grid and panicked -- reachable by dragging a window's corner in.
-pub fn note_height(lo: f32, hi: f32, grid: Rect, bar: Option<f32>) -> f32 {
-    bar.unwrap_or_else(|| row_height(lo, hi, grid))
-        .min(grid.h)
-        .max(NOTE_MIN_H)
+    grid.h / Pitches::rows(lo, hi).span()
 }
 
 /// The integer pitches whose rows show in the window `[lo - 0.5, hi + 0.5]` --
@@ -159,7 +246,7 @@ fn visible_band(yc: f32, h: f32, grid: Rect) -> Option<(f32, f32)> {
 /// clamps to a zero-width span and is skipped -- while the vertical one has to
 /// be asked.
 pub fn pitch_visible(p: f32, lo: f32, hi: f32) -> bool {
-    p > lo - 1.0 && p < hi + 1.0
+    Pitches::rows(lo, hi).visible(p)
 }
 
 /// A pitch's y pixel (its row centre), **unclamped**: a pitch outside the
@@ -171,7 +258,7 @@ pub fn row_center(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
     // band 0. Deliberately **not** `Bands::at`, which clamps to the stack -- a
     // row leaving the view is cut where it is, not slid back in, and the caller
     // is the one that cuts it (`visible_band`).
-    grid.y + (hi + 0.5 - pitch) * row_height(lo, hi, grid)
+    Pitches::rows(lo, hi).y(pitch, grid)
 }
 
 /// A pitch's y pixel (its row centre) **inside** `grid`: high pitch at the top.
@@ -187,8 +274,12 @@ pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 /// The (fractional) pitch a y pixel maps to over the `[lo - 0.5, hi + 0.5]`
 /// window -- the inverse of [`pitch_to_y`], so a drop lands on the row it is
 /// drawn on.
+///
+/// Continuous, and down to the grid's edges: counting whole bands instead
+/// truncated a fractional window's rows, so the stretch past the last whole
+/// one could never be reached by a drag.
 pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
-    hi + 0.5 - bands(lo, hi, grid).index_of(y - grid.y)
+    Pitches::rows(lo, hi).pitch(y, grid)
 }
 
 // --- Drawing --------------------------------------------------------------
@@ -239,8 +330,8 @@ pub fn draw_grid_background(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
 /// clip's own width, drifting the roll off its clip under a pan/zoom. The one
 /// primitive both the widget and the clip body use. When `color_velocity` the
 /// note fill brightens with velocity. `selected` indices draw highlighted (the
-/// multi-note selection; the clip body passes none). `bar` is a note's
-/// height ([`note_height`]).
+/// multi-note selection; the clip body passes none). `axis` is where a note
+/// sits and how tall it is ([`Pitches`]).
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
 pub fn draw_notes(
     d: &mut Draw,
@@ -249,17 +340,15 @@ pub fn draw_notes(
     nav: &View,
     offset: f64,
     notes: &[Note],
-    lo: f32,
-    hi: f32,
+    axis: Pitches,
     color_velocity: bool,
     selected: &[usize],
-    bar: Option<f32>,
 ) {
     let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
-    let h = note_height(lo, hi, grid, bar);
+    let h = axis.note_height(grid);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
     for (i, n) in notes.iter().enumerate() {
         // x maps through `field` -- the pixel domain the shared `nav` spans (the
@@ -271,13 +360,13 @@ pub fn draw_notes(
         let mut nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, field) as f32;
         nx0 = nx0.clamp(x_lo, x_hi);
         nx1 = nx1.clamp(x_lo, x_hi);
-        if nx1 <= nx0 || !pitch_visible(n.pitch, lo, hi) {
+        if nx1 <= nx0 || !axis.visible(n.pitch) {
             continue;
         }
         // The bar is **cut** by the grid's edge, never pushed inside it: a
         // note on its way out of the pitch window has to leave, and one shoved
         // back in would sit on a row that is not its own.
-        let Some((y, h)) = visible_band(row_center(n.pitch, lo, hi, grid), h, grid) else {
+        let Some((y, h)) = visible_band(axis.y(axis.anchor(n.pitch), grid), h, grid) else {
             continue;
         };
         let is_selected = selected.contains(&i);
@@ -295,11 +384,13 @@ pub fn draw_notes(
             theme.note_fill
         };
         mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), fill);
-        // A bar of a fixed height is a mark on a continuous axis, and what it
-        // marks is its centre: said by a line there, since the height itself
-        // means nothing.
-        if bar.is_some() {
-            let yc = row_center(n.pitch, lo, hi, grid);
+        // **The exact pitch, as a line**: a bar on a continuous axis marks its
+        // centre, since the height itself means nothing; a box on its key's
+        // row marks how far off the key it is -- the bend beside the key --
+        // and draws nothing on the key itself.
+        let bend = n.pitch - axis.anchor(n.pitch);
+        if axis.is_line() || bend.abs() > 1e-3 {
+            let yc = axis.y(n.pitch, grid);
             if yc >= y && yc <= y + h {
                 mesh.rect(
                     Rect::new(nx0, yc - m.divider_w * 0.5, nx1 - nx0, m.divider_w),
@@ -314,6 +405,40 @@ pub fn draw_notes(
                 theme.note_edge
             };
             mesh.border(Rect::new(nx0, y, nx1 - nx0, h), m.divider_w, edge);
+        }
+    }
+}
+
+/// **The notes a compass cannot hold, marked at its edge**: a note whose key
+/// is outside `[min, max]` -- a frequency past what a MIDI key can be, written
+/// from a roll in hertz -- has no row to be drawn on, so a strip at the top or
+/// the bottom of the grid, as long as the note, says it is there.
+#[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
+pub fn draw_out_of_range(
+    d: &mut Draw,
+    grid: Rect,
+    nav: &View,
+    offset: f64,
+    notes: &[Note],
+    axis: Pitches,
+    compass: (f32, f32),
+) {
+    let (mesh, m, theme) = d.parts();
+    let strip = (m.divider_w * 3.0).max(3.0);
+    for n in notes {
+        let key = axis.anchor(n.pitch);
+        let y = if key > compass.1 {
+            grid.y
+        } else if key < compass.0 {
+            grid.y + grid.h - strip
+        } else {
+            continue;
+        };
+        let x0 = (to_x(offset + n.start, nav, grid) as f32).clamp(grid.x, grid.x + grid.w);
+        let x1 = (to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32)
+            .clamp(grid.x, grid.x + grid.w);
+        if x1 > x0 {
+            mesh.rect(Rect::new(x0, y, x1 - x0, strip), theme.selected_edge);
         }
     }
 }
@@ -404,9 +529,10 @@ const HZ_CEIL: f64 = 159.0;
 /// The round frequencies to mark over the pitch window `[lo, hi]` of a strip
 /// `height` pixels tall, each as the pitch it sits at and its label when it
 /// has room for one -- the spectrogram's own ruler, over the roll's window.
-pub fn hz_ticks(lo: f32, hi: f32, height: f32, m: &Metrics) -> Vec<(f32, Option<String>)> {
+pub fn hz_ticks(axis: Pitches, height: f32, m: &Metrics) -> Vec<(f32, Option<String>)> {
     let span = HZ_CEIL - HZ_FLOOR;
-    let (bottom, top) = (f64::from(lo) - 0.5, f64::from(hi) + 0.5);
+    let top = f64::from(axis.hi) + f64::from(axis.pad());
+    let bottom = top - f64::from(axis.span());
     let nyquist = scale::midi_to_hz(HZ_CEIL);
     let floor = scale::midi_to_hz(HZ_FLOOR) / nyquist;
     crate::host::ruler::hz_ticks(
@@ -424,16 +550,16 @@ pub fn hz_ticks(lo: f32, hi: f32, height: f32, m: &Metrics) -> Vec<(f32, Option<
 }
 
 /// The grid of a roll in hertz: a line at each round frequency, brighter where
-/// it is labelled. `lo`/`hi` are the visible pitch window, as for the keys.
-pub fn draw_hz_grid(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
-    let ticks = hz_ticks(lo, hi, grid.h, d.parts().1);
+/// it is labelled, over the roll's `axis`.
+pub fn draw_hz_grid(d: &mut Draw, grid: Rect, axis: Pitches) {
+    let ticks = hz_ticks(axis, grid.h, d.parts().1);
     let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
     mesh.rect(grid, theme.lane);
     for (pitch, label) in ticks {
-        let y = row_center(pitch, lo, hi, grid);
+        let y = axis.y(pitch, grid);
         if y < grid.y || y > grid.y + grid.h {
             continue;
         }
@@ -449,8 +575,8 @@ pub fn draw_hz_grid(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
 
 /// The ruler of a roll in hertz, in the gutter the keys take otherwise: a tick
 /// at each round frequency and its label beside it.
-pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
-    let ticks = hz_ticks(lo, hi, gutter.h, d.parts().1);
+pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, axis: Pitches) {
+    let ticks = hz_ticks(axis, gutter.h, d.parts().1);
     let (mesh, m, theme) = d.parts();
     if gutter.w <= 0.0 || gutter.h <= 0.0 {
         return;
@@ -458,7 +584,7 @@ pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
     mesh.rect(gutter, theme.lane_alt);
     let text_h = font::height(m.micro_scale);
     for (pitch, label) in ticks {
-        let y = row_center(pitch, lo, hi, gutter);
+        let y = axis.y(pitch, gutter);
         if y < gutter.y || y > gutter.y + gutter.h {
             continue;
         }
@@ -529,23 +655,21 @@ pub fn note_hit(
     nav: &View,
     offset: f64,
     notes: &[Note],
-    lo: f32,
-    hi: f32,
+    axis: Pitches,
     x: f32,
     y: f32,
-    bar: Option<f32>,
 ) -> Option<NoteHit> {
-    let h = note_height(lo, hi, grid, bar);
+    let h = axis.note_height(grid);
     let mut found: Option<NoteHit> = None;
     for (i, n) in notes.iter().enumerate() {
-        if !pitch_visible(n.pitch, lo, hi) {
+        if !axis.visible(n.pitch) {
             continue; // scrolled out of the pitch window: not drawn, not grabbable
         }
         let nx0 = to_x(offset + n.start, nav, grid) as f32;
         let nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32;
         // The band actually on screen, exactly as drawn: a half-cut note is
         // grabbed by the half you can see.
-        let Some((ny, nh)) = visible_band(row_center(n.pitch, lo, hi, grid), h, grid) else {
+        let Some((ny, nh)) = visible_band(axis.y(axis.anchor(n.pitch), grid), h, grid) else {
             continue;
         };
         if x >= nx0 && x <= nx1 && y >= ny && y <= ny + nh {
@@ -614,12 +738,12 @@ mod tests {
         let x = (to_x(100.0, &nv, g) + to_x(500.0, &nv, g)) as f32 * 0.5;
         // Inside a window holding it: the row is hit at its own y.
         let yc = pitch_to_y(84.0, 72.0, 96.0, g);
-        assert!(note_hit(g, &nv, 0.0, &notes, 72.0, 96.0, x, yc, None).is_some());
+        assert!(note_hit(g, &nv, 0.0, &notes, Pitches::rows(72.0, 96.0), x, yc).is_some());
         // Zoomed onto 48..72, the note is a whole octave above the top row.
         assert!(!pitch_visible(84.0, 48.0, 72.0));
         for y in [g.y, g.y + 1.0, g.y + g.h * 0.5, g.y + g.h - 1.0] {
             assert!(
-                note_hit(g, &nv, 0.0, &notes, 48.0, 72.0, x, y, None).is_none(),
+                note_hit(g, &nv, 0.0, &notes, Pitches::rows(48.0, 72.0), x, y).is_none(),
                 "grabbed at y {y}"
             );
         }
@@ -664,16 +788,36 @@ mod tests {
         let x1 = to_x(500.0, &nv, g) as f32;
         let yc = pitch_to_y(60.0, 24.0, 96.0, g);
         // Near the start edge.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 + 1.0, yc, None).unwrap();
+        let h = note_hit(g, &nv, 0.0, &notes, Pitches::rows(24.0, 96.0), x0 + 1.0, yc).unwrap();
         assert_eq!(h.part, Part::Start);
         // Near the end edge.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x1 - 1.0, yc, None).unwrap();
+        let h = note_hit(g, &nv, 0.0, &notes, Pitches::rows(24.0, 96.0), x1 - 1.0, yc).unwrap();
         assert_eq!(h.part, Part::End);
         // In the middle -> body.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, (x0 + x1) * 0.5, yc, None).unwrap();
+        let h = note_hit(
+            g,
+            &nv,
+            0.0,
+            &notes,
+            Pitches::rows(24.0, 96.0),
+            (x0 + x1) * 0.5,
+            yc,
+        )
+        .unwrap();
         assert_eq!(h.part, Part::Body);
         // Off the note -> miss.
-        assert!(note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 - 20.0, yc, None).is_none());
+        assert!(
+            note_hit(
+                g,
+                &nv,
+                0.0,
+                &notes,
+                Pitches::rows(24.0, 96.0),
+                x0 - 20.0,
+                yc
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -696,5 +840,63 @@ mod tests {
             108.0,
         );
         assert_eq!(mesh.vertex_count(), 0);
+    }
+
+    /// **A line reaches its grid's edges, and so do the keys**: the pitches a
+    /// y maps to run edge to edge -- the whole window on a line, half a row
+    /// past each end on the keys -- and a fractional window of rows is reached
+    /// all the way down, where counting whole bands stopped short of it.
+    #[test]
+    fn both_axes_reach_the_grids_edges() {
+        let g = grid();
+        let line = Pitches::line(60.0, 62.5, 8.0);
+        assert!((line.pitch(g.y, g) - 62.5).abs() < 1e-4);
+        assert!((line.pitch(g.y + g.h, g) - 60.0).abs() < 1e-4);
+        assert!((line.y(61.25, g) - (g.y + g.h * 0.5)).abs() < 1e-3);
+        let rows = Pitches::rows(50.8, 76.2);
+        assert!(
+            (rows.pitch(g.y + g.h, g) - 50.3).abs() < 1e-3,
+            "the last fraction"
+        );
+        assert!((rows.pitch(g.y, g) - 76.7).abs() < 1e-3);
+    }
+
+    /// **On the keys a note sits on its nearest key's row**, and what it is off
+    /// that key is a line inside the box; on a line it is centred on itself.
+    #[test]
+    fn a_note_sits_on_its_nearest_key_or_on_its_own_pitch() {
+        let rows = Pitches::rows(48.0, 72.0);
+        assert_eq!(rows.anchor(60.37), 60.0);
+        assert_eq!(rows.anchor(60.6), 61.0);
+        let line = Pitches::line(48.0, 72.0, 8.0);
+        assert_eq!(line.anchor(60.37), 60.37);
+        let g = grid();
+        let nv = View::full(1000);
+        let notes = vec![Note::new(0.0, 500.0, 60.37)];
+        let x = to_x(100.0, &nv, g) as f32;
+        let on_row = rows.y(60.0, g);
+        assert!(note_hit(g, &nv, 0.0, &notes, rows, x, on_row).is_some());
+    }
+
+    /// **A key a compass cannot hold is marked at its edge**, and one inside it
+    /// is not.
+    #[test]
+    fn a_key_past_the_compass_is_marked_at_its_edge() {
+        let nv = View::full(1000);
+        let draw = |pitch: f32| {
+            let mut mesh = Mesh::new();
+            draw_out_of_range(
+                &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
+                grid(),
+                &nv,
+                0.0,
+                &[Note::new(0.0, 500.0, pitch)],
+                Pitches::rows(100.0, 127.0),
+                (0.0, 127.0),
+            );
+            mesh.vertex_count()
+        };
+        assert!(draw(131.0) > 0, "above 127");
+        assert_eq!(draw(120.0), 0, "inside the compass");
     }
 }

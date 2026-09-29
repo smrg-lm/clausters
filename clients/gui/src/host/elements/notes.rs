@@ -28,7 +28,7 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::graphics::pianoroll;
+use crate::host::graphics::pianoroll::{self, Pitches};
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
@@ -234,6 +234,50 @@ impl Notes {
         self.hz().then(|| (HZ_NOTE_H * m.ui_scale).round())
     }
 
+    /// **The roll's vertical axis** as it is drawn now: the keys' rows, or a
+    /// line in hertz with its bar ([`Pitches`]).
+    fn axis(&self, m: &Metrics) -> Pitches {
+        let (lo, hi) = self.pitch_window();
+        match self.bar(m) {
+            Some(bar) => Pitches::line(lo, hi, bar),
+            None => Pitches::rows(lo, hi),
+        }
+    }
+
+    /// **Where a hand at `y` puts a note** that was at `held`. On the keys:
+    /// the nearest key inside the window, the note keeping how far off its key
+    /// it was -- its bend -- so a microtone is transposed and never rounded. On
+    /// a line: the frequency under the hand, rounded to what a pixel measures
+    /// there ([`Self::round_hz`]).
+    fn placed_pitch(&self, axis: Pitches, grid: Rect, y: f32, held: f32) -> f32 {
+        let under = axis.pitch(y, grid);
+        if axis.is_line() {
+            return self.round_hz(under, axis, grid);
+        }
+        let (low, high) = (axis.lo.ceil(), axis.hi.floor().max(axis.lo.ceil()));
+        under.round().clamp(low, high) + (held - held.round())
+    }
+
+    /// **A frequency a hand can mean**: `pitch` as hertz, rounded to the 1-2-5
+    /// step just above what one pixel spans there -- so a note dragged at a
+    /// wide zoom lands on 440 rather than 437.23, and a close zoom gives finer
+    /// steps -- and back to its pitch, inside the window.
+    fn round_hz(&self, pitch: f32, axis: Pitches, grid: Rect) -> f32 {
+        use clausters_core::scale::{hz_to_midi, midi_to_hz};
+
+        let per_px = f64::from(axis.span()) / f64::from(grid.h.max(1.0));
+        let hz = midi_to_hz(f64::from(pitch));
+        let spanned = hz * (2f64.powf(per_px / 12.0) - 1.0);
+        let decade = 10f64.powf(spanned.max(1e-9).log10().floor());
+        let step = [1.0, 2.0, 5.0, 10.0]
+            .into_iter()
+            .map(|k| k * decade)
+            .find(|s| *s >= spanned)
+            .unwrap_or(10.0 * decade);
+        let rounded = ((hz / step).round() * step).max(step);
+        (hz_to_midi(rounded) as f32).clamp(axis.lo, axis.hi)
+    }
+
     /// What a pitch snaps to: a semitone, or nothing on a continuous axis.
     fn step(&self) -> f32 {
         if self.hz() { 0.0 } else { 1.0 }
@@ -318,7 +362,7 @@ impl Notes {
     fn hit(&self, at: (f64, f64), input: &Input) -> Hit {
         let r = self.regions(input.rect, input.indent, input.metrics);
         let nav = self.view(input.time);
-        let (lo, hi) = self.pitch_window();
+        let axis = self.axis(input.metrics);
         let (fx, fy) = (at.0 as f32, at.1 as f32);
         if self.osc_lane && r.osc.contains(at.0, at.1) {
             // No marker index: the lane shows and does not write, so which
@@ -327,8 +371,7 @@ impl Notes {
                 region: Region::Osc,
                 grid: r.grid,
                 nav,
-                lo,
-                hi,
+                axis,
                 note: None,
             };
         }
@@ -341,13 +384,9 @@ impl Notes {
             region,
             grid: r.grid,
             nav,
-            lo,
-            hi,
+            axis,
             note: (region == Region::Grid)
-                .then(|| {
-                    let bar = self.bar(input.metrics);
-                    pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, lo, hi, fx, fy, bar)
-                })
+                .then(|| pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, axis, fx, fy))
                 .flatten(),
         }
     }
@@ -374,8 +413,7 @@ struct Hit {
     region: Region,
     grid: Rect,
     nav: View,
-    lo: f32,
-    hi: f32,
+    axis: Pitches,
     note: Option<pianoroll::NoteHit>,
 }
 
@@ -439,9 +477,10 @@ impl Element for Notes {
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let r = self.regions(ctx.rect, ctx.indent, ctx.metrics);
         let nav = self.view(ctx.time);
-        let (lo, hi) = self.pitch_window();
+        let axis = self.axis(ctx.metrics);
+        let (lo, hi) = (axis.lo, axis.hi);
         if self.hz() {
-            pianoroll::draw_hz_grid(d, r.grid, lo, hi);
+            pianoroll::draw_hz_grid(d, r.grid, axis);
         } else {
             pianoroll::draw_grid_background(d, r.grid, lo, hi);
         }
@@ -452,16 +491,18 @@ impl Element for Notes {
             &nav,
             0.0,
             &self.notes,
-            lo,
-            hi,
+            axis,
             true,
             &self.selected,
-            self.bar(ctx.metrics),
         );
         if self.hz() {
-            pianoroll::draw_hz_ruler(d, r.keyboard, lo, hi);
+            pianoroll::draw_hz_ruler(d, r.keyboard, axis);
         } else {
             pianoroll::draw_keyboard(d, r.keyboard, lo, hi);
+            // A key a MIDI note cannot have -- a frequency past the compass,
+            // written from a roll in hertz -- is marked at the edge it is past.
+            let compass = (self.min, self.max);
+            pianoroll::draw_out_of_range(d, r.grid, &nav, 0.0, &self.notes, axis, compass);
         }
         if self.osc_lane {
             pianoroll::draw_osc_lane(d, r.osc, &nav, 0.0, &self.osc);
@@ -543,11 +584,9 @@ impl Element for Notes {
             local,
             0.0,
             &self.notes,
-            lo,
-            hi,
+            Pitches::rows(lo, hi),
             false,
             &[],
-            None,
         );
         pianoroll::draw_pitch_labels(d, rect, lo, hi);
     }
@@ -612,10 +651,15 @@ impl Element for Notes {
             self.time_at(h.grid, &h.nav, from.0),
             self.time_at(h.grid, &h.nav, to.0),
         );
-        let p0 = pianoroll::y_to_pitch(from.1 as f32, h.lo, h.hi, h.grid);
-        let p1 = pianoroll::y_to_pitch(to.1 as f32, h.lo, h.hi, h.grid);
+        let p0 = h.axis.pitch(from.1 as f32, h.grid);
+        let p1 = h.axis.pitch(to.1 as f32, h.grid);
         self.selected = notes::notes_in_rect(&self.notes, t0, t1, p0, p1);
-        let (a, b) = (p0.min(p1).ceil(), p0.max(p1).floor());
+        // Whole rows on the keys; on a line, the pitches the sweep crossed.
+        let (a, b) = if h.axis.is_line() {
+            (p0.min(p1), p0.max(p1))
+        } else {
+            (p0.min(p1).ceil(), p0.max(p1).floor())
+        };
         // A rectangle that never left its row restricts nothing -- the click it
         // still is vertically. The ceil/floor pair says so on its own for a
         // sweep inside a row; a press, whose two corners are one point, would
@@ -684,7 +728,8 @@ impl Element for Notes {
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let r = self.regions(input.rect, input.indent, input.metrics);
         let nav = self.view(input.time);
-        let (lo, hi) = self.pitch_window();
+        let axis = self.axis(input.metrics);
+        let (lo, hi) = (axis.lo, axis.hi);
         let time = self.time_at(r.grid, &nav, at.0);
         let limit = self.edit_limit(input);
         match self.drag.clone() {
@@ -699,7 +744,8 @@ impl Element for Notes {
                 match part {
                     boxes::Part::Body => {
                         let start = orig_start + (time - press_time);
-                        let pitch = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
+                        let held = self.notes.get(index).map_or(0.0, |n| n.pitch);
+                        let pitch = self.placed_pitch(axis, r.grid, at.1 as f32, held);
                         // The duration is asserted **first**: the clamp against
                         // the far edge measures the note's tail, so a duration
                         // a `set` changed under a running drag has to be the one
@@ -707,15 +753,16 @@ impl Element for Notes {
                         if let Some(n) = self.notes.get_mut(index) {
                             n.dur = orig_dur;
                         }
-                        let step = self.step();
+                        // Placed already -- a key and its bend, or a round
+                        // frequency -- and inside what the window shows.
                         notes::move_note(
                             &mut self.notes,
                             index,
                             start,
                             pitch,
-                            lo,
-                            hi,
-                            step,
+                            lo - 0.5,
+                            hi + 0.5,
+                            0.0,
                             bounds,
                         );
                     }
@@ -735,7 +782,15 @@ impl Element for Notes {
                     Some((_, s0, _)) => snap_to(s0 + (time - press_time), self.snap) - s0,
                     None => 0.0,
                 };
-                let dp = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid) - press_pitch;
+                let mut dp = axis.pitch(at.1 as f32, r.grid) - press_pitch;
+                // On a line the grabbed note lands on a round frequency and the
+                // rest keep their distance from it; on the keys the block moves
+                // by whole semitones, each note keeping its bend.
+                if let Some(&(_, _, lead)) = orig.first()
+                    && axis.is_line()
+                {
+                    dp = self.round_hz(lead + dp, axis, r.grid) - lead;
+                }
                 let step = self.step();
                 notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, step, limit);
                 Events::none()
@@ -1043,7 +1098,7 @@ impl Notes {
         // **the pitch band this roll's own marquee swept** -- which it used to
         // throw away, drawing a full-height stripe over a selection that held a
         // few semitones of it.
-        let (lo, hi) = self.pitch_window();
+        let axis = self.axis(m);
         crate::host::graphics::selection::draw_span(
             &mut Draw::new(mesh, m, theme),
             grid,
@@ -1051,7 +1106,7 @@ impl Notes {
             time.sel,
             1,
             self.editor.value_range(),
-            crate::host::graphics::selection::Vertical::Pitch { lo, hi },
+            crate::host::graphics::selection::Vertical::Pitch(axis),
         );
         // The position cursor first, then the playhead over it: two lines that
         // mean two things, and where they coincide the music's is the one that
@@ -1069,8 +1124,7 @@ impl Notes {
         let Some((cx, cy)) = ctx.world.cursor.filter(|(x, y)| grid.contains(*x, *y)) else {
             return;
         };
-        let (lo, hi) = self.pitch_window();
-        let row = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
+        let row = self.axis(m).pitch(cy as f32, grid);
         let s = nav.start + nav.len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
         let time = match self.editor.ruler {
             Ruler::Samples => ruler::readout_samples(s),
@@ -1152,11 +1206,7 @@ impl Notes {
                 // the length until release.
                 None if !is_body => {
                     let time = snap_to(self.time_at(h.grid, &h.nav, at.0), self.snap).max(0.0);
-                    let pitch = boxes::snap_row(
-                        pianoroll::y_to_pitch(at.1 as f32, h.lo, h.hi, h.grid),
-                        self.step(),
-                    )
-                    .clamp(h.lo, h.hi);
+                    let pitch = self.placed_pitch(h.axis, h.grid, at.1 as f32, 0.0);
                     let dur = self.default_dur(&h.nav);
                     let index = self.insert(notes::Note::new(time, dur, pitch));
                     self.drag = Some(Drag::Note {
@@ -1197,7 +1247,7 @@ impl Notes {
                 if !orig.is_empty() {
                     self.drag = Some(Drag::Block {
                         press_time,
-                        press_pitch: pianoroll::y_to_pitch(at.1 as f32, h.lo, h.hi, h.grid),
+                        press_pitch: h.axis.pitch(at.1 as f32, h.grid),
                         orig,
                     });
                     return Claim::take().edge_scrolling();
@@ -1576,14 +1626,88 @@ mod tests {
         let grid = Rect::new(0.0, 0.0, 400.0, 400.0);
         let bar = r.bar(&m);
         assert!(bar.is_some());
-        let wide = pianoroll::note_height(20.0, 120.0, grid, bar);
-        let close = pianoroll::note_height(60.0, 72.0, grid, bar);
+        let bar = bar.unwrap();
+        let wide = Pitches::line(20.0, 120.0, bar).note_height(grid);
+        let close = Pitches::line(60.0, 72.0, bar).note_height(grid);
         assert_eq!(wide, close, "the same bar whatever the window");
         let keys = roll(r#"{"notes":[0.0,100.0,69.0,100,0]}"#);
         assert!(keys.bar(&m).is_none());
         assert!(
-            pianoroll::note_height(60.0, 72.0, grid, None)
-                > pianoroll::note_height(20.0, 120.0, grid, None)
+            Pitches::rows(60.0, 72.0).note_height(grid)
+                > Pitches::rows(20.0, 120.0).note_height(grid)
+        );
+    }
+
+    /// **In hertz a drag reaches the window's edges and lands on round
+    /// frequencies**: the note's centre goes where the hand is, to the very
+    /// edge of a zoomed window, and its frequency is rounded to what a pixel
+    /// spans there.
+    #[test]
+    fn a_drag_in_hertz_reaches_the_edges_on_round_frequencies() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,440.0,100,0],"min":8.175798915643707,"max":20000.0,
+                "ruler_y":"hz","y_start":0.5,"y_len":0.03}"#,
+        );
+        let pitches = r.axis(&m);
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        let x = x_of(&r, &m, 50.0, 1000.0);
+        let at = (x, f64::from(pitches.y(r.notes[0].pitch, grid)));
+        assert!(
+            matches!(
+                r.press(at, &input(&m, rect(), axis(1000.0))),
+                Claim::Take(_)
+            ),
+            "the note is under {at:?} in a window {pitches:?}"
+        );
+        // Past the top: the centre is at the window's top edge.
+        r.drag(
+            (x, f64::from(grid.y) - 20.0),
+            &input(&m, rect(), axis(1000.0)),
+        );
+        let per_px = pitches.span() / grid.h;
+        assert!(
+            (r.notes[0].pitch - pitches.hi).abs() <= per_px,
+            "{}",
+            r.notes[0].pitch
+        );
+        // Past the bottom: its bottom edge.
+        r.drag(
+            (x, f64::from(grid.y + grid.h) + 20.0),
+            &input(&m, rect(), axis(1000.0)),
+        );
+        assert!(
+            (r.notes[0].pitch - pitches.lo).abs() <= per_px,
+            "{}",
+            r.notes[0].pitch
+        );
+        // In the middle: a round frequency, to what a pixel spans there -- a
+        // step of a half hertz at this zoom.
+        r.drag(
+            (x, f64::from(grid.y + grid.h * 0.37)),
+            &input(&m, rect(), axis(1000.0)),
+        );
+        let f = clausters_core::scale::midi_to_hz(f64::from(r.notes[0].pitch));
+        assert!((f * 2.0 - (f * 2.0).round()).abs() < 1e-2, "{f}");
+    }
+
+    /// **On the keys a drag transposes a microtone and keeps its bend**: the
+    /// box moves by whole semitones, the cents stay.
+    #[test]
+    fn a_drag_on_the_keys_keeps_a_notes_bend() {
+        let m = Metrics::default();
+        let mut r = roll(r#"{"notes":[0.0,100.0,60.37,100,0],"min":48,"max":72}"#);
+        let at = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 60.0));
+        assert!(matches!(
+            r.press(at, &input(&m, rect(), axis(1000.0))),
+            Claim::Take(_)
+        ));
+        let to = (at.0, y_of(&r, &m, 62.0));
+        r.drag(to, &input(&m, rect(), axis(1000.0)));
+        assert!(
+            (r.notes[0].pitch - 62.37).abs() < 1e-4,
+            "{}",
+            r.notes[0].pitch
         );
     }
 
@@ -1615,7 +1739,7 @@ mod tests {
     /// where its pitch is.
     #[test]
     fn the_hertz_ruler_marks_round_frequencies_at_their_pitches() {
-        let ticks = pianoroll::hz_ticks(45.0, 93.0, 400.0, &Metrics::default());
+        let ticks = pianoroll::hz_ticks(Pitches::line(45.0, 93.0, 8.0), 400.0, &Metrics::default());
         let labelled: Vec<_> = ticks.iter().filter(|(_, l)| l.is_some()).collect();
         assert!(!labelled.is_empty());
         for (pitch, label) in &labelled {
