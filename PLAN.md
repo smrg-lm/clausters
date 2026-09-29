@@ -2600,6 +2600,23 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **A lane's notes froze with the transport, and a stop cut their releases**
+  *(the user, 2026-09-29, playing `edit_notes`: "El transporte corta el sonido
+  antes de terminar de tocar la última nota", and "Al posicionar el cursor y
+  hacer play toca un fragmento de la última nota de la reproducción
+  anterior")*. `T8` made a lane's notes in the governed group, so a stop froze
+  them: the end mark, on the last note's end, froze the voice as its release
+  began, and the release was never heard; and a voice frozen mid-release
+  thawed on the next play and finished its release there, wherever the
+  position now was. Freezing is right for a reader, which continues from the
+  sample it read; a voice is not one.
+  **Fixed 2026-09-29**: a stop -- `/transport_stop` and the end mark alike --
+  releases what the lanes sound, as a DAW's stop sends its note-offs, and the
+  notes are made in a group the transport does not govern (the group that
+  follows it, for the notes editor and the multitrack), so their releases ring
+  out. A play does not bring a released note back. `/lane_new` says to give it
+  such a group.
+
 - ✅ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
   giving both clients the manual ordering verbs, whose docstrings have to say
   "refused inside an auto-ordered group" and leave the reader no way to ask

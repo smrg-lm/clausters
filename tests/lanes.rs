@@ -211,3 +211,70 @@ fn a_stop_holds_the_lane_and_a_play_goes_on() {
     let out = pull(&mut server, 100);
     assert_eq!(sounding(&out), vec![(3200, 4200)]);
 }
+
+/// **A stop releases what the lane is sounding**, as a DAW's stop sends its
+/// note-offs, and the next play does not bring it back: a voice frozen with
+/// its note held would sound again, mid-release, wherever the play starts.
+/// The notes are made in a group the transport does not govern, so nothing
+/// of theirs freezes.
+#[test]
+fn a_stop_releases_the_sounding_notes_and_a_play_does_not_bring_them_back() {
+    let mut server = server();
+    send(
+        &mut server,
+        "/group_new",
+        vec![OscType::Int(200), OscType::Int(0), OscType::Int(0)],
+    );
+    send(
+        &mut server,
+        "/lane_new",
+        vec![OscType::Int(0), OscType::Int(2), OscType::Int(200)],
+    );
+    let json = r#"{"notes": [[0, 48000, "dc", {"level": 0.5}, "free"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(2), OscType::String(json.into())],
+    );
+    play(&mut server);
+    assert_eq!(sounding(&pull(&mut server, 50)), vec![(0, 3200)]);
+    send(&mut server, "/transport_stop", vec![OscType::Int(0)]);
+    assert!(
+        sounding(&pull(&mut server, 50)).is_empty(),
+        "released on the stop"
+    );
+    play(&mut server);
+    assert!(
+        sounding(&pull(&mut server, 50)).is_empty(),
+        "and not sounding again when the transport rolls on"
+    );
+}
+
+/// **The end mark is a stop**, and releases what the lane sounds on it.
+#[test]
+fn the_end_mark_releases_what_the_lane_sounds() {
+    let mut server = server();
+    send(
+        &mut server,
+        "/group_new",
+        vec![OscType::Int(200), OscType::Int(0), OscType::Int(0)],
+    );
+    send(
+        &mut server,
+        "/lane_new",
+        vec![OscType::Int(0), OscType::Int(2), OscType::Int(200)],
+    );
+    let json = r#"{"notes": [[0, 48000, "dc", {"level": 0.5}, "free"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(2), OscType::String(json.into())],
+    );
+    send(
+        &mut server,
+        "/transport_end",
+        vec![OscType::Int(0), OscType::Long(6400), OscType::Long(0)],
+    );
+    play(&mut server);
+    assert_eq!(sounding(&pull(&mut server, 200)), vec![(0, 6400)]);
+}

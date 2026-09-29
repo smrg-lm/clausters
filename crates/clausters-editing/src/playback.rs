@@ -55,8 +55,9 @@ pub struct MultitrackPlayback {
     end_sent: Option<(i64, i64)>,
     /// The transport's ramp last sent, in samples.
     fade_sent: Option<i64>,
-    /// **The event lane the boxes over sequences play from**, once made: the
-    /// tracks' group, whose id it takes, so its notes freeze with the tracks.
+    /// **The event lane the boxes over sequences play from**, once made: named
+    /// by the tracks' group's id, its notes made in the transport's group
+    /// around the multitrack, which a stop does not freeze.
     lane: Option<i32>,
 }
 
@@ -97,9 +98,17 @@ impl MultitrackPlayback {
         if self.lane != Some(group) {
             // A tracks' group made again is a new lane.
             steps.extend(self.free_lane());
+            // Named by the tracks' group, its notes made in the transport's
+            // group around the multitrack, which follows the transport and
+            // is not frozen by a stop: a stop releases them, and their
+            // releases ring out.
+            let target = self
+                .applier
+                .node(crate::instance::TRANSPORT)
+                .unwrap_or(group);
             steps.extend(transport_command(
                 "/lane_new",
-                vec![OscType::Int(group), OscType::Int(group)],
+                vec![OscType::Int(group), OscType::Int(target)],
             ));
             self.lane = Some(group);
         }
@@ -576,6 +585,7 @@ mod tests {
         let steps = playback.notes(std::slice::from_ref(&note));
         assert_eq!(addrs(&steps), ["/lane_new", "/lane_set"]);
         let group = playback.applier.node(crate::instance::TRACKS).unwrap();
+        let around = playback.applier.node(crate::instance::TRANSPORT).unwrap();
         let Step::Send(made) = &steps[0] else {
             panic!("a send");
         };
@@ -584,8 +594,9 @@ mod tests {
             vec![
                 OscType::Int(MULTITRACK_TRANSPORT),
                 OscType::Int(group),
-                OscType::Int(group)
-            ]
+                OscType::Int(around)
+            ],
+            "named by the tracks' group, its notes made where a stop does not freeze them"
         );
         let again = playback.notes(&[note]);
         assert_eq!(addrs(&again), ["/lane_set"], "made once");

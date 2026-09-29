@@ -66,7 +66,7 @@ Every change is **pushed** to every `/server_notify` client as a `/transport_que
 
 ## Events on the transport's position
 
-`/sched_atTransport` stamps a packet on a transport's **clock**, which never jumps; that is right for a packet meant to land a fixed time from now, and wrong for a sequence meant to sit at a place in the piece, since a locate or a loop's wrap moves the position and not the clock — a client would have to re-stamp everything after each jump. An **event lane** (`/lane_new`, `/lane_set`, `/lane_free`, in [`schemas.md`](schemas.md)) is the other axis: its notes and messages sit at samples of the **position**, and the server fires each when the position reaches it, as a reader follows the transport. A note's length then runs on the clock, so a note that started rings for its length whatever the position does next — except across a locate, which releases it.
+`/sched_atTransport` stamps a packet on a transport's **clock**, which never jumps; that is right for a packet meant to land a fixed time from now, and wrong for a sequence meant to sit at a place in the piece, since a locate or a loop's wrap moves the position and not the clock — a client would have to re-stamp everything after each jump. An **event lane** (`/lane_new`, `/lane_set`, `/lane_free`, in [`schemas.md`](schemas.md)) is the other axis: its notes and messages sit at samples of the **position**, and the server fires each when the position reaches it, as a reader follows the transport. A note's length then runs on the clock, so a note that started rings for its length whatever the position does next — except across a locate or a stop, which release it.
 
 ## Caveats
 

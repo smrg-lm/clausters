@@ -245,10 +245,12 @@ export class ServerTransport {
      * Makes **event lane** `lane` on this transport (`/lane_new`): notes and
      * messages the transport plays by its position, as a reader plays a take
      * -- a locate moves them, a loop plays them again on every pass, a stop
-     * holds them, with nothing sent per pass. `lane` is an id the caller
+     * releases them, with nothing sent per pass. `lane` is an id the caller
      * picks, like a buffer's; its notes are made at the tail of `target`,
-     * which should be the group this transport governs, so a pause freezes
-     * them. An existing lane of that id is freed first.
+     * which should be a group this transport does **not** govern: a stop
+     * releases the notes, and a voice frozen there would sound again,
+     * mid-release, on the next play. An existing lane of that id is freed
+     * first.
      */
     async laneNew(this: Server, lane: number, target: NodeLike, timeout?: number): Promise<Server> {
         await this.command(

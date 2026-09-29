@@ -13,9 +13,11 @@
 //! take does: on the server's transport, by its position. The editor's
 //! structure is a group that follows [`NOTES_EDITOR_TRANSPORT`], a group
 //! inside it that the transport governs, and an **event lane** on that
-//! transport whose notes are made in the governed group (`/lane_new`). The
-//! lane takes the governed group's id as its own: one lane per playback, alive
-//! as long as the group is. A play writes the sequence as the lane's data
+//! transport whose notes are made in the group that follows (`/lane_new`) --
+//! not in the governed one, since a note is a voice and not a reader: a stop
+//! releases it and its release rings out, where one frozen would sound again,
+//! mid-release, on the next play. The lane takes the governed group's id as
+//! its own: one lane per playback, alive as long as the group is. A play writes the sequence as the lane's data
 //! ([`data`]), sets the transport's end mark at the sequence's end going back
 //! to where the pass began, locates and rolls; a pause, a resume, a stop and a
 //! loop are then the transport's, with nothing planned here.
@@ -205,8 +207,9 @@ impl NotesPlayback {
     }
 
     /// The editor's structure and its lane, the first time: the group that
-    /// follows the transport, the governed group inside it, and the lane whose
-    /// notes are made there.
+    /// follows the transport, the governed group inside it, and the lane --
+    /// named by the governed group's id, its notes made in the group that
+    /// follows, which a stop does not freeze.
     fn structure(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         if self.lane.is_some() {
             return Ok(Vec::new());
@@ -225,10 +228,14 @@ impl NotesPlayback {
             ],
             ids,
         )?;
-        let Some(group) = self.applier.node(GOVERNED) else {
+        let (Some(group), Some(follows)) = (self.applier.node(GOVERNED), self.applier.node(EDITOR))
+        else {
             return Ok(steps);
         };
-        steps.extend(self.command("/lane_new", vec![OscType::Int(group), OscType::Int(group)]));
+        steps.extend(self.command(
+            "/lane_new",
+            vec![OscType::Int(group), OscType::Int(follows)],
+        ));
         self.lane = Some(group);
         Ok(steps)
     }
@@ -298,8 +305,8 @@ impl NotesPlayback {
         self.command("/transport_play", vec![])
     }
 
-    /// Pauses where it stands: the notes freeze with the governed group, and a
-    /// resume carries them on.
+    /// Pauses where it stands: the server releases what the lane sounds, and a
+    /// resume plays on from there -- the notes that start after it.
     pub fn pause(&mut self) -> Vec<Step> {
         self.rolling = false;
         self.command("/transport_stop", vec![])

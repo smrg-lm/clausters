@@ -114,10 +114,11 @@ The declaration is not there to disambiguate — the classification is determini
 
 ## Event lanes: notes the transport plays by its position
 
-A scheduled bundle rides the transport's **clock**, which never jumps, so a plan stamped on it has to be written again after every locate. Notes that are **data** — a roll's, a notes region's — have a better home: an **event lane**, which holds them at samples of the transport's **position** and is played by the server the way a reader plays a take. A locate moves them, a loop plays them again on every pass, a stop holds them, and nothing is sent per pass.
+A scheduled bundle rides the transport's **clock**, which never jumps, so a plan stamped on it has to be written again after every locate. Notes that are **data** — a roll's, a notes region's — have a better home: an **event lane**, which holds them at samples of the transport's **position** and is played by the server the way a reader plays a take. A locate moves them, a loop plays them again on every pass, a stop releases them — as a DAW's stop sends its note-offs, so their releases ring out — and nothing is sent per pass.
 
 ```js
-await server.laneNew(7, governed);   // lane 7 on this transport, notes made in `governed`
+await server.laneNew(7, voices);     // lane 7 on this transport, notes made in `voices`,
+                                     // a group the transport does not govern
 await server.laneSet(7, {
   notes: [[0, 24_000, "default", { freq: 440 }, "gate"]],
   messages: [[12_000, "/bus_set", 100, 1.0]],
@@ -127,7 +128,7 @@ await server.laneSet(7, newData);    // an edit: heard from where the position i
 await server.laneFree(7);
 ```
 
-Every position is a sample of the transport; a note is released at its end by `gate 0` or by a free, and a message is a command the server takes in a timed bundle, run as written. A new `laneSet` keeps the release of whatever is sounding; a locate releases it, as a DAW does on a jump. The notes editor plays this way — its sequence is its lane's data — and so do a multitrack's notes regions.
+Every position is a sample of the transport; a note is released at its end by `gate 0` or by a free, and a message is a command the server takes in a timed bundle, run as written. A new `laneSet` keeps the release of whatever is sounding; a locate or a stop releases it, as a DAW does. The notes editor plays this way — its sequence is its lane's data — and so do a multitrack's notes regions.
 
 ## Several transports
 

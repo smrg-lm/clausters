@@ -184,11 +184,12 @@ class ServerTransport:
         """Make **event lane** ``lane`` on this transport (``/lane_new``): notes
         and messages the transport plays by its position, as a reader plays a
         take -- a locate moves them, a loop plays them again on every pass, a
-        stop holds them, with nothing sent per pass. ``lane`` is an id the
+        stop releases them, with nothing sent per pass. ``lane`` is an id the
         caller picks, like a buffer's; its notes are made at the tail of
         ``target`` (a `clausters.defs.node.Group` or its raw id), which should
-        be the group this transport governs, so a pause freezes them. An
-        existing lane of that id is freed first."""
+        be a group this transport does **not** govern: a stop releases the
+        notes, and a voice frozen there would sound again, mid-release, on the
+        next play. An existing lane of that id is freed first."""
         addr, args = self.request("/lane_new", self.transport_id, int(lane),
                                   _target_id(target),
                                   timeout=timeout, expect=("/done", "/fail"))

@@ -1474,9 +1474,10 @@ impl Engine {
             }
             if let Some(back) = back {
                 t.position = PositionAnchor::located(TransportPosition::new(back), t.at(here));
-                // Going back is a jump, and releases what the lanes sounded.
-                take_releases(&mut t.sched, &mut self.released, None);
             }
+            // A stop, the end mark's included, releases what the lanes
+            // sounded -- and going back is a jump, which would too.
+            take_releases(&mut t.sched, &mut self.released, None);
             if ended {
                 self.push_garbage(Garbage::TransportEnded { transport: k });
             }
@@ -1763,11 +1764,17 @@ impl Engine {
                     // With a ramp, a stop only starts the stopping phase and
                     // the freeze is an edge of the block; a play during one
                     // calls it off, and the group never froze.
-                    let flipped = if rolling { t.play(here) } else { t.stop(here) };
-                    if !flipped {
-                        return;
+                    // **A stop releases what the lanes are sounding**, as a
+                    // DAW's stop sends its note-offs: a voice is not a reader,
+                    // and one frozen with its note held would sound again,
+                    // mid-release, wherever the next play starts. The notes
+                    // live where the transport does not freeze them, so their
+                    // releases ring out.
+                    if !rolling && t.rolling && t.stopping.is_none() {
+                        take_releases(&mut t.sched, &mut self.released, None);
                     }
-                    if let Some(group) = t.group {
+                    let flipped = if rolling { t.play(here) } else { t.stop(here) };
+                    if flipped && let Some(group) = t.group {
                         self.tree.set_paused(group, !rolling);
                         if rolling {
                             // **Playback comes back where the transport is, not

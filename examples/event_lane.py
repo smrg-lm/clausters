@@ -13,7 +13,9 @@ script sends one lane a four-note figure and then only moves the transport:
 - it loops the figure's first half, and the lane plays again on every pass
   with no message from here;
 - while the loop turns it sends the lane new data -- the same figure a fifth up
-  -- and the next pass is the new one, while the note sounding keeps its end.
+  -- and the next pass is the new one, while the note sounding keeps its end;
+- it stops in the middle of a note, which is released there and rings out,
+  as a DAW's stop sends its note-offs.
 
 Listen for each change at the moment the script names it. Needs an audio
 device (it boots its own server and plays through the sound card). Run it:
@@ -55,11 +57,13 @@ def figure(transpose=1.0):
 def main():
     with Session.live() as session:
         server = session.server
-        # The lane's notes are made in the group the transport governs, so a
-        # stop freezes them with it.
+        # The transport rolls in the engine once it governs a group. The
+        # lane's notes are made in another one, which a stop does not freeze:
+        # a stop releases them, and their releases ring out.
         group = Group()
         server.transport_group(group)
-        server.lane_new(LANE, group)
+        voices = Group()
+        server.lane_new(LANE, voices)
         server.lane_set(LANE, figure())
         server.transport_locate_sample(0)
 
@@ -80,10 +84,16 @@ def main():
         server.lane_set(LANE, figure(transpose=1.5))
         time.sleep(2.0)
 
+        print("a stop mid-note: the note is released, and its release rings out")
         server.transport_loop(None)
+        server.transport_locate_sample(0)
+        time.sleep(0.25)
         server.transport_stop()
+        time.sleep(1.0)
+
         server.lane_free(LANE)
         server.transport_group(None)
+        voices.free()
         group.free()
         print("done")
 

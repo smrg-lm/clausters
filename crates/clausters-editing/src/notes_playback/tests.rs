@@ -99,14 +99,16 @@ fn a_play_is_the_lanes_data_and_the_transports_verbs() {
         })
         .expect("a lane");
     let group = playback.applier.node(GOVERNED).unwrap();
+    let follows = playback.applier.node(EDITOR).unwrap();
     assert_eq!(
         lane_new,
         vec![
             OscType::Int(NOTES_EDITOR_TRANSPORT),
             OscType::Int(group),
-            OscType::Int(group)
+            OscType::Int(follows)
         ],
-        "on its transport, named by and playing into the governed group"
+        "on its transport, named by the governed group, playing into the one \
+         that follows -- which a stop does not freeze"
     );
     assert!(lane_data(&steps).is_some());
     for addr in [
