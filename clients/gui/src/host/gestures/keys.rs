@@ -255,14 +255,15 @@ impl Gestures {
         vec![GestureEffect::Redraw(ctx.def_id)]
     }
 
-    /// **Home and End: the position cursor to the start or the end of the
-    /// samples under the pointer** -- the same placing a click on the body
+    /// **Home and End: the position cursor to the start or the end of what
+    /// is under the pointer** -- the samples of a take, the notes of a roll,
+    /// the regions of a multitrack -- the same placing a click on the ruler
     /// makes, so the owner is told where the mark went and a play that follows
     /// starts there.
     ///
-    /// Over anything that draws no samples it is the window's one take, and
-    /// `None` when there is none, so the key falls through to whatever else
-    /// the window does with it.
+    /// Over anything that is on no axis it is the window's one take, or else
+    /// its first view on an axis, and `None` when there is neither, so the key
+    /// falls through to whatever else the window does with it.
     pub fn ends_key(
         &self,
         host: &mut Host,
@@ -273,16 +274,33 @@ impl Gestures {
     ) -> Option<Vec<GestureEffect>> {
         // Over something that draws no samples -- a meter beside the take --
         // the key still means the window's one take.
-        let id = hit(host, ctx, cx, cy)
+        let take = hit(host, ctx, cx, cy)
             .map(|Hit { id, .. }| id)
             .filter(|id| host.buffer_frames(ctx.def_id, *id).is_some())
-            .or_else(|| sole_take(host, ctx.def_id))?;
-        let frames = host.buffer_frames(ctx.def_id, id)?;
-        // End is the take's last frame, the one a cursor can stand on.
-        let pos = if to_end {
-            frames.saturating_sub(1) as f64
-        } else {
-            0.0
+            .or_else(|| sole_take(host, ctx.def_id));
+        let (id, pos) = match take {
+            Some(id) => {
+                let frames = host.buffer_frames(ctx.def_id, id)?;
+                // End is the take's last frame, the one a cursor can stand on.
+                let end = frames.saturating_sub(1) as f64;
+                (id, if to_end { end } else { 0.0 })
+            }
+            // **A view with no samples of its own** -- a roll, a multitrack --
+            // goes to where its contents end: the last note's, the last
+            // region's. The view under the pointer, or the window's first on
+            // an axis when the pointer is over neither.
+            None => {
+                let id = hit(host, ctx, cx, cy)
+                    .map(|Hit { id, .. }| id)
+                    .filter(|id| host.timeline_key(*id).is_some())
+                    .or_else(|| {
+                        timeline_ids(host.window_def(ctx.def_id)?)
+                            .into_iter()
+                            .next()
+                    })?;
+                let end = host.timeline_content(host.timeline_key(id)?) as f64;
+                (id, if to_end { end } else { 0.0 })
+            }
         };
         let mut out = Vec::new();
         super::nav::locate_at(host, &mut out, ctx, id, pos);

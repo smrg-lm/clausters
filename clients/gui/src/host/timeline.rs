@@ -439,6 +439,20 @@ impl Host {
             .map(|m| m.key)
     }
 
+    /// **How far group `key`'s contents reach**, in its samples: the end of
+    /// the last thing on it -- a take's last frame, a roll's last note, a
+    /// multitrack's last region -- and 0 for a group with nothing on it yet.
+    /// The axis a group navigates is this or its empty span
+    /// ([`Self::timeline_total`]); this is what an End key goes to.
+    pub fn timeline_content(&self, key: GroupKey) -> usize {
+        self.timeline_members()
+            .iter()
+            .filter(|m| m.key == key)
+            .map(|m| m.offset.max(0.0).ceil() as usize + self.timelines.total_of(m.id))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// The timeline length of group `key`: the max of its members' **placed**
     /// data extents -- each member's data occupies `[offset, offset + extent]`
     /// on the shared timeline, so a clip placed late lengthens the group. A
@@ -447,13 +461,7 @@ impl Host {
     ///
     /// [`timeline_empty_span`]: Host::timeline_empty_span
     pub fn timeline_total(&self, key: GroupKey) -> usize {
-        let content = self
-            .timeline_members()
-            .iter()
-            .filter(|m| m.key == key)
-            .map(|m| m.offset.max(0.0).ceil() as usize + self.timelines.total_of(m.id))
-            .max()
-            .unwrap_or(0);
+        let content = self.timeline_content(key);
         // Content is the axis once there *is* content; the empty span only
         // stands in for a group that has none yet (>= 1, so it still navigates).
         if content == 0 {

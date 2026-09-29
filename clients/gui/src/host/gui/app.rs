@@ -878,7 +878,8 @@ impl ApplicationHandler<UserEvent> for App {
                         self.loop_key(def_id);
                     }
                     // Home and End put the position cursor at the start or the
-                    // end of the samples under the pointer.
+                    // end of what is under the pointer: a take's samples, a
+                    // roll's notes, a multitrack's regions.
                     Key::Named(NamedKey::Home) => {
                         self.ends_key(def_id, false);
                     }

@@ -21,7 +21,8 @@ beat is an end marker.
 
 **Click the ruler under the grid** to place the position cursor: the play line
 goes there, and the next play starts from it. While it plays, the line is
-where the transport is.
+where the transport is. **Home** puts the cursor at the start and **End** where
+the last note ends.
 
 **A second window shows the same notes in hertz** -- the same sequence, the
 roll's vertical axis a frequency on a log scale, ruled in round frequencies. A

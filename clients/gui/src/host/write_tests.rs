@@ -437,6 +437,45 @@ fn with_no_pointer_the_keys_reach_the_windows_one_take() {
     assert_eq!(host.playing_widget(), Some(50), "space plays it");
 }
 
+/// **Home and End reach a roll too**: a view with no samples of its own
+/// goes to where its contents end -- the last note's end -- and the owner is
+/// told where the mark went, as a click on the ruler tells it.
+#[test]
+fn home_and_end_reach_the_end_of_a_rolls_notes() {
+    let mut host = Host::new();
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: "/gui_def".into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String(
+                    r#"{"type":"window","w":800,"h":400,"children":[
+                        {"id":50,"type":"notes","notes":[0.0,100.0,60.0,100,0,200.0,150.0,64.0,100,0],
+                         "axes":{"x":{"sample_rate":100.0}}}]}"#
+                        .into(),
+                ),
+            ],
+        }),
+        from(),
+    );
+    let ctx = gestures::GestureCtx::new(1, 800, 400);
+    let g = gestures::Gestures::default();
+    let key = host.timeline_key(50).unwrap();
+    let cursor = |host: &Host| host.timelines().state(key).unwrap().cursor();
+    let effects = g
+        .ends_key(&mut host, &ctx, true, -1.0, -1.0)
+        .expect("the roll");
+    assert_eq!(cursor(&host), Some(350.0), "End: the last note's end");
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, gestures::GestureEffect::Emit { .. })),
+        "the owner is told: {effects:?}"
+    );
+    assert!(g.ends_key(&mut host, &ctx, false, -1.0, -1.0).is_some());
+    assert_eq!(cursor(&host), Some(0.0), "Home: the start");
+}
+
 /// **Home and End put the position cursor at the ends of the take** --
 /// frame 0 and the last frame, the one a cursor can stand on.
 #[test]

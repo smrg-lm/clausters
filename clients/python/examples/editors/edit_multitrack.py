@@ -36,7 +36,8 @@ What to do in the window:
   starting over; stop goes back to the mark rather than to the top; and rewind
   puts the **mark** back at the top, which is the cursor's verb and not the
   transport's. **The space bar is play/stop**, so the play cursor comes back
-  to the mark every time.
+  to the mark every time, and **Home** and **End** put the mark at the start
+  and where the last region ends.
 - **Double click the box on the keys track** to open its **roll**. That box
   holds notes -- an `EventSequence` -- and the roll opens over the very same
   sequence, in the multitrack's undo order: drag a note there and the box redraws
