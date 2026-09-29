@@ -177,3 +177,31 @@ fn a_roll_in_hertz_draws_and_edits_frequencies() {
     assert!((midinote - 62.37).abs() < 0.01, "{midinote}");
     assert_eq!(held.get(2).unwrap().data.0["midinote"], json!(64));
 }
+
+/// **A roll navigates its whole domain and opens on its notes**: the compass
+/// is MIDI notes 0 to 127 -- or, in hertz, past the highest MIDI note -- and
+/// the window the view starts on is the notes with air around them.
+#[test]
+fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
+    let mut midi = editor(shared());
+    let y = &midi.window(40)["children"][0]["axes"]["y"];
+    assert_eq!(
+        (y["min"].as_f64(), y["max"].as_f64()),
+        (Some(0.0), Some(127.0))
+    );
+    let (start, len) = (y["start"].as_f64().unwrap(), y["len"].as_f64().unwrap());
+    let (low, high) = (start * 127.0, (start + len) * 127.0);
+    assert!(low <= 60.0 && high >= 64.0 && len < 1.0, "{low} {high}");
+
+    let mut hz = new_json(shared(), r#"{"rate": 100.0, "version": 1, "domain": "hz"}"#);
+    let y = &hz.window(40)["children"][0]["axes"]["y"];
+    assert!(y["max"].as_f64().unwrap() > 12_543.9, "past MIDI note 127");
+    let (floor, ceiling) = (
+        clausters_core::scale::hz_to_midi(y["min"].as_f64().unwrap()),
+        clausters_core::scale::hz_to_midi(y["max"].as_f64().unwrap()),
+    );
+    let (start, len) = (y["start"].as_f64().unwrap(), y["len"].as_f64().unwrap());
+    let low = floor + start * (ceiling - floor);
+    let high = low + len * (ceiling - floor);
+    assert!(low <= 60.0 && high >= 64.0 && len < 1.0, "{low} {high}");
+}

@@ -48,6 +48,9 @@ use crate::viewport::View;
 const PITCH_MIN: f32 = 21.0;
 const PITCH_MAX: f32 = 108.0;
 
+/// A note's height on a roll in hertz, in logical pixels.
+const HZ_NOTE_H: f32 = 8.0;
+
 /// The shortest note a resize may leave, in axis units.
 const MIN_DUR: f64 = 1.0;
 
@@ -224,6 +227,13 @@ impl Notes {
         out
     }
 
+    /// **A note's height on a continuous axis**: fixed, so zooming the
+    /// frequencies does not grow the bars and the line at a bar's centre is
+    /// where its frequency is; `None` on the keys, where a note is its row.
+    fn bar(&self, m: &Metrics) -> Option<f32> {
+        self.hz().then(|| (HZ_NOTE_H * m.ui_scale).round())
+    }
+
     /// What a pitch snaps to: a semitone, or nothing on a continuous axis.
     fn step(&self) -> f32 {
         if self.hz() { 0.0 } else { 1.0 }
@@ -334,7 +344,10 @@ impl Notes {
             lo,
             hi,
             note: (region == Region::Grid)
-                .then(|| pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, lo, hi, fx, fy))
+                .then(|| {
+                    let bar = self.bar(input.metrics);
+                    pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, lo, hi, fx, fy, bar)
+                })
                 .flatten(),
         }
     }
@@ -443,6 +456,7 @@ impl Element for Notes {
             hi,
             true,
             &self.selected,
+            self.bar(ctx.metrics),
         );
         if self.hz() {
             pianoroll::draw_hz_ruler(d, r.keyboard, lo, hi);
@@ -522,7 +536,19 @@ impl Element for Notes {
     fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
         let (lo, hi) = (self.min, self.max);
         let local = &time.view;
-        pianoroll::draw_notes(d, rect, rect, local, 0.0, &self.notes, lo, hi, false, &[]);
+        pianoroll::draw_notes(
+            d,
+            rect,
+            rect,
+            local,
+            0.0,
+            &self.notes,
+            lo,
+            hi,
+            false,
+            &[],
+            None,
+        );
         pianoroll::draw_pitch_labels(d, rect, lo, hi);
     }
 
@@ -918,6 +944,11 @@ impl OnAxis for Notes {
 
     fn content_span(&self) -> Option<f64> {
         Some(self.span())
+    }
+
+    /// The keyboard's gutter scrolls through the octaves, and Ctrl zooms them.
+    fn wheel_pans_y(&self) -> bool {
+        true
     }
 }
 
@@ -1530,6 +1561,50 @@ mod tests {
             (f64::from(hz) - expected).abs() < 1e-2,
             "reported in hertz: {hz}"
         );
+    }
+
+    /// **A note in hertz keeps its height at any zoom**, and on the keys it is
+    /// its row, which grows with the zoom.
+    #[test]
+    fn a_note_in_hertz_keeps_its_height_at_any_zoom() {
+        let m = Metrics::default();
+        let r = roll(r#"{"notes":[0.0,100.0,440.0,100,0],"ruler_y":"hz"}"#);
+        let grid = Rect::new(0.0, 0.0, 400.0, 400.0);
+        let bar = r.bar(&m);
+        assert!(bar.is_some());
+        let wide = pianoroll::note_height(20.0, 120.0, grid, bar);
+        let close = pianoroll::note_height(60.0, 72.0, grid, bar);
+        assert_eq!(wide, close, "the same bar whatever the window");
+        let keys = roll(r#"{"notes":[0.0,100.0,69.0,100,0]}"#);
+        assert!(keys.bar(&m).is_none());
+        assert!(
+            pianoroll::note_height(60.0, 72.0, grid, None)
+                > pianoroll::note_height(20.0, 120.0, grid, None)
+        );
+    }
+
+    /// **A roll navigates its compass and opens on its window**: `min`/`max`
+    /// are the whole domain, and the view starts on the slice `y_start` and
+    /// `y_len` name -- in hertz, read as the pitches its rows are.
+    #[test]
+    fn a_roll_opens_on_its_window_inside_the_whole_compass() {
+        let keys = roll(
+            r#"{"notes":[0.0,100.0,60.0,100,0],"min":0,"max":127,
+                             "y_start":0.4,"y_len":0.2}"#,
+        );
+        let (lo, hi) = keys.pitch_window();
+        assert!(
+            (lo - 50.8).abs() < 1e-3 && (hi - 76.2).abs() < 1e-3,
+            "{lo} {hi}"
+        );
+        let hz = roll(
+            r#"{"notes":[0.0,100.0,440.0,100,0],"min":8.175798915643707,
+                           "max":20000.0,"ruler_y":"hz","y_start":0.5,"y_len":0.1}"#,
+        );
+        let (lo, hi) = hz.pitch_window();
+        let top = clausters_core::scale::hz_to_midi(20_000.0) as f32;
+        assert!((lo - top * 0.5).abs() < 1e-2, "{lo}");
+        assert!((hi - top * 0.6).abs() < 1e-2, "{hi}");
     }
 
     /// The hertz ruler marks round frequencies over the roll's window, each

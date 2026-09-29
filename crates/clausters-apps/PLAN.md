@@ -1121,6 +1121,23 @@ wrong.
   the position cursor. The end marker is a number from a script; drawing it
   and placing it by hand is open.
 
+- ✅ **A roll navigates only the window it opened on, and a note in hertz
+  grows with the zoom** *(the user, 2026-09-29, trying `edit_notes`: the roll
+  should scroll to octaves outside its range as the piano widget does, MIDI 0
+  to 127 and hertz past MIDI 127, opening on the contents with a margin; and
+  "al hacer zoom in vertical con la representación frecuencial no cambie el
+  ancho de las cajas", since a box's frequency is at the middle of its height
+  and nothing says so)*. The crate sent the window fitted to the notes as the
+  roll's compass, so nothing past it could be reached; and a note was a
+  semitone row high in hertz too.
+  **Fixed 2026-09-29**: the compass is the domain's whole range (MIDI 0 to
+  127; the hertz domain from MIDI note 0 to 20 kHz) and the fitted window is
+  the slice the view opens on (`axes.y.start`/`len`); a wheel over the
+  keyboard scrolls the window, a tenth of it a notch, and Ctrl and the wheel
+  zoom it (`OnAxis::wheel_pans_y`, the roll's alone). In hertz a note is a
+  bar of a fixed height with a line at its centre (`pianoroll::note_height`).
+  Home and End place the cursor over a roll and a multitrack too.
+
 - ⬜ **Two windows of one role over one structure draw on one widget**
   *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the
   one in MIDI notes: "gui_def: widget id 1000 already in use, skipping")*. A

@@ -215,6 +215,12 @@ impl Gestures {
                 // pitch) holds the value under the cursor. Only the second is
                 // arithmetic the machine can do, since it is the lane geometry
                 // it already has.
+                // A keyboard's gutter scrolls through the octaves, as a
+                // piano's range does, and Ctrl zooms it: a tenth of the
+                // window a notch, up for up.
+                Some(_) if kind.wheel_pans_y() && !ctx.ctrl => {
+                    pan_timeline_y(host, &mut out, def_id, tid, steps * 0.1);
+                }
                 Some(y) => {
                     let anchor = if kind.centres_y_zoom() {
                         0.5

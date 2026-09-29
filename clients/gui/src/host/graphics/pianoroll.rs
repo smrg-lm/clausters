@@ -117,6 +117,21 @@ pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
     grid.h / rows
 }
 
+/// **How tall a note is drawn and grabbed**: a semitone row of the pitch
+/// window `[lo, hi]`, or `bar` pixels when it is given -- a roll on a
+/// continuous axis (hertz), where a row means nothing and a note that grew
+/// with the zoom would hide where its frequency is.
+///
+/// The floor wins over the ceiling: a note never collapses below
+/// `NOTE_MIN_H`, and a grid shorter than one bar cuts it (`visible_band`)
+/// rather than shrinking it. Written as a `clamp` this inverted its own range
+/// on such a grid and panicked -- reachable by dragging a window's corner in.
+pub fn note_height(lo: f32, hi: f32, grid: Rect, bar: Option<f32>) -> f32 {
+    bar.unwrap_or_else(|| row_height(lo, hi, grid))
+        .min(grid.h)
+        .max(NOTE_MIN_H)
+}
+
 /// The integer pitches whose rows show in the window `[lo - 0.5, hi + 0.5]` --
 /// what everything drawn *per row* iterates, so the bands, the dividers, the
 /// keys and the labels are the same set of rows.
@@ -224,7 +239,8 @@ pub fn draw_grid_background(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
 /// clip's own width, drifting the roll off its clip under a pan/zoom. The one
 /// primitive both the widget and the clip body use. When `color_velocity` the
 /// note fill brightens with velocity. `selected` indices draw highlighted (the
-/// multi-note selection; the clip body passes none).
+/// multi-note selection; the clip body passes none). `bar` is a note's
+/// height ([`note_height`]).
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
 pub fn draw_notes(
     d: &mut Draw,
@@ -237,18 +253,13 @@ pub fn draw_notes(
     hi: f32,
     color_velocity: bool,
     selected: &[usize],
+    bar: Option<f32>,
 ) {
     let (mesh, m, theme) = d.parts();
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
-    let rh = row_height(lo, hi, grid);
-    // The floor wins over the ceiling, which is what the trailing `max`
-    // always said: a note never collapses below `NOTE_MIN_H`, and a grid
-    // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
-    // Written as a `clamp` this inverted its own range on such a grid and
-    // panicked -- reachable by dragging a window's corner in.
-    let h = rh.min(grid.h).max(NOTE_MIN_H);
+    let h = note_height(lo, hi, grid, bar);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
     for (i, n) in notes.iter().enumerate() {
         // x maps through `field` -- the pixel domain the shared `nav` spans (the
@@ -284,6 +295,18 @@ pub fn draw_notes(
             theme.note_fill
         };
         mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), fill);
+        // A bar of a fixed height is a mark on a continuous axis, and what it
+        // marks is its centre: said by a line there, since the height itself
+        // means nothing.
+        if bar.is_some() {
+            let yc = row_center(n.pitch, lo, hi, grid);
+            if yc >= y && yc <= y + h {
+                mesh.rect(
+                    Rect::new(nx0, yc - m.divider_w * 0.5, nx1 - nx0, m.divider_w),
+                    theme.frame,
+                );
+            }
+        }
         if nx1 - nx0 > 3.0 && h > 3.0 {
             let edge = if is_selected {
                 theme.selected_edge
@@ -510,14 +533,9 @@ pub fn note_hit(
     hi: f32,
     x: f32,
     y: f32,
+    bar: Option<f32>,
 ) -> Option<NoteHit> {
-    let rh = row_height(lo, hi, grid);
-    // The floor wins over the ceiling, which is what the trailing `max`
-    // always said: a note never collapses below `NOTE_MIN_H`, and a grid
-    // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
-    // Written as a `clamp` this inverted its own range on such a grid and
-    // panicked -- reachable by dragging a window's corner in.
-    let h = rh.min(grid.h).max(NOTE_MIN_H);
+    let h = note_height(lo, hi, grid, bar);
     let mut found: Option<NoteHit> = None;
     for (i, n) in notes.iter().enumerate() {
         if !pitch_visible(n.pitch, lo, hi) {
@@ -596,12 +614,12 @@ mod tests {
         let x = (to_x(100.0, &nv, g) + to_x(500.0, &nv, g)) as f32 * 0.5;
         // Inside a window holding it: the row is hit at its own y.
         let yc = pitch_to_y(84.0, 72.0, 96.0, g);
-        assert!(note_hit(g, &nv, 0.0, &notes, 72.0, 96.0, x, yc).is_some());
+        assert!(note_hit(g, &nv, 0.0, &notes, 72.0, 96.0, x, yc, None).is_some());
         // Zoomed onto 48..72, the note is a whole octave above the top row.
         assert!(!pitch_visible(84.0, 48.0, 72.0));
         for y in [g.y, g.y + 1.0, g.y + g.h * 0.5, g.y + g.h - 1.0] {
             assert!(
-                note_hit(g, &nv, 0.0, &notes, 48.0, 72.0, x, y).is_none(),
+                note_hit(g, &nv, 0.0, &notes, 48.0, 72.0, x, y, None).is_none(),
                 "grabbed at y {y}"
             );
         }
@@ -646,16 +664,16 @@ mod tests {
         let x1 = to_x(500.0, &nv, g) as f32;
         let yc = pitch_to_y(60.0, 24.0, 96.0, g);
         // Near the start edge.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 + 1.0, yc).unwrap();
+        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 + 1.0, yc, None).unwrap();
         assert_eq!(h.part, Part::Start);
         // Near the end edge.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x1 - 1.0, yc).unwrap();
+        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x1 - 1.0, yc, None).unwrap();
         assert_eq!(h.part, Part::End);
         // In the middle -> body.
-        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, (x0 + x1) * 0.5, yc).unwrap();
+        let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, (x0 + x1) * 0.5, yc, None).unwrap();
         assert_eq!(h.part, Part::Body);
         // Off the note -> miss.
-        assert!(note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 - 20.0, yc).is_none());
+        assert!(note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 - 20.0, yc, None).is_none());
     }
 
     #[test]

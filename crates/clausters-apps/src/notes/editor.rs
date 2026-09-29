@@ -78,8 +78,8 @@ struct Opened {
     version: i64,
 }
 
-/// The Y domain a caller names: a word -- `"midi"`, or `"hz"` over the range
-/// of a piano -- or the whole [`YDomain`].
+/// The Y domain a caller names: a word -- `"midi"`, or `"hz"` from MIDI note
+/// 0 to 20 kHz -- or the whole [`YDomain`].
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Domain {
@@ -93,8 +93,12 @@ impl Domain {
             Domain::Full(domain) => Some(domain),
             Domain::Named(name) => match name.as_str() {
                 "midi" => Some(YDomain::midi()),
-                // A1 to C8 -- the range of the MIDI roll's compass.
-                "hz" => Some(YDomain::hz(27.5, 4186.0)),
+                // MIDI note 0 to the top of hearing: past the highest MIDI
+                // note, which a frequency is free to be.
+                "hz" => Some(YDomain::hz(
+                    clausters_core::scale::midi_to_hz(0.0),
+                    20_000.0,
+                )),
                 _ => None,
             },
         }

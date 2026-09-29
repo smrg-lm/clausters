@@ -22,7 +22,10 @@ beat is an end marker.
 **Click the ruler under the grid** to place the position cursor: the play line
 goes there, and the next play starts from it. While it plays, the line is
 where the transport is. **Home** puts the cursor at the start and **End** where
-the last note ends.
+the last note ends. **The wheel over the keyboard scrolls through the octaves**
+-- every MIDI note, and in the hertz window up to 20 kHz -- and **Ctrl** with
+it zooms; the roll opens on the notes. In hertz a note is a bar of one height
+whatever the zoom, and the line through it is its frequency.
 
 **A second window shows the same notes in hertz** -- the same sequence, the
 roll's vertical axis a frequency on a log scale, ruled in round frequencies. A

@@ -740,6 +740,26 @@ pub(super) fn zoom_timeline_y(
     set_y_view(host, out, def_id, id, start, len);
 }
 
+/// **Scrolls a view's vertical window** by `fraction` of its own length, up
+/// for a positive one, clamped into the axis like every move of it.
+pub(super) fn pan_timeline_y(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    fraction: f64,
+) {
+    let Some((y0, ylen)) = host
+        .widget_kind(def_id, id)
+        .and_then(WidgetKind::editor)
+        .map(|e| e.y_view())
+    else {
+        return;
+    };
+    let start = (y0 + fraction * ylen).clamp(0.0, (1.0 - ylen).max(0.0));
+    set_y_view(host, out, def_id, id, start, ylen);
+}
+
 pub(super) fn zoom_timeline(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,

@@ -57,14 +57,12 @@ pub fn props(
     });
     out.insert("note_ids".into(), json!(drawn.note_ids));
     out.remove("type");
-    if domain.ruler == "hz" {
-        let notes: Vec<f64> = out
-            .get("notes")
-            .and_then(Value::as_array)
-            .map(|n| n.iter().filter_map(Value::as_f64).collect())
-            .unwrap_or_default();
-        hz_axis(&mut out, &notes, domain);
-    }
+    let notes: Vec<f64> = out
+        .get("notes")
+        .and_then(Value::as_array)
+        .map(|n| n.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default();
+    y_axis(&mut out, &notes, domain);
     // **The play cursor is the transport's position**: anchored at 0, the
     // counter the window's playheads read (the playback's transport) puts the
     // line on the sample the lane is playing, stopped or rolling.
@@ -74,31 +72,50 @@ pub fn props(
     out
 }
 
-/// **The Y axis of a roll in hertz**: the unit the host reads its notes and
-/// its compass in, and the window fitted to the notes as a MIDI roll's is --
-/// in pitch, where the air around them is semitones, and then in hertz. With
-/// no notes it is the domain's own window.
-fn hz_axis(props: &mut Map<String, Value>, notes: &[f64], domain: &YDomain) {
-    use clausters_core::scale::{hz_to_midi, midi_to_hz};
+/// **The Y axis a roll navigates, and the window it opens on.**
+///
+/// The compass is the domain's whole range -- MIDI notes 0 to 127, or the
+/// hertz the domain spans, which reach past the highest MIDI note -- so the
+/// hand scrolls to any octave; and the window is the notes with some air
+/// around them, as a box's roll is fitted (`catalogue::pitch_window`), sent as
+/// the slice of the compass the view starts on. A roll in hertz says so, and
+/// its compass is in hertz; its window is fitted in pitch, where the air
+/// around the notes is semitones, since a log frequency is a linear pitch.
+fn y_axis(props: &mut Map<String, Value>, notes: &[f64], domain: &YDomain) {
+    use clausters_core::scale::hz_to_midi;
 
-    let (min, max) = if notes.is_empty() {
-        (domain.min, domain.max)
-    } else {
-        let pitches: Vec<f64> = notes
-            .as_chunks::<5>()
-            .0
-            .iter()
-            .flat_map(|n| [n[0], n[1], hz_to_midi(n[2].max(1e-3)), n[3], n[4]])
-            .collect();
-        let (low, high) = catalogue::pitch_window(&pitches);
-        (midi_to_hz(low), midi_to_hz(high))
+    let hz = domain.ruler == "hz";
+    let row = |value: f64| {
+        if hz {
+            hz_to_midi(value.max(1e-3))
+        } else {
+            value
+        }
     };
-    let axes = props
+    let (floor, ceiling) = (row(domain.min), row(domain.max));
+    let span = (ceiling - floor).max(1.0);
+    let pitches: Vec<f64> = notes
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .flat_map(|n| [n[0], n[1], row(n[2]), n[3], n[4]])
+        .collect();
+    let (low, high) = catalogue::pitch_window(&pitches);
+    let (low, high) = (low.clamp(floor, ceiling), high.clamp(floor, ceiling));
+    let mut y = Map::new();
+    if hz {
+        y.insert("unit".into(), json!("hz"));
+    }
+    y.insert("min".into(), json!(domain.min));
+    y.insert("max".into(), json!(domain.max));
+    y.insert("start".into(), json!((low - floor) / span));
+    y.insert("len".into(), json!(((high - low) / span).max(1.0 / span)));
+    if let Some(axes) = props
         .entry("axes")
         .or_insert_with(|| json!({}))
-        .as_object_mut();
-    if let Some(axes) = axes {
-        axes.insert("y".into(), json!({"unit": "hz", "min": min, "max": max}));
+        .as_object_mut()
+    {
+        axes.insert("y".into(), Value::Object(y));
     }
 }
 

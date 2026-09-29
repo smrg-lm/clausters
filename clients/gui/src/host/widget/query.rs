@@ -371,6 +371,14 @@ impl WidgetKind {
             .is_some_and(OnAxis::centres_y_zoom)
     }
 
+    /// Whether a wheel over this widget's vertical strip scrolls its window
+    /// rather than zooming it ([`OnAxis::wheel_pans_y`]).
+    pub fn wheel_pans_y(&self) -> bool {
+        self.as_element()
+            .and_then(Element::on_axis)
+            .is_some_and(OnAxis::wheel_pans_y)
+    }
+
     /// **The window one read of this widget's taps has to bring**, in frames at
     /// `sample_rate` -- the one door the page's tap subscription is sized from.
     ///

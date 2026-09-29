@@ -1331,6 +1331,43 @@ fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor()
     );
 }
 
+/// **A roll's keyboard scrolls through the octaves under the wheel**, as a
+/// piano's range does, and Ctrl zooms them: the window keeps its height and
+/// moves up for a wheel up, where a waveform's strip would zoom.
+#[test]
+fn a_rolls_keyboard_scrolls_under_the_wheel_and_ctrl_zooms() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"notes","notes":[0.0,100.0,60.0,100,0],"min":0,"max":127,
+             "axes":{"y":{"start":0.4,"len":0.2}}}]}"#,
+    );
+    let view = |host: &Host| {
+        host.window_def(1)
+            .unwrap()
+            .find(70)
+            .unwrap()
+            .kind
+            .editor()
+            .unwrap()
+            .y_view()
+    };
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    // Over the keyboard, the gutter at the left of the roll.
+    let effects = g.wheel(&mut host, &ctx, 10.0, 100.0, 1.0);
+    assert!(has_emit_tag(&effects, 70, "view_y"));
+    let (start, len) = view(&host);
+    assert!(
+        (len - 0.2).abs() < 1e-9,
+        "a scroll keeps the window's height"
+    );
+    assert!((start - 0.42).abs() < 1e-9, "up a tenth of it: {start}");
+    ctx.ctrl = true;
+    g.wheel(&mut host, &ctx, 10.0, 100.0, 1.0);
+    let (_, zoomed) = view(&host);
+    assert!(zoomed < 0.2, "Ctrl zooms: {zoomed}");
+}
+
 // ---- the one navigable axis that is not time: a spectrum's frequency ----
 
 fn spectrum_host() -> Host {

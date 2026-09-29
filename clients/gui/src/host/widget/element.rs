@@ -2070,6 +2070,14 @@ pub trait OnAxis {
     fn centres_y_zoom(&self) -> bool {
         false
     }
+
+    /// **Whether a wheel over the vertical strip scrolls the window**, and
+    /// Ctrl with it zooms -- a keyboard's gutter, which scrolls through the
+    /// octaves the way a piano's range does. `false`, the default, is a strip
+    /// whose wheel zooms.
+    fn wheel_pans_y(&self) -> bool {
+        false
+    }
 }
 
 /// **What an element whose picture is a texture owes the frame's GPU pass.**
