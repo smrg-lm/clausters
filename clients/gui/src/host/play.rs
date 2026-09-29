@@ -245,6 +245,14 @@ impl Host {
     /// The engine has already located the transport back. A reply about
     /// another transport is not the monitor's.
     pub(crate) fn on_transport_state(&mut self, args: &[OscType]) {
+        // The multitrack's and the roll's transports: whether they roll is the
+        // engine's, and a pass that stopped on its end mark stopped without
+        // this host saying so -- so the next space bar plays rather than stops.
+        if let (Some(OscType::Int(transport)), Some(OscType::Int(playing))) =
+            (args.get(12), args.get(3))
+        {
+            self.transport_rolled(*transport, *playing != 0);
+        }
         if args.get(12) != Some(&OscType::Int(MONITOR_TRANSPORT)) {
             return;
         }

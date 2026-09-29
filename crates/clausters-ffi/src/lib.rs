@@ -507,8 +507,10 @@ pub use time::*;
 /// `_stops_at_end` are replaced by `clausters_editing_playback_set_end` and
 /// `_end`, whose JSON says `null` (the transport rolls on), `"contents"` or an
 /// end marker; the notes editor's playback takes the same through its `end`
-/// verb and no longer marks the sequence's end on every play. **Not
-/// additive** -- two symbols went.
+/// verb and no longer marks the sequence's end on every play. New:
+/// `clausters_editing_playback_play_pass`, the space bar's pass over a time
+/// range or the loop switch, which the notes editor's `play` verb takes as
+/// `range` and `loop`. **Not additive** -- two symbols went.
 pub const CORE_ABI_VERSION: u32 = 77;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.

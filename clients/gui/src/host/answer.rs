@@ -319,13 +319,17 @@ impl Host {
                     }]));
                 self.roll_multitrack();
             }
-            Some(TransportVerb::PlayStop { mark }) => {
+            Some(TransportVerb::PlayStop {
+                mark,
+                range,
+                looping,
+            }) => {
                 if self.multitrack_rolling() {
                     self.stop_multitrack(mark);
                 } else {
                     #[cfg(test)]
                     self.exchange.asked.push(serde_json::json!(["play"]));
-                    self.roll_multitrack();
+                    self.play_multitrack(range, looping);
                 }
             }
             Some(TransportVerb::Stop { mark }) => self.stop_multitrack(mark),
@@ -528,8 +532,16 @@ impl Host {
         if let Some(beat) = outcome.locate {
             self.cue_notes(source, beat);
         }
-        if outcome.play.is_some() {
-            self.roll_notes(source);
+        if let Some(play) = outcome.play {
+            let range = play
+                .get("range")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            let looping = play
+                .get("looping")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            self.roll_notes(source, range, looping);
         }
         true
     }

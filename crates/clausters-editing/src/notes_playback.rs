@@ -328,6 +328,62 @@ impl NotesPlayback {
         Ok(steps)
     }
 
+    /// **The space bar's play: the audio editor's pass over a roll.** From
+    /// beat `from` -- the position cursor, and where a pass goes back to -- or
+    /// from the start of `range` (`[start, end]` in beats) to its end; with the
+    /// loop switch the transport loops the range, or with none every note.
+    /// Without either it is [`Self::play`], ending where [`End`] says; a pass
+    /// over a range sets the end mark for that pass alone.
+    #[allow(clippy::too_many_arguments)] // one pass: where, how far, and its sequence
+    pub fn play_pass(
+        &mut self,
+        sequence: &EventSequence,
+        from: f64,
+        range: Option<(f64, f64)>,
+        looping: bool,
+        rate: f64,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
+        if range.is_none() && !looping {
+            return self.play(sequence, from, rate, ids);
+        }
+        let mut steps = self.structure(ids)?;
+        steps.extend(self.lane_set(sequence, rate));
+        let back = Self::sample(sequence, from, rate);
+        self.back = back;
+        let contents = placed(sequence)
+            .iter()
+            .filter(|p| render::Type::of(&p.keys) == Type::Note)
+            .map(|p| p.end)
+            .fold(0.0, f64::max);
+        let start = range.map_or(back, |(a, _)| Self::sample(sequence, a, rate));
+        if looping {
+            let (a, b) = match range {
+                Some((a, b)) => (
+                    Self::sample(sequence, a, rate),
+                    Self::sample(sequence, b, rate),
+                ),
+                None => (0, (contents * rate).round() as i64),
+            };
+            steps.extend(self.command(
+                "/transport_loop",
+                vec![OscType::Long(a), OscType::Long(b.max(a + 1))],
+            ));
+        } else if let Some((_, b)) = range {
+            steps.extend(self.command("/transport_loop", vec![]));
+            let want = (Self::sample(sequence, b, rate).max(start), back);
+            self.end_sent = Some(want);
+            steps.extend(self.command(
+                "/transport_end",
+                vec![OscType::Long(want.0), OscType::Long(want.1)],
+            ));
+        }
+        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(start)]));
+        self.rolling = true;
+        steps.extend(self.command("/transport_play", vec![]));
+        Ok(steps)
+    }
+
     /// **The sequence changed**: the lane takes it again, and an end at the
     /// contents follows its new end.
     /// Nothing before the first play: there is no lane yet.
@@ -407,7 +463,8 @@ impl NotesPlayback {
 /// played is handed in; a request `{"verb": ...}` answers `{"steps": [...]}`, a
 /// query's own object, or `{"error": ...}`.
 ///
-/// - `play` -- `from` (a beat), `rate`
+/// - `play` -- `from` (a beat), `rate`, and the space bar's pass: `range`
+///   (`[start, end]` in beats) and `loop` (a boolean)
 /// - `update` -- `rate`
 /// - `resume`, `pause`, `stop` (`back`, a beat; `rate`), `close`
 /// - `cue` -- `at` (a beat), `rate`
@@ -429,7 +486,17 @@ pub fn call_json(
     let rate = number("rate", 48_000.0);
     let answer = |steps: Result<Vec<Step>, IdError>| crate::playback::answer_json(steps);
     match request.get("verb").and_then(Value::as_str).unwrap_or("") {
-        "play" => answer(playback.play(sequence, number("from", 0.0), rate, ids)),
+        "play" => {
+            let range = request
+                .get("range")
+                .and_then(Value::as_array)
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            let looping = request
+                .get("loop")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            answer(playback.play_pass(sequence, number("from", 0.0), range, looping, rate, ids))
+        }
         "update" => answer(Ok(playback.update(sequence, rate))),
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),

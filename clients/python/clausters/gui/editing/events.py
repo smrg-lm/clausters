@@ -218,9 +218,15 @@ class NotesEditor(Editor):
         if self._server is not None:
             self._playback.call("end", self.structure, end=end)
 
-    def play(self, beat: "float | None" = None, destination=None) -> "NotesEditor":
+    def play(self, beat: "float | None" = None, destination=None, *,
+             range=None, looping: bool = False) -> "NotesEditor":
         """**Play the sequence** from ``beat`` -- or from the position cursor,
         or the start -- on the notes editor's own transport. Returns ``self``.
+
+        It is the audio editor's pass: ``range`` -- ``(start, end)`` in beats,
+        a time range a sweep left -- plays from its start to its end, going
+        back to ``beat``; ``looping`` loops the range, or with none every note;
+        with neither the pass ends where `end` says.
 
         ``destination`` is for a MIDI port (a `clausters.base.MidiServer`): the
         server has no MIDI output, so the events are played on this client's
@@ -238,7 +244,9 @@ class NotesEditor(Editor):
             return self
         playback = self._playback
         playback.call("end", self.structure, end=self._end)
-        playback.call("play", self.structure, **{"from": start})
+        playback.call("play", self.structure, **{"from": start},
+                      range=list(range) if range is not None else None,
+                      loop=bool(looping))
         playback.planned = self.structure
         return self
 
@@ -339,7 +347,8 @@ class NotesEditor(Editor):
             if self.playing:
                 self.stop()
             else:
-                self.play()
+                pass_ = outcome["play"]
+                self.play(range=pass_.get("range"), looping=bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
         return changed
 

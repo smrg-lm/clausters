@@ -338,7 +338,17 @@ impl Gestures {
             .click
             .take()
             .filter(|c| (cx - c.origin_x).abs() <= host.metrics_for(ctx.def_id).hit_slop as f64);
+        let range = self.range_click.take();
         let mut out = self.release_drag(host, ctx, cx, cy);
+        // **A range that never moved is a click on what is under it**: the
+        // element gets the press it would have had -- a toggle of the note or
+        // the box there -- and only where it declines is it a place.
+        if click.is_some()
+            && let Some(at) = range
+            && super::element::click(host, ctx, &mut out, at, cx, cy)
+        {
+            return out;
+        }
         if let Some(c) = click {
             // **A click on a marker is that marker's moment**, not the pixel's:
             // the arrow is a handle onto an exact time, which is most of what a

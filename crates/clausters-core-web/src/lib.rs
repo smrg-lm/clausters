@@ -1839,6 +1839,15 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.cue(secs)))
     }
 
+    /// The steps of the space bar's play: `pass` the JSON `{"range": [start,
+    /// end] | null, "looping": bool}`, seconds of the multitrack.
+    #[wasm_bindgen(js_name = playPass)]
+    pub fn play_pass(&mut self, pass: &str) -> String {
+        use clausters_editing::playback::{answer_json, pass_of};
+        let (range, looping) = pass_of(pass);
+        answer_json(Ok(self.0.play_pass(range, looping)))
+    }
+
     /// The steps that set where a pass ends: `end` the JSON `null`,
     /// `"contents"` or seconds (an end marker). One that names none answers
     /// no steps.

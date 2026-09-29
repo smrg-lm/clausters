@@ -495,6 +495,36 @@ impl Host {
         Some(rolling)
     }
 
+    /// **The space bar's play over the multitrack**: the time range a sweep
+    /// left, from its start to its end, or the loop switch over it or the
+    /// whole multitrack, or a plain play from the mark.
+    pub fn play_multitrack(&mut self, range: Option<(f64, f64)>, looping: bool) {
+        let Some(multitrack) = self.instance.multitrack.as_mut() else {
+            return;
+        };
+        if !multitrack.is_sounding() {
+            return;
+        }
+        let steps = multitrack.play_pass(range, looping);
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
+    }
+
+    /// **Transport `transport` rolls or not, as the engine said**: the
+    /// multitrack's playback or the roll's takes it as the truth.
+    pub(crate) fn transport_rolled(&mut self, transport: i32, rolling: bool) {
+        if let Some(multitrack) = self.instance.multitrack.as_mut()
+            && multitrack.transport() == transport
+        {
+            multitrack.set_rolling(rolling);
+        }
+        if let Some(notes) = self.instance.notes.as_mut()
+            && notes.transport() == transport
+        {
+            notes.set_rolling(rolling);
+        }
+    }
+
     /// Whether the multitrack is rolling.
     pub fn multitrack_rolling(&self) -> bool {
         self.instance.rolling()
@@ -503,7 +533,7 @@ impl Host {
     /// **The space bar over the roll of `source`**: a sounding sequence stops
     /// and goes back to the roll's position cursor, a silent one plays from
     /// there -- what a client's notes editor does with the same key.
-    pub fn roll_notes(&mut self, source: SourceId) {
+    pub fn roll_notes(&mut self, source: SourceId, range: Option<(f64, f64)>, looping: bool) {
         #[cfg(test)]
         self.exchange.asked.push(serde_json::json!(["notes play"]));
         let Some(owner) = self.owner.as_ref() else {
@@ -533,7 +563,7 @@ impl Host {
             Ok(playback.stop(&sequence, from, rate))
         } else {
             self.instance.notes_played = Some(source);
-            playback.play(&sequence, from, rate, &mut self.ids)
+            playback.play_pass(&sequence, from, range, looping, rate, &mut self.ids)
         };
         drop(sequence);
         match steps {

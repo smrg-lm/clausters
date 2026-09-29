@@ -249,3 +249,47 @@ fn the_door_answers_steps() {
         "replanning is the transport's now"
     );
 }
+
+/// **The space bar's pass over a range**: from its start to its end, going
+/// back to the cursor; and the loop switch loops the range -- or, with none,
+/// every note.
+#[test]
+fn a_pass_over_a_range_ends_there_and_the_loop_switch_loops_it() {
+    // The last of each: the first play also clears whatever end it found.
+    let args_of = |steps: &[Step], addr: &str| {
+        steps.iter().rev().find_map(|step| match step {
+            Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
+            _ => None,
+        })
+    };
+    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    // Two beats a second at 100 samples a second.
+    let steps = playback
+        .play_pass(&sequence(), 1.0, Some((2.0, 3.0)), false, SR, &mut ids())
+        .unwrap();
+    assert_eq!(
+        args_of(&steps, "/transport_end"),
+        Some(vec![OscType::Long(150), OscType::Long(50)]),
+        "ends at the range's end, back to the cursor"
+    );
+    assert_eq!(
+        args_of(&steps, "/transport_locateSample"),
+        Some(vec![OscType::Long(100)]),
+        "starts at the range's start"
+    );
+    let looped = playback
+        .play_pass(&sequence(), 0.0, Some((2.0, 3.0)), true, SR, &mut ids())
+        .unwrap();
+    assert_eq!(
+        args_of(&looped, "/transport_loop"),
+        Some(vec![OscType::Long(100), OscType::Long(150)])
+    );
+    let whole = playback
+        .play_pass(&sequence(), 0.0, None, true, SR, &mut ids())
+        .unwrap();
+    assert_eq!(
+        args_of(&whole, "/transport_loop"),
+        Some(vec![OscType::Long(0), OscType::Long(150)]),
+        "every note: the last one ends on beat 3"
+    );
+}

@@ -159,10 +159,15 @@ class Playback:
         is the engine's."""
         return self.transport.refresh().position
 
-    def play(self):
+    def play(self, range=None, looping: bool = False):
         """Play, or continue a paused pass: the engine keeps where it stopped,
-        so resuming is the same verb as starting and nothing is re-cued."""
-        self._run(self._instance.play())
+        so resuming is the same verb as starting and nothing is re-cued.
+
+        It is the audio editor's pass. ``range`` -- ``(start, end)`` in seconds,
+        a time range a sweep left -- plays from its start to its end, going back
+        to the position cursor; ``looping`` loops the range, or with none the
+        whole multitrack; with neither the pass ends where `end` says."""
+        self._run(self._instance.play_pass(range, looping))
         self.transport.reported(playing=True)
         return self
 

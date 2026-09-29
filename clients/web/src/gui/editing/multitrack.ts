@@ -486,6 +486,8 @@ interface TransportVerb {
     verb: string;
     secs?: number;
     mark?: number;
+    range?: [number, number] | null;
+    looping?: boolean;
 }
 
 /**
@@ -840,10 +842,11 @@ export class MultitrackEditor extends Editor<Multitrack> {
             else await playback.play();
         } else if (verb.verb === "playStop") {
             // The space bar: a stop goes back to the position cursor, so the
-            // play cursor lands where the reader left the mark.
+            // play cursor lands where the reader left the mark; a play is the
+            // time range a sweep left, and the loop switch over it.
             await playback.refresh();
             if (playback.playing) playback.stop();
-            else await playback.play();
+            else await playback.play({ range: verb.range ?? null, looping: verb.looping ?? false });
         } else if (verb.verb === "stop") {
             playback.stop();
         } else if (verb.verb === "cue") {

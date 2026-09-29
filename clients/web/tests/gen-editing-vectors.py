@@ -266,7 +266,7 @@ def editor_exchange():
             self.playing = False
             self.meters = {}
 
-        def play(self):
+        def play(self, range=None, looping=False):
             self.calls.append(["play"])
             self.playing = True
 

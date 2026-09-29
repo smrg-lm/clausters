@@ -72,7 +72,7 @@ export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
 export { Playback } from "./playback.ts";
 // The plan's own shapes are the crate's and were only ever restated here to
 // read it; what a page sees now is the reconciler's answer.
-export type { End, Step, StepArg } from "./playback.ts";
+export type { End, Pass, Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
 export type { CratePoint, EditableCurve, PointsEditorOptions } from "./points.ts";
 export { MEASURES, SamplesView, measures } from "./samples.ts";

@@ -55,6 +55,16 @@ export type { Step, StepArg } from "../../steps.ts";
  */
 export type End = null | "contents" | number;
 
+/**
+ * **The audio editor's pass**, over a multitrack or a roll: a time range to
+ * play from its start to its end (`[start, end]`, seconds of a multitrack or
+ * beats of a sequence), and whether the loop switch is on.
+ */
+export interface Pass {
+    range?: readonly [number, number] | null;
+    looping?: boolean;
+}
+
 export class Playback {
     readonly editor: MultitrackEditor;
     readonly server: Server;
@@ -232,9 +242,19 @@ export class Playback {
     /**
      * Play, or continue a paused pass: the engine keeps where it stopped, so
      * resuming is the same verb as starting and nothing is re-cued.
+     *
+     * It is the audio editor's pass. `range` -- `[start, end]` in seconds, a
+     * time range a sweep left -- plays from its start to its end, going back to
+     * the position cursor; `looping` loops the range, or with none the whole
+     * multitrack; with neither the pass ends where {@link Playback.end} says.
      */
-    async play(): Promise<this> {
-        if (this.instance !== null) await this.run(this.instance.play());
+    async play(pass: Pass = {}): Promise<this> {
+        if (this.instance !== null) {
+            await this.run(this.instance.playPass(JSON.stringify({
+                range: pass.range ?? null,
+                looping: pass.looping ?? false,
+            })));
+        }
         this.transport.reported({ playing: true });
         return this;
     }

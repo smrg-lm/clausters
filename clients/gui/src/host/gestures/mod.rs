@@ -331,6 +331,10 @@ const DOUBLE_PX: f64 = 6.0;
 pub struct Gestures {
     drag: Option<Drag>,
     click: Option<Click>,
+    /// The element under a **range** sweep's press
+    /// ([`GestureStep::Range`](crate::host::widget::GestureStep::Range)), to be
+    /// handed the press as a click if the hand never moves.
+    range_click: Option<element::At>,
     /// Where and when the last press landed, and what number it was -- the whole
     /// of what a double click is made of. See [`GestureCtx::now_ms`] for why
     /// the clock comes from the front.

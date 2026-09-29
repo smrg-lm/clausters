@@ -336,7 +336,7 @@ impl Gestures {
                 true
             }
             (
-                step @ (GestureStep::Select | GestureStep::SelectBox),
+                step @ (GestureStep::Select | GestureStep::SelectBox | GestureStep::Range),
                 interact::Coords::Time(axis),
             ) => {
                 if !axis.spans(cx) {
@@ -372,7 +372,14 @@ impl Gestures {
                 // -- a roll's notes -- and a press is that rectangle at no size,
                 // which is what lets go of what it held.
                 let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
-                sweep_element(host, ctx, element, (cx, cy), (cx, cy));
+                // A range asks nothing of what is drawn in it, and keeps the
+                // element for the click the press may turn out to be.
+                let range = step == GestureStep::Range;
+                if range {
+                    self.range_click = Some(element);
+                } else {
+                    sweep_element(host, ctx, element, (cx, cy), (cx, cy));
+                }
                 self.drag = Some(Drag::Select {
                     id,
                     body: axis.body,
@@ -382,7 +389,7 @@ impl Gestures {
                     origin_x: cx,
                     origin_y: cy,
                     value: value.zip(anchor_v),
-                    element: Some(element),
+                    element: (!range).then_some(element),
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true

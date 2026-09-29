@@ -634,3 +634,24 @@ test("the space bar plays and stops the roll, and its end is the transport's", a
     assert.ok(addrs.includes("/transport_stop") && addrs.includes("/transport_locateSample"),
         "a stop, back to the position cursor");
 });
+
+test("the space bar plays the time range a sweep left", async () => {
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const editor = new NotesEditor(seq, { sampleRate: SR, server });
+    const { host, wid } = await opened(editor);
+    const window = 900 + host.trees.length;
+    // A sweep from beat 1 to beat 2, on the roll's axis.
+    editor.apply("/gui_event", [wid, 1, 0, "selection", BEAT, BEAT]);
+    editor.apply("/gui_event", [window, 2, 0, "play", 0]);
+    await editor.settled();
+    const sent = server.sent
+        .filter(([addr]) => addr === "/transport_end" || addr === "/transport_locateSample")
+        .map(([addr, args]) => [addr, (args as [string, number | bigint][]).slice(1).map(([, v]) => Number(v))]);
+    // 100 samples a second, two beats a second: beat 1 is sample 50, beat 2 is 100.
+    assert.ok(sent.some(([a, v]) => a === "/transport_end" && JSON.stringify(v) === "[100,0]"), JSON.stringify(sent));
+    assert.deepEqual(sent.at(-1), ["/transport_locateSample", [50]], "from the range's start");
+});

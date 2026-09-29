@@ -844,6 +844,36 @@ pub unsafe extern "C" fn clausters_editing_playback_cue(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(secs)))) }
 }
 
+/// The steps of the space bar's play -- `pass` the JSON `{"range": [start,
+/// end] | null, "looping": bool}`, seconds of the multitrack: from the
+/// range's start to its end, or the loop switch over the range or the whole
+/// multitrack, or a plain play (`MultitrackPlayback::play_pass`).
+///
+/// # Safety
+/// `p` null or live, `pass` null or readable for `pass_len` bytes, `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_play_pass(
+    p: *mut FfiPlayback,
+    pass: *const u8,
+    pass_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::{answer_json, pass_of};
+    // SAFETY: forwarded from this function's own contract.
+    let Some(pass) = (unsafe { crate::out::text(pass, pass_len) }) else {
+        return 0;
+    };
+    let (range, looping) = pass_of(&pass);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_verb(p, out, out_cap, |pb| {
+            answer_json(Ok(pb.play_pass(range, looping)))
+        })
+    }
+}
+
 /// The steps that set where a pass ends -- `end` the JSON `null` (open),
 /// `"contents"` or seconds (an end marker), going back to the position
 /// cursor: the transport's end mark, sent only when it moves. An `end` that

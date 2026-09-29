@@ -106,8 +106,35 @@ fn the_space_bar_over_the_window_asks_for_a_play() {
         1,
     );
     assert_eq!(out.turn, Kind::Route);
-    assert_eq!(out.play, Some(json!({"looping": false})));
+    assert_eq!(out.play, Some(json!({"looping": false, "range": null})));
     assert!(e.window(40)["plays"].as_bool().unwrap());
+}
+
+/// **A sweep's time range is what the space bar plays**, in beats, with the
+/// loop switch beside it; a range of no length is none.
+#[test]
+fn the_space_bar_plays_the_time_range_a_sweep_left() {
+    let mut e = editor(shared());
+    let space = |e: &mut NotesEditor, looping: i64| {
+        e.event(
+            &Event {
+                addr: "/gui_event".into(),
+                args: vec![json!(39), json!(3), json!(0), json!("play"), json!(looping)],
+            },
+            1,
+        )
+        .play
+    };
+    e.event(&gesture("selection", vec![json!(50.0), json!(100.0)]), 1);
+    assert_eq!(
+        space(&mut e, 1),
+        Some(json!({"looping": true, "range": [0.5, 1.5]}))
+    );
+    e.event(&gesture("selection", vec![json!(80.0), json!(0.0)]), 1);
+    assert_eq!(
+        space(&mut e, 0),
+        Some(json!({"looping": false, "range": null}))
+    );
 }
 
 /// **A click on the ruler places the position cursor**, as a beat of the

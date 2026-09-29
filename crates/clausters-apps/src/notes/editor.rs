@@ -37,8 +37,9 @@ pub struct Outcome {
     pub changed: bool,
     /// The version after the turn.
     pub version: i64,
-    /// What the space bar asks of the playback: `{"looping"}`, when it was
-    /// pressed over the window.
+    /// What the space bar asks of the playback: `{"looping", "range"}`, when
+    /// it was pressed over the window -- `range` the time range a sweep left,
+    /// `[start, end]` in beats, or `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub play: Option<Value>,
     /// Where the position cursor was placed, as a beat of the sequence -- a
@@ -63,6 +64,9 @@ pub struct NotesEditor {
     widget: Option<i32>,
     title: String,
     size: (i64, i64),
+    /// The time range a sweep left, `[start, end)` in beats, while there is
+    /// one: what the space bar plays.
+    range: Option<(f64, f64)>,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -132,6 +136,7 @@ impl NotesEditor {
             widget: None,
             title: "Notes".into(),
             size: (1000, 520),
+            range: None,
         }
     }
 
@@ -198,6 +203,21 @@ impl NotesEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if tag == "selection" {
+            // A sweep's time range, on the axis's samples, kept in beats: the
+            // span the space bar plays. A range of no length is none.
+            let axis = Axis::of(&self.held(), self.rate);
+            let at = |i: usize| {
+                values
+                    .get(i)
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.0)
+                    .max(0.0)
+            };
+            let (start, len) = (at(0), at(1));
+            self.range = (len > 0.0).then(|| (axis.beat(start), axis.beat(start + len)));
+            return (None, Vec::new());
+        }
         if tag == "locate" {
             // A click on the ruler: the reader put the position cursor there,
             // on the axis's sample, which the sequence's tempo map reads as a
@@ -293,7 +313,8 @@ impl Converse for NotesEditor {
 
     /// **The space bar over the window is a play**, the window's own verb
     /// (the window says `plays`): what it asks of the playback, with the loop
-    /// switch the host sends beside it.
+    /// switch the host sends beside it and the time range a sweep left -- the
+    /// audio editor's pass, over a roll.
     fn window_verb(
         &mut self,
         message: &conversation::Message,
@@ -305,7 +326,10 @@ impl Converse for NotesEditor {
         }
         out.turn = Kind::Route;
         let looping = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
-        out.play = Some(json!({ "looping": looping }));
+        out.play = Some(json!({
+            "looping": looping,
+            "range": self.range.map(|(a, b)| json!([a, b])),
+        }));
         out.answer = Some(conversation::answer(
             message.seq,
             out.version,

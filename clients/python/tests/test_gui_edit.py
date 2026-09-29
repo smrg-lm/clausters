@@ -586,3 +586,20 @@ def test_the_space_bar_plays_and_stops_the_roll_and_its_end_is_the_transports():
     addrs = [addr for addr, _ in server.sent]
     assert "/transport_stop" in addrs and "/transport_locateSample" in addrs, \
         "a stop, back to the position cursor"
+
+
+def test_the_space_bar_plays_the_time_range_a_sweep_left():
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = NotesEditor(seq, sample_rate=SR, server=server)
+    host, wid = opened(editor)
+    window = int(editor._window)
+    # A sweep from beat 1 to beat 2, on the roll's axis.
+    editor.apply("/gui_event", [wid, 1, 0, "selection", BEAT, BEAT])
+    editor.apply("/gui_event", [window, 2, 0, "play", 0])
+    sent = [(addr, [int(getattr(a, "value", a)) for a in args[1:]])
+            for addr, args in server.sent if addr in ("/transport_end", "/transport_locateSample")]
+    # 100 samples a second, two beats a second: beat 1 is sample 50, beat 2 is 100.
+    assert ("/transport_end", [100, 0]) in sent, sent
+    assert sent[-1] == ("/transport_locateSample", [50]), "from the range's start"

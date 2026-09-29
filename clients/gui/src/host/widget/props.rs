@@ -758,6 +758,15 @@ pub enum GestureStep {
     /// (a roll's notes, in the band of semitones it reports), because there the
     /// span and the notes under it are one hand's one meaning.
     Select,
+    /// Sweep a **time range and nothing else**, over a view whose plain drag is
+    /// already spoken for -- a roll's notes, a multitrack's boxes: the span of
+    /// [`Select`](GestureStep::Select), with nothing drawn in it asked what
+    /// fell inside, since the objects there are the other selection. A press
+    /// that never moves is a **click on what is under it**, handed to the
+    /// element as the same press would have been -- so Alt, which a roll and a
+    /// multitrack give this step, still toggles the note or the box it lands
+    /// on -- and a place where the element declines is an ordinary click.
+    Range,
     /// Sweep a **marquee**: the objects a rectangle covered -- a lane's clips, a
     /// patcher's boxes -- and nothing else. The rectangle is the gesture's own
     /// picture and is gone when the hand lets go; what stays is what is
@@ -821,6 +830,7 @@ impl GestureStep {
             "element" => GestureStep::Element,
             "pan" => GestureStep::Pan,
             "select" => GestureStep::Select,
+            "range" => GestureStep::Range,
             "marquee" => GestureStep::Marquee,
             "select_box" => GestureStep::SelectBox,
             "sample" => GestureStep::Sample,

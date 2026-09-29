@@ -1138,6 +1138,21 @@ wrong.
   bar of a fixed height with a line at its centre (`pianoroll::note_height`).
   Home and End place the cursor over a roll and a multitrack too.
 
+- ✅ **A time range over a roll and a multitrack** *(the user, 2026-09-29:
+  "Al multipista y el roll hay que agregarle la capacidad de poder marcar un
+  rango temporal como en el editor de audio", with a modifier since the plain
+  drag selects notes and boxes, and anywhere on the view; Alt chosen, an Alt
+  click still toggling, and the range played as the audio editor plays
+  one)*. **Done 2026-09-29**: the host's `range` gesture step sweeps the
+  time range alone and hands a press that never moved to the element as a
+  click; a roll and a multitrack give it Alt. The range is kept by the
+  editor (beats for a roll, seconds for a multitrack) and the space bar plays
+  it as the audio editor does -- from its start to its end, back to the
+  position cursor, and the loop switch `L` over it or over everything
+  (`play_pass` on both playbacks, `clausters_editing_playback_play_pass`;
+  `play(range=, looping=)` in both clients). The standalone host plays the
+  same, and learns from the engine when a pass stopped on its end mark.
+
 - ⬜ **Two windows of one role over one structure draw on one widget**
   *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the
   one in MIDI notes: "gui_def: widget id 1000 already in use, skipping")*. A

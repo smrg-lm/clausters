@@ -135,10 +135,17 @@ pub enum TransportVerb {
     /// Play, or pause where it stands -- whichever the transport is not doing.
     Toggle,
     /// **The space bar**: play, or -- when it is rolling -- stop and go back
-    /// to the mark, so the play cursor lands on the position cursor again.
+    /// to the mark, so the play cursor lands on the position cursor again. A
+    /// play is the audio editor's pass: from the time range a sweep left to its
+    /// end, or from the mark, and with the loop switch over the range or the
+    /// whole multitrack.
     PlayStop {
         /// The mark, in seconds.
         mark: f64,
+        /// The time range a sweep left, `[start, end]` in seconds.
+        range: Option<(f64, f64)>,
+        /// Whether the loop switch is on.
+        looping: bool,
     },
     /// Halt and go back to the mark: the position cursor, not the top.
     Stop {
@@ -189,6 +196,9 @@ pub struct MultitrackEditor {
     title: String,
     size: (i64, i64),
     cursor: Option<f64>,
+    /// The time range a sweep left, `[start, end)` in seconds, while there is
+    /// one: what the space bar plays.
+    range: Option<(f64, f64)>,
     window: Option<i32>,
     widget: Option<i32>,
     ruler: Option<i32>,
@@ -218,6 +228,7 @@ impl MultitrackEditor {
             title: String::new(),
             size: (0, 0),
             cursor: None,
+            range: None,
             window: None,
             widget: None,
             ruler: None,
@@ -604,6 +615,8 @@ impl MultitrackEditor {
         if self.window.map(i64::from) == Some(widget) && tag == PLAY_KEY {
             out.transport = Some(TransportVerb::PlayStop {
                 mark: self.cursor.unwrap_or(0.0),
+                range: self.range,
+                looping: values.first().is_some_and(|v| number(v) != 0.0),
             });
             return (None, Vec::new());
         }
@@ -754,6 +767,7 @@ impl MultitrackEditor {
             "selection" => {
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 let mut selection = json!({ "start": at(0), "len": at(1) });
+                self.range = (at(1) > 0.0).then(|| (at(0), at(0) + at(1)));
                 if values.len() >= 4 {
                     // The sweep restricted the value axis too, carried as it
                     // came: no unit of this editor's applies to it.
@@ -1346,8 +1360,48 @@ mod tests {
     fn the_space_bar_plays_and_stops() {
         let mut ed = editor();
         let out = ed.event(&event(39, 2, 1, PLAY_KEY, vec![]), 1);
-        assert_eq!(out.transport, Some(TransportVerb::PlayStop { mark: 0.0 }));
+        assert_eq!(
+            out.transport,
+            Some(TransportVerb::PlayStop {
+                mark: 0.0,
+                range: None,
+                looping: false
+            })
+        );
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
+    }
+
+    /// **A sweep's time range is what the space bar plays**, with the loop
+    /// switch the host sends beside it; a range of no length is none.
+    #[test]
+    fn the_space_bar_plays_the_time_range_a_sweep_left() {
+        let mut ed = editor();
+        ed.event(
+            &event(41, 2, 1, "selection", vec![json!(SR), json!(2.0 * SR)]),
+            1,
+        );
+        let out = ed.event(&event(39, 3, 1, PLAY_KEY, vec![json!(1)]), 1);
+        assert_eq!(
+            out.transport,
+            Some(TransportVerb::PlayStop {
+                mark: 0.0,
+                range: Some((1.0, 3.0)),
+                looping: true
+            })
+        );
+        ed.event(
+            &event(41, 4, 1, "selection", vec![json!(SR), json!(0.0)]),
+            1,
+        );
+        let out = ed.event(&event(39, 5, 1, PLAY_KEY, vec![json!(0)]), 1);
+        assert!(matches!(
+            out.transport,
+            Some(TransportVerb::PlayStop {
+                range: None,
+                looping: false,
+                ..
+            })
+        ));
     }
 
     /// The clock reads the position and the multitrack's end, in the multitrack's beats.

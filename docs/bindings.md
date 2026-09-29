@@ -430,6 +430,7 @@ sits over it.
 | `clausters_editing_playback_stop` | `JsMultitrackPlayback.stop` | `idiom` — the steps that halt and go back to the mark |
 | `clausters_editing_playback_locate` | `JsMultitrackPlayback.locate` | `idiom` — the steps that put the transport at a second of the multitrack |
 | `clausters_editing_playback_cue` | `JsMultitrackPlayback.cue` | `idiom` — a locate for a stopped transport, nothing for a rolling one |
+| `clausters_editing_playback_play_pass` | `JsMultitrackPlayback.play_pass` | `idiom` — the steps of the space bar's play: from a time range's start to its end, or the loop switch over the range or the whole multitrack, the pass as JSON text |
 | `clausters_editing_playback_set_end` | `JsMultitrackPlayback.set_end` | `idiom` — the steps that set where a pass ends, back to the position cursor: `null` (open), `"contents"` or seconds (an end marker), as JSON text |
 | `clausters_editing_playback_close` | `JsMultitrackPlayback.close` | `idiom` — the steps that free everything the muece made |
 | `clausters_editing_playback_meters` | `JsMultitrackPlayback.meters` | `idiom` — the meter bus runs by track, as JSON |

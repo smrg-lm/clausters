@@ -1537,6 +1537,52 @@ fn a_roll_asked_for_the_range_by_name_sweeps_the_span() {
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
 
+/// **Alt sweeps a time range over a roll, anywhere, and takes no notes**; an
+/// Alt click that never moves is the roll's toggle of the note under it, not a
+/// place for the cursor.
+#[test]
+fn alt_sweeps_a_range_over_a_roll_and_an_alt_click_toggles_a_note() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"notes","min":48.0,"max":72.0,
+             "notes":[0.0,400.0,60.0,100,0, 6000.0,400.0,61.0,100,0]}]}"#,
+    );
+    host.set_timeline_total(90, 10000);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 400);
+    ctx.alt = true;
+    let grid = {
+        let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
+        interact::time_of(&h.chain).unwrap().1.body
+    };
+    let key = host.timeline_key(90).unwrap();
+    // A sweep that starts on the first note: a span, and the note untouched.
+    let y60 = {
+        let (lo, hi) = (48.0, 72.0);
+        crate::host::graphics::pianoroll::pitch_to_y(60.0, lo, hi, grid) as f64
+    };
+    let x0 = grid.x as f64 + 2.0;
+    let x1 = grid.x as f64 + grid.w as f64 * 0.3;
+    let effects = g.press(&mut host, &ctx, x0, y60);
+    assert!(has_emit_tag(&effects, 90, "selection"));
+    g.drag_to(&mut host, &ctx, x1, y60);
+    g.release(&mut host, &ctx, x1, y60);
+    assert!(host.timelines().state(key).unwrap().sel_len > 0.0, "a span");
+    assert!(selected_notes(&host, 90).is_empty(), "and no note taken");
+    // An Alt click on the note: toggled into the roll's selection.
+    let effects = g.press(&mut host, &ctx, x0, y60);
+    let released = g.release(&mut host, &ctx, x0, y60);
+    assert_eq!(
+        selected_notes(&host, 90),
+        vec![0],
+        "{effects:?} {released:?}"
+    );
+    assert!(
+        !has_emit_tag(&released, 90, "locate"),
+        "the click was the note's, not a place"
+    );
+}
+
 /// The multi-note selection of a roll -- view state no query reports, reached
 /// through the element's own `as_any` door, which is what it is for.
 fn selected_notes(host: &Host, id: i32) -> Vec<usize> {

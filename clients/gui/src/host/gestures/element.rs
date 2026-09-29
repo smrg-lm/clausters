@@ -174,6 +174,31 @@ pub(super) fn press(host: &mut Host, ctx: &GestureCtx, at: At, cx: f64, cy: f64)
     })
 }
 
+/// **A click handed to the element `at` addresses**: the press it would have
+/// had and the release after it, where the hand never moved -- what a range
+/// sweep that never swept becomes ([`GestureStep::Range`]). Answers whether
+/// the element took it; one that declines leaves the click to be a place.
+///
+/// [`GestureStep::Range`]: crate::host::widget::GestureStep::Range
+pub(super) fn click(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    out: &mut Vec<GestureEffect>,
+    at: At,
+    cx: f64,
+    cy: f64,
+) -> bool {
+    let Some(Claim::Take(take)) = press(host, ctx, at, cx, cy) else {
+        return false;
+    };
+    report(host, out, ctx, at.id, take.events);
+    if let Some(events) = with(host, ctx, at, |el, input| el.release((cx, cy), true, input)) {
+        report(host, out, ctx, at.id, events);
+    }
+    out.push(GestureEffect::Redraw(ctx.def_id));
+    true
+}
+
 /// **Whether the pointer is on the element `at` addresses**, by the declared
 /// shape and the slop [`press`] filters with.
 ///

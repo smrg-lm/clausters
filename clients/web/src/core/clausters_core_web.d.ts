@@ -432,6 +432,11 @@ export class MultitrackPlayback {
      */
     play(): string;
     /**
+     * The steps of the space bar's play: `pass` the JSON `{"range": [start,
+     * end] | null, "looping": bool}`, seconds of the multitrack.
+     */
+    playPass(pass: string): string;
+    /**
      * Whether the transport was last told to roll.
      */
     rolling(): boolean;
@@ -1876,6 +1881,7 @@ export interface InitOutput {
     readonly multitrackplayback_notes: (a: number, b: number, c: number) => [number, number];
     readonly multitrackplayback_pause: (a: number) => [number, number];
     readonly multitrackplayback_play: (a: number) => [number, number];
+    readonly multitrackplayback_playPass: (a: number, b: number, c: number) => [number, number];
     readonly multitrackplayback_rolling: (a: number) => number;
     readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
     readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;

@@ -41,7 +41,7 @@ import type { Answer } from "./echo.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
-import type { End } from "./playback.ts";
+import type { End, Pass } from "./playback.ts";
 import { plain } from "./samples.ts";
 import { View } from "./view.ts";
 
@@ -50,7 +50,7 @@ interface Outcome {
     turn?: string;
     changed?: boolean;
     answer?: Answer;
-    play?: { looping: boolean };
+    play?: { looping: boolean; range?: [number, number] | null };
     locate?: number;
 }
 
@@ -301,12 +301,17 @@ export class NotesEditor extends Editor<EventSequence> {
      * **Plays the sequence** from `beat` -- or from the position cursor, or the
      * start -- on the notes editor's own transport.
      *
+     * It is the audio editor's pass: `range` -- `[start, end]` in beats, a time
+     * range a sweep left -- plays from its start to its end, going back to
+     * `beat`; `looping` loops the range, or with none every note; with neither
+     * the pass ends where {@link NotesEditor.end} says.
+     *
      * `destination` is for a MIDI port (a `MidiServer`): the server has no MIDI
      * output, so the events are played on this page's clock to that destination
      * instead, each as the MIDI messages the core renders it to, and an edit is
      * heard from the next play.
      */
-    async play(beat?: number, destination?: PlayDestination): Promise<this> {
+    async play(beat?: number, destination?: PlayDestination, pass: Pass = {}): Promise<this> {
         const start = beat ?? this.cursor ?? 0;
         if (destination !== undefined) {
             const played = new Timeline([...this.structure]);
@@ -318,7 +323,11 @@ export class NotesEditor extends Editor<EventSequence> {
         }
         const playback = this.#playback;
         await playback.call("end", this.structure, { end: this.#end });
-        await playback.call("play", this.structure, { from: start });
+        await playback.call("play", this.structure, {
+            from: start,
+            range: pass.range ?? null,
+            loop: pass.looping ?? false,
+        });
         playback.planned = this.structure;
         return this;
     }
@@ -445,7 +454,10 @@ export class NotesEditor extends Editor<EventSequence> {
             // cursor, so the play cursor lands where the reader left the mark.
             this.#work = this.#work.then(async () => {
                 if (await this.playing()) await this.stop();
-                else await this.play();
+                else await this.play(undefined, undefined, {
+                    range: outcome.play?.range ?? null,
+                    looping: outcome.play?.looping ?? false,
+                });
             });
             this.#work.catch(() => {});
         }

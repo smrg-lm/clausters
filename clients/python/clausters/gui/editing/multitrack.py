@@ -593,11 +593,13 @@ class MultitrackEditor(Editor):
                 self.playback.play()
         elif kind == "playStop":
             # The space bar: a stop goes back to the position cursor, so the
-            # play cursor lands where the reader left the mark.
+            # play cursor lands where the reader left the mark; a play is the
+            # time range a sweep left, and the loop switch over it.
             if self.playback.playing:
                 self.playback.stop()
             else:
-                self.playback.play()
+                self.playback.play(range=verb.get("range"),
+                                   looping=bool(verb.get("looping")))
         elif kind == "stop":
             self.playback.stop()
         elif kind == "cue":

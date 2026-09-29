@@ -37,7 +37,8 @@ What to do in the window:
   puts the **mark** back at the top, which is the cursor's verb and not the
   transport's. **The space bar is play/stop**, so the play cursor comes back
   to the mark every time, and **Home** and **End** put the mark at the start
-  and where the last region ends.
+  and where the last region ends. **Alt and a drag** anywhere marks a time
+  range, as in the audio editor: the space bar plays it, and **L** loops it.
 - **Double click the box on the keys track** to open its **roll**. That box
   holds notes -- an `EventSequence` -- and the roll opens over the very same
   sequence, in the multitrack's undo order: drag a note there and the box redraws

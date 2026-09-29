@@ -246,7 +246,10 @@ dropped with nothing that is sounding cut. The window carries the transport row
 that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 `editor.play()`, `pause()`, `stop()` and `rewind()` are the same verbs from a
 page. **The space bar is play/stop**: a stop goes back to the position
-cursor, so the play cursor lands where the mark is. **Where a pass ends** is
+cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
+drag does in the audio editor: the space bar plays it from its start to its end,
+and the loop switch (**L**) loops it, or the whole multitrack with no range --
+the playback's `play({ range, looping })` from a script, as the notes editor's `play` takes it too. **Where a pass ends** is
 the playback's `end`: `null` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
 end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened with

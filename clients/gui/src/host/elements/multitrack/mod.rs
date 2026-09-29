@@ -508,12 +508,16 @@ impl Element for Multitrack {
     /// size: it lets go of everything, and the machine puts the transport's
     /// cursor where it pointed, which is what makes one cursor the window's.
     fn gesture_map(&self) -> Option<GestureMap> {
-        use crate::host::widget::GestureStep::{Element as El, Marquee, Pan};
+        use crate::host::widget::GestureStep::{Element as El, Marquee, Pan, Range};
+        // **Alt sweeps a time range**, the audio editor's selection, anywhere
+        // on the view -- the plain drag is the marquee over the contents, so
+        // the span needs a modifier of its own -- and an Alt click that never
+        // moves is still the element's toggle of what it lands on.
         Some(GestureMap::of_plans(
             &[El, Marquee],
             &[Pan],
             &[El, Marquee],
-            &[El, Marquee],
+            &[Range],
         ))
     }
 

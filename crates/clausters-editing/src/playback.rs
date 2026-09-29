@@ -91,6 +91,21 @@ impl End {
     }
 }
 
+/// **A pass as JSON**, `{"range": [start, end] | null, "looping": bool}`: the
+/// one reading every door of [`MultitrackPlayback::play_pass`] shares.
+pub fn pass_of(json: &str) -> (Option<(f64, f64)>, bool) {
+    let value: Value = serde_json::from_str(json).unwrap_or(Value::Null);
+    let range = value
+        .get("range")
+        .and_then(Value::as_array)
+        .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+    let looping = value
+        .get("looping")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    (range, looping)
+}
+
 /// **One multitrack, as it is playing.**
 #[derive(Debug, Clone)]
 pub struct MultitrackPlayback {
@@ -271,6 +286,55 @@ impl MultitrackPlayback {
     pub fn play(&mut self) -> Vec<Step> {
         self.rolling = true;
         transport_command("/transport_play", vec![])
+    }
+
+    /// **The space bar's play: the audio editor's pass over a multitrack.**
+    ///
+    /// With a time range (`[start, end]` in seconds) the pass starts at its
+    /// start and ends at its end, going back to the mark; with the loop switch
+    /// the transport loops the range -- or, with none, the whole multitrack --
+    /// and with neither it plays from where the transport stands (the mark,
+    /// after a stop) to wherever [`End`] says. A pass over a range sets the end
+    /// mark for that pass alone: the next one without a range puts back the
+    /// end that was asked for.
+    pub fn play_pass(&mut self, range: Option<(f64, f64)>, looping: bool) -> Vec<Step> {
+        let mut steps = Vec::new();
+        let span = range
+            .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
+        match (span, looping) {
+            (Some((from, to)), true) => {
+                steps.extend(transport_command(
+                    "/transport_loop",
+                    vec![
+                        OscType::Long(self.secs_to_samples(from)),
+                        OscType::Long(self.secs_to_samples(to.max(from))),
+                    ],
+                ));
+                if range.is_some() {
+                    steps.extend(self.locate(from));
+                }
+            }
+            _ => {
+                steps.extend(transport_command("/transport_loop", vec![]));
+                match range {
+                    Some((from, to)) => {
+                        let want = (
+                            self.secs_to_samples(to.max(from)),
+                            self.secs_to_samples(self.mark),
+                        );
+                        self.end_sent = Some(want);
+                        steps.extend(transport_command(
+                            "/transport_end",
+                            vec![OscType::Long(want.0), OscType::Long(want.1)],
+                        ));
+                        steps.extend(self.locate(from));
+                    }
+                    None => steps.extend(self.end_steps()),
+                }
+            }
+        }
+        steps.extend(self.play());
+        steps
     }
 
     /// **Freezes the multitrack where it stands**, every node's state intact -- and
@@ -574,6 +638,56 @@ mod tests {
         assert_eq!(End::from_json(&json!(3.0)), Some(End::At(3.0)));
         assert_eq!(End::from_json(&Value::Null), Some(End::Open));
         assert_eq!(End::from_json(&json!("nope")), None);
+    }
+
+    /// **The space bar's pass over a range** ends at the range's end and goes
+    /// back to the mark; the loop switch loops the range, or with none the
+    /// whole multitrack; and a pass with neither puts back the end asked for.
+    #[test]
+    fn a_pass_over_a_range_ends_there_and_the_loop_switch_loops_it() {
+        let args_of = |steps: &[Step], addr: &str| {
+            steps.iter().find_map(|step| match step {
+                Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
+                _ => None,
+            })
+        };
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        playback
+            .sync(
+                &ending_at(5.0),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        playback.cue(0.5);
+        let steps = playback.play_pass(Some((1.0, 2.0)), false);
+        assert_eq!(
+            args_of(&steps, "/transport_end"),
+            Some(vec![OscType::Long(96_000), OscType::Long(24_000)])
+        );
+        assert_eq!(
+            args_of(&steps, "/transport_locateSample"),
+            Some(vec![OscType::Long(48_000)])
+        );
+        assert_eq!(
+            addrs(&steps).last().map(String::as_str),
+            Some("/transport_play")
+        );
+        let looped = playback.play_pass(None, true);
+        assert_eq!(
+            args_of(&looped, "/transport_loop"),
+            Some(vec![OscType::Long(0), OscType::Long(240_000)]),
+            "the whole multitrack"
+        );
+        let plain = playback.play_pass(None, false);
+        assert_eq!(args_of(&plain, "/transport_loop"), Some(vec![]));
+        assert_eq!(
+            args_of(&plain, "/transport_end"),
+            Some(vec![]),
+            "the range's end mark was for its pass: open again"
+        );
     }
 
     /// **A locate is the second's sample**, and a tempo in the multitrack
