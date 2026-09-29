@@ -814,14 +814,20 @@ test("the playback sends the crate's steps and waits where they say", async () =
         "a sample rides as 64 bits",
     );
 
-    // Stopping at the end is the crate's switch, read back through the binding;
-    // with no contents there is no end to mark, so nothing is sent.
+    // Where a pass ends is the crate's, read back through the binding; with no
+    // contents there is no end to mark, so nothing is sent -- and a marker is
+    // its own place.
     (playback as unknown as { instance: unknown }).instance = multitrack;
     log.length = 0;
-    assert.equal(playback.stopAtEnd, false);
-    playback.stopAtEnd = true;
-    assert.equal(playback.stopAtEnd, true);
+    assert.equal(playback.end, null);
+    playback.end = "contents";
+    assert.equal(playback.end, "contents");
     assert.equal(log.length, 0, "no contents, nothing to mark");
+    playback.end = 2.5;
+    assert.equal(playback.end, 2.5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(log.length, 1);
+    assert.equal(log[0]![1], "/transport_end");
 });
 
 

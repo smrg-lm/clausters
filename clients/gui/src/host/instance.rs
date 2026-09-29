@@ -500,9 +500,9 @@ impl Host {
         self.instance.rolling()
     }
 
-    /// **The space bar over the roll of `source`**: a sounding sequence
-    /// pauses, a silent one plays from the roll's position cursor -- what a
-    /// client's notes editor does with the same key.
+    /// **The space bar over the roll of `source`**: a sounding sequence stops
+    /// and goes back to the roll's position cursor, a silent one plays from
+    /// there -- what a client's notes editor does with the same key.
     pub fn roll_notes(&mut self, source: SourceId) {
         #[cfg(test)]
         self.exchange.asked.push(serde_json::json!(["notes play"]));
@@ -527,8 +527,10 @@ impl Host {
             .notes
             .get_or_insert_with(|| NotesPlayback::new(NOTES_EDITOR_TRANSPORT));
         let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
+        // Play/stop, as a client's notes editor does with the same key: a stop
+        // goes back to the roll's position cursor.
         let steps = if playback.rolling() {
-            Ok(playback.pause())
+            Ok(playback.stop(&sequence, from, rate))
         } else {
             self.instance.notes_played = Some(source);
             playback.play(&sequence, from, rate, &mut self.ids)

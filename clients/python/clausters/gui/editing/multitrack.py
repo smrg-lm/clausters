@@ -591,6 +591,13 @@ class MultitrackEditor(Editor):
                 self.playback.pause()
             else:
                 self.playback.play()
+        elif kind == "playStop":
+            # The space bar: a stop goes back to the position cursor, so the
+            # play cursor lands where the reader left the mark.
+            if self.playback.playing:
+                self.playback.stop()
+            else:
+                self.playback.play()
         elif kind == "stop":
             self.playback.stop()
         elif kind == "cue":

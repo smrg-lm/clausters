@@ -47,6 +47,14 @@ import type { MultitrackEditor } from "./multitrack.ts";
 
 export type { Step, StepArg } from "../../steps.ts";
 
+/**
+ * **Where a pass ends**, on a multitrack's transport or a notes editor's:
+ * `null`, the transport rolling on past the contents; `"contents"`, where
+ * they end; or a number, an **end marker** -- seconds of a multitrack, a beat
+ * of a sequence.
+ */
+export type End = null | "contents" | number;
+
 export class Playback {
     readonly editor: MultitrackEditor;
     readonly server: Server;
@@ -297,18 +305,20 @@ export class Playback {
     }
 
     /**
-     * Whether a pass **stops at the end of the contents** -- where the last
-     * region ends, on any track and any lane -- going back to the position
-     * cursor, as an audio editor's does. Off by default: a multitrack is also
-     * played past its end. The engine stops on that frame (the transport's end
-     * mark), and a loop set on the transport wins over it.
+     * **Where a pass ends**: `null` by default -- the transport rolls on past
+     * the contents, to record onto or to hear a tail -- or `"contents"`, where
+     * the last region ends on any track and any lane, or a number of seconds,
+     * an **end marker**; either of the last two goes back to the position
+     * cursor, as an audio editor's pass does. The engine stops on that frame
+     * (the transport's end mark), and a loop set on the transport wins over
+     * it. The notes editor's `end` is the same three, its marker a beat.
      */
-    get stopAtEnd(): boolean {
-        return this.instance?.stopsAtEnd() ?? false;
+    get end(): End {
+        return this.instance === null ? null : (JSON.parse(this.instance.end()) as End);
     }
 
-    set stopAtEnd(on: boolean) {
-        if (this.instance !== null) void this.run(this.instance.setStopAtEnd(on));
+    set end(end: End) {
+        if (this.instance !== null) void this.run(this.instance.setEnd(JSON.stringify(end)));
     }
 
     /**

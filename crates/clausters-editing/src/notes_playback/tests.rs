@@ -79,12 +79,15 @@ fn a_sequence_becomes_lane_data_in_samples() {
         (notes[1][0].clone(), notes[1][1].clone()),
         (json!(100), json!(150))
     );
-    assert_eq!(data["messages"], json!([[50, "/cue", 1, "a"]]));
+    assert!(
+        data.get("messages").is_none(),
+        "an OSC event is for another application, not the server's lane"
+    );
 }
 
-/// **A play makes the lane once, in the governed group, gives it the
-/// sequence, and hands the rest to the transport**: its end mark at the
-/// sequence's end, a locate and a roll -- no clock and no stamped bundle.
+/// **A play makes the lane once, gives it the sequence, and hands the rest to
+/// the transport**: any end it was left with cleared, a locate and a roll --
+/// no clock and no stamped bundle.
 #[test]
 fn a_play_is_the_lanes_data_and_the_transports_verbs() {
     let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
@@ -142,7 +145,50 @@ fn an_update_sends_the_lane_its_data() {
             .len(),
         1
     );
-    assert!(addrs(&steps).contains(&"/transport_end".to_string()));
+    assert!(
+        !addrs(&steps).contains(&"/transport_end".to_string()),
+        "an open pass has no end to follow"
+    );
+}
+
+/// **A pass is open by default**, as a multitrack's is; at the contents it
+/// ends where the last note does, following an edit, and an end marker is a
+/// beat -- each going back to the position cursor, which a cue moves.
+#[test]
+fn a_pass_ends_where_it_is_asked_to() {
+    let end_mark = |steps: &[Step]| {
+        steps.iter().find_map(|step| match step {
+            Step::Send(m) if m.addr == "/transport_end" => Some(m.args[1..].to_vec()),
+            _ => None,
+        })
+    };
+    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    playback.play(&sequence(), 0.0, SR, &mut ids()).unwrap();
+    assert_eq!(playback.end(), End::Open);
+    // Two beats a second at 100 samples a second: the last note, at beat 2
+    // for one beat, ends on sample 150.
+    let contents = playback.set_end(End::Contents, &sequence(), SR);
+    assert_eq!(
+        end_mark(&contents),
+        Some(vec![OscType::Long(150), OscType::Long(0)])
+    );
+    playback.set_rolling(false);
+    let cued = playback.cue(&sequence(), 1.0, SR);
+    assert_eq!(
+        end_mark(&cued),
+        Some(vec![OscType::Long(150), OscType::Long(50)]),
+        "the return follows the cursor"
+    );
+    let marker = playback.set_end(End::At(2.0), &sequence(), SR);
+    assert_eq!(
+        end_mark(&marker),
+        Some(vec![OscType::Long(100), OscType::Long(50)])
+    );
+    assert_eq!(
+        end_mark(&playback.set_end(End::Open, &sequence(), SR)),
+        Some(vec![]),
+        "open clears it"
+    );
 }
 
 /// **A stop goes back, and a close frees the lane and the groups.**
@@ -153,7 +199,8 @@ fn a_stop_goes_back_and_a_close_frees_the_lane() {
     playback.play(&sequence(), 0.0, SR, &mut ids).unwrap();
     assert_eq!(
         addrs(&playback.stop(&sequence(), 2.0, SR)),
-        ["/transport_stop", "/transport_locateSample"]
+        ["/transport_stop", "/transport_locateSample"],
+        "an open pass: nothing to mark"
     );
     let closed = addrs(&playback.close(&mut ids).unwrap());
     assert!(closed.contains(&"/lane_free".to_string()));

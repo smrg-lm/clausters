@@ -844,24 +844,35 @@ pub unsafe extern "C" fn clausters_editing_playback_cue(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(secs)))) }
 }
 
-/// The steps that switch whether a pass stops at the end of the contents
-/// (`on` non-zero), going back to the position cursor -- the transport's end
-/// mark, sent only when it moves.
+/// The steps that set where a pass ends -- `end` the JSON `null` (open),
+/// `"contents"` or seconds (an end marker), going back to the position
+/// cursor: the transport's end mark, sent only when it moves. An `end` that
+/// names none answers no steps.
 ///
 /// # Safety
-/// As [`clausters_editing_playback_sync`].
+/// `p` null or live, `end` null or readable for `end_len` bytes, `out` null
+/// or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_playback_set_stop_at_end(
+pub unsafe extern "C" fn clausters_editing_playback_set_end(
     p: *mut FfiPlayback,
-    on: i32,
+    end: *const u8,
+    end_len: usize,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    use clausters_editing::playback::answer_json;
+    use clausters_editing::playback::{End, answer_json};
+    // SAFETY: forwarded from this function's own contract.
+    let Some(end) = (unsafe { crate::out::text(end, end_len) }) else {
+        return 0;
+    };
+    let end = serde_json::from_str(&end)
+        .ok()
+        .and_then(|value| End::from_json(&value));
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        playback_verb(p, out, out_cap, |pb| {
-            answer_json(Ok(pb.set_stop_at_end(on != 0)))
+        playback_verb(p, out, out_cap, |pb| match end {
+            Some(end) => answer_json(Ok(pb.set_end(end))),
+            None => answer_json(Ok(Vec::new())),
         })
     }
 }
@@ -939,22 +950,18 @@ pub unsafe extern "C" fn clausters_editing_playback_transport(p: *mut FfiPlaybac
         .unwrap_or(0)
 }
 
-/// Whether a pass stops at the end of the contents: 1 or 0.
+/// Where a pass ends, as its JSON: `null`, `"contents"` or seconds.
 ///
 /// # Safety
-/// `p` must be null or a live playback.
+/// As [`clausters_editing_playback_sync`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_editing_playback_stops_at_end(p: *mut FfiPlayback) -> i32 {
-    // SAFETY: caller guarantees `p` is null or live.
-    unsafe { p.as_ref() }
-        .and_then(|playback| {
-            playback
-                .0
-                .lock()
-                .ok()
-                .map(|held| i32::from(held.stops_at_end()))
-        })
-        .unwrap_or(0)
+pub unsafe extern "C" fn clausters_editing_playback_end(
+    p: *mut FfiPlayback,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { playback_verb(p, out, out_cap, |pb| pb.end().to_json().to_string()) }
 }
 
 /// A second of the multitrack as a sample, at the rate it was planned at.

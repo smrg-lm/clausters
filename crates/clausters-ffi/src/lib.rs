@@ -503,7 +503,13 @@ pub use time::*;
 /// multitrack's notes regions as its lane's data, and
 /// `clausters_apps_editing_bind_sequence`, a multitrack member's source bound
 /// to a sequence handle. **Not additive** -- a verb went.
-pub const CORE_ABI_VERSION: u32 = 76;
+/// **v77 where a pass ends.** `clausters_editing_playback_set_stop_at_end` and
+/// `_stops_at_end` are replaced by `clausters_editing_playback_set_end` and
+/// `_end`, whose JSON says `null` (the transport rolls on), `"contents"` or an
+/// end marker; the notes editor's playback takes the same through its `end`
+/// verb and no longer marks the sequence's end on every play. **Not
+/// additive** -- two symbols went.
+pub const CORE_ABI_VERSION: u32 = 77;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

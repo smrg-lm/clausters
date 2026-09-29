@@ -402,6 +402,10 @@ export class MultitrackPlayback {
      */
     cue(secs: number): string;
     /**
+     * Where a pass ends, as its JSON: `null`, `"contents"` or seconds.
+     */
+    end(): string;
+    /**
      * The steps that put the transport at `secs` of the multitrack.
      */
     locate(secs: number): string;
@@ -440,21 +444,19 @@ export class MultitrackPlayback {
      */
     secsToSamples(secs: number): number;
     /**
+     * The steps that set where a pass ends: `end` the JSON `null`,
+     * `"contents"` or seconds (an end marker). One that names none answers
+     * no steps.
+     */
+    setEnd(end: string): string;
+    /**
      * Says whether the transport is rolling.
      */
     setRolling(rolling: boolean): void;
     /**
-     * The steps that switch whether a pass stops at the end of the contents.
-     */
-    setStopAtEnd(on: boolean): string;
-    /**
      * The steps that halt and go back to the mark.
      */
     stop(mark: number): string;
-    /**
-     * Whether a pass stops at the end of the contents.
-     */
-    stopsAtEnd(): boolean;
     /**
      * The steps that make what sounds be what the multitrack says.
      */
@@ -1867,6 +1869,7 @@ export interface InitOutput {
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly multitrackplayback_close: (a: number, b: number) => [number, number];
     readonly multitrackplayback_cue: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_end: (a: number) => [number, number];
     readonly multitrackplayback_locate: (a: number, b: number) => [number, number];
     readonly multitrackplayback_meters: (a: number) => [number, number];
     readonly multitrackplayback_new: (a: number) => number;
@@ -1876,10 +1879,9 @@ export interface InitOutput {
     readonly multitrackplayback_rolling: (a: number) => number;
     readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
     readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;
+    readonly multitrackplayback_setEnd: (a: number, b: number, c: number) => [number, number];
     readonly multitrackplayback_setRolling: (a: number, b: number) => void;
-    readonly multitrackplayback_setStopAtEnd: (a: number, b: number) => [number, number];
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
-    readonly multitrackplayback_stopsAtEnd: (a: number) => number;
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly multitrackplayback_transport: (a: number) => number;
     readonly node_id_partition: (a: number) => [number, number, number];

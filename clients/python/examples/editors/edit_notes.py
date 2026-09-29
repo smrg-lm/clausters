@@ -11,10 +11,13 @@ timeline is left as it was.
 What to do in the window: **drag a note** to move it, **drag its edge** to
 resize, **Shift and drag it up or down** to change its velocity (drawn as the
 note's fill), **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back.
-**The space bar plays and pauses** -- the editor's own playback, on a transport
-of its own -- and an edit while it plays is heard at once: a note moved ahead
-of the line sounds where it lands, and a note already sounding ends as it
-would have.
+**The space bar plays and stops** -- the editor's own playback, on a transport
+of its own -- and a stop goes back to the position cursor. An edit while it
+plays is heard at once: a note moved ahead of the line sounds where it lands,
+and a note already sounding ends as it would have. The pass does not stop at
+the last note: it rolls on, as a multitrack's does, until the space bar stops
+it -- ``editor.end = "contents"`` stops it where the last note ends, and a
+beat is an end marker.
 
 **Click the ruler under the grid** to place the position cursor: the play line
 goes there, and the next play starts from it. While it plays, the line is

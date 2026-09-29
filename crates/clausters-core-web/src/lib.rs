@@ -1839,10 +1839,16 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.cue(secs)))
     }
 
-    /// The steps that switch whether a pass stops at the end of the contents.
-    #[wasm_bindgen(js_name = setStopAtEnd)]
-    pub fn set_stop_at_end(&mut self, on: bool) -> String {
-        clausters_editing::playback::answer_json(Ok(self.0.set_stop_at_end(on)))
+    /// The steps that set where a pass ends: `end` the JSON `null`,
+    /// `"contents"` or seconds (an end marker). One that names none answers
+    /// no steps.
+    #[wasm_bindgen(js_name = setEnd)]
+    pub fn set_end(&mut self, end: &str) -> String {
+        use clausters_editing::playback::{End, answer_json};
+        let end = serde_json::from_str(end)
+            .ok()
+            .and_then(|value| End::from_json(&value));
+        answer_json(Ok(end.map_or_else(Vec::new, |end| self.0.set_end(end))))
     }
 
     /// The steps that free everything the multitrack made.
@@ -1871,10 +1877,9 @@ impl JsMultitrackPlayback {
         self.0.transport()
     }
 
-    /// Whether a pass stops at the end of the contents.
-    #[wasm_bindgen(js_name = stopsAtEnd)]
-    pub fn stops_at_end(&self) -> bool {
-        self.0.stops_at_end()
+    /// Where a pass ends, as its JSON: `null`, `"contents"` or seconds.
+    pub fn end(&self) -> String {
+        self.0.end().to_json().to_string()
     }
 
     /// A second of the multitrack as a sample.

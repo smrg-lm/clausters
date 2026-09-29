@@ -66,6 +66,15 @@ pub struct Notes {
     /// Whether the notes carry the ids of the events they draw (`note_ids`),
     /// and so whether a report names each one.
     ids: bool,
+    /// The last `note_ids` set, kept for a `notes` that arrives after it.
+    ///
+    /// **A set's keys come in whatever order the sender's map keeps**, and a
+    /// map that sorts them puts `note_ids` before `notes` -- so a new list
+    /// cleared the ids it had just been given, every note of the next report
+    /// read as one the hand made, and each gesture rewrote the whole sequence
+    /// as new events that had lost what the roll cannot draw. The list that
+    /// arrives is named by the ids beside it whichever of the two came first.
+    id_list: Option<Value>,
     osc_lane: bool,
     midi_in: bool,
     label: Option<String>,
@@ -142,6 +151,7 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
     let mut roll = Notes {
         notes,
         ids,
+        id_list: None,
         // The OSC lane shows when there are markers or it is explicitly asked
         // for (so an empty lane can still be opened to author them).
         osc_lane: props
@@ -371,15 +381,23 @@ impl Element for Notes {
                 for i in 0..self.notes.len() {
                     self.notes[i].pitch = self.row_of(f64::from(self.notes[i].pitch));
                 }
-                // The indices would dangle over the new list. The ids go with
-                // them: a new list names its own, in the `note_ids` beside it.
+                // The indices would dangle over the new list. The ids are the
+                // ones set beside it, if they came first (`id_list`).
                 self.selected.clear();
                 self.held.clear();
+                if let Some(ids) = self.id_list.take()
+                    && ids
+                        .as_array()
+                        .is_some_and(|ids| ids.len() == self.notes.len())
+                {
+                    self.ids = set_ids(&mut self.notes, Some(&ids));
+                }
                 true
             }
             "note_ids" => {
                 let ids = parse::as_array_props("note_ids", v);
                 self.ids = set_ids(&mut self.notes, ids.get("note_ids"));
+                self.id_list = ids.get("note_ids").cloned();
                 true
             }
             "osc" => {
@@ -1454,6 +1472,25 @@ mod tests {
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");
         assert!(r.drag.is_none());
+    }
+
+    /// **The ids name the new list whichever came first**: a sender whose map
+    /// sorts its keys sets `note_ids` before `notes`, and the list that
+    /// arrives second must not lose the ids that arrived first -- or the next
+    /// report names every note 0, as one the hand made.
+    #[test]
+    fn a_list_set_after_its_ids_keeps_them() {
+        let mut r = roll(r#"{"notes":[0.0,100.0,60.0,100,0],"note_ids":[7]}"#);
+        assert!(r.set("note_ids", &Value::from("[7,9]")));
+        assert!(r.set(
+            "notes",
+            &Value::from("[0.0,10.0,62.0,100,0,20.0,10.0,64.0,100,0]")
+        ));
+        assert_eq!(r.notes.iter().map(|n| n.id).collect::<Vec<_>>(), vec![7, 9]);
+        // And the other way round.
+        assert!(r.set("notes", &Value::from("[0.0,10.0,65.0,100,0]")));
+        assert!(r.set("note_ids", &Value::from("[11]")));
+        assert_eq!(r.notes[0].id, 11);
     }
 
     /// **A roll in hertz reads, draws and reports hertz**, and a pitch moves

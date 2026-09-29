@@ -140,6 +140,8 @@ class NotesEditor(Editor):
         self._server = server
         #: The timeline a play to a destination of its own (a MIDI port) runs.
         self._elsewhere = None
+        #: Where a pass ends (`end`).
+        self._end = None
         self._member, self._structure_id = self._editing.open_notes(
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
@@ -200,6 +202,22 @@ class NotesEditor(Editor):
             self._server = main.resolve_server()
         return _NotesPlayback.of(self._server)
 
+    @property
+    def end(self):
+        """**Where a pass ends**, as on a multitrack's transport: ``None`` by
+        default -- the transport rolls on past the last note until it is
+        stopped -- or ``"contents"``, where the last note ends (its onset and
+        its length), or a beat, an **end marker**; either of the last two goes
+        back to the position cursor. A note's release rings out past the end,
+        since a stop releases the notes rather than freezing them."""
+        return self._end
+
+    @end.setter
+    def end(self, end) -> None:
+        self._end = end
+        if self._server is not None:
+            self._playback.call("end", self.structure, end=end)
+
     def play(self, beat: "float | None" = None, destination=None) -> "NotesEditor":
         """**Play the sequence** from ``beat`` -- or from the position cursor,
         or the start -- on the notes editor's own transport. Returns ``self``.
@@ -219,6 +237,7 @@ class NotesEditor(Editor):
             self._elsewhere = played
             return self
         playback = self._playback
+        playback.call("end", self.structure, end=self._end)
         playback.call("play", self.structure, **{"from": start})
         playback.planned = self.structure
         return self
@@ -315,9 +334,10 @@ class NotesEditor(Editor):
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
         if outcome.get("play") is not None:
-            # The space bar: a sounding sequence pauses, a silent one plays.
+            # The space bar is play/stop: a stop goes back to the position
+            # cursor, so the play cursor lands where the reader left the mark.
             if self.playing:
-                self.pause()
+                self.stop()
             else:
                 self.play()
         self.echo.send(outcome.get("answer"))

@@ -319,6 +319,15 @@ impl Host {
                     }]));
                 self.roll_multitrack();
             }
+            Some(TransportVerb::PlayStop { mark }) => {
+                if self.multitrack_rolling() {
+                    self.stop_multitrack(mark);
+                } else {
+                    #[cfg(test)]
+                    self.exchange.asked.push(serde_json::json!(["play"]));
+                    self.roll_multitrack();
+                }
+            }
             Some(TransportVerb::Stop { mark }) => self.stop_multitrack(mark),
             Some(TransportVerb::Cue { secs }) => self.cue_multitrack(secs),
             None => {}

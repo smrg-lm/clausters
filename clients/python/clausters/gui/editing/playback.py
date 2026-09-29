@@ -211,18 +211,20 @@ class Playback:
         return self
 
     @property
-    def stop_at_end(self) -> bool:
-        """Whether a pass **stops at the end of the contents** -- where the
-        last region ends, on any track and any lane -- going back to the
-        position cursor, as an audio editor's does. Off by default: a
-        multitrack is also played past its end. The engine stops on that
-        frame (the transport's end mark), and a loop set on the transport wins
-        over it."""
-        return self._instance.stops_at_end()
+    def end(self):
+        """**Where a pass ends**: ``None`` by default -- the transport rolls on
+        past the contents, to record onto or to hear a tail -- or
+        ``"contents"``, where the last region ends on any track and any lane,
+        or a number of seconds, an **end marker**; either of the last two goes
+        back to the position cursor, as an audio editor's pass does. The
+        engine stops on that frame (the transport's end mark), and a loop set
+        on the transport wins over it. The notes editor's ``end`` is the same
+        three, its marker a beat."""
+        return self._instance.end()
 
-    @stop_at_end.setter
-    def stop_at_end(self, on: bool) -> None:
-        self._run(self._instance.set_stop_at_end(bool(on)))
+    @end.setter
+    def end(self, end) -> None:
+        self._run(self._instance.set_end(end))
 
     def close(self):
         """Free the instance. The multitrack itself is untouched: what a

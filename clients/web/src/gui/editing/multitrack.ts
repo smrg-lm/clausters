@@ -838,6 +838,12 @@ export class MultitrackEditor extends Editor<Multitrack> {
             await playback.refresh();
             if (playback.playing) playback.pause();
             else await playback.play();
+        } else if (verb.verb === "playStop") {
+            // The space bar: a stop goes back to the position cursor, so the
+            // play cursor lands where the reader left the mark.
+            await playback.refresh();
+            if (playback.playing) playback.stop();
+            else await playback.play();
         } else if (verb.verb === "stop") {
             playback.stop();
         } else if (verb.verb === "cue") {

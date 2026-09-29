@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 76
+CORE_ABI_VERSION = 77
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -342,9 +342,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         fn = getattr(lib, f"clausters_editing_playback_{name}")
         fn.argtypes = [ctypes.c_void_p, ctypes.c_double, u8p_early, ctypes.c_size_t]
         fn.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_set_stop_at_end.argtypes = [
-        ctypes.c_void_p, ctypes.c_int32, u8p_early, ctypes.c_size_t]
-    lib.clausters_editing_playback_set_stop_at_end.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_set_end.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
+    lib.clausters_editing_playback_set_end.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_end.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t]
+    lib.clausters_editing_playback_end.restype = ctypes.c_size_t
     lib.clausters_editing_playback_close.argtypes = [
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t,
     ]
@@ -355,8 +358,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_playback_rolling.restype = ctypes.c_int32
     lib.clausters_editing_playback_transport.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_playback_transport.restype = ctypes.c_int32
-    lib.clausters_editing_playback_stops_at_end.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_playback_stops_at_end.restype = ctypes.c_int32
     lib.clausters_editing_playback_secs_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.clausters_editing_playback_secs_to_samples.restype = ctypes.c_int64
     lib.clausters_editing_playback_samples_to_secs.argtypes = [ctypes.c_void_p, ctypes.c_int64]
@@ -1672,11 +1673,12 @@ class MultitrackPlayback:
         rolling one."""
         return self._steps(lib().clausters_editing_playback_cue, float(secs))
 
-    def set_stop_at_end(self, on: bool) -> list:
-        """The steps that switch whether a pass stops at the end of the
-        contents, going back to the position cursor."""
-        return self._steps(lib().clausters_editing_playback_set_stop_at_end,
-                           1 if on else 0)
+    def set_end(self, end) -> list:
+        """The steps that set where a pass ends, going back to the position
+        cursor: ``None`` (it rolls on), ``"contents"`` or seconds (an end
+        marker)."""
+        body = json.dumps(end).encode("utf-8")
+        return self._steps(lib().clausters_editing_playback_set_end, as_u8(body), len(body))
 
     def close(self, ids: "IdSpaces") -> list:
         """The steps that free everything the multitrack made."""
@@ -1708,10 +1710,13 @@ class MultitrackPlayback:
             return 0
         return int(lib().clausters_editing_playback_transport(ctypes.c_void_p(self._handle)))
 
-    def stops_at_end(self) -> bool:
-        """Whether a pass stops at the end of the contents."""
-        return bool(self._handle) and bool(
-            lib().clausters_editing_playback_stops_at_end(ctypes.c_void_p(self._handle)))
+    def end(self):
+        """Where a pass ends: ``None``, ``"contents"`` or seconds."""
+        if not self._handle:
+            return None
+        raw = size_then_fill(lib().clausters_editing_playback_end,
+                             ctypes.c_void_p(self._handle))
+        return json.loads(raw.decode("utf-8")) if raw else None
 
     def secs_to_samples(self, secs: float) -> int:
         """A second of the multitrack as a sample, at the rate it was planned

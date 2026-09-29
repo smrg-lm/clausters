@@ -1000,7 +1000,10 @@ opened it.
   from `Multitrack::end` on every `sync` and the return from the position
   cursor `cue` and `stop` already carry, sent as the transport's end mark only
   when it moves -- bound in C and wasm and exposed as `Playback.stop_at_end` /
-  `Playback.stopAtEnd` in both clients.
+  `Playback.stopAtEnd` in both clients. *(Replaced 2026-09-29 by
+  `MultitrackPlayback::set_end` and `Playback.end`, three ways -- open, the
+  contents, an end marker -- shared with the notes editor: "Where a pass
+  ends", Found by use.)*
 
   **Decided for the standalone host** *(the user, 2026-09-24)*: the switch is
   reached with **a key**, and it is **saved in the session**. The
@@ -1041,7 +1044,7 @@ Every entry carries a checkbox.
 
 - ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
-  (`MultitrackPlayback::set_stop_at_end`, bound in both clients); the
+  (`MultitrackPlayback::set_end`, bound in both clients as `Playback.end`); the
   standalone host needs a key that flips it and the session to keep it, so a
   reopened session stops where it stopped before. Waits for the chrome entry
   above.
@@ -1081,6 +1084,42 @@ wrong.
   **Fixed 2026-09-28 by `T8`**: the playback is an event lane on its
   transport, an edit is the lane's new data (`update`), and nothing asks for
   the transport's clock.
+
+- ✅ **A roll's edit made every note new** *(the user's log of `edit_notes`,
+  2026-09-29: the notes came back with ids #53 to #56, each with a
+  `velocity` and an amplitude the author never wrote)*. The crate corrects a
+  roll with `notes` and `note_ids`, in a `serde_json` map that sorts its
+  keys, so `note_ids` reached the host first and the `notes` behind it
+  cleared the ids it had just been given. The next report named every note
+  0, as one the hand made, and each gesture rewrote the sequence as new
+  events that had lost what the roll cannot draw.
+  **Fixed 2026-09-29** in the host's `notes` element: the ids set last are
+  kept for a list that arrives after them, applied when the lengths agree and
+  consumed there, so a list is named by the ids beside it whichever came
+  first.
+
+- ✅ **A roll's OSC markers were sent to the server** *(the same log: "lane
+  1001: event 3 was not built: /mark cannot be scheduled in a timed bundle",
+  on every edit)*. An OSC event is a message to another application, which
+  the server cannot send, and `notes_playback::data` wrote it as a lane
+  message. **Fixed 2026-09-29**: a lane's data holds the notes only; the
+  lane's own `messages` are commands for the server, and a sequence holds
+  none.
+
+- ✅ **Where a pass ends, and the space bar** *(the user, 2026-09-29, trying
+  `edit_notes`: the roll should be able to play to the last note's end or
+  roll on as the multitrack does, better the second; "Para el multipista se
+  puede aplicar la misma regla que el roll para el final de lo que existe o
+  se puede utilizar un marcador de fin"; and "la barra sea play y stop para
+  que el cabezal de reproducción vuelva a posicionarse sobre el cabezal de
+  posición")*. The notes editor marked its sequence's end on every play, the
+  multitrack had a switch, and the space bar paused both.
+  **Done 2026-09-29**: `clausters_editing::playback::End` -- open (the
+  default), the contents, or an end marker -- is how both playbacks say where
+  a pass ends (`Playback.end` and `NotesEditor.end` in both clients; core ABI
+  77), and the space bar is play/stop over both windows, a stop going back to
+  the position cursor. The end marker is a number from a script; drawing it
+  and placing it by hand is open.
 
 - ⬜ **Two windows of one role over one structure draw on one widget**
   *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the

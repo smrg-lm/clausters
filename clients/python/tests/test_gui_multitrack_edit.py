@@ -751,14 +751,19 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     assert isinstance(entry[3], _osclib.Int64), "a sample rides as 64 bits"
     assert entry[3].value == multitrack.secs_to_samples(2.0)
 
-    # Stopping at the end is the crate's switch, read back through the binding;
-    # with no contents there is no end to mark, so nothing is sent.
+    # Where a pass ends is the crate's, read back through the binding; with no
+    # contents there is no end to mark, so nothing is sent -- and a marker is
+    # its own place.
     playback._instance = multitrack
     playback.server.log.clear()
-    assert not playback.stop_at_end
-    playback.stop_at_end = True
-    assert playback.stop_at_end
+    assert playback.end is None
+    playback.end = "contents"
+    assert playback.end == "contents"
     assert playback.server.log == [], "no contents, nothing to mark"
+    playback.end = 2.5
+    assert playback.end == 2.5
+    (entry,) = playback.server.log
+    assert entry[1] == "/transport_end"
 
 
 def test_the_source_table_says_how_long_a_source_is_when_its_buffer_does():

@@ -134,6 +134,12 @@ impl Converse for MultitrackEditor {
 pub enum TransportVerb {
     /// Play, or pause where it stands -- whichever the transport is not doing.
     Toggle,
+    /// **The space bar**: play, or -- when it is rolling -- stop and go back
+    /// to the mark, so the play cursor lands on the position cursor again.
+    PlayStop {
+        /// The mark, in seconds.
+        mark: f64,
+    },
     /// Halt and go back to the mark: the position cursor, not the top.
     Stop {
         /// The mark, in seconds.
@@ -590,11 +596,15 @@ impl MultitrackEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        // **The space bar is the window's**, and it is play/pause: a multitrack's
+        // **The space bar is the window's**, and it is play/stop: a stop goes
+        // back to the position cursor, so the play cursor is where the reader
+        // left the mark rather than wherever the pass got to. A multitrack's
         // readers are resident and follow the transport, so there is nothing
         // under the pointer to aim it at.
         if self.window.map(i64::from) == Some(widget) && tag == PLAY_KEY {
-            out.transport = Some(TransportVerb::Toggle);
+            out.transport = Some(TransportVerb::PlayStop {
+                mark: self.cursor.unwrap_or(0.0),
+            });
             return (None, Vec::new());
         }
         if tag == "click"
@@ -1330,13 +1340,13 @@ mod tests {
         );
     }
 
-    /// **The space bar is the window's play/pause**, whatever is under the
-    /// pointer.
+    /// **The space bar is the window's play/stop**, whatever is under the
+    /// pointer, and a stop goes back to the position cursor.
     #[test]
-    fn the_space_bar_toggles() {
+    fn the_space_bar_plays_and_stops() {
         let mut ed = editor();
         let out = ed.event(&event(39, 2, 1, PLAY_KEY, vec![]), 1);
-        assert_eq!(out.transport, Some(TransportVerb::Toggle));
+        assert_eq!(out.transport, Some(TransportVerb::PlayStop { mark: 0.0 }));
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
     }
 

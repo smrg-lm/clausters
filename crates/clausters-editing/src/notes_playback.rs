@@ -18,9 +18,11 @@
 //! releases it and its release rings out, where one frozen would sound again,
 //! mid-release, on the next play. The lane takes the governed group's id as
 //! its own: one lane per playback, alive as long as the group is. A play writes the sequence as the lane's data
-//! ([`data`]), sets the transport's end mark at the sequence's end going back
-//! to where the pass began, locates and rolls; a pause, a resume, a stop and a
-//! loop are then the transport's, with nothing planned here.
+//! ([`data`]), locates and rolls; a pause, a resume, a stop and a loop are
+//! then the transport's, with nothing planned here. **Where a pass ends** is
+//! [`End`], as for a multitrack on its transport: open by default, the
+//! transport rolling on past the last note; or at the last note's end, or at
+//! an end marker, going back to the position cursor.
 //!
 //! **An edit is heard while it plays** because [`NotesPlayback::update`] sends
 //! the lane its new data: the server feeds it again from where the position
@@ -47,6 +49,7 @@ use serde_json::{Map, Value, json};
 
 use crate::apply::{Applier, Endpoint, Step};
 use crate::instance::Op;
+use crate::playback::End;
 
 /// The transport the notes editor plays on: its own, so playing a sequence
 /// never moves a multitrack (0), an audio editor (1) or the host's monitor (2).
@@ -93,16 +96,16 @@ pub fn placed(sequence: &EventSequence) -> Vec<Placed> {
 }
 
 /// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
-/// a second: `{"notes": [[start, end, def, {controls}, "gate"|"free"]],
-/// "messages": [[position, address, args...]]}`. A note is what the core
-/// renders its keys to -- the def, `freq`, `amp` and every other numeric key,
-/// released by `gate 0` when its def is gated and by a free otherwise; an OSC
-/// event is its message. A rest sounds nothing, and a MIDI event has no OSC
-/// spelling.
+/// a second: `{"notes": [[start, end, def, {controls}, "gate"|"free"]]}`. A
+/// note is what the core renders its keys to -- the def, `freq`, `amp` and
+/// every other numeric key, released by `gate 0` when its def is gated and by
+/// a free otherwise. A rest sounds nothing and a MIDI event has no OSC
+/// spelling; **an OSC event is a message to another application**, which the
+/// server cannot send, so it is not the lane's -- the lane's own `messages`
+/// are commands for the server, and a sequence holds none.
 pub fn data(placed: &[Placed], rate: f64) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
     let mut notes = Vec::new();
-    let mut messages = Vec::new();
     for event in placed {
         match Type::of(&event.keys) {
             Type::Note => {
@@ -137,22 +140,10 @@ pub fn data(placed: &[Placed], rate: f64) -> Value {
                     release
                 ]));
             }
-            Type::Osc => {
-                let addr = event
-                    .keys
-                    .get("addr")
-                    .and_then(Value::as_str)
-                    .unwrap_or("/");
-                let mut message = vec![json!(sample(event.start)), json!(addr)];
-                if let Some(args) = event.keys.get("args").and_then(Value::as_array) {
-                    message.extend(args.iter().cloned());
-                }
-                messages.push(Value::Array(message));
-            }
-            Type::Rest | Type::Midi => {}
+            Type::Osc | Type::Rest | Type::Midi => {}
         }
     }
-    json!({"notes": notes, "messages": messages})
+    json!({ "notes": notes })
 }
 
 fn map(sequence: &EventSequence) -> TempoMap {
@@ -170,8 +161,13 @@ pub struct NotesPlayback {
     rolling: bool,
     /// The lane, once it is made: the governed group's id.
     lane: Option<i32>,
-    /// The sample a pass goes back to: where the last play began.
+    /// The sample a pass goes back to: the position cursor, where the last
+    /// play began or a cue or a stop put it.
     back: i64,
+    /// Where a pass ends ([`End`]): open unless asked.
+    end: End,
+    /// The end mark last sent, as `(end, back)` in samples.
+    end_sent: Option<(i64, i64)>,
 }
 
 impl NotesPlayback {
@@ -183,7 +179,23 @@ impl NotesPlayback {
             rolling: false,
             lane: None,
             back: 0,
+            end: End::Open,
+            end_sent: None,
         }
+    }
+
+    /// Where a pass ends.
+    pub fn end(&self) -> End {
+        self.end
+    }
+
+    /// **Where a pass ends** ([`End`]): open by default -- the transport rolls
+    /// on past the last note, as a multitrack's does -- or where the last note
+    /// ends, or at an end marker, a beat of the sequence; each going back to
+    /// the position cursor. Sent only when the mark moves.
+    pub fn set_end(&mut self, end: End, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+        self.end = end;
+        self.end_steps(sequence, rate)
     }
 
     /// The transport it plays on.
@@ -236,6 +248,10 @@ impl NotesPlayback {
             "/lane_new",
             vec![OscType::Int(group), OscType::Int(follows)],
         ));
+        // The transport is the editor's, and whatever end it was left with is
+        // not this playback's: a pass is open until it is asked otherwise.
+        steps.extend(self.command("/transport_end", vec![]));
+        self.end_sent = None;
         self.lane = Some(group);
         Ok(steps)
     }
@@ -255,17 +271,42 @@ impl NotesPlayback {
         ]
     }
 
-    /// The end mark at the sequence's end, going back to `back` (a sample).
-    fn end_mark(&self, sequence: &EventSequence, back: i64, rate: f64) -> Vec<Step> {
-        let end = (map(sequence).secs_at(sequence.duration()) * rate).round() as i64;
+    /// The end mark the end, the notes and the cursor ask for, sent when it
+    /// differs from the one last sent. The contents end where the last note
+    /// does -- its onset and its length, the latest of them -- and a note's
+    /// release rings out past it, since a stop releases the notes and does not
+    /// freeze them.
+    fn end_steps(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+        let contents = placed(sequence)
+            .iter()
+            .filter(|p| render::Type::of(&p.keys) == Type::Note)
+            .map(|p| p.end)
+            .fold(0.0, f64::max);
+        let secs = match self.end {
+            End::Open => None,
+            End::Contents => (contents > 0.0).then_some(contents),
+            End::At(beat) => Some(map(sequence).secs_at(beat.max(0.0))),
+        };
+        let want = secs.map(|secs| (((secs * rate).round() as i64).max(self.back), self.back));
+        if want == self.end_sent {
+            return Vec::new();
+        }
+        self.end_sent = want;
         self.command(
             "/transport_end",
-            vec![OscType::Long(end.max(back)), OscType::Long(back)],
+            want.map_or_else(Vec::new, |(end, back)| {
+                vec![OscType::Long(end), OscType::Long(back)]
+            }),
         )
     }
 
+    /// A beat of `sequence` as a sample of the transport.
+    fn sample(sequence: &EventSequence, beat: f64, rate: f64) -> i64 {
+        (map(sequence).secs_at(beat.max(0.0)) * rate).round() as i64
+    }
+
     /// **Plays `sequence` from beat `from`**: the lane takes the sequence, the
-    /// transport's loop is cleared and its end mark set at the sequence's end
+    /// transport's loop is cleared and its end mark is where [`End`] says
     /// (going back to `from`), and the transport is located at `from` and
     /// rolled.
     pub fn play(
@@ -277,25 +318,25 @@ impl NotesPlayback {
     ) -> Result<Vec<Step>, IdError> {
         let mut steps = self.structure(ids)?;
         steps.extend(self.lane_set(sequence, rate));
-        let from = (map(sequence).secs_at(from.max(0.0)) * rate).round() as i64;
+        let from = Self::sample(sequence, from, rate);
         self.back = from;
         steps.extend(self.command("/transport_loop", vec![]));
-        steps.extend(self.end_mark(sequence, from, rate));
+        steps.extend(self.end_steps(sequence, rate));
         steps.extend(self.command("/transport_locateSample", vec![OscType::Long(from)]));
         self.rolling = true;
         steps.extend(self.command("/transport_play", vec![]));
         Ok(steps)
     }
 
-    /// **The sequence changed**: the lane takes it again, and the end mark
-    /// follows its new end, still going back to where the last play began.
+    /// **The sequence changed**: the lane takes it again, and an end at the
+    /// contents follows its new end.
     /// Nothing before the first play: there is no lane yet.
     pub fn update(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
         if self.lane.is_none() {
             return Vec::new();
         }
         let mut steps = self.lane_set(sequence, rate);
-        steps.extend(self.end_mark(sequence, self.back, rate));
+        steps.extend(self.end_steps(sequence, rate));
         steps
     }
 
@@ -316,8 +357,10 @@ impl NotesPlayback {
     /// located there, which releases what the lane was sounding.
     pub fn stop(&mut self, sequence: &EventSequence, back: f64, rate: f64) -> Vec<Step> {
         let mut steps = self.pause();
-        let sample = (map(sequence).secs_at(back.max(0.0)) * rate).round() as i64;
+        let sample = Self::sample(sequence, back, rate);
+        self.back = sample;
         steps.extend(self.command("/transport_locateSample", vec![OscType::Long(sample)]));
+        steps.extend(self.end_steps(sequence, rate));
         steps
     }
 
@@ -328,8 +371,12 @@ impl NotesPlayback {
         if self.rolling {
             return Vec::new();
         }
-        let sample = (map(sequence).secs_at(at.max(0.0)) * rate).round() as i64;
-        self.command("/transport_locateSample", vec![OscType::Long(sample)])
+        let sample = Self::sample(sequence, at, rate);
+        self.back = sample;
+        let mut steps = self.command("/transport_locateSample", vec![OscType::Long(sample)]);
+        // The pass goes back to the cursor, so the end mark's return moves with it.
+        steps.extend(self.end_steps(sequence, rate));
+        steps
     }
 
     /// Frees what the playback made: the lane (its notes released), the
@@ -364,8 +411,10 @@ impl NotesPlayback {
 /// - `update` -- `rate`
 /// - `resume`, `pause`, `stop` (`back`, a beat; `rate`), `close`
 /// - `cue` -- `at` (a beat), `rate`
+/// - `end` -- `end` (`null`, `"contents"` or a beat), `rate`: where a pass
+///   ends ([`End`])
 /// - `setRolling` -- `rolling`
-/// - `state` -- `{"transport", "rolling"}`
+/// - `state` -- `{"transport", "rolling", "end"}`
 pub fn call_json(
     playback: &mut NotesPlayback,
     sequence: &EventSequence,
@@ -386,6 +435,10 @@ pub fn call_json(
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), rate))),
         "cue" => answer(Ok(playback.cue(sequence, number("at", 0.0), rate))),
+        "end" => match request.get("end").and_then(End::from_json) {
+            Some(end) => answer(Ok(playback.set_end(end, sequence, rate))),
+            None => json!({"error": "an end is null, \"contents\" or a beat"}).to_string(),
+        },
         "close" => answer(playback.close(ids)),
         "setRolling" => {
             playback.set_rolling(
@@ -396,9 +449,12 @@ pub fn call_json(
             );
             answer(Ok(Vec::new()))
         }
-        "state" => {
-            json!({"transport": playback.transport(), "rolling": playback.rolling()}).to_string()
-        }
+        "state" => json!({
+            "transport": playback.transport(),
+            "rolling": playback.rolling(),
+            "end": playback.end().to_json(),
+        })
+        .to_string(),
         other => json!({"error": format!("no notes playback verb {other:?}")}).to_string(),
     }
 }

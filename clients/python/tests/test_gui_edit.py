@@ -564,3 +564,25 @@ def test_a_roll_in_hertz_draws_and_edits_frequencies():
     moved = list(seq)[0][1]
     assert abs(moved["freq"] - 300.0) < 1e-3
     assert abs(moved["midinote"] - 62.37) < 0.01, "the MIDI note follows the frequency"
+
+
+def test_the_space_bar_plays_and_stops_the_roll_and_its_end_is_the_transports():
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = NotesEditor(seq, sample_rate=SR, server=server)
+    host, wid = opened(editor)
+    window = int(editor._window)
+    editor.end = "contents"
+    editor.apply("/gui_event", [window, 1, 0, "play", 0])
+    addrs = [addr for addr, _ in server.sent]
+    assert addrs[-1] == "/transport_play"
+    # Two beats a second at 100 samples a second: the last note sounds 0.8 of
+    # its beat (the default legato), so it ends on beat 2.8 -- sample 140.
+    ends = [args for addr, args in server.sent if addr == "/transport_end"]
+    assert [int(getattr(a, "value", a)) for a in ends[-1][1:]] == [140, 0]
+    server.sent.clear()
+    editor.apply("/gui_event", [window, 2, 0, "play", 0])
+    addrs = [addr for addr, _ in server.sent]
+    assert "/transport_stop" in addrs and "/transport_locateSample" in addrs, \
+        "a stop, back to the position cursor"

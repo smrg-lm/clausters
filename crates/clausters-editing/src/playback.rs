@@ -34,6 +34,63 @@ use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_js
 use crate::instance::Instance;
 use crate::notes_playback::Placed;
 
+/// **Where a pass ends**, the same three ways for every playback on a
+/// transport -- the multitrack's and the notes editor's.
+///
+/// - `Open`: it does not, and the transport rolls on past the contents until
+///   it is stopped, as a multitrack is played to record onto or to hear a
+///   tail. The default.
+/// - `Contents`: where the contents end -- the last region, the last note's
+///   end -- going back to the position cursor, as an audio editor's pass does.
+/// - `At`: an **end marker**, at a place of the playback's own axis (seconds
+///   of a multitrack, beats of a sequence), going back the same way.
+///
+/// What it sends is the transport's end mark, only when that moves; a loop
+/// set on the transport wins over it. As JSON: `null`, `"contents"` or the
+/// number.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum End {
+    /// The transport rolls on.
+    #[default]
+    Open,
+    /// Where the contents end.
+    Contents,
+    /// An end marker.
+    At(f64),
+}
+
+impl End {
+    /// The end a JSON value names, or `None` for one that names none.
+    pub fn from_json(value: &Value) -> Option<End> {
+        match value {
+            Value::Null => Some(End::Open),
+            Value::String(word) if word == "contents" => Some(End::Contents),
+            Value::Number(n) => n.as_f64().map(|at| End::At(at.max(0.0))),
+            _ => None,
+        }
+    }
+
+    /// Its JSON form.
+    pub fn to_json(self) -> Value {
+        match self {
+            End::Open => Value::Null,
+            End::Contents => json!("contents"),
+            End::At(at) => json!(at),
+        }
+    }
+
+    /// Where a pass ends, given where the contents do, or `None` for one that
+    /// rolls on -- and for contents that end nowhere, since a pass over
+    /// nothing has no end to stop on.
+    pub fn at(self, contents: f64) -> Option<f64> {
+        match self {
+            End::Open => None,
+            End::Contents => (contents > 0.0).then_some(contents),
+            End::At(at) => Some(at),
+        }
+    }
+}
+
 /// **One multitrack, as it is playing.**
 #[derive(Debug, Clone)]
 pub struct MultitrackPlayback {
@@ -43,8 +100,8 @@ pub struct MultitrackPlayback {
     rate: f64,
     /// Whether the transport was last told to roll.
     rolling: bool,
-    /// Whether a pass stops at the end of the contents ([`Self::set_stop_at_end`]).
-    stop_at_end: bool,
+    /// Where a pass ends ([`Self::set_end`]).
+    end: End,
     /// Where the contents end, in seconds of the multitrack: the last region's
     /// end on any track and any lane, as of the last [`Self::sync`].
     content_end: f64,
@@ -70,7 +127,7 @@ impl MultitrackPlayback {
             applier: Applier::new(endpoint),
             rate: 48_000.0,
             rolling: false,
-            stop_at_end: false,
+            end: End::Open,
             content_end: 0.0,
             mark: 0.0,
             end_sent: None,
@@ -171,14 +228,11 @@ impl MultitrackPlayback {
         Ok(steps)
     }
 
-    /// **Whether a pass stops at the end of the contents** -- where the last
-    /// region ends, on any track and any lane -- going back to the position
-    /// cursor, as an audio editor's does. Off by default: a multitrack is also
-    /// played past its end, to record onto or to hear a tail. What it sends is
-    /// the transport's end mark, and only when that moves; a loop set on the
-    /// transport wins over it.
-    pub fn set_stop_at_end(&mut self, on: bool) -> Vec<Step> {
-        self.stop_at_end = on;
+    /// **Where a pass ends** ([`End`]): open by default, or where the last
+    /// region ends on any track and any lane, or at an end marker in seconds
+    /// -- going back to the position cursor.
+    pub fn set_end(&mut self, end: End) -> Vec<Step> {
+        self.end = end;
         self.end_steps()
     }
 
@@ -188,20 +242,18 @@ impl MultitrackPlayback {
         MULTITRACK_TRANSPORT
     }
 
-    /// Whether a pass stops at the end of the contents.
-    pub fn stops_at_end(&self) -> bool {
-        self.stop_at_end
+    /// Where a pass ends.
+    pub fn end(&self) -> End {
+        self.end
     }
 
-    /// The end mark the switch, the contents and the cursor ask for, sent
-    /// when it differs from the one last sent.
+    /// The end mark the end, the contents and the cursor ask for, sent when
+    /// it differs from the one last sent.
     fn end_steps(&mut self) -> Vec<Step> {
-        let want = (self.stop_at_end && self.content_end > 0.0).then(|| {
-            (
-                self.secs_to_samples(self.content_end),
-                self.secs_to_samples(self.mark),
-            )
-        });
+        let want = self
+            .end
+            .at(self.content_end)
+            .map(|end| (self.secs_to_samples(end), self.secs_to_samples(self.mark)));
         if want == self.end_sent {
             return Vec::new();
         }
@@ -455,11 +507,11 @@ mod tests {
         })
     }
 
-    /// **Stopping at the end is a switch, off by default**: on, the end mark is
-    /// where the last region ends and the return is the position cursor, and
-    /// it is sent only when one of the two moves.
+    /// **A pass is open by default**; at the contents, the end mark is where
+    /// the last region ends and the return is the position cursor, sent only
+    /// when one of the two moves; and an end marker is its own place.
     #[test]
-    fn a_pass_stops_at_the_end_of_the_contents_when_asked() {
+    fn a_pass_ends_where_it_is_asked_to() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
         let steps = playback
             .sync(
@@ -472,7 +524,7 @@ mod tests {
             .unwrap();
         assert_eq!(end_mark(&steps), None, "off: nothing is marked");
 
-        let on = playback.set_stop_at_end(true);
+        let on = playback.set_end(End::Contents);
         assert_eq!(
             end_mark(&on),
             Some(vec![OscType::Long(240_000), OscType::Long(0)]),
@@ -509,10 +561,19 @@ mod tests {
             "an edit that moves the last region moves it"
         );
         assert_eq!(
-            end_mark(&playback.set_stop_at_end(false)),
-            Some(vec![]),
-            "off clears it"
+            end_mark(&playback.set_end(End::At(2.5))),
+            Some(vec![OscType::Long(120_000), OscType::Long(48_000)]),
+            "an end marker is where it says"
         );
+        assert_eq!(
+            end_mark(&playback.set_end(End::Open)),
+            Some(vec![]),
+            "open clears it"
+        );
+        assert_eq!(End::from_json(&json!("contents")), Some(End::Contents));
+        assert_eq!(End::from_json(&json!(3.0)), Some(End::At(3.0)));
+        assert_eq!(End::from_json(&Value::Null), Some(End::Open));
+        assert_eq!(End::from_json(&json!("nope")), None);
     }
 
     /// **A locate is the second's sample**, and a tempo in the multitrack

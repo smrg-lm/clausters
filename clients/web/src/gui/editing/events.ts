@@ -41,6 +41,7 @@ import type { Answer } from "./echo.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import type { End } from "./playback.ts";
 import { plain } from "./samples.ts";
 import { View } from "./view.ts";
 
@@ -173,6 +174,8 @@ export class NotesEditor extends Editor<EventSequence> {
     #work: Promise<void> = Promise.resolve();
     /** The timeline a play to a destination of its own (a MIDI port) runs. */
     #elsewhere: Timeline | null = null;
+    /** Where a pass ends ({@link NotesEditor.end}). */
+    #end: End = null;
 
     constructor(sequence: EventSequence, options: NotesEditorOptions) {
         const domain = new NotesDomain();
@@ -275,6 +278,26 @@ export class NotesEditor extends Editor<EventSequence> {
     }
 
     /**
+     * **Where a pass ends**, as on a multitrack's transport: `null` by default
+     * -- the transport rolls on past the last note until it is stopped -- or
+     * `"contents"`, where the last note ends (its onset and its length), or a
+     * beat, an **end marker**; either of the last two goes back to the
+     * position cursor. A note's release rings out past the end, since a stop
+     * releases the notes rather than freezing them.
+     */
+    get end(): End {
+        return this.#end;
+    }
+
+    set end(end: End) {
+        this.#end = end;
+        if (this.#server === null) return;
+        const playback = this.#playback;
+        this.#work = this.#work.then(() => playback.call("end", this.structure, { end }));
+        this.#work.catch(() => {});
+    }
+
+    /**
      * **Plays the sequence** from `beat` -- or from the position cursor, or the
      * start -- on the notes editor's own transport.
      *
@@ -294,6 +317,7 @@ export class NotesEditor extends Editor<EventSequence> {
             return this;
         }
         const playback = this.#playback;
+        await playback.call("end", this.structure, { end: this.#end });
         await playback.call("play", this.structure, { from: start });
         playback.planned = this.structure;
         return this;
@@ -417,9 +441,10 @@ export class NotesEditor extends Editor<EventSequence> {
             this.onLocate?.(this.cursor);
         }
         if (outcome.play !== undefined) {
-            // The space bar: a sounding sequence pauses, a silent one plays.
+            // The space bar is play/stop: a stop goes back to the position
+            // cursor, so the play cursor lands where the reader left the mark.
             this.#work = this.#work.then(async () => {
-                if (await this.playing()) await this.pause();
+                if (await this.playing()) await this.stop();
                 else await this.play();
             });
             this.#work.catch(() => {});

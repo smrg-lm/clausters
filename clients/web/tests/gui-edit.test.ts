@@ -608,3 +608,29 @@ test("a roll in hertz draws and edits frequencies", async () => {
     assert.ok(Math.abs(Number(moved.get("freq")) - 300.0) < 1e-3);
     assert.ok(Math.abs(Number(moved.get("midinote")) - 62.37) < 0.01, "the MIDI note follows the frequency");
 });
+
+test("the space bar plays and stops the roll, and its end is the transport's", async () => {
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const editor = new NotesEditor(seq, { sampleRate: SR, server });
+    const { host } = await opened(editor);
+    const window = 900 + host.trees.length;
+    editor.end = "contents";
+    editor.apply("/gui_event", [window, 1, 0, "play", 0]);
+    await editor.settled();
+    assert.equal(server.sent.at(-1)![0], "/transport_play");
+    // Two beats a second at 100 samples a second: the last note sounds 0.8 of
+    // its beat (the default legato), so it ends on beat 2.8 -- sample 140.
+    const ends = server.sent.filter(([addr]) => addr === "/transport_end");
+    const args = ends.at(-1)![1] as [string, number | bigint][];
+    assert.deepEqual(args.map(([, v]) => Number(v)), [3, 140, 0], "its transport, the end, the return");
+    server.sent = [];
+    editor.apply("/gui_event", [window, 2, 0, "play", 0]);
+    await editor.settled();
+    const addrs = server.sent.map(([addr]) => addr);
+    assert.ok(addrs.includes("/transport_stop") && addrs.includes("/transport_locateSample"),
+        "a stop, back to the position cursor");
+});

@@ -61,7 +61,7 @@ opens, which is why the curve row below names three unrelated types:
 
 **An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
-**It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `y_axis="hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output.
+**It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `None` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `y_axis="hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output.
 
 
 **A `Buffer` opens in the audio editor**, `clausters.gui.editing.AudioEditor`.
@@ -248,7 +248,11 @@ same multitrack, or a step of the history. Moving a box while it plays is one
 dropped with nothing that is sounding cut. The window carries the transport row
 that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 `editor.play()`, `pause()`, `stop()` and `rewind()` are the same verbs from a
-script. A multitrack opened
+script. **The space bar is play/stop**: a stop goes back to the position
+cursor, so the play cursor lands where the mark is. **Where a pass ends** is
+the playback's `end`: `None` by default, the transport rolling on past the
+contents; `"contents"`, where the last region ends; or a number of seconds, an
+end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened
 with no server still edits; it is simply not heard.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
