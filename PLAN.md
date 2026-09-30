@@ -613,7 +613,7 @@ Cargo feature: every build has both clocks and both queues.
 
 - ⬜ **T9 — A lane plays MIDI** *(opened 2026-09-29 by the user, out of
   `crates/clausters-apps/PLAN.md` `X3.10`: the server's lanes should carry
-  MIDI messages before anything is recorded, since `T8` made the lane and
+  MIDI messages before anything is recorded (`T10`), since `T8` made the lane and
   this completes it)*. `T8` left it open: "whether a lane plays MIDI out once
   the server has a MIDI output". Today it cannot. The server has a MIDI
   **input** (`src/midi/live.rs`, a virtual ALSA port whose messages reach
@@ -645,6 +645,24 @@ Cargo feature: every build has both clocks and both queues.
   what sounds; the notes editor and a multitrack's notes regions play a
   sequence's `"midi"` events. `docs/schemas.md`, both clients' builders and
   the crate's `data` move in the same pass.
+
+- ⬜ **T10 — The server records MIDI** *(opened 2026-09-29 by the user, moved
+  out of `crates/clausters-apps/PLAN.md` `X3.10`: recording is a feature of
+  the server, not of the notes editor; taken after `T9`)*. The server records
+  MIDI as it records audio: the bytes that reach its input
+  (`src/midi/live.rs`), each stamped with the transport's position, into a
+  buffer of its own, written to a Standard MIDI File that the session then
+  points at as a source (`crates/clausters-document/PLAN.md`, Found by use,
+  "A MIDI file and an OSC score are sources, as a sound file is, and a
+  session holds neither inside"). Stamped on the transport, a MIDI take is on
+  the same axis as an audio take recorded in the same pass, and in step with
+  it. It is not written into an `EventSequence`: a sequence is the client's
+  representation of what a `Timeline` renders to, not something recorded. A
+  client's `MidiFunc` still receives MIDI in real time; it does not write the
+  take.
+
+  **Open:** the commands (arm, stop, write); the tempo the file's ticks are
+  written against; whether one recording spans several input ports.
 
 Open, not blocking:
 

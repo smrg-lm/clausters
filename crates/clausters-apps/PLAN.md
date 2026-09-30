@@ -557,20 +557,12 @@ opened it.
       answers `Outcome::open` with the source when it is a bound sequence,
       and each client's editor (`open_roll` / `openRoll`) and the standalone
       host open a notes editor over it in the multitrack's context.
-  - ⬜ **X3.10 - Recording MIDI.** *Postponed until after `PLAN.md` `T9`*
-    (the user, 2026-09-29: the lanes playing MIDI comes first). It was
-    written as "into an `EventSequence`", which is the wrong target: a
-    sequence is the client's representation of what a `Timeline` renders to,
-    not something recorded (`crates/clausters-document/PLAN.md`, Found by use,
-    "A MIDI file and an OSC score are sources, as a sound file is, and a
-    session holds neither inside"). **The server records**, as it records
-    audio: the MIDI bytes that reach its input, each stamped with the
-    transport's position, into a buffer of its own, written to a `.mid` that
-    the session then points at as a source. That keeps a MIDI take on the
-    same axis and in step with an audio take recorded in the same pass. A
-    client's `MidiFunc` still receives MIDI in real time; it does not write
-    the take. **Open:** the commands (arm, stop, write), the tempo the file's
-    ticks are written against, and how the notes editor opens the file.
+  - ⬜ **X3.10 - The notes editor records, through `PLAN.md` `T10`.**
+    Recording MIDI is the server's (moved to `T10` by the user, 2026-09-29:
+    it is a server feature, not the editor's). What stays here is the
+    editor's side: arming a recording from the roll, and opening the take the
+    server wrote as the roll's source. Taken after `T10`; both are skipped
+    for now, with `T9` and `X3.11` first.
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
   - ✅ **X3.12 - The Hz domain.**
     *(Shipped 2026-09-28: the `notes` element reads `axes.y.unit` `"hz"` --
