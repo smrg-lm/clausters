@@ -1066,6 +1066,14 @@ impl OnAxis for Notes {
         Some(self.span())
     }
 
+    /// **A roll's time goes on past its last note**, as a multitrack's does
+    /// past its last clip: the bars after the notes are where the next ones
+    /// are written, a range drawn across them is a range, and a loop may end
+    /// there. Its extent is where the notes happen to end, not where time does.
+    fn unbounded_axis(&self) -> bool {
+        true
+    }
+
     /// The keyboard's gutter scrolls through the octaves, and Ctrl zooms them.
     fn wheel_pans_y(&self) -> bool {
         true

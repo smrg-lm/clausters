@@ -1899,6 +1899,30 @@ mod tests {
         assert_eq!(total, 424_000, "and the extent is registered all the same");
     }
 
+    /// **A roll's range may run past its last note**, as a multitrack's runs
+    /// past its last clip: the time after the notes is where a loop may end
+    /// and the next note is written.
+    #[test]
+    fn a_rolls_range_runs_past_its_last_note() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"notes","notes":[0.0, 24000.0, 62.0, 100, 0],
+                 "min":48,"max":84,"sample_rate":48000.0,"tempo":2.0}
+            ]}"#,
+            ),
+            from(),
+        );
+        let (start, len, _) = host.select_timeline(100, 12_000.0, 96_000.0).unwrap();
+        assert_eq!(
+            (start, len),
+            (12_000.0, 84_001.0),
+            "past 24000, where the note ends"
+        );
+    }
+
     /// A heavy view's axis stays bound to its data: there is no signal out past
     /// the end of a file to look at.
     #[test]
