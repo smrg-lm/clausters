@@ -7710,4 +7710,7 @@ module of its own.
   wanted is a hover readout -- the control's name and the value at the
   pointer, a point's exact value, a note's pitch and level -- drawn by the
   host in the element's own space, since the value's units are the curve's
-  (`min`/`max`) and the element already knows them.
+  (`min`/`max`) and the element already knows them. The row labels need it
+  too: a lane's label is drawn in the keyboard's column, which is narrow, so
+  `editors/edit_midi_file`'s "volume" lane shows only its first letters (the
+  user, 2026-09-30) -- the hover is where the whole name is read.
