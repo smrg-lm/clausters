@@ -701,7 +701,7 @@ opened it.
       was, and each channel curve it reads goes through a hold (`ev.hold`)
       that its `gate` closes -- the channel reaches a note from its on to its
       off, and after that the note keeps the last value.)*
-    - ⬜ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
+    - ✅ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
       read (a zone's member channels into per-note curves -- the half of
       `M35`'s acceptance moved here), and curves into messages when a
       sequence is written or played as MIDI (MPE for a per-note bend). With
