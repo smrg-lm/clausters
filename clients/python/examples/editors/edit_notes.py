@@ -80,7 +80,8 @@ from clausters.seq.event import Event
 #
 # Beats and events. The `instrument` and `amp` on the last one are what the
 # roll cannot draw and editing must not lose -- and so are the marker's
-# arguments.
+# arguments. A marker is a message the server runs when it plays; this one
+# writes a value to a control bus.
 
 # %%
 timeline = Timeline([
@@ -88,7 +89,7 @@ timeline = Timeline([
     (1.0, Event(midinote=64, dur=1.0)),
     (2.0, Event(midinote=67, dur=2.0)),
     (4.0, Event(midinote=72, dur=1.0, instrument="default", amp=0.4)),
-    (3.0, OscItem("/mark", 1, "cue")),
+    (3.0, OscItem("/bus_set", 100, 0.5)),
 ])
 
 # %% [markdown]
