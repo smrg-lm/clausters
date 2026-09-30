@@ -420,6 +420,29 @@ fn l_switches_the_monitors_loop() {
         [OscType::Int(play::MONITOR_TRANSPORT)],
         "and no end while it loops"
     );
+
+    // **Switched while it plays, the pass follows**: off, the loop is cleared
+    // and the pass ends at the take's end, from where it stands.
+    g.loop_key(&mut host, &ctx);
+    let sent = exchange(&mut host, &server);
+    assert_eq!(
+        one(&sent, "/transport_loop").args,
+        [OscType::Int(play::MONITOR_TRANSPORT)]
+    );
+    assert_eq!(
+        one(&sent, "/transport_end").args[1],
+        OscType::Long(16),
+        "on to the take's end"
+    );
+    assert!(
+        !sent.iter().any(|m| m.addr == "/transport_locateSample"),
+        "nothing located"
+    );
+    assert_eq!(
+        host.loop_verb(),
+        vec![OscType::String("loop".into()), OscType::Int(0)],
+        "and the window is told the switch"
+    );
 }
 
 /// **With no pointer, the keys reach the window's one take** -- the first

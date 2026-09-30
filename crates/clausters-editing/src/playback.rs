@@ -308,6 +308,50 @@ impl MultitrackPlayback {
         transport_command("/transport_play", vec![])
     }
 
+    /// **The loop switch changed while it plays**: the pass in progress now
+    /// loops over `range` (`[start, end]` in seconds), or the whole
+    /// multitrack with none -- or, switched off, goes on to the range's end,
+    /// or to where [`End`] says, and back to the mark. From where the
+    /// transport stands: nothing is located and nothing restarts. Stopped, it
+    /// answers nothing, since the next play reads the switch.
+    pub fn set_loop(&mut self, range: Option<(f64, f64)>, looping: bool) -> Vec<Step> {
+        if !self.rolling {
+            return Vec::new();
+        }
+        let span = range
+            .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
+        if let (true, Some((from, to))) = (looping, span) {
+            let mut steps = transport_command(
+                "/transport_loop",
+                vec![
+                    OscType::Long(self.secs_to_samples(from)),
+                    OscType::Long(self.secs_to_samples(to.max(from))),
+                ],
+            );
+            // A loop does not stop on an end mark the pass began with.
+            if self.end_sent.take().is_some() {
+                steps.extend(transport_command("/transport_end", vec![]));
+            }
+            return steps;
+        }
+        let mut steps = transport_command("/transport_loop", vec![]);
+        match range {
+            Some((from, to)) => {
+                let want = (
+                    self.secs_to_samples(to.max(from)),
+                    self.secs_to_samples(self.mark),
+                );
+                self.end_sent = Some(want);
+                steps.extend(transport_command(
+                    "/transport_end",
+                    vec![OscType::Long(want.0), OscType::Long(want.1)],
+                ));
+            }
+            None => steps.extend(self.end_steps()),
+        }
+        steps
+    }
+
     /// **The space bar's play: the audio editor's pass over a multitrack.**
     ///
     /// With a time range (`[start, end]` in seconds) the pass starts at its
@@ -708,6 +752,52 @@ mod tests {
             args_of(&plain, "/transport_end"),
             Some(vec![]),
             "the range's end mark was for its pass: open again"
+        );
+    }
+
+    /// **The loop switch changes the pass in progress**: on, it loops the
+    /// range or the whole multitrack from where it stands; off, it ends at the
+    /// range's end and goes back to the mark; stopped, nothing.
+    #[test]
+    fn the_loop_switch_changes_the_pass_in_progress() {
+        let args_of = |steps: &[Step], addr: &str| {
+            steps.iter().find_map(|step| match step {
+                Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
+                _ => None,
+            })
+        };
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        playback
+            .sync(
+                &ending_at(5.0),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        assert!(playback.set_loop(None, true).is_empty(), "nothing playing");
+        playback.cue(0.5);
+        playback.play_pass(Some((1.0, 2.0)), false);
+        let on = playback.set_loop(Some((1.0, 2.0)), true);
+        assert_eq!(
+            args_of(&on, "/transport_loop"),
+            Some(vec![OscType::Long(48_000), OscType::Long(96_000)])
+        );
+        assert!(
+            args_of(&on, "/transport_play").is_none(),
+            "nothing restarted"
+        );
+        let off = playback.set_loop(Some((1.0, 2.0)), false);
+        assert_eq!(args_of(&off, "/transport_loop"), Some(vec![]));
+        assert_eq!(
+            args_of(&off, "/transport_end"),
+            Some(vec![OscType::Long(96_000), OscType::Long(24_000)])
+        );
+        let whole = playback.set_loop(None, true);
+        assert_eq!(
+            args_of(&whole, "/transport_loop"),
+            Some(vec![OscType::Long(0), OscType::Long(240_000)])
         );
     }
 

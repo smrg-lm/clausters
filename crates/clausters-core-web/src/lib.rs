@@ -1849,6 +1849,15 @@ impl JsMultitrackPlayback {
         answer_json(Ok(self.0.play_pass(range, looping)))
     }
 
+    /// The steps the loop switch asks while the multitrack plays: `pass` as
+    /// for `playPass` -- the C ABI's `clausters_editing_playback_set_loop`.
+    #[wasm_bindgen(js_name = setLoop)]
+    pub fn set_loop(&mut self, pass: &str) -> String {
+        use clausters_editing::playback::{answer_json, pass_of};
+        let (range, looping) = pass_of(pass);
+        answer_json(Ok(self.0.set_loop(range, looping)))
+    }
+
     /// The steps that set where a pass ends: `end` the JSON `null`,
     /// `"contents"` or seconds (an end marker). One that names none answers
     /// no steps.

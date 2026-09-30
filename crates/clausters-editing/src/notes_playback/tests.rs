@@ -323,3 +323,53 @@ fn a_pass_over_a_range_ends_there_and_the_loop_switch_loops_it() {
         "every note: the last one ends on beat 3"
     );
 }
+
+/// **The loop switch changes the pass in progress**: switched on it loops the
+/// range from where the transport stands, with nothing located or restarted;
+/// switched off it ends at the range's end and goes back to the cursor; and
+/// stopped it asks nothing, since the next play reads the switch.
+#[test]
+fn the_loop_switch_changes_the_pass_in_progress() {
+    let args_of = |steps: &[Step], addr: &str| {
+        steps.iter().rev().find_map(|step| match step {
+            Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
+            _ => None,
+        })
+    };
+    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    assert!(
+        playback
+            .set_loop(&sequence(), Some((2.0, 3.0)), true, SR)
+            .is_empty(),
+        "nothing playing"
+    );
+    playback
+        .play_pass(&sequence(), 1.0, Some((2.0, 3.0)), false, SR, &mut ids())
+        .unwrap();
+    let on = playback.set_loop(&sequence(), Some((2.0, 3.0)), true, SR);
+    assert_eq!(
+        args_of(&on, "/transport_loop"),
+        Some(vec![OscType::Long(100), OscType::Long(150)])
+    );
+    assert_eq!(
+        args_of(&on, "/transport_end"),
+        Some(vec![]),
+        "no end in a loop"
+    );
+    assert!(
+        args_of(&on, "/transport_locateSample").is_none(),
+        "nothing located"
+    );
+    assert!(
+        args_of(&on, "/transport_play").is_none(),
+        "nothing restarted"
+    );
+    let off = playback.set_loop(&sequence(), Some((2.0, 3.0)), false, SR);
+    assert_eq!(args_of(&off, "/transport_loop"), Some(vec![]));
+    assert_eq!(
+        args_of(&off, "/transport_end"),
+        Some(vec![OscType::Long(150), OscType::Long(50)])
+    );
+    playback.set_rolling(false);
+    assert!(playback.set_loop(&sequence(), None, true, SR).is_empty());
+}

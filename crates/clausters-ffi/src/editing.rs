@@ -876,6 +876,36 @@ pub unsafe extern "C" fn clausters_editing_playback_play_pass(
     }
 }
 
+/// The steps the loop switch asks while the multitrack plays -- `pass` as for
+/// [`clausters_editing_playback_play_pass`]: the pass in progress loops over
+/// the range or the whole multitrack, or goes on to its end, from where the
+/// transport stands (`MultitrackPlayback::set_loop`). Stopped, no steps.
+///
+/// # Safety
+/// `p` null or live, `pass` null or readable for `pass_len` bytes, `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_set_loop(
+    p: *mut FfiPlayback,
+    pass: *const u8,
+    pass_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::{answer_json, pass_of};
+    // SAFETY: forwarded from this function's own contract.
+    let Some(pass) = (unsafe { crate::out::text(pass, pass_len) }) else {
+        return 0;
+    };
+    let (range, looping) = pass_of(&pass);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_verb(p, out, out_cap, |pb| {
+            answer_json(Ok(pb.set_loop(range, looping)))
+        })
+    }
+}
+
 /// The steps that set where a pass ends -- `end` the JSON `null` (open),
 /// `"contents"` or seconds (an end marker), going back to the position
 /// cursor: the transport's end mark, sent only when it moves. An `end` that

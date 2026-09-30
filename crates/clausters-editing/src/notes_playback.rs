@@ -589,6 +589,63 @@ impl NotesPlayback {
         Ok(steps)
     }
 
+    /// **The loop switch changed while it plays**: the pass in progress now
+    /// loops over `range` (`[start, end]` in beats), or over every note with
+    /// none -- or, switched off, goes on to the range's end, or to where
+    /// [`End`] says, and back to the position cursor. From where the transport
+    /// stands: nothing is located and nothing restarts. Stopped, it answers
+    /// nothing, since the next play reads the switch.
+    pub fn set_loop(
+        &mut self,
+        sequence: &EventSequence,
+        range: Option<(f64, f64)>,
+        looping: bool,
+        rate: f64,
+    ) -> Vec<Step> {
+        if !self.rolling || self.lane.is_none() {
+            return Vec::new();
+        }
+        if looping {
+            let (a, b) = match range {
+                Some((a, b)) => (
+                    Self::sample(sequence, a, rate),
+                    Self::sample(sequence, b, rate),
+                ),
+                None => {
+                    let contents = placed(sequence)
+                        .events
+                        .iter()
+                        .filter(|p| render::Type::of(&p.keys) == Type::Note)
+                        .map(|p| p.end)
+                        .fold(0.0, f64::max);
+                    (0, (contents * rate).round() as i64)
+                }
+            };
+            let mut steps = self.command(
+                "/transport_loop",
+                vec![OscType::Long(a), OscType::Long(b.max(a + 1))],
+            );
+            // A loop does not stop on an end mark the pass began with.
+            if self.end_sent.take().is_some() {
+                steps.extend(self.command("/transport_end", vec![]));
+            }
+            return steps;
+        }
+        let mut steps = self.command("/transport_loop", vec![]);
+        match range {
+            Some((_, b)) => {
+                let want = (Self::sample(sequence, b, rate).max(self.back), self.back);
+                self.end_sent = Some(want);
+                steps.extend(self.command(
+                    "/transport_end",
+                    vec![OscType::Long(want.0), OscType::Long(want.1)],
+                ));
+            }
+            None => steps.extend(self.end_steps(sequence, rate)),
+        }
+        steps
+    }
+
     /// **The sequence changed**: the lane takes it again, and an end at the
     /// contents follows its new end.
     /// Nothing before the first play: there is no lane yet.
@@ -675,6 +732,8 @@ impl NotesPlayback {
 /// - `play` -- `from` (a beat), `rate`, and the space bar's pass: `range`
 ///   (`[start, end]` in beats) and `loop` (a boolean)
 /// - `update` -- `rate`
+/// - `loop` -- `range` and `loop`, as for `play`, and `rate`: the loop switch
+///   changed while it plays
 /// - `resume`, `pause`, `stop` (`back`, a beat; `rate`), `close`
 /// - `cue` -- `at` (a beat), `rate`
 /// - `end` -- `end` (`null`, `"contents"` or a beat), `rate`: where a pass
@@ -707,6 +766,17 @@ pub fn call_json(
             answer(playback.play_pass(sequence, number("from", 0.0), range, looping, rate, ids))
         }
         "update" => answer(playback.update(sequence, rate, ids)),
+        "loop" => {
+            let range = request
+                .get("range")
+                .and_then(Value::as_array)
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            let looping = request
+                .get("loop")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            answer(Ok(playback.set_loop(sequence, range, looping, rate)))
+        }
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), rate))),

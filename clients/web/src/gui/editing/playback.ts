@@ -260,6 +260,23 @@ export class Playback {
     }
 
     /**
+     * **The loop switch changed while it plays**: the pass in progress loops
+     * over `range` (`[start, end]` in seconds) or the whole multitrack, or --
+     * switched off -- goes on to the range's end or to where
+     * {@link Playback.end} says, from where it stands. Stopped, nothing: the
+     * next {@link Playback.play} reads the switch.
+     */
+    async setLoop(pass: Pass = {}): Promise<this> {
+        if (this.instance !== null) {
+            await this.run(this.instance.setLoop(JSON.stringify({
+                range: pass.range ?? null,
+                looping: pass.looping ?? false,
+            })));
+        }
+        return this;
+    }
+
+    /**
      * Freeze it where it stands, with every node's state intact, and its
      * meters at zero.
      */

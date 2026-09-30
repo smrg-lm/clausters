@@ -171,6 +171,15 @@ class Playback:
         self.transport.reported(playing=True)
         return self
 
+    def set_loop(self, range=None, looping: bool = False):
+        """**The loop switch changed while it plays**: the pass in progress
+        loops over ``range`` (``(start, end)`` in seconds) or the whole
+        multitrack, or -- switched off -- goes on to the range's end or to where
+        `end` says, from where it stands. Stopped, nothing: the next `play`
+        reads the switch."""
+        self._run(self._instance.set_loop(range, looping))
+        return self
+
     def pause(self):
         """Freeze it where it stands, with every node's state intact,
         and its meters at zero."""

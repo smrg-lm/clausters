@@ -515,7 +515,8 @@ pub use time::*;
 /// takes the id spaces after `placed`, since the graphs a sequence's curves
 /// play through allocate nodes, buses and buffers; `placed` is the events and
 /// the lanes over their channels (a bare list of events is still read).
-/// **Not additive** -- a signature moved.
+/// New: `clausters_editing_playback_set_loop`, the loop switch while the
+/// multitrack plays. **Not additive** -- a signature moved.
 pub const CORE_ABI_VERSION: u32 = 78;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.

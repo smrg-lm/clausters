@@ -456,6 +456,11 @@ export class MultitrackPlayback {
      */
     setEnd(end: string): string;
     /**
+     * The steps the loop switch asks while the multitrack plays: `pass` as
+     * for `playPass` -- the C ABI's `clausters_editing_playback_set_loop`.
+     */
+    setLoop(pass: string): string;
+    /**
      * Says whether the transport is rolling.
      */
     setRolling(rolling: boolean): void;
@@ -1887,6 +1892,7 @@ export interface InitOutput {
     readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
     readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;
     readonly multitrackplayback_setEnd: (a: number, b: number, c: number) => [number, number];
+    readonly multitrackplayback_setLoop: (a: number, b: number, c: number) => [number, number];
     readonly multitrackplayback_setRolling: (a: number, b: number) => void;
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];

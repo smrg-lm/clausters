@@ -392,6 +392,10 @@ class AudioEditor(Editor):
             self._sound()
         if outcome.get("play") is not None:
             self._play(outcome["play"])
+        if outcome.get("pass") is not None:
+            # `L`: the pass in progress ends as the switch now says; a stopped
+            # playback reads it on its next play.
+            self._playback.call("pass", **{"pass": outcome["pass"]})
         if outcome.get("cue") is not None:
             self._cue(int(outcome["cue"]))
         if outcome.get("locate") is not None:

@@ -465,6 +465,20 @@ fn the_space_bar_asks_the_playback_for_the_pass_the_view_says() {
     );
 }
 
+/// **`L` over the window changes the pass in progress**: how it ends now,
+/// read off the view as a play's is, and no play.
+#[test]
+fn the_loop_key_asks_the_pass_in_progress_to_follow() {
+    let mut editor = opened(1);
+    event(&mut editor, json!([12, 2, 0, "selection", 10, 20]));
+    let looped = event(&mut editor, json!([900, 3, 0, "loop", 1]));
+    assert!(looped.get("play").is_none(), "no play");
+    assert_eq!(
+        looped["pass"],
+        json!({"kind": "loop", "from": 10, "to": 30})
+    );
+}
+
 /// **The level meter stands beside the take** once a playback says where it
 /// writes, and the window says the space bar is its own.
 #[test]

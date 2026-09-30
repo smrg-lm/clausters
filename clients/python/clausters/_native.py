@@ -346,6 +346,9 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_playback_play_pass.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
     lib.clausters_editing_playback_play_pass.restype = ctypes.c_size_t
+    lib.clausters_editing_playback_set_loop.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
+    lib.clausters_editing_playback_set_loop.restype = ctypes.c_size_t
     lib.clausters_editing_playback_set_end.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
     lib.clausters_editing_playback_set_end.restype = ctypes.c_size_t
@@ -1674,6 +1677,15 @@ class MultitrackPlayback:
         body = json.dumps({"range": list(range) if range is not None else None,
                            "looping": bool(looping)}).encode("utf-8")
         return self._steps(lib().clausters_editing_playback_play_pass, as_u8(body), len(body))
+
+    def set_loop(self, range=None, looping: bool = False) -> list:
+        """The steps the loop switch asks while the multitrack plays: the pass
+        in progress loops over ``range`` (``(start, end)`` in seconds) or the
+        whole multitrack, or goes on to its end, from where the transport
+        stands; stopped, none (`clausters_editing_playback_set_loop`)."""
+        body = json.dumps({"range": list(range) if range is not None else None,
+                           "looping": bool(looping)}).encode("utf-8")
+        return self._steps(lib().clausters_editing_playback_set_loop, as_u8(body), len(body))
 
     def pause(self) -> list:
         """The steps that freeze the multitrack and zero its meters."""

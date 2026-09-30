@@ -238,11 +238,21 @@ impl Gestures {
             .then(|| vec![GestureEffect::Redraw(ctx.def_id)])
     }
 
-    /// **`L` switches the monitor's loop**, and the status bar says which way
-    /// it went -- the one place the state is shown, since the applications have
-    /// no transport row. It takes effect on the next play.
+    /// **`L` switches the loop**, and the status bar says which way it went --
+    /// the one place the state is shown, since the applications have no
+    /// transport row. A take the monitor is playing follows it at once, as a
+    /// pass read off the view the way the space bar reads one; the window's
+    /// owner is told beside it (`Host::loop_verb`), by the front.
     pub fn loop_key(&self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         let looping = host.toggle_monitor_loop();
+        if let Some(loaded) = host.monitor()
+            && loaded.rolling
+            && let Some(frames) = host.buffer_frames(ctx.def_id, loaded.widget)
+        {
+            let (_, span) = start_of(host, loaded.widget);
+            let (_, pass) = space(looping, span, position_cursor(host, loaded.widget), frames);
+            host.repass_monitor(pass);
+        }
         host.say(
             ctx.def_id,
             crate::host::status::Line {

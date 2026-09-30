@@ -72,6 +72,11 @@ pub struct Outcome {
     /// otherwise -- the playback is the caller's, and so is whether it rolls.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub play: Option<Play>,
+    /// **What `L` asks of a pass in progress**: how it ends now, read off the
+    /// view as a play's is -- the caller changes the pass of what is playing,
+    /// and a stopped playback reads the switch on its next play.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pass: Option<Pass>,
     /// **Where the position cursor now stands**, in frames of the take: the
     /// caller cues the playback there, so the play cursor goes with it while
     /// nothing plays.
@@ -141,10 +146,15 @@ impl Converse for AudioEditor {
         // **The space bar over the window is a play**, the window's own verb
         // and the application's to read (the window says `plays`): what it
         // asks of the playback, with the loop switch the host sends beside it.
-        if message.tag == "play" {
+        if message.tag == "play" || message.tag == "loop" {
             out.turn = Kind::Route;
             let looping = args.get(4).is_some_and(|v| int(v) != 0);
-            out.play = Some(self.play(looping));
+            // The space bar plays or stops; `L` changes the pass in progress.
+            if message.tag == "play" {
+                out.play = Some(self.play(looping));
+            } else {
+                out.pass = Some(self.play(looping).pass);
+            }
             out.answer = Some(conversation::answer(
                 message.seq,
                 out.version,

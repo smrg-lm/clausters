@@ -230,9 +230,16 @@ impl Host {
         self.follow.looping
     }
 
-    /// Switches the monitor's loop (`L`), and answers the new state. It takes
-    /// effect on the next play: a pass already running keeps the end it began
-    /// with.
+    /// **The loop switch changed while the monitor plays**: the pass in
+    /// progress ends as `pass` now says, from where the transport stands.
+    pub fn repass_monitor(&mut self, pass: Pass) {
+        let steps = self.monitor.set_pass(pass);
+        self.run_monitor(steps);
+    }
+
+    /// Switches the monitor's loop (`L`), and answers the new state. A pass
+    /// already running follows it ([`Self::repass_monitor`], which the key
+    /// calls), and a stopped one reads it on the next play.
     pub fn toggle_monitor_loop(&mut self) -> bool {
         self.follow.looping = !self.follow.looping;
         self.follow.looping

@@ -320,6 +320,10 @@ impl WebApp {
                 let effects = slot.gestures.loop_key(&mut self.host, ctx);
                 self.apply_gesture_effects(effects);
             }
+            // The window is told, as the space bar tells it, so whoever plays
+            // the window changes the pass in progress.
+            let verb = self.host.loop_verb();
+            self.window_event(def, verb);
             return true;
         }
         if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {

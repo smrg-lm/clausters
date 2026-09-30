@@ -267,7 +267,9 @@ impl App {
         true
     }
 
-    /// `L`: the take monitor's loop, switched, with a status line saying so.
+    /// `L`: the loop, switched, with a status line saying so -- the monitor's
+    /// pass follows it, and the window is told, as the space bar tells it, so
+    /// whoever plays the window changes the pass in progress.
     pub(super) fn loop_key(&mut self, def_id: i32) {
         let ctx = self.gesture_ctx(def_id);
         let Some(effects) = self
@@ -278,6 +280,8 @@ impl App {
             return;
         };
         self.apply_gesture_effects(effects);
+        let verb = self.host.loop_verb();
+        self.window_event(def_id, verb);
     }
 
     /// Home or End: the position cursor to the start or the end of the

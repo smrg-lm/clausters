@@ -51,6 +51,7 @@ interface Outcome {
     changed?: boolean;
     answer?: Answer;
     play?: { looping: boolean; range?: [number, number] | null };
+    loop?: { looping: boolean; range?: [number, number] | null };
     locate?: number;
 }
 
@@ -459,6 +460,19 @@ export class NotesEditor extends Editor<EventSequence> {
                     looping: outcome.play?.looping ?? false,
                 });
             });
+            this.#work.catch(() => {});
+        }
+        const relooped = outcome.loop;
+        if (relooped !== undefined && this.#server !== null) {
+            // `L`: the pass in progress loops, or stops looping, from where it
+            // stands; a stopped playback reads the switch on its next play.
+            const playback = this.#playback;
+            this.#work = this.#work.then(() =>
+                playback.call("loop", this.structure, {
+                    range: relooped.range ?? null,
+                    loop: relooped.looping,
+                }),
+            );
             this.#work.catch(() => {});
         }
         this.echo.send(outcome.answer);

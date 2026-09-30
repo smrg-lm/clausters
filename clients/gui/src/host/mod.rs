@@ -1105,6 +1105,17 @@ impl Host {
         ]
     }
 
+    /// **The window's `loop` verb**, as it goes out when `L` switches the loop:
+    /// the verb and the switch's new state, `1` or `0` -- an owner that plays
+    /// the window changes the pass in progress, and one that does not ignores
+    /// it.
+    pub fn loop_verb(&self) -> Vec<OscType> {
+        vec![
+            OscType::String(clausters_apps::multitrack::editor::LOOP_KEY.into()),
+            OscType::Int(i32::from(self.monitor_loops())),
+        ]
+    }
+
     /// The inner size window `id` asks its shell for, in **logical** pixels:
     /// what its `w`/`h` declared, or -- when it carries `hug` -- what its content
     /// wants ([`Widget::hug_size`]) on the axes where that composition is

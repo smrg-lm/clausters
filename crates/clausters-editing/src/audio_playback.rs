@@ -261,29 +261,50 @@ impl AudioEditorPlayback {
         let Some(f) = self.files.get(&file).cloned() else {
             return steps;
         };
+        steps.extend(self.pass_steps(&f, pass));
+        steps.extend(self.command(
+            "/transport_locateSample",
+            vec![OscType::Long(self.frames_to_samples(&f, start))],
+        ));
+        steps.extend(self.resume());
+        steps
+    }
+
+    /// **The loop switch changed while the file plays**: the pass in progress
+    /// ends as `pass` now says -- looping over its span, or going on to its end
+    /// mark and back -- from where the transport stands, nothing located and
+    /// nothing restarted. Stopped, it answers nothing: the next play reads the
+    /// switch.
+    pub fn set_pass(&mut self, pass: Pass) -> Vec<Step> {
+        if !self.rolling {
+            return Vec::new();
+        }
+        match self.focus.and_then(|f| self.files.get(&f)).cloned() {
+            Some(f) => self.pass_steps(&f, pass),
+            None => Vec::new(),
+        }
+    }
+
+    /// The loop and the end mark `pass` asks of the transport, in `f`'s frames.
+    fn pass_steps(&self, f: &File, pass: Pass) -> Vec<Step> {
         let (looping, end) = match pass {
             Pass::Loop { from, to } => (
                 vec![
-                    OscType::Long(self.frames_to_samples(&f, from)),
-                    OscType::Long(self.frames_to_samples(&f, to)),
+                    OscType::Long(self.frames_to_samples(f, from)),
+                    OscType::Long(self.frames_to_samples(f, to)),
                 ],
                 vec![],
             ),
             Pass::Until { end, back } => (
                 vec![],
                 vec![
-                    OscType::Long(self.frames_to_samples(&f, end)),
-                    OscType::Long(self.frames_to_samples(&f, back)),
+                    OscType::Long(self.frames_to_samples(f, end)),
+                    OscType::Long(self.frames_to_samples(f, back)),
                 ],
             ),
         };
-        steps.extend(self.command("/transport_loop", looping));
+        let mut steps = self.command("/transport_loop", looping);
         steps.extend(self.command("/transport_end", end));
-        steps.extend(self.command(
-            "/transport_locateSample",
-            vec![OscType::Long(self.frames_to_samples(&f, start))],
-        ));
-        steps.extend(self.resume());
         steps
     }
 
@@ -622,6 +643,7 @@ fn out_ports(outs: usize) -> Ports {
 /// - `closeFile` -- `file`
 /// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
 ///   `{"kind": "until", "end", "back"}`)
+/// - `pass` -- `pass`, as for `play`: the loop switch changed while it plays
 /// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `cue`
 ///   (`frame`: a locate while stopped, nothing while rolling), `close`
 /// - `setRolling` -- `rolling`
@@ -653,6 +675,14 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
         {
             Some(Ok(pass)) => answer(Ok(playback.play(int("file"), int("start"), pass))),
             _ => json!({"error": "a play needs a pass"}).to_string(),
+        },
+        "pass" => match request
+            .get("pass")
+            .cloned()
+            .map(serde_json::from_value::<Pass>)
+        {
+            Some(Ok(pass)) => answer(Ok(playback.set_pass(pass))),
+            _ => json!({"error": "a pass is a loop or an end"}).to_string(),
         },
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
@@ -845,6 +875,41 @@ mod tests {
                 OscType::Long(48_000),
                 OscType::Long(24_000)
             ]
+        );
+    }
+
+    /// **The loop switch changes the pass in progress**: the loop or the end
+    /// mark it asks, from where the transport stands; stopped, nothing.
+    #[test]
+    fn the_loop_switch_changes_the_pass_in_progress() {
+        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut ids = spaces();
+        playback
+            .sync(1, 10, 1, 48_000, 48_000.0, 48_000.0, &mut ids)
+            .unwrap();
+        assert!(
+            playback
+                .set_pass(Pass::Loop { from: 0, to: 100 })
+                .is_empty()
+        );
+        playback.play(
+            1,
+            0,
+            Pass::Until {
+                end: 48_000,
+                back: 0,
+            },
+        );
+        let on = playback.set_pass(Pass::Loop { from: 100, to: 200 });
+        assert_eq!(
+            sent(&on, "/transport_loop")[0].args[1..],
+            [OscType::Long(100), OscType::Long(200)]
+        );
+        assert!(sent(&on, "/transport_play").is_empty(), "nothing restarted");
+        let off = playback.set_pass(Pass::Until { end: 200, back: 50 });
+        assert_eq!(
+            sent(&off, "/transport_end")[0].args[1..],
+            [OscType::Long(200), OscType::Long(50)]
         );
     }
 

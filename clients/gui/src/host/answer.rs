@@ -332,6 +332,7 @@ impl Host {
                     self.play_multitrack(range, looping);
                 }
             }
+            Some(TransportVerb::Loop { range, looping }) => self.reloop_multitrack(range, looping),
             Some(TransportVerb::Stop { mark }) => self.stop_multitrack(mark),
             Some(TransportVerb::Cue { secs }) => self.cue_multitrack(secs),
             None => {}
@@ -542,6 +543,17 @@ impl Host {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             self.roll_notes(source, range, looping);
+        }
+        if let Some(pass) = outcome.relooped {
+            let range = pass
+                .get("range")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            let looping = pass
+                .get("looping")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            self.reloop_notes(source, range, looping);
         }
         true
     }

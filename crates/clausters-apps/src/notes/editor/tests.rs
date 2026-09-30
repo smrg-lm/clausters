@@ -137,6 +137,27 @@ fn the_space_bar_plays_the_time_range_a_sweep_left() {
     );
 }
 
+/// **`L` over the window changes the pass in progress**: the loop switch's
+/// new state and the time range a sweep left, apart from a play.
+#[test]
+fn the_loop_key_asks_the_pass_in_progress_to_follow() {
+    let mut e = editor(shared());
+    e.event(&gesture("selection", vec![json!(50.0), json!(100.0)]), 1);
+    let out = e.event(
+        &Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(39), json!(3), json!(0), json!("loop"), json!(1)],
+        },
+        1,
+    );
+    assert_eq!(out.turn, Kind::Route);
+    assert_eq!(out.play, None, "no play");
+    assert_eq!(
+        out.relooped,
+        Some(json!({"looping": true, "range": [0.5, 1.5]}))
+    );
+}
+
 /// **A click on the ruler places the position cursor**, as a beat of the
 /// sequence, and edits nothing; the roll's play cursor is anchored so the
 /// transport's position is where it is drawn.

@@ -349,6 +349,12 @@ class NotesEditor(Editor):
             else:
                 pass_ = outcome["play"]
                 self.play(range=pass_.get("range"), looping=bool(pass_.get("looping")))
+        if outcome.get("loop") is not None and self._server is not None:
+            # `L`: the pass in progress loops, or stops looping, from where it
+            # stands; a stopped playback reads the switch on its next play.
+            pass_ = outcome["loop"]
+            self._playback.call("loop", self.structure, range=pass_.get("range"),
+                                loop=bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
         return changed
 

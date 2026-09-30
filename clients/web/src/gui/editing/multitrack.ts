@@ -847,6 +847,10 @@ export class MultitrackEditor extends Editor<Multitrack> {
             await playback.refresh();
             if (playback.playing) playback.stop();
             else await playback.play({ range: verb.range ?? null, looping: verb.looping ?? false });
+        } else if (verb.verb === "loop") {
+            // `L`: the pass in progress loops, or stops looping, from where it
+            // stands; a stopped transport reads the switch on its next play.
+            await playback.setLoop({ range: verb.range ?? null, looping: verb.looping ?? false });
         } else if (verb.verb === "stop") {
             playback.stop();
         } else if (verb.verb === "cue") {

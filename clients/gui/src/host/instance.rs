@@ -511,6 +511,40 @@ impl Host {
         self.send_multitrack();
     }
 
+    /// **The loop switch changed while the multitrack plays** (`L`): the pass
+    /// in progress loops over `range` or the whole multitrack, or goes on to
+    /// its end, from where it stands.
+    pub fn reloop_multitrack(&mut self, range: Option<(f64, f64)>, looping: bool) {
+        let Some(multitrack) = self.instance.multitrack.as_mut() else {
+            return;
+        };
+        let steps = multitrack.set_loop(range, looping);
+        self.instance.run.push(Server::Sound, steps);
+    }
+
+    /// **The loop switch changed while the roll of `source` plays** (`L`): the
+    /// pass in progress loops over `range` (beats) or every note, or goes on
+    /// to its end, from where it stands.
+    pub fn reloop_notes(&mut self, source: SourceId, range: Option<(f64, f64)>, looping: bool) {
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let (Some(shared), Some(playback)) = (
+            owner.sequences.get(&source).cloned(),
+            self.instance.notes.as_mut(),
+        ) else {
+            return;
+        };
+        let rate = owner.multitrack_look().rate;
+        let steps = playback.set_loop(
+            &shared.lock().unwrap_or_else(|e| e.into_inner()),
+            range,
+            looping,
+            rate,
+        );
+        self.instance.run.push(Server::Sound, steps);
+    }
+
     /// **Transport `transport` rolls or not, as the engine said**: the
     /// multitrack's playback or the roll's takes it as the truth.
     pub(crate) fn transport_rolled(&mut self, transport: i32, rolling: bool) {

@@ -147,6 +147,15 @@ pub enum TransportVerb {
         /// Whether the loop switch is on.
         looping: bool,
     },
+    /// **The loop switch changed** (`L`): a pass in progress now loops over
+    /// the time range a sweep left or the whole multitrack, or goes on to its
+    /// end -- from where it stands. Stopped, nothing: the next play reads it.
+    Loop {
+        /// The time range a sweep left, `[start, end]` in seconds.
+        range: Option<(f64, f64)>,
+        /// Whether the loop switch is on.
+        looping: bool,
+    },
     /// Halt and go back to the mark: the position cursor, not the top.
     Stop {
         /// The mark, in seconds.
@@ -375,9 +384,10 @@ impl MultitrackEditor {
     }
 
     /// Whether a message on `widget` tagged `tag` is this editor's to answer:
-    /// one of its widgets, or its window's own `play` -- the space bar.
+    /// one of its widgets, or its window's own `play` and `loop` -- the space
+    /// bar and `L`.
     pub fn answers(&self, widget: i32, tag: &str) -> bool {
-        self.owns(widget) || (self.window == Some(widget) && tag == PLAY_KEY)
+        self.owns(widget) || (self.window == Some(widget) && (tag == PLAY_KEY || tag == LOOP_KEY))
     }
 
     /// **Rewind**: the position cursor back at the top, and a stopped
@@ -620,6 +630,13 @@ impl MultitrackEditor {
             });
             return (None, Vec::new());
         }
+        if self.window.map(i64::from) == Some(widget) && tag == LOOP_KEY {
+            out.transport = Some(TransportVerb::Loop {
+                range: self.range,
+                looping: values.first().is_some_and(|v| number(v) != 0.0),
+            });
+            return (None, Vec::new());
+        }
         if tag == "click"
             && let Some(controls) = self.controls
         {
@@ -783,6 +800,10 @@ impl MultitrackEditor {
 
 /// The tag the host's space bar reaches a window with.
 pub const PLAY_KEY: &str = "play";
+
+/// The tag the host's `L` reaches a window with, the loop switch's new state
+/// beside it.
+pub const LOOP_KEY: &str = "loop";
 
 /// **The editor's tables as one**: which buffer each source was read into, how
 /// many frames each take holds, and the segments each join it knows is made of.
@@ -1369,6 +1390,21 @@ mod tests {
             })
         );
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
+    }
+
+    /// **`L` is the window's too**: the loop switch's new state and the time
+    /// range, for the pass in progress.
+    #[test]
+    fn the_loop_key_asks_the_pass_in_progress_to_follow() {
+        let mut ed = editor();
+        let out = ed.event(&event(39, 2, 1, LOOP_KEY, vec![json!(1)]), 1);
+        assert_eq!(
+            out.transport,
+            Some(TransportVerb::Loop {
+                range: None,
+                looping: true
+            })
+        );
     }
 
     /// **A sweep's time range is what the space bar plays**, with the loop

@@ -65,6 +65,8 @@ interface Outcome {
     locate?: number;
     selection?: unknown;
     play?: Play;
+    /** What `L` asks of a pass in progress: how it ends now. */
+    pass?: unknown;
     cue?: number;
 }
 
@@ -571,6 +573,10 @@ export class AudioEditor extends Editor<Buffer> {
         }
         const play = outcome.play;
         if (play !== undefined) domain.after(() => this.play(play));
+        const pass = outcome.pass;
+        // `L`: the pass in progress ends as the switch now says; a stopped
+        // playback reads it on its next play.
+        if (pass !== undefined) domain.after(() => this.playback.call("pass", { pass }).then(() => {}));
         const cue = outcome.cue;
         if (cue !== undefined) domain.after(() => this.cue(cue));
         if (outcome.locate !== undefined) {

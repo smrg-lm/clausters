@@ -600,6 +600,11 @@ class MultitrackEditor(Editor):
             else:
                 self.playback.play(range=verb.get("range"),
                                    looping=bool(verb.get("looping")))
+        elif kind == "loop":
+            # `L`: the pass in progress loops, or stops looping, from where it
+            # stands; a stopped transport reads the switch on its next play.
+            self.playback.set_loop(range=verb.get("range"),
+                                   looping=bool(verb.get("looping")))
         elif kind == "stop":
             self.playback.stop()
         elif kind == "cue":
