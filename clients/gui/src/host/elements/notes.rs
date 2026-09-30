@@ -2125,6 +2125,30 @@ mod tests {
         assert!(inside.h < bend.h, "the pressure is inside the box");
     }
 
+    /// **A note's curve runs past its off**, into the release: the layer
+    /// reaches its last point while the note's box stays its on-to-off span.
+    #[test]
+    fn a_layer_reaches_past_its_note_and_the_box_does_not() {
+        let m = Metrics::default();
+        let r = roll(
+            r#"{"notes":[0.0,50.0,60.0,100.0,0.0],"note_ids":[7],
+                "layers":["p","7","pressure",0.0,1.0,false],
+                "points":["p",0.0,0.5,1,0.0,"p",80.0,0.0,1,0.0]}"#,
+        );
+        let placed = r.curves_on_screen(rect(), pianoroll::KEYBOARD_W, &m, axis(100.0));
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        let nav = r.view(axis(100.0));
+        let boxed = pianoroll::note_rect(grid, &nav, 0.0, &r.notes[0], r.axis(&m)).unwrap();
+        let (_, layer, space) = placed.iter().find(|(n, ..)| *n == "p").unwrap();
+        assert!((layer.x - boxed.x).abs() < 1e-3);
+        assert!(
+            (layer.w - boxed.w * 80.0 / 50.0).abs() < 1e-2,
+            "the layer reaches its last point"
+        );
+        assert!(space.span >= 80.0);
+        assert_eq!(r.notes[0].dur, 50.0, "the note is still its on and its off");
+    }
+
     /// **An MPE note is painted at its bend, and follows it**: a zone note
     /// starts at its key plus its bend, and a retune moves the held note.
     #[test]

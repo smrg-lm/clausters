@@ -645,9 +645,15 @@ opened it.
       all `curve` bodies; both clients' `EventSequence` add and remove them
       (`add_lane`/`addLane`, `add_expression`/`addExpression`), and both
       `pianoroll` builders take the three props.)*
-    - ⬜ **X3.11b - The scopes in the editor.** A lane's channel; an
-      expression's layer past its note's off, the box unchanged; the per-note
-      curves offered by the destination.
+    - ✅ **X3.11b - The scopes in the editor.** A lane's channel; an
+      expression's layer past its note's off, the box unchanged. *(Shipped
+      2026-09-30: a lane's target takes `channel`, labelled on its row
+      counted from 1; a note's layer reaches its last point and a hand
+      dragging that point lengthens it, the box drawn from the note's on and
+      off as before. The per-note curves offered by the destination moved to
+      X3.11d by the user's choice: the editor plays only on the server today,
+      where every per-note control is legal, so there is nothing to restrict
+      until it has a MIDI destination.)*
     - ⬜ **X3.11c - Heard.** The shared tabulation; a lane's reader and bus
       mapped by its channel's notes, an expression's reader per note, the bend
       summed -- in the crate's notes playback and the multitrack's notes
@@ -655,7 +661,11 @@ opened it.
     - ⬜ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
       read (a zone's member channels into per-note curves -- the half of
       `M35`'s acceptance moved here), and curves into messages when a
-      sequence is written or played as MIDI (MPE for a per-note bend).
+      sequence is written or played as MIDI (MPE for a per-note bend). With
+      the editor's MIDI destination comes the rule deferred from X3.11b: the
+      roll offers only the per-note curves that destination can say, and it
+      **shows which MIDI it is editing** -- 1.0, 2.0 or MPE -- which helps the
+      reading (the user, 2026-09-30).
     - ⬜ **X3.11e - Between the scopes.** The two edits: a lane into its
       notes' expression, and the notes' expression into a lane, refused under
       overlap.

@@ -97,8 +97,9 @@ timeline = Timeline([
 # `edit(timeline)` renders the timeline into the events it plays and opens
 # them as a `clausters.gui.editing.NotesEditor`: one roll, each note with its
 # id. Here the render is its own line, so the sequence gets its curves before
-# it opens: a CC lane over all of it, and a bend on its first note that glides
-# up two semitones over a beat.
+# it opens: a CC lane on the first channel, and a bend on its first note that
+# glides up two semitones while the note is held and falls back one in its
+# release -- a note's curve runs past its box, which is its on and its off.
 
 # %%
 # `activate` is what makes this session the **ambient** one, and the free-standing
@@ -107,9 +108,9 @@ timeline = Timeline([
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 notes = timeline.render_events()   # what the roll edits, in place
-notes.add_lane({"cc": 74}, [(0.0, 20.0), (4.0, 110.0)], name="brightness")
+notes.add_lane({"cc": 74, "channel": 0}, [(0.0, 20.0), (4.0, 110.0)], name="brightness")
 first = notes.entries()[0][0]
-notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (1.0, 2.0)])
+notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
 editor = edit(notes,
               sample_rate=session.server.query_info().nominal_sample_rate,
               title="notes")

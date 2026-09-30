@@ -175,9 +175,10 @@ export class EventSequence {
      * Adds a curve over the whole sequence -- a lane -- and answers its id.
      * `target` says what it moves: `{cc: 74}` (0 to 127), `{bend: true}`
      * (semitones), `{pressure: true}`, `{timbre: true}` (0 to 1) or
-     * `{control: "cutoff"}`, with `min`/`max` to override the range. `points`
-     * are `[beat, value]` pairs; `name` labels it. The notes editor draws it as
-     * a row under the roll.
+     * `{control: "cutoff"}`, with `min`/`max` to override the range and
+     * `channel` for the one channel it acts on (counted from 0, as a note's;
+     * without it, every channel). `points` are `[beat, value]` pairs; `name`
+     * labels it. The notes editor draws it as a row under the roll.
      */
     addLane(
         target: Record<string, unknown>,
@@ -190,8 +191,9 @@ export class EventSequence {
      * Adds a curve over the event with this id -- its own expression, as MPE
      * gives a note its bend, pressure and timbre -- and answers its id. `target`
      * as for {@link EventSequence.addLane}; `points` are `[beat, value]` pairs,
-     * each beat counted from the event's start. The notes editor draws it
-     * inside the note, and a bend in the plane over the pitches it spans.
+     * each beat counted from the event's start, and free to run past the
+     * note's end into its release. The notes editor draws it inside the note,
+     * and a bend in the plane over the pitches it spans.
      */
     addExpression(
         id: number,

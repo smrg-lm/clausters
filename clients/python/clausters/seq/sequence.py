@@ -128,16 +128,19 @@ class EventSequence:
         ``target`` says what it moves: ``{"cc": 74}`` (0 to 127), ``{"bend":
         True}`` (semitones), ``{"pressure": True}``, ``{"timbre": True}``
         (0 to 1) or ``{"control": "cutoff"}``, with ``min``/``max`` to override
-        the range. ``points`` are ``(beat, value)`` pairs; ``name`` labels it.
-        The notes editor draws it as a row under the roll."""
+        the range and ``channel`` for the one channel it acts on (counted from
+        0, as a note's; without it, every channel). ``points`` are ``(beat,
+        value)`` pairs; ``name`` labels it. The notes editor draws it as a row
+        under the roll."""
         return self._curve({"intent": "lane"}, target, points, name)
 
     def add_expression(self, id: int, target: dict, points=(), name: str | None = None) -> int:
         """Add a curve over the event with this id -- its own expression, as
         MPE gives a note its bend, pressure and timbre -- and answer its id.
         ``target`` as for `add_lane`; ``points`` are ``(beat, value)`` pairs,
-        each beat counted from the event's start. The notes editor draws it
-        inside the note, and a bend in the plane over the pitches it spans."""
+        each beat counted from the event's start, and free to run past the
+        note's end into its release. The notes editor draws it inside the
+        note, and a bend in the plane over the pitches it spans."""
         return self._curve({"intent": "expression", "id": int(id)}, target, points, name)
 
     def remove_lane(self, lane: int) -> None:

@@ -30,10 +30,13 @@
 //!   being lost.
 //! - **Curve lanes**: a CC, bend or pressure curve over the whole sequence,
 //!   each a [`multitrack::Automation`](crate::multitrack::Automation) whose
-//!   points are on the sequence's beats.
+//!   points are on the sequence's beats -- a channel's function, as MIDI's are,
+//!   on the one channel its target names (`channel`) or on every one.
 //! - **A note's own expression**: curves hung on one event, their points in
 //!   beats from the note's start, as a region's automation is measured from the
-//!   region's -- which is where MPE's per-note bend and pressure will live.
+//!   region's -- which is where MPE's per-note bend and pressure live. Unlike
+//!   a region's, a note's curve may run past its end: a note's end is its
+//!   release, not its silence.
 //!
 //! A sequence is also a source a session can hold
 //! ([`Location::Events`](crate::session::Location::Events)), so a multitrack's

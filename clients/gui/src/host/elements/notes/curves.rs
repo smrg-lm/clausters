@@ -4,7 +4,8 @@
 //! holds automation: a **lane** is a curve over the whole sequence (a CC, a
 //! bend, a pressure, a control), drawn as a row of its own under the plane;
 //! a note's **expression** is a curve over that note alone, drawn as a layer
-//! inside its box. A bend is the one expression drawn in the plane rather than
+//! inside its box -- and past the box's end when it runs into the release,
+//! the box itself staying the span between the note's on and its off. A bend is the one expression drawn in the plane rather than
 //! normalized inside the box: its layer spans the pitches its range covers, so
 //! the line is the trajectory the note's pitch takes.
 //!
@@ -174,7 +175,7 @@ impl Notes {
     /// **Where every drawn curve is, and the space it is drawn against**: the
     /// rows on the roll's own axis, and each layer over its note -- a bend's
     /// over the pitches its range spans, the rest inside the box -- measured
-    /// from the note's start.
+    /// from the note's start and reaching its last point.
     pub(super) fn curves_on_screen(
         &self,
         rect: Rect,
@@ -199,7 +200,21 @@ impl Notes {
             let Some(note) = self.notes.iter().find(|n| n.id == layer.note && n.id != 0) else {
                 continue;
             };
-            let Some(boxed) = pianoroll::note_rect(grid, &nav, 0.0, note, axis) else {
+            // **A note's curve may run past its off**, into the release: the
+            // layer reaches its last point when that is later than the note's
+            // end. The box itself stays the span between the on and the off --
+            // it draws the message, not what sounds.
+            let reach = self
+                .bodies
+                .get(&layer.name)
+                .and_then(|b| b.points().last())
+                .map_or(0.0, |p| p.time)
+                .max(note.dur);
+            let tail = Note {
+                dur: reach,
+                ..*note
+            };
+            let Some(boxed) = pianoroll::note_rect(grid, &nav, 0.0, &tail, axis) else {
                 continue;
             };
             let place = if layer.pitch {
@@ -212,8 +227,10 @@ impl Notes {
             } else {
                 boxed
             };
-            let local = track::clip_local_view(grid, &nav, note.start, note.dur, boxed);
-            let mut space = TimeSpace::of(local, note.dur);
+            // A point is kept from the note's start to the roll's end, so a
+            // hand dragging the last one out lengthens the tail.
+            let local = track::clip_local_view(grid, &nav, note.start, reach, boxed);
+            let mut space = TimeSpace::of(local, (span - note.start).max(reach));
             space.active = active(&layer.name);
             out.push((layer.name.as_str(), place, space));
         }

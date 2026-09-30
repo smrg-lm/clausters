@@ -29,14 +29,16 @@
 //!   the whole lane as the hand left it.
 //! - `osc`: the marker lane, `time label` pairs, and its report the same --
 //!   matched by label, since a marker is the message it sends.
-//! - `curves`: the sequence's lanes (CC, bend, pressure, a control), flat
+//! - `curves`: the sequence's lanes (CC, bend, pressure, a control, each on
+//!   one channel or on every one), flat
 //!   `name label min max height` quintuples, a row each under the plane;
 //!   `layers`: each note's own curves, flat `name note label min max pitch`
 //!   sextuples (`pitch` for a bend, drawn in the plane over its range);
 //!   `points`: every curve's break-points, flat `name at value shape curve`,
-//!   `at` in view units -- a note's curve measured from the note's start. A
-//!   curve's name is its id. A `points` report comes back in the same shape,
-//!   every curve's points as the hand left them.
+//!   `at` in view units -- a note's curve measured from the note's start, and
+//!   free to run past its off into the release. A curve's name is its id. A
+//!   `points` report comes back in the same shape, every curve's points as the
+//!   hand left them.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -217,7 +219,8 @@ pub const CURVE_H: f64 = 40.0;
 /// what it moves -- `{"cc": n}` (0 to 127), `{"bend": ...}` (semitones, 2
 /// either way unless the target says), `{"pressure": ...}` or `{"timbre":
 /// ...}` (0 to 1), `{"control": name}` -- and an explicit `min`/`max` on it,
-/// or a name on the curve, wins.
+/// or a name on the curve, wins. A lane's `channel` (the notes' own count,
+/// from 0) is the channel it acts on, and none is every channel.
 fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
     let target = curve.target.0.as_object();
     let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
@@ -236,6 +239,12 @@ fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
             .and_then(Value::as_str)
             .unwrap_or("curve");
         (name.to_string(), 0.0, 1.0, false)
+    };
+    // A lane's channel is part of what it is on, as in MIDI, and shown the
+    // way MIDI shows a channel: counted from 1.
+    let label = match read("channel") {
+        Some(channel) => format!("{label} ch {}", channel + 1.0),
+        None => label,
     };
     (
         curve.name.clone().unwrap_or(label),

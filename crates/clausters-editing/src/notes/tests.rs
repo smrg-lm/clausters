@@ -276,6 +276,19 @@ fn a_roll_draws_the_lanes_and_each_notes_curves() {
     assert_eq!(at_of(&bend), vec![0.0, 50.0]);
 }
 
+/// **A lane names its channel**, counted from 1 as MIDI shows one.
+#[test]
+fn a_lane_on_a_channel_says_which() {
+    let mut s = sequence();
+    let lane = Automation::new(
+        clausters_document::NodeId(0),
+        Opaque(json!({"cc": 74, "channel": 1})),
+    );
+    s.edit(EventsIntent::Lane { automation: lane }).unwrap();
+    let p = project(&s, &YDomain::midi(), &Axis::constant(100.0));
+    assert_eq!(p.curves[1], json!("CC 74 ch 2"));
+}
+
 /// **A `points` report is the one curve it changed**, back in beats.
 #[test]
 fn a_points_report_is_the_edit_of_the_curve_it_changed() {
