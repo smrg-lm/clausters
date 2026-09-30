@@ -241,3 +241,65 @@ fn a_sequence_goes_to_midi_and_back() {
     );
     assert!(mutates(r#"{"verb":"loadmidi"}"#) && !mutates(r#"{"verb":"midi"}"#));
 }
+
+#[test]
+fn a_lane_and_a_notes_curve_are_set_whole_and_removed() {
+    use crate::NodeId;
+    use crate::multitrack::Automation;
+    let mut sequence = EventSequence::new(vec![Event::new(0.0, json!({"midinote": 60}))]);
+    let note = sequence.events[0].id;
+    let mut cc = Automation::new(NodeId(0), Opaque(json!({"cc": 74})));
+    cc.points.push(crate::Point {
+        at: 0.0,
+        value: 0.5,
+        data: Opaque::none(),
+    });
+    let lane = sequence
+        .edit(EventsIntent::Lane {
+            automation: cc.clone(),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    assert!(lane > note, "a curve's id comes off the events' counter");
+    cc.id = NodeId(lane);
+    cc.points.push(crate::Point {
+        at: 1.0,
+        value: 1.0,
+        data: Opaque::none(),
+    });
+    sequence
+        .edit(EventsIntent::Lane {
+            automation: cc.clone(),
+        })
+        .unwrap();
+    assert_eq!(sequence.lanes.len(), 1, "set whole, not added again");
+    assert_eq!(sequence.lanes[0].points.len(), 2);
+
+    let bend = Automation::new(NodeId(0), Opaque(json!({"bend": true})));
+    let curve = sequence
+        .edit(EventsIntent::Expression {
+            id: note,
+            automation: bend,
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    assert_eq!(sequence.events[0].expression[0].id, NodeId(curve));
+    sequence
+        .edit(EventsIntent::RemoveExpression {
+            id: note,
+            lane: NodeId(curve),
+        })
+        .unwrap();
+    assert!(sequence.events[0].expression.is_empty());
+    sequence
+        .edit(EventsIntent::RemoveLane { lane: NodeId(lane) })
+        .unwrap();
+    assert!(sequence.lanes.is_empty());
+    assert!(
+        sequence
+            .edit(EventsIntent::RemoveLane { lane: NodeId(99) })
+            .is_err()
+    );
+}

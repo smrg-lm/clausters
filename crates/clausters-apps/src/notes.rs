@@ -56,6 +56,9 @@ pub fn props(
         ..Roll::default()
     });
     out.insert("note_ids".into(), json!(drawn.note_ids));
+    out.insert("curves".into(), json!(drawn.curves));
+    out.insert("layers".into(), json!(drawn.layers));
+    out.insert("points".into(), json!(drawn.points));
     out.remove("type");
     let notes: Vec<f64> = out
         .get("notes")
@@ -120,7 +123,7 @@ fn y_axis(props: &mut Map<String, Value>, notes: &[f64], domain: &YDomain) {
 }
 
 /// **What the roll is corrected with** after the sequence changed: the notes,
-/// their ids, the markers and the tempo map, each stated even when empty -- a
+/// their ids, the markers, the curves and their points and the tempo map, each stated even when empty -- a
 /// roll whose last note was removed is told so. The pitch window is left as
 /// the hand has it.
 pub fn correction(sequence: &EventSequence, domain: &YDomain, rate: f64) -> Map<String, Value> {
@@ -130,6 +133,9 @@ pub fn correction(sequence: &EventSequence, domain: &YDomain, rate: f64) -> Map<
     out.insert("notes".into(), json!(drawn.notes));
     out.insert("note_ids".into(), json!(drawn.note_ids));
     out.insert("osc".into(), json!(drawn.osc));
+    out.insert("curves".into(), json!(drawn.curves));
+    out.insert("layers".into(), json!(drawn.layers));
+    out.insert("points".into(), json!(drawn.points));
     if let Ok(map) = serde_json::to_string(&axis.map) {
         out.insert("tempo_map".into(), json!(map));
     }

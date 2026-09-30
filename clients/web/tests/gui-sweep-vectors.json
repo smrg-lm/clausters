@@ -1592,6 +1592,87 @@
  },
  {
   "builder": "notes",
+  "option": "curves",
+  "value": [
+   [
+    "lane",
+    "CC 1",
+    0.0,
+    127.0,
+    40.0
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "curves": [
+    "lane",
+    "CC 1",
+    0.0,
+    127.0,
+    40.0
+   ]
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "layers",
+  "value": [
+   [
+    "bend",
+    7,
+    "bend",
+    -2.0,
+    2.0,
+    true
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "layers": [
+    "bend",
+    7,
+    "bend",
+    -2.0,
+    2.0,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "points",
+  "value": [
+   [
+    "lane",
+    0.0,
+    1.0
+   ],
+   [
+    "bend",
+    1.0,
+    0.0,
+    5,
+    4.0
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "points": [
+    "lane",
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    "bend",
+    1.0,
+    0.0,
+    5.0,
+    4.0
+   ]
+  }
+ },
+ {
+  "builder": "notes",
   "option": "osc_lane",
   "value": true,
   "tree": {
@@ -2353,6 +2434,87 @@
   "tree": {
    "type": "notes",
    "snap": 3.5
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "curves",
+  "value": [
+   [
+    "lane",
+    "CC 1",
+    0.0,
+    127.0,
+    40.0
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "curves": [
+    "lane",
+    "CC 1",
+    0.0,
+    127.0,
+    40.0
+   ]
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "layers",
+  "value": [
+   [
+    "bend",
+    7,
+    "bend",
+    -2.0,
+    2.0,
+    true
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "layers": [
+    "bend",
+    7,
+    "bend",
+    -2.0,
+    2.0,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "points",
+  "value": [
+   [
+    "lane",
+    0.0,
+    1.0
+   ],
+   [
+    "bend",
+    1.0,
+    0.0,
+    5,
+    4.0
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "points": [
+    "lane",
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    "bend",
+    1.0,
+    0.0,
+    5.0,
+    4.0
+   ]
   }
  },
  {

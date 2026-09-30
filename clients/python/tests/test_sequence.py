@@ -124,3 +124,21 @@ def test_a_score_reads_into_a_sequence_and_a_sequence_engraves():
     assert [(beat, e["midinote"], e["dur"]) for beat, e in back] == [(0.0, 60, 1.0),
                                                                       (1.0, 64, 1.0)], \
         "the osc event has no pitch, so no note on the page"
+
+
+def test_a_lane_and_a_notes_expression_are_curves_the_sequence_holds():
+    seq = _sequence()
+    first = seq.entries()[0][0]
+    lane = seq.add_lane({"cc": 74}, [(0.0, 0.0), (2.0, 127.0)], name="brightness")
+    bend = seq.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.5, 1.0)])
+    data = seq.data()
+    assert [(c["id"], c["name"], len(c["points"])) for c in data["lanes"]] == [
+        (lane, "brightness", 2)]
+    held = next(e for e in data["events"] if e["id"] == first)
+    assert [c["id"] for c in held["expression"]] == [bend]
+    assert lane != bend != first, "one counter for events and curves"
+    seq.remove_expression(first, bend)
+    seq.remove_lane(lane)
+    data = seq.data()
+    assert not data.get("lanes")
+    assert not next(e for e in data["events"] if e["id"] == first).get("expression")

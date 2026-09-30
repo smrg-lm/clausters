@@ -136,9 +136,10 @@ export class EventSequence {
 
     /**
      * Applies one edit in the sequence's vocabulary (`add`, `remove`, `move`,
-     * `set`, `keys`, `setevents`, `tempo`, `restore`) and answers
-     * `{applied, current}` -- `current` the edit that puts it back, read before
-     * this one landed -- with `id` for an add. Throws when refused.
+     * `set`, `keys`, `setevents`, `tempo`, `lane`, `removelane`, `expression`,
+     * `removeexpression`, `restore`) and answers `{applied, current}` --
+     * `current` the edit that puts it back, read before this one landed -- with
+     * `id` for an add, a lane or an expression. Throws when refused.
      */
     apply(intent: Record<string, unknown>): { applied: boolean; current: unknown; id?: number } {
         return this.call("apply", { intent });
@@ -166,6 +167,63 @@ export class EventSequence {
      */
     set(id: number, key: string, value: unknown): void {
         this.apply({ intent: "set", id, key, value });
+    }
+
+    // ---- curves ----
+
+    /**
+     * Adds a curve over the whole sequence -- a lane -- and answers its id.
+     * `target` says what it moves: `{cc: 74}` (0 to 127), `{bend: true}`
+     * (semitones), `{pressure: true}`, `{timbre: true}` (0 to 1) or
+     * `{control: "cutoff"}`, with `min`/`max` to override the range. `points`
+     * are `[beat, value]` pairs; `name` labels it. The notes editor draws it as
+     * a row under the roll.
+     */
+    addLane(
+        target: Record<string, unknown>,
+        { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
+    ): number {
+        return this.curve({ intent: "lane" }, target, points, name);
+    }
+
+    /**
+     * Adds a curve over the event with this id -- its own expression, as MPE
+     * gives a note its bend, pressure and timbre -- and answers its id. `target`
+     * as for {@link EventSequence.addLane}; `points` are `[beat, value]` pairs,
+     * each beat counted from the event's start. The notes editor draws it
+     * inside the note, and a bend in the plane over the pitches it spans.
+     */
+    addExpression(
+        id: number,
+        target: Record<string, unknown>,
+        { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
+    ): number {
+        return this.curve({ intent: "expression", id }, target, points, name);
+    }
+
+    /** Removes the lane with this id. */
+    removeLane(lane: number): void {
+        this.apply({ intent: "removelane", lane });
+    }
+
+    /** Removes curve `lane` from the event with this id. */
+    removeExpression(id: number, lane: number): void {
+        this.apply({ intent: "removeexpression", id, lane });
+    }
+
+    private curve(
+        intent: Record<string, unknown>,
+        target: Record<string, unknown>,
+        points: readonly (readonly [number, number])[],
+        name: string | undefined,
+    ): number {
+        const automation: Record<string, unknown> = {
+            id: 0,
+            target: { ...target },
+            points: points.map(([at, value]) => ({ at: Number(at), value: Number(value) })),
+        };
+        if (name !== undefined) automation.name = String(name);
+        return Number(this.apply({ ...intent, automation }).id);
     }
 
     // ---- MIDI files ----

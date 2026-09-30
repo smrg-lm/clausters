@@ -2581,7 +2581,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
     return node("field", id=id, h=h, **extra, **props)
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
-              snap: float | None = None, note_ids=None,
+              snap: float | None = None, note_ids=None, curves=None, layers=None, points=None,
               osc_lane: bool | None = None, midi_in: bool | None = None, link: int | None = None,
               autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
@@ -2624,6 +2624,21 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     ``markers`` are the labelled points on the shared time axis, drawn in this
     roll's own ruler strip when it has one (see `timeruler`, which documents
     them).
+
+    Curves, drawn and edited as a `multitrack`'s automation is:
+
+    - ``curves`` -- the **lanes**, curves over the whole roll, each a row under
+      the grid: ``(name, label, min, max, height)``.
+    - ``layers`` -- each note's own curves: ``(name, note_id, label, min, max,
+      pitch)``, drawn inside the note named by ``note_id`` (see ``note_ids``) --
+      or, with ``pitch`` true (a bend, in semitones), in the grid over the
+      pitches ``min..max`` from the note, so the line is the note's pitch.
+    - ``points`` -- every curve's break-points, ``(curve, time, value, shape,
+      amount)`` as a `multitrack`'s are, times in timeline samples (a layer's
+      counted from its note's start).
+
+    A gesture on a curve comes back once, on release, as a ``"points"`` event:
+    every curve's points, flat ``name time value shape curve``.
 
     **A plain drag over the grid sweeps the notes** the rectangle covered -- the
     rectangles the notes *are*, the same gesture a patcher's canvas has over its
@@ -2675,6 +2690,15 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         y_start=y_start, y_len=y_len))
     if note_ids is not None:
         extra["note_ids"] = [int(i) for i in note_ids]
+    if curves is not None:
+        extra["curves"] = [v for name, text, lo, hi, height in curves
+                           for v in (str(name), str(text), float(lo), float(hi), float(height))]
+    if layers is not None:
+        extra["layers"] = [v for name, note, text, lo, hi, pitch in layers
+                           for v in (str(name), int(note), str(text), float(lo), float(hi),
+                                     1 if pitch else 0)]
+    if points is not None:
+        extra["points"] = _flat_curve_points(points)
     if osc_lane is not None:
         extra["osc_lane"] = 1 if osc_lane else 0
     if midi_in is not None:

@@ -227,7 +227,7 @@ impl NotesEditor {
             }
             return (None, Vec::new());
         }
-        if !matches!(tag, "notes" | "osc") {
+        if !matches!(tag, "notes" | "osc" | "points") {
             return (None, Vec::new());
         }
         if !self.editable {

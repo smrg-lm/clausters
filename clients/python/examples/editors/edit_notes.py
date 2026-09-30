@@ -46,6 +46,13 @@ same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
 one *there* is refused and says why: the lane has no way to type an address.
 
+**Curves are drawn and edited like a multitrack's automation.** The row under
+the grid, *brightness*, is a lane of the sequence -- a CC 74 curve over all of
+it -- and the first note carries a curve of its own, a **bend**, drawn in the
+plane as the pitch it glides to. **Drag a point** to move it, **Ctrl+click** to
+add one or remove the one under the cursor; one gesture is one edit, and
+Ctrl+Z takes it back.
+
 **A note keeps what the roll cannot draw.** Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
@@ -85,10 +92,13 @@ timeline = Timeline([
 ])
 
 # %% [markdown]
-# ## One verb
+# ## One verb, spelled out
 #
-# The timeline is rendered into the events it plays, and those open as a
-# `clausters.gui.editing.NotesEditor`: one roll, each note with its id.
+# `edit(timeline)` renders the timeline into the events it plays and opens
+# them as a `clausters.gui.editing.NotesEditor`: one roll, each note with its
+# id. Here the render is its own line, so the sequence gets its curves before
+# it opens: a CC lane over all of it, and a bend on its first note that glides
+# up two semitones over a beat.
 
 # %%
 # `activate` is what makes this session the **ambient** one, and the free-standing
@@ -96,10 +106,13 @@ timeline = Timeline([
 # `edit` resolves its host.
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
-editor = edit(timeline,
+notes = timeline.render_events()   # what the roll edits, in place
+notes.add_lane({"cc": 74}, [(0.0, 20.0), (4.0, 110.0)], name="brightness")
+first = notes.entries()[0][0]
+notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (1.0, 2.0)])
+editor = edit(notes,
               sample_rate=session.server.query_info().nominal_sample_rate,
               title="notes")
-notes = editor.sequence        # what the roll edits, in place
 
 # %% [markdown]
 # ## The same notes, in hertz

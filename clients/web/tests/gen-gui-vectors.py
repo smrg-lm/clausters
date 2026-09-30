@@ -281,6 +281,14 @@ REQUIRED: dict = {}
 #: two clients stringifying a float, which is a difference about `str(0.0)` and
 #: not about the builder.
 PER_BUILDER = {
+    # A roll's curves: a lane and a note's bend, the points by curve name,
+    # under both of the roll builder's names.
+    ("pianoroll", "curves"): [["lane", "CC 1", 0.0, 127.0, 40.0]],
+    ("pianoroll", "layers"): [["bend", 7, "bend", -2.0, 2.0, True]],
+    ("pianoroll", "points"): [["lane", 0.0, 1.0], ["bend", 1.0, 0.0, 5, 4.0]],
+    ("notes", "curves"): [["lane", "CC 1", 0.0, 127.0, 40.0]],
+    ("notes", "layers"): [["bend", 7, "bend", -2.0, 2.0, True]],
+    ("notes", "points"): [["lane", 0.0, 1.0], ["bend", 1.0, 0.0, 5, 4.0]],
     ("multitrack", "notes"): [["a", 0.0, 1.0, 60], ["a", 1.0, 0.5, 64, 90, 1]],
     ("multitrack", "curves"): [["gain", "one", "Gain", 0.0, 1.0, 40.0],
                                ["pan", "one"]],

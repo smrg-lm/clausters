@@ -646,6 +646,27 @@ pub struct NoteHit {
     pub part: Part,
 }
 
+/// **Where note `n` is drawn**: its box as `draw_notes` paints it, clamped to
+/// what of it the grid shows -- `None` when none of it does. What a note's own
+/// contents (its expression) are drawn inside, and pressed through.
+pub fn note_rect(grid: Rect, nav: &View, offset: f64, n: &Note, axis: Pitches) -> Option<Rect> {
+    if !axis.visible(n.pitch) {
+        return None;
+    }
+    let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
+    let x0 = (to_x(offset + n.start, nav, grid) as f32).clamp(x_lo, x_hi);
+    let x1 = (to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32).clamp(x_lo, x_hi);
+    if x1 <= x0 {
+        return None;
+    }
+    let (y, h) = visible_band(
+        axis.y(axis.anchor(n.pitch), grid),
+        axis.note_height(grid),
+        grid,
+    )?;
+    Some(Rect::new(x0, y, x1 - x0, h))
+}
+
 /// The note under `(x, y)` in the grid, if any -- the last drawn (topmost) match
 /// wins. Returns the edge part when the cursor is within `EDGE_PX` of a wide
 /// enough note's start/end, else the body.

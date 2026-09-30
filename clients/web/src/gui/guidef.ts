@@ -2600,6 +2600,18 @@ export function bpf(
  * the hand made). A note's velocity is drawn as its fill and set with Shift and
  * a vertical drag. `midiIn` arms live MIDI painting in the native host.
  *
+ * Curves, drawn and edited as a `multitrack`'s automation is: `curves` are the
+ * **lanes**, curves over the whole roll, each a row under the grid, as `[name,
+ * label, min, max, height]`; `layers` are each note's own curves, `[name,
+ * noteId, label, min, max, pitch]`, drawn inside the note named by `noteId`
+ * (see `noteIds`) -- or, with `pitch` true (a bend, in semitones), in the grid
+ * over the pitches `min..max` from the note, so the line is the note's pitch;
+ * `points` are every curve's break-points, `[curve, time, value, shape,
+ * amount]` as a `multitrack`'s are, times in timeline samples (a layer's
+ * counted from its note's start). A gesture on a
+ * curve comes back once, on release, as a `"points"` event: every curve's
+ * points, flat `name time value shape curve`.
+ *
  * **A plain drag over the grid sweeps the notes** the rectangle covered -- the
  * rectangles the notes *are*, the same gesture a patcher's canvas has over its
  * boxes and a lane has over its clips -- and it writes **no time span**. A
@@ -2614,13 +2626,16 @@ export function pianoroll(
         max?: number;
         snap?: number;
         noteIds?: readonly number[];
+        curves?: readonly (readonly [string, string, number, number, number])[];
+        layers?: readonly (readonly [string, number, string, number, number, boolean])[];
+        points?: CurvePointSpec;
         oscLane?: boolean;
         midiIn?: boolean;
         label?: string;
     } = {},
 ): GuiNode {
     const {
-        notes, osc, min, max, snap, noteIds, oscLane, midiIn,
+        notes, osc, min, max, snap, noteIds, curves, layers, points, oscLane, midiIn,
         label: text, ...timeline
     } = options;
     return node("notes", {
@@ -2630,6 +2645,17 @@ export function pianoroll(
             ["osc", held(osc, flatOsc)],
             ["snap", snap],
             ["note_ids", noteIds === undefined ? undefined : [...noteIds]],
+            [
+                "curves",
+                curves?.flatMap(([name, text, lo, hi, height]) => [name, text, lo, hi, height]),
+            ],
+            [
+                "layers",
+                layers?.flatMap(([name, note, text, lo, hi, pitch]) => [
+                    name, Math.trunc(note), text, lo, hi, pitch ? 1 : 0,
+                ]),
+            ],
+            ["points", points === undefined ? undefined : flatCurvePoints(points)],
             ["osc_lane", flag(oscLane)],
             ["midi_in", flag(midiIn)],
             ["label", text],

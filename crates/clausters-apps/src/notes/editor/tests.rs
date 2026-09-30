@@ -232,3 +232,45 @@ fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
     let high = low + len * (ceiling - floor);
     assert!(low <= 60.0 && high >= 64.0 && len < 1.0, "{low} {high}");
 }
+
+/// **A curve drawn on the roll is one edit of the sequence**: the window draws
+/// the lane, a `points` gesture lands on it, and the entry puts it back.
+#[test]
+fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
+    use clausters_document::NodeId;
+    use clausters_document::multitrack::Automation;
+    let sequence = shared();
+    let lane = sequence
+        .lock()
+        .unwrap()
+        .edit(EventsIntent::Lane {
+            automation: Automation::new(NodeId(0), Opaque(json!({"cc": 1}))),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    let mut e = editor(sequence.clone());
+    let tree = e.window(40);
+    assert_eq!(tree["children"][0]["curves"][0], json!(lane.to_string()));
+    let name = json!(lane.to_string());
+    let drawn = vec![
+        name.clone(),
+        json!(0.0),
+        json!(10.0),
+        json!(1),
+        json!(0.0),
+        name,
+        json!(100.0),
+        json!(90.0),
+        json!(1),
+        json!(0.0),
+    ];
+    let out = e.event(&gesture("points", drawn), 1);
+    assert!(out.changed);
+    let record = out.record.expect("an entry");
+    assert_eq!(record.label, "draw a curve");
+    let points = sequence.lock().unwrap().lanes[0].points.clone();
+    assert_eq!((points[1].at, points[1].value), (1.0, 90.0));
+    assert!(e.apply(&record.legs[0].backward));
+    assert!(sequence.lock().unwrap().lanes[0].points.is_empty());
+}

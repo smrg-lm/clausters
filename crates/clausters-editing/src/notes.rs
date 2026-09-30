@@ -29,6 +29,14 @@
 //!   the whole lane as the hand left it.
 //! - `osc`: the marker lane, `time label` pairs, and its report the same --
 //!   matched by label, since a marker is the message it sends.
+//! - `curves`: the sequence's lanes (CC, bend, pressure, a control), flat
+//!   `name label min max height` quintuples, a row each under the plane;
+//!   `layers`: each note's own curves, flat `name note label min max pitch`
+//!   sextuples (`pitch` for a bend, drawn in the plane over its range);
+//!   `points`: every curve's break-points, flat `name at value shape curve`,
+//!   `at` in view units -- a note's curve measured from the note's start. A
+//!   curve's name is its id. A `points` report comes back in the same shape,
+//!   every curve's points as the hand left them.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -37,6 +45,7 @@ use clausters_core::event::amp_of_velocity;
 use clausters_core::event::render::{self, Type};
 use clausters_core::tempomap::TempoMap;
 use clausters_document::events::{Event, EventSequence, EventsIntent};
+use clausters_document::multitrack::Automation;
 use clausters_document::{Beat, Opaque};
 
 use crate::events::{PAIR, label_of};
@@ -192,6 +201,65 @@ pub struct Projection {
     pub note_ids: Vec<u64>,
     /// The marker lane: `time label` pairs.
     pub osc: Vec<Value>,
+    /// The lanes: `name label min max height` quintuples.
+    pub curves: Vec<Value>,
+    /// The notes' curves: `name note label min max pitch` sextuples.
+    pub layers: Vec<Value>,
+    /// Every curve's points: `name at value shape curve` quintuples.
+    pub points: Vec<Value>,
+}
+
+/// How tall a lane's row under the plane is drawn.
+pub const CURVE_H: f64 = 40.0;
+
+/// **What a curve is drawn over**: its label, its value range, and whether
+/// it is a bend (drawn in the plane when it is a note's). The target says
+/// what it moves -- `{"cc": n}` (0 to 127), `{"bend": ...}` (semitones, 2
+/// either way unless the target says), `{"pressure": ...}` or `{"timbre":
+/// ...}` (0 to 1), `{"control": name}` -- and an explicit `min`/`max` on it,
+/// or a name on the curve, wins.
+fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
+    let target = curve.target.0.as_object();
+    let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
+    let read = |key: &str| target.and_then(|t| t.get(key)).and_then(Value::as_f64);
+    let (label, min, max, pitch) = if let Some(cc) = read("cc") {
+        (format!("CC {cc}"), 0.0, 127.0, false)
+    } else if has("bend") {
+        ("bend".to_string(), -2.0, 2.0, true)
+    } else if has("pressure") {
+        ("pressure".to_string(), 0.0, 1.0, false)
+    } else if has("timbre") {
+        ("timbre".to_string(), 0.0, 1.0, false)
+    } else {
+        let name = target
+            .and_then(|t| t.get("control"))
+            .and_then(Value::as_str)
+            .unwrap_or("curve");
+        (name.to_string(), 0.0, 1.0, false)
+    };
+    (
+        curve.name.clone().unwrap_or(label),
+        read("min").unwrap_or(min),
+        read("max").unwrap_or(max),
+        pitch,
+    )
+}
+
+/// A point as the wire carries it, `at` already in view units.
+fn point_values(name: &str, at: f64, point: &clausters_document::Point) -> [Value; 5] {
+    let data = point.data.0.as_object();
+    let read = |key: &str, default: f64| {
+        data.and_then(|d| d.get(key))
+            .and_then(Value::as_f64)
+            .unwrap_or(default)
+    };
+    [
+        json!(name),
+        json!(at),
+        json!(point.value),
+        json!(read("shape", 1.0)),
+        json!(read("curve", 0.0)),
+    ]
 }
 
 /// **What a roll draws of a sequence**: every event the domain places, as a
@@ -219,6 +287,38 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
             keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0),
         ]);
         out.note_ids.push(event.id);
+        let from = axis.units(event.at.0);
+        for curve in &event.expression {
+            let name = curve.id.0.to_string();
+            let (label, min, max, pitch) = curve_look(curve);
+            out.layers.extend([
+                json!(name),
+                json!(event.id),
+                json!(label),
+                json!(min),
+                json!(max),
+                json!(pitch),
+            ]);
+            for point in &curve.points {
+                let at = axis.units(event.at.0 + point.at) - from;
+                out.points.extend(point_values(&name, at, point));
+            }
+        }
+    }
+    for curve in &sequence.lanes {
+        let name = curve.id.0.to_string();
+        let (label, min, max, _) = curve_look(curve);
+        out.curves.extend([
+            json!(name),
+            json!(label),
+            json!(min),
+            json!(max),
+            json!(CURVE_H),
+        ]);
+        for point in &curve.points {
+            out.points
+                .extend(point_values(&name, axis.units(point.at), point));
+        }
     }
     out
 }
@@ -242,6 +342,9 @@ pub fn intake(
     axis: &Axis,
     domain: &YDomain,
 ) -> Intake {
+    if tag == "points" {
+        return curves(sequence, values, axis);
+    }
     let events = match tag {
         "notes" => notes(sequence, values, axis, domain),
         "osc" => match markers(sequence, values, axis) {
@@ -334,6 +437,97 @@ fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDoma
         out.push(event);
     }
     out
+}
+
+/// **A `points` gesture**: each curve the report names, with its points as
+/// the hand left them -- back to beats (a note's from its start) -- and the
+/// shape of each segment kept in the point's data. The one curve that changed
+/// is its own edit (`lane` or `expression`, which coalesces per curve); if a
+/// gesture changed more than one, the sequence is restated whole.
+fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
+    let mut reported: Map<String, Value> = Map::new();
+    for p in groups(values, 5) {
+        let name = text(&p[0]);
+        let entry = reported.entry(name).or_insert_with(|| json!([]));
+        if let Some(list) = entry.as_array_mut() {
+            list.push(json!([
+                number(&p[1]),
+                number(&p[2]),
+                number(&p[3]),
+                number(&p[4])
+            ]));
+        }
+    }
+    let points_of = |name: &str, beat_at: &dyn Fn(f64) -> f64| -> Vec<clausters_document::Point> {
+        reported
+            .get(name)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|p| {
+                let p = p.as_array()?;
+                let f = |i: usize| p.get(i).and_then(Value::as_f64).unwrap_or(0.0);
+                Some(clausters_document::Point {
+                    at: beat_at(f(0)),
+                    value: f(1),
+                    data: Opaque(json!({"shape": f(2), "curve": f(3)})),
+                })
+            })
+            .collect()
+    };
+    let mut after = sequence.clone();
+    let mut intents = Vec::new();
+    for lane in &mut after.lanes {
+        let points = points_of(&lane.id.0.to_string(), &|units| axis.beat(units));
+        if !same_points(&lane.points, &points) {
+            lane.points = points;
+            intents.push(EventsIntent::Lane {
+                automation: lane.clone(),
+            });
+        }
+    }
+    for event in &mut after.events {
+        let from = axis.units(event.at.0);
+        let start = event.at.0;
+        for curve in &mut event.expression {
+            let points = points_of(&curve.id.0.to_string(), &|units| {
+                axis.beat(from + units) - start
+            });
+            if !same_points(&curve.points, &points) {
+                curve.points = points;
+                intents.push(EventsIntent::Expression {
+                    id: event.id,
+                    automation: curve.clone(),
+                });
+            }
+        }
+    }
+    let intent = match intents.len() {
+        0 => return Intake::nothing(),
+        1 => intents.remove(0),
+        _ => EventsIntent::Restore {
+            sequence: Box::new(after),
+        },
+    };
+    Intake::edit(
+        serde_json::to_value(&intent).unwrap_or(Value::Null),
+        "draw a curve",
+    )
+}
+
+/// Whether two curves' points say the same thing, as a roll that holds them
+/// as `f32` hands them back.
+fn same_points(a: &[clausters_document::Point], b: &[clausters_document::Point]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(p, q)| {
+            let shape = |p: &clausters_document::Point, key: &str, default: f64| {
+                p.data.0.get(key).and_then(Value::as_f64).unwrap_or(default)
+            };
+            same(p.at, q.at)
+                && same(p.value, q.value)
+                && same(shape(p, "shape", 1.0), shape(q, "shape", 1.0))
+                && same(shape(p, "curve", 0.0), shape(q, "curve", 0.0))
+        })
 }
 
 /// The sequence after an `osc` gesture -- the notes untouched and the markers

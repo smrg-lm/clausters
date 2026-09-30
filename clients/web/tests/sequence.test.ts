@@ -140,3 +140,23 @@ test("a score reads into a sequence and a sequence engraves", async () => {
         "the osc event has no pitch, so no note on the page",
     );
 });
+
+test("a lane and a note's expression are curves the sequence holds", () => {
+    const seq = sequence();
+    const first = seq.entries()[0][0];
+    const lane = seq.addLane({ cc: 74 }, { points: [[0.0, 0.0], [2.0, 127.0]], name: "brightness" });
+    const bend = seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0], [0.5, 1.0]] });
+    let data = seq.data() as {
+        lanes?: { id: number; name: string; points: unknown[] }[];
+        events: { id: number; expression?: { id: number }[] }[];
+    };
+    assert.deepEqual(data.lanes?.map((c) => [c.id, c.name, c.points.length]), [[lane, "brightness", 2]]);
+    const held = data.events.find((e) => e.id === first);
+    assert.deepEqual(held?.expression?.map((c) => c.id), [bend]);
+    assert.ok(lane !== bend && bend !== first, "one counter for events and curves");
+    seq.removeExpression(first, bend);
+    seq.removeLane(lane);
+    data = seq.data() as typeof data;
+    assert.ok(!data.lanes?.length);
+    assert.ok(!data.events.find((e) => e.id === first)?.expression?.length);
+});

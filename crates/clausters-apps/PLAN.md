@@ -583,10 +583,19 @@ opened it.
       of `M35`'s acceptance moved here.
 
     **The steps**, in this order:
-    - ⬜ **X3.11a - The lanes and the expression in the editor.** CC lanes
+    - ✅ **X3.11a - The lanes and the expression in the editor.** CC lanes
       under the roll, drawn and edited as a multitrack's automation rows; a
       note's expression inside its box; its bend drawn in the plane as a
       trajectory (the pitch axis already draws a note's bend line).
+      *(Shipped 2026-09-30: the sequence's vocabulary grew `lane`,
+      `removelane`, `expression` and `removeexpression`, curves drawing ids
+      off the events' counter; the crate projects `curves`, `layers` and
+      `points` and reads a `points` report as the one curve it changed; the
+      host's roll draws the lanes as rows under its plane and each note's
+      curves as layers over it -- a bend over the pitches its range spans --
+      all `curve` bodies; both clients' `EventSequence` add and remove them
+      (`add_lane`/`addLane`, `add_expression`/`addExpression`), and both
+      `pianoroll` builders take the three props.)*
     - ⬜ **X3.11b - Heard.** The two paths above, in the crate's notes
       playback and the multitrack's notes regions.
     - ⬜ **X3.11c - MPE files.** A sequence's expression written as MPE, and a

@@ -94,9 +94,11 @@ class EventSequence:
 
     def apply(self, intent: dict) -> dict:
         """Apply one edit in the sequence's vocabulary (``add``, ``remove``,
-        ``move``, ``set``, ``keys``, ``setevents``, ``tempo``, ``restore``) and
+        ``move``, ``set``, ``keys``, ``setevents``, ``tempo``, ``lane``,
+        ``removelane``, ``expression``, ``removeexpression``, ``restore``) and
         answer ``{"applied", "current"}`` -- ``current`` the edit that puts it
-        back, read before this one landed -- with ``"id"`` for an add.
+        back, read before this one landed -- with ``"id"`` for an add, a lane
+        or an expression.
         `ValueError` when refused."""
         return self._seq.call("apply", intent=intent)
 
@@ -118,6 +120,40 @@ class EventSequence:
         """Write one key of an event, with its family's coherence: a moved
         ``midinote`` moves the ``freq`` and the ``degree`` the event holds."""
         self.apply({"intent": "set", "id": int(id), "key": key, "value": value})
+
+    # ---- curves ----
+
+    def add_lane(self, target: dict, points=(), name: str | None = None) -> int:
+        """Add a curve over the whole sequence -- a lane -- and answer its id.
+        ``target`` says what it moves: ``{"cc": 74}`` (0 to 127), ``{"bend":
+        True}`` (semitones), ``{"pressure": True}``, ``{"timbre": True}``
+        (0 to 1) or ``{"control": "cutoff"}``, with ``min``/``max`` to override
+        the range. ``points`` are ``(beat, value)`` pairs; ``name`` labels it.
+        The notes editor draws it as a row under the roll."""
+        return self._curve({"intent": "lane"}, target, points, name)
+
+    def add_expression(self, id: int, target: dict, points=(), name: str | None = None) -> int:
+        """Add a curve over the event with this id -- its own expression, as
+        MPE gives a note its bend, pressure and timbre -- and answer its id.
+        ``target`` as for `add_lane`; ``points`` are ``(beat, value)`` pairs,
+        each beat counted from the event's start. The notes editor draws it
+        inside the note, and a bend in the plane over the pitches it spans."""
+        return self._curve({"intent": "expression", "id": int(id)}, target, points, name)
+
+    def remove_lane(self, lane: int) -> None:
+        """Remove the lane with this id."""
+        self.apply({"intent": "removelane", "lane": int(lane)})
+
+    def remove_expression(self, id: int, lane: int) -> None:
+        """Remove curve ``lane`` from the event with this id."""
+        self.apply({"intent": "removeexpression", "id": int(id), "lane": int(lane)})
+
+    def _curve(self, intent: dict, target: dict, points, name) -> int:
+        automation = {"id": 0, "target": dict(target),
+                      "points": [{"at": float(at), "value": float(v)} for at, v in points]}
+        if name is not None:
+            automation["name"] = str(name)
+        return int(self.apply({**intent, "automation": automation})["id"])
 
     # ---- MIDI files ----
 

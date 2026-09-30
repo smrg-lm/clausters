@@ -45,6 +45,7 @@ use serde_json::{Map, Value, json};
 use clausters_core::event::render;
 use clausters_core::tempomap::TempoMap;
 
+use crate::NodeId;
 use crate::Opaque;
 use crate::history::{Applied, Editable};
 use crate::multitrack::{Automation, Extra};
@@ -223,6 +224,33 @@ pub enum EventsIntent {
         #[serde(default)]
         tempo_map: Option<TempoMap>,
     },
+    /// A curve over the whole sequence (a CC, a bend, a pressure, a control),
+    /// whole: it replaces the lane of its id, or is one lane more -- its id
+    /// minted when it has none, and the answer says which.
+    Lane {
+        /// The curve, its points on the sequence's beats.
+        automation: Automation,
+    },
+    /// One lane fewer.
+    RemoveLane {
+        /// Which.
+        lane: NodeId,
+    },
+    /// A curve over one event, whole: it replaces that event's curve of its
+    /// id, or is one more -- its id minted when it has none.
+    Expression {
+        /// Which event.
+        id: u64,
+        /// The curve, its points in beats from the event's start.
+        automation: Automation,
+    },
+    /// One of an event's curves fewer.
+    RemoveExpression {
+        /// Which event.
+        id: u64,
+        /// Which of its curves.
+        lane: NodeId,
+    },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
         /// All of it.
@@ -244,7 +272,19 @@ impl EventSequence {
     /// Gives every event that has no id one, and keeps the events in beat
     /// order.
     fn hold(&mut self) {
-        let highest = self.events.iter().map(|e| e.id).max().unwrap_or(0);
+        // Events and curves draw on one counter, so no id is ever two things.
+        let highest = self
+            .events
+            .iter()
+            .map(|e| e.id)
+            .chain(self.lanes.iter().map(|a| a.id.0))
+            .chain(
+                self.events
+                    .iter()
+                    .flat_map(|e| e.expression.iter().map(|a| a.id.0)),
+            )
+            .max()
+            .unwrap_or(0);
         self.next_id = self.next_id.max(highest);
         for event in &mut self.events {
             if event.id == 0 {
@@ -432,6 +472,49 @@ impl EventSequence {
                 self.events[i].data = data;
             }
             EventsIntent::Tempo { tempo_map } => self.tempo_map = tempo_map,
+            EventsIntent::Lane { mut automation } => {
+                if automation.id.0 == 0 {
+                    automation.id = NodeId(self.mint());
+                } else {
+                    self.next_id = self.next_id.max(automation.id.0);
+                }
+                added = Some(automation.id.0);
+                match self.lanes.iter_mut().find(|a| a.id == automation.id) {
+                    Some(held) => *held = automation,
+                    None => self.lanes.push(automation),
+                }
+            }
+            EventsIntent::RemoveLane { lane } => {
+                let i = self
+                    .lanes
+                    .iter()
+                    .position(|a| a.id == lane)
+                    .ok_or_else(|| format!("the sequence holds no lane {}", lane.0))?;
+                self.lanes.remove(i);
+            }
+            EventsIntent::Expression { id, mut automation } => {
+                let i = self.index(id).ok_or_else(|| no_event(id))?;
+                if automation.id.0 == 0 {
+                    automation.id = NodeId(self.mint());
+                } else {
+                    self.next_id = self.next_id.max(automation.id.0);
+                }
+                added = Some(automation.id.0);
+                let curves = &mut self.events[i].expression;
+                match curves.iter_mut().find(|a| a.id == automation.id) {
+                    Some(held) => *held = automation,
+                    None => curves.push(automation),
+                }
+            }
+            EventsIntent::RemoveExpression { id, lane } => {
+                let i = self.index(id).ok_or_else(|| no_event(id))?;
+                let curves = &mut self.events[i].expression;
+                let j = curves
+                    .iter()
+                    .position(|a| a.id == lane)
+                    .ok_or_else(|| format!("event {id} holds no curve {}", lane.0))?;
+                curves.remove(j);
+            }
             EventsIntent::Restore { sequence } => {
                 // Everything as it was but the counter, which only climbs: an
                 // id a later edit could still name is never handed out again.
@@ -460,7 +543,8 @@ fn no_event(id: u64) -> String {
 pub struct Change {
     /// Whether the sequence changed.
     pub applied: bool,
-    /// The id an [`EventsIntent::Add`] gave its event.
+    /// The id an [`EventsIntent::Add`] gave its event, or a
+    /// [`EventsIntent::Lane`] or [`EventsIntent::Expression`] its curve.
     pub added: Option<u64>,
 }
 
@@ -508,8 +592,15 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         EventsIntent::Set { id, key, .. } => format!("{EVENTS}:set:{id}:{key}"),
         EventsIntent::Keys { id, .. } => format!("{EVENTS}:keys:{id}"),
         EventsIntent::Tempo { .. } => format!("{EVENTS}:tempo"),
+        EventsIntent::Lane { automation } => format!("{EVENTS}:lane:{}", automation.id.0),
+        EventsIntent::Expression { id, automation } => {
+            format!("{EVENTS}:expression:{id}:{}", automation.id.0)
+        }
         EventsIntent::SetEvents { .. } | EventsIntent::Restore { .. } => EVENTS.to_string(),
-        EventsIntent::Add { .. } | EventsIntent::Remove { .. } => return None,
+        EventsIntent::Add { .. }
+        | EventsIntent::Remove { .. }
+        | EventsIntent::RemoveLane { .. }
+        | EventsIntent::RemoveExpression { .. } => return None,
     })
 }
 

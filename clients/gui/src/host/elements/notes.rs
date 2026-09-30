@@ -97,7 +97,21 @@ pub struct Notes {
     /// it, which reads as a broken editor rather than as samples that cannot
     /// be edited here. So the refusal happens at the press, where it is seen.
     editable: bool,
+    /// The lanes under the plane: curves over the whole sequence.
+    rows: Vec<curves::Row>,
+    /// The notes' own curves, each over the note it names.
+    layers: Vec<curves::Layer>,
+    /// The points the owner last sent, by curve.
+    curve_points: std::collections::HashMap<String, Vec<f64>>,
+    /// Each curve's body, by name.
+    bodies: std::collections::HashMap<String, crate::host::elements::curve::Curve>,
+    /// The curve last pressed: the one whose segments bend.
+    layer: Option<String>,
+    /// The curve a gesture holds, and its points before it.
+    holding: Option<(String, Value)>,
 }
+
+mod curves;
 
 /// What a held press on a roll is doing. Each carries the **press-time data**
 /// it is measured from and no geometry: the rectangle and the axis arrive with
@@ -173,7 +187,14 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         held: Vec::new(),
         step: 0.0,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
+        rows: curves::parse_rows(props),
+        layers: curves::parse_layers(props),
+        curve_points: curves::parse_points(props),
+        bodies: std::collections::HashMap::new(),
+        layer: None,
+        holding: None,
     };
+    roll.rebuild_bodies();
     // What arrived is in the domain's unit, and the rows are pitches: a roll in
     // hertz reads its notes and its compass through the one conversion.
     if roll.hz() {
@@ -286,14 +307,21 @@ impl Notes {
     /// The regions this placement is split into -- the same call the drawing and
     /// the hit-test both make, so a note is grabbed by the pixels it is
     /// painted on.
+    ///
+    /// The lanes, when there are any, take the bottom of the plane (and of the
+    /// keyboard beside it, where their labels go).
     fn regions(&self, rect: Rect, indent: f32, m: &Metrics) -> pianoroll::Regions {
-        pianoroll::regions(
+        let mut r = pianoroll::regions(
             rect,
             self.editor.ruler != Ruler::Off,
             self.osc_lane,
             indent,
             m,
-        )
+        );
+        let rows = self.rows_h(r.grid.h);
+        r.grid.h -= rows;
+        r.keyboard.h -= rows;
+        r
     }
 
     /// The visible MIDI pitch window `[lo, hi]`: the `[min, max]` compass sliced
@@ -455,6 +483,21 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
+            "curves" => {
+                self.rows = curves::parse_rows(&parse::as_array_props("curves", v));
+                self.rebuild_bodies();
+                true
+            }
+            "layers" => {
+                self.layers = curves::parse_layers(&parse::as_array_props("layers", v));
+                self.rebuild_bodies();
+                true
+            }
+            "points" => {
+                self.curve_points = curves::parse_points(&parse::as_array_props("points", v));
+                self.rebuild_bodies();
+                true
+            }
             "min" => v.as_f64().map(|x| self.min = self.row_of(x)).is_some(),
             "max" => v.as_f64().map(|x| self.max = self.row_of(x)).is_some(),
             "snap" => v.as_f64().map(|x| self.snap = x.max(0.0)).is_some(),
@@ -507,6 +550,7 @@ impl Element for Notes {
         if self.osc_lane {
             pianoroll::draw_osc_lane(d, r.osc, &nav, 0.0, &self.osc);
         }
+        self.draw_curves(d, ctx);
         if let Some(text) = &self.label {
             let (mesh, m, theme) = d.parts();
             font::text(
@@ -689,6 +733,10 @@ impl Element for Notes {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        // A curve's own contents first: it is drawn over what it shapes.
+        if let Some(claim) = self.press_curve(at, input) {
+            return claim;
+        }
         let h = self.hit(at, input);
         // **Read-only is answered before the drag, not after it.** The press is
         // consumed so nothing behind it turns a refused edit into a selection,
@@ -726,6 +774,9 @@ impl Element for Notes {
     /// per frame: an undo history of a hundred steps for one dragged note, and
     /// a hundred round trips whose acknowledgements the next frame outruns.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        if self.drag_curve(at, input) {
+            return Events::none();
+        }
         let r = self.regions(input.rect, input.indent, input.metrics);
         let nav = self.view(input.time);
         let axis = self.axis(input.metrics);
@@ -804,7 +855,10 @@ impl Element for Notes {
         }
     }
 
-    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+    fn release(&mut self, at: (f64, f64), inside: bool, input: &Input) -> Events {
+        if let Some(events) = self.release_curve(at, inside, input) {
+            return events;
+        }
         // What the drag amounts to, once -- see `drag`. A marquee edited
         // nothing: it swept a selection, which is screen state and was reported
         // as it went.
@@ -2016,6 +2070,61 @@ mod tests {
     /// Live MIDI: a note-on paints a held note, the matching note-off closes it
     /// -- at the running playhead when recording, on the step cursor when the
     /// transport is stopped (and the last key up advances it).
+    /// **A lane sits under the plane and a Ctrl press on it adds a point**,
+    /// reported once as every curve's points.
+    #[test]
+    fn a_lane_takes_the_bottom_of_the_plane_and_a_ctrl_press_adds_a_point() {
+        let m = Metrics::default();
+        let flat = roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0]}"#);
+        let mut r = roll(
+            r#"{"notes":[0.0,50.0,60.0,100.0,0.0],
+                "curves":["cc74","CC 74",0.0,127.0,40.0]}"#,
+        );
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        let whole = flat.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        assert_eq!(
+            grid.h,
+            whole.h - 40.0,
+            "the lane took its height off the plane"
+        );
+        let (_, body) = r.row_rects(rect(), pianoroll::KEYBOARD_W, &m)[0];
+        let at = (
+            (body.x + body.w * 0.5) as f64,
+            (body.y + body.h * 0.5) as f64,
+        );
+        let mut held = input(&m, rect(), axis(100.0));
+        held.mods = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let Claim::Take(take) = r.press(at, &held) else {
+            panic!("the lane takes the press");
+        };
+        let args = take.events.into_messages()[0].clone();
+        assert_eq!(args[0], OscType::String("points".into()));
+        assert_eq!(args[1], OscType::String("cc74".into()));
+        assert_eq!(r.release(at, true, &held), Events::none(), "reported once");
+    }
+
+    /// **A bend is drawn in the plane**, over the pitches its range spans from
+    /// its note; any other expression inside the note's box.
+    #[test]
+    fn a_bend_layer_spans_its_pitches_and_another_sits_in_the_box() {
+        let m = Metrics::default();
+        let r = roll(
+            r#"{"notes":[0.0,50.0,60.0,100.0,0.0],"note_ids":[7],
+                "layers":["b","7","bend",-2.0,2.0,true,"p","7","pressure",0.0,1.0,false]}"#,
+        );
+        let placed = r.curves_on_screen(rect(), pianoroll::KEYBOARD_W, &m, axis(100.0));
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        let axis_y = r.axis(&m);
+        let (_, bend, _) = placed.iter().find(|(n, ..)| *n == "b").unwrap();
+        let (_, inside, _) = placed.iter().find(|(n, ..)| *n == "p").unwrap();
+        assert!((bend.y - axis_y.y(62.0, grid)).abs() < 1e-3);
+        assert!((bend.y + bend.h - axis_y.y(58.0, grid)).abs() < 1e-3);
+        assert!(inside.h < bend.h, "the pressure is inside the box");
+    }
+
     /// **An MPE note is painted at its bend, and follows it**: a zone note
     /// starts at its key plus its bend, and a retune moves the held note.
     #[test]

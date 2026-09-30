@@ -68,6 +68,13 @@ its <b>label</b>, the address it sends, so the message survives the drag. Adding
 one <i>there</i> is refused and says why: the lane has no way to type an
 address.
 
+<b>Curves are drawn and edited like a multitrack's automation.</b> The row
+under the grid, <i>brightness</i>, is a lane of the sequence -- a CC 74 curve
+over all of it -- and the first note carries a curve of its own, a
+<b>bend</b>, drawn in the plane as the pitch it glides to. <b>Drag a point</b>
+to move it, <b>Ctrl+click</b> to add one or remove the one under the cursor;
+one gesture is one edit, and Ctrl+Z takes it back.
+
 <b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
@@ -136,14 +143,20 @@ leaves every other note its own.</div>
         session = (await Session.embed()).activate();
         await session.gui();
 
-        // One verb. The timeline is rendered into the events it plays, and
-        // those open as a NotesEditor: one roll, each note with its id.
-        const editor = await gui.edit(timeline, {
+        // One verb, spelled out. `edit(timeline)` renders the timeline into
+        // the events it plays and opens them as a NotesEditor: one roll, each
+        // note with its id. Here the render is its own line, so the sequence
+        // gets its curves before it opens: a CC lane over all of it, and a
+        // bend on its first note that glides up two semitones over a beat.
+        notes = await timeline.renderEvents(); // what the roll edits, in place
+        notes.addLane({ cc: 74 }, { points: [[0.0, 20.0], [4.0, 110.0]], name: "brightness" });
+        const first = notes.entries()[0][0];
+        notes.addExpression(first, { bend: true }, { points: [[0.0, 0.0], [1.0, 2.0]] });
+        const editor = await gui.edit(notes, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "notes",
           stage: $("stage"),
         });
-        notes = editor.sequence;
 
         // The same notes, in hertz: a second editor over the very same
         // sequence, whose vertical axis is the frequency -- the same pitch in

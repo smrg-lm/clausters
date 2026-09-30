@@ -211,3 +211,100 @@ fn a_marker_moves_by_its_label_and_a_new_one_is_refused() {
     );
     assert!(refused.refusal.is_some());
 }
+
+/// A sequence with a CC lane and a bend on its first note.
+fn curved() -> EventSequence {
+    use clausters_document::{NodeId, Point};
+    let point = |at: f64, value: f64| Point {
+        at,
+        value,
+        data: Opaque::none(),
+    };
+    let mut s = sequence();
+    let mut cc = Automation::new(NodeId(0), Opaque(json!({"cc": 74})));
+    cc.points = vec![point(0.0, 0.0), point(2.0, 127.0)];
+    s.edit(EventsIntent::Lane { automation: cc }).unwrap();
+    let mut bend = Automation::new(NodeId(0), Opaque(json!({"bend": true})));
+    bend.points = vec![point(0.0, 0.0), point(0.5, 1.0)];
+    s.edit(EventsIntent::Expression {
+        id: 1,
+        automation: bend,
+    })
+    .unwrap();
+    s
+}
+
+/// **A lane is a row and a note's curve a layer over it**, each point in view
+/// units -- a note's measured from the note's start.
+#[test]
+fn a_roll_draws_the_lanes_and_each_notes_curves() {
+    let s = curved();
+    let p = project(&s, &YDomain::midi(), &Axis::constant(100.0));
+    let lane = s.lanes[0].id.0.to_string();
+    let bend = s.events[0].expression[0].id.0.to_string();
+    assert_eq!(
+        p.curves,
+        vec![
+            json!(lane),
+            json!("CC 74"),
+            json!(0.0),
+            json!(127.0),
+            json!(CURVE_H)
+        ]
+    );
+    assert_eq!(
+        p.layers,
+        vec![
+            json!(bend),
+            json!(1),
+            json!("bend"),
+            json!(-2.0),
+            json!(2.0),
+            json!(true)
+        ]
+    );
+    // The lane's second point at beat 2 is sample 200; the bend's at half a
+    // beat from its note is 50.
+    let at_of = |name: &str| -> Vec<f64> {
+        p.points
+            .chunks(5)
+            .filter(|c| c[0] == json!(name))
+            .map(|c| c[1].as_f64().unwrap())
+            .collect()
+    };
+    assert_eq!(at_of(&lane), vec![0.0, 200.0]);
+    assert_eq!(at_of(&bend), vec![0.0, 50.0]);
+}
+
+/// **A `points` report is the one curve it changed**, back in beats.
+#[test]
+fn a_points_report_is_the_edit_of_the_curve_it_changed() {
+    let s = curved();
+    let axis = Axis::constant(100.0);
+    let p = project(&s, &YDomain::midi(), &axis);
+    let bend = s.events[0].expression[0].id;
+    // The report as drawn, with the bend's last point moved to 3 semitones at
+    // three quarters of a beat.
+    let mut values = p.points.clone();
+    let last = values
+        .chunks(5)
+        .rposition(|c| c[0] == json!(bend.0.to_string()))
+        .unwrap();
+    values[last * 5 + 1] = json!(75.0);
+    values[last * 5 + 2] = json!(3.0);
+    let intake = intake(&s, "points", &values, &axis, &YDomain::midi());
+    let intent: EventsIntent = serde_json::from_value(intake.payloads[0].clone()).unwrap();
+    let EventsIntent::Expression { id, automation } = intent else {
+        panic!("a note's curve");
+    };
+    assert_eq!((id, automation.id), (1, bend));
+    assert_eq!(automation.points[1].at, 0.75);
+    assert_eq!(automation.points[1].value, 3.0);
+    // An unchanged report is no edit.
+    let same = intake_of(&s, &p.points, &axis);
+    assert!(same.payloads.is_empty());
+}
+
+fn intake_of(s: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
+    intake(s, "points", values, axis, &YDomain::midi())
+}
