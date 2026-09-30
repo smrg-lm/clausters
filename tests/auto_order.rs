@@ -269,6 +269,92 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
     server.quit();
 }
 
+/// A def writing its `level` to the **control** bus its `out` names.
+fn ctl_writer_def() -> serde_json::Value {
+    json!({
+        "name": "ctlw",
+        "controls": [{"name": "out", "default": 5.0}, {"name": "level", "default": 0.5}],
+        "ugens": [{"kind": "OutCtl", "inputs": [{"control": 0}, {"control": 1}]}]
+    })
+}
+
+/// A def reading the **control** bus its `in` names onto audio bus 0.
+fn ctl_reader_def() -> serde_json::Value {
+    json!({
+        "name": "ctlr",
+        "controls": [{"name": "in", "default": 5.0}],
+        "ugens": [
+            {"kind": "InCtl", "inputs": [{"control": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+}
+
+/// **A control map is a read edge too**: a node whose control is mapped to a
+/// control bus runs after the node that writes that bus, as one reading an
+/// audio bus does -- else it reads the value of the block before.
+#[test]
+fn n_map_adds_a_control_read_edge_and_resorts() {
+    let server = Server::spawn();
+    server.d_recv(&ctl_writer_def());
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    // Reader first, writer second: nothing connects them yet.
+    for (def, id) in [("default", 1001), ("ctlw", 1002)] {
+        server.send(
+            "/synth_new",
+            vec![
+                OscType::String(def.into()),
+                OscType::Int(id),
+                OscType::Int(1),
+                OscType::Int(100),
+            ],
+        );
+    }
+    server.wait_for_order(100, &[1001, 1002]);
+    // default's amp -> control bus 5, which 1002 writes.
+    server.send(
+        "/node_map",
+        vec![
+            OscType::Int(1001),
+            OscType::String("amp".into()),
+            OscType::Int(5),
+        ],
+    );
+    server.wait_for_order(100, &[1002, 1001]);
+    server.quit();
+}
+
+/// **`InCtl` reads a control bus and `OutCtl` writes one**, and an auto group
+/// orders the two by it: a reader added before its writer runs after it.
+#[test]
+fn a_control_bus_orders_its_writer_before_its_reader() {
+    let server = Server::spawn();
+    server.d_recv(&ctl_writer_def());
+    server.d_recv(&ctl_reader_def());
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    for (def, id) in [("ctlr", 1001), ("ctlw", 1002)] {
+        server.send(
+            "/synth_new",
+            vec![
+                OscType::String(def.into()),
+                OscType::Int(id),
+                OscType::Int(1),
+                OscType::Int(100),
+            ],
+        );
+    }
+    server.wait_for_order(100, &[1002, 1001]);
+    server.quit();
+}
+
 #[test]
 fn manual_group_keeps_the_reversed_chain_silent() {
     let mut server = Server::spawn();

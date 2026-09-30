@@ -771,6 +771,8 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
                 BusRole::Read => "read",
                 BusRole::Write => "write",
                 BusRole::ReadWrite => "read_write",
+                BusRole::ReadControl => "read_control",
+                BusRole::WriteControl => "write_control",
             }
             .into(),
         ),

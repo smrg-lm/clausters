@@ -255,10 +255,10 @@ fn reader_ports(surface: &mut Map<String, Value>, member: usize, port: impl Fn(&
 /// bent, then the voice (`ends`), each of whose controls reads the note's
 /// curve, else the channel's as held, else keeps its port's value.
 ///
-/// The voice comes **last**: a control bus is written by whatever runs first in
-/// the block, and a group sorts by audio buses alone, so the order the members
-/// are listed in is the order they run -- the readers first, and the voice
-/// reading what they wrote in the same block.
+/// The voice is listed **last**, after everything that writes what it reads.
+/// The group a graph is sorts its members by their buses, control buses
+/// included, so the voice runs after its readers whatever the order here --
+/// the listing only says it the way it runs.
 pub fn note_graph(shape: &Shape) -> Value {
     let mut buses: Vec<Value> = shape
         .lanes

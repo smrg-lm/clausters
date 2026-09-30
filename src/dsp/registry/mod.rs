@@ -301,7 +301,7 @@ pub enum OpFamily {
 /// (`osc::graph::ugen_usage`), read off input 0 (the bus index).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusRole {
-    /// Touches no audio bus (the default).
+    /// Touches no bus (the default).
     None,
     /// Reads the bus (`In`).
     Read,
@@ -309,6 +309,10 @@ pub enum BusRole {
     Write,
     /// Reads and writes the bus (`ReplaceOut` consumes what it overwrites).
     ReadWrite,
+    /// Reads a **control** bus (`InCtl`).
+    ReadControl,
+    /// Writes a **control** bus (`OutCtl`).
+    WriteControl,
 }
 
 /// Everything the compiler and engine need to know about one UGen kind, as

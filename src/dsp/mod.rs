@@ -282,8 +282,8 @@ impl ControlBuses {
     }
 }
 
-/// **Which audio buses a node reads and writes**, exactly, however many buses
-/// the server was configured with.
+/// **Which buses a node reads and writes**, audio and control apart, exactly,
+/// however many buses the server was configured with.
 ///
 /// Computed on the network thread from the def and the node's current control
 /// values (`osc::graph`), where allocating is free. Two things read it and
@@ -300,6 +300,12 @@ impl ControlBuses {
 pub struct BusUsage {
     reads: Vec<u64>,
     writes: Vec<u64>,
+    /// The **control** buses read and written (`InCtl`, a control mapped to
+    /// a bus, `OutCtl`): a dependency as real as an audio one, since a node
+    /// reading a control bus before its writer ran reads the last block's
+    /// value.
+    control_reads: Vec<u64>,
+    control_writes: Vec<u64>,
     /// A bus index fed by a computed signal: the node may touch *any* bus,
     /// so it keeps its position and never runs in parallel with anything.
     pub dynamic: bool,
@@ -343,17 +349,40 @@ impl BusUsage {
         bits_list(&self.writes)
     }
 
-    /// Whether what `self` writes is read by `other` -- the dependency an
-    /// auto-ordered group is sorted by.
+    /// Every control bus read, ascending.
+    pub fn control_reads(&self) -> impl Iterator<Item = usize> + '_ {
+        bits_list(&self.control_reads)
+    }
+
+    /// Every control bus written, ascending.
+    pub fn control_writes(&self) -> impl Iterator<Item = usize> + '_ {
+        bits_list(&self.control_writes)
+    }
+
+    /// Whether what `self` writes is read by `other` -- an audio bus or a
+    /// control bus -- the dependency an auto-ordered group is sorted by.
     pub fn feeds(&self, other: &Self) -> bool {
         bits_overlap(&self.writes, &other.reads)
+            || bits_overlap(&self.control_writes, &other.control_reads)
     }
 
     /// Everything both of them touch: a group's usage is its children's.
     pub fn union_with(&mut self, other: &Self) {
         bits_union(&mut self.reads, &other.reads);
         bits_union(&mut self.writes, &other.writes);
+        bits_union(&mut self.control_reads, &other.control_reads);
+        bits_union(&mut self.control_writes, &other.control_writes);
         self.dynamic |= other.dynamic;
+    }
+
+    /// Marks one control bus by index.
+    pub fn mark_control(&mut self, bus: usize, read: bool, write: bool) {
+        if read {
+            bit_set(&mut self.control_reads, bus);
+        }
+        if write {
+            bit_set(&mut self.control_writes, bus);
+        }
     }
 
     /// Marks one bus, converting like `dsp::io::audio_bus` does at run time.
@@ -408,6 +437,15 @@ impl StageMask {
             mask.reads |= 1 << (bus % STAGE_LANES);
         }
         for bus in usage.writes() {
+            mask.writes |= 1 << (bus % STAGE_LANES);
+        }
+        // A control bus shares the lanes: a stage that ran its writer beside
+        // its reader would race, and a lane an audio bus also folds into
+        // costs parallelism and nothing else.
+        for bus in usage.control_reads() {
+            mask.reads |= 1 << (bus % STAGE_LANES);
+        }
+        for bus in usage.control_writes() {
             mask.writes |= 1 << (bus % STAGE_LANES);
         }
         mask

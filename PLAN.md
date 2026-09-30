@@ -4041,7 +4041,7 @@ should confirm before the fix.
   MIDI event is written into that type, not into both halves. **Fixed
   2026-09-29 with `T9`**: `clausters_core::lane::LaneData`.
 
-- ⬜ **A group's order does not see control maps** *(found 2026-09-30,
+- ✅ **A group's order does not see control maps** *(found 2026-09-30,
   writing the notes editor's curves, `crates/clausters-apps/PLAN.md` `X3.11c`)*.
   An auto-sorted group orders its children by the audio buses they read and
   write (`TreeMirror::sorted_children`); a control bus written by `OutCtl` and
@@ -4051,7 +4051,13 @@ should confirm before the fix.
   added at the head of its channel's instance, runs before the channel's
   readers and hears their curves one block late. Folding control writes and
   control maps into the usage the sort reads would make the order follow the
-  wiring, as it does for audio.
+  wiring, as it does for audio. **Fixed 2026-09-30**: `BusUsage` keeps the
+  control buses read and written beside the audio ones -- `InCtl` and a
+  control map read, `OutCtl` writes, the new `BusRole::ReadControl` and
+  `WriteControl` -- and `feeds` is either kind; the stage masks fold them into
+  their lanes, a map made or cleared re-sorts, and a GraphDef member's maps
+  count from the moment it is built. A note now runs after its channel's
+  curves, and inside its graph after its own.
 
 - ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
   *(found 2026-09-30, reading `/midi_bind` onto a GraphDef while adding

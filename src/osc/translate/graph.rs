@@ -204,6 +204,13 @@ impl CmdTranslator {
                 });
                 self.mirror.set_map(node_id, index, bus, false);
             }
+            // The maps are reads of the buses they name, which is what the
+            // group is sorted by.
+            if !def.members[mi].maps.is_empty() {
+                self.refresh_usage(node_id);
+                let usage = crate::dsp::StageMask::of(&self.mirror.usage_of(node_id));
+                cmds.push(Cmd::SetUsage { id: node_id, usage });
+            }
         }
         node_of
     }

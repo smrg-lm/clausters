@@ -18,9 +18,9 @@ In scsynth, execution order is the client's problem: a node reading an audio bus
 
 ## How the analysis works
 
-Per def, the server records which audio buses each node **reads** (`In`, a Faust def's `in..in+inputs`) and **writes** (`Out`, `ReplaceOut`, a Faust def's `out..out+outputs`):
+Per def, the server records which audio buses each node **reads** (`In`, a Faust def's `in..in+inputs`) and **writes** (`Out`, `ReplaceOut`, a Faust def's `out..out+outputs`), and which **control** buses it reads (`InCtl`, and every control mapped to a control bus with `/node_map` or a GraphDef member's `maps`) and writes (`OutCtl`). The two kinds are kept apart -- audio bus 5 and control bus 5 are different buses -- and both are edges: a node reading a control bus before its writer ran reads the value of the block before, which is what a curve read by a note, or a pitch made from a bend, cannot afford.
 
-- A bus index that is a **constant or a control** is static. Controls use the node's current value — an `/node_set` on a control used as a bus index re-analyzes and re-sorts on the spot.
+- A bus index that is a **constant or a control** is static. Controls use the node's current value — an `/node_set` on a control used as a bus index re-analyzes and re-sorts on the spot, and so does a map made or cleared, audio or control.
 - A bus index computed by a **signal** (a UGen wire) cannot be analyzed: the node is marked **dynamic** and acts as a conservative barrier — it keeps its position and nothing is sorted across it.
 
 A node that writes a bus another reads must run first; that is the whole DAG. `ReplaceOut` counts as read+write (it consumes what is on the bus), so an insert fx (`In 16 … ReplaceOut 16`) lands after the sources summing into 16 and before the readers. Pure summing writers to the same bus get no edge between each other — mixing commutes.

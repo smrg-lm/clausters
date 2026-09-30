@@ -130,10 +130,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A channel whose curves
   change is a new graph, made again under the notes sounding in it.
 
-- ⬜ **A group's order does not see control maps** *(root `PLAN.md`, Found by
-  use)*. The auto-sort reads audio buses only, so a note hears its channel's
-  curves a block late.
-
 - ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
   *(root `PLAN.md`, Found by use)*. Reproduce first; `ends` is the tool.
 

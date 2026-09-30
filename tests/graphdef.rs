@@ -1143,3 +1143,74 @@ fn a_slot_that_never_ran_is_forgotten_with_its_graph() {
     assert!(t.graph_instances[&800].voices.is_empty());
     assert_eq!(t.member_ended(voice), None, "and its voice's ends");
 }
+
+/// **A graph orders its members by their control buses too**: a slot added
+/// at the head of its instance runs after the shared member that writes the
+/// control bus it reads -- a note after its channel's curve -- and inside a
+/// graph a member that writes a control bus runs before the one mapped to it,
+/// whichever the def lists first.
+#[test]
+fn a_graph_orders_its_members_by_their_control_buses() {
+    let mut t = CmdTranslator::new(SR);
+    let writer = r#"{
+        "name": "ctlw",
+        "controls": [{"name": "out", "default": 0.0}, {"name": "level", "default": 0.5}],
+        "ugens": [{"kind": "OutCtl", "inputs": [{"control": 0}, {"control": 1}]}]
+    }"#;
+    t.d_recv(&[OscType::String(writer.into())]).unwrap();
+    // The voice listed before the curve that shapes it.
+    let note = r#"{
+        "name": "note",
+        "buses": [{"name": "lane", "rate": "control", "external": true},
+                  {"name": "own", "rate": "control"}],
+        "members": [
+            {"def": "default", "maps": {"amp": "own", "freq": "lane"}},
+            {"def": "ctlw", "controls": {"out": "own"}}
+        ]
+    }"#;
+    let channel = r#"{
+        "name": "channel",
+        "buses": [{"name": "lane", "rate": "control"}],
+        "members": [
+            {"def": "ctlw", "controls": {"out": "lane"}},
+            {"def": "note", "kind": "graph", "slot": "note", "controls": {"lane": "lane"}}
+        ]
+    }"#;
+    t.d_graph(&[OscType::String(note.into())]).unwrap();
+    t.d_graph(&[OscType::String(channel.into())]).unwrap();
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("channel".into()),
+            OscType::Int(800),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    run(
+        &mut t,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(800),
+            OscType::String("note".into()),
+            OscType::Int(810),
+        ],
+    );
+    let curve = t.graph_instances[&800].shared_nodes[&0];
+    assert_eq!(
+        t.mirror.children(800).unwrap(),
+        vec![curve, 810],
+        "the channel's curve before the note that reads it"
+    );
+    let graph = *t.graph_voices[&810].children.values().next().unwrap();
+    let (voice, own) = (
+        t.graph_instances[&graph].shared_nodes[&0],
+        t.graph_instances[&graph].shared_nodes[&1],
+    );
+    assert_eq!(
+        t.mirror.children(graph).unwrap(),
+        vec![own, voice],
+        "the note's own curve before its voice"
+    );
+}

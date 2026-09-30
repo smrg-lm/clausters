@@ -54,19 +54,29 @@ pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
     let mut usage = BusUsage::default();
     let mut bus_controls = Vec::new();
     for ugen in &def.ugens {
-        let (read, write) = match ugen.desc.bus {
-            BusRole::Read => (true, false),
-            BusRole::Write => (false, true),
-            BusRole::ReadWrite => (true, true),
+        let (read, write, control) = match ugen.desc.bus {
+            BusRole::Read => (true, false, false),
+            BusRole::Write => (false, true, false),
+            BusRole::ReadWrite => (true, true, false),
+            BusRole::ReadControl => (true, false, true),
+            BusRole::WriteControl => (false, true, true),
             BusRole::None => continue,
         };
-        match ugen.inputs[0] {
-            InputRef::Const(c) => usage.mark(def.constants[c], read, write),
+        let value = match ugen.inputs[0] {
+            InputRef::Const(c) => def.constants[c],
             InputRef::Control(c) => {
                 bus_controls.push(c as u32);
-                usage.mark(controls.get(c).copied().unwrap_or(0.0), read, write);
+                controls.get(c).copied().unwrap_or(0.0)
             }
-            InputRef::Wire(_) => usage.dynamic = true,
+            InputRef::Wire(_) => {
+                usage.dynamic = true;
+                continue;
+            }
+        };
+        if control {
+            usage.mark_control(value.max(0.0) as usize, read, write);
+        } else {
+            usage.mark(value, read, write);
         }
     }
     (usage, bus_controls)
@@ -708,28 +718,30 @@ impl TreeMirror {
     }
 
     /// Records (`bus >= 0`) or clears (`bus < 0`) a control->bus mapping.
-    /// Returns whether the change can affect the node's bus usage -- i.e. it
-    /// touches an audio map (new or just-cleared) or a control used as a bus
-    /// index -- so the caller knows to re-analyze and re-sort.
+    /// Returns whether the change can affect the node's bus usage -- any map
+    /// made or cleared, since a map reads its bus whether it is audio or
+    /// control, and a control used as a bus index -- so the caller knows to
+    /// re-analyze and re-sort.
     pub fn set_map(&mut self, id: i32, ctl: u32, bus: i32, audio: bool) -> bool {
         if let Some(MirrorBody::Synth {
             maps, bus_controls, ..
         }) = self.nodes.get_mut(&id).map(|n| &mut n.body)
         {
-            let had_audio = maps.iter().any(|&(c, _, a)| c == ctl && a);
+            let had = maps.iter().any(|&(c, _, _)| c == ctl);
             maps.retain(|&(c, _, _)| c != ctl);
             if bus >= 0 {
                 maps.push((ctl, bus, audio));
             }
-            had_audio || (audio && bus >= 0) || bus_controls.contains(&ctl)
+            had || bus >= 0 || bus_controls.contains(&ctl)
         } else {
             false
         }
     }
 
     /// Folds a synth's live mappings into its statically computed usage: each
-    /// audio map adds the bus to `reads`, and any mapped bus-index control
-    /// forces `dynamic` (the index is no longer statically known).
+    /// audio map adds the bus to its audio reads, each control map to its
+    /// control reads, and any mapped bus-index control forces `dynamic` (the
+    /// index is no longer statically known).
     pub fn fold_maps_into_usage(&self, id: i32, mut usage: BusUsage) -> BusUsage {
         if let Some(MirrorBody::Synth {
             maps, bus_controls, ..
@@ -738,6 +750,11 @@ impl TreeMirror {
             for &(ctl, bus, audio) in maps {
                 if audio && bus >= 0 {
                     usage.mark_bus(bus as usize, true, false);
+                }
+                // A control read from a control bus depends on whoever
+                // writes it, as much as an audio input does.
+                if !audio && bus >= 0 {
+                    usage.mark_control(bus as usize, true, false);
                 }
                 if bus_controls.contains(&ctl) {
                     usage.dynamic = true;
