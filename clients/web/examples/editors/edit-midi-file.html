@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a MIDI file with its curves</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 460px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A MIDI file with its curves: an MPE chord written, read
+back and edited.
+
+A MIDI file says a bend, a pressure or a controller as a stream of messages; a
+sequence says it as a curve. Which curve depends on what the message is
+addressed to: a channel's stream is a <b>lane</b> of that channel, and in an
+MPE zone each member channel is one note's, so its stream is that note's own
+<b>expression</b>. So a sequence written for MPE writes each note's curves on a
+member channel of its own, and a file read back gives them to the notes again.
+
+Here a three-note chord is written for MPE (<code>setMidi("mpe")</code>): the
+lowest note bends up a semitone, the top one bends down a quarter tone, the
+middle one swells in pressure, and a volume lane runs over the whole zone. The
+sequence goes to a Standard MIDI File (<code>toSmf</code>), written into the
+page's own filesystem (the origin private file system, <code>opfs</code>) as
+<code>out/mpe_chord.mid</code>, and comes back from it (<code>fromSmf</code>).
+The roll opens on what the file
+held: <b>MPE</b> under its keyboard, the bends drawn in the plane as the pitch
+each note takes, the volume lane as a row under the grid. Play sounds it on
+the engine, the bends heard.</div>
+      <button id="run">run</button>
+      <button id="play" disabled>play</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+    <!--
+      The twin of clients/python/examples/editors/edit_midi_file.py: the same
+      chord, the same curves and the same calls, the file written into the
+      page's origin private file system where the script writes it to
+      clients/python/examples/out/.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/edit-midi-file.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui, opfs } from "../../dist/index.js";
+      import { Event, EventSequence } from "../../dist/seq/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // A chord written for MPE: three notes on one beat, each with a curve
+      // of its own -- the thing MIDI 1.0 cannot say, since one channel's bend
+      // moves every note on it -- and a lane over the zone.
+      const chord = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 4.0 })],
+        [0.0, new Event({ midinote: 64, dur: 4.0 })],
+        [0.0, new Event({ midinote: 67, dur: 4.0 })],
+      ]);
+      chord.setMidi("mpe");
+      const [low, middle, top] = chord.entries().map(([id]) => id);
+      chord.addExpression(low, { bend: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
+      chord.addExpression(middle, { pressure: true }, { points: [[0.0, 0.2], [3.0, 1.0]] });
+      chord.addExpression(top, { bend: true }, { points: [[1.0, 0.0], [3.0, -0.5]] });
+      chord.addLane({ cc: 7 }, { points: [[0.0, 90.0], [4.0, 120.0]], name: "volume" });
+
+      // To a file and back. The file is MIDI 1.0 bytes: the zone's
+      // configuration first, then each note on a member channel with its bend
+      // and pressure on that channel, and the volume on the zone's master
+      // channel. Read back, the streams are curves again.
+      async function run() {
+        $("run").disabled = true;
+        await opfs.writeFile("out/mpe_chord.mid", chord.toSmf());
+        const notes = EventSequence.fromSmf(await opfs.readFile("out/mpe_chord.mid"));
+        log(`mpe_chord.mid: ${notes.midi}, ${notes.length} notes`);
+        for (const held of notes.data().events) {
+          const curves = (held.expression ?? []).map((c) => Object.keys(c.target)[0]);
+          log(`  #${held.id} ${held.at.toFixed(2)}  midinote ${held.data.midinote.toFixed(1)}  ${JSON.stringify(curves)}`);
+        }
+
+        // On the roll: it says which MIDI it is editing under its keyboard,
+        // draws each bend as the pitch its note takes, and the volume as a row
+        // under the grid.
+        const session = (await Session.embed()).activate();
+        await session.gui();
+        const editor = await gui.edit(notes, {
+          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
+          title: "mpe chord",
+          stage: $("stage"),
+        });
+        log("play sounds the chord");
+        $("play").disabled = false;
+        // The editor plays the sequence on its own transport -- the space bar
+        // in the window is the same verb.
+        $("play").onclick = () => editor.play();
+        // The script's ending: there `wait()` blocks so the process stays
+        // alive while the window is on screen. Here nothing exits and nothing
+        // may block, so the same verb is a promise.
+        editor.wait();
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

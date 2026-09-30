@@ -33,6 +33,7 @@ import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import type { TempoMap } from "../../base/time.ts";
 import { EventSequence } from "../../seq/sequence.ts";
+import { MidiItem } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import type { PlayDestination } from "../../seq/timeline.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -308,14 +309,19 @@ export class NotesEditor extends Editor<EventSequence> {
      * the pass ends where {@link NotesEditor.end} says.
      *
      * `destination` is for a MIDI port (a `MidiServer`): the server has no MIDI
-     * output, so the events are played on this page's clock to that destination
-     * instead, each as the MIDI messages the core renders it to, and an edit is
-     * heard from the next play.
+     * output, so the sequence is played on this page's clock to that
+     * destination instead, as the MIDI messages a file of it holds
+     * ({@link EventSequence.midiMessages}) -- its lanes and its notes'
+     * expression included -- and an edit is heard from the next play.
      */
     async play(beat?: number, destination?: PlayDestination, pass: Pass = {}): Promise<this> {
         const start = beat ?? this.cursor ?? 0;
         if (destination !== undefined) {
-            const played = new Timeline([...this.structure]);
+            // The render a file of it holds: its notes, its lanes and its
+            // notes' expression, as its MIDI spec says them.
+            const played = new Timeline(
+                this.structure.midiMessages().map(([beat, message]) => [beat, MidiItem(message)] as const),
+            );
             const map = this.structure.tempoMap;
             if (map !== null) played.map = map;
             played.play({ at: start, destination });

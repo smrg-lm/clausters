@@ -161,3 +161,21 @@ def test_a_midi_spec_admits_the_curves_it_can_say():
         seq.set_midi("1.0")
     seq.set_midi(None)
     assert seq.midi is None
+
+
+def test_a_sequences_curves_go_to_a_midi_file_and_back():
+    seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0)),
+                         (0.0, Event(midinote=64, velocity=100, sustain=1.0))])
+    seq.set_midi("mpe")
+    first = seq.entries()[0][0]
+    seq.add_lane({"cc": 7}, [(0.0, 100.0)])
+    seq.add_expression(first, {"bend": True}, [(0.0, 6.0)])
+    messages = seq.midi_messages()
+    assert messages[0] == (0.0, bytes([0xB0, 101, 0])), "the zone first"
+    back = EventSequence.from_smf(seq.to_smf())
+    assert back.midi == "mpe"
+    data = back.data()
+    assert [lane["target"] for lane in data["lanes"]] == [{"cc": 7}], "the master's: the zone's"
+    bent = next(e for e in data["events"] if e.get("expression"))
+    assert bent["expression"][0]["target"] == {"bend": True}
+    assert bent["expression"][0]["points"][0]["value"] == pytest.approx(6.0)

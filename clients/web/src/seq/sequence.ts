@@ -258,11 +258,25 @@ export class EventSequence {
     // ---- MIDI files ----
 
     /**
+     * The sequence as the MIDI messages a file of it holds -- the render
+     * {@link EventSequence.toSmf} writes -- as `[beat, bytes]` pairs, in
+     * order, at `ppq` ticks per beat. What a MIDI destination plays.
+     */
+    midiMessages(ppq = 960): [number, Uint8Array][] {
+        const written = this.call("midi", { ppq }) as { events: [number, number[]][] };
+        return written.events.map(([tick, bytes]) => [tick / ppq, Uint8Array.from(bytes)]);
+    }
+
+    /**
      * The sequence as a Standard MIDI File, at `ppq` ticks per beat: every
      * event's MIDI messages -- a note as its on and off, a `"midi"` event as its
-     * message -- and the tempo map as the file's tempo. An `"osc"` event has no
-     * MIDI spelling and is left out; a tempo ramp is written as the step at its
-     * breakpoint, since a file's tempo only steps.
+     * message -- its lanes as its channels' messages and its notes' expression
+     * as theirs, as its {@link EventSequence.midi} spec says them (MIDI 1.0
+     * when it names none; a 2.0 sequence as MPE), and the tempo map as the
+     * file's tempo. An `"osc"` event has no MIDI spelling and is left out, as
+     * is a curve the spec cannot say; a ramp is sampled where the MIDI value
+     * changes, and a tempo ramp is written as the step at its breakpoint,
+     * since a file's tempo only steps.
      */
     toSmf(ppq = 480): Uint8Array {
         const written = this.call("midi", { ppq }) as {
@@ -283,9 +297,12 @@ export class EventSequence {
 
     /**
      * The sequence a Standard MIDI File holds: its notes -- each note-on with the
-     * note-off that closes it -- and its other messages as `"midi"` events, in
-     * beats, with the file's tempo as the tempo map (its default 120 quarter
-     * notes a minute when it states none).
+     * note-off that closes it -- its streams as curves (a channel's CC, bend and
+     * pressure as lanes; poly pressure, and an MPE zone's member channels, as
+     * the notes' expression), its other messages as `"midi"` events, in beats,
+     * with the file's tempo as the tempo map (its default 120 quarter notes a
+     * minute when it states none). Its {@link EventSequence.midi} spec is MPE
+     * when the file declares a zone, else MIDI 1.0.
      */
     static fromSmf(data: Uint8Array): EventSequence {
         const read = JSON.parse(midiReadSmf(data));

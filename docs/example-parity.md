@@ -109,6 +109,8 @@ to.
 | `IdShare` | — | `idiom` — the slice of an id space two clients divide. Python's is a class that validates its pair; TypeScript's is an **interface**, so the same value is the object literal it describes (`{ index: 0, of: 2 }`) and there is nothing to construct |
 | `subscribe` | `onMessage` | `idiom` — listening to every inbound host message, ahead of the per-widget callbacks. A script hands over a function of `(addr, args)`, the decoded pair its OSC layer already carries; a page's host carries whole `OscMessage` objects and hands one over, so the same seam takes the message rather than its two halves |
 | `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; a tab has no filesystem, so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
+| — | `writeFile` | `idiom` — writing a file a page keeps. A page's files live in its origin private file system, through the client's `opfs`; a script writes its file with the language's own `pathlib`, which is no call on the client surface |
+| — | `readFile` | `idiom` — the other half of the row above: reading that file back |
 
 ## What one side of a pair says alone
 

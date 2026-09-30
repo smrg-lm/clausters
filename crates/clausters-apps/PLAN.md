@@ -732,7 +732,7 @@ opened it.
         read is MIDI 1.0; the roll's `midi` prop and its caption; `midi` /
         `set_midi` and `midi` / `setMidi` on both clients' sequence. Seen by
         eye with `X3.11d2`'s example, which reads a file.)*
-      - ⬜ **X3.11d2 - `.mid` in and out (1.0 and MPE).** Reading: a
+      - ✅ **X3.11d2 - `.mid` in and out (1.0 and MPE).** Reading: a
         channel's stream of CC, bend (through the channel's RPN 0 range, 2 by
         default) or channel pressure becomes a lane of step points; poly
         pressure the expression of the note on its key; a declared MPE zone
@@ -744,7 +744,16 @@ opened it.
         the MIDI value changes; expression as poly pressure in 1.0, or on a
         member channel per note in MPE (the zone messages first); a curve
         with no spelling refused with why. Playing a sequence to a MIDI
-        destination plays the same render.
+        destination plays the same render. *(Shipped 2026-09-30: the
+        document's `events::midi`, read and write, with a round trip through
+        MPE in its tests. A curve with no spelling is refused when it is made,
+        by `X3.11d1`'s spec, so a write never meets one; a sequence with no
+        spec is written as MIDI 1.0 and what 1.0 cannot say is left out, as an
+        OSC event is, and a 2.0 sequence is written as MPE until `X3.11d3`
+        gives it a file of its own. Both clients' `midi_messages` /
+        `midiMessages` is the render in beats, and a MIDI destination plays
+        it. The example is `editors/edit_midi_file`, a pair; the page keeps
+        its file in the origin private file system.)*
       - ⬜ **X3.11d3 - SMF2CLIP in and out (2.0).** The clip file whole,
         read and written: lanes as 32-bit channel messages, expression as
         per-note pitch bend, 32-bit poly pressure and a per-note controller

@@ -230,8 +230,13 @@ fn a_sequence_goes_to_midi_and_back() {
     assert_eq!(tempo, vec![(0, 250_000)]);
 
     let back = EventSequence::from_midi(96, &events, &tempo).unwrap();
-    assert_eq!(back.events.len(), 2);
+    assert_eq!(back.events.len(), 1, "the note; the CC is a lane now");
     assert_eq!(back.events[0].data.0["sustain"], json!(1.0));
+    assert_eq!(back.lanes[0].target.0, json!({"cc": 7, "channel": 0}));
+    assert_eq!(
+        (back.lanes[0].points[0].at, back.lanes[0].points[0].value),
+        (1.0, 99.0)
+    );
     assert_eq!(back.tempo_map, Some(TempoMap::new(4.0)));
     let untimed = EventSequence::from_midi(96, &events, &[]).unwrap();
     assert_eq!(
@@ -386,4 +391,222 @@ fn a_midi_spec_is_written_as_its_name() {
     );
     let read = EventSequence::from_midi(480, &[(0, vec![0x90, 60, 100])], &[]).unwrap();
     assert_eq!(read.midi, Some(MidiSpec::Midi1));
+}
+
+/// Beats of `ppq` 4, as a file's ticks.
+fn ticks(messages: &[(f64, Vec<u8>)]) -> Vec<(u32, Vec<u8>)> {
+    messages
+        .iter()
+        .map(|(beat, bytes)| ((beat * 4.0) as u32, bytes.clone()))
+        .collect()
+}
+
+/// **A channel's streams are lanes, and a note's pressure its own**: a CC,
+/// the bend (through the channel's RPN 0 range) and channel pressure on
+/// channel 2 are that channel's lanes, each message a step; poly pressure is
+/// the expression of the note on its key; the RPN is consumed and a program
+/// change stays an event.
+#[test]
+fn a_files_streams_are_lanes_and_a_notes_pressure_its_own() {
+    let file = ticks(&[
+        (0.0, vec![0xB2, 101, 0]),
+        (0.0, vec![0xB2, 100, 0]),
+        (0.0, vec![0xB2, 6, 12]),
+        (0.0, vec![0xC2, 5]),
+        (0.0, vec![0x92, 60, 100]),
+        (0.0, vec![0xB2, 7, 100]),
+        (1.0, vec![0xB2, 7, 50]),
+        (1.0, vec![0xE2, 0x00, 0x60]),
+        (1.5, vec![0xD2, 127]),
+        (0.5, vec![0xA2, 60, 64]),
+        (2.0, vec![0x82, 60, 0]),
+    ]);
+    let s = EventSequence::from_midi(4, &file, &[]).unwrap();
+    assert_eq!(s.midi, Some(MidiSpec::Midi1));
+    let lane = |target: Value| s.lanes.iter().find(|l| l.target.0 == target).unwrap();
+    let volume = lane(json!({"cc": 7, "channel": 2}));
+    let points: Vec<(f64, f64)> = volume.points.iter().map(|p| (p.at, p.value)).collect();
+    assert_eq!(points, [(0.0, 100.0), (1.0, 50.0)]);
+    // 0x60 << 7 is 12288, a half of the way up: 6 of the channel's 12.
+    assert_eq!(
+        lane(json!({"bend": true, "channel": 2})).points[0].value,
+        6.0
+    );
+    assert_eq!(
+        lane(json!({"pressure": true, "channel": 2})).points[0].value,
+        1.0
+    );
+    let note = s
+        .events
+        .iter()
+        .find(|e| e.keys().get("midinote").is_some())
+        .unwrap();
+    assert_eq!(note.expression[0].target.0, json!({"pressure": true}));
+    assert_eq!(
+        note.expression[0].points[0].at, 0.5,
+        "from the note's start"
+    );
+    let kept: Vec<String> = s
+        .events
+        .iter()
+        .filter_map(|e| {
+            e.keys()
+                .get("midicmd")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
+        .collect();
+    assert_eq!(kept, ["program"], "the RPN is consumed, the program kept");
+    assert!(s.lanes.iter().chain(&note.expression).all(|c| c.id.0 != 0));
+}
+
+/// **An MPE zone's member channels are its notes'**: the configuration
+/// declares the lower zone, each member channel's bend (48 semitones by
+/// default), pressure and CC 74 are the expression of the note on it -- the
+/// first sent just before its note-on -- and the master's bend is a lane over
+/// the whole zone.
+#[test]
+fn an_mpe_zones_members_are_its_notes() {
+    let file = ticks(&[
+        (0.0, vec![0xB0, 101, 0]),
+        (0.0, vec![0xB0, 100, 6]),
+        (0.0, vec![0xB0, 6, 15]),
+        (0.0, vec![0xE0, 0x00, 0x50]),
+        (0.0, vec![0xE1, 0x00, 0x48]),
+        (0.0, vec![0x91, 60, 100]),
+        (0.0, vec![0xE2, 0x00, 0x40]),
+        (0.0, vec![0x92, 64, 100]),
+        (1.0, vec![0xD2, 64]),
+        (1.0, vec![0xB2, 74, 127]),
+        (2.0, vec![0x81, 60, 0]),
+        (2.0, vec![0x82, 64, 0]),
+    ]);
+    let s = EventSequence::from_midi(4, &file, &[]).unwrap();
+    assert_eq!(
+        s.midi,
+        Some(MidiSpec::Mpe {
+            upper: false,
+            members: 15
+        })
+    );
+    let notes: Vec<&Event> = s.events.iter().collect();
+    assert_eq!(notes.len(), 2, "no message is left an event");
+    let bend = &notes[0].expression[0];
+    assert_eq!(bend.target.0, json!({"bend": true}));
+    // 0x48 << 7 is 9216: 1024 of 8192 up, an eighth of 48.
+    assert_eq!(bend.points[0].value, 6.0);
+    let second: Vec<Value> = notes[1]
+        .expression
+        .iter()
+        .map(|c| c.target.0.clone())
+        .collect();
+    assert!(second.contains(&json!({"pressure": true})));
+    assert!(second.contains(&json!({"timbre": true})));
+    let master = &s.lanes[0];
+    assert_eq!(master.target.0, json!({"bend": true}), "the whole zone's");
+}
+
+/// **What is read is what is written**: a sequence's lanes as its channels'
+/// messages, a note's pressure as poly pressure, and a ramp sampled where the
+/// message changes; in MPE a member channel per note, the configuration first
+/// and a note's first bend before its on.
+#[test]
+fn a_sequence_writes_its_curves_as_the_spec_says_them() {
+    let curve = |target: Value, points: &[(f64, f64, i32)]| {
+        let mut c = Automation::new(NodeId(0), Opaque(target));
+        c.points = points
+            .iter()
+            .map(|(at, value, shape)| crate::Point {
+                at: *at,
+                value: *value,
+                data: Opaque(json!({"shape": shape})),
+            })
+            .collect();
+        c
+    };
+    let mut s = EventSequence::new(vec![note(0.0, 60)]);
+    s.edit(EventsIntent::Midi {
+        midi: Some(MidiSpec::Midi1),
+    })
+    .unwrap();
+    s.edit(EventsIntent::Lane {
+        automation: curve(
+            json!({"cc": 1, "channel": 0}),
+            &[(0.0, 0.0, 1), (1.0, 127.0, 0)],
+        ),
+    })
+    .unwrap();
+    let id = s.events[0].id;
+    s.edit(EventsIntent::Expression {
+        id,
+        automation: curve(json!({"pressure": true}), &[(0.0, 0.5, 0)]),
+    })
+    .unwrap();
+    let (written, _) = s.to_midi(64);
+    let ccs: Vec<&Vec<u8>> = written
+        .iter()
+        .filter(|(_, b)| b[0] == 0xB0)
+        .map(|(_, b)| b)
+        .collect();
+    assert!(ccs.len() > 10, "the ramp is sampled: {}", ccs.len());
+    assert_eq!(ccs.last().unwrap()[2], 127);
+    assert!(
+        written.iter().any(|(_, b)| *b == vec![0xA0, 60, 64]),
+        "the note's pressure is poly pressure"
+    );
+
+    let mut mpe = EventSequence::new(vec![note(0.0, 60), note(0.0, 64)]);
+    mpe.edit(EventsIntent::Midi {
+        midi: Some(MidiSpec::Mpe {
+            upper: false,
+            members: 15,
+        }),
+    })
+    .unwrap();
+    let first = mpe.events[0].id;
+    mpe.edit(EventsIntent::Expression {
+        id: first,
+        automation: curve(json!({"bend": true}), &[(0.0, 6.0, 0)]),
+    })
+    .unwrap();
+    let (written, _) = mpe.to_midi(64);
+    assert_eq!(
+        written[..3]
+            .iter()
+            .map(|(_, b)| b.clone())
+            .collect::<Vec<_>>(),
+        [vec![0xB0, 101, 0], vec![0xB0, 100, 6], vec![0xB0, 6, 15]]
+    );
+    let ons: Vec<u8> = written
+        .iter()
+        .filter(|(_, b)| b[0] & 0xF0 == 0x90)
+        .map(|(_, b)| b[0] & 0x0F)
+        .collect();
+    assert_eq!(ons.len(), 2);
+    assert_ne!(ons[0], ons[1], "a member channel each");
+    assert!(ons.iter().all(|c| (1..=15).contains(c)));
+    let bend = written
+        .iter()
+        .position(|(_, b)| b[0] & 0xF0 == 0xE0)
+        .unwrap();
+    let on = written
+        .iter()
+        .position(|(_, b)| b[0] & 0xF0 == 0x90 && b[1] == 60)
+        .unwrap();
+    assert!(bend < on, "the note's first bend before its on");
+    assert_eq!(
+        written[bend].1,
+        vec![0xE0 | ons[0], 0x00, 0x48],
+        "6 of 48 up"
+    );
+
+    // And back: the file read is the sequence written.
+    let back = EventSequence::from_midi(64, &written, &[]).unwrap();
+    assert_eq!(back.midi, mpe.midi);
+    let bent = back
+        .events
+        .iter()
+        .find(|e| e.keys().get("midinote").and_then(Value::as_f64) == Some(60.0))
+        .unwrap();
+    assert_eq!(bent.expression[0].points[0].value, 6.0);
 }

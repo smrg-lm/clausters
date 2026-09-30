@@ -177,3 +177,26 @@ test("a MIDI spec admits the curves it can say", () => {
     seq.setMidi(null);
     assert.equal(seq.midi, null);
 });
+
+test("a sequence's curves go to a MIDI file and back", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })],
+        [0.0, new Event({ midinote: 64, velocity: 100, sustain: 1.0 })],
+    ]);
+    seq.setMidi("mpe");
+    const first = seq.entries()[0][0];
+    seq.addLane({ cc: 7 }, { points: [[0.0, 100.0]] });
+    seq.addExpression(first, { bend: true }, { points: [[0.0, 6.0]] });
+    const messages = seq.midiMessages();
+    assert.deepEqual([messages[0][0], [...messages[0][1]]], [0, [0xb0, 101, 0]], "the zone first");
+    const back = EventSequence.fromSmf(seq.toSmf());
+    assert.equal(back.midi, "mpe");
+    const data = back.data() as {
+        lanes: { target: unknown }[];
+        events: { expression?: { target: unknown; points: { value: number }[] }[] }[];
+    };
+    assert.deepEqual(data.lanes.map((l) => l.target), [{ cc: 7 }], "the master's: the zone's");
+    const bent = data.events.find((e) => e.expression !== undefined);
+    assert.deepEqual(bent?.expression?.[0].target, { bend: true });
+    assert.ok(Math.abs((bent?.expression?.[0].points[0].value ?? 0) - 6.0) < 1e-9);
+});

@@ -186,13 +186,23 @@ class EventSequence:
 
     # ---- MIDI files ----
 
+    def midi_messages(self, ppq: int = 960) -> list:
+        """The sequence as the MIDI messages a file of it holds -- the render
+        `to_smf` writes -- as ``(beat, bytes)`` pairs, in order, at ``ppq``
+        ticks per beat. What a MIDI destination plays."""
+        written = self._seq.call("midi", ppq=int(ppq))
+        return [(tick / ppq, bytes(message)) for tick, message in written["events"]]
+
     def to_smf(self, ppq: int = 480) -> bytes:
         """The sequence as a Standard MIDI File, at ``ppq`` ticks per beat:
         every event's MIDI messages -- a note as its on and off, a ``"midi"``
-        event as its message -- and the tempo map as the file's tempo. An
-        ``"osc"`` event has no MIDI spelling and is left out; a tempo ramp is
-        written as the step at its breakpoint, since a file's tempo only
-        steps."""
+        event as its message -- its lanes as its channels' messages and its
+        notes' expression as theirs, as its `midi` spec says them (MIDI 1.0
+        when it names none; a 2.0 sequence as MPE), and the tempo map as the
+        file's tempo. An ``"osc"`` event has no MIDI spelling and is left out,
+        as is a curve the spec cannot say; a ramp is sampled where the MIDI
+        value changes, and a tempo ramp is written as the step at its
+        breakpoint, since a file's tempo only steps."""
         from .. import _midi
 
         written = self._seq.call("midi", ppq=int(ppq))
@@ -201,9 +211,12 @@ class EventSequence:
     @classmethod
     def from_smf(cls, data: bytes) -> "EventSequence":
         """The sequence a Standard MIDI File holds: its notes -- each note-on
-        with the note-off that closes it -- and its other messages as
+        with the note-off that closes it -- its streams as curves (a channel's
+        CC, bend and pressure as lanes; poly pressure, and an MPE zone's
+        member channels, as the notes' expression), its other messages as
         ``"midi"`` events, in beats, with the file's tempo as the tempo map
-        (its default 120 quarter notes a minute when it states none)."""
+        (its default 120 quarter notes a minute when it states none). Its
+        `midi` spec is MPE when the file declares a zone, else MIDI 1.0."""
         from .. import _midi
 
         read = _midi.read_smf(data)

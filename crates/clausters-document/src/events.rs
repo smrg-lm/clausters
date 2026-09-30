@@ -310,6 +310,17 @@ impl EventSequence {
                 event.id = self.next_id;
             }
         }
+        // A curve read with no id (a file's stream) takes one the same way.
+        let curves = self
+            .lanes
+            .iter_mut()
+            .chain(self.events.iter_mut().flat_map(|e| e.expression.iter_mut()));
+        for curve in curves {
+            if curve.id.0 == 0 {
+                self.next_id += 1;
+                curve.id = NodeId(self.next_id);
+            }
+        }
         self.sort();
     }
 
@@ -341,22 +352,18 @@ impl EventSequence {
 
     /// The sequence as the MIDI a file holds, at `ppq` ticks per beat: every
     /// event's messages at their ticks (`render::midi`, on channel 0 unless an
-    /// event says otherwise), and the tempo as Set Tempo marks. An OSC event has
-    /// no MIDI spelling and is left out. A tempo ramp is written as the step at
-    /// its breakpoint -- a file's tempo only steps.
+    /// event says otherwise), its lanes as its channels' messages and its
+    /// notes' expression as theirs -- as its [`MidiSpec`] says them (see
+    /// `midi`), MIDI 1.0 when it names none -- and the tempo as Set Tempo
+    /// marks. An OSC event has no MIDI spelling and is left out, as is a curve
+    /// the spec cannot say. A tempo ramp is written as the step at its
+    /// breakpoint -- a file's tempo only steps.
     pub fn to_midi(&self, ppq: u16) -> Midi {
         let tick = |beat: f64| (beat * f64::from(ppq)).round().max(0.0) as u32;
-        let mut events = Vec::new();
-        for event in &self.events {
-            let Ok(messages) = render::midi(&event.keys(), 0) else {
-                continue;
-            };
-            for m in messages {
-                events.push((tick(event.at.0 + m.at), m.bytes));
-            }
-        }
-        // Stable, so an event's own messages keep their order at one tick.
-        events.sort_by_key(|(t, _)| *t);
+        let events: Vec<(u32, Vec<u8>)> = midi::write(self)
+            .into_iter()
+            .map(|(at, bytes)| (tick(at), bytes))
+            .collect();
         let tempo = self
             .tempo_map
             .as_ref()
@@ -370,10 +377,13 @@ impl EventSequence {
         (events, tempo)
     }
 
-    /// The sequence a MIDI file holds, at `ppq` ticks per beat: its notes and
-    /// messages paired into events (`render::from_midi_messages`), and its
-    /// tempo marks as the tempo map -- or the format's own 120 quarter notes a
-    /// minute when it states none.
+    /// The sequence a MIDI file holds, at `ppq` ticks per beat: its notes
+    /// paired into events (`render::from_midi_messages`), its streams as
+    /// curves -- a channel's as lanes, poly pressure and an MPE zone's member
+    /// channels as the notes' expression (see `midi`) -- its other messages as
+    /// events, the spec it is written for (MPE when it declares a zone, else
+    /// MIDI 1.0), and its tempo marks as the tempo map -- or the format's own
+    /// 120 quarter notes a minute when it states none.
     ///
     /// # Errors
     /// A tempo mark the tempo map refuses.
@@ -399,13 +409,15 @@ impl EventSequence {
         .collect();
         let tempo_map =
             TempoMap::from_breakpoints(&points).map_err(|e| format!("the file's tempo: {e:?}"))?;
-        let events = render::from_midi_messages(&messages)
-            .into_iter()
-            .map(|(at, keys)| Event::new(at, Value::Object(keys)))
-            .collect();
-        let mut sequence = Self::new(events);
-        sequence.tempo_map = Some(tempo_map);
-        sequence.midi = Some(MidiSpec::Midi1);
+        let (events, lanes, spec) = midi::read(&messages);
+        let mut sequence = Self {
+            events,
+            lanes,
+            midi: Some(spec),
+            tempo_map: Some(tempo_map),
+            ..Self::default()
+        };
+        sequence.hold();
         Ok(sequence)
     }
 
@@ -882,6 +894,8 @@ pub fn mutates(request: &str) -> bool {
         .and_then(|r| r.get("verb").and_then(Value::as_str).map(str::to_owned))
         .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi"))
 }
+
+mod midi;
 
 #[cfg(test)]
 mod tests;
