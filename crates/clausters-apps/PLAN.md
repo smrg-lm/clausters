@@ -567,20 +567,69 @@ opened it.
     *(Designed with the user 2026-09-29.)* The data is there since X3.2 --
     `EventSequence.lanes` (curves over the sequence: CC, bend, pressure) and
     `Event.expression` (curves over one note, from its start), both
-    `Automation`. What is missing is editing them and hearing them. **How they
-    are heard follows the event's type**, as `T9` settled for a lane: an event
-    is one kind.
-    - **A note for the server** (`type: note`) hears a curve as the
-      multitrack hears its automation: a table in a buffer, a reader on the
-      transport's position writing a bus, and the note's control mapped to
-      that bus -- sample-exact through a locate, a loop and a stop, and any
-      control the def declares. A sequence's CC lane is one such curve; a
-      note's expression is one over that note's span.
-    - **A MIDI event** (`type: midi`) hears it as MPE: the note's expression
-      rendered as a member-channel stream (bend, pressure, timbre), played by
-      the server's zone through `T9`'s lane, and the same render writes a
-      `.mid` MPE file -- whose reading back into per-note curves is the half
-      of `M35`'s acceptance moved here.
+    `Automation`. What is missing is editing them and hearing them.
+
+    **Two scopes, as MIDI 2.0 has them and as the multitrack already does.**
+    *(Redesigned with the user 2026-09-30, replacing "heard by the event's
+    type": every note of a sequence is `type: note` -- a `.mid` is paired into
+    notes too -- so the type separates nothing.)* A control acts on a whole
+    channel or on one note, and that is the multitrack's two places for one
+    `Automation`: a sequence's **lane** is a track's automation (a function
+    over time, and a note sounding reads it during its span), a note's
+    **expression** is a region's (the note's own envelope, from its start). A
+    note is to a roll what a region is to a multitrack, and the host already
+    draws a note's curves through the clip's own `track::clip_local_view`.
+    The user's framing: a note built from outside functions and a note that
+    carries its own envelopes always coexist, so what the roll needs is the
+    mechanism that goes from one to the other, and a roll that draws MIDI
+    must draw what MIDI does -- a channel function as a lane, a per-note one
+    in the note -- or it misleads; the server's resources follow the same
+    abstraction. Four decisions, taken with the user:
+    - **A lane has a channel.** Its target names the MIDI channel it is on
+      (none: every channel), and it acts only on that channel's notes -- in
+      MIDI the channel is part of a function's address.
+    - **Combining the two scopes on one control**, per dimension: a bend (in
+      semitones) is the channel's plus the note's, as MIDI 2.0's per-note
+      bend and MPE's master channel add; any other control takes the note's
+      expression while the note has one, else the lane.
+    - **An expression may run past the note-off**, into the release: a note
+      does not end at its off as a region ends at its end, it changes its gate
+      (and in MPE its member channel still reaches it). **The note's box stays
+      `at` + `dur`**, the span between its on and its off: it draws the
+      message, not what sounds (the user, 2026-09-30); only the expression's
+      layer may extend past it.
+    - **The roll only offers what the destination can say.** Per note, plain
+      MIDI 1.0 has the attack and release velocity and poly pressure and
+      nothing else; MPE adds bend, pressure and timbre (each a member
+      channel's message); MIDI 2.0 its per-note bend and controllers; a note
+      for the server any control. A per-note curve the sequence's destination
+      cannot play is not offered, rather than drawn and not heard.
+
+    **The conversions**, the part that is missing entirely:
+    - **Messages into curves**, reading: a channel's stream of CC, bend or
+      channel pressure becomes a lane of step points (MIDI holds the last
+      value); poly pressure and an MPE member channel's stream become the
+      expression of the note on that key or channel. Only the discrete
+      gestures stay events -- a program change, a sysex, raw bytes. Today
+      `render::from_midi_messages` keeps every such message a `midi` event,
+      which the roll draws as a marker: a function drawn as a list of labels.
+    - **Curves into messages**, writing or playing MIDI: a lane as sampled
+      channel messages; an expression as poly pressure or as MPE (a member
+      channel per note), else refused.
+    - **Channel to note**: a lane's span copied into each note's expression.
+      Nothing of the note is lost; that the curve was shared is.
+    - **Note to channel**: exact only while the notes do not overlap, so
+      refused (or confirmed) under polyphony.
+
+    **Heard on the server**, by scope: a lane is one reader on the transport's
+    position writing one bus, which every note of its channel maps to --
+    shared, as the channel is; an expression is a reader per note; and where a
+    bend is in both, the sum is made per note (a node per note, or a def that
+    takes `bend` and turns it into pitch itself). The tabulation is the
+    multitrack's (`multitrack::nodes::curves`, a curve's points on the frame
+    axis from an origin), grown to take a local-to-frame map so a note's beats
+    through the tempo map use it too -- one function for a region, a track, a
+    lane and a note.
 
     **The steps**, in this order:
     - ✅ **X3.11a - The lanes and the expression in the editor.** CC lanes
@@ -596,10 +645,20 @@ opened it.
       all `curve` bodies; both clients' `EventSequence` add and remove them
       (`add_lane`/`addLane`, `add_expression`/`addExpression`), and both
       `pianoroll` builders take the three props.)*
-    - ⬜ **X3.11b - Heard.** The two paths above, in the crate's notes
-      playback and the multitrack's notes regions.
-    - ⬜ **X3.11c - MPE files.** A sequence's expression written as MPE, and a
-      `.mid` with a zone read into per-note curves.
+    - ⬜ **X3.11b - The scopes in the editor.** A lane's channel; an
+      expression's layer past its note's off, the box unchanged; the per-note
+      curves offered by the destination.
+    - ⬜ **X3.11c - Heard.** The shared tabulation; a lane's reader and bus
+      mapped by its channel's notes, an expression's reader per note, the bend
+      summed -- in the crate's notes playback and the multitrack's notes
+      regions.
+    - ⬜ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
+      read (a zone's member channels into per-note curves -- the half of
+      `M35`'s acceptance moved here), and curves into messages when a
+      sequence is written or played as MIDI (MPE for a per-note bend).
+    - ⬜ **X3.11e - Between the scopes.** The two edits: a lane into its
+      notes' expression, and the notes' expression into a lane, refused under
+      overlap.
   - ✅ **X3.12 - The Hz domain.**
     *(Shipped 2026-09-28: the `notes` element reads `axes.y.unit` `"hz"` --
     its notes, their report and its compass in hertz, converted at the wire
