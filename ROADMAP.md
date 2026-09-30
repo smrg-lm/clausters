@@ -147,11 +147,6 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **MIDI 2.0 by port into the server** *(`crates/clausters-apps/PLAN.md`,
-  `X3.11d4`)*. Packets reach the server by a lane and by `/midi_ump`; the live
-  input's port reads MIDI 1.0 bytes. **The decision:** the transport that
-  carries packets -- ALSA's UMP rawmidi or UDP MIDI 2.0 (root `PLAN.md`).
-
 - ⬜ **The graphs a note plays in are never freed**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Every new shape is a new
   def, sent and never given back. **The decision:** whether generated defs are
@@ -228,8 +223,7 @@ its plan; the plan is where its acceptance is read.
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
-  edits -- **`X3.11`** (CC lanes and per-note expression, over `M35`'s MPE)
-  is next, and its recording (`X3.10`) waits for `T10`, skipped for now;
+  edits -- its recording (`X3.10`) waits for `T10`, skipped for now;
   **`X4`** whether the points editor is one; **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application. **Related:** an application inside another,

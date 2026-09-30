@@ -563,7 +563,7 @@ opened it.
     editor's side: arming a recording from the roll, and opening the take the
     server wrote as the roll's source. Taken after `T10`; both are skipped
     for now, with `T9` and `X3.11` first.
-  - ⬜ **X3.11 - CC lanes and per-note expression**, over `PLAN.md` `M35`.
+  - ✅ **X3.11 - CC lanes and per-note expression**, over `PLAN.md` `M35`.
     *(Designed with the user 2026-09-29.)* The data is there since X3.2 --
     `EventSequence.lanes` (curves over the sequence: CC, bend, pressure) and
     `Event.expression` (curves over one note, from its start), both
@@ -766,7 +766,7 @@ opened it.
         and Flex Data (`to_ump` / `from_ump`, the tempo map as Set Tempo);
         both clients' `to_clip` / `from_clip` and `toClip` / `fromClip`. The
         example pair writes the chord again as a clip.)*
-      - ⬜ **X3.11d4 - MIDI 2.0 into the server** *(the user, 2026-09-30:
+      - ✅ **X3.11d4 - MIDI 2.0 into the server** *(the user, 2026-09-30:
         MIDI 2.0 has to be an input for the server, by MIDI port or by a
         playback lane -- left for later if need be, but written down as
         pending, and better now if it can be done)*. A UMP parser for
@@ -781,11 +781,12 @@ opened it.
         into `PerNote`; `/midi_ump` plays packets now, a lane's `ump` list at
         their positions, read among its MIDI bytes; a per-note bend retunes
         the note's voice, a registered or assignable per-note controller sets
-        the control its number is mapped to. **Still open: the MIDI port.**
-        The live input opens a MIDI 1.0 port (`midir`), which carries no
-        packets; a port that does -- ALSA's UMP rawmidi, or UDP MIDI 2.0 --
-        is the transport decision `PLAN.md` names, and until it is taken this
-        entry stays open.)*
+        the control its number is mapped to. **Closed there** -- the user,
+        2026-09-30: the transport is for instructions internal to the server
+        for now, and that is what has to work; the lane and `/midi_ump` are
+        both, and neither depends on the operating system. The port a device
+        would send packets through is external input, and it moved to root
+        `PLAN.md`, Future directions, "MIDI 2.0 from outside the server".)*
     - ✅ **X3.11e - Between the scopes.** The two edits: a lane into its
       notes' expression, and the notes' expression into a lane, refused under
       overlap. *(Shipped 2026-09-30. The user set the weight between them:

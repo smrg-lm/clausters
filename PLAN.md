@@ -2682,6 +2682,25 @@ where it came from).
   implementations are defensible; nothing checks them against each other. A
   test driving both with one sequence of operations is the cheap guard.
 
+- ⬜ **MIDI 2.0 from outside the server** *(named 2026-09-30, closing
+  `crates/clausters-apps/PLAN.md` `X3.11d4`)*. MIDI 2.0 reaches the server
+  as instructions of its own -- a transport lane's `ump` list and
+  `/midi_ump` -- and neither depends on the operating system. What is not
+  there is a **port** a device or another program sends packets through: the
+  live input opens a MIDI 1.0 port with `midir`, which speaks no UMP, and no
+  Rust crate that is portable does yet. Three ways, each with its cost:
+  - **a backend per system behind one interface**, as `cpal` does for audio
+    -- the ALSA sequencer's UMP clients on Linux (`snd_seq_set_client_midi_version`,
+    in alsa-lib 1.2.10 and later; testable here with `aseqsend -u 2` and
+    `aseqdump -u 2`, and a MIDI 1.0 device on the same port arrives
+    converted), CoreMIDI's MIDI 2.0 protocol on macOS, Windows MIDI Services
+    on Windows -- each needing its own machine to be tested on;
+  - **Network MIDI 2.0**, the standard's UDP transport, portable by nature
+    and needing no system API;
+  - **waiting** for `midir`, or another crate, to carry packets.
+  Whichever it is ends at `CmdTranslator::translate_ump`, which the lane and
+  `/midi_ump` already reach.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
