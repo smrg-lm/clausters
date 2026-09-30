@@ -9,10 +9,13 @@
 //!   of the curve's table on the transport's position ([`curve_def`]), shared
 //!   as the channel is. Its notes are its slots.
 //! - **A note** is one of those slots, an instance of [`note_graph`]: the def
-//!   the note names, beside the readers of the note's own curves on buses of
-//!   its own, and -- when either scope bends it -- a node that makes its pitch
-//!   ([`pitch_def`]). The voice is marked `ends`, so the slot is freed with it:
-//!   the readers do not outlive what they shape.
+//!   the note names, beside the readers of the note's own curves in its own
+//!   time ([`local_def`]) on buses of its own, a hold per channel curve it
+//!   reads ([`hold_def`]) -- the channel reaches a note from its on to its
+//!   off, and after that the note keeps the last value -- and, when either
+//!   scope bends it, a node that makes its pitch ([`pitch_def`]). The voice
+//!   is marked `ends`, so the slot is freed with it: the readers do not
+//!   outlive what they shape.
 //!
 //! **How the two combine**, one control at a time: a bend is the channel's plus
 //! the note's, in semitones, as MIDI 2.0's per-note bend and MPE's master
@@ -151,8 +154,8 @@ fn note_bus(control: &str) -> String {
     format!("note/{control}")
 }
 
-/// The port a curve's table buffer is handed through: `<control>/buf`, and
-/// `<control>/at` and `<control>/step` beside it.
+/// The port a note curve's table buffer is handed through: `<control>/buf`,
+/// and `<control>/step` beside it.
 pub fn curve_port(control: &str, what: &str) -> String {
     format!("{control}/{what}")
 }
@@ -162,12 +165,82 @@ pub fn lane_port(control: &str, what: &str) -> String {
     format!("lane/{control}/{what}")
 }
 
-/// A reader of one curve's table, onto `bus`.
+/// The bus a note keeps a channel's curve over `control` on, held from its
+/// release on.
+fn held_bus(control: &str) -> String {
+    format!("held/{control}")
+}
+
+/// The name of a note's own curve's reader.
+pub fn local_name() -> String {
+    format!("{PREFIX}.local")
+}
+
+/// **A note's own curve's reader**: its table read in **the note's own time**,
+/// from the sample it started on, onto the control bus `out`.
+///
+/// A note's curve is its envelope -- it runs from the note's start through its
+/// release -- so it follows the note and not the transport: a loop's wrap, a
+/// stop or a locate moves the transport and leaves a note that is sounding
+/// where it was in its own curve. The table starts where the note does, a
+/// sample every `step` frames.
+pub fn local_def() -> Value {
+    json!({
+        "name": local_name(),
+        "controls": [
+            {"name": OUT_BUS, "default": 0.0},
+            {"name": BUF, "default": 0.0},
+            {"name": "step", "default": CURVE_STEP},
+        ],
+        "ugens": [
+            // 0..2: frames since the note started, in table samples.
+            {"kind": "SampleRate", "rate": "ir", "inputs": []},
+            {"kind": "Sweep", "rate": "kr", "inputs": [{"const": 0.0}, {"ugen": 0}]},
+            {"kind": "Div", "inputs": [{"ugen": 1}, {"control": 2}]},
+            // 3..4: the value there, onto the bus.
+            {"kind": "BufRd", "inputs": [
+                {"control": 1}, {"const": 0.0}, {"ugen": 2}, {"const": 0.0}
+            ]},
+            {"kind": "OutCtl", "inputs": [{"control": 0}, {"ugen": 3}]}
+        ]
+    })
+}
+
+/// The name of the node that holds a channel's curve for one note.
+pub fn hold_name() -> String {
+    format!("{PREFIX}.hold")
+}
+
+/// **A channel's curve as one note reads it**: `in` (mapped from the
+/// channel's bus) onto `out` while `gate` is open, and held from when it
+/// closes -- the note's release.
+///
+/// A channel's function reaches a note during its span, from its on to its
+/// off, and what it does after is not the note's: a loop's wrap or a stop's
+/// locate moves the channel's curve, and a note in its release would follow
+/// it -- a step in its level, a jump in its pitch. The note's `gate` port
+/// closes this with the voice's own gate.
+pub fn hold_def() -> Value {
+    json!({
+        "name": hold_name(),
+        "controls": [
+            {"name": OUT_BUS, "default": 0.0},
+            {"name": "in", "default": 0.0},
+            {"name": GATE, "default": 1.0},
+        ],
+        "ugens": [
+            {"kind": "Gate", "rate": "kr", "inputs": [{"control": 1}, {"control": 2}]},
+            {"kind": "OutCtl", "inputs": [{"control": 0}, {"ugen": 0}]}
+        ]
+    })
+}
+
+/// A reader of one channel curve's table, onto `bus`.
 fn reader(bus: &str) -> Value {
     json!({"def": curve_name(), "controls": {OUT_BUS: bus, "step": CURVE_STEP}})
 }
 
-/// The three ports of the reader at `member`, named by `port`.
+/// The three ports of the channel reader at `member`, named by `port`.
 fn reader_ports(surface: &mut Map<String, Value>, member: usize, port: impl Fn(&str) -> String) {
     for control in [BUF, AT, "step"] {
         surface.insert(
@@ -177,9 +250,10 @@ fn reader_ports(surface: &mut Map<String, Value>, member: usize, port: impl Fn(&
     }
 }
 
-/// **A note's graph**, as [`Shape`] says: the readers of its own curves, the
-/// pitch node when it is bent, then the voice (`ends`), each of whose controls
-/// reads the note's curve, else the channel's, else keeps its port's value.
+/// **A note's graph**, as [`Shape`] says: the readers of its own curves in
+/// its own time, a hold per channel curve it reads, the pitch node when it is
+/// bent, then the voice (`ends`), each of whose controls reads the note's
+/// curve, else the channel's as held, else keeps its port's value.
 ///
 /// The voice comes **last**: a control bus is written by whatever runs first in
 /// the block, and a group sorts by audio buses alone, so the order the members
@@ -193,22 +267,45 @@ pub fn note_graph(shape: &Shape) -> Value {
         .collect();
     let mut members = Vec::new();
     let mut surface = Map::new();
+    let mut gates = Vec::new();
     for control in &shape.own {
         buses.push(json!({"name": note_bus(control), "rate": "control"}));
-        reader_ports(&mut surface, members.len(), |what| {
-            curve_port(control, what)
-        });
-        members.push(reader(&note_bus(control)));
+        for what in [BUF, "step"] {
+            surface.insert(
+                curve_port(control, what),
+                json!([{"member": members.len(), "control": what}]),
+            );
+        }
+        members.push(json!({
+            "def": local_name(),
+            "controls": {OUT_BUS: note_bus(control), "step": CURVE_STEP},
+        }));
+    }
+    let bends = shape.bends();
+    let own = |c: &str| shape.own.iter().any(|o| o == c);
+    // The channel's curves the note reads -- those it has none of its own
+    // for, and a bend, which adds -- each held from the note's release.
+    for control in shape
+        .lanes
+        .iter()
+        .filter(|c| if *c == BEND { bends } else { !own(c) })
+    {
+        buses.push(json!({"name": held_bus(control), "rate": "control"}));
+        gates.push(json!({"member": members.len(), "control": GATE}));
+        members.push(json!({
+            "def": hold_name(),
+            "controls": {OUT_BUS: held_bus(control)},
+            "maps": {"in": lane_bus(control)},
+        }));
     }
     let mut maps = Map::new();
-    let bends = shape.bends();
     if bends {
         buses.push(json!({"name": "pitch", "rate": "control"}));
         let mut pitch_maps = Map::new();
         if shape.lanes.iter().any(|c| c == BEND) {
-            pitch_maps.insert("lane".into(), json!(lane_bus(BEND)));
+            pitch_maps.insert("lane".into(), json!(held_bus(BEND)));
         }
-        if shape.own.iter().any(|c| c == BEND) {
+        if own(BEND) {
             pitch_maps.insert("note".into(), json!(note_bus(BEND)));
         }
         surface.insert(
@@ -222,8 +319,8 @@ pub fn note_graph(shape: &Shape) -> Value {
         }));
         maps.insert(FREQ.into(), json!("pitch"));
     }
-    for control in shape.lanes.iter().filter(|c| *c != BEND) {
-        maps.insert(control.clone(), json!(lane_bus(control)));
+    for control in shape.lanes.iter().filter(|c| *c != BEND && !own(c)) {
+        maps.insert(control.clone(), json!(held_bus(control)));
     }
     for control in shape.own.iter().filter(|c| *c != BEND) {
         maps.insert(control.clone(), json!(note_bus(control)));
@@ -232,8 +329,10 @@ pub fn note_graph(shape: &Shape) -> Value {
     // **The release is a port too.** A note is started with the controls its
     // keys name, and `gate` is seldom one of them -- a def's own default opens
     // it -- yet the lane closes it through the slot's surface, where a port
-    // the surface does not have is ignored and the note would hang.
-    surface.insert(GATE.into(), json!([{"member": voice, "control": GATE}]));
+    // the surface does not have is ignored and the note would hang. It closes
+    // the holds with it.
+    gates.insert(0, json!({"member": voice, "control": GATE}));
+    surface.insert(GATE.into(), Value::Array(gates));
     // **A control a curve drives is not a port.** Setting a mapped control
     // unmaps it, so the value a note starts with -- its `amp`, written by
     // its author -- would take the control back from the curve the moment the
@@ -331,8 +430,9 @@ mod tests {
         }
     }
 
-    /// **The voice reads the note's curve, else the channel's**, and comes
-    /// after everything that writes what it reads.
+    /// **The voice reads the note's curve, else the channel's as held**, and
+    /// comes after everything that writes what it reads; its `gate` closes
+    /// the holds with it.
     #[test]
     fn a_note_reads_its_own_curve_before_the_channels() {
         let graph = note_graph(&shape(&["pressure"], &["pressure", "cutoff"]));
@@ -341,19 +441,32 @@ mod tests {
         assert_eq!(voice["def"], "default");
         assert_eq!(voice["ends"], true);
         assert_eq!(voice["maps"]["pressure"], "note/pressure");
-        assert_eq!(voice["maps"]["cutoff"], "lane/cutoff");
+        assert_eq!(voice["maps"]["cutoff"], "held/cutoff");
         assert!(
             graph["surface"]["pressure"].is_null(),
             "a port would unmap the curve"
         );
-        assert_eq!(members[0]["def"], curve_name());
+        assert_eq!(
+            members[0]["def"],
+            local_name(),
+            "its own curve in its own time"
+        );
+        assert_eq!(members[1]["def"], hold_name(), "the channel's cutoff, held");
+        assert_eq!(members[1]["maps"]["in"], "lane/cutoff");
+        assert_eq!(
+            members.len(),
+            3,
+            "no hold for a control it has its own curve of"
+        );
         assert_eq!(graph["surface"]["pressure/buf"][0]["member"], 0);
         assert_eq!(graph["surface"]["amp"][0]["member"], members.len() - 1);
-        assert_eq!(
-            graph["surface"][GATE][0]["member"],
-            members.len() - 1,
-            "the lane releases the voice through it"
-        );
+        let gate: Vec<u64> = graph["surface"][GATE]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["member"].as_u64().unwrap())
+            .collect();
+        assert_eq!(gate, [2, 1], "the lane releases the voice and the holds");
     }
 
     /// **A bend is the channel's plus the note's**, made into the voice's
@@ -362,12 +475,14 @@ mod tests {
     fn a_bend_in_either_scope_makes_the_pitch() {
         let graph = note_graph(&shape(&[BEND], &[BEND]));
         let members = graph["members"].as_array().unwrap();
-        let pitch = &members[1];
+        assert_eq!(members[0]["def"], local_name());
+        assert_eq!(members[1]["def"], hold_name());
+        let pitch = &members[2];
         assert_eq!(pitch["def"], pitch_name());
-        assert_eq!(pitch["maps"]["lane"], "lane/bend");
+        assert_eq!(pitch["maps"]["lane"], "held/bend");
         assert_eq!(pitch["maps"]["note"], "note/bend");
-        assert_eq!(members[2]["maps"][FREQ], "pitch");
-        assert_eq!(graph["surface"][FREQ][0]["member"], 1);
+        assert_eq!(members[3]["maps"][FREQ], "pitch");
+        assert_eq!(graph["surface"][FREQ][0]["member"], 2);
         assert_eq!(graph["surface"][FREQ][0]["control"], "base");
         assert!(!note_graph(&shape(&[], &[]))["surface"][FREQ].is_null());
     }

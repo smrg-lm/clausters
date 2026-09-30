@@ -694,7 +694,13 @@ opened it.
       table is given back when the next pass starts rather than on the next
       edit, whose buffer number could hand a sounding note another curve. A
       slot a lane forgets before it runs now goes with its graph's state, its
-      buses and its voice's `ends`.)*
+      buses and its voice's `ends`. A later ear test (a loop's wrap clicked in
+      a releasing note) made the graph keep the two scopes as designed: a
+      note's own curves are read in its own time (`ev.local`, counting from
+      its start), so a wrap, a stop or a locate leaves its envelope where it
+      was, and each channel curve it reads goes through a hold (`ev.hold`)
+      that its `gate` closes -- the channel reaches a note from its on to its
+      off, and after that the note keeps the last value.)*
     - ⬜ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
       read (a zone's member channels into per-note curves -- the half of
       `M35`'s acceptance moved here), and curves into messages when a

@@ -173,7 +173,10 @@ fn the_ops_make_what_the_plan_says_and_no_more() {
         .iter()
         .filter(|op| matches!(op, Op::Def { .. }))
         .count();
-    assert_eq!(defs, 5, "the reader, the pitch, two notes and the channel");
+    assert_eq!(
+        defs, 7,
+        "the two readers, the hold, the pitch, two notes and the channel"
+    );
     assert!(
         first.iter().any(
             |op| matches!(op, Op::Def { spec, .. } if spec["name"] == event_graph::curve_name())
@@ -231,7 +234,7 @@ fn a_slot_note_carries_its_readers_ports() {
     assert_eq!(Some(first.graph), applier.node("t/channel/#0"));
     assert_eq!(first.slot, plan.notes[0].as_ref().unwrap().slot);
     let names: Vec<&str> = first.ports.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["pressure/buf", "pressure/at", "pressure/step"]);
+    assert_eq!(names, ["pressure/buf", "pressure/step"]);
     assert!(slots[1].as_ref().unwrap().ports.is_empty());
     assert!(slots[2].is_none());
 

@@ -124,9 +124,10 @@ fn table(key: String, points: &[Point], first: f64, last: f64, origin: f64, rate
 /// A note plays in a graph when it has a curve of its own or its channel has
 /// one: its channel is `scope` and the note's `channel` key, and a lane
 /// reaches it when it is of the same scope and names that channel or none. A
-/// note's own table runs from its start to the later of its release and its
-/// last point -- a curve may run into the release -- and a lane's from its
-/// first point to its last; past either end a reader holds.
+/// note's own table is in the note's own time, from its start to the later of
+/// its release and its last point -- a curve may run into the release -- and a
+/// lane's on the transport's, from its first point to its last; past either
+/// end a reader holds.
 pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
     struct Channel {
         lanes: Vec<(String, Table)>,
@@ -204,14 +205,10 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
                 let points = &curve.points;
                 let reach = event.end.max(event.start + points[points.len() - 1].at);
                 let key = format!("note/{id}/{control}");
-                let t = table(
-                    key,
-                    points,
-                    event.start * rate,
-                    reach * rate,
-                    event.start,
-                    rate,
-                );
+                // In the note's own time: its reader counts from the sample
+                // the note starts on, so the table does too, and a note moved
+                // is the same table.
+                let t = table(key, points, 0.0, (reach - event.start) * rate, 0.0, rate);
                 (control, t)
             })
             .collect();
@@ -343,7 +340,12 @@ impl NoteCurves {
         }
         let mut defs = Vec::new();
         if !plan.channels.is_empty() {
-            for spec in [event_graph::curve_def(), event_graph::pitch_def()] {
+            for spec in [
+                event_graph::curve_def(),
+                event_graph::local_def(),
+                event_graph::hold_def(),
+                event_graph::pitch_def(),
+            ] {
                 let name = spec["name"].as_str().unwrap_or_default().to_string();
                 if self.sent.insert(name) {
                     defs.push(Op::Def {
@@ -465,7 +467,6 @@ impl NoteCurves {
                 for (control, t) in &note.curves {
                     let buffer = applier.buffer(&self.current(&t.key)?)?;
                     ports.push((event_graph::curve_port(control, BUF), f64::from(buffer)));
-                    ports.push((event_graph::curve_port(control, AT), t.at));
                     ports.push((event_graph::curve_port(control, "step"), CURVE_STEP));
                 }
                 Some(SlotNote {

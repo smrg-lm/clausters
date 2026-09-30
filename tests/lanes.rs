@@ -442,7 +442,9 @@ fn a_lanes_mpe_bend_retunes_its_note_on_its_sample() {
 /// `freq * level` while it lives, so the output is the combination itself.
 #[test]
 fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
-    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+    use clausters_core::event_graph::{
+        Shape, channel_graph, curve_def, hold_def, local_def, note_graph, pitch_def,
+    };
 
     let mut server = server();
     let probe = r#"{
@@ -457,6 +459,8 @@ fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
     for def in [
         probe.to_string(),
         curve_def().to_string(),
+        local_def().to_string(),
+        hold_def().to_string(),
         pitch_def().to_string(),
     ] {
         send(
@@ -539,7 +543,9 @@ fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
 /// still falls silent a release after its end.
 #[test]
 fn a_note_in_a_graph_is_released_through_its_gate() {
-    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+    use clausters_core::event_graph::{
+        Shape, channel_graph, curve_def, hold_def, local_def, note_graph, pitch_def,
+    };
 
     let mut server = server();
     // `level * env`, a 10 ms release that frees the voice.
@@ -561,6 +567,8 @@ fn a_note_in_a_graph_is_released_through_its_gate() {
     for def in [
         gated.to_string(),
         curve_def().to_string(),
+        local_def().to_string(),
+        hold_def().to_string(),
         pitch_def().to_string(),
     ] {
         send(
@@ -643,7 +651,9 @@ fn a_note_in_a_graph_is_released_through_its_gate() {
 /// the note's release falls from where it was rather than stepping down to it.
 #[test]
 fn a_stop_holds_the_curves_a_releasing_note_reads() {
-    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+    use clausters_core::event_graph::{
+        Shape, channel_graph, curve_def, hold_def, local_def, note_graph, pitch_def,
+    };
 
     let mut server = server();
     // `level * env`, a 0.2 s linear release.
@@ -665,6 +675,8 @@ fn a_stop_holds_the_curves_a_releasing_note_reads() {
     for def in [
         gated.to_string(),
         curve_def().to_string(),
+        local_def().to_string(),
+        hold_def().to_string(),
         pitch_def().to_string(),
     ] {
         send(
@@ -804,5 +816,136 @@ fn a_loop_ending_at_the_last_notes_end_plays_it_every_pass() {
     assert_eq!(
         sounding(&out),
         vec![(1000, 9600), (10_600, 19_200), (20_200, 28_800)]
+    );
+}
+
+/// **A loop's wrap leaves a releasing note its channel's last value**: the
+/// channel's curve is low at the loop's start and high at its end, the note
+/// held across the end is released on the seam, and its release falls from
+/// the high value rather than stepping down to the low one.
+#[test]
+fn a_wrap_leaves_a_releasing_note_its_channels_last_value() {
+    use clausters_core::event_graph::{
+        Shape, channel_graph, curve_def, hold_def, local_def, note_graph, pitch_def,
+    };
+
+    let mut server = server();
+    let gated = r#"{
+        "name": "gated",
+        "controls": [{"name": "level", "default": 0.5}, {"name": "gate", "default": 1.0}],
+        "ugens": [
+            {"kind": "EnvGen", "inputs": [
+                {"control": 1}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                {"const": 2.0}, {"const": 1.0}, {"const": 2.0}, {"const": 1.0},
+                {"const": -1.0},
+                {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.2}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    for def in [
+        gated.to_string(),
+        curve_def().to_string(),
+        local_def().to_string(),
+        hold_def().to_string(),
+        pitch_def().to_string(),
+    ] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
+    }
+    let shape = Shape {
+        def: "gated".into(),
+        controls: Vec::new(),
+        own: Vec::new(),
+        lanes: vec!["level".into()],
+    };
+    let note = note_graph(&shape);
+    let channel = channel_graph(&["level".to_string()], std::slice::from_ref(&note));
+    for graph in [&note, &channel] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("graph".into()),
+                OscType::Blob(graph.to_string().into_bytes()),
+            ],
+        );
+    }
+    // The channel's level: 0.1 until a tenth of a second, 0.8 after.
+    send(
+        &mut server,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(2), OscType::Int(1)],
+    );
+    pull(&mut server, 1);
+    send(
+        &mut server,
+        "/buffer_set",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Float(0.1),
+            OscType::Int(1),
+            OscType::Float(0.8),
+        ],
+    );
+    send(
+        &mut server,
+        "/group_new",
+        vec![OscType::Int(200), OscType::Int(0), OscType::Int(0)],
+    );
+    send(
+        &mut server,
+        "/transport_follow",
+        vec![OscType::Int(0), OscType::Int(200)],
+    );
+    let name = channel["name"].as_str().unwrap().to_string();
+    send(
+        &mut server,
+        "/graph_new",
+        vec![
+            OscType::String(name),
+            OscType::Int(500),
+            OscType::Int(1),
+            OscType::Int(200),
+            OscType::String("lane/level/buf".into()),
+            OscType::Float(0.0),
+            OscType::String("lane/level/step".into()),
+            OscType::Float(4800.0),
+        ],
+    );
+    // A note from 9600 past the loop's end at 19200.
+    let json = r#"{"notes": [[9600, 30000, {"graph": 500, "slot": "note.0"}, {}, "gate"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    send(
+        &mut server,
+        "/transport_loop",
+        vec![OscType::Int(0), OscType::Long(0), OscType::Long(19_200)],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 19_200 / BLOCK_SIZE + 60);
+    assert!(
+        (out[19_000] - 0.8).abs() < 1e-3,
+        "at the channel's level before the seam"
+    );
+    let steps = out[19_000..]
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        steps < 0.01,
+        "the release falls from 0.8 across the seam without a step (largest {steps})"
     );
 }
