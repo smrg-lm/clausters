@@ -36,10 +36,11 @@
 use std::collections::{HashMap, HashSet};
 
 use clausters_core::event::render::Arg;
-use clausters_core::lane::{LaneData, LaneMidi, LaneVoice, Release};
+use clausters_core::lane::{LaneData, LaneMidi, LaneUmp, LaneVoice, Release};
 use clausters_midi::mpe::{Decoder, MpeEvent};
 
 use super::*;
+use crate::midi::ump::{PerNote, UmpMessage, parse_ump};
 use crate::midi::{ChannelVoiceMessage, parse_midi1};
 use crate::server::engine::LaneTag;
 
@@ -100,6 +101,33 @@ enum LaneEvent {
         voice: u32,
         event: MpeEvent,
     },
+    /// A MIDI 2.0 per-note message, on the `voice` of the note `note` of
+    /// `channel` sounding at its position.
+    PerNote {
+        channel: u8,
+        note: u8,
+        message: PerNote,
+        voice: u32,
+    },
+}
+
+/// A lane's MIDI as its data holds it: MIDI 1.0 bytes, or a MIDI 2.0 packet.
+enum Raw {
+    Bytes(Vec<u8>),
+    Packet(Vec<u32>),
+}
+
+/// What a lane's MIDI reads as, in position order: what the zones' decoder
+/// makes of MIDI 1.0 bytes, a MIDI 2.0 channel voice message at its own
+/// resolution, or a MIDI 2.0 per-note message.
+enum Heard {
+    Mpe(MpeEvent),
+    Voice(ChannelVoiceMessage),
+    PerNote {
+        channel: u8,
+        note: u8,
+        message: PerNote,
+    },
 }
 
 /// One lane, as this side holds it.
@@ -157,7 +185,7 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
             }),
         ));
     }
-    events.extend(midi_events(data.midi, zones));
+    events.extend(midi_events(data.midi, data.ump, zones));
     events.sort_by_key(|(position, _)| *position);
     Ok(events)
 }
@@ -171,10 +199,22 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
 /// notes sounding on its channel at its position, or the one on its key; a
 /// program change picks the instrument of the notes after it. A note-on the
 /// lane never turns off is not played, and a message that is not a channel
-/// voice message is dropped.
-fn midi_events(midi: Vec<LaneMidi>, mut zones: Decoder) -> Vec<(u64, LaneEvent)> {
-    let mut midi = midi;
-    midi.sort_by_key(|m| m.position);
+/// voice message is dropped. MIDI 2.0's packets read among the bytes, in
+/// position order: a channel voice message as its MIDI 1.0 twin reads, at its
+/// own resolution, and a per-note message reaches the note sounding on its
+/// channel and key.
+fn midi_events(
+    midi: Vec<LaneMidi>,
+    ump: Vec<LaneUmp>,
+    mut zones: Decoder,
+) -> Vec<(u64, LaneEvent)> {
+    // Both lists in one order, bytes before packets at a position.
+    let mut raw: Vec<(u64, Raw)> = midi
+        .into_iter()
+        .map(|m| (m.position, Raw::Bytes(m.bytes)))
+        .chain(ump.into_iter().map(|p| (p.position, Raw::Packet(p.words))))
+        .collect();
+    raw.sort_by_key(|(position, _)| *position);
     // Each zone note's slot in `out`, its start, key and master, while it sounds.
     let mut zone_notes: HashMap<u32, (usize, u64, u8, u8)> = HashMap::new();
     // Each note's slot in `out`, with its start, while it sounds.
@@ -182,23 +222,78 @@ fn midi_events(midi: Vec<LaneMidi>, mut zones: Decoder) -> Vec<(u64, LaneEvent)>
     let mut programs: HashMap<u8, u8> = HashMap::new();
     let mut out: Vec<Option<(u64, LaneEvent)>> = Vec::new();
     let mut voices = 0u32;
-    let end = |out: &mut Vec<Option<(u64, LaneEvent)>>, slot: usize, at: u64, from: u64| {
-        if let Some((_, LaneEvent::MidiNote { length, .. })) = out[slot].as_mut() {
-            *length = at - from;
-        }
-    };
     let voice_of = |out: &[Option<(u64, LaneEvent)>], slot: usize| match out[slot] {
         Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
         _ => None,
     };
-    let mut decoded = Vec::new();
-    for m in midi {
-        zones.feed(&m.bytes);
+    let mut decoded: Vec<(u64, Heard)> = Vec::new();
+    let feed = |zones: &mut Decoder, decoded: &mut Vec<(u64, Heard)>, at: u64, bytes: &[u8]| {
+        zones.feed(bytes);
         while let Some(event) = zones.poll() {
-            decoded.push((m.position, event));
+            decoded.push((at, Heard::Mpe(event)));
+        }
+    };
+    for (at, item) in raw {
+        match item {
+            Raw::Bytes(bytes) => feed(&mut zones, &mut decoded, at, &bytes),
+            Raw::Packet(words) => {
+                for message in parse_ump(&words) {
+                    match message {
+                        UmpMessage::Voice(voice) => decoded.push((at, Heard::Voice(voice))),
+                        UmpMessage::PerNote {
+                            channel,
+                            note,
+                            message,
+                        } => decoded.push((
+                            at,
+                            Heard::PerNote {
+                                channel,
+                                note,
+                                message,
+                            },
+                        )),
+                        UmpMessage::Midi1(bytes) => feed(&mut zones, &mut decoded, at, &bytes),
+                    }
+                }
+            }
         }
     }
-    for (at, event) in decoded {
+    for (at, heard) in decoded {
+        let event = match heard {
+            Heard::Mpe(event) => event,
+            Heard::Voice(message) => {
+                push_voice(
+                    &mut out,
+                    &mut sounding,
+                    &mut programs,
+                    &mut voices,
+                    at,
+                    message,
+                );
+                continue;
+            }
+            Heard::PerNote {
+                channel,
+                note,
+                message,
+            } => {
+                if let Some(voice) = sounding
+                    .get(&(channel, note))
+                    .and_then(|(slot, _)| voice_of(&out, *slot))
+                {
+                    out.push(Some((
+                        at,
+                        LaneEvent::PerNote {
+                            channel,
+                            note,
+                            message,
+                            voice,
+                        },
+                    )));
+                }
+                continue;
+            }
+        };
         let message = match event {
             MpeEvent::Plain([status, d1, d2]) => match parse_midi1(status, d1, d2) {
                 Some(message) => message,
@@ -263,58 +358,14 @@ fn midi_events(midi: Vec<LaneMidi>, mut zones: Decoder) -> Vec<(u64, LaneEvent)>
                 continue;
             }
         };
-        match message {
-            ChannelVoiceMessage::NoteOn {
-                channel,
-                note,
-                velocity,
-            } => {
-                if let Some((slot, from)) = sounding.remove(&(channel, note)) {
-                    end(&mut out, slot, at, from);
-                }
-                sounding.insert((channel, note), (out.len(), at));
-                out.push(Some((
-                    at,
-                    LaneEvent::MidiNote {
-                        channel,
-                        note,
-                        velocity,
-                        // Unset until its note-off, and dropped without one.
-                        length: u64::MAX,
-                        program: programs.get(&channel).copied(),
-                        voice: voices,
-                    },
-                )));
-                voices = voices.wrapping_add(1);
-            }
-            ChannelVoiceMessage::NoteOff { channel, note, .. } => {
-                if let Some((slot, from)) = sounding.remove(&(channel, note)) {
-                    end(&mut out, slot, at, from);
-                }
-            }
-            ChannelVoiceMessage::ProgramChange { channel, program } => {
-                programs.insert(channel, program);
-            }
-            ChannelVoiceMessage::PolyAftertouch { channel, note, .. } => {
-                let voices = sounding
-                    .get(&(channel, note))
-                    .and_then(|(slot, _)| voice_of(&out, *slot))
-                    .into_iter()
-                    .collect();
-                out.push(Some((at, LaneEvent::MidiSet { message, voices })));
-            }
-            ChannelVoiceMessage::ChannelAftertouch { channel, .. }
-            | ChannelVoiceMessage::ControlChange { channel, .. }
-            | ChannelVoiceMessage::PitchBend { channel, .. } => {
-                let mut voices: Vec<u32> = sounding
-                    .iter()
-                    .filter(|((c, _), _)| *c == channel)
-                    .filter_map(|(_, (slot, _))| voice_of(&out, *slot))
-                    .collect();
-                voices.sort_unstable();
-                out.push(Some((at, LaneEvent::MidiSet { message, voices })));
-            }
-        }
+        push_voice(
+            &mut out,
+            &mut sounding,
+            &mut programs,
+            &mut voices,
+            at,
+            message,
+        );
     }
     for (slot, _) in sounding.into_values() {
         out[slot] = None;
@@ -323,6 +374,84 @@ fn midi_events(midi: Vec<LaneMidi>, mut zones: Decoder) -> Vec<(u64, LaneEvent)>
         out[slot] = None;
     }
     out.into_iter().flatten().collect()
+}
+
+/// A lane's events so far, as `Option`s so an unended note can be dropped.
+type Slots = Vec<Option<(u64, LaneEvent)>>;
+
+/// **One channel voice message into a lane's events**, at `at`: a note-on
+/// starts a note (ending one already sounding on its key), a note-off ends
+/// it, a program change is remembered for the notes after it, and an
+/// expressive message reaches the notes it is for.
+fn push_voice(
+    out: &mut Slots,
+    sounding: &mut HashMap<(u8, u8), (usize, u64)>,
+    programs: &mut HashMap<u8, u8>,
+    voices: &mut u32,
+    at: u64,
+    message: ChannelVoiceMessage,
+) {
+    let end = |out: &mut Slots, slot: usize, at: u64, from: u64| {
+        if let Some((_, LaneEvent::MidiNote { length, .. })) = out[slot].as_mut() {
+            *length = at - from;
+        }
+    };
+    let voice_of = |out: &Slots, slot: usize| match out[slot] {
+        Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
+        _ => None,
+    };
+    match message {
+        ChannelVoiceMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => {
+            if let Some((slot, from)) = sounding.remove(&(channel, note)) {
+                end(out, slot, at, from);
+            }
+            sounding.insert((channel, note), (out.len(), at));
+            out.push(Some((
+                at,
+                LaneEvent::MidiNote {
+                    channel,
+                    note,
+                    velocity,
+                    // Unset until its note-off, and dropped without one.
+                    length: u64::MAX,
+                    program: programs.get(&channel).copied(),
+                    voice: *voices,
+                },
+            )));
+            *voices = voices.wrapping_add(1);
+        }
+        ChannelVoiceMessage::NoteOff { channel, note, .. } => {
+            if let Some((slot, from)) = sounding.remove(&(channel, note)) {
+                end(out, slot, at, from);
+            }
+        }
+        ChannelVoiceMessage::ProgramChange { channel, program } => {
+            programs.insert(channel, program);
+        }
+        ChannelVoiceMessage::PolyAftertouch { channel, note, .. } => {
+            let voices = sounding
+                .get(&(channel, note))
+                .and_then(|(slot, _)| voice_of(out, *slot))
+                .into_iter()
+                .collect();
+            out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+        }
+        ChannelVoiceMessage::ChannelAftertouch { channel, .. }
+        | ChannelVoiceMessage::ControlChange { channel, .. }
+        | ChannelVoiceMessage::PitchBend { channel, .. } => {
+            let mut voices: Vec<u32> = sounding
+                .iter()
+                .filter(|((c, _), _)| *c == channel)
+                .filter_map(|(_, (slot, _))| voice_of(out, *slot))
+                .collect();
+            voices.sort_unstable();
+            out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+        }
+    }
 }
 
 /// **The spans of position a transport plays next**, in playback order,
@@ -699,6 +828,25 @@ impl OscServer {
                     .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
                     .collect();
                 self.translator.lane_midi_set(message, &nodes, &mut start);
+                if start.is_empty() {
+                    return Ok(None);
+                }
+            }
+            LaneEvent::PerNote {
+                channel,
+                note,
+                message,
+                voice,
+            } => {
+                let Some(node) = self
+                    .lanes
+                    .get(&id)
+                    .and_then(|lane| lane.voices.get(&voice).copied())
+                else {
+                    return Ok(None);
+                };
+                self.translator
+                    .lane_per_note(node, channel, note, message, &mut start);
                 if start.is_empty() {
                     return Ok(None);
                 }

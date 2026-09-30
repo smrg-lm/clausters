@@ -11,7 +11,8 @@
 //! ```text
 //! {"notes":    [[start, end, voice, {"control": value, ...}, "gate"|"free"], ...],
 //!  "messages": [[position, "/address", args...], ...],
-//!  "midi":     [[position, byte, byte, ...], ...]}
+//!  "midi":     [[position, byte, byte, ...], ...],
+//!  "ump":      [[position, word, word, ...], ...]}
 //! ```
 //!
 //! Every list may be absent, and an empty one is not written. A note's `voice`
@@ -70,12 +71,21 @@ pub struct LaneMidi {
     pub bytes: Vec<u8>,
 }
 
+/// A MIDI 2.0 packet -- a Universal MIDI Packet's words -- played at
+/// `position` as though it had reached the server's MIDI input then.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneUmp {
+    pub position: u64,
+    pub words: Vec<u32>,
+}
+
 /// A lane's data whole.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LaneData {
     pub notes: Vec<LaneNote>,
     pub messages: Vec<LaneMessage>,
     pub midi: Vec<LaneMidi>,
+    pub ump: Vec<LaneUmp>,
 }
 
 impl LaneData {
@@ -121,6 +131,14 @@ impl LaneData {
                 Value::Array(entry)
             });
             out.insert("midi".into(), Value::Array(midi.collect()));
+        }
+        if !self.ump.is_empty() {
+            let ump = self.ump.iter().map(|packet| {
+                let mut entry = vec![json!(packet.position)];
+                entry.extend(packet.words.iter().map(|w| json!(w)));
+                Value::Array(entry)
+            });
+            out.insert("ump".into(), Value::Array(ump.collect()));
         }
         Value::Object(out)
     }
@@ -222,6 +240,24 @@ impl LaneData {
                 bytes,
             });
         }
+        for packet in list("ump") {
+            let fields = packet.as_array().ok_or("a MIDI 2.0 packet is an array")?;
+            let [position, words @ ..] = fields.as_slice() else {
+                return Err("a MIDI 2.0 packet is [position, words...]".into());
+            };
+            let words = words
+                .iter()
+                .map(|w| {
+                    w.as_u64()
+                        .and_then(|w| u32::try_from(w).ok())
+                        .ok_or_else(|| "a packet's word is 32 bits".to_string())
+                })
+                .collect::<Result<Vec<u32>, String>>()?;
+            data.ump.push(LaneUmp {
+                position: sample(position, "a MIDI 2.0 packet's position")?,
+                words,
+            });
+        }
         Ok(data)
     }
 }
@@ -268,6 +304,10 @@ mod tests {
             midi: vec![LaneMidi {
                 position: 7,
                 bytes: vec![0x90, 60, 100],
+            }],
+            ump: vec![LaneUmp {
+                position: 9,
+                words: vec![0x4090_3C00, 0xFFFF_0000],
             }],
         };
         let text = data.to_json().to_string();

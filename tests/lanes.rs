@@ -949,3 +949,104 @@ fn a_wrap_leaves_a_releasing_note_its_channels_last_value() {
         "the release falls from 0.8 across the seam without a step (largest {steps})"
     );
 }
+
+/// The `probe` def: `freq * level` onto bus 0, so a voice's pitch and level
+/// are what the output reads.
+fn probe(server: &mut ClaustersHeadless) {
+    let probe = r#"{
+        "name": "probe",
+        "controls": [{"name": "freq", "default": 440.0},
+                     {"name": "level", "default": 1.0}],
+        "ugens": [
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"control": 1}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    send(
+        server,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(probe.as_bytes().to_vec()),
+        ],
+    );
+    send(
+        server,
+        "/midi_bind",
+        vec![
+            OscType::Int(0),
+            OscType::String("probe".into()),
+            OscType::Int(GROUP),
+            OscType::Int(1),
+        ],
+    );
+    send(
+        server,
+        "/midi_map",
+        vec![
+            OscType::Int(0),
+            OscType::String("cc74".into()),
+            OscType::String("level".into()),
+        ],
+    );
+}
+
+/// **A lane's MIDI 2.0 packets play as the live input's would**: a note-on
+/// at 16-bit velocity sounds the channel's instrument at its key, a per-note
+/// pitch bend retunes that note alone (12 of 48 semitones: an octave), the
+/// registered per-note controller 74 moves the control CC 74 is mapped to,
+/// and the note-off ends it.
+#[test]
+fn a_lanes_midi2_packets_play_per_note() {
+    let mut server = server();
+    probe(&mut server);
+    let json = r#"{"ump": [
+        [4800, 1083196672, 3221225472],
+        [9600, 1080050944, 2684354560],
+        [14400, 1073759562, 2147483648],
+        [19200, 1082148096, 0]
+    ]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 400);
+    assert_eq!(sounding(&out), vec![(4800, 19200)]);
+    assert!((out[7000] - 440.0).abs() < 0.5, "at its key: {}", out[7000]);
+    assert!(
+        (out[12000] - 880.0).abs() < 0.5,
+        "an octave up: {}",
+        out[12000]
+    );
+    assert!(
+        (out[16000] - 440.0).abs() < 1.0,
+        "at half level: {}",
+        out[16000]
+    );
+}
+
+/// **`/midi_ump` is the live input's MIDI 2.0**: the same packets, now.
+#[test]
+fn midi_ump_plays_packets_now() {
+    let mut server = server();
+    probe(&mut server);
+    // The binding's voices are made in the group the transport governs.
+    play(&mut server);
+    let words = |w: &[u32]| {
+        w.iter()
+            .map(|&w| OscType::Int(w as i32))
+            .collect::<Vec<_>>()
+    };
+    send(&mut server, "/midi_ump", words(&[0x4090_4500, 0xC000_0000]));
+    let out = pull(&mut server, 10);
+    assert!((out[out.len() - 1] - 440.0).abs() < 0.5);
+    send(&mut server, "/midi_ump", words(&[0x4060_4500, 0xA000_0000]));
+    let out = pull(&mut server, 10);
+    assert!(
+        (out[out.len() - 1] - 880.0).abs() < 0.5,
+        "{}",
+        out[out.len() - 1]
+    );
+}

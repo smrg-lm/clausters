@@ -849,12 +849,114 @@ impl CmdTranslator {
     /// **A lane's expressive MIDI message** on `voices`, the lane's voices it
     /// reaches: the control the binding maps it to, set on each. Nothing when
     /// the binding maps none.
+    /// **A lane's per-note message** on the voice `node`, the note `note` of
+    /// `channel`, into `cmds` ([`Self::per_note`]).
+    pub fn lane_per_note(
+        &mut self,
+        node: i32,
+        channel: u8,
+        note: u8,
+        message: crate::midi::ump::PerNote,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        self.per_note(node, channel, note, message, cmds);
+    }
+
     pub fn lane_midi_set(&mut self, msg: ChannelVoiceMessage, voices: &[i32], cmds: &mut Vec<Cmd>) {
         if let Some((control, value)) = self.midi_expression(msg) {
             for &id in voices {
                 self.midi_set(id, &control, value, cmds);
             }
         }
+    }
+
+    /// **MIDI 2.0's packets** (`/midi_ump`, a lane's `ump`): each channel voice
+    /// message plays as [`Self::translate_midi`] plays it, at the resolution
+    /// it came in; a MIDI 1.0 message in a packet as the live input's bytes
+    /// do; and a per-note message reaches the voice sounding on its channel
+    /// and key ([`Self::per_note`]). Nothing a running stream sends errors.
+    pub fn translate_ump(&mut self, words: &[u32], cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        use crate::midi::ump::{UmpMessage, parse_ump};
+        let mut result = Ok(());
+        for message in parse_ump(words) {
+            let done = match message {
+                UmpMessage::Voice(msg) => self.translate_midi(msg, cmds),
+                UmpMessage::Midi1(bytes) => self.translate_midi_bytes(&bytes, cmds),
+                UmpMessage::PerNote {
+                    channel,
+                    note,
+                    message,
+                } => {
+                    if let Some(&id) = self.midi.voices.get(&(channel, note)) {
+                        self.per_note(id, channel, note, message, cmds);
+                    }
+                    Ok(())
+                }
+            };
+            if done.is_err() && result.is_ok() {
+                result = done;
+            }
+        }
+        result
+    }
+
+    /// **A per-note message on voice `id`**, the note `note` of `channel`: a
+    /// bend retunes it (`freq` at its key plus the bend) and sets the
+    /// binding's bend control, when one is mapped, in semitones -- as a zone's
+    /// voice is bent; a controller sets the control the binding maps that
+    /// number to, since a registered per-note controller's number is a CC's
+    /// meaning (74, the timbre) and an assignable one is the CC its number
+    /// names.
+    pub(crate) fn per_note(
+        &mut self,
+        id: i32,
+        channel: u8,
+        note: u8,
+        message: crate::midi::ump::PerNote,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        use crate::midi::ump::PerNote;
+        let Some(binding) = self.midi.channels.get(&channel) else {
+            return;
+        };
+        match message {
+            PerNote::Bend(semitones) => {
+                let bend = binding.bend_control.clone();
+                self.midi_set(
+                    id,
+                    "freq",
+                    convert::midi2freq(f32::from(note) + semitones),
+                    cmds,
+                );
+                if let Some(control) = bend {
+                    self.midi_set(id, &control, semitones, cmds);
+                }
+            }
+            PerNote::Controller { index, value } => {
+                if let Some(control) = binding.cc.get(&index).cloned() {
+                    self.midi_set(id, &control, convert::cc2control(value), cmds);
+                }
+            }
+        }
+    }
+
+    /// `/midi_ump word...`: MIDI 2.0 packets, each word an int's 32 bits, played
+    /// as the live input plays its messages ([`Self::translate_ump`]).
+    pub(in crate::osc::translate) fn midi_ump(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let words: Vec<u32> = msg
+            .args
+            .iter()
+            .map(|arg| match arg {
+                OscType::Int(word) => Ok(*word as u32),
+                OscType::Long(word) => Ok(*word as u32),
+                _ => Err("/midi_ump takes the packets' words as ints".to_string()),
+            })
+            .collect::<Result<_, _>>()?;
+        self.translate_ump(&words, cmds)
     }
 
     /// `/node_set` one control on one voice; tolerate a stale node / unknown name.

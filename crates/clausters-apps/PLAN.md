@@ -775,6 +775,17 @@ opened it.
         through the per-voice path MPE zones already use. The live transport
         (UDP MIDI 2.0, ALSA's UMP) is the open decision `PLAN.md` names; if
         it does not land here, this entry stays open.
+        *(The lane and the network door shipped 2026-09-30: `crate::midi::ump`
+        reads Channel Voice 2 into the actuation's `ChannelVoiceMessage`,
+        whose resolution was already MIDI 2.0's, and the per-note messages
+        into `PerNote`; `/midi_ump` plays packets now, a lane's `ump` list at
+        their positions, read among its MIDI bytes; a per-note bend retunes
+        the note's voice, a registered or assignable per-note controller sets
+        the control its number is mapped to. **Still open: the MIDI port.**
+        The live input opens a MIDI 1.0 port (`midir`), which carries no
+        packets; a port that does -- ALSA's UMP rawmidi, or UDP MIDI 2.0 --
+        is the transport decision `PLAN.md` names, and until it is taken this
+        entry stays open.)*
     - ⬜ **X3.11e - Between the scopes.** The two edits: a lane into its
       notes' expression, and the notes' expression into a lane, refused under
       overlap.

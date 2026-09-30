@@ -5401,5 +5401,7 @@ than being ticked here.
   raw with `send_msg` (`examples/event_lane.py` does). The builders belong
   beside `lane_set` on the server, the same verbs in both clients
   (`clients/web/PLAN.md` follows this entry), with the docstrings saying what
-  a binding reaches.
+  a binding reaches. `/midi_bindZone`, `/midi_query` and `/midi_ump` (MIDI 2.0
+  packets in, `crates/clausters-apps/PLAN.md` `X3.11d4`) joined the set
+  without builders either.
 

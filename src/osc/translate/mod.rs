@@ -1066,6 +1066,7 @@ impl CmdTranslator {
             "/midi_bindZone" => self.midi_bind_zone(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
             "/midi_map" => self.midi_map(msg),
+            "/midi_ump" => self.midi_ump(msg, cmds),
             "/node_free" => {
                 for arg in &msg.args {
                     let OscType::Int(id) = arg else {

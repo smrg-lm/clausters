@@ -147,6 +147,11 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
+- ⬜ **MIDI 2.0 by port into the server** *(`crates/clausters-apps/PLAN.md`,
+  `X3.11d4`)*. Packets reach the server by a lane and by `/midi_ump`; the live
+  input's port reads MIDI 1.0 bytes. **The decision:** the transport that
+  carries packets -- ALSA's UMP rawmidi or UDP MIDI 2.0 (root `PLAN.md`).
+
 - ⬜ **The graphs a note plays in are never freed**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Every new shape is a new
   def, sent and never given back. **The decision:** whether generated defs are

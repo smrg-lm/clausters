@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 pub mod convert;
 #[cfg(feature = "midi")]
 pub mod live;
+pub mod ump;
 
 // MIDI-spawned voices get node IDs from a reserved range of the node-id
 // partition (`clausters_core::registry::NodeIdPartition`), disjoint from the

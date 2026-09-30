@@ -201,7 +201,8 @@ class ServerTransport:
         """Replace event lane ``lane``'s data whole (``/lane_set``):
         ``{"notes": [[start, end, voice, {control: value}, "gate" | "free"],
         ...], "messages": [[position, address, *args], ...], "midi":
-        [[position, *bytes], ...]}``, every position a sample of the
+        [[position, *bytes], ...], "ump": [[position, *words], ...]}``,
+        every position a sample of the
         transport's position and every list optional. A note's ``voice`` is a
         def's name, or ``{"graph": id, "slot": name}`` for one more of a slot
         of a running graph instance, the controls its ports -- how a note
@@ -209,7 +210,9 @@ class ServerTransport:
         ``gate 0`` or by a free; a message is a command the server
         takes in a timed bundle, run as written; a MIDI message plays as though
         it had reached the server's MIDI input there, through its channel's
-        ``/midi_bind`` binding. What sounds
+        ``/midi_bind`` binding, and a ``ump`` entry -- one MIDI 2.0 packet's
+        words -- the same way at its own resolution, its per-note messages
+        reaching the note on their channel and key. What sounds
         keeps its release, and the new data is heard from where the position
         is. The notes editor's playback writes it from a
         `clausters.seq.EventSequence`."""
