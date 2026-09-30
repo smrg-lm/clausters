@@ -154,6 +154,13 @@ pub struct MidiBinding {
     pub pressure_control: Option<String>,
     /// Poly (per-note) aftertouch.
     pub poly_control: Option<String>,
+    /// A zone's third dimension (its timbre controller). A zone defaults it to
+    /// `timbre`; a per-channel binding has none.
+    #[serde(default)]
+    pub timbre_control: Option<String>,
+    /// Note-off velocity, set on the voice as it is released.
+    #[serde(default)]
+    pub lift_control: Option<String>,
     /// CC number -> control name.
     pub cc: HashMap<u8, String>,
     /// Program number -> instrument def name (program change re-selects it).
@@ -168,11 +175,65 @@ pub struct MidiBinding {
 
 /// A persisted binding: a channel plus its config, written to `midi.json` and
 /// re-issued at startup so a MIDI-driven setup survives a restart. The
-/// runtime `graph_instance` is excluded (re-instantiated on restore).
+/// runtime `graph_instance` is excluded (re-instantiated on restore). A zone's
+/// entry is its master channel with `zone` set; a file written before zones
+/// has none and loads as it did.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PersistedBinding {
     pub channel: u8,
     pub binding: MidiBinding,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<ZoneConfig>,
+}
+
+/// What an MPE zone adds to a binding: how many members it was bound with (0
+/// waits for the device's RPN 6, which wins when it comes) and the controller
+/// its third dimension is read from.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ZoneConfig {
+    pub members: u8,
+    #[serde(default = "timbre_cc")]
+    pub timbre_cc: u8,
+}
+
+fn timbre_cc() -> u8 {
+    clausters_midi::mpe::TIMBRE_CC
+}
+
+/// An MPE zone bound to an instrument: its binding (the instrument, where its
+/// voices go, whether they gate, and the controls each dimension moves) and
+/// its configuration.
+#[derive(Clone)]
+pub struct ZoneBinding {
+    pub binding: MidiBinding,
+    pub config: ZoneConfig,
+}
+
+impl ZoneBinding {
+    /// A zone of `members` playing `instrument`: a binding whose pressure and
+    /// timbre default to controls of those names, so a def that declares them
+    /// plays the three dimensions with nothing mapped.
+    pub fn new(members: u8, instrument: String, target: i32, action: i32, gate: bool) -> Self {
+        let mut binding = MidiBinding::new(instrument, target, action, gate);
+        binding.pressure_control = Some("pressure".into());
+        binding.timbre_control = Some("timbre".into());
+        Self {
+            binding,
+            config: ZoneConfig {
+                members,
+                timbre_cc: timbre_cc(),
+            },
+        }
+    }
+}
+
+/// A zone's sounding note, by the decoder's note id: its voice, its key and
+/// the zone (by master channel) it plays in.
+#[derive(Clone, Copy, Debug)]
+pub struct ZoneVoice {
+    pub id: i32,
+    pub key: u8,
+    pub master: u8,
 }
 
 impl MidiBinding {
@@ -188,6 +249,8 @@ impl MidiBinding {
             bend_control: None,
             pressure_control: None,
             poly_control: None,
+            timbre_control: None,
+            lift_control: None,
             cc: HashMap::new(),
             programs: HashMap::new(),
             graph_instance: None,
@@ -201,6 +264,13 @@ impl MidiBinding {
 pub struct MidiBindings {
     pub channels: HashMap<u8, MidiBinding>,
     pub voices: HashMap<(u8, u8), i32>,
+    /// MPE zones, by master channel (0 or 15).
+    pub zones: HashMap<u8, ZoneBinding>,
+    /// The zones' decoder: the live input goes through it, and what it passes
+    /// through untouched is a plain channel's.
+    pub decoder: clausters_midi::mpe::Decoder,
+    /// The zones' sounding notes, by the decoder's note id.
+    pub zone_voices: HashMap<u32, ZoneVoice>,
     ids: Registry,
 }
 
@@ -211,8 +281,21 @@ impl MidiBindings {
         Self {
             channels: HashMap::new(),
             voices: HashMap::new(),
+            zones: HashMap::new(),
+            decoder: clausters_midi::mpe::Decoder::new(),
+            zone_voices: HashMap::new(),
             ids: Registry::new(base, capacity),
         }
+    }
+
+    /// The channels a zone may reach: every one no per-channel binding holds.
+    /// Kept on the decoder, so a device's RPN cannot widen a zone over one.
+    pub fn refresh_allowed(&mut self) {
+        let bound = self
+            .channels
+            .keys()
+            .fold(0u16, |mask, &c| if c < 16 { mask | (1 << c) } else { mask });
+        self.decoder.set_allowed(!bound);
     }
 
     /// Allocate a node ID for a MIDI-spawned voice; `None` when every id in
@@ -239,7 +322,13 @@ impl MidiBindings {
             .map(|(&channel, binding)| PersistedBinding {
                 channel,
                 binding: binding.clone(),
+                zone: None,
             })
+            .chain(self.zones.iter().map(|(&master, zone)| PersistedBinding {
+                channel: master,
+                binding: zone.binding.clone(),
+                zone: Some(zone.config),
+            }))
             .collect();
         out.sort_by_key(|b| b.channel);
         out

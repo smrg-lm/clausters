@@ -309,6 +309,7 @@ name = "clausters"
 version = "0.11.0"
 dependencies = [
  "clausters-core",
+ "clausters-midi",
  "clausters-net",
  "cpal",
  "hound",

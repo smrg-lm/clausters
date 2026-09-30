@@ -389,3 +389,47 @@ fn an_unbound_channel_and_an_unended_note_sound_nothing() {
     play(&mut server);
     assert_eq!(sounding(&pull(&mut server, 100)), Vec::new());
 }
+
+/// **A lane's MPE plays per note**: in a zone, a member's bend retunes its own
+/// note on its sample, as the live input would. The def writes its `freq` to
+/// the output, so the output is the pitch.
+#[test]
+fn a_lanes_mpe_bend_retunes_its_note_on_its_sample() {
+    let mut server = server();
+    let pitch = r#"{
+        "name": "pitch",
+        "controls": [{"name": "freq", "default": 0.0}],
+        "ugens": [
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"control": 0}]}
+        ]
+    }"#;
+    send(
+        &mut server,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(pitch.as_bytes().to_vec()),
+        ],
+    );
+    send(
+        &mut server,
+        "/midi_bindZone",
+        vec![
+            OscType::Int(0),
+            OscType::Int(15),
+            OscType::String("pitch".into()),
+            OscType::Int(GROUP),
+            OscType::Int(1),
+        ],
+    );
+    let up = clausters_midi::mpe::bend_message(1, 12.0, 48.0);
+    set_midi(
+        &mut server,
+        &[(1000, [0x91, 69, 100]), (3000, up), (6000, [0x81, 69, 0])],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 200);
+    assert!((out[2999] - 440.0).abs() < 0.01, "{}", out[2999]);
+    assert!((out[3000] - 880.0).abs() < 1.0, "{}", out[3000]);
+    assert_eq!(sounding(&out), vec![(1000, 6000)]);
+}

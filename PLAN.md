@@ -251,7 +251,7 @@ completed items lives in the git history.)
 
   **Acceptance (met).** A poll lists one row per role and one per worker, never a row for a worker the server does not have; the audio row counts one call per block and the net row one per turn; two polls never report less than the first (`tests/osc.rs::server_load_reports_every_role_cumulatively`); each worker accounts the stages it took and a sequential engine reports no `dsp` row at all (`tests/parallel.rs::every_worker_accounts_the_stages_it_took`); the audio thread stays allocation-free (`tests/rt_safety.rs`); and the example reads a live server's roles while it plays, with the NRT row moving for a `/buffer_gen` neither CPU figure would have shown.
 
-- ⬜ **M35 — MPE: the expression belongs to the note, and the shape it takes is MIDI 2.0's** *(opened 2026-09-19)*
+- ✅ **M35 — MPE: the expression belongs to the note, and the shape it takes is MIDI 2.0's** *(opened 2026-09-19; done 2026-09-29, with `crates/clausters-apps/PLAN.md` `X3.11` next on it)*
 
   **What is missing.** `/midi_bind` binds **one channel** to an instrument, and every expressive message on it reaches **every** voice of that channel (`midi_set_channel`). MPE is the opposite arrangement: a *zone* of member channels, one note per channel at a time, and bend/pressure/timbre addressed to that one note through the channel it sits on. Nothing in the server knows what a zone is, and the control-change path never looks at **RPN** — which is how a zone is declared (RPN 6, over CC 101/100/6/38). So an MPE controller routed into the virtual port today plays the notes and loses all three expression dimensions: they either go nowhere or, once mapped, go to every voice at once.
 
@@ -327,6 +327,34 @@ completed items lives in the git history.)
   **The reference implementation.** JUCE's `juce_audio_basics/mpe`. What is worth taking is the *separation*, not the code: `MPEZoneLayout` (zones and the RPN that declares them), `MPEInstrument` (the note state machine holding the five dimensions of every sounding note), `MPEValue` (7- and 14-bit unified), `MPEChannelAssigner` (the output side). The first three map almost one to one onto what `clausters-midi` grows here.
 
   **Acceptance.** A zone declared over RPN is recognized and readable back; a per-channel binding that maps CC 6 still receives it, and a plain MIDI 1.0 keyboard with a bend wheel behaves exactly as it does before this milestone (a regression test over the existing path, not an inspection); a member bend moves only its own voice while a master bend moves the whole zone; a full controller stream (three dimensions x 15 channels) drives one def with no allocation on the audio thread (`tests/rt_safety.rs`); a take recorded through the Python client writes out with its expression and reads back on another host; `docs/schemas.md` gains the zone commands, `docs/architecture.md` the decoder's place, and an example plays an MPE controller into a gate-aware def.
+
+  **Shipped** *(2026-09-29)*. `clausters_midi::mpe`: `Decoder` (zones on
+  either side, RPN 0 and 6 read on a configured master only, a device's RPN 6
+  winning, a zone of zero members playing its master, `set_allowed` refusing an
+  RPN that would widen a zone over a bound channel), `Assigner`,
+  `zone_messages`, `bend_message` and `expression_messages`, with the C ABI
+  shell as handles (`MIDI_ABI_VERSION` 4; the version record moved to
+  `docs/ipc.md`). **One change from the shape above**: the per-note model is the
+  decoder's own message, `MpeEvent` (a note id minted at the note-on; a bend
+  already summed in semitones), which the translator actuates directly --
+  `ChannelVoiceMessage` did not grow per-note variants, since nothing else
+  would produce them until a UMP transport does. The server holds one decoder
+  in its bindings and the live input reaches it as bytes
+  (`translate_midi_bytes`); `/midi_bindZone`, `/midi_query`, `/midi_map`'s
+  `timbre` (with its controller number) and `lift`, zones persisted in
+  `midi.json` with serde defaults. An event lane's `midi` list decodes through
+  the zones' layout when it is set, so an MPE stream on a lane plays per note
+  (`T9`'s path). Python's `MidiServer(zone=..., upper=...)` declares the zone
+  and assigns each note a member with its `bend`/`pressure`/`timbre`; the GUI
+  host's live input runs through the same decoder (both zones waiting) and the
+  roll paints a zone note at its bend and retunes it as the bend moves. The
+  voice budget needed nothing: the MIDI id range is twice `--max-nodes`. Tests:
+  `crates/clausters-midi` (the decoder and the assigner), `tests/mpe.rs`,
+  `tests/lanes.rs` (a lane's MPE bend on its sample), `tests/rt_safety.rs` (a
+  full stream), `test_midi.py`; `examples/midi_mpe.py` is the manual test.
+  **Moved to `X3.11`**: a take read back *with* its expression -- reading a
+  `.mid`'s MPE into a sequence's per-note curves is the notes editor's
+  conversion, and writing one from those curves is too.
 
 ### Reviewed ideas: what was dropped and why
 

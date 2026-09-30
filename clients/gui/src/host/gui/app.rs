@@ -138,6 +138,14 @@ pub(super) struct App {
     /// the port).
     #[cfg(feature = "midi")]
     pub(super) midi_in: Option<clausters_midi::live::Input>,
+    /// What the port's messages go through: the shared MPE decoder, both
+    /// zones waiting for a device to size them.
+    #[cfg(feature = "midi")]
+    pub(super) mpe: clausters_midi::mpe::Decoder,
+    /// A zone note's channel and key, by the decoder's note id, while it
+    /// sounds.
+    #[cfg(feature = "midi")]
+    pub(super) mpe_notes: std::collections::HashMap<u32, (u8, u8)>,
     /// Whether the port-open failure was already reported (retrying is cheap,
     /// warning every frame is not).
     #[cfg(feature = "midi")]
@@ -175,6 +183,15 @@ impl App {
             standalone: false,
             #[cfg(feature = "midi")]
             midi_in: None,
+            #[cfg(feature = "midi")]
+            mpe: {
+                let mut decoder = clausters_midi::mpe::Decoder::new();
+                decoder.set_zone(clausters_midi::mpe::Side::Lower, Some(0));
+                decoder.set_zone(clausters_midi::mpe::Side::Upper, Some(0));
+                decoder
+            },
+            #[cfg(feature = "midi")]
+            mpe_notes: std::collections::HashMap::new(),
             #[cfg(feature = "midi")]
             midi_warned: false,
             text_clipboard: crate::host::clipboard::Clip::default(),

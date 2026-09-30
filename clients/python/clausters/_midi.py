@@ -21,7 +21,7 @@ from array import array
 
 from . import _libpath
 
-MIDI_ABI_VERSION = 3
+MIDI_ABI_VERSION = 4
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _MIDI_NAMES = ("libclausters_midi.so", "libclausters_midi.dylib", "clausters_midi.dll")
@@ -68,6 +68,21 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_midi_read_smf.restype = u8p
     lib.clausters_midi_read_smf.argtypes = [u8p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    # MPE: the output side's channel assigner and the messages a zone and a
+    # note's expression are written as.
+    lib.clausters_mpe_assigner_new.restype = ctypes.c_void_p
+    lib.clausters_mpe_assigner_new.argtypes = [ctypes.c_int32, ctypes.c_int32]
+    lib.clausters_mpe_assigner_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_mpe_assigner_note_on.restype = ctypes.c_int32
+    lib.clausters_mpe_assigner_note_on.argtypes = [ctypes.c_void_p, ctypes.c_uint8]
+    lib.clausters_mpe_assigner_note_off.argtypes = [ctypes.c_void_p, ctypes.c_uint8, ctypes.c_uint8]
+    lib.clausters_mpe_zone_messages.restype = ctypes.c_int32
+    lib.clausters_mpe_zone_messages.argtypes = [ctypes.c_int32, ctypes.c_int32, u8p, ctypes.c_size_t]
+    lib.clausters_mpe_expression_messages.restype = ctypes.c_int32
+    lib.clausters_mpe_expression_messages.argtypes = [
+        ctypes.c_uint8, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float,
+        ctypes.c_uint8, u8p, ctypes.c_size_t,
+    ]
     # Live I/O (only present if the cdylib was built with `--features live`).
     if hasattr(lib, "clausters_midi_output_open"):
         lib.clausters_midi_output_open.restype = ctypes.c_void_p
@@ -258,3 +273,58 @@ def input_poll(handle) -> bytes | None:
 
 def input_close(handle) -> None:
     lib().clausters_midi_input_close(handle)
+
+
+# ---- MPE ----
+
+
+def _messages(fill) -> list:
+    """Three-byte messages a library call writes into a buffer."""
+    buf = (ctypes.c_uint8 * 64)()
+    n = fill(ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)), 64)
+    if n < 0:
+        raise RuntimeError("MPE message buffer too small")
+    return [bytes(buf[i : i + 3]) for i in range(0, n, 3)]
+
+
+def zone_messages(members: int, upper: bool = False) -> list:
+    """The messages that declare an MPE zone of ``members`` (the lower zone,
+    master channel 0, unless ``upper``): RPN 6 on its master, then the null
+    RPN."""
+    return _messages(lambda out, cap: lib().clausters_mpe_zone_messages(
+        int(upper), int(members), out, cap))
+
+
+def expression_messages(channel: int, bend: float, bend_range: float,
+                        pressure: float | None, timbre: float | None,
+                        timbre_cc: int = 74) -> list:
+    """A note's starting expression on its member ``channel``, sent before its
+    note-on: the bend in semitones through ``bend_range``, the pressure and the
+    timbre (0..1, ``None`` for one the note does not state, which goes back to
+    its rest)."""
+    return _messages(lambda out, cap: lib().clausters_mpe_expression_messages(
+        int(channel), float(bend), float(bend_range),
+        -1.0 if pressure is None else float(pressure),
+        -1.0 if timbre is None else float(timbre), int(timbre_cc), out, cap))
+
+
+class MpeAssigner:
+    """Which member channel an outgoing note goes on: round robin over a
+    zone's members, preferring a channel with nothing sounding, reusing the
+    one held longest when all are busy (the library's rule)."""
+
+    def __init__(self, members: int, upper: bool = False):
+        self._handle = lib().clausters_mpe_assigner_new(int(upper), int(members))
+
+    def note_on(self, key: int) -> int | None:
+        channel = lib().clausters_mpe_assigner_note_on(self._handle, int(key) & 0x7F)
+        return None if channel < 0 else channel
+
+    def note_off(self, channel: int, key: int) -> None:
+        lib().clausters_mpe_assigner_note_off(self._handle, int(channel), int(key) & 0x7F)
+
+    def __del__(self):
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_mpe_assigner_free(handle)
+

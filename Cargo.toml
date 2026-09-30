@@ -125,6 +125,10 @@ required-features = ["synth", "embed"]
 # the seeded RNG and the timing/OSC math that both the server and every
 # client binding use, so client-side results match the server by construction.
 clausters-core = { path = "crates/clausters-core" }
+# MPE: the zone layout, the RPN parse and the per-note decoder, shared with the
+# GUI host and the clients. Pure computation (no `live` feature), so it builds
+# wherever the server does.
+clausters-midi = { path = "crates/clausters-midi" }
 # The stream carriers (TCP and WebSocket) and the hub the command loop drains,
 # shared with the GUI host so both fronts have one implementation of each.
 clausters-net = { path = "crates/clausters-net" }

@@ -157,12 +157,33 @@ class MidiServer:
     ``"midi"`` event as the message its ``midicmd`` names. Note number from
     `event.midinote()`, velocity from `event.velocity()` -- an explicit
     ``velocity``, else the amplitude's, never 0, which is a note-off -- and the
-    channel the event's own ``channel``, else this destination's."""
+    channel the event's own ``channel``, else this destination's.
 
-    def __init__(self, interface=None, channel: int = 0, ppq: int = 480):
+    **MPE.** With ``zone`` (a number of members), the destination is an MPE
+    zone: the lower one (master channel 0, members from 1 up) unless
+    ``upper``. The RPN that declares it goes out first -- at the head of the
+    score, or down the port at once -- and each note goes on a member channel
+    of its own (round robin, preferring a free one, reusing the one held
+    longest), preceded by its expression: the event's ``bend`` in semitones
+    through ``bend_range`` (48, the zone's default), and its ``pressure`` and
+    ``timbre``, 0..1. A dimension the event does not state goes back to its
+    rest, so a reused channel does not carry the last note's."""
+
+    def __init__(self, interface=None, channel: int = 0, ppq: int = 480,
+                 zone: int | None = None, upper: bool = False, bend_range: float = 48.0):
         self.interface = interface if interface is not None else MidiNrtInterface()
         self.channel = channel & 0x0F
         self.ppq = ppq
+        self.bend_range = float(bend_range)
+        self._assigner = None
+        self._held = []  # (off beat, channel, key) of the zone's notes
+        if zone is not None:
+            from .. import _midi
+
+            self._midi = _midi
+            self._assigner = _midi.MpeAssigner(zone, upper)
+            for message in _midi.zone_messages(zone, upper):
+                self.interface.emit(0.0, message)
 
     @property
     def score(self):
@@ -171,11 +192,37 @@ class MidiServer:
 
     def play_event(self, event):
         beat = Moment.current().beat
+        keys = event.keys_data()
         # The messages are the core's render: a note's on and off, a "midi"
         # event's one message, nothing for a rest.
-        for at, message in _native.event_midi(event.keys_data(), self.channel):
+        messages = _native.event_midi(keys, self.channel)
+        if self._assigner is not None and keys.get("type", "note") == "note":
+            messages = self._on_member(beat, keys, messages)
+        for at, message in messages:
             self.interface.emit(beat + at, message)
         return None
+
+    def _on_member(self, beat, keys, messages):
+        """A note's messages moved onto the member channel the zone assigns it,
+        its expression ahead of its note-on."""
+        ons = [m for _, m in messages if m[0] & 0xF0 == 0x90 and m[2] > 0]
+        if not ons:
+            return messages
+        key = ons[0][1]
+        # The notes that ended by now free their channels.
+        for held in [h for h in self._held if h[0] <= beat + 1e-9]:
+            self._assigner.note_off(held[1], held[2])
+            self._held.remove(held)
+        channel = self._assigner.note_on(key)
+        if channel is None:
+            return messages
+        moved = [(at, bytes((m[0] & 0xF0 | channel,)) + m[1:]) for at, m in messages]
+        off = max((at for at, m in moved if m[0] & 0xF0 == 0x80), default=0.0)
+        self._held.append((beat + off, channel, key))
+        expression = self._midi.expression_messages(
+            channel, float(keys.get("bend", 0.0)), self.bend_range,
+            keys.get("pressure"), keys.get("timbre"))
+        return [(0.0, m) for m in expression] + moved
 
     def send_message(self, message):
         """Emit a raw MIDI message at the running routine's logical beat -- the

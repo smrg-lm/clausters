@@ -1043,6 +1043,7 @@ impl CmdTranslator {
             "/graph_newVoice" => self.graph_voice(msg, cmds),
             // MIDI binding config (no engine command; pure translator state).
             "/midi_bind" => self.midi_bind(msg, cmds),
+            "/midi_bindZone" => self.midi_bind_zone(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
             "/midi_map" => self.midi_map(msg),
             "/node_free" => {

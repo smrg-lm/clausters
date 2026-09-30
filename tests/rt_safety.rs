@@ -2088,3 +2088,56 @@ fn event_lanes_do_not_allocate_on_the_audio_thread() {
         }
     });
 }
+
+/// **A full MPE stream** -- fifteen member notes, each moved on all three
+/// dimensions every block -- drives one def with no allocation on the audio
+/// thread. The zone's decoding and the voices' commands are the network
+/// side's; the engine only applies what arrives built.
+#[test]
+fn an_mpe_stream_does_not_allocate_on_the_audio_thread() {
+    use clausters::osc::translate::CmdTranslator;
+    use clausters::rosc::{OscMessage, OscType};
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut translator = CmdTranslator::new(48_000.0);
+    let mut cmds = Vec::new();
+    translator
+        .translate(
+            &OscMessage {
+                addr: "/midi_bindZone".into(),
+                args: vec![
+                    OscType::Int(0),
+                    OscType::Int(15),
+                    OscType::String("default".into()),
+                ],
+            },
+            &mut cmds,
+        )
+        .unwrap();
+    for channel in 1..=15u8 {
+        translator
+            .translate_midi_bytes(&[0x90 | channel, 48 + channel, 100], &mut cmds)
+            .unwrap();
+    }
+    for cmd in cmds.drain(..) {
+        handle.send(cmd).ok().unwrap();
+    }
+    engine.process_block(&mut out);
+    for step in 0..100u8 {
+        for channel in 1..=15u8 {
+            let v = step % 128;
+            for msg in [
+                [0xE0 | channel, v, 64],
+                [0xD0 | channel, v, 0],
+                [0xB0 | channel, 74, v],
+            ] {
+                translator.translate_midi_bytes(&msg, &mut cmds).unwrap();
+            }
+        }
+        for cmd in cmds.drain(..) {
+            handle.send(cmd).ok().unwrap();
+        }
+        assert_no_alloc(|| engine.process_block(&mut out));
+    }
+}

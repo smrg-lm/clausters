@@ -921,6 +921,13 @@ impl Element for Notes {
     /// step, and the last key up advances it).
     fn midi(&mut self, note: MidiNote, playhead: Option<f64>) -> Option<Events> {
         let key = (note.channel, note.pitch);
+        if note.retune {
+            // An MPE bend moved: the held note is painted where it now is.
+            let &(_, index) = self.held.iter().find(|(k, _)| *k == key)?;
+            let n = self.notes.get_mut(index)?;
+            n.pitch = note.pitch as f32 + note.bend;
+            return Some(self.notes_event());
+        }
         if note.on {
             let dur = if self.snap > 0.0 { self.snap } else { MIN_DUR };
             let start = match playhead {
@@ -931,7 +938,7 @@ impl Element for Notes {
                 id: 0,
                 start,
                 dur,
-                pitch: note.pitch as f32,
+                pitch: note.pitch as f32 + note.bend,
                 velocity: note.velocity,
                 channel: note.channel,
             });
@@ -2009,6 +2016,33 @@ mod tests {
     /// Live MIDI: a note-on paints a held note, the matching note-off closes it
     /// -- at the running playhead when recording, on the step cursor when the
     /// transport is stopped (and the last key up advances it).
+    /// **An MPE note is painted at its bend, and follows it**: a zone note
+    /// starts at its key plus its bend, and a retune moves the held note.
+    #[test]
+    fn an_mpe_note_is_painted_at_its_bend_and_follows_it() {
+        let mut r = roll(r#"{"midi_in":true}"#);
+        let on = MidiNote {
+            on: true,
+            channel: 3,
+            pitch: 60,
+            velocity: 90,
+            bend: 0.5,
+            retune: false,
+        };
+        r.midi(on, Some(0.0));
+        assert_eq!(r.notes[0].pitch, 60.5);
+        r.midi(
+            MidiNote {
+                bend: 2.0,
+                retune: true,
+                ..on
+            },
+            Some(10.0),
+        );
+        assert_eq!(r.notes[0].pitch, 62.0);
+        assert_eq!(r.notes.len(), 1, "a retune starts no note");
+    }
+
     #[test]
     fn live_midi_records_at_the_playhead_and_steps_when_stopped() {
         let mut r = roll(r#"{"midi_in":true,"snap":100.0}"#);
@@ -2021,6 +2055,8 @@ mod tests {
             channel: 0,
             pitch: 60,
             velocity: 90,
+            bend: 0.0,
+            retune: false,
         };
         assert!(r.midi(on, Some(200.0)).is_some());
         assert_eq!(r.notes[0].start, 200.0);
@@ -2046,6 +2082,8 @@ mod tests {
                     channel: 0,
                     pitch,
                     velocity: 90,
+                    bend: 0.0,
+                    retune: false,
                 },
                 None,
             );
@@ -2058,6 +2096,8 @@ mod tests {
                     channel: 0,
                     pitch,
                     velocity: 0,
+                    bend: 0.0,
+                    retune: false,
                 },
                 None,
             );
@@ -2070,7 +2110,9 @@ mod tests {
                     on: false,
                     channel: 9,
                     pitch: 1,
-                    velocity: 0
+                    velocity: 0,
+                    bend: 0.0,
+                    retune: false,
                 },
                 None
             )

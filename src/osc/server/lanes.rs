@@ -37,6 +37,7 @@ use std::collections::{HashMap, HashSet};
 
 use clausters_core::event::render::Arg;
 use clausters_core::lane::{LaneData, LaneMidi, Release};
+use clausters_midi::mpe::{Decoder, MpeEvent};
 
 use super::*;
 use crate::midi::{ChannelVoiceMessage, parse_midi1};
@@ -79,6 +80,26 @@ enum LaneEvent {
         message: ChannelVoiceMessage,
         voices: Vec<u32>,
     },
+    /// A note in an MPE zone (by its `master`), decoded from the lane's data:
+    /// a voice at `key` plus `bend` semitones, with the pressure and timbre it
+    /// starts with, released `length` samples after it starts.
+    ZoneNote {
+        master: u8,
+        key: u8,
+        velocity: u16,
+        bend: f32,
+        pressure: u32,
+        timbre: u32,
+        length: u64,
+        voice: u32,
+    },
+    /// A zone note's expression, on that note's `voice`.
+    ZoneSet {
+        master: u8,
+        key: u8,
+        voice: u32,
+        event: MpeEvent,
+    },
 }
 
 /// One lane, as this side holds it.
@@ -99,7 +120,7 @@ pub(in crate::osc::server) struct Lane {
 
 /// Reads a lane's data (`clausters_core::lane::LaneData`, the JSON
 /// `/lane_set` carries) into its events, sorted by position.
-fn parse_events(json: &[u8]) -> Result<Vec<(u64, LaneEvent)>, String> {
+fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, String> {
     let data = LaneData::from_json(json)?;
     let mut events = Vec::new();
     for note in data.notes {
@@ -136,22 +157,26 @@ fn parse_events(json: &[u8]) -> Result<Vec<(u64, LaneEvent)>, String> {
             }),
         ));
     }
-    events.extend(midi_events(data.midi));
+    events.extend(midi_events(data.midi, zones));
     events.sort_by_key(|(position, _)| *position);
     Ok(events)
 }
 
 /// **A lane's MIDI messages as its events**, read in position order as the
-/// live input would have read them: a note-on and the note-off after it on
-/// its channel and key are one note (a note-on over one already sounding ends
+/// live input would have read them, through a decoder with the MPE zones'
+/// layout: in a zone, a note-on and its note-off are one zone note and its
+/// bend, pressure and timbre reach it alone. Outside every zone, a note-on
+/// and the note-off after it on its channel and key are one note (a note-on over one already sounding ends
 /// it there, as a live retrigger does); an expressive message reaches the
 /// notes sounding on its channel at its position, or the one on its key; a
 /// program change picks the instrument of the notes after it. A note-on the
 /// lane never turns off is not played, and a message that is not a channel
 /// voice message is dropped.
-fn midi_events(midi: Vec<LaneMidi>) -> Vec<(u64, LaneEvent)> {
+fn midi_events(midi: Vec<LaneMidi>, mut zones: Decoder) -> Vec<(u64, LaneEvent)> {
     let mut midi = midi;
     midi.sort_by_key(|m| m.position);
+    // Each zone note's slot in `out`, its start, key and master, while it sounds.
+    let mut zone_notes: HashMap<u32, (usize, u64, u8, u8)> = HashMap::new();
     // Each note's slot in `out`, with its start, while it sounds.
     let mut sounding: HashMap<(u8, u8), (usize, u64)> = HashMap::new();
     let mut programs: HashMap<u8, u8> = HashMap::new();
@@ -166,12 +191,78 @@ fn midi_events(midi: Vec<LaneMidi>) -> Vec<(u64, LaneEvent)> {
         Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
         _ => None,
     };
+    let mut decoded = Vec::new();
     for m in midi {
-        let byte = |i: usize| m.bytes.get(i).copied().unwrap_or(0);
-        let Some(message) = parse_midi1(byte(0), byte(1), byte(2)) else {
-            continue;
+        zones.feed(&m.bytes);
+        while let Some(event) = zones.poll() {
+            decoded.push((m.position, event));
+        }
+    }
+    for (at, event) in decoded {
+        let message = match event {
+            MpeEvent::Plain([status, d1, d2]) => match parse_midi1(status, d1, d2) {
+                Some(message) => message,
+                None => continue,
+            },
+            MpeEvent::NoteOn {
+                note,
+                side,
+                key,
+                velocity,
+                bend,
+                pressure,
+                timbre,
+                ..
+            } => {
+                zone_notes.insert(note, (out.len(), at, key, side.master()));
+                out.push(Some((
+                    at,
+                    LaneEvent::ZoneNote {
+                        master: side.master(),
+                        key,
+                        velocity,
+                        bend,
+                        pressure,
+                        timbre,
+                        length: u64::MAX,
+                        voice: voices,
+                    },
+                )));
+                voices = voices.wrapping_add(1);
+                continue;
+            }
+            MpeEvent::NoteOff { note, .. } => {
+                if let Some((slot, from, _, _)) = zone_notes.remove(&note)
+                    && let Some((_, LaneEvent::ZoneNote { length, .. })) = out[slot].as_mut()
+                {
+                    *length = at - from;
+                }
+                continue;
+            }
+            expression => {
+                let note = match expression {
+                    MpeEvent::Bend { note, .. }
+                    | MpeEvent::Pressure { note, .. }
+                    | MpeEvent::Timbre { note, .. }
+                    | MpeEvent::Controller { note, .. } => note,
+                    _ => continue,
+                };
+                if let Some(&(slot, _, key, master)) = zone_notes.get(&note)
+                    && let Some((_, LaneEvent::ZoneNote { voice, .. })) = out[slot]
+                {
+                    out.push(Some((
+                        at,
+                        LaneEvent::ZoneSet {
+                            master,
+                            key,
+                            voice,
+                            event: expression,
+                        },
+                    )));
+                }
+                continue;
+            }
         };
-        let at = m.position;
         match message {
             ChannelVoiceMessage::NoteOn {
                 channel,
@@ -226,6 +317,9 @@ fn midi_events(midi: Vec<LaneMidi>) -> Vec<(u64, LaneEvent)> {
         }
     }
     for (slot, _) in sounding.into_values() {
+        out[slot] = None;
+    }
+    for (slot, ..) in zone_notes.into_values() {
         out[slot] = None;
     }
     out.into_iter().flatten().collect()
@@ -305,7 +399,8 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let id = args.int()?;
-        let events = parse_events(crate::osc::args::json_payload(args.rest())?)?;
+        let zones = self.translator.midi.decoder.with_layout();
+        let events = parse_events(crate::osc::args::json_payload(args.rest())?, zones)?;
         if !self.lanes.contains_key(&id) {
             return Err(format!("no lane {id}"));
         }
@@ -538,6 +633,53 @@ impl OscServer {
                 }
                 length = held;
             }
+            LaneEvent::ZoneNote {
+                master,
+                key,
+                velocity,
+                bend,
+                pressure,
+                timbre,
+                length: held,
+                voice,
+            } => {
+                let Some(node) = self.translator.lane_zone_note(
+                    master,
+                    key,
+                    velocity,
+                    bend,
+                    pressure,
+                    timbre,
+                    &mut start,
+                    &mut release,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if let Some(lane) = self.lanes.get_mut(&id) {
+                    lane.voices.insert(voice, node);
+                }
+                length = held;
+            }
+            LaneEvent::ZoneSet {
+                master,
+                key,
+                voice,
+                event,
+            } => {
+                let Some(node) = self
+                    .lanes
+                    .get(&id)
+                    .and_then(|l| l.voices.get(&voice).copied())
+                else {
+                    return Ok(None);
+                };
+                self.translator
+                    .lane_zone_set(master, key, node, event, &mut start);
+                if start.is_empty() {
+                    return Ok(None);
+                }
+            }
             LaneEvent::MidiSet { message, voices } => {
                 let nodes: Vec<i32> = voices
                     .iter()
@@ -618,6 +760,7 @@ mod tests {
         let events = parse_events(
             br#"{"notes": [[480, 960, "sine", {"freq": 440, "amp": 0.1}, "free"]],
                  "messages": [[0, "/mark", 1, 2.5, "cue"]]}"#,
+            Decoder::new(),
         )
         .unwrap();
         assert_eq!(events.len(), 2);
@@ -640,6 +783,8 @@ mod tests {
             panic!("then the note");
         };
         assert_eq!((*length, *release), (480, Release::Free));
-        assert!(parse_events(br#"{"notes": [[0, 1, "x", {}, "slowly"]]}"#).is_err());
+        assert!(
+            parse_events(br#"{"notes": [[0, 1, "x", {}, "slowly"]]}"#, Decoder::new()).is_err()
+        );
     }
 }

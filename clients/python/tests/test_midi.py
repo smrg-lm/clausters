@@ -139,3 +139,30 @@ def test_live_output_smoke():
         clock.render()  # drives the routine: note-ons now, note-offs scheduled
     finally:
         iface.close()
+
+
+def test_an_mpe_zone_puts_each_note_on_a_member_with_its_expression():
+    # Overlapping notes: each takes a member channel of its own, the zone is
+    # declared at the head, and a note's bend and pressure precede its note-on.
+    midi = MidiServer(zone=3)
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
+    Pbind(
+        instrument="default", midinote=Pseq([60, 64, 67, 72]), dur=0.5, legato=1.5,
+        bend=Pseq([12.0, 0.0, 0.0, 0.0]), pressure=Pseq([1.0, None, None, None]),
+    ).play(clock, midi)
+    clock.render()
+    events = midi.score.sorted()
+    # RPN 6 on the master (channel 0), three members.
+    assert events[0] == (0.0, bytes((0xB0, 101, 0)))
+    assert events[2] == (0.0, bytes((0xB0, 6, 3)))
+    ons = _note_ons(events)
+    channels = [m[0] & 0x0F for _, m in ons]
+    # Three overlap and take channels 1-3; the fourth reuses the first freed.
+    assert channels[:3] == [1, 2, 3]
+    assert channels[3] == 1
+    # The first note's bend (12 of 48 semitones) and full pressure on its
+    # channel, just ahead of its note-on.
+    first = [m for b, m in events if b == 0.0 and m[0] & 0x0F == 1]
+    assert first[0][0] == 0xE1 and ((first[0][2] << 7) | first[0][1]) == 8192 + round(0.25 * 8191)
+    assert first[1] == bytes((0xD1, 127, 0))
+    assert first[3] == bytes((0x91, 60, first[3][2]))

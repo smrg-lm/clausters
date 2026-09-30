@@ -223,6 +223,7 @@ dependencies = [
  "clausters-core",
  "clausters-document",
  "clausters-editing",
+ "clausters-midi",
  "clausters-net",
  "cpal",
  "hound",

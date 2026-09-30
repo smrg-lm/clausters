@@ -7,7 +7,16 @@
 //! read for itself -- where the transport stands. What a note *does* to a
 //! picture is the element's, exactly as what a key does to a field is.
 //!
+//! The translation runs through the shared MPE decoder (`clausters_midi::mpe`,
+//! the server's own), with both zones waiting for a device to size them: an
+//! MPE controller's notes arrive with their bend and are retuned as it moves,
+//! so a glide is painted as one, and a plain keyboard on a channel no zone
+//! covers arrives as it always did.
+//!
 //! [`Needs::midi`]: crate::host::widget::element::Needs::midi
+
+use clausters_midi::NoteEvent;
+use clausters_midi::mpe::MpeEvent;
 
 use crate::host::widget::element::MidiNote;
 
@@ -21,9 +30,12 @@ impl App {
         let mut events = Vec::new();
         if let Some(input) = &self.midi_in {
             while let Some(msg) = input.poll() {
-                if let Some(ev) = clausters_midi::parse_note(&msg) {
-                    events.push(note_of(ev));
-                }
+                self.mpe.feed(&msg);
+            }
+        }
+        while let Some(event) = self.mpe.poll() {
+            if let Some(note) = self.note_of(event) {
+                events.push(note);
             }
         }
         if events.is_empty() {
@@ -53,26 +65,60 @@ impl App {
     }
 }
 
-/// The shared crate's channel-voice note event as the host's own -- the same
-/// translation the keyboard front does for a key, so an element answers
-/// identically wherever it is compiled.
-fn note_of(ev: clausters_midi::NoteEvent) -> MidiNote {
-    match ev {
-        clausters_midi::NoteEvent::On {
-            channel,
-            pitch,
+impl App {
+    /// A decoded message as the host's note event: a plain note-on or off, or
+    /// a zone note's start, end or retune (whose channel and key are
+    /// remembered by note id from its start). Anything else paints nothing.
+    fn note_of(&mut self, event: MpeEvent) -> Option<MidiNote> {
+        let note = |on, channel: u8, key: u8, velocity: i32, bend, retune| MidiNote {
+            on,
+            channel: i32::from(channel),
+            pitch: i32::from(key),
             velocity,
-        } => MidiNote {
-            on: true,
-            channel: channel as i32,
-            pitch: pitch as i32,
-            velocity: velocity as i32,
-        },
-        clausters_midi::NoteEvent::Off { channel, pitch } => MidiNote {
-            on: false,
-            channel: channel as i32,
-            pitch: pitch as i32,
-            velocity: 0,
-        },
+            bend,
+            retune,
+        };
+        match event {
+            MpeEvent::Plain(bytes) => match clausters_midi::parse_note(&bytes)? {
+                NoteEvent::On {
+                    channel,
+                    pitch,
+                    velocity,
+                } => Some(note(true, channel, pitch, i32::from(velocity), 0.0, false)),
+                NoteEvent::Off { channel, pitch } => {
+                    Some(note(false, channel, pitch, 0, 0.0, false))
+                }
+            },
+            MpeEvent::NoteOn {
+                note: id,
+                channel,
+                key,
+                velocity,
+                bend,
+                ..
+            } => {
+                self.mpe_notes.insert(id, (channel, key));
+                Some(note(
+                    true,
+                    channel,
+                    key,
+                    i32::from(velocity >> 9),
+                    bend,
+                    false,
+                ))
+            }
+            MpeEvent::NoteOff { note: id, .. } => {
+                let (channel, key) = self.mpe_notes.remove(&id)?;
+                Some(note(false, channel, key, 0, 0.0, false))
+            }
+            MpeEvent::Bend {
+                note: id,
+                semitones,
+            } => {
+                let &(channel, key) = self.mpe_notes.get(&id)?;
+                Some(note(true, channel, key, 0, semitones, true))
+            }
+            _ => None,
+        }
     }
 }

@@ -24,15 +24,9 @@ use midi2::utility::{DeltaClockstamp, DeltaClockstampTpq};
 use midly::live::LiveEvent;
 use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind};
 
-/// The C ABI version of this surface. Bump on any incompatible change.
-///
-/// v2 added the live virtual MIDI **input** port (`clausters_midi_input_*`) for
-/// the client's responder layer; the v1 surface (file writers + live output)
-/// is unchanged.
-///
-/// v3 added the tempo to a written file (`clausters_midi_write_smf_tempo`) and
-/// the reader (`clausters_midi_read_smf`); the v2 surface is unchanged.
-pub const MIDI_ABI_VERSION: u32 = 3;
+/// The C ABI version of this surface: a binding checks it first and refuses a
+/// library of another. What each version changed is in `docs/ipc.md`.
+pub const MIDI_ABI_VERSION: u32 = 4;
 
 /// One timed MIDI event: an absolute `tick` (in the file's PPQ time base) and
 /// up to three raw channel-voice bytes (`status`, `data1`, `data2`). The byte
@@ -299,6 +293,8 @@ pub fn write_clip(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
     }
     out
 }
+
+pub mod mpe;
 
 // ---- C ABI ----
 

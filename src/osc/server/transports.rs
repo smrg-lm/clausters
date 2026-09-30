@@ -257,7 +257,7 @@ impl OscServer {
 
     /// Translates every queued live-MIDI message into engine commands and
     /// ships them. Each message is self-contained (one note/control event), so
-    /// it is handled like the immediate OSC forms: `translate_midi` (which
+    /// it is handled like the immediate OSC forms: `translate_midi_bytes` (which
     /// reuses the `/synth_new`/`/node_set`/`/node_free` path and keeps the tree mirror in
     /// sync), then ship the batch. MIDI never quits the server.
     #[cfg(feature = "midi")]
@@ -265,7 +265,7 @@ impl OscServer {
         let mut cmds = Vec::new();
         while let Some(msg) = self.midi.as_ref().and_then(|hub| hub.try_next()) {
             cmds.clear();
-            if let Err(e) = self.translator.translate_midi(msg, &mut cmds) {
+            if let Err(e) = self.translator.translate_midi_bytes(&msg, &mut cmds) {
                 warn!("midi: {e}");
                 continue;
             }

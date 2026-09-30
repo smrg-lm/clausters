@@ -7,14 +7,13 @@
 //! idea, deliberately out of scope here.)
 //!
 //! Threading mirrors the TCP transport ([`clausters_net::tcp`]): `midir` runs the
-//! input callback on **its own thread**, which decodes each MIDI 1.0 message
-//! ([`super::parse_midi1`], widening to the internal high-resolution form) and
-//! hands it to the single-threaded command loop over an
+//! input callback on **its own thread**, which hands each channel-voice
+//! message's bytes to the single-threaded command loop over an
 //! [`mpsc`](std::sync::mpsc) channel; a **zero-length UDP datagram** to the
 //! server's own address wakes the loop so the message is acted on at once,
 //! without waiting for the periodic GC tick. The loop translates it on the
-//! network thread (`CmdTranslator::translate_midi`); the audio thread is never
-//! touched.
+//! network thread (`CmdTranslator::translate_midi_bytes`, which runs it through
+//! the MPE zones' decoder first); the audio thread is never touched.
 
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc::{Receiver, channel};
@@ -22,13 +21,11 @@ use std::sync::mpsc::{Receiver, channel};
 use midir::os::unix::VirtualInput;
 use midir::{MidiInput, MidiInputConnection};
 
-use super::{ChannelVoiceMessage, parse_midi1};
-
 /// The server side of the live MIDI transport: the decoded-message stream the
 /// command loop drains. Holds the `midir` connection open (dropping it closes
 /// the virtual port and stops the input thread).
 pub struct MidiHub {
-    events: Receiver<ChannelVoiceMessage>,
+    events: Receiver<[u8; 3]>,
     _conn: MidiInputConnection<()>,
     port_name: String,
 }
@@ -47,13 +44,14 @@ impl MidiHub {
                 port_name,
                 move |_timestamp, bytes, _| {
                     let Some(&status) = bytes.first() else { return };
+                    // Only channel-voice messages reach the loop; system
+                    // messages (SysEx, clock, ...) are dropped here.
+                    if !(0x80..0xF0).contains(&status) {
+                        return;
+                    }
                     let d1 = bytes.get(1).copied().unwrap_or(0);
                     let d2 = bytes.get(2).copied().unwrap_or(0);
-                    // Non-channel-voice messages (SysEx, clock, ...) decode to
-                    // None and are dropped here, never reaching the loop.
-                    if let Some(msg) = parse_midi1(status, d1, d2)
-                        && tx.send(msg).is_ok()
-                    {
+                    if tx.send([status, d1, d2]).is_ok() {
                         let _ = wake.send_to(&[], wake_target);
                     }
                 },
@@ -71,8 +69,8 @@ impl MidiHub {
         &self.port_name
     }
 
-    /// The next decoded message, or `None` when the queue is drained.
-    pub fn try_next(&self) -> Option<ChannelVoiceMessage> {
+    /// The next message's bytes, or `None` when the queue is drained.
+    pub fn try_next(&self) -> Option<[u8; 3]> {
         self.events.try_recv().ok()
     }
 }

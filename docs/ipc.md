@@ -130,6 +130,15 @@ void clausters_close(Clausters *);
 
 JavaScript reaches the same surface through Node/Deno FFI; in a browser there is no shared memory between processes, so that target waits for a wasm build (where the "segment" becomes a `SharedArrayBuffer` in-process).
 
+## The MIDI C ABI
+
+`libclausters_midi.so` (the `clausters-midi` crate) is a separate flat-data surface: MIDI files written and read, live virtual ports (feature `live`), and MPE. It keeps its own counter, `clausters_midi_abi_version()`, checked before anything else and refused on a mismatch. What each version changed:
+
+- **v1** — the file writers (`clausters_midi_write_smf`, `clausters_midi_write_clip`) and the live output port.
+- **v2** — the live virtual **input** port (`clausters_midi_input_*`), for the client's responder layer; v1 unchanged.
+- **v3** — the tempo in a written file (`clausters_midi_write_smf_tempo`) and the reader (`clausters_midi_read_smf`); v2 unchanged.
+- **v4** — MPE: the decoder (`clausters_mpe_decoder_new`/`set_zone`/`feed`/`poll`/`free`, a 12-byte record per polled message) and the channel assigner (`clausters_mpe_assigner_new`/`note_on`/`note_off`/`free`) as opaque handles, and the zone and bend messages (`clausters_mpe_zone_messages`, `clausters_mpe_bend_message`); v3 unchanged. Why a handle and not a state block is in `docs/decisions.md`.
+
 ## Synchronous calls
 
 Asynchronous replies are the right server model and the wrong interactive ergonomics. The fix lives in the **client**: a blocking facade — send the request, block *this thread* with a timeout until the reply arrives. The server and the audio thread never wait on anything; "synchronous" is purely the caller's view, which is why it composes with every transport:

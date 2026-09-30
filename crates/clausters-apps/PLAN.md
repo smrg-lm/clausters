@@ -563,7 +563,34 @@ opened it.
     editor's side: arming a recording from the roll, and opening the take the
     server wrote as the roll's source. Taken after `T10`; both are skipped
     for now, with `T9` and `X3.11` first.
-  - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
+  - ⬜ **X3.11 - CC lanes and per-note expression**, over `PLAN.md` `M35`.
+    *(Designed with the user 2026-09-29.)* The data is there since X3.2 --
+    `EventSequence.lanes` (curves over the sequence: CC, bend, pressure) and
+    `Event.expression` (curves over one note, from its start), both
+    `Automation`. What is missing is editing them and hearing them. **How they
+    are heard follows the event's type**, as `T9` settled for a lane: an event
+    is one kind.
+    - **A note for the server** (`type: note`) hears a curve as the
+      multitrack hears its automation: a table in a buffer, a reader on the
+      transport's position writing a bus, and the note's control mapped to
+      that bus -- sample-exact through a locate, a loop and a stop, and any
+      control the def declares. A sequence's CC lane is one such curve; a
+      note's expression is one over that note's span.
+    - **A MIDI event** (`type: midi`) hears it as MPE: the note's expression
+      rendered as a member-channel stream (bend, pressure, timbre), played by
+      the server's zone through `T9`'s lane, and the same render writes a
+      `.mid` MPE file -- whose reading back into per-note curves is the half
+      of `M35`'s acceptance moved here.
+
+    **The steps**, in this order:
+    - ⬜ **X3.11a - The lanes and the expression in the editor.** CC lanes
+      under the roll, drawn and edited as a multitrack's automation rows; a
+      note's expression inside its box; its bend drawn in the plane as a
+      trajectory (the pitch axis already draws a note's bend line).
+    - ⬜ **X3.11b - Heard.** The two paths above, in the crate's notes
+      playback and the multitrack's notes regions.
+    - ⬜ **X3.11c - MPE files.** A sequence's expression written as MPE, and a
+      `.mid` with a zone read into per-note curves.
   - ✅ **X3.12 - The Hz domain.**
     *(Shipped 2026-09-28: the `notes` element reads `axes.y.unit` `"hz"` --
     its notes, their report and its compass in hertz, converted at the wire

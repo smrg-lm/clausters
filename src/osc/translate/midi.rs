@@ -6,7 +6,10 @@
 //! have arrived as and fed back through [`CmdTranslator::translate`], so the
 //! MIDI path and the OSC path build byte-identical commands.
 
+use clausters_midi::mpe::{MpeEvent, Side};
+
 use super::*;
+use crate::midi::{ZoneBinding, ZoneVoice};
 use crate::osc::args::Args;
 
 impl CmdTranslator {
@@ -31,10 +34,123 @@ impl CmdTranslator {
         if AddAction::from_i32(action).is_none() {
             return Err("add action must be 0-4".into());
         }
+        if channel < 16 && self.midi.decoder.zone_of(channel).is_some() {
+            return Err(format!(
+                "channel {channel} is in an MPE zone: unbind the zone first"
+            ));
+        }
         let mut binding = MidiBinding::new(instrument.clone(), target, action, gate);
         binding.graph_instance = self.bind_graph_instance(instrument, target, action, cmds)?;
         self.midi.channels.insert(channel, binding);
+        self.midi.refresh_allowed();
         Ok(())
+    }
+
+    /// `/midi_bindZone master members instrument [target] [addAction] [gate]`:
+    /// bind an **MPE zone** to an instrument. `master` is channel 0 (the lower
+    /// zone, members ascending from 1) or 15 (the upper, descending from 14);
+    /// `members` is how many (0 waits for the device's RPN 6, which wins
+    /// whenever it comes). Each note is a voice of its own, and a member's
+    /// bend, pressure and timbre reach that voice only -- bend as pitch, the
+    /// member and master bends summed through their ranges. A zone whose
+    /// channels reach one a per-channel binding holds is refused.
+    pub(in crate::osc::translate) fn midi_bind_zone(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let [
+            OscType::Int(master),
+            OscType::Int(members),
+            OscType::String(instrument),
+            ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: master, members, instrument [, target, addAction, gate]".into());
+        };
+        let side = u8::try_from(*master)
+            .ok()
+            .and_then(Side::of_master)
+            .ok_or("a zone's master is channel 0 (lower) or 15 (upper)")?;
+        let members = u8::try_from(*members)
+            .ok()
+            .filter(|m| *m <= 15)
+            .ok_or("a zone has 0-15 members")?;
+        let mut tail = Args::after(&msg.args, 3);
+        let target = tail.opt_int()?.unwrap_or(0);
+        let action = tail.opt_int()?.unwrap_or(0);
+        let gate = tail.opt_int()?.unwrap_or(0) != 0;
+        if AddAction::from_i32(action).is_none() {
+            return Err("add action must be 0-4".into());
+        }
+        let mut zone = ZoneBinding::new(members, instrument.clone(), target, action, gate);
+        self.bind_zone(side, &mut zone, cmds)?;
+        self.midi.zones.insert(side.master(), zone);
+        Ok(())
+    }
+
+    /// Puts `zone` on `side`: refused over a bound channel, its shared
+    /// GraphDef instance spawned, the decoder told. A zone already there is
+    /// unbound first. Shared by `/midi_bindZone` and the restore.
+    fn bind_zone(
+        &mut self,
+        side: Side,
+        zone: &mut ZoneBinding,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let reach: Vec<u8> = std::iter::once(side.master())
+            .chain(side.members(zone.config.members))
+            .collect();
+        if let Some(c) = reach.iter().find(|c| self.midi.channels.contains_key(c)) {
+            return Err(format!(
+                "the zone would reach channel {c}, which a /midi_bind holds"
+            ));
+        }
+        if self.midi.zones.contains_key(&side.master()) {
+            self.unbind_zone(side.master(), cmds);
+        }
+        let b = &zone.binding;
+        zone.binding.graph_instance =
+            self.bind_graph_instance(&b.instrument.clone(), b.target, b.action, cmds)?;
+        self.midi.decoder.set_zone(side, Some(zone.config.members));
+        self.midi.decoder.set_timbre_cc(side, zone.config.timbre_cc);
+        // What the zone's notes end on is freed with them below, not replayed.
+        while self.midi.decoder.poll().is_some() {}
+        self.midi.refresh_allowed();
+        Ok(())
+    }
+
+    /// Unbinds the zone on `master`: its voices (or its shared instance) are
+    /// freed and the decoder forgets it.
+    fn unbind_zone(&mut self, master: u8, cmds: &mut Vec<Cmd>) {
+        let Some(zone) = self.midi.zones.remove(&master) else {
+            return;
+        };
+        if let Some(side) = Side::of_master(master) {
+            self.midi.decoder.set_zone(side, None);
+            while self.midi.decoder.poll().is_some() {}
+        }
+        let notes: Vec<u32> = self
+            .midi
+            .zone_voices
+            .iter()
+            .filter(|(_, v)| v.master == master)
+            .map(|(note, _)| *note)
+            .collect();
+        let ids: Vec<i32> = notes
+            .iter()
+            .filter_map(|n| self.midi.zone_voices.remove(n).map(|v| v.id))
+            .collect();
+        if let Some(instance) = zone.binding.graph_instance {
+            cmds.push(Cmd::FreeNode { id: instance });
+            self.mirror.remove(instance);
+            self.free_graph_node(instance);
+        } else {
+            for id in ids {
+                cmds.push(Cmd::FreeNode { id });
+                self.mirror.remove(id);
+            }
+        }
     }
 
     /// If `instrument` names a GraphDef, spawn its shared instance now (so each
@@ -85,10 +201,21 @@ impl CmdTranslator {
         pb: crate::midi::PersistedBinding,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
+        if let Some(config) = pb.zone {
+            let side = Side::of_master(pb.channel).ok_or("a zone's master is channel 0 or 15")?;
+            let mut zone = ZoneBinding {
+                binding: pb.binding,
+                config,
+            };
+            self.bind_zone(side, &mut zone, cmds)?;
+            self.midi.zones.insert(pb.channel, zone);
+            return Ok(());
+        }
         let mut binding = pb.binding;
         binding.graph_instance =
             self.bind_graph_instance(&binding.instrument, binding.target, binding.action, cmds)?;
         self.midi.channels.insert(pb.channel, binding);
+        self.midi.refresh_allowed();
         Ok(())
     }
 
@@ -104,11 +231,17 @@ impl CmdTranslator {
             return Err("expected: channel".into());
         };
         let channel = midi_channel(*channel)?;
+        if self.midi.zones.contains_key(&channel) {
+            self.unbind_zone(channel, cmds);
+            self.midi.refresh_allowed();
+            return Ok(());
+        }
         let instance = self
             .midi
             .channels
             .remove(&channel)
             .and_then(|b| b.graph_instance);
+        self.midi.refresh_allowed();
         let voices = self.midi.drain_channel(channel);
         if let Some(instance) = instance {
             // Freeing the instance group frees every voice sub-graph with it.
@@ -124,10 +257,12 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/midi_map channel selector name`: route a message type to a control.
-    /// Selectors: `note`, `vel`, `gate`, `bend`,
-    /// `pressure` (channel aftertouch), `poly` (per-note aftertouch), `ccN`
-    /// (control change), `progN` (program -> instrument def `name`).
+    /// `/midi_map channel selector name [cc]`: route a message type to a
+    /// control. Selectors: `note`, `vel`, `gate`, `bend`, `pressure` (channel
+    /// aftertouch), `poly` (per-note aftertouch), `lift` (note-off velocity),
+    /// `ccN` (control change), `progN` (program -> instrument def `name`), and
+    /// on a zone's master `timbre` (its third dimension; a fourth argument sets
+    /// the controller that carries it, 74 unless given).
     pub(in crate::osc::translate) fn midi_map(
         &mut self,
         msg: &rosc::OscMessage,
@@ -136,16 +271,38 @@ impl CmdTranslator {
             OscType::Int(channel),
             OscType::String(selector),
             OscType::String(name),
+            tail @ ..,
         ] = msg.args.as_slice()
         else {
             return Err("expected: channel, selector, name".into());
         };
         let channel = midi_channel(*channel)?;
-        let binding = self
-            .midi
-            .channels
-            .get_mut(&channel)
-            .ok_or_else(|| format!("channel {channel} is not bound"))?;
+        if let Some(zone) = self.midi.zones.get_mut(&channel) {
+            if selector == "timbre" {
+                zone.binding.timbre_control = Some(name.clone());
+                if let Some(OscType::Int(cc)) = tail.first() {
+                    let cc = u8::try_from(*cc)
+                        .ok()
+                        .filter(|c| *c < 128)
+                        .ok_or("a controller is 0-127")?;
+                    zone.config.timbre_cc = cc;
+                    if let Some(side) = Side::of_master(channel) {
+                        self.midi.decoder.set_timbre_cc(side, cc);
+                    }
+                }
+                return Ok(());
+            }
+        } else if selector == "timbre" {
+            return Err("timbre is a zone's third dimension: bind one with /midi_bindZone".into());
+        }
+        let binding = match self.midi.zones.get_mut(&channel) {
+            Some(zone) => &mut zone.binding,
+            None => self
+                .midi
+                .channels
+                .get_mut(&channel)
+                .ok_or_else(|| format!("channel {channel} is not bound"))?,
+        };
         match selector.as_str() {
             "note" => binding.freq_control = name.clone(),
             "vel" | "velocity" => binding.amp_control = name.clone(),
@@ -153,6 +310,7 @@ impl CmdTranslator {
             "bend" => binding.bend_control = Some(name.clone()),
             "pressure" => binding.pressure_control = Some(name.clone()),
             "poly" => binding.poly_control = Some(name.clone()),
+            "lift" => binding.lift_control = Some(name.clone()),
             s if s.starts_with("cc") => {
                 let n: u8 = s[2..].parse().map_err(|_| "bad cc selector".to_string())?;
                 binding.cc.insert(n, name.clone());
@@ -166,6 +324,219 @@ impl CmdTranslator {
             other => return Err(format!("unknown MIDI selector {other:?}")),
         }
         Ok(())
+    }
+
+    /// **A raw MIDI message**, as the live input delivers it: through the
+    /// zones' decoder, whose per-note messages actuate a zone's voices and
+    /// whose untouched ones are a plain channel's ([`Self::translate_midi`]).
+    /// Unbound channels and anything else that plays nothing are ignored.
+    pub fn translate_midi_bytes(
+        &mut self,
+        bytes: &[u8],
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        self.midi.decoder.feed(bytes);
+        let mut result = Ok(());
+        while let Some(event) = self.midi.decoder.poll() {
+            let done = match event {
+                MpeEvent::Plain([status, d1, d2]) => match crate::midi::parse_midi1(status, d1, d2)
+                {
+                    Some(msg) => self.translate_midi(msg, cmds),
+                    None => Ok(()),
+                },
+                event => self.translate_mpe(event, cmds),
+            };
+            if done.is_err() && result.is_ok() {
+                result = done;
+            }
+        }
+        result
+    }
+
+    /// **One per-note message of a zone**: a note-on makes a voice of the
+    /// zone's instrument at its key plus its bend, with its pressure and
+    /// timbre; a bend retunes that voice (and sets the `bend` control, in
+    /// semitones, when one is mapped); pressure, timbre and a mapped
+    /// controller set theirs; a note-off releases it, its lift first.
+    fn translate_mpe(&mut self, event: MpeEvent, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        match event {
+            MpeEvent::NoteOn {
+                note,
+                side,
+                key,
+                velocity,
+                bend,
+                pressure,
+                timbre,
+                ..
+            } => {
+                let master = side.master();
+                if !self.midi.zones.contains_key(&master) {
+                    return Ok(());
+                }
+                let id = self
+                    .midi
+                    .alloc_id()
+                    .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
+                let Some(msg) = self.zone_voice(master, key, velocity, bend, pressure, timbre, id)
+                else {
+                    self.midi.release_id(id as i64);
+                    return Ok(());
+                };
+                if let Err(e) = self.translate(&msg, cmds) {
+                    self.midi.release_id(id as i64);
+                    return Err(e);
+                }
+                self.midi
+                    .zone_voices
+                    .insert(note, ZoneVoice { id, key, master });
+                Ok(())
+            }
+            MpeEvent::NoteOff { note, velocity } => {
+                if let Some(voice) = self.midi.zone_voices.remove(&note) {
+                    for msg in self.zone_release(voice, velocity) {
+                        let _ = self.translate(&msg, cmds);
+                    }
+                }
+                Ok(())
+            }
+            MpeEvent::Plain(_) => Ok(()),
+            expression => {
+                let note = match expression {
+                    MpeEvent::Bend { note, .. }
+                    | MpeEvent::Pressure { note, .. }
+                    | MpeEvent::Timbre { note, .. }
+                    | MpeEvent::Controller { note, .. } => note,
+                    _ => return Ok(()),
+                };
+                if let Some(voice) = self.midi.zone_voices.get(&note).copied() {
+                    for (control, value) in self.zone_expression(voice, expression) {
+                        self.midi_set(voice.id, &control, value, cmds);
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// The message that starts voice `id` of the zone on `master`: its
+    /// binding's instrument (or a voice of its shared GraphDef), `freq` at
+    /// `key + bend` semitones, `amp` from the velocity, and the pressure and
+    /// timbre controls the note starts with. `None` when no zone is there.
+    #[allow(clippy::too_many_arguments)] // one note's whole state, as the decoder hands it
+    fn zone_voice(
+        &self,
+        master: u8,
+        key: u8,
+        velocity: u16,
+        bend: f32,
+        pressure: u32,
+        timbre: u32,
+        id: i32,
+    ) -> Option<rosc::OscMessage> {
+        let b = &self.midi.zones.get(&master)?.binding;
+        let mut controls = vec![
+            OscType::String(b.freq_control.clone()),
+            OscType::Float(convert::midi2freq(f32::from(key) + bend)),
+            OscType::String(b.amp_control.clone()),
+            OscType::Float(convert::velocity2amp(velocity)),
+        ];
+        if let Some(name) = &b.pressure_control {
+            controls.push(OscType::String(name.clone()));
+            controls.push(OscType::Float(convert::aftertouch2control(pressure)));
+        }
+        if let Some(name) = &b.timbre_control {
+            controls.push(OscType::String(name.clone()));
+            controls.push(OscType::Float(convert::cc2control(timbre)));
+        }
+        let mut args = match b.graph_instance {
+            Some(instance) => vec![OscType::Int(instance), OscType::Int(id)],
+            None => vec![
+                OscType::String(b.instrument.clone()),
+                OscType::Int(id),
+                OscType::Int(b.action),
+                OscType::Int(b.target),
+            ],
+        };
+        args.extend(controls);
+        let addr = if b.graph_instance.is_some() {
+            "/graph_newVoice"
+        } else {
+            "/synth_new"
+        };
+        Some(midi_message(addr, args))
+    }
+
+    /// What releases a zone's voice: its lift first when mapped, then the gate
+    /// closing or the voice freed.
+    fn zone_release(&self, voice: ZoneVoice, velocity: u16) -> Vec<rosc::OscMessage> {
+        let Some(b) = self.midi.zones.get(&voice.master).map(|z| &z.binding) else {
+            return vec![midi_message("/node_free", vec![OscType::Int(voice.id)])];
+        };
+        let mut out = Vec::new();
+        if let Some(lift) = &b.lift_control {
+            out.push(midi_message(
+                "/node_set",
+                vec![
+                    OscType::Int(voice.id),
+                    OscType::String(lift.clone()),
+                    OscType::Float(convert::velocity2amp(velocity)),
+                ],
+            ));
+        }
+        out.push(if b.gate {
+            midi_message(
+                "/node_set",
+                vec![
+                    OscType::Int(voice.id),
+                    OscType::String(b.gate_control.clone()),
+                    OscType::Float(0.0),
+                ],
+            )
+        } else {
+            midi_message("/node_free", vec![OscType::Int(voice.id)])
+        });
+        out
+    }
+
+    /// The controls a zone's expression sets on one of its voices: a bend's
+    /// pitch (and its semitones on a mapped `bend`), pressure, timbre, or a
+    /// controller the binding maps.
+    fn zone_expression(&self, voice: ZoneVoice, event: MpeEvent) -> Vec<(String, f32)> {
+        let Some(b) = self.midi.zones.get(&voice.master).map(|z| &z.binding) else {
+            return Vec::new();
+        };
+        match event {
+            MpeEvent::Bend { semitones, .. } => {
+                let mut out = vec![(
+                    b.freq_control.clone(),
+                    convert::midi2freq(f32::from(voice.key) + semitones),
+                )];
+                if let Some(name) = &b.bend_control {
+                    out.push((name.clone(), semitones));
+                }
+                out
+            }
+            MpeEvent::Pressure { value, .. } => b
+                .pressure_control
+                .iter()
+                .map(|n| (n.clone(), convert::aftertouch2control(value)))
+                .collect(),
+            MpeEvent::Timbre { value, .. } => b
+                .timbre_control
+                .iter()
+                .map(|n| (n.clone(), convert::cc2control(value)))
+                .collect(),
+            MpeEvent::Controller {
+                controller, value, ..
+            } => {
+                b.cc.get(&controller)
+                    .map(|n| (n.clone(), convert::cc2control(value)))
+                    .into_iter()
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Actuate nodes from a standard channel-voice MIDI message. Reuses
@@ -186,12 +557,16 @@ impl CmdTranslator {
                 velocity,
             } => {
                 if velocity == 0 {
-                    self.midi_note_off(channel, note, cmds)
+                    self.midi_note_off(channel, note, 0, cmds)
                 } else {
                     self.midi_note_on(channel, note, velocity, cmds)
                 }
             }
-            NoteOff { channel, note, .. } => self.midi_note_off(channel, note, cmds),
+            NoteOff {
+                channel,
+                note,
+                velocity,
+            } => self.midi_note_off(channel, note, velocity, cmds),
             PolyAftertouch { channel, note, .. } => {
                 if let Some((ctrl, value)) = self.midi_expression(msg)
                     && let Some(&id) = self.midi.voices.get(&(channel, note))
@@ -232,7 +607,7 @@ impl CmdTranslator {
             return Ok(());
         }
         if self.midi.voices.contains_key(&(channel, note)) {
-            self.midi_note_off(channel, note, cmds)?;
+            self.midi_note_off(channel, note, 0, cmds)?;
         }
         let id = self
             .midi
@@ -250,11 +625,27 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// Note off -> `/node_free` (or `/node_set gate 0` for gate-aware bindings).
-    fn midi_note_off(&mut self, channel: u8, note: u8, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+    /// Note off -> `/node_free` (or `/node_set gate 0` for gate-aware
+    /// bindings), with the release velocity on the `lift` control first when
+    /// the binding maps one.
+    fn midi_note_off(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
         let Some(id) = self.midi.voices.remove(&(channel, note)) else {
             return Ok(());
         };
+        if let Some(lift) = self
+            .midi
+            .channels
+            .get(&channel)
+            .and_then(|b| b.lift_control.clone())
+        {
+            self.midi_set(id, &lift, convert::velocity2amp(velocity), cmds);
+        }
         let msg = self.midi_release(channel, id);
         // A freed voice may already be gone; an unknown control is a no-op.
         let _ = self.translate(&msg, cmds);
@@ -402,6 +793,57 @@ impl CmdTranslator {
         let msg = self.midi_release(channel, id);
         self.translate(&msg, release)?;
         Ok(Some(id))
+    }
+
+    /// **A lane's note in an MPE zone**, built as the live note-on and its
+    /// note-off would be through the zone on `master`, into `start` and
+    /// `release`. Returns the voice id, or `None` when no zone is bound there.
+    #[allow(clippy::too_many_arguments)] // one note's whole state, as the decoder hands it
+    pub fn lane_zone_note(
+        &mut self,
+        master: u8,
+        key: u8,
+        velocity: u16,
+        bend: f32,
+        pressure: u32,
+        timbre: u32,
+        start: &mut Vec<Cmd>,
+        release: &mut Vec<Cmd>,
+    ) -> Result<Option<i32>, String> {
+        if !self.midi.zones.contains_key(&master) {
+            return Ok(None);
+        }
+        let id = self
+            .midi
+            .alloc_id()
+            .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
+        let Some(msg) = self.zone_voice(master, key, velocity, bend, pressure, timbre, id) else {
+            self.midi.release_id(id as i64);
+            return Ok(None);
+        };
+        if let Err(e) = self.translate(&msg, start) {
+            self.midi.release_id(id as i64);
+            return Err(e);
+        }
+        for msg in self.zone_release(ZoneVoice { id, key, master }, 0) {
+            self.translate(&msg, release)?;
+        }
+        Ok(Some(id))
+    }
+
+    /// **A lane's per-note expression** on its note's voice `id`, as the zone
+    /// on `master` maps it.
+    pub fn lane_zone_set(
+        &mut self,
+        master: u8,
+        key: u8,
+        id: i32,
+        event: MpeEvent,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        for (control, value) in self.zone_expression(ZoneVoice { id, key, master }, event) {
+            self.midi_set(id, &control, value, cmds);
+        }
     }
 
     /// **A lane's expressive MIDI message** on `voices`, the lane's voices it

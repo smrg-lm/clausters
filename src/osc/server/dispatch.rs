@@ -410,10 +410,18 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.persist_bindings();
         Ok(())
     }),
+    ("/midi_bindZone", |s, addr, m, f| {
+        s.handle_via_translate(addr, m, f)?;
+        s.persist_bindings();
+        Ok(())
+    }),
     ("/midi_map", |s, addr, m, f| {
         s.handle_via_translate(addr, m, f)?;
         s.persist_bindings();
         Ok(())
+    }),
+    ("/midi_query", |s, _, m, f| {
+        s.handle_midi_query(Args::new(m), f)
     }),
     ("/midi_unbind", |s, addr, m, f| {
         s.handle_via_translate(addr, m, f)?;

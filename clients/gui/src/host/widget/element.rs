@@ -1027,14 +1027,22 @@ pub enum Key {
 /// note wherever it runs.
 ///
 /// Note-on with velocity 0 is a note-off before it gets here -- the parse is the
-/// front's, exactly as resolving a keyboard layout into a [`Key::Char`] is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// front's, exactly as resolving a keyboard layout into a [`Key::Char`] is. So
+/// is MPE: a note of a zone arrives with its `bend` in semitones, and a bend
+/// that moves while it sounds arrives as a `retune` of the note held at that
+/// pitch and channel.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MidiNote {
     /// Start it, or release the one sounding at this pitch and channel.
     pub on: bool,
     pub channel: i32,
     pub pitch: i32,
     pub velocity: i32,
+    /// Semitones from `pitch`: an MPE note's bend, 0 for a plain one.
+    pub bend: f32,
+    /// The note held at this pitch and channel moved to `pitch + bend`,
+    /// rather than a new one starting.
+    pub retune: bool,
 }
 
 /// What a key arrives with: the modifiers held, and the host-wide clipboard a
