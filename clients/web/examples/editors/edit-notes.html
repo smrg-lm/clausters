@@ -86,6 +86,8 @@ leaves every other note its own.</div>
       <div id="stage"></div>
       <div id="hertz"></div>
       <button id="play" disabled>play the notes</button>
+      <button id="own" disabled>give the level to the notes</button>
+      <button id="gather" disabled>gather it back</button>
       <button id="read" disabled>what the roll never drew</button>
       <pre id="log"></pre>
     </main>
@@ -155,7 +157,7 @@ leaves every other note its own.</div>
         // note is held and falls back one in its release -- a note's curve
         // runs past its box, which is its on and its off.
         notes = await timeline.renderEvents(); // what the roll edits, in place
-        notes.addLane({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
+        let level = notes.addLane({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
         const first = notes.entries()[0][0];
         notes.addExpression(first, { bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
         const editor = await gui.edit(notes, {
@@ -167,7 +169,7 @@ leaves every other note its own.</div>
         // The same notes, in hertz: a second editor over the very same
         // sequence, whose vertical axis is the frequency -- the same pitch in
         // another coordinate.
-        await gui.edit(notes, {
+        const hertz = await gui.edit(notes, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           yAxis: "hz",
           title: "notes in hertz",
@@ -179,6 +181,27 @@ leaves every other note its own.</div>
         // The editor plays the sequence it edits, on its own transport -- the
         // space bar in the window is the same verb.
         $("play").onclick = () => editor.play();
+
+        // A lane given to its notes: the level lane is the channel's, and each
+        // note hears it from its on to its off. `laneToExpression` gives it to
+        // the notes it reaches -- each takes the stretch its span covers as a
+        // curve of its own, drawn inside it, and the row goes -- and they sound
+        // as they did. `expressionToLane` gathers the notes' curves back into a
+        // lane, which holds where no two notes that sound together differ: here
+        // none overlap. Both are edits of the sequence; `adopt` brings the rolls
+        // in step with it.
+        $("own").disabled = false;
+        $("own").onclick = () => {
+          notes.laneToExpression(level);
+          editor.adopt();
+          hertz.adopt();
+        };
+        $("gather").disabled = false;
+        $("gather").onclick = () => {
+          level = notes.expressionToLane({ control: "amp" });
+          editor.adopt();
+          hertz.adopt();
+        };
 
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen, and prints what was drawn when it

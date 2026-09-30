@@ -786,9 +786,23 @@ opened it.
         packets; a port that does -- ALSA's UMP rawmidi, or UDP MIDI 2.0 --
         is the transport decision `PLAN.md` names, and until it is taken this
         entry stays open.)*
-    - ⬜ **X3.11e - Between the scopes.** The two edits: a lane into its
+    - ✅ **X3.11e - Between the scopes.** The two edits: a lane into its
       notes' expression, and the notes' expression into a lane, refused under
-      overlap.
+      overlap. *(Shipped 2026-09-30. The user set the weight between them:
+      the main case is the lane into the notes, so that an event carries as
+      part of its structure the lanes that made its expression; the way back
+      is wanted but does not hold in every case -- and does hold for a chord
+      whose lane was given to its notes, since they all have the same curve.
+      So `lanetoexpression` gives each note on the lane's channel the stretch
+      its span covers and the lane goes (a bend kept beside the copies would
+      be heard twice); a note with its own curve over the control keeps it,
+      except a bend, which adds and is refused; and `expressiontolane` is
+      refused only where two notes that sound at once differ over the time
+      they share, rather than under any overlap. The document's
+      `events::scopes`; `lane_to_expression` / `expression_to_lane` and
+      `laneToExpression` / `expressionToLane` on both clients; the
+      `edit_notes` pair gives its level lane to the notes and gathers it
+      back.)*
   - ✅ **X3.12 - The Hz domain.**
     *(Shipped 2026-09-28: the `notes` element reads `axes.y.unit` `"hz"` --
     its notes, their report and its compass in hertz, converted at the wire

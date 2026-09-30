@@ -197,3 +197,23 @@ def test_a_sequence_goes_to_a_midi2_clip_and_back():
     assert values["cc"] == pytest.approx(64.0, abs=1e-3)
     with pytest.raises(ValueError, match="SMF2CLIP"):
         EventSequence.from_clip(b"MThd")
+
+
+def test_a_lane_goes_to_its_notes_and_a_chord_gives_it_back():
+    seq = EventSequence([(1.0, Event(midinote=m, sustain=2.0)) for m in (60, 64, 67)])
+    lane = seq.add_lane({"bend": True, "channel": 0}, [(0.0, 0.0), (4.0, 4.0)])
+    seq.lane_to_expression(lane)
+    data = seq.data()
+    assert not data.get("lanes")
+    for held in data["events"]:
+        points = [(p["at"], p["value"]) for p in held["expression"][0]["points"]]
+        assert points == [(0.0, 1.0), (2.0, 3.0)]
+    back = seq.expression_to_lane({"bend": True})
+    lanes = seq.data()["lanes"]
+    assert lanes[0]["id"] == back
+    assert lanes[0]["target"] == {"bend": True, "channel": 0}
+    first, second = seq.entries()[0][0], seq.entries()[1][0]
+    seq.add_expression(first, {"pressure": True}, [(0.0, 0.0), (2.0, 1.0)])
+    seq.add_expression(second, {"pressure": True}, [(0.0, 0.0), (2.0, 0.5)])
+    with pytest.raises(ValueError, match="cannot say both"):
+        seq.expression_to_lane({"pressure": True})

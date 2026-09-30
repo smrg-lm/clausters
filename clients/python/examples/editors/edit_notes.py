@@ -110,7 +110,8 @@ timeline = Timeline([
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 notes = timeline.render_events()   # what the roll edits, in place
-notes.add_lane({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.0, 0.4)], name="level")
+level = notes.add_lane({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.0, 0.4)],
+                       name="level")
 first = notes.entries()[0][0]
 notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
 editor = edit(notes,
@@ -139,6 +140,33 @@ hertz = edit(notes,
 def play():
     """Play the sequence as it now stands, from the position cursor."""
     editor.play()
+
+
+# %% [markdown]
+# ## A lane given to its notes
+#
+# The level lane is the channel's: each note hears it from its on to its off.
+# `lane_to_expression` gives it to the notes it reaches -- each takes the
+# stretch its span covers as a curve of its own, drawn inside it, and the row
+# goes -- and they sound as they did. `expression_to_lane` gathers the notes'
+# curves back into a lane, which holds where no two notes that sound together
+# differ: here none overlap. Both are edits of the sequence; `adopt` brings the
+# rolls in step with it.
+
+# %%
+def own_the_level():
+    """Give the level lane to the notes it reaches."""
+    notes.lane_to_expression(level)
+    editor.adopt()
+    hertz.adopt()
+
+
+def gather_the_level():
+    """Gather the notes' level curves back into a lane."""
+    global level
+    level = notes.expression_to_lane({"control": "amp"})
+    editor.adopt()
+    hertz.adopt()
 
 
 # %% [markdown]

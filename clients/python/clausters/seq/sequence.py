@@ -120,11 +120,11 @@ class EventSequence:
     def apply(self, intent: dict) -> dict:
         """Apply one edit in the sequence's vocabulary (``add``, ``remove``,
         ``move``, ``set``, ``keys``, ``setevents``, ``tempo``, ``lane``,
-        ``removelane``, ``expression``, ``removeexpression``, ``midi``,
-        ``restore``) and
+        ``removelane``, ``expression``, ``removeexpression``,
+        ``lanetoexpression``, ``expressiontolane``, ``midi``, ``restore``) and
         answer ``{"applied", "current"}`` -- ``current`` the edit that puts it
-        back, read before this one landed -- with ``"id"`` for an add, a lane
-        or an expression.
+        back, read before this one landed -- with ``"id"`` for an add, a lane,
+        an expression or a lane gathered from the notes.
         `ValueError` when refused."""
         return self._seq.call("apply", intent=intent)
 
@@ -168,6 +168,28 @@ class EventSequence:
         note's end into its release. The notes editor draws it inside the
         note, and a bend in the plane over the pitches it spans."""
         return self._curve({"intent": "expression", "id": int(id)}, target, points, name)
+
+    def lane_to_expression(self, lane: int) -> None:
+        """**Give lane ``lane`` to the notes it reaches**: each note on its
+        channel (every note, for a lane that names none) takes the stretch of
+        the lane its span covers as a curve of its own -- sounding as it did,
+        since a channel reaches a note from its on to its off -- and the lane
+        goes. A note with its own curve over that control keeps it; over a
+        bend, which adds, that is a `ValueError`, as is a lane the sequence's
+        `midi` spec cannot say of one note."""
+        self.apply({"intent": "lanetoexpression", "lane": int(lane)})
+
+    def expression_to_lane(self, target: dict, channel: "int | None" = None) -> int:
+        """**Gather the notes' curves over** ``target`` **into a lane** -- of
+        the notes on ``channel``, or of every note -- and answer its id: each
+        note's curve over its span, on the channel its notes share. The notes'
+        curves go. It holds where the notes agree: two that sound at once with
+        different curves are a `ValueError`, since one channel cannot say both
+        -- a chord whose lane was given to its notes gives it back."""
+        intent = {"intent": "expressiontolane", "target": dict(target)}
+        if channel is not None:
+            intent["channel"] = int(channel)
+        return int(self.apply(intent)["id"])
 
     def remove_lane(self, lane: int) -> None:
         """Remove the lane with this id."""

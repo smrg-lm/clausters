@@ -164,7 +164,8 @@ export class EventSequence {
     /**
      * Applies one edit in the sequence's vocabulary (`add`, `remove`, `move`,
      * `set`, `keys`, `setevents`, `tempo`, `lane`, `removelane`, `expression`,
-     * `removeexpression`, `midi`, `restore`) and answers `{applied, current}` --
+     * `removeexpression`, `lanetoexpression`, `expressiontolane`, `midi`,
+     * `restore`) and answers `{applied, current}` --
      * `current` the edit that puts it back, read before this one landed -- with
      * `id` for an add, a lane or an expression. Throws when refused.
      */
@@ -228,6 +229,33 @@ export class EventSequence {
         { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
     ): number {
         return this.curve({ intent: "expression", id }, target, points, name);
+    }
+
+    /**
+     * **Gives lane `lane` to the notes it reaches**: each note on its channel
+     * (every note, for a lane that names none) takes the stretch of the lane
+     * its span covers as a curve of its own -- sounding as it did, since a
+     * channel reaches a note from its on to its off -- and the lane goes. A
+     * note with its own curve over that control keeps it; over a bend, which
+     * adds, that throws, as does a lane the sequence's
+     * {@link EventSequence.midi} spec cannot say of one note.
+     */
+    laneToExpression(lane: number): void {
+        this.apply({ intent: "lanetoexpression", lane: Math.trunc(lane) });
+    }
+
+    /**
+     * **Gathers the notes' curves over `target` into a lane** -- of the notes
+     * on `channel`, or of every note -- and answers its id: each note's curve
+     * over its span, on the channel its notes share. The notes' curves go. It
+     * holds where the notes agree: two that sound at once with different
+     * curves throw, since one channel cannot say both -- a chord whose lane
+     * was given to its notes gives it back.
+     */
+    expressionToLane(target: Record<string, unknown>, { channel }: { channel?: number } = {}): number {
+        const intent: Record<string, unknown> = { intent: "expressiontolane", target };
+        if (channel !== undefined) intent.channel = Math.trunc(channel);
+        return Number(this.apply(intent).id);
     }
 
     /** Removes the lane with this id. */

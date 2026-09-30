@@ -219,3 +219,25 @@ test("a sequence goes to a MIDI 2.0 clip and back", () => {
     assert.ok(Math.abs(values.cc - 64.0) < 1e-3);
     assert.throws(() => EventSequence.fromClip(new TextEncoder().encode("MThd")), /SMF2CLIP/);
 });
+
+test("a lane goes to its notes and a chord gives it back", () => {
+    const seq = new EventSequence([60, 64, 67].map((m) => [1.0, new Event({ midinote: m, sustain: 2.0 })]));
+    const lane = seq.addLane({ bend: true, channel: 0 }, { points: [[0.0, 0.0], [4.0, 4.0]] });
+    seq.laneToExpression(lane);
+    let data = seq.data() as {
+        lanes?: { id: number; target: unknown }[];
+        events: { expression: { points: { at: number; value: number }[] }[] }[];
+    };
+    assert.ok(data.lanes === undefined || data.lanes.length === 0);
+    for (const held of data.events) {
+        assert.deepEqual(held.expression[0].points.map((p) => [p.at, p.value]), [[0, 1], [2, 3]]);
+    }
+    const back = seq.expressionToLane({ bend: true });
+    data = seq.data() as typeof data;
+    assert.equal(data.lanes?.[0].id, back);
+    assert.deepEqual(data.lanes?.[0].target, { bend: true, channel: 0 });
+    const [first, second] = seq.entries().map(([id]) => id);
+    seq.addExpression(first, { pressure: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
+    seq.addExpression(second, { pressure: true }, { points: [[0.0, 0.0], [2.0, 0.5]] });
+    assert.throws(() => seq.expressionToLane({ pressure: true }), /cannot say both/);
+});

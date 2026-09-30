@@ -269,6 +269,23 @@ pub enum EventsIntent {
         #[serde(default)]
         midi: Option<MidiSpec>,
     },
+    /// A lane given to the notes it reaches: each note takes the stretch of
+    /// the lane its span covers as a curve of its own, and the lane goes. See
+    /// `scopes`.
+    LaneToExpression {
+        /// Which lane.
+        lane: NodeId,
+    },
+    /// The notes' curves over `target` gathered into a lane -- of the notes on
+    /// `channel`, or of every note -- the answer saying which. Refused where
+    /// two notes that sound at once have different curves.
+    ExpressionToLane {
+        /// What the curves drive, as a note's curve names it.
+        target: Opaque,
+        /// The notes' channel, or none for every note.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<i64>,
+    },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
         /// All of it.
@@ -642,6 +659,16 @@ impl EventSequence {
                     .ok_or_else(|| format!("event {id} holds no curve {}", lane.0))?;
                 curves.remove(j);
             }
+            EventsIntent::LaneToExpression { lane } => {
+                let mut after = self.clone();
+                after.lane_to_expression(lane)?;
+                *self = after;
+            }
+            EventsIntent::ExpressionToLane { target, channel } => {
+                let mut after = self.clone();
+                added = Some(after.expression_to_lane(&target.0, channel)?);
+                *self = after;
+            }
             EventsIntent::Restore { sequence } => {
                 // Everything as it was but the counter, which only climbs: an
                 // id a later edit could still name is never handed out again.
@@ -863,7 +890,9 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::Remove { .. }
         | EventsIntent::RemoveLane { .. }
         | EventsIntent::RemoveExpression { .. }
-        | EventsIntent::Midi { .. } => return None,
+        | EventsIntent::Midi { .. }
+        | EventsIntent::LaneToExpression { .. }
+        | EventsIntent::ExpressionToLane { .. } => return None,
     })
 }
 
@@ -1011,6 +1040,7 @@ pub fn mutates(request: &str) -> bool {
 }
 
 mod midi;
+mod scopes;
 
 #[cfg(test)]
 mod tests;

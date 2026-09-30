@@ -690,3 +690,161 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
     assert_eq!(back.lanes[0].target.0, json!({"cc": 7, "channel": 0}));
     assert!((back.lanes[0].points[0].value - 100.0).abs() < 1e-4);
 }
+
+/// A curve's points as `(at, value)`, linear.
+fn ramp(target: Value, points: &[(f64, f64)]) -> Automation {
+    let mut c = Automation::new(NodeId(0), Opaque(target));
+    c.points = points
+        .iter()
+        .map(|&(at, value)| crate::Point {
+            at,
+            value,
+            data: Opaque(json!({"shape": 1})),
+        })
+        .collect();
+    c
+}
+
+/// Three notes from beat 1 for two beats on channel 0, and one on channel 1.
+fn chord() -> EventSequence {
+    let note = |midinote: i64, channel: i64| {
+        Event::new(
+            1.0,
+            json!({"midinote": midinote, "sustain": 2.0, "channel": channel}),
+        )
+    };
+    EventSequence::new(vec![note(60, 0), note(64, 0), note(67, 0), note(72, 1)])
+}
+
+/// **A lane given to its notes becomes each one's own**: the notes on its
+/// channel take the stretch their span covers -- from the value where they
+/// begin to the value where they end -- the lane goes, and a note on another
+/// channel is untouched.
+#[test]
+fn a_lane_given_to_its_notes_is_each_ones_own() {
+    let mut s = chord();
+    let lane = s
+        .edit(EventsIntent::Lane {
+            automation: ramp(
+                json!({"bend": true, "channel": 0}),
+                &[(0.0, 0.0), (4.0, 4.0)],
+            ),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    s.edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
+        .unwrap();
+    assert!(s.lanes.is_empty(), "the lane is the notes' now");
+    for event in &s.events[..3] {
+        let bend = &event.expression[0];
+        assert_eq!(bend.target.0, json!({"bend": true}));
+        let points: Vec<(f64, f64)> = bend.points.iter().map(|p| (p.at, p.value)).collect();
+        assert_eq!(points, [(0.0, 1.0), (2.0, 3.0)], "beat 1 to 3 of the ramp");
+    }
+    assert!(
+        s.events[3].expression.is_empty(),
+        "channel 1 is not the lane's"
+    );
+}
+
+/// **A chord gives its lane back**: its notes' curves agree where they sound
+/// at once, so gathering them is the lane over their span, on their channel;
+/// the notes' curves go.
+#[test]
+fn a_chords_curves_gather_back_into_its_lane() {
+    let mut s = chord();
+    let lane = s
+        .edit(EventsIntent::Lane {
+            automation: ramp(
+                json!({"bend": true, "channel": 0}),
+                &[(0.0, 0.0), (4.0, 4.0)],
+            ),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    s.edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
+        .unwrap();
+    let back = s
+        .edit(EventsIntent::ExpressionToLane {
+            target: Opaque(json!({"bend": true})),
+            channel: None,
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    assert_eq!(s.lanes[0].id, NodeId(back));
+    assert_eq!(s.lanes[0].target.0, json!({"bend": true, "channel": 0}));
+    let points: Vec<(f64, f64)> = s.lanes[0].points.iter().map(|p| (p.at, p.value)).collect();
+    assert_eq!(
+        points,
+        [(1.0, 1.0), (3.0, 3.0)],
+        "the stretch the notes held"
+    );
+    assert!(s.events.iter().all(|e| e.expression.is_empty()));
+}
+
+/// **Notes that disagree cannot be one channel's**: two sounding at once with
+/// different curves are refused, and say which; a bend lane over a note with
+/// a bend of its own is refused, since a bend adds; and a lane the spec
+/// cannot say of one note stays a lane.
+#[test]
+fn the_scopes_refuse_what_they_cannot_hold() {
+    let mut s = chord();
+    let (a, b) = (s.events[0].id, s.events[1].id);
+    for (id, to) in [(a, 1.0), (b, 0.5)] {
+        s.edit(EventsIntent::Expression {
+            id,
+            automation: ramp(json!({"pressure": true}), &[(0.0, 0.0), (2.0, to)]),
+        })
+        .unwrap();
+    }
+    let before = s.clone();
+    let refused = s
+        .edit(EventsIntent::ExpressionToLane {
+            target: Opaque(json!({"pressure": true})),
+            channel: None,
+        })
+        .unwrap_err();
+    assert!(
+        refused.contains(&a.to_string()) && refused.contains(&b.to_string()),
+        "{refused}"
+    );
+    assert_eq!(s, before, "refused, nothing moved");
+
+    s.edit(EventsIntent::Expression {
+        id: a,
+        automation: ramp(json!({"bend": true}), &[(0.0, 1.0)]),
+    })
+    .unwrap();
+    let lane = s
+        .edit(EventsIntent::Lane {
+            automation: ramp(json!({"bend": true}), &[(0.0, 2.0)]),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    let twice = s
+        .edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
+        .unwrap_err();
+    assert!(twice.contains("heard twice"), "{twice}");
+
+    let mut one = chord();
+    one.edit(EventsIntent::Midi {
+        midi: Some(MidiSpec::Midi1),
+    })
+    .unwrap();
+    let cc = one
+        .edit(EventsIntent::Lane {
+            automation: ramp(json!({"cc": 7}), &[(0.0, 100.0)]),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    assert!(
+        one.edit(EventsIntent::LaneToExpression { lane: NodeId(cc) })
+            .unwrap_err()
+            .contains("MIDI 1.0")
+    );
+}
