@@ -709,6 +709,55 @@ opened it.
       roll offers only the per-note curves that destination can say, and it
       **shows which MIDI it is editing** -- 1.0, 2.0 or MPE -- which helps the
       reading (the user, 2026-09-30).
+      *(Designed with the user 2026-09-30, in four parts, one commit each and
+      in this order. MIDI 2.0 is in, not deferred: the `midi2` crate is
+      already a dependency of `clausters-midi`, which writes a notes-only
+      SMF2CLIP, and the server normalizes to MIDI 2.0 resolution while
+      reading MIDI 1.0 bytes. The roll already represents what 2.0 says per
+      note.)*
+      - ✅ **X3.11d1 - The sequence's MIDI spec.** `EventSequence.midi`, a
+        `MidiSpec` -- the user's name for it, since it covers two protocols
+        and a specification over them: `"1.0"`, MPE (its zone) or `"2.0"`, or
+        none -- a sequence for the
+        server, where every curve is legal. Set by reading a file, changed by
+        a verb in both clients (`set_midi`/`setMidi`), kept in the document.
+        A spec admits the curves it can say: per note, MIDI 1.0 has poly
+        pressure alone, MPE bend, pressure and timbre, 2.0 those and per-note
+        controllers; a lane in a MIDI spec is a channel message (CC, bend,
+        channel pressure, timbre as CC 74), never a bare `control`. A curve
+        the spec cannot say is refused, and so is a spec the curves already
+        there cannot be said in. The roll shows the spec in the corner under
+        its keyboard, beside the ruler. *(Shipped 2026-09-30: the document's
+        `MidiSpec` and `CurveKind`, the `midi` intent, the refusals; a file
+        read is MIDI 1.0; the roll's `midi` prop and its caption; `midi` /
+        `set_midi` and `midi` / `setMidi` on both clients' sequence. Seen by
+        eye with `X3.11d2`'s example, which reads a file.)*
+      - ⬜ **X3.11d2 - `.mid` in and out (1.0 and MPE).** Reading: a
+        channel's stream of CC, bend (through the channel's RPN 0 range, 2 by
+        default) or channel pressure becomes a lane of step points; poly
+        pressure the expression of the note on its key; a declared MPE zone
+        (its MCM) makes each member channel's bend (48 by default), pressure
+        and CC 74 the expression of the note on it, and the master's streams
+        lanes over the whole zone; the RPNs are consumed, and only the
+        discrete gestures (program change, sysex, raw) stay events. Writing:
+        lanes as channel messages, steps as they are and ramps sampled where
+        the MIDI value changes; expression as poly pressure in 1.0, or on a
+        member channel per note in MPE (the zone messages first); a curve
+        with no spelling refused with why. Playing a sequence to a MIDI
+        destination plays the same render.
+      - ⬜ **X3.11d3 - SMF2CLIP in and out (2.0).** The clip file whole,
+        read and written: lanes as 32-bit channel messages, expression as
+        per-note pitch bend, 32-bit poly pressure and a per-note controller
+        for timbre (assignable 74, CC 74's mirror).
+      - ⬜ **X3.11d4 - MIDI 2.0 into the server** *(the user, 2026-09-30:
+        MIDI 2.0 has to be an input for the server, by MIDI port or by a
+        playback lane -- left for later if need be, but written down as
+        pending, and better now if it can be done)*. A UMP parser for
+        Channel Voice 2 in the actuation; a lane's `ump` list beside `midi`;
+        per-note bend, pressure and controllers reaching the note's voice
+        through the per-voice path MPE zones already use. The live transport
+        (UDP MIDI 2.0, ALSA's UMP) is the open decision `PLAN.md` names; if
+        it does not land here, this entry stays open.
     - ⬜ **X3.11e - Between the scopes.** The two edits: a lane into its
       notes' expression, and the notes' expression into a lane, refused under
       overlap.

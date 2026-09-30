@@ -90,12 +90,38 @@ class EventSequence:
         written = None if value is None else json.loads(value.dump())
         self.apply({"intent": "tempo", "tempo_map": written})
 
+    @property
+    def midi(self) -> "str | None":
+        """**Which MIDI specification the sequence is written for**:
+        ``"1.0"``, ``"mpe"`` or ``"2.0"`` -- or ``None``, a sequence for the
+        server, where any curve is legal. It decides which curves the
+        sequence can hold: per note, MIDI 1.0 says only pressure, MPE bend,
+        pressure and timbre, 2.0 those and per-note controllers; over a channel
+        a MIDI spec says a CC, the bend, pressure and timbre, never a bare
+        ``control``. A file read is MIDI 1.0. Change it with `set_midi`."""
+        written = self.data().get("midi")
+        if isinstance(written, dict):
+            return next(iter(written), None)
+        return written
+
+    def set_midi(self, spec: "str | None", *, upper: bool = False, members: int = 15) -> None:
+        """Write the sequence for ``spec`` -- ``"1.0"``, ``"mpe"``, ``"2.0"`` or
+        ``None`` -- an edit. An MPE zone is the lower one (master channel 1)
+        unless ``upper``, with ``members`` member channels. `ValueError` when a
+        curve the sequence holds has no spelling in that spec."""
+        if spec == "mpe":
+            written = {"mpe": {"upper": bool(upper), "members": int(members)}}
+        else:
+            written = spec
+        self.apply({"intent": "midi", "midi": written})
+
     # ---- editing ----
 
     def apply(self, intent: dict) -> dict:
         """Apply one edit in the sequence's vocabulary (``add``, ``remove``,
         ``move``, ``set``, ``keys``, ``setevents``, ``tempo``, ``lane``,
-        ``removelane``, ``expression``, ``removeexpression``, ``restore``) and
+        ``removelane``, ``expression``, ``removeexpression``, ``midi``,
+        ``restore``) and
         answer ``{"applied", "current"}`` -- ``current`` the edit that puts it
         back, read before this one landed -- with ``"id"`` for an add, a lane
         or an expression.

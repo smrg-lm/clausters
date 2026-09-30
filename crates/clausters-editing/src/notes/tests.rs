@@ -276,6 +276,29 @@ fn a_roll_draws_the_lanes_and_each_notes_curves() {
     assert_eq!(at_of(&bend), vec![0.0, 50.0]);
 }
 
+/// **A roll shows the MIDI spec its sequence is written for**, by the name a
+/// reader knows it by, and nothing for a sequence for the server.
+#[test]
+fn a_roll_shows_the_midi_spec() {
+    use clausters_document::events::MidiSpec;
+    let mut s = sequence();
+    assert_eq!(
+        project(&s, &YDomain::midi(), &Axis::constant(100.0)).midi,
+        ""
+    );
+    s.edit(EventsIntent::Midi {
+        midi: Some(MidiSpec::Mpe {
+            upper: false,
+            members: 15,
+        }),
+    })
+    .unwrap();
+    assert_eq!(
+        project(&s, &YDomain::midi(), &Axis::constant(100.0)).midi,
+        "MPE"
+    );
+}
+
 /// **A lane names its channel**, counted from 1 as MIDI shows one.
 #[test]
 fn a_lane_on_a_channel_says_which() {

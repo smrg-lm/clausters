@@ -39,6 +39,9 @@
 //!   free to run past its off into the release. A curve's name is its id. A
 //!   `points` report comes back in the same shape, every curve's points as the
 //!   hand left them.
+//! - `midi`: the MIDI spec the sequence is written for, as a reader names it
+//!   (`MIDI 1.0`, `MPE`, `MIDI 2.0`), empty for a sequence for the server --
+//!   the roll shows it beside its ruler.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -209,6 +212,9 @@ pub struct Projection {
     pub layers: Vec<Value>,
     /// Every curve's points: `name at value shape curve` quintuples.
     pub points: Vec<Value>,
+    /// The MIDI spec the sequence is written for, as a reader names it
+    /// (`MIDI 1.0`, `MPE`, `MIDI 2.0`), or empty for a sequence for the server.
+    pub midi: String,
 }
 
 /// How tall a lane's row under the plane is drawn.
@@ -274,7 +280,13 @@ fn point_values(name: &str, at: f64, point: &clausters_document::Point) -> [Valu
 /// **What a roll draws of a sequence**: every event the domain places, as a
 /// note, and every raw message as a marker.
 pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Projection {
-    let mut out = Projection::default();
+    let mut out = Projection {
+        midi: sequence
+            .midi
+            .map(|spec| spec.label().to_string())
+            .unwrap_or_default(),
+        ..Projection::default()
+    };
     for event in &sequence.events {
         let keys = event.keys();
         if let Some(label) = label_of(&event.data.0) {

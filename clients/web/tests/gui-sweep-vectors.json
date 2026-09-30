@@ -1691,6 +1691,15 @@
  },
  {
   "builder": "notes",
+  "option": "midi",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "midi": "q"
+  }
+ },
+ {
+  "builder": "notes",
   "option": "link",
   "value": 7,
   "tree": {
@@ -2533,6 +2542,15 @@
   "tree": {
    "type": "notes",
    "midi_in": 1
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "midi",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "midi": "q"
   }
  },
  {

@@ -132,12 +132,39 @@ export class EventSequence {
         this.apply({ intent: "tempo", tempo_map: written });
     }
 
+    /**
+     * **Which MIDI specification the sequence is written for**: `"1.0"`,
+     * `"mpe"` or `"2.0"` -- or `null`, a sequence for the server, where any
+     * curve is legal. It decides which curves the sequence can hold: per
+     * note, MIDI 1.0 says only pressure, MPE bend, pressure and timbre, 2.0
+     * those and per-note controllers; over a channel a MIDI spec says a CC,
+     * the bend, pressure and timbre, never a bare `control`. A file read is
+     * MIDI 1.0. Change it with {@link EventSequence.setMidi}.
+     */
+    get midi(): string | null {
+        const written = this.data().midi;
+        if (written === undefined || written === null) return null;
+        if (typeof written === "object") return Object.keys(written)[0] ?? null;
+        return String(written);
+    }
+
+    /**
+     * Writes the sequence for `spec` -- `"1.0"`, `"mpe"`, `"2.0"` or `null` --
+     * an edit. An MPE zone is the lower one (master channel 1) unless
+     * `upper`, with `members` member channels. Throws when a curve the
+     * sequence holds has no spelling in that spec.
+     */
+    setMidi(spec: string | null, { upper = false, members = 15 }: { upper?: boolean; members?: number } = {}): void {
+        const written = spec === "mpe" ? { mpe: { upper, members: Math.trunc(members) } } : spec;
+        this.apply({ intent: "midi", midi: written });
+    }
+
     // ---- editing ----
 
     /**
      * Applies one edit in the sequence's vocabulary (`add`, `remove`, `move`,
      * `set`, `keys`, `setevents`, `tempo`, `lane`, `removelane`, `expression`,
-     * `removeexpression`, `restore`) and answers `{applied, current}` --
+     * `removeexpression`, `midi`, `restore`) and answers `{applied, current}` --
      * `current` the edit that puts it back, read before this one landed -- with
      * `id` for an add, a lane or an expression. Throws when refused.
      */

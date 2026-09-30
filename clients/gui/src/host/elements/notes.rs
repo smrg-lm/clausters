@@ -81,6 +81,9 @@ pub struct Notes {
     osc_lane: bool,
     midi_in: bool,
     label: Option<String>,
+    /// The MIDI spec the notes are written for, as a reader names it, shown
+    /// beside the ruler; empty for notes for the server.
+    midi: String,
     editor: EditorProps,
     drag: Option<Drag>,
     /// The live-MIDI keys currently down: `(channel, pitch)` and the note each
@@ -182,6 +185,11 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         snap: number_f64(props, "snap", 0.0).max(0.0),
         midi_in: props.get("midi_in").and_then(truthy).unwrap_or(false),
         label: label(props),
+        midi: props
+            .get("midi")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         editor: EditorProps::parse(props, crate::host::widget::RulerY::Off),
         drag: None,
         held: Vec::new(),
@@ -344,6 +352,42 @@ impl Notes {
         }
     }
 
+    /// **Which MIDI the notes are written for**, in the cell under the
+    /// keyboard beside the ruler -- the one place in the roll a word about
+    /// the whole of it belongs, and empty otherwise. Nothing when the notes
+    /// are for the server, or when the roll has no such cell.
+    fn draw_midi_spec(&self, d: &mut Draw, ctx: &Ctx) {
+        if self.midi.is_empty() {
+            return;
+        }
+        let full = pianoroll::regions(
+            ctx.rect,
+            self.editor.ruler != Ruler::Off,
+            self.osc_lane,
+            ctx.indent,
+            ctx.metrics,
+        );
+        let top = full.keyboard.y + full.keyboard.h;
+        let cell = Rect::new(
+            full.keyboard.x,
+            top,
+            full.keyboard.w,
+            ctx.rect.y + ctx.rect.h - top,
+        );
+        let (mesh, m, theme) = d.parts();
+        if cell.w <= m.pad * 2.0 || cell.h < font::height(m.caption_scale) {
+            return;
+        }
+        font::text(
+            mesh,
+            &self.midi,
+            cell.x + m.pad,
+            cell.y + (cell.h - font::height(m.caption_scale)) * 0.5,
+            m.caption_scale,
+            theme.ruler_text,
+        );
+    }
+
     /// How far this roll's own content reaches on the axis: the end of its last
     /// note and of its last event.
     fn span(&self) -> f64 {
@@ -504,6 +548,10 @@ impl Element for Notes {
             "osc_lane" => truthy(v).map(|b| self.osc_lane = b).is_some(),
             "midi_in" => truthy(v).map(|b| self.midi_in = b).is_some(),
             "label" => set_label(&mut self.label, v),
+            "midi" => v
+                .as_str()
+                .map(|text| self.midi = text.to_string())
+                .is_some(),
             _ => self.editor.apply(key, v),
         }
     }
@@ -562,6 +610,7 @@ impl Element for Notes {
                 theme.ruler_text,
             );
         }
+        self.draw_midi_spec(d, ctx);
         let rate = self.rate(ctx.world.sample_rate);
         if self.editor.ruler != Ruler::Off {
             // The strip sits under the grid, aligned to the grid's x range --
@@ -2131,6 +2180,19 @@ mod tests {
         assert!((bend.y - axis_y.y(62.0, grid)).abs() < 1e-3);
         assert!((bend.y + bend.h - axis_y.y(58.0, grid)).abs() < 1e-3);
         assert!(inside.h < bend.h, "the pressure is inside the box");
+    }
+
+    /// **A roll says which MIDI its notes are written for**, set and cleared
+    /// like any prop -- empty for notes for the server.
+    #[test]
+    fn a_roll_carries_the_midi_spec_it_shows() {
+        let mut r = roll(r#"{"midi":"MPE"}"#);
+        assert_eq!(r.midi, "MPE");
+        assert!(r.set("midi", &Value::from("MIDI 1.0")));
+        assert_eq!(r.midi, "MIDI 1.0");
+        assert!(r.set("midi", &Value::from("")));
+        assert!(r.midi.is_empty());
+        assert!(roll("{}").midi.is_empty());
     }
 
     /// **A note's curve runs past its off**, into the release: the layer

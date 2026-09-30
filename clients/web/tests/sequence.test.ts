@@ -160,3 +160,20 @@ test("a lane and a note's expression are curves the sequence holds", () => {
     assert.ok(!data.lanes?.length);
     assert.ok(!data.events.find((e) => e.id === first)?.expression?.length);
 });
+
+test("a MIDI spec admits the curves it can say", () => {
+    const seq = sequence();
+    const first = seq.entries()[0][0];
+    assert.equal(seq.midi, null, "a sequence for the server");
+    seq.setMidi("1.0");
+    assert.equal(seq.midi, "1.0");
+    seq.addExpression(first, { pressure: true }, { points: [[0.0, 0.5]] });
+    assert.throws(() => seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0]] }), /MIDI 1\.0/);
+    seq.setMidi("mpe", { members: 7 });
+    assert.equal(seq.midi, "mpe");
+    assert.deepEqual(seq.data().midi, { mpe: { upper: false, members: 7 } });
+    seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0]] });
+    assert.throws(() => seq.setMidi("1.0"), /bend/);
+    seq.setMidi(null);
+    assert.equal(seq.midi, null);
+});

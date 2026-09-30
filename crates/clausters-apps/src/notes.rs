@@ -59,6 +59,7 @@ pub fn props(
     out.insert("curves".into(), json!(drawn.curves));
     out.insert("layers".into(), json!(drawn.layers));
     out.insert("points".into(), json!(drawn.points));
+    out.insert("midi".into(), json!(drawn.midi));
     out.remove("type");
     let notes: Vec<f64> = out
         .get("notes")
@@ -136,6 +137,7 @@ pub fn correction(sequence: &EventSequence, domain: &YDomain, rate: f64) -> Map<
     out.insert("curves".into(), json!(drawn.curves));
     out.insert("layers".into(), json!(drawn.layers));
     out.insert("points".into(), json!(drawn.points));
+    out.insert("midi".into(), json!(drawn.midi));
     if let Ok(map) = serde_json::to_string(&axis.map) {
         out.insert("tempo_map".into(), json!(map));
     }

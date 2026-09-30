@@ -142,3 +142,22 @@ def test_a_lane_and_a_notes_expression_are_curves_the_sequence_holds():
     data = seq.data()
     assert not data.get("lanes")
     assert not next(e for e in data["events"] if e["id"] == first).get("expression")
+
+
+def test_a_midi_spec_admits_the_curves_it_can_say():
+    seq = _sequence()
+    first = seq.entries()[0][0]
+    assert seq.midi is None, "a sequence for the server"
+    seq.set_midi("1.0")
+    assert seq.midi == "1.0"
+    seq.add_expression(first, {"pressure": True}, [(0.0, 0.5)])
+    with pytest.raises(ValueError, match="MIDI 1.0"):
+        seq.add_expression(first, {"bend": True}, [(0.0, 0.0)])
+    seq.set_midi("mpe", members=7)
+    assert seq.midi == "mpe"
+    assert seq.data()["midi"] == {"mpe": {"upper": False, "members": 7}}
+    seq.add_expression(first, {"bend": True}, [(0.0, 0.0)])
+    with pytest.raises(ValueError, match="bend"):
+        seq.set_midi("1.0")
+    seq.set_midi(None)
+    assert seq.midi is None

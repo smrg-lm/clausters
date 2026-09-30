@@ -2582,8 +2582,8 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
               snap: float | None = None, note_ids=None, curves=None, layers=None, points=None,
-              osc_lane: bool | None = None, midi_in: bool | None = None, link: int | None = None,
-              autofit: bool | None = None,
+              osc_lane: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
+              link: int | None = None, autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
               sel_start: float | None = None, sel_len: float | None = None,
@@ -2640,6 +2640,10 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     A gesture on a curve comes back once, on release, as a ``"points"`` event:
     every curve's points, flat ``name time value shape curve``.
 
+    ``midi`` names the MIDI specification the notes are written for --
+    ``"MIDI 1.0"``, ``"MPE"``, ``"MIDI 2.0"``, or ``""`` for notes for the
+    server -- drawn in the cell under the keyboard beside the ruler.
+
     **A plain drag over the grid sweeps the notes** the rectangle covered -- the
     rectangles the notes *are*, the same gesture a patcher's canvas has over its
     boxes and a lane has over its clips -- and it writes **no time span**. A
@@ -2678,7 +2682,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     extra = _drop_none(
         notes=_held(notes, _flat_notes),
         osc=_held(osc, _flat_osc),
-        snap=snap, label=label, color=color)
+        snap=snap, label=label, color=color, midi=midi)
     extra.update(_axes(
         axes, min=min, max=max, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, tempo_map=_tempo_map(tempo_map),

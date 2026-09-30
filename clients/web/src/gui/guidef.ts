@@ -2631,12 +2631,18 @@ export function pianoroll(
         points?: CurvePointSpec;
         oscLane?: boolean;
         midiIn?: boolean;
+        /**
+         * The MIDI specification the notes are written for -- `"MIDI 1.0"`,
+         * `"MPE"`, `"MIDI 2.0"`, or `""` for notes for the server -- drawn in
+         * the cell under the keyboard beside the ruler.
+         */
+        midi?: string;
         label?: string;
     } = {},
 ): GuiNode {
     const {
         notes, osc, min, max, snap, noteIds, curves, layers, points, oscLane, midiIn,
-        label: text, ...timeline
+        midi, label: text, ...timeline
     } = options;
     return node("notes", {
         ...timelineProps(timeline, drop([["min", min], ["max", max]])),
@@ -2658,6 +2664,7 @@ export function pianoroll(
             ["points", points === undefined ? undefined : flatCurvePoints(points)],
             ["osc_lane", flag(oscLane)],
             ["midi_in", flag(midiIn)],
+            ["midi", midi],
             ["label", text],
         ]),
     });

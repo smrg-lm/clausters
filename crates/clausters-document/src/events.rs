@@ -119,6 +119,10 @@ pub struct EventSequence {
     /// Curves over the whole sequence -- CC, bend, pressure -- on its beats.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lanes: Vec<Automation>,
+    /// **Which MIDI specification it is written for**, or none: a sequence
+    /// for the server, where every curve is legal. See [`MidiSpec`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub midi: Option<MidiSpec>,
     /// The last id minted. Kept, so an id is never handed out twice, not even
     /// to an event that comes back after its first holder was removed.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -143,6 +147,8 @@ enum Written {
         #[serde(default)]
         lanes: Vec<Automation>,
         #[serde(default)]
+        midi: Option<MidiSpec>,
+        #[serde(default)]
         next_id: u64,
         #[serde(flatten, default)]
         extra: Extra,
@@ -160,12 +166,14 @@ impl From<Written> for EventSequence {
                 events,
                 tempo_map,
                 lanes,
+                midi,
                 next_id,
                 extra,
             } => Self {
                 events,
                 tempo_map,
                 lanes,
+                midi,
                 next_id,
                 extra,
             },
@@ -253,6 +261,13 @@ pub enum EventsIntent {
         id: u64,
         /// Which of its curves.
         lane: NodeId,
+    },
+    /// The MIDI specification the sequence is written for, or none. Refused
+    /// when a curve it holds has no spelling in that spec.
+    Midi {
+        /// The spec.
+        #[serde(default)]
+        midi: Option<MidiSpec>,
     },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
@@ -390,6 +405,7 @@ impl EventSequence {
             .collect();
         let mut sequence = Self::new(events);
         sequence.tempo_map = Some(tempo_map);
+        sequence.midi = Some(MidiSpec::Midi1);
         Ok(sequence)
     }
 
@@ -475,7 +491,20 @@ impl EventSequence {
                 self.events[i].data = data;
             }
             EventsIntent::Tempo { tempo_map } => self.tempo_map = tempo_map,
+            EventsIntent::Midi { midi } => {
+                if let Some(spec) = midi
+                    && let Some(why) = self.unsayable(spec)
+                {
+                    return Err(why);
+                }
+                self.midi = midi;
+            }
             EventsIntent::Lane { mut automation } => {
+                if let Some(spec) = self.midi
+                    && !spec.says_lane(&automation.target.0)
+                {
+                    return Err(spec.refusal("a lane", &automation.target.0));
+                }
                 if automation.id.0 == 0 {
                     automation.id = NodeId(self.mint());
                 } else {
@@ -497,6 +526,11 @@ impl EventSequence {
             }
             EventsIntent::Expression { id, mut automation } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
+                if let Some(spec) = self.midi
+                    && !spec.says_note(&automation.target.0)
+                {
+                    return Err(spec.refusal("a note's curve", &automation.target.0));
+                }
                 if automation.id.0 == 0 {
                     automation.id = NodeId(self.mint());
                 } else {
@@ -536,6 +570,141 @@ impl EventSequence {
 /// A sequence as a MIDI file holds it: the messages at their ticks, and the
 /// tempo marks as `(tick, microseconds per quarter note)`.
 pub type Midi = (Vec<(u32, Vec<u8>)>, Vec<(u32, u32)>);
+
+/// **Which MIDI specification a sequence is written for**: what its curves
+/// can say, per note and per channel, and so what a file of it and a MIDI
+/// destination hear.
+///
+/// A control acts on a channel or on one note, and the three specs differ in
+/// the second: **MIDI 1.0** has one per-note message, poly pressure; **MPE**
+/// spends a member channel on each note so its channel's bend, pressure and
+/// CC 74 (timbre) are the note's; **MIDI 2.0** says per-note pitch bend, poly
+/// pressure and per-note controllers natively. Per channel all three say a
+/// CC, the bend, channel pressure and timbre (CC 74) -- and none says a bare
+/// `control`, which is a def's name and has no MIDI spelling. A sequence with
+/// no spec is one for the server, where any curve is legal. (MIDI 1.0 and 2.0
+/// are protocols and MPE a specification over them, so the name is the word
+/// that covers the three.)
+///
+/// Written `"1.0"`, `"2.0"`, or `{"mpe": {"upper": false, "members": 15}}` --
+/// the zone: lower (master channel 1) or upper (16), and its member count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MidiSpec {
+    /// MIDI 1.0: one channel's messages, poly pressure the only per-note one.
+    #[serde(rename = "1.0")]
+    Midi1,
+    /// MPE, over MIDI 1.0: a zone whose member channels are one note each.
+    #[serde(rename = "mpe")]
+    Mpe {
+        /// The upper zone (master channel 16) rather than the lower (1).
+        #[serde(default)]
+        upper: bool,
+        /// How many member channels the zone has.
+        #[serde(default = "fifteen")]
+        members: u8,
+    },
+    /// MIDI 2.0: per-note messages of its own.
+    #[serde(rename = "2.0")]
+    Midi2,
+}
+
+fn fifteen() -> u8 {
+    15
+}
+
+/// What a curve's target drives, as MIDI can name it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurveKind {
+    /// A controller by number (`{"cc": n}`).
+    Cc(u8),
+    /// The pitch bend (`{"bend": ...}`).
+    Bend,
+    /// Pressure: channel pressure over a channel, poly pressure over a note.
+    Pressure,
+    /// MPE's third dimension, CC 74 (`{"timbre": ...}`).
+    Timbre,
+    /// A def's control and nothing MIDI names (`{"control": name}` alone).
+    Control,
+}
+
+impl CurveKind {
+    /// What `target` drives. A `cc` is named first, since a curve over one
+    /// that also names the control it reaches is still that CC to MIDI.
+    pub fn of(target: &Value) -> Self {
+        let has = |key: &str| target.get(key).is_some();
+        if let Some(cc) = target.get("cc").and_then(Value::as_f64) {
+            CurveKind::Cc(cc.clamp(0.0, 127.0) as u8)
+        } else if has("bend") {
+            CurveKind::Bend
+        } else if has("pressure") {
+            CurveKind::Pressure
+        } else if has("timbre") {
+            CurveKind::Timbre
+        } else {
+            CurveKind::Control
+        }
+    }
+}
+
+impl MidiSpec {
+    /// Whether a curve over a channel with this target can be said.
+    pub fn says_lane(&self, target: &Value) -> bool {
+        CurveKind::of(target) != CurveKind::Control
+    }
+
+    /// Whether a curve over one note with this target can be said.
+    pub fn says_note(&self, target: &Value) -> bool {
+        match (self, CurveKind::of(target)) {
+            (_, CurveKind::Control) => false,
+            (MidiSpec::Midi1, kind) => kind == CurveKind::Pressure,
+            (MidiSpec::Mpe { .. }, kind) => !matches!(kind, CurveKind::Cc(_)),
+            (MidiSpec::Midi2, _) => true,
+        }
+    }
+
+    /// How the spec is named to a reader: `MIDI 1.0`, `MPE`, `MIDI 2.0`.
+    pub fn label(&self) -> &'static str {
+        match self {
+            MidiSpec::Midi1 => "MIDI 1.0",
+            MidiSpec::Mpe { .. } => "MPE",
+            MidiSpec::Midi2 => "MIDI 2.0",
+        }
+    }
+
+    /// Why `what` over `target` cannot be said in this spec.
+    fn refusal(&self, what: &str, target: &Value) -> String {
+        let kind = match CurveKind::of(target) {
+            CurveKind::Cc(n) => format!("CC {n}"),
+            CurveKind::Bend => "bend".into(),
+            CurveKind::Pressure => "pressure".into(),
+            CurveKind::Timbre => "timbre".into(),
+            CurveKind::Control => "a control with no MIDI spelling".into(),
+        };
+        format!("{what} over {kind} has no {} spelling", self.label())
+    }
+}
+
+impl EventSequence {
+    /// The first curve the sequence holds that `spec` cannot say, as why.
+    fn unsayable(&self, spec: MidiSpec) -> Option<String> {
+        if let Some(lane) = self.lanes.iter().find(|l| !spec.says_lane(&l.target.0)) {
+            return Some(spec.refusal("a lane", &lane.target.0));
+        }
+        self.events.iter().find_map(|event| {
+            event
+                .expression
+                .iter()
+                .find(|c| !spec.says_note(&c.target.0))
+                .map(|c| {
+                    format!(
+                        "{} (event {})",
+                        spec.refusal("a note's curve", &c.target.0),
+                        event.id
+                    )
+                })
+        })
+    }
+}
 
 fn no_event(id: u64) -> String {
     format!("the sequence holds no event {id}")
@@ -603,7 +772,8 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         EventsIntent::Add { .. }
         | EventsIntent::Remove { .. }
         | EventsIntent::RemoveLane { .. }
-        | EventsIntent::RemoveExpression { .. } => return None,
+        | EventsIntent::RemoveExpression { .. }
+        | EventsIntent::Midi { .. } => return None,
     })
 }
 

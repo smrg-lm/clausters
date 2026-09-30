@@ -303,3 +303,87 @@ fn a_lane_and_a_notes_curve_are_set_whole_and_removed() {
             .is_err()
     );
 }
+
+/// **A MIDI spec admits the curves it can say**: MIDI 1.0 a note's pressure
+/// and not its bend, MPE a bend and not a per-note CC, 2.0 both; no spec
+/// admits a lane over a bare control; and a spec the curves already there
+/// cannot be said in is refused, the sequence left as it was.
+#[test]
+fn a_midi_spec_admits_the_curves_it_can_say() {
+    let curve = |target: Value| Automation::new(NodeId(0), Opaque(target));
+    let mut sequence = EventSequence::new(vec![note(0.0, 60)]);
+    let id = sequence.events[0].id;
+    let expression = |target: Value| EventsIntent::Expression {
+        id,
+        automation: curve(target),
+    };
+    sequence
+        .edit(EventsIntent::Midi {
+            midi: Some(MidiSpec::Midi1),
+        })
+        .unwrap();
+    assert!(sequence.edit(expression(json!({"pressure": true}))).is_ok());
+    let refused = sequence
+        .edit(expression(json!({"bend": true})))
+        .unwrap_err();
+    assert!(refused.contains("MIDI 1.0"), "{refused}");
+    assert!(
+        sequence
+            .edit(EventsIntent::Lane {
+                automation: curve(json!({"control": "cutoff"}))
+            })
+            .is_err(),
+        "a bare control has no MIDI spelling"
+    );
+    assert!(
+        sequence
+            .edit(EventsIntent::Lane {
+                automation: curve(json!({"cc": 74, "control": "cutoff"}))
+            })
+            .is_ok(),
+        "a CC is one, whatever it reaches on the server"
+    );
+
+    let mpe = MidiSpec::Mpe {
+        upper: false,
+        members: 15,
+    };
+    sequence
+        .edit(EventsIntent::Midi { midi: Some(mpe) })
+        .unwrap();
+    assert!(sequence.edit(expression(json!({"bend": true}))).is_ok());
+    assert!(sequence.edit(expression(json!({"cc": 1}))).is_err());
+    sequence
+        .edit(EventsIntent::Midi {
+            midi: Some(MidiSpec::Midi2),
+        })
+        .unwrap();
+    assert!(sequence.edit(expression(json!({"cc": 1}))).is_ok());
+
+    let before = sequence.clone();
+    let back = sequence
+        .edit(EventsIntent::Midi {
+            midi: Some(MidiSpec::Midi1),
+        })
+        .unwrap_err();
+    assert!(back.contains("bend"), "{back}");
+    assert_eq!(sequence, before, "a refused spec changes nothing");
+    sequence.edit(EventsIntent::Midi { midi: None }).unwrap();
+    assert_eq!(sequence.midi, None, "for the server, everything is legal");
+}
+
+/// **A spec is written as the standards name it**, and a file read is MIDI 1.0.
+#[test]
+fn a_midi_spec_is_written_as_its_name() {
+    assert_eq!(serde_json::to_value(MidiSpec::Midi1).unwrap(), json!("1.0"));
+    assert_eq!(serde_json::to_value(MidiSpec::Midi2).unwrap(), json!("2.0"));
+    assert_eq!(
+        serde_json::from_value::<MidiSpec>(json!({"mpe": {"upper": true}})).unwrap(),
+        MidiSpec::Mpe {
+            upper: true,
+            members: 15
+        }
+    );
+    let read = EventSequence::from_midi(480, &[(0, vec![0x90, 60, 100])], &[]).unwrap();
+    assert_eq!(read.midi, Some(MidiSpec::Midi1));
+}
