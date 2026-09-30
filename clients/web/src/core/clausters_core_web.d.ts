@@ -1386,6 +1386,14 @@ export function meiToSheet(mei: string): string;
 export function mel_to_hz(mel: number): number;
 
 /**
+ * A MIDI 2.0 Clip File read back as JSON -- the C ABI's
+ * `clausters_midi_read_clip`.
+ *
+ * JS face: `midiReadClip(Uint8Array) -> string`.
+ */
+export function midiReadClip(bytes: Uint8Array): string;
+
+/**
  * A Standard MIDI File as JSON: `{"ppq", "events": [[tick, [bytes]]],
  * "tempo": [[tick, micros]]}` or `{"error"}`.
  *
@@ -1400,6 +1408,15 @@ export function midiReadSmf(bytes: Uint8Array): string;
  * JS face: `midiWriteClip(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
  */
 export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
+
+/**
+ * A MIDI 2.0 Clip File from UMP packets: packet `i` at `ticks[i]`, `sizes[i]`
+ * words of `words` in order -- the C ABI's `clausters_midi_write_clip_ump`.
+ *
+ * JS face: `midiWriteClipUmp(Uint32Array, Uint8Array, Uint32Array, ppq) ->
+ * Uint8Array`.
+ */
+export function midiWriteClipUmp(ticks: Uint32Array, sizes: Uint8Array, words: Uint32Array, ppq: number): Uint8Array;
 
 /**
  * Type-0 Standard MIDI File bytes from `n` events at `ppq` ticks per quarter
@@ -1869,8 +1886,10 @@ export interface InitOutput {
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
     readonly mel_to_hz: (a: number) => number;
+    readonly midiReadClip: (a: number, b: number) => [number, number];
     readonly midiReadSmf: (a: number, b: number) => [number, number];
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly midiWriteClipUmp: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmfTempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly midinote_to_degree: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
@@ -2026,6 +2045,14 @@ export interface InitOutput {
     readonly velocity_of_amp: (a: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
     readonly widgetids_inUse: (a: number) => number;
+    readonly clausters_midi_abi_version: () => number;
+    readonly clausters_midi_free: (a: number, b: number) => void;
+    readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;
+    readonly clausters_midi_read_smf: (a: number, b: number, c: number) => number;
+    readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_clip_ump: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly clausters_midi_write_smf: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_smf_tempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_mpe_assigner_free: (a: number) => void;
     readonly clausters_mpe_assigner_new: (a: number, b: number) => number;
     readonly clausters_mpe_assigner_note_off: (a: number, b: number, c: number) => void;
@@ -2038,12 +2065,6 @@ export interface InitOutput {
     readonly clausters_mpe_decoder_set_zone: (a: number, b: number, c: number) => void;
     readonly clausters_mpe_expression_messages: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_mpe_zone_messages: (a: number, b: number, c: number, d: number) => number;
-    readonly clausters_midi_abi_version: () => number;
-    readonly clausters_midi_free: (a: number, b: number) => void;
-    readonly clausters_midi_read_smf: (a: number, b: number, c: number) => number;
-    readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly clausters_midi_write_smf: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly clausters_midi_write_smf_tempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
