@@ -143,6 +143,9 @@ pub struct NoteEvent {
 
 /// A loaded score, kept alive so it can be **edited** and re-engraved.
 ///
+/// A **symbolic score** -- notation, held as MEI -- and not an OSC score, the
+/// timed bundles an offline render runs, which share the word and nothing else.
+///
 /// Every edit runs the same three steps, because verovio needs all of them: the
 /// editor action, then `commit` (which is what re-runs the layout -- an action
 /// alone changes the document but leaves the drawing stale), then a reload of the

@@ -456,7 +456,11 @@ class OscWsInterface(OscInterface):
 
 class OscScore:
     """Accumulated NRT bundles, ordered by time, serialized to a binary score
-    (`[i32 len][packet]...`) that the offline renderer consumes."""
+    (`[i32 len][packet]...`) that the offline renderer consumes.
+
+    An **OSC score**: timed messages for a render, not a symbolic score (the
+    notation `Score` of `clausters.gui.notation`), which shares the word and
+    nothing else."""
 
     def __init__(self):
         self.bundles = []  # (time_seconds, packet_bytes)

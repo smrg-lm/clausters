@@ -41,6 +41,10 @@ _PAGE_LAYERS = ("vb", "glyphs", "prims", "cursors", "step", "elements")
 class Score:
     """A loaded score, kept alive so it can be **edited** and re-engraved.
 
+    A **symbolic score** -- notation, held as MEI -- and not an OSC score
+    (`OscScore`, the timed bundles an offline render runs), which shares the
+    word and nothing else.
+
     `engrave` is the one-shot form -- load, draw, discard. This is the stateful
     one: it holds the engraver's document open, so an edit can be applied to the
     same one the display list was drawn from and the page re-engraved against it.

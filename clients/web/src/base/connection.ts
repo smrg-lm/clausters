@@ -302,6 +302,9 @@ export async function pageConnection(
  * Accumulated NRT bundles, ordered by time, serialized to the binary score
  * (`[i32 len][packet]...`) the offline renderer consumes -- the Python client's
  * `OscScore`.
+ *
+ * An **OSC score**: timed messages for a render, not a symbolic score (the
+ * notation `Score` of the engraver), which shares the word and nothing else.
  */
 export class Score {
     private readonly bundles: { at: number; packet: Uint8Array }[] = [];

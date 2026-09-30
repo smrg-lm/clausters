@@ -266,6 +266,14 @@ on trust, so that is where drift accumulates:
   **rendered**, memory is **built** or **allocated**, an iterable is **read**,
   a spilled payload is **restored**. Only "materialize an iterable" in its
   plain Python/TS sense survives, and only where nothing is being generated.
+- **"Score" names two structures, so the prose says which.** A **symbolic
+  score** is notation: staves, notes and their engraving, edited as MEI — the
+  `Score` of `clausters_core::notation` and of both clients' engraver, and the
+  score editor's. An **OSC score** is a list of timed OSC bundles that an
+  offline render runs — the Python client's `OscScore` and the server's
+  render script. The class names stay (`Score` alone is the symbolic one);
+  where the context does not settle it, the prose writes "symbolic score" or
+  "OSC score", never a bare "score".
 - **A metaphor that has to be decoded is not an explanation.** The economic
   register (`cost`, `pay`, `price`, `cheap`) is the project's and stays, but
   the *benefit* side is always a plain verb: something **gives**, **adds**,

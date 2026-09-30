@@ -115,6 +115,13 @@ already carry it.
   and give back takes now; the multitrack's entries do not state theirs yet,
   so a join undone is kept for the whole session.
 
+- ⬜ **The offline score and its carrier are named apart from Python's**
+  *(`clients/web/PLAN.md`, Found by use)*. The web client has two classes
+  named `Score`, the symbolic one and the OSC one; the second takes Python's
+  `OscScore`, and its carrier `OscNrtInterface`. **Related:** "The render's
+  score is named `Score`, and the clients call it `OscScore`" (root
+  `PLAN.md`, Found by use), the same rename on the server.
+
 
 ## 2. Fixes that need a decision first
 

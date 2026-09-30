@@ -39,6 +39,9 @@ pub struct ScoreEvent {
 }
 
 /// A render script: events sorted by time (stable for equal times).
+///
+/// An **OSC score** -- timed bundles -- and not a symbolic score, the notation
+/// `clausters_core::notation` engraves, which shares the word and nothing else.
 pub struct Score {
     events: Vec<ScoreEvent>,
 }
