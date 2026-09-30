@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 77
+CORE_ABI_VERSION = 78
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -331,7 +331,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_editing_playback_sync.restype = ctypes.c_size_t
     lib.clausters_editing_playback_notes.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
+        u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_playback_notes.restype = ctypes.c_size_t
     for name in ("play", "pause", "meters"):
@@ -1648,12 +1649,19 @@ class MultitrackPlayback:
                            as_u8(table), len(table), float(gain),
                            ctypes.c_void_p(ids._handle))
 
-    def notes(self, placed: list) -> list:
+    def notes(self, placed: dict, ids: "IdSpaces") -> list:
         """The steps that give the multitrack's notes regions to its event lane:
         ``placed`` is what the multitrack editor's ``notes`` verb answers under
-        ``placed`` (`clausters_editing_playback_notes`)."""
+        ``placed`` -- the events and the curves over their channels -- and the
+        graphs the curves play through allocate from ``ids``
+        (`clausters_editing_playback_notes`).
+
+        Raises:
+            ValueError: when an id space is exhausted; nothing changes then.
+        """
         body = json.dumps(placed).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_notes, as_u8(body), len(body))
+        return self._steps(lib().clausters_editing_playback_notes, as_u8(body), len(body),
+                           ctypes.c_void_p(ids._handle))
 
     def play(self) -> list:
         """The steps that roll the transport."""

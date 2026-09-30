@@ -36,7 +36,7 @@
 use std::collections::{HashMap, HashSet};
 
 use clausters_core::event::render::Arg;
-use clausters_core::lane::{LaneData, LaneMidi, Release};
+use clausters_core::lane::{LaneData, LaneMidi, LaneVoice, Release};
 use clausters_midi::mpe::{Decoder, MpeEvent};
 
 use super::*;
@@ -52,10 +52,10 @@ pub(in crate::osc::server) const LOOKAHEAD_SECS: f64 = 0.5;
 /// One event of a lane, at a position of its transport.
 #[derive(Clone, Debug, PartialEq)]
 enum LaneEvent {
-    /// A note: a synth of `def` with `controls`, released `length` samples
-    /// after it starts.
+    /// A note: a synth of a def, or one more of a graph's slot, with
+    /// `controls`, released `length` samples after it starts.
     Note {
-        def: String,
+        voice: LaneVoice,
         controls: Vec<OscType>,
         length: u64,
         release: Release,
@@ -132,7 +132,7 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
         events.push((
             note.start,
             LaneEvent::Note {
-                def: note.def,
+                voice: note.voice,
                 controls,
                 length: note.end.saturating_sub(note.start),
                 release: note.release,
@@ -561,27 +561,40 @@ impl OscServer {
         let mut length = 0;
         match event {
             LaneEvent::Note {
-                def,
+                voice,
                 controls,
                 length: held,
                 release: how,
             } => {
-                let mut args = vec![
-                    OscType::String(def),
-                    OscType::Int(-1),
-                    OscType::Int(1),
-                    OscType::Int(target),
-                ];
-                args.extend(controls);
-                self.translator.translate(
-                    &OscMessage {
-                        addr: "/synth_new".into(),
-                        args,
-                    },
-                    &mut start,
-                )?;
+                // A synth, or one more of a graph's slot -- whose group is the
+                // note, released through the slot's `gate` port or freed whole.
+                let message = match voice {
+                    LaneVoice::Def(def) => {
+                        let mut args = vec![
+                            OscType::String(def),
+                            OscType::Int(-1),
+                            OscType::Int(1),
+                            OscType::Int(target),
+                        ];
+                        args.extend(controls);
+                        OscMessage {
+                            addr: "/synth_new".into(),
+                            args,
+                        }
+                    }
+                    LaneVoice::Slot { graph, slot } => {
+                        let mut args =
+                            vec![OscType::Int(graph), OscType::String(slot), OscType::Int(-1)];
+                        args.extend(controls);
+                        OscMessage {
+                            addr: "/graph_addSlot".into(),
+                            args,
+                        }
+                    }
+                };
+                self.translator.translate(&message, &mut start)?;
                 let Some(node) = start.iter().find_map(|cmd| match cmd {
-                    Cmd::AddSynth { id, .. } => Some(*id),
+                    Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } => Some(*id),
                     _ => None,
                 }) else {
                     return Ok(None);
@@ -721,7 +734,7 @@ impl OscServer {
     pub(in crate::osc::server) fn forget_unrun(&mut self, cmds: &[Cmd]) {
         for cmd in cmds {
             if let Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } = cmd {
-                self.translator.forget_node(*id);
+                self.translator.forget_unrun_node(*id);
                 self.translator.release_node_id(*id);
             }
         }

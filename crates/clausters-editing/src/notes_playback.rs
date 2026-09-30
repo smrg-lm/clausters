@@ -43,15 +43,16 @@
 
 use clausters_core::event::render::{self, Arg, Type};
 use clausters_core::ids::{IdError, IdSpaces};
-use clausters_core::lane::{LaneData, LaneMessage, LaneMidi, LaneNote, Release};
+use clausters_core::lane::{LaneData, LaneMessage, LaneMidi, LaneNote, LaneVoice, Release};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
-use clausters_document::EventSequence;
+use clausters_document::{EventSequence, Point};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::apply::{Applier, Endpoint, Step};
 use crate::instance::Op;
+use crate::note_curves::{self, NoteCurves};
 use crate::playback::End;
 
 /// The transport the notes editor plays on: its own, so playing a sequence
@@ -60,6 +61,7 @@ pub const NOTES_EDITOR_TRANSPORT: i32 = 3;
 
 const EDITOR: &str = "notes";
 const GOVERNED: &str = "notes/transport";
+const CURVES: &str = "notes/curves";
 
 /// **One event placed on a transport's axis**: where it starts and, for a
 /// note, where it is released, in seconds of that axis, and its keys.
@@ -76,68 +78,216 @@ pub struct Placed {
     pub end: f64,
     /// Its keys.
     pub keys: Map<String, Value>,
+    /// Its identity, stable across edits: what its curves' tables are kept by.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    /// Which sequence it is of, as a lane's curves name it: a curve over a
+    /// channel reaches the notes of its own sequence alone.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    /// The note's own curves, their points in seconds from its start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub curves: Vec<PlacedCurve>,
+}
+
+/// **A curve placed on a transport's axis**: what it drives and its points in
+/// seconds -- a note's from the note's start, a lane's on the axis itself.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlacedCurve {
+    /// A lane's identity, stable across edits.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    /// A lane's sequence, as its notes name it ([`Placed::scope`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    /// What it drives, as the sequence's curve names it.
+    pub target: Value,
+    /// Its break-points, `at` in seconds.
+    pub points: Vec<Point>,
+}
+
+/// **Events and the curves over their channels**, placed on one axis.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(from = "Written")]
+pub struct Placement {
+    /// The events, in the order of their start.
+    pub events: Vec<Placed>,
+    /// The lanes: each a curve over a channel of its sequence.
+    pub lanes: Vec<PlacedCurve>,
+}
+
+/// What a placement is read from: the object it writes, or a bare list of
+/// events, which is how placed events were written before they had curves.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Written {
+    List(Vec<Placed>),
+    Whole {
+        #[serde(default)]
+        events: Vec<Placed>,
+        #[serde(default)]
+        lanes: Vec<PlacedCurve>,
+    },
+}
+
+impl From<Written> for Placement {
+    fn from(written: Written) -> Self {
+        match written {
+            Written::List(events) => Self {
+                events,
+                lanes: Vec::new(),
+            },
+            Written::Whole { events, lanes } => Self { events, lanes },
+        }
+    }
 }
 
 /// **A sequence placed on its own axis**: every event at the second its tempo
 /// map puts it (one beat a second when it states none), a note released at
-/// the second its sustain ends.
-pub fn placed(sequence: &EventSequence) -> Vec<Placed> {
+/// the second its sustain ends, and each curve's points through the same map.
+pub fn placed(sequence: &EventSequence) -> Placement {
     let map = map(sequence);
-    sequence
+    let events = sequence
         .events
         .iter()
         .map(|event| {
             let keys = event.keys();
             let sustain = render::sustain_of(&keys).max(0.0);
+            let start = map.secs_at(event.at.0);
+            let curves = event
+                .expression
+                .iter()
+                .filter(|curve| curve.enabled && !curve.points.is_empty())
+                .map(|curve| PlacedCurve {
+                    id: curve.id.0.to_string(),
+                    scope: String::new(),
+                    target: curve.target.0.clone(),
+                    points: curve
+                        .points
+                        .iter()
+                        .map(|p| Point {
+                            at: map.secs_at(event.at.0 + p.at) - start,
+                            ..p.clone()
+                        })
+                        .collect(),
+                })
+                .collect();
             Placed {
-                start: map.secs_at(event.at.0),
+                start,
                 end: map.secs_at(event.at.0 + sustain),
                 keys,
+                id: event.id.to_string(),
+                scope: String::new(),
+                curves,
             }
         })
-        .collect()
+        .collect();
+    let lanes = sequence
+        .lanes
+        .iter()
+        .filter(|curve| curve.enabled && !curve.points.is_empty())
+        .map(|curve| PlacedCurve {
+            id: curve.id.0.to_string(),
+            scope: String::new(),
+            target: curve.target.0.clone(),
+            points: curve
+                .points
+                .iter()
+                .map(|p| Point {
+                    at: map.secs_at(p.at),
+                    ..p.clone()
+                })
+                .collect(),
+        })
+        .collect();
+    Placement { events, lanes }
+}
+
+/// **A note as its voice is started**: the def the core renders its keys to,
+/// the controls it starts with, and how it is released.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Voice {
+    pub def: String,
+    pub controls: Vec<(String, f64)>,
+    pub release: Release,
+}
+
+/// A note's [`Voice`], or `None` for keys the core renders no synth from.
+pub fn voice_of(keys: &Map<String, Value>) -> Option<Voice> {
+    let synth = render::synth(keys, 0)?;
+    // `/synth_new def id addAction target name value ...`
+    let def = match synth.start.get(1) {
+        Some(Arg::Str(def)) => def.clone(),
+        _ => return None,
+    };
+    let mut controls = Vec::new();
+    for pair in synth.start.get(5..).unwrap_or_default().chunks(2) {
+        if let [Arg::Str(name), value] = pair {
+            let value = match value {
+                Arg::Float(f) => f64::from(*f),
+                Arg::Int(i) => f64::from(*i),
+                Arg::Str(_) => continue,
+            };
+            controls.push((name.clone(), value));
+        }
+    }
+    let release = match synth.release.first() {
+        Some(Arg::Str(addr)) if addr == "/node_set" => Release::Gate,
+        _ => Release::Free,
+    };
+    Some(Voice {
+        def,
+        controls,
+        release,
+    })
+}
+
+/// **A note that plays in a graph**: one more of `slot` in the instance
+/// `graph`, with the ports its curves' readers take beside its controls
+/// (`crate::note_curves`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SlotNote {
+    pub graph: i32,
+    pub slot: String,
+    pub ports: Vec<(String, f64)>,
 }
 
 /// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
 /// a second (the shape is [`LaneData`]'s). A note is what the core renders its
 /// keys to -- the def, `freq`, `amp` and every other numeric key, released by
-/// `gate 0` when its def is gated and by a free otherwise. A MIDI event is the
-/// message the core spells it as, which the server plays as though it had
-/// reached its MIDI input; an OSC event is a message the server runs as
-/// written. A rest sounds nothing.
-pub fn data(placed: &[Placed], rate: f64) -> Value {
+/// `gate 0` when its def is gated and by a free otherwise -- as a synth, or as
+/// the slot `slots` names for it at its index, when curves shape it. A MIDI
+/// event is the message the core spells it as, which the server plays as
+/// though it had reached its MIDI input; an OSC event is a message the server
+/// runs as written. A rest sounds nothing.
+pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
     let mut data = LaneData::default();
-    for event in placed {
+    for (i, event) in placed.iter().enumerate() {
         match Type::of(&event.keys) {
             Type::Note => {
-                let Some(synth) = render::synth(&event.keys, 0) else {
+                let Some(Voice {
+                    def,
+                    mut controls,
+                    release,
+                }) = voice_of(&event.keys)
+                else {
                     continue;
                 };
-                // `/synth_new def id addAction target name value ...`
-                let def = match synth.start.get(1) {
-                    Some(Arg::Str(def)) => def.clone(),
-                    _ => continue,
-                };
-                let mut controls = Vec::new();
-                for pair in synth.start.get(5..).unwrap_or_default().chunks(2) {
-                    if let [Arg::Str(name), value] = pair {
-                        let value = match value {
-                            Arg::Float(f) => f64::from(*f),
-                            Arg::Int(i) => f64::from(*i),
-                            Arg::Str(_) => continue,
-                        };
-                        controls.push((name.clone(), value));
+                let voice = match slots.get(i).and_then(Option::as_ref) {
+                    Some(slot) => {
+                        controls.extend(slot.ports.iter().cloned());
+                        LaneVoice::Slot {
+                            graph: slot.graph,
+                            slot: slot.slot.clone(),
+                        }
                     }
-                }
-                let release = match synth.release.first() {
-                    Some(Arg::Str(addr)) if addr == "/node_set" => Release::Gate,
-                    _ => Release::Free,
+                    None => LaneVoice::Def(def),
                 };
                 data.notes.push(LaneNote {
                     start: sample(event.start),
                     end: sample(event.end.max(event.start)),
-                    def,
+                    voice,
                     controls,
                     release,
                 });
@@ -203,6 +353,8 @@ pub struct NotesPlayback {
     end: End,
     /// The end mark last sent, as `(end, back)` in samples.
     end_sent: Option<(i64, i64)>,
+    /// The graphs, readers and tables the sequence's curves play through.
+    curves: NoteCurves,
 }
 
 impl NotesPlayback {
@@ -216,6 +368,7 @@ impl NotesPlayback {
             back: 0,
             end: End::Open,
             end_sent: None,
+            curves: NoteCurves::new(CURVES),
         }
     }
 
@@ -291,19 +444,34 @@ impl NotesPlayback {
         Ok(steps)
     }
 
-    /// The lane's data, from `sequence` at `rate`.
-    fn lane_set(&self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+    /// **The lane's data, from `sequence` at `rate`**, after the graphs its
+    /// curves play through: a channel's instance in the group that follows
+    /// the transport, which a stop does not freeze, since its notes are
+    /// voices.
+    fn lane_set(
+        &mut self,
+        sequence: &EventSequence,
+        rate: f64,
+        pass: bool,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
         let Some(lane) = self.lane else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let data = data(&placed(sequence), rate).to_string();
-        vec![
+        let placement = placed(sequence);
+        let plan = note_curves::plan(&placement, rate);
+        let ops = self.curves.ops(&plan, EDITOR, pass);
+        let mut steps = self.applier.apply(ops, ids)?;
+        let slots = self.curves.slots(&plan, &self.applier);
+        let data = data(&placement.events, rate, &slots).to_string();
+        steps.extend([
             crate::apply::send("/lane_set", vec![OscType::Int(lane), OscType::String(data)]),
             Step::AwaitDone {
                 command: "/lane_set".into(),
                 index: None,
             },
-        ]
+        ]);
+        Ok(steps)
     }
 
     /// The end mark the end, the notes and the cursor ask for, sent when it
@@ -313,6 +481,7 @@ impl NotesPlayback {
     /// freeze them.
     fn end_steps(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
         let contents = placed(sequence)
+            .events
             .iter()
             .filter(|p| render::Type::of(&p.keys) == Type::Note)
             .map(|p| p.end)
@@ -352,7 +521,7 @@ impl NotesPlayback {
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
         let mut steps = self.structure(ids)?;
-        steps.extend(self.lane_set(sequence, rate));
+        steps.extend(self.lane_set(sequence, rate, true, ids)?);
         let from = Self::sample(sequence, from, rate);
         self.back = from;
         steps.extend(self.command("/transport_loop", vec![]));
@@ -383,10 +552,11 @@ impl NotesPlayback {
             return self.play(sequence, from, rate, ids);
         }
         let mut steps = self.structure(ids)?;
-        steps.extend(self.lane_set(sequence, rate));
+        steps.extend(self.lane_set(sequence, rate, true, ids)?);
         let back = Self::sample(sequence, from, rate);
         self.back = back;
         let contents = placed(sequence)
+            .events
             .iter()
             .filter(|p| render::Type::of(&p.keys) == Type::Note)
             .map(|p| p.end)
@@ -422,13 +592,18 @@ impl NotesPlayback {
     /// **The sequence changed**: the lane takes it again, and an end at the
     /// contents follows its new end.
     /// Nothing before the first play: there is no lane yet.
-    pub fn update(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+    pub fn update(
+        &mut self,
+        sequence: &EventSequence,
+        rate: f64,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
         if self.lane.is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        let mut steps = self.lane_set(sequence, rate);
+        let mut steps = self.lane_set(sequence, rate, false, ids)?;
         steps.extend(self.end_steps(sequence, rate));
-        steps
+        Ok(steps)
     }
 
     /// Rolls the transport again from where it stands.
@@ -483,13 +658,12 @@ impl NotesPlayback {
             index: None,
         });
         steps.extend(self.command("/transport_end", vec![]));
-        steps.extend(self.applier.apply(
-            vec![Op::Free {
-                handle: EDITOR.into(),
-                forget: vec![GOVERNED.into()],
-            }],
-            ids,
-        )?);
+        let mut ops = self.curves.teardown();
+        ops.push(Op::Free {
+            handle: EDITOR.into(),
+            forget: vec![GOVERNED.into()],
+        });
+        steps.extend(self.applier.apply(ops, ids)?);
         Ok(steps)
     }
 }
@@ -532,7 +706,7 @@ pub fn call_json(
                 .unwrap_or(false);
             answer(playback.play_pass(sequence, number("from", 0.0), range, looping, rate, ids))
         }
-        "update" => answer(Ok(playback.update(sequence, rate))),
+        "update" => answer(playback.update(sequence, rate, ids)),
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), rate))),

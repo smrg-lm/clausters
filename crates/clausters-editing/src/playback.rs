@@ -32,7 +32,8 @@ use serde_json::{Value, json};
 
 use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_json};
 use crate::instance::Instance;
-use crate::notes_playback::Placed;
+use crate::note_curves::{self, NoteCurves};
+use crate::notes_playback::Placement;
 
 /// **Where a pass ends**, the same three ways for every playback on a
 /// transport -- the multitrack's and the notes editor's.
@@ -131,6 +132,11 @@ pub struct MultitrackPlayback {
     /// by the tracks' group's id, its notes made in the transport's group
     /// around the multitrack, which a stop does not freeze.
     lane: Option<i32>,
+    /// The graphs, readers and tables the notes' curves play through.
+    curves: NoteCurves,
+    /// Whether a pass started since the notes were last planned: a note's
+    /// old tables are given back then (`NoteCurves::ops`).
+    passed: bool,
 }
 
 impl MultitrackPlayback {
@@ -148,6 +154,8 @@ impl MultitrackPlayback {
             end_sent: None,
             fade_sent: None,
             lane: None,
+            curves: NoteCurves::new("mt/notes"),
+            passed: false,
         }
     }
 
@@ -159,12 +167,15 @@ impl MultitrackPlayback {
     /// its data again on every call; a multitrack that never had notes makes
     /// nothing. Its notes sound through their own `out`, outside the tracks'
     /// strips, and a track's mute and solo decide what is placed at all.
-    pub fn notes(&mut self, placed: &[Placed]) -> Vec<Step> {
+    ///
+    /// **The curves are heard through graphs** (`crate::note_curves`), made in
+    /// the transport's group beside the notes, allocating from `ids`.
+    pub fn notes(&mut self, placed: &Placement, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         let Some(group) = self.applier.node(crate::instance::TRACKS) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        if placed.is_empty() && self.lane.is_none() {
-            return Vec::new();
+        if placed.events.is_empty() && self.lane.is_none() {
+            return Ok(Vec::new());
         }
         let mut steps = Vec::new();
         if self.lane != Some(group) {
@@ -184,7 +195,15 @@ impl MultitrackPlayback {
             ));
             self.lane = Some(group);
         }
-        let data = crate::notes_playback::data(placed, self.rate).to_string();
+        let plan = note_curves::plan(placed, self.rate);
+        let ops = self.curves.ops(
+            &plan,
+            crate::instance::TRANSPORT,
+            std::mem::take(&mut self.passed),
+        );
+        steps.extend(self.applier.apply(ops, ids)?);
+        let slots = self.curves.slots(&plan, &self.applier);
+        let data = crate::notes_playback::data(&placed.events, self.rate, &slots).to_string();
         steps.push(send(
             "/lane_set",
             vec![OscType::Int(group), OscType::String(data)],
@@ -193,7 +212,7 @@ impl MultitrackPlayback {
             command: "/lane_set".into(),
             index: None,
         });
-        steps
+        Ok(steps)
     }
 
     /// Frees the lane, when there is one: its notes are released.
@@ -285,6 +304,7 @@ impl MultitrackPlayback {
     /// where it stopped, so resuming is the same verb as starting.
     pub fn play(&mut self) -> Vec<Step> {
         self.rolling = true;
+        self.passed = true;
         transport_command("/transport_play", vec![])
     }
 
@@ -397,7 +417,8 @@ impl MultitrackPlayback {
         self.rolling = false;
         self.fade_sent = None;
         let mut steps = self.free_lane();
-        let ops = self.instance.teardown();
+        let mut ops = self.curves.teardown();
+        ops.extend(self.instance.teardown());
         steps.extend(self.applier.apply(ops, ids)?);
         Ok(steps)
     }
@@ -491,9 +512,9 @@ pub fn sync_json(
 /// [`MultitrackPlayback::notes`] over JSON: the placed notes as
 /// `crate::multitrack::placed_notes` answers them, `[{"start", "end",
 /// "keys"}]`.
-pub fn notes_json(playback: &mut MultitrackPlayback, placed: &str) -> String {
-    match serde_json::from_str::<Vec<Placed>>(placed) {
-        Ok(placed) => answer_json(Ok(playback.notes(&placed))),
+pub fn notes_json(playback: &mut MultitrackPlayback, placed: &str, ids: &mut IdSpaces) -> String {
+    match serde_json::from_str::<Placement>(placed) {
+        Ok(placed) => answer_json(playback.notes(&placed, ids)),
         Err(e) => json!({ "error": format!("not placed notes: {e}") }).to_string(),
     }
 }
@@ -751,13 +772,26 @@ mod tests {
         playback
             .sync(&multitrack(), 48_000.0, &HashMap::new(), 1.0, &mut ids)
             .unwrap();
-        assert!(playback.notes(&[]).is_empty(), "no notes, no lane");
-        let note = Placed {
+        assert!(
+            playback
+                .notes(&Placement::default(), &mut ids)
+                .unwrap()
+                .is_empty(),
+            "no notes, no lane"
+        );
+        let note = crate::notes_playback::Placed {
             start: 1.0,
             end: 1.5,
             keys: serde_json::from_value(json!({"midinote": 60})).unwrap(),
+            id: String::new(),
+            scope: String::new(),
+            curves: Vec::new(),
         };
-        let steps = playback.notes(std::slice::from_ref(&note));
+        let placement = Placement {
+            events: vec![note],
+            lanes: Vec::new(),
+        };
+        let steps = playback.notes(&placement, &mut ids).unwrap();
         assert_eq!(addrs(&steps), ["/lane_new", "/lane_set"]);
         let group = playback.applier.node(crate::instance::TRACKS).unwrap();
         let around = playback.applier.node(crate::instance::TRANSPORT).unwrap();
@@ -773,7 +807,7 @@ mod tests {
             ],
             "named by the tracks' group, its notes made where a stop does not freeze them"
         );
-        let again = playback.notes(&[note]);
+        let again = playback.notes(&placement, &mut ids).unwrap();
         assert_eq!(addrs(&again), ["/lane_set"], "made once");
         let closed = addrs(&playback.close(&mut ids).unwrap());
         assert_eq!(closed[0], "/lane_free");

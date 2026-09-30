@@ -7698,3 +7698,16 @@ module of its own.
   `write_tests.rs` for strokes and the monitor. The argument helpers are
   `wire.rs`'s: `status.rs`'s `arg_str` is its `string_arg` now, and
   `gui/serverleg.rs`'s `float_arg` went with the replies.
+
+- ⬜ **A roll's curves do not say what they are or where they stand**
+  *(the user, 2026-09-30, trying the notes editor's curves: hovering over an
+  envelope, its points, the lane below and the notes' boxes could show a
+  status saying which control it is and what value it has)*. A lane's row
+  carries its label in the keyboard's column, and a note's layer carries
+  nothing: over a bend, a pressure or a point there is no way to read which
+  control it drives or the value under the pointer, and over a note's box
+  none of its keys. The multitrack's curves have the same gap. What is
+  wanted is a hover readout -- the control's name and the value at the
+  pointer, a point's exact value, a note's pitch and level -- drawn by the
+  host in the element's own space, since the value's units are the curve's
+  (`min`/`max`) and the element already knows them.

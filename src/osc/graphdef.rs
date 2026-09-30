@@ -169,6 +169,15 @@ pub struct GraphMember {
     /// sounding, which is why it cannot be a member list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
+    /// **When this member ends, the graph it is in ends with it** -- and the
+    /// slot around that graph, when the graph is all that fills one.
+    ///
+    /// A voice that frees itself when its envelope closes would otherwise
+    /// leave the rest of its graph behind: the curves that were shaping it
+    /// reading on, the group holding nothing that sounds. Marking the voice
+    /// says that the graph exists for it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends: bool,
 }
 
 impl GraphMember {

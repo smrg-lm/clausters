@@ -180,7 +180,7 @@ pub fn curve_port(automation: &Automation) -> Option<&str> {
 /// editor had already settled what those two keys mean -- its projection draws
 /// them and its reading writes them -- so a bent segment was drawn bent and
 /// heard straight (found 2026-09-13, by ear).
-fn value_at(points: &[crate::Point], at: f64) -> f64 {
+pub fn value_at(points: &[crate::Point], at: f64) -> f64 {
     let first = &points[0];
     if at <= first.at {
         return first.value;
@@ -212,6 +212,25 @@ fn value_at(points: &[crate::Point], at: f64) -> f64 {
     points[points.len() - 1].value
 }
 
+/// **A curve as a table on the frame axis**: `value` asked at every `step`
+/// frames from `first` through `last`, the last sample at or past it -- or
+/// the one value at `first` when the span is empty.
+///
+/// What a caller hands is the curve *through its own axis*: a track's
+/// automation is on the timeline, a clip's is the box's own time, a
+/// sequence's lane and a note's curve are beats through a tempo map. Each
+/// says how a frame becomes a place on its curve, and the table is sampled
+/// here, once, for all of them.
+pub fn tabulate(first: f64, last: f64, step: f64, value: impl Fn(f64) -> f64) -> Vec<f32> {
+    if last <= first || step <= 0.0 {
+        return vec![value(first) as f32];
+    }
+    let count = ((last - first) / step).ceil() as usize + 1;
+    (0..count)
+        .map(|i| value(first + i as f64 * step) as f32)
+        .collect()
+}
+
 /// The curves over one thing, as tables on the **frame** axis.
 ///
 /// `origin` is the second the curve's own axis starts at: a track's automation
@@ -229,17 +248,9 @@ fn curves(automation: &[Automation], origin: f64, step: f64, rate: f64) -> Vec<P
         };
         let first = frames(origin + curve.points[0].at);
         let last = frames(origin + curve.points[curve.points.len() - 1].at);
-        let table: Vec<f32> = if last <= first || step <= 0.0 {
-            vec![curve.points[0].value as f32]
-        } else {
-            let count = ((last - first) / step).ceil() as usize + 1;
-            (0..count)
-                .map(|i| {
-                    let at = (first + i as f64 * step) / rate - origin;
-                    value_at(&curve.points, at) as f32
-                })
-                .collect()
-        };
+        let table = tabulate(first, last, step, |frame| {
+            value_at(&curve.points, frame / rate - origin)
+        });
         out.push(PlannedCurve {
             id: curve.id,
             port: port.to_string(),

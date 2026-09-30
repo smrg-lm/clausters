@@ -46,12 +46,13 @@ same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
 one *there* is refused and says why: the lane has no way to type an address.
 
-**Curves are drawn and edited like a multitrack's automation.** The row under
-the grid, *brightness*, is a lane of the sequence -- a CC 74 curve over all of
-it -- and the first note carries a curve of its own, a **bend**, drawn in the
-plane as the pitch it glides to. **Drag a point** to move it, **Ctrl+click** to
-add one or remove the one under the cursor; one gesture is one edit, and
-Ctrl+Z takes it back.
+**Curves are drawn and edited like a multitrack's automation, and heard.** The
+row under the grid, *level*, is a lane of the sequence -- a curve over the
+first channel driving every note's `amp`, a crescendo -- and the first note
+carries a curve of its own, a **bend**, drawn in the plane as the pitch it
+glides to and running on into its release. **Drag a point** to move it,
+**Ctrl+click** to add one or remove the one under the cursor; one gesture is
+one edit, Ctrl+Z takes it back, and the space bar plays what is drawn.
 
 **A note keeps what the roll cannot draw.** Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
@@ -98,7 +99,7 @@ timeline = Timeline([
 # `edit(timeline)` renders the timeline into the events it plays and opens
 # them as a `clausters.gui.editing.NotesEditor`: one roll, each note with its
 # id. Here the render is its own line, so the sequence gets its curves before
-# it opens: a CC lane on the first channel, and a bend on its first note that
+# it opens: a level lane on the first channel, and a bend on its first note that
 # glides up two semitones while the note is held and falls back one in its
 # release -- a note's curve runs past its box, which is its on and its off.
 
@@ -109,7 +110,7 @@ timeline = Timeline([
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 notes = timeline.render_events()   # what the roll edits, in place
-notes.add_lane({"cc": 74, "channel": 0}, [(0.0, 20.0), (4.0, 110.0)], name="brightness")
+notes.add_lane({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.0, 0.4)], name="level")
 first = notes.entries()[0][0]
 notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
 editor = edit(notes,

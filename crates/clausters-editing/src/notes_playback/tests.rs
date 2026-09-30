@@ -66,7 +66,7 @@ fn lane_data(steps: &[Step]) -> Option<Value> {
 /// as its message.
 #[test]
 fn a_sequence_becomes_lane_data_in_samples() {
-    let data = data(&placed(&sequence()), SR);
+    let data = data(&placed(&sequence()).events, SR, &[]);
     // Two beats a second at 100 samples a second: beat 2 is sample 100.
     let notes = data["notes"].as_array().unwrap();
     assert_eq!(notes.len(), 2);
@@ -100,7 +100,7 @@ fn a_midi_event_becomes_a_lane_midi_message() {
         ),
     ]);
     seq.tempo_map = Some(TempoMap::new(2.0));
-    let data = data(&placed(&seq), SR);
+    let data = data(&placed(&seq).events, SR, &[]);
     assert_eq!(
         data["midi"],
         json!([[50, 0x90, 60, 100], [100, 0xB2, 7, 64]])
@@ -156,11 +156,18 @@ fn a_play_is_the_lanes_data_and_the_transports_verbs() {
 #[test]
 fn an_update_sends_the_lane_its_data() {
     let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
-    assert!(playback.update(&sequence(), SR).is_empty(), "no lane yet");
-    playback.play(&sequence(), 0.0, SR, &mut ids()).unwrap();
+    let mut ids = ids();
+    assert!(
+        playback
+            .update(&sequence(), SR, &mut ids)
+            .unwrap()
+            .is_empty(),
+        "no lane yet"
+    );
+    playback.play(&sequence(), 0.0, SR, &mut ids).unwrap();
     let mut edited = sequence();
     edited.events.pop();
-    let steps = playback.update(&edited, SR);
+    let steps = playback.update(&edited, SR, &mut ids).unwrap();
     assert_eq!(
         lane_data(&steps).unwrap()["notes"]
             .as_array()

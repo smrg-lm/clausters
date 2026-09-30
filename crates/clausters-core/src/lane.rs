@@ -9,12 +9,16 @@
 //! On the wire it is JSON, each entry an array so a long lane stays compact:
 //!
 //! ```text
-//! {"notes":    [[start, end, "def", {"control": value, ...}, "gate"|"free"], ...],
+//! {"notes":    [[start, end, voice, {"control": value, ...}, "gate"|"free"], ...],
 //!  "messages": [[position, "/address", args...], ...],
 //!  "midi":     [[position, byte, byte, ...], ...]}
 //! ```
 //!
-//! Every list may be absent, and an empty one is not written.
+//! Every list may be absent, and an empty one is not written. A note's `voice`
+//! is a def's name, played as a synth, or `{"graph": id, "slot": name}`, one
+//! more of a slot of a running graph instance, its controls the slot's ports.
+//! A graph is how a note carries more than its def: the curves that shape it,
+//! read beside it.
 
 use serde_json::{Map, Value, json};
 
@@ -29,13 +33,22 @@ pub enum Release {
     Free,
 }
 
-/// A note: a synth of `def` with `controls`, started at `start` and released
-/// at `end`.
+/// What a lane's note is made as.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LaneVoice {
+    /// A synth of this def (`/synth_new`), its controls the def's.
+    Def(String),
+    /// One more of `slot` in the graph instance `graph` (`/graph_addSlot`),
+    /// its controls the slot's ports.
+    Slot { graph: i32, slot: String },
+}
+
+/// A note: a voice with `controls`, started at `start` and released at `end`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LaneNote {
     pub start: u64,
     pub end: u64,
-    pub def: String,
+    pub voice: LaneVoice,
     /// The controls it starts with, by name.
     pub controls: Vec<(String, f64)>,
     pub release: Release,
@@ -81,7 +94,11 @@ impl LaneData {
                     Release::Gate => "gate",
                     Release::Free => "free",
                 };
-                json!([note.start, note.end, note.def, controls, release])
+                let voice = match &note.voice {
+                    LaneVoice::Def(def) => json!(def),
+                    LaneVoice::Slot { graph, slot } => json!({"graph": graph, "slot": slot}),
+                };
+                json!([note.start, note.end, voice, controls, release])
             });
             out.insert("notes".into(), Value::Array(notes.collect()));
         }
@@ -125,10 +142,25 @@ impl LaneData {
         let mut data = Self::default();
         for note in list("notes") {
             let fields = note.as_array().ok_or("a note is an array")?;
-            let [start, end, def, controls, tail @ ..] = fields.as_slice() else {
-                return Err("a note is [start, end, def, controls, release]".into());
+            let [start, end, voice, controls, tail @ ..] = fields.as_slice() else {
+                return Err("a note is [start, end, voice, controls, release]".into());
             };
-            let def = def.as_str().ok_or("a note's def is a name")?.to_string();
+            let voice = match voice {
+                Value::String(def) => LaneVoice::Def(def.clone()),
+                Value::Object(slot) => LaneVoice::Slot {
+                    graph: slot
+                        .get("graph")
+                        .and_then(Value::as_i64)
+                        .and_then(|g| i32::try_from(g).ok())
+                        .ok_or("a note's graph is a node id")?,
+                    slot: slot
+                        .get("slot")
+                        .and_then(Value::as_str)
+                        .ok_or("a note's slot is a name")?
+                        .to_string(),
+                },
+                _ => return Err("a note's voice is a def's name or a graph's slot".into()),
+            };
             let controls = controls
                 .as_object()
                 .into_iter()
@@ -145,7 +177,7 @@ impl LaneData {
             data.notes.push(LaneNote {
                 start: sample(start, "start")?,
                 end: sample(end, "end")?,
-                def,
+                voice,
                 controls,
                 release,
             });
@@ -209,13 +241,25 @@ mod tests {
     #[test]
     fn a_lane_reads_back_what_it_writes() {
         let data = LaneData {
-            notes: vec![LaneNote {
-                start: 10,
-                end: 20,
-                def: "default".into(),
-                controls: vec![("amp".into(), 0.25), ("freq".into(), 440.0)],
-                release: Release::Free,
-            }],
+            notes: vec![
+                LaneNote {
+                    start: 10,
+                    end: 20,
+                    voice: LaneVoice::Def("default".into()),
+                    controls: vec![("amp".into(), 0.25), ("freq".into(), 440.0)],
+                    release: Release::Free,
+                },
+                LaneNote {
+                    start: 12,
+                    end: 30,
+                    voice: LaneVoice::Slot {
+                        graph: 1000,
+                        slot: "note.0".into(),
+                    },
+                    controls: vec![("freq".into(), 330.0)],
+                    release: Release::Gate,
+                },
+            ],
             messages: vec![LaneMessage {
                 position: 5,
                 addr: "/node_set".into(),

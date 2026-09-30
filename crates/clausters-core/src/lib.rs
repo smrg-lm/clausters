@@ -98,6 +98,7 @@ pub mod config;
 pub mod edit;
 pub mod envshape;
 pub mod event;
+pub mod event_graph;
 pub mod fft;
 pub mod ids;
 pub mod lane;

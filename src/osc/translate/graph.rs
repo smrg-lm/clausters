@@ -468,6 +468,11 @@ impl CmdTranslator {
             &bus_index,
             cmds,
         );
+        for (mi, node) in &node_of {
+            if def.members.get(*mi).is_some_and(|m| m.ends) {
+                self.graph_ends.insert(*node, group_id);
+            }
+        }
         // The nested graphs, inside this group. Each registers itself, which is
         // what makes its surface reachable when this one's ports resolve.
         let mut child_of = HashMap::new();
@@ -576,6 +581,20 @@ impl CmdTranslator {
             self.apply_surface(group_id, &port, value, cmds);
         }
         Ok(())
+    }
+
+    /// **A node ended**: when it was a member marked `ends`, the group its graph
+    /// ends with -- the slot around that graph when the graph is all that
+    /// fills one, else the graph's own -- while that group is still there.
+    pub fn member_ended(&mut self, node: i32) -> Option<i32> {
+        let graph = self.graph_ends.remove(&node)?;
+        let slot = self.graph_voices.iter().find_map(|(slot, voice)| {
+            let mut children = voice.children.values();
+            (voice.nodes.is_empty() && children.next() == Some(&graph) && children.next().is_none())
+                .then_some(*slot)
+        });
+        let group = slot.unwrap_or(graph);
+        self.mirror.get(group).is_some().then_some(group)
     }
 
     /// `/graph_addSlot instanceID slot id [port value ...]`: build one more of

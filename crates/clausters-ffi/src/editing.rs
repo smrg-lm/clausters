@@ -740,17 +740,19 @@ pub unsafe extern "C" fn clausters_editing_playback_sync(
 
 /// **What the multitrack's notes regions play**, as its event lane's data:
 /// `placed` is the JSON the multitrack editor's `notes` verb answers under
-/// `placed`. Answers the steps (`{"steps": [...]}` or `{"error": "..."}`),
-/// sizing with a null `out` and filling with a second call.
+/// `placed`, and the graphs its curves play through allocate from `ids`.
+/// Answers the steps (`{"steps": [...]}` or `{"error": "..."}`), sizing with a
+/// null `out` and filling with a second call.
 ///
 /// # Safety
-/// `p` null or live, `placed` null or readable for `placed_len` bytes, `out`
-/// null or writable for `out_cap` bytes.
+/// `p` and `ids` null or live, `placed` null or readable for `placed_len`
+/// bytes, `out` null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_playback_notes(
     p: *mut FfiPlayback,
     placed: *const u8,
     placed_len: usize,
+    ids: *mut crate::registry::FfiIdSpaces,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
@@ -760,8 +762,8 @@ pub unsafe extern "C" fn clausters_editing_playback_notes(
     };
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        playback_verb(p, out, out_cap, |pb| {
-            clausters_editing::playback::notes_json(pb, &placed)
+        playback_ids_verb(p, ids, out, out_cap, |pb, ids| {
+            clausters_editing::playback::notes_json(pb, &placed, ids)
         })
     }
 }

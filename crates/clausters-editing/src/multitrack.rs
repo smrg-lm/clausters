@@ -619,11 +619,17 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 /// own tempo map, read at the box's playrate). A note that runs past the box
 /// is released where the box ends, and a box that is muted, or on a track the
 /// mixer's rule silences, plays nothing.
+///
+/// **The curves go with them**: a note's own, read at the box's playrate, and
+/// the sequence's lanes, placed as the box places the sequence. Each box is a
+/// scope of its own, so a lane reaches the notes of its box and no other --
+/// two boxes over one sequence are two passes over its channels.
 pub fn placed_notes(
     multitrack: &Multitrack,
     sources: &dyn Buffers,
-) -> Vec<crate::notes_playback::Placed> {
-    let mut out = Vec::new();
+) -> crate::notes_playback::Placement {
+    use crate::notes_playback::{Placed, PlacedCurve, Placement};
+    let mut out = Placement::default();
     for box_ in picture::boxes(multitrack) {
         let silent = box_.muted
             || multitrack
@@ -643,21 +649,64 @@ pub fn placed_notes(
             1.0
         };
         let (position, length) = (box_.position.0, box_.length.0);
-        for event in crate::notes_playback::placed(&sequence) {
+        let scope = box_.region.0.to_string();
+        let placement = crate::notes_playback::placed(&sequence);
+        for event in placement.events {
             let from = (event.start - box_.start) / rate;
             if from < 0.0 || from >= length {
                 continue;
             }
             let to = ((event.end - box_.start) / rate).min(length);
-            out.push(crate::notes_playback::Placed {
+            let curves = event
+                .curves
+                .into_iter()
+                .map(|curve| PlacedCurve {
+                    points: scaled(curve.points, 0.0, 1.0 / rate),
+                    ..curve
+                })
+                .collect();
+            out.events.push(Placed {
                 start: position + from,
                 end: position + to.max(from),
                 keys: event.keys,
+                id: format!("{scope}:{}", event.id),
+                scope: scope.clone(),
+                curves,
+            });
+        }
+        for lane in placement.lanes {
+            out.lanes.push(PlacedCurve {
+                id: format!("{scope}:{}", lane.id),
+                scope: scope.clone(),
+                points: lane
+                    .points
+                    .into_iter()
+                    .map(|p| clausters_document::Point {
+                        at: position + (p.at - box_.start) / rate,
+                        ..p
+                    })
+                    .collect(),
+                target: lane.target,
             });
         }
     }
-    out.sort_by(|a, b| a.start.total_cmp(&b.start));
+    out.events.sort_by(|a, b| a.start.total_cmp(&b.start));
     out
+}
+
+/// Points with every `at` taken to `origin + at * scale`.
+fn scaled(
+    points: Vec<clausters_document::Point>,
+    origin: f64,
+    scale: f64,
+) -> Vec<clausters_document::Point> {
+    points
+        .into_iter()
+        .map(|p| clausters_document::Point {
+            at: origin + p.at * scale,
+            ..p
+        })
+        .collect()
 }
 
 /// **The notes each box over a sequence draws**, as the flat `box start dur
@@ -679,7 +728,7 @@ pub fn notes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             1.0
         };
         let name = box_.region.0.to_string();
-        for event in crate::notes_playback::placed(&sequence) {
+        for event in crate::notes_playback::placed(&sequence).events {
             let keys = event.keys;
             let Some(pitch) = domain.value(&keys) else {
                 continue;
@@ -1234,12 +1283,12 @@ mod tests {
         let held = One(source, sequence);
         let placed = placed_notes(&multitrack, &held);
         // The box sits at 4 s and lasts 4 s; its window starts 1 s in.
-        let spans: Vec<(f64, f64)> = placed.iter().map(|p| (p.start, p.end)).collect();
+        let spans: Vec<(f64, f64)> = placed.events.iter().map(|p| (p.start, p.end)).collect();
         assert_eq!(spans, vec![(5.0, 6.0), (7.5, 8.0)]);
 
         multitrack.tracks[0].muted = true;
         assert!(
-            placed_notes(&multitrack, &held).is_empty(),
+            placed_notes(&multitrack, &held).events.is_empty(),
             "a muted track places nothing"
         );
     }

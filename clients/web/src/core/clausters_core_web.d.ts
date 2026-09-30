@@ -419,10 +419,11 @@ export class MultitrackPlayback {
      */
     constructor(chunk: number);
     /**
-     * What the multitrack's notes regions play, as its event lane's data --
-     * the C ABI's `clausters_editing_playback_notes`.
+     * What the multitrack's notes regions play, as its event lane's data,
+     * the graphs its curves play through allocating from `ids` -- the C
+     * ABI's `clausters_editing_playback_notes`.
      */
-    notes(placed: string): string;
+    notes(placed: string, ids: IdSpaces): string;
     /**
      * The steps that freeze the multitrack and zero its meters.
      */
@@ -1878,7 +1879,7 @@ export interface InitOutput {
     readonly multitrackplayback_locate: (a: number, b: number) => [number, number];
     readonly multitrackplayback_meters: (a: number) => [number, number];
     readonly multitrackplayback_new: (a: number) => number;
-    readonly multitrackplayback_notes: (a: number, b: number, c: number) => [number, number];
+    readonly multitrackplayback_notes: (a: number, b: number, c: number, d: number) => [number, number];
     readonly multitrackplayback_pause: (a: number) => [number, number];
     readonly multitrackplayback_play: (a: number) => [number, number];
     readonly multitrackplayback_playPass: (a: number, b: number, c: number) => [number, number];

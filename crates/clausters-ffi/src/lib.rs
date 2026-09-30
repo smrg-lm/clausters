@@ -511,7 +511,12 @@ pub use time::*;
 /// `clausters_editing_playback_play_pass`, the space bar's pass over a time
 /// range or the loop switch, which the notes editor's `play` verb takes as
 /// `range` and `loop`. **Not additive** -- two symbols went.
-pub const CORE_ABI_VERSION: u32 = 77;
+/// **v78 a note's curves are heard.** `clausters_editing_playback_notes`
+/// takes the id spaces after `placed`, since the graphs a sequence's curves
+/// play through allocate nodes, buses and buffers; `placed` is the events and
+/// the lanes over their channels (a bare list of events is still read).
+/// **Not additive** -- a signature moved.
+pub const CORE_ABI_VERSION: u32 = 78;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

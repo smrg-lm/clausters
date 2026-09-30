@@ -433,3 +433,339 @@ fn a_lanes_mpe_bend_retunes_its_note_on_its_sample() {
     assert!((out[3000] - 880.0).abs() < 1.0, "{}", out[3000]);
     assert_eq!(sounding(&out), vec![(1000, 6000)]);
 }
+
+// ---- a note's curves, through its channel's graph ----
+
+/// **A note in its channel's graph hears both scopes**: the channel's bend
+/// and its own add (an octave each: 220 Hz sounds 880), and its own curve
+/// drives the control it names (`level`, halving it). The probe writes
+/// `freq * level` while it lives, so the output is the combination itself.
+#[test]
+fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
+    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+
+    let mut server = server();
+    let probe = r#"{
+        "name": "probe",
+        "controls": [{"name": "freq", "default": 440.0},
+                     {"name": "level", "default": 1.0}],
+        "ugens": [
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"control": 1}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    for def in [
+        probe.to_string(),
+        curve_def().to_string(),
+        pitch_def().to_string(),
+    ] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
+    }
+    let shape = Shape {
+        def: "probe".into(),
+        controls: vec!["freq".into()],
+        own: vec!["bend".into(), "level".into()],
+        lanes: vec!["bend".into()],
+    };
+    let note = note_graph(&shape);
+    let channel = channel_graph(&["bend".to_string()], std::slice::from_ref(&note));
+    for graph in [&note, &channel] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("graph".into()),
+                OscType::Blob(graph.to_string().into_bytes()),
+            ],
+        );
+    }
+    // One-sample tables hold their value: the channel's bend, the note's bend
+    // and the note's level.
+    for (buffer, value) in [(0, 12.0), (1, 12.0), (2, 0.5)] {
+        send(
+            &mut server,
+            "/buffer_alloc",
+            vec![OscType::Int(buffer), OscType::Int(1), OscType::Int(1)],
+        );
+        pull(&mut server, 1);
+        send(
+            &mut server,
+            "/buffer_set",
+            vec![OscType::Int(buffer), OscType::Int(0), OscType::Float(value)],
+        );
+    }
+    let name = channel["name"].as_str().unwrap().to_string();
+    send(
+        &mut server,
+        "/graph_new",
+        vec![
+            OscType::String(name),
+            OscType::Int(500),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::String("lane/bend/buf".into()),
+            OscType::Float(0.0),
+        ],
+    );
+    let json = r#"{"notes": [[4808, 9608, {"graph": 500, "slot": "note.0"},
+        {"freq": 220, "bend/buf": 1, "level/buf": 2}, "free"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 200);
+    assert_eq!(sounding(&out), vec![(4808, 9608)]);
+    // The first block reads what the readers wrote in it; every sample after
+    // the note's first is the combination.
+    let held = &out[4808 + 64..9608];
+    assert!(
+        held.iter().all(|x| (*x - 440.0).abs() < 1e-2),
+        "880 Hz at half level, got {:?}",
+        &held[..4]
+    );
+}
+
+/// **A note in a graph is released through its slot's `gate`**, and its
+/// envelope closing ends it: a gated voice started with no `gate` of its own
+/// still falls silent a release after its end.
+#[test]
+fn a_note_in_a_graph_is_released_through_its_gate() {
+    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+
+    let mut server = server();
+    // `level * env`, a 10 ms release that frees the voice.
+    let gated = r#"{
+        "name": "gated",
+        "controls": [{"name": "level", "default": 0.5}, {"name": "gate", "default": 1.0}],
+        "ugens": [
+            {"kind": "EnvGen", "inputs": [
+                {"control": 1}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                {"const": 2.0}, {"const": 1.0}, {"const": 2.0}, {"const": 1.0},
+                {"const": -1.0},
+                {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.01}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    for def in [
+        gated.to_string(),
+        curve_def().to_string(),
+        pitch_def().to_string(),
+    ] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
+    }
+    let shape = Shape {
+        def: "gated".into(),
+        controls: vec!["level".into()],
+        own: vec!["level".into()],
+        lanes: Vec::new(),
+    };
+    let note = note_graph(&shape);
+    let channel = channel_graph(&[], std::slice::from_ref(&note));
+    for graph in [&note, &channel] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("graph".into()),
+                OscType::Blob(graph.to_string().into_bytes()),
+            ],
+        );
+    }
+    send(
+        &mut server,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(1), OscType::Int(1)],
+    );
+    pull(&mut server, 1);
+    send(
+        &mut server,
+        "/buffer_set",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Float(0.25)],
+    );
+    let name = channel["name"].as_str().unwrap().to_string();
+    send(
+        &mut server,
+        "/graph_new",
+        vec![
+            OscType::String(name),
+            OscType::Int(500),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    let json = r#"{"notes": [[4808, 9608, {"graph": 500, "slot": "note.0"},
+        {"level": 0.5, "level/buf": 0}, "gate"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 300);
+    let spans = sounding(&out);
+    assert_eq!(spans.len(), 1, "{spans:?}");
+    let (from, to) = spans[0];
+    assert_eq!(from, 4808);
+    assert!(
+        (9608..9608 + 480 + 64).contains(&to),
+        "released at its end and silent a release later, not held: {to}"
+    );
+    assert!(
+        out[4808 + 64..9608]
+            .iter()
+            .all(|x| (*x - 0.25).abs() < 1e-3),
+        "{:?}",
+        &out[4808 + 60..4808 + 70]
+    );
+}
+
+/// **A stop holds the curves a releasing note reads**: the transport stops
+/// and is located back to the start, where the channel's curve is lower, and
+/// the note's release falls from where it was rather than stepping down to it.
+#[test]
+fn a_stop_holds_the_curves_a_releasing_note_reads() {
+    use clausters_core::event_graph::{Shape, channel_graph, curve_def, note_graph, pitch_def};
+
+    let mut server = server();
+    // `level * env`, a 0.2 s linear release.
+    let gated = r#"{
+        "name": "gated",
+        "controls": [{"name": "level", "default": 0.5}, {"name": "gate", "default": 1.0}],
+        "ugens": [
+            {"kind": "EnvGen", "inputs": [
+                {"control": 1}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                {"const": 2.0}, {"const": 1.0}, {"const": 2.0}, {"const": 1.0},
+                {"const": -1.0},
+                {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.2}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    for def in [
+        gated.to_string(),
+        curve_def().to_string(),
+        pitch_def().to_string(),
+    ] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(def.into_bytes()),
+            ],
+        );
+    }
+    let shape = Shape {
+        def: "gated".into(),
+        controls: Vec::new(),
+        own: Vec::new(),
+        lanes: vec!["level".into()],
+    };
+    let note = note_graph(&shape);
+    let channel = channel_graph(&["level".to_string()], std::slice::from_ref(&note));
+    for graph in [&note, &channel] {
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("graph".into()),
+                OscType::Blob(graph.to_string().into_bytes()),
+            ],
+        );
+    }
+    // The channel's level: 0.1 at the start, 0.8 from a tenth of a second on.
+    send(
+        &mut server,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(2), OscType::Int(1)],
+    );
+    pull(&mut server, 1);
+    send(
+        &mut server,
+        "/buffer_set",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Float(0.1),
+            OscType::Int(1),
+            OscType::Float(0.8),
+        ],
+    );
+    // The channel is made where the notes editor makes it: in a group that
+    // follows the transport, which a stop does not freeze.
+    send(
+        &mut server,
+        "/group_new",
+        vec![OscType::Int(200), OscType::Int(0), OscType::Int(0)],
+    );
+    send(
+        &mut server,
+        "/transport_follow",
+        vec![OscType::Int(0), OscType::Int(200)],
+    );
+    let name = channel["name"].as_str().unwrap().to_string();
+    send(
+        &mut server,
+        "/graph_new",
+        vec![
+            OscType::String(name),
+            OscType::Int(500),
+            OscType::Int(1),
+            OscType::Int(200),
+            OscType::String("lane/level/buf".into()),
+            OscType::Float(0.0),
+            OscType::String("lane/level/step".into()),
+            OscType::Float(4800.0),
+        ],
+    );
+    let json = r#"{"notes": [[9600, 96000, {"graph": 500, "slot": "note.0"}, {}, "gate"]]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    play(&mut server);
+    let mut out = pull(&mut server, 400);
+    assert!(
+        (out[out.len() - 1] - 0.8).abs() < 1e-3,
+        "the note at the channel's level: {:?}",
+        &out[out.len() - 3..]
+    );
+    send(&mut server, "/transport_stop", vec![OscType::Int(0)]);
+    send(
+        &mut server,
+        "/transport_locateSample",
+        vec![OscType::Int(0), OscType::Long(0)],
+    );
+    out = pull(&mut server, 200);
+    let steps = out
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        steps < 0.01,
+        "the release falls from 0.8 without a step (largest {steps})"
+    );
+    assert!(out.iter().any(|x| *x > 0.5), "and it is the release of 0.8");
+}

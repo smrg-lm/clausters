@@ -195,8 +195,8 @@ export class Playback {
         // boxes over bound sequences read, placed by the editor's core and
         // handed to the lane, which the server plays by the position.
         this.editor.syncCore();
-        const placed = (this.editor.coreCall("notes").placed ?? []) as unknown[];
-        await this.run(this.instance.notes(JSON.stringify(placed)));
+        const placed = this.editor.coreCall("notes").placed ?? {};
+        await this.run(this.instance.notes(JSON.stringify(placed), this.server.ids));
     }
 
     /**

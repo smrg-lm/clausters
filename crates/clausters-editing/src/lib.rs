@@ -41,6 +41,7 @@ pub mod instance;
 pub mod intake;
 pub mod load;
 pub mod multitrack;
+pub mod note_curves;
 pub mod notes;
 pub mod notes_playback;
 pub mod playback;

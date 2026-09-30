@@ -205,6 +205,9 @@ pub struct CmdTranslator {
     /// Per-voice sub-graphs spawned by `/graph_newVoice` (or MIDI notes), keyed by
     /// their sub-group id.
     pub graph_voices: HashMap<i32, GraphVoice>,
+    /// The members marked `ends`, by node id, and the group each one's
+    /// graph is: what [`CmdTranslator::member_ended`] frees.
+    pub graph_ends: HashMap<i32, i32>,
     graph_audio_buses: Registry,
     graph_control_buses: Registry,
     /// Boot-time pool capacities. `max_group_children` sizes every non-root
@@ -276,6 +279,7 @@ impl CmdTranslator {
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
             graph_voices: HashMap::new(),
+            graph_ends: HashMap::new(),
             graph_audio_buses: Registry::new((audio_buses - audio_reserved) as i64, audio_reserved),
             graph_control_buses: Registry::new(
                 (control_buses - control_reserved) as i64,
@@ -342,10 +346,26 @@ impl CmdTranslator {
             .unwrap_or_default()
     }
 
-    /// Drops the mirror entries of a node the engine freed or rejected.
+    /// Drops the mirror entries of a node the engine freed or rejected -- and,
+    /// for a GraphDef's slot or instance, what `/node_free` would have dropped:
+    /// its translator state and its private buses.
     pub fn forget_node(&mut self, id: i32) {
         self.node_defs.remove(&id);
         self.mirror.remove(id);
+        self.free_graph_node(id);
+    }
+
+    /// **Forgets a node that never ran**: [`Self::forget_node`], and a
+    /// member's `ends` with it.
+    ///
+    /// A lane builds a slot ahead of the position and forgets it when new
+    /// data comes before it runs. Its graph's state would leak its buses on
+    /// every edit, and a stale `ends` would free whatever group took the id
+    /// next. (A node the engine freed keeps its `ends` until its `/node_end`,
+    /// which is what reads it.)
+    pub fn forget_unrun_node(&mut self, id: i32) {
+        self.graph_ends.remove(&id);
+        self.forget_node(id);
     }
 
     /// Re-sorts every auto group on the ancestor chain starting at `group`,

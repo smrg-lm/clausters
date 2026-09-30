@@ -4021,3 +4021,24 @@ should confirm before the fix.
   serialize, where the crate and the server can both depend on it. `T9`'s
   MIDI event is written into that type, not into both halves. **Fixed
   2026-09-29 with `T9`**: `clausters_core::lane::LaneData`.
+
+- ⬜ **A group's order does not see control maps** *(found 2026-09-30,
+  writing the notes editor's curves, `crates/clausters-apps/PLAN.md` `X3.11c`)*.
+  An auto-sorted group orders its children by the audio buses they read and
+  write (`TreeMirror::sorted_children`); a control bus written by `OutCtl` and
+  read through a `/node_map` counts for nothing, so a curve's reader and the
+  node that reads its bus run in whatever order they were added. The note
+  graph lists its readers before its voice for that reason, and a note, a slot
+  added at the head of its channel's instance, runs before the channel's
+  readers and hears their curves one block late. Folding control writes and
+  control maps into the usage the sort reads would make the order follow the
+  wiring, as it does for audio.
+
+- ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
+  *(found 2026-09-30, reading `/midi_bind` onto a GraphDef while adding
+  `ends`; not reproduced)*. A gate-aware binding releases a graph voice by
+  setting its `gate` port to 0; the member whose envelope then frees itself
+  goes, and nothing frees the slot group around it. If that holds, every note
+  played leaves an empty group. A GraphDef member marked `ends` now frees its
+  graph and the slot around it; a voice graph's generator member is where the
+  mark belongs, or the binding could free the slot itself.

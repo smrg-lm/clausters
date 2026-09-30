@@ -518,7 +518,7 @@ impl MultitrackEditor {
     /// **What the boxes over its bound sequences play**, placed in seconds of
     /// the multitrack (`clausters_editing::multitrack::placed_notes`): what
     /// the multitrack's playback hands its event lane.
-    pub fn placed_notes(&self) -> Vec<clausters_editing::notes_playback::Placed> {
+    pub fn placed_notes(&self) -> clausters_editing::notes_playback::Placement {
         let table = Table {
             buffers: &self.sources,
             lengths: &self.lengths,

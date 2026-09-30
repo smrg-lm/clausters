@@ -999,3 +999,147 @@ fn a_target_that_names_the_wrong_kind_is_refused_at_load() {
         .unwrap_err();
     assert!(err.contains("port"), "it says what to name instead: {err}");
 }
+
+/// **A member marked `ends` takes its graph along** -- the slot around it when
+/// the graph is all that fills one, the graph's own group otherwise -- and a
+/// graph already freed with it asks for nothing.
+#[test]
+fn a_member_that_ends_frees_its_graph_and_the_slot_around_it() {
+    let mut t = CmdTranslator::new(SR);
+    t.d_recv(&[OscType::String(GSRC.into())]).unwrap();
+    t.d_recv(&[OscType::String(GSINK.into())]).unwrap();
+    let note = r#"{
+        "name": "note",
+        "buses": [{"name": "own", "rate": "control"},
+                  {"name": "out", "rate": "audio", "external": true}],
+        "members": [
+            {"def": "gsrc", "controls": {"out": "out"}, "ends": true},
+            {"def": "gsink", "controls": {"in": "out", "out": "OUT"}}
+        ]
+    }"#;
+    let channel = r#"{
+        "name": "channel",
+        "buses": [{"name": "mix", "rate": "audio"}],
+        "members": [
+            {"def": "note", "kind": "graph", "slot": "note", "controls": {"out": "mix"}}
+        ]
+    }"#;
+    t.d_graph(&[OscType::String(note.into())]).unwrap();
+    t.d_graph(&[OscType::String(channel.into())]).unwrap();
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("channel".into()),
+            OscType::Int(800),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    run(
+        &mut t,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(800),
+            OscType::String("note".into()),
+            OscType::Int(810),
+        ],
+    );
+    let graph = t.graph_voices[&810].children[&0];
+    let voice = t.graph_instances[&graph].shared_nodes[&0];
+    let other = t.graph_instances[&graph].shared_nodes[&1];
+    assert_eq!(t.member_ended(other), None, "an unmarked member ends alone");
+    assert_eq!(
+        t.member_ended(voice),
+        Some(810),
+        "the slot, not only its graph"
+    );
+    assert_eq!(t.member_ended(voice), None, "asked once");
+
+    // A graph that is no slot's frees its own group; one already freed, nothing.
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("note".into()),
+            OscType::Int(900),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let voice = t.graph_instances[&900].shared_nodes[&0];
+    assert_eq!(t.member_ended(voice), Some(900));
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("note".into()),
+            OscType::Int(901),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let voice = t.graph_instances[&901].shared_nodes[&0];
+    run(&mut t, "/node_free", vec![OscType::Int(901)]);
+    assert_eq!(t.member_ended(voice), None);
+}
+
+/// **A slot that never ran is forgotten whole**: a lane builds one ahead of
+/// the position and forgets it when new data comes first. Its graph's state
+/// goes, its private buses come back, and its voice's `ends` with it -- else
+/// the next group to take the id would be freed in its place.
+#[test]
+fn a_slot_that_never_ran_is_forgotten_with_its_graph() {
+    let mut t = CmdTranslator::new(SR);
+    t.d_recv(&[OscType::String(GSRC.into())]).unwrap();
+    let note = r#"{
+        "name": "note",
+        "buses": [{"name": "own", "rate": "control"}],
+        "members": [{"def": "gsrc", "controls": {"out": "OUT"}, "ends": true}]
+    }"#;
+    let channel = r#"{
+        "name": "channel",
+        "members": [{"def": "note", "kind": "graph", "slot": "note"}]
+    }"#;
+    t.d_graph(&[OscType::String(note.into())]).unwrap();
+    t.d_graph(&[OscType::String(channel.into())]).unwrap();
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("channel".into()),
+            OscType::Int(800),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let instances = t.graph_instances.len();
+    let cmds = run(
+        &mut t,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(800),
+            OscType::String("note".into()),
+            OscType::Int(-1),
+        ],
+    );
+    let made: Vec<i32> = cmds
+        .iter()
+        .filter_map(|cmd| match cmd {
+            Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    let voice = made
+        .iter()
+        .copied()
+        .find(|id| !t.graph_voices.contains_key(id) && !t.graph_instances.contains_key(id))
+        .unwrap();
+    for id in &made {
+        t.forget_unrun_node(*id);
+    }
+    assert!(t.graph_voices.is_empty(), "the slot is gone");
+    assert_eq!(t.graph_instances.len(), instances, "and its note graph");
+    assert!(t.graph_instances[&800].voices.is_empty());
+    assert_eq!(t.member_ended(voice), None, "and its voice's ends");
+}

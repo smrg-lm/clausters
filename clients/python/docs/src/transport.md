@@ -222,7 +222,7 @@ server.lane_set(7, new_data)       # an edit: heard from where the position is
 server.lane_free(7)
 ```
 
-Every position is a sample of the transport; a note is released at its end by `gate 0` or by a free, and a message is a command the server takes in a timed bundle, run as written. A `midi` list, `[[position, byte, byte, ...], ...]`, plays as though the messages had reached the server's MIDI input there: the channel's `/midi_bind` binding says the instrument, a note-on and its note-off are one note, and a controller reaches the lane's own voices on that channel. A new `lane_set` keeps the release of whatever is sounding; a locate or a stop releases it, as a DAW does. The notes editor plays this way — its sequence is its lane's data — and so do a multitrack's notes regions.
+Every position is a sample of the transport; a note is a synth of the def it names, or — written `{"graph": id, "slot": name}` — one more of a slot of a running graph instance, which is how the notes editor plays a note that curves shape. It is released at its end by `gate 0` or by a free, and a message is a command the server takes in a timed bundle, run as written. A `midi` list, `[[position, byte, byte, ...], ...]`, plays as though the messages had reached the server's MIDI input there: the channel's `/midi_bind` binding says the instrument, a note-on and its note-off are one note, and a controller reaches the lane's own voices on that channel. A new `lane_set` keeps the release of whatever is sounding; a locate or a stop releases it, as a DAW does. The notes editor plays this way — its sequence is its lane's data — and so do a multitrack's notes regions.
 
 ## Several transports
 

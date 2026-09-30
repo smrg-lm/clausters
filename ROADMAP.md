@@ -126,11 +126,31 @@ already carry it.
   score is named `Score`, and the clients call it `OscScore`" (root
   `PLAN.md`, Found by use), the same rename on the server.
 
+- ⬜ **A curve added while a sequence plays cuts its channel**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A channel whose curves
+  change is a new graph, made again under the notes sounding in it.
+
+- ⬜ **A group's order does not see control maps** *(root `PLAN.md`, Found by
+  use)*. The auto-sort reads audio buses only, so a note hears its channel's
+  curves a block late.
+
+- ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
+  *(root `PLAN.md`, Found by use)*. Reproduce first; `ends` is the tool.
+
+- ⬜ **A roll's curves do not say what they are or where they stand**
+  *(`clients/gui/PLAN.md`, Found by use)*. A hover readout of the control and
+  its value over a curve, a point, a lane's row and a note's box.
+
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
+
+- ⬜ **The graphs a note plays in are never freed**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Every new shape is a new
+  def, sent and never given back. **The decision:** whether generated defs are
+  persisted at all, before when one is freed.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox

@@ -130,8 +130,8 @@ class Playback:
         # boxes over bound sequences read, placed by the editor's core and
         # handed to the lane, which the server plays by the position.
         self.editor._sync_core()
-        placed = self.editor._call("notes").get("placed") or []
-        steps = self._instance.notes(placed)
+        placed = self.editor._call("notes").get("placed") or {}
+        steps = self._instance.notes(placed, self.server.ids)
         if steps:
             self._run(steps)
 

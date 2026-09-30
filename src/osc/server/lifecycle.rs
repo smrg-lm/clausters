@@ -567,6 +567,22 @@ impl OscServer {
             // same `/node_end` broadcast below.
             if ev.kind == NodeEventKind::End {
                 self.translator.release_node_id(ev.id);
+                // A voice whose graph exists for it takes the graph along.
+                if let Some(group) = self.translator.member_ended(ev.id) {
+                    let mut cmds = Vec::new();
+                    let free = OscMessage {
+                        addr: "/node_free".into(),
+                        args: vec![OscType::Int(group)],
+                    };
+                    match self.translator.translate(&free, &mut cmds) {
+                        Ok(()) => {
+                            if let Err(why) = self.send_all(cmds) {
+                                warn!("the graph of ended node {} was not freed: {why}", ev.id);
+                            }
+                        }
+                        Err(why) => warn!("the graph of ended node {} was not freed: {why}", ev.id),
+                    }
+                }
             }
             // id, parent, previous, next, isGroup, name. We don't track
             // sibling IDs on this side, so previous/next are -1. The name is

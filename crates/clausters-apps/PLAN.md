@@ -621,15 +621,27 @@ opened it.
     - **Note to channel**: exact only while the notes do not overlap, so
       refused (or confirmed) under polyphony.
 
-    **Heard on the server**, by scope: a lane is one reader on the transport's
-    position writing one bus, which every note of its channel maps to --
-    shared, as the channel is; an expression is a reader per note; and where a
-    bend is in both, the sum is made per note (a node per note, or a def that
-    takes `bend` and turns it into pitch itself). The tabulation is the
-    multitrack's (`multitrack::nodes::curves`, a curve's points on the frame
-    axis from an origin), grown to take a local-to-frame map so a note's beats
-    through the tempo map use it too -- one function for a region, a track, a
-    lane and a note.
+    **Heard on the server, as graphs**, by scope -- the user's direction
+    (2026-09-30): a note's nodes are designed as a GraphDef per note event, as
+    the multitrack and the audio editor were, applied to the events' domain. A
+    **channel** is a graph instance (a track, in the multitrack's terms): its
+    shared members read the channel's curves on the transport's position onto
+    private control buses, shared as the channel is. A **note** is a slot of it
+    (a clip): a nested graph holding the note's def beside the readers of its
+    own curves on buses of its own and, where a bend is in either scope, a
+    node making its pitch from the sum. Decided with the user: an instance
+    **per channel**, a slot **per shape** of note (the def, the controls it
+    starts with, its own curves, the channel's -- a slot's members are fixed),
+    the graphs generated and named by what they hold as the multitrack's are
+    by width. The voice is marked in its graph as the member the graph
+    **ends** with, rather than written with a done action that frees its
+    group: the def is the user's and is played outside a graph too, and a
+    done action frees only the nearest group, which would leave the slot
+    around the note's graph. The tabulation is the multitrack's
+    (`multitrack::nodes::curves`, a curve's points on the frame axis from an
+    origin), grown to take a local-to-frame map so a note's beats through the
+    tempo map use it too -- one function for a region, a track, a lane and a
+    note.
 
     **The steps**, in this order:
     - ✅ **X3.11a - The lanes and the expression in the editor.** CC lanes
@@ -654,10 +666,35 @@ opened it.
       X3.11d by the user's choice: the editor plays only on the server today,
       where every per-note control is legal, so there is nothing to restrict
       until it has a MIDI destination.)*
-    - ⬜ **X3.11c - Heard.** The shared tabulation; a lane's reader and bus
+    - ✅ **X3.11c - Heard.** The shared tabulation; a lane's reader and bus
       mapped by its channel's notes, an expression's reader per note, the bend
       summed -- in the crate's notes playback and the multitrack's notes
-      regions.
+      regions. *(Shipped 2026-09-30: `nodes::tabulate` and `value_at` are
+      public and the multitrack's curves go through them; the core's
+      `event_graph` writes the channel and note graphs and `ev.pitch`, and the
+      editing crate's `note_curves` plans which notes play in which graph,
+      samples every table and keeps the instances and buffers, a table a
+      sounding note may read given back one plan later. The server grew a
+      GraphDef member's `ends` and a lane note whose voice is a graph's slot
+      (`{"graph": id, "slot": name}`, fired as `/graph_addSlot`). Placed
+      events carry an id, a scope and their curves, and a placement its lanes;
+      the multitrack's notes regions place a box's lanes in the box's scope, so
+      its playback's `notes` takes the id spaces -- the core ABI moved to 78.
+      A curve's control is its target's `control`, else `bend`, `pressure` or
+      `timbre`; a bare CC drives nothing on a synth. Both `edit_notes`
+      examples' lane now drives `amp`, which the default def has. The user's
+      ear tests found four things, fixed before closing: a slot's release is
+      its `gate` port, which the note graph now always answers (the notes
+      hung); a control a curve drives is not a port, since setting a mapped
+      control unmaps it (the note's own `amp` took the level back from the
+      lane); a note's readers are `ev.curve`, which holds while the transport
+      is stopped -- the stop and the locate after it moved every curve a
+      releasing note reads, a click and a jump in pitch -- and glides 10 ms,
+      so a lane edited under the play line does not step; and a note's old
+      table is given back when the next pass starts rather than on the next
+      edit, whose buffer number could hand a sounding note another curve. A
+      slot a lane forgets before it runs now goes with its graph's state, its
+      buses and its voice's `ends`.)*
     - ⬜ **X3.11d - MIDI in and out.** Messages into curves when a `.mid` is
       read (a zone's member channels into per-note curves -- the half of
       `M35`'s acceptance moved here), and curves into messages when a
@@ -1382,3 +1419,22 @@ wrong.
   integer it projected with the integer that comes back, so an untouched note
   keeps the amplitude its author wrote.
 
+
+- ⬜ **The graphs a note plays in are never freed** *(found 2026-09-30,
+  writing `X3.11c`)*. A channel's graph and each note graph are named by what
+  they hold (`clausters_core::event_graph`), so every new shape -- a curve
+  added, a note started with another control -- is a new def sent to the
+  server, and none is ever freed: they accumulate for as long as the server
+  runs, and on a server with a data directory they are persisted, so they
+  outlive it. What is missing is giving a def back once no instance and no
+  channel graph names it (`/def_free`), and deciding whether generated defs
+  are persisted at all.
+
+- ⬜ **A curve added while a sequence plays cuts its channel** *(found
+  2026-09-30, writing `X3.11c`)*. A slot's members are fixed by its def, so a
+  channel whose set of shapes or of curves changes is a new graph, and its
+  instance is made again: the notes sounding in the old one stop at once,
+  releases included. An edit of a curve's points does not do this -- a table
+  is replaced under its reader -- only one that changes which curves there
+  are. Keeping the old instance until its notes end, and adding the new one
+  beside it, would make the change as seamless as a point dragged.

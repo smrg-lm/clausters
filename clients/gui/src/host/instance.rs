@@ -334,9 +334,10 @@ impl Host {
             .editor()
             .map(clausters_apps::multitrack::editor::MultitrackEditor::placed_notes)
             .unwrap_or_default();
-        let steps = self.instance.playback().notes(&placed);
-        if !steps.is_empty() {
-            self.instance.run.push(Server::Sound, steps);
+        match self.instance.playback().notes(&placed, &mut self.ids) {
+            Ok(steps) if !steps.is_empty() => self.instance.run.push(Server::Sound, steps),
+            Ok(_) => {}
+            Err(e) => diag::warn!("the notes regions cannot be played: {e}"),
         }
         // A roll played on its own hears the edit too, from whichever window
         // made it: the multitrack's history is the roll's.
@@ -613,8 +614,14 @@ impl Host {
             return;
         };
         let rate = owner.multitrack_look().rate;
-        let steps = playback.update(&shared.lock().unwrap_or_else(|e| e.into_inner()), rate);
-        self.instance.run.push(Server::Sound, steps);
+        match playback.update(
+            &shared.lock().unwrap_or_else(|e| e.into_inner()),
+            rate,
+            &mut self.ids,
+        ) {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the roll cannot be played: {e}"),
+        }
         self.send_multitrack();
     }
 }
