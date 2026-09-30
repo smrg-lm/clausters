@@ -192,7 +192,8 @@ its plan; the plan is where its acceptance is read.
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
-  edits; **`X4`** whether the points editor is one; **`X5`** the score editor over
+  edits -- its recording (`X3.10`) waits for **`T9`**, a lane that plays MIDI
+  (root `PLAN.md`, T track), which is taken first; **`X4`** whether the points editor is one; **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application. **Related:** an application inside another,
   under "The larger questions" below.
@@ -206,6 +207,14 @@ its plan; the plan is where its acceptance is read.
   that opens out of line and shows the chosen name twice put right. **`G38`** — a
   tooltip. `G37`'s keyboard and `G38`'s text both read `G36`'s table, so the three
   are designed together.
+
+- ⬜ **`T9` — A lane plays MIDI** *(root `PLAN.md`, T track)*. A MIDI output
+  on the server through the live input's pipeline, and a MIDI event on a lane,
+  before `X3.10` records anything. **Related:** "A lane's data is written twice
+  and typed nowhere" (root `PLAN.md`, Found by use), whose type the MIDI event
+  is written into, and "A MIDI file and an OSC score are sources, as a sound
+  file is, and a session holds neither inside"
+  (`crates/clausters-document/PLAN.md`, Found by use), which `X3.10` needs.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the

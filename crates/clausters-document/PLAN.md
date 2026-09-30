@@ -2155,3 +2155,30 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   the session runs. The mechanism exists; what is missing is the multitrack's
   entries stating the sources their two halves reach, and a caller (the
   clients, the standalone host) freeing what comes back.
+
+- ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
+  session holds neither inside** *(found 2026-09-29, with the user, designing
+  `crates/clausters-apps/PLAN.md` `X3.10`)*. `Location::Events` keeps an
+  `EventSequence` in the session file, on the argument that a `.mid` would
+  lose the ids, the lanes and every key it cannot say (`session.rs`). That
+  mixes two levels. A Standard MIDI File is an interchange standard, as WAV
+  is, and an OSC score is the server's own offline format; each is a
+  **source** the session points at, as it points at samples. What an edit
+  needs -- identity, undo -- lives in the document *over* the source, as a
+  region and a join live over a sound file that stays as it is.
+  - **An event is one kind**: a note for the server, a MIDI message or an OSC
+    message, never two at once (its `type` already says which). A sequence
+    that mixes MIDI and OSC events is saved as **two files**, a `.mid` and an
+    OSC score, rather than as one format that says both.
+  - **An `EventSequence` is neither recorded nor a source.** It is the
+    client's representation of what a `Timeline`'s instructions render to --
+    the events in beats that the clients and the crate edit and play (as a
+    lane's data, which the server reads and never edits). What is recorded
+    and stored is a file: samples, MIDI, an OSC score.
+
+  **Open:** how the document keeps ids and the edit log over a file that
+  carries none (ids minted on load and kept in the session beside the
+  reference, or edits as layers over the source); what `to_midi`/`from_midi`
+  become once the file is the source; how a session written with
+  `Location::Events` opens.
+

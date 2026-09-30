@@ -611,6 +611,41 @@ Cargo feature: every build has both clocks and both queues.
   `notes` verb), core ABI 76. `docs/decisions.md` has the reasoning and
   `examples/event_lane.py` is the manual test.
 
+- ⬜ **T9 — A lane plays MIDI** *(opened 2026-09-29 by the user, out of
+  `crates/clausters-apps/PLAN.md` `X3.10`: the server's lanes should carry
+  MIDI messages before anything is recorded, since `T8` made the lane and
+  this completes it)*. `T8` left it open: "whether a lane plays MIDI out once
+  the server has a MIDI output". Today it cannot. The server has a MIDI
+  **input** (`src/midi/live.rs`, a virtual ALSA port whose messages reach
+  `/midi_bind` on the network thread) and no output. So the crate's
+  `notes_playback::data`, which writes a lane from an `EventSequence`, drops
+  every event of type `"midi"` -- and every one of type `"osc"`, on the
+  assumption that an OSC event is addressed to another application.
+
+  **The shape.**
+  - **A MIDI output on the server, through the input's own pipeline**: a
+    virtual port opened by the same `midir` hub, named for the server, and
+    used the way the input is in real time -- no second transport for MIDI.
+  - **A third lane event beside `Note` and `Message`**: MIDI bytes at a
+    position, sent to that port when the position reaches them, so a locate,
+    a loop and a stop are the transport's as they are for a note. A note-on a
+    jump leaves sounding gets its note-off, as a lane's synth gets its
+    release.
+  - **An `"osc"` event addressed to the server** is a lane `message`, as
+    written. Only one addressed elsewhere has no carrier, and that is the same
+    question as MIDI's: an output to the outside.
+
+  **Open:** the event's wire form in `/lane_set` (see "Found by use", "A
+  lane's data is written twice and typed nowhere"); whether an event names its
+  port or the lane does; the output ports' names and how a client lists them;
+  what an NRT render does with a MIDI event.
+
+  **Acceptance:** a lane's MIDI events leave the port on their positions
+  through a locate, a loop and an edit mid-pass; a jump sends the note-offs of
+  what sounds; the notes editor and a multitrack's notes regions play a
+  sequence's `"midi"` events. `docs/schemas.md`, both clients' builders and
+  the crate's `data` move in the same pass.
+
 Open, not blocking:
 
 - ⬜ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group
@@ -3908,3 +3943,15 @@ should confirm before the fix.
   it could be confused with lives. **Related:** the web client's copy of the
   same divergence (`clients/web/PLAN.md`, Found by use, "The offline score and
   its carrier are named apart from Python's").
+
+- ⬜ **A lane's data is written twice and typed nowhere** *(found 2026-09-29,
+  with the user, reading what `/lane_set` carries)*. The JSON is right -- a
+  lane is a sequencing structure, and `/lane_set` is the one command besides
+  the defs that takes a JSON object. What is wrong is that no Rust type
+  stands for it: the crate writes it with `json!` in
+  `clausters_editing::notes_playback::data`, and the server reads it by hand
+  into its private `LaneEvent` in `src/osc/server/lanes.rs::parse_events`.
+  A field that moves on one side is found by no compiler on the other. The
+  fix is one type (a lane's notes and messages, in samples) that both sides
+  serialize, where the crate and the server can both depend on it. `T9`'s
+  MIDI event is written into that type, not into both halves.
