@@ -1,4 +1,4 @@
-//! **Event lanes**: sequences of notes and messages the transport plays, the
+//! **Event lanes**: sequences of notes, messages and MIDI the transport plays, the
 //! way a reader plays a take.
 //!
 //! A take follows the transport because its reader reads the position: a
@@ -23,10 +23,23 @@
 //! start and its release must name one node. An entry that leaves unrun comes
 //! back through the garbage FIFO with its commands, and the nodes it would have
 //! made are forgotten there ([`OscServer::forget_unrun`]).
+//!
+//! **A lane's MIDI plays as the live input does.** Its messages go through
+//! the channel's `/midi_bind` binding and the translator's own MIDI builders,
+//! as though they had reached the port at their position. What the live path
+//! decides as a message arrives -- which voice a note-off ends, which voices a
+//! controller moves, which instrument a program change picks -- the lane
+//! decides from its data when it is set ([`midi_events`]), since it builds its
+//! entries ahead of the position: a note-on and its note-off are one entry
+//! with a release, like a note, and its voice id is the MIDI range's.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+use clausters_core::event::render::Arg;
+use clausters_core::lane::{LaneData, LaneMidi, Release};
 
 use super::*;
+use crate::midi::{ChannelVoiceMessage, parse_midi1};
 use crate::server::engine::LaneTag;
 
 /// How far ahead of the position a lane is kept built, in seconds. Far more
@@ -34,15 +47,6 @@ use crate::server::engine::LaneTag;
 /// something slow -- a def compiled, a file read -- does not let the position
 /// overtake the feed.
 pub(in crate::osc::server) const LOOKAHEAD_SECS: f64 = 0.5;
-
-/// How a note is released.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Release {
-    /// `/node_set <id> gate 0`: the def's envelope releases it.
-    Gate,
-    /// `/node_free <id>`.
-    Free,
-}
 
 /// One event of a lane, at a position of its transport.
 #[derive(Clone, Debug, PartialEq)]
@@ -57,6 +61,24 @@ enum LaneEvent {
     },
     /// A command the server takes in a timed bundle, run as it is written.
     Message(OscMessage),
+    /// A MIDI note-on and its note-off, paired on the lane's data: a voice
+    /// through the channel's binding, released `length` samples after it
+    /// starts. `voice` names it to the expressive messages that reach it, and
+    /// `program` is the lane's last program change on the channel before it.
+    MidiNote {
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        length: u64,
+        program: Option<u8>,
+        voice: u32,
+    },
+    /// An expressive MIDI message (a controller, bend, pressure), on the
+    /// lane's `voices` sounding on its channel -- one for poly pressure.
+    MidiSet {
+        message: ChannelVoiceMessage,
+        voices: Vec<u32>,
+    },
 }
 
 /// One lane, as this side holds it.
@@ -70,88 +92,143 @@ pub(in crate::osc::server) struct Lane {
     generation: u32,
     /// The events of this generation that are on the engine's lane queue.
     queued: HashSet<u32>,
+    /// The node of each MIDI voice built in this generation, by its `voice`,
+    /// for the expressive messages after it.
+    voices: HashMap<u32, i32>,
 }
 
-/// Parses a lane's data: `{"notes": [[start, end, "def", {controls},
-/// "gate"|"free"], ...], "messages": [[position, "/addr", args...], ...]}`,
-/// every position in samples of the transport.
+/// Reads a lane's data (`clausters_core::lane::LaneData`, the JSON
+/// `/lane_set` carries) into its events, sorted by position.
 fn parse_events(json: &[u8]) -> Result<Vec<(u64, LaneEvent)>, String> {
-    let value: serde_json::Value =
-        serde_json::from_slice(json).map_err(|e| format!("invalid JSON: {e}"))?;
-    let sample = |v: &serde_json::Value, what: &str| -> Result<u64, String> {
-        v.as_f64()
-            .filter(|n| n.is_finite() && *n >= 0.0)
-            .map(|n| n.round() as u64)
-            .ok_or_else(|| format!("{what} must be a sample >= 0"))
-    };
+    let data = LaneData::from_json(json)?;
     let mut events = Vec::new();
-    for note in value
-        .get("notes")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let fields = note.as_array().ok_or("a note is an array")?;
-        let [start, end, def, controls, rest @ ..] = fields.as_slice() else {
-            return Err("a note is [start, end, def, controls, release]".into());
-        };
-        let (start, end) = (sample(start, "start")?, sample(end, "end")?);
-        let def = def.as_str().ok_or("a note's def is a name")?.to_string();
-        let mut pairs = Vec::new();
-        for (name, value) in controls.as_object().into_iter().flatten() {
-            if let Some(v) = value.as_f64() {
-                pairs.push(OscType::String(name.clone()));
-                pairs.push(OscType::Float(v as f32));
-            }
-        }
-        let release = match rest.first().and_then(serde_json::Value::as_str) {
-            None | Some("gate") => Release::Gate,
-            Some("free") => Release::Free,
-            Some(other) => return Err(format!("a note is released by gate or free, not {other}")),
-        };
+    for note in data.notes {
+        let controls = note
+            .controls
+            .into_iter()
+            .flat_map(|(name, value)| [OscType::String(name), OscType::Float(value as f32)])
+            .collect();
         events.push((
-            start,
+            note.start,
             LaneEvent::Note {
-                def,
-                controls: pairs,
-                length: end.saturating_sub(start),
-                release,
+                def: note.def,
+                controls,
+                length: note.end.saturating_sub(note.start),
+                release: note.release,
             },
         ));
     }
-    for message in value
-        .get("messages")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let fields = message.as_array().ok_or("a message is an array")?;
-        let [position, addr, args @ ..] = fields.as_slice() else {
-            return Err("a message is [position, address, args...]".into());
-        };
-        let addr = addr.as_str().ok_or("a message's address is a string")?;
-        let args = args
-            .iter()
-            .map(|a| match a {
-                serde_json::Value::Number(n) if n.is_i64() => {
-                    OscType::Int(n.as_i64().unwrap_or(0) as i32)
-                }
-                serde_json::Value::Number(n) => OscType::Float(n.as_f64().unwrap_or(0.0) as f32),
-                serde_json::Value::String(s) => OscType::String(s.clone()),
-                serde_json::Value::Bool(b) => OscType::Int(i32::from(*b)),
-                other => OscType::String(other.to_string()),
+    for message in data.messages {
+        let args = message
+            .args
+            .into_iter()
+            .map(|arg| match arg {
+                Arg::Int(i) => OscType::Int(i),
+                Arg::Float(f) => OscType::Float(f),
+                Arg::Str(s) => OscType::String(s),
             })
             .collect();
         events.push((
-            sample(position, "a message's position")?,
+            message.position,
             LaneEvent::Message(OscMessage {
-                addr: addr.to_string(),
+                addr: message.addr,
                 args,
             }),
         ));
     }
+    events.extend(midi_events(data.midi));
     events.sort_by_key(|(position, _)| *position);
     Ok(events)
+}
+
+/// **A lane's MIDI messages as its events**, read in position order as the
+/// live input would have read them: a note-on and the note-off after it on
+/// its channel and key are one note (a note-on over one already sounding ends
+/// it there, as a live retrigger does); an expressive message reaches the
+/// notes sounding on its channel at its position, or the one on its key; a
+/// program change picks the instrument of the notes after it. A note-on the
+/// lane never turns off is not played, and a message that is not a channel
+/// voice message is dropped.
+fn midi_events(midi: Vec<LaneMidi>) -> Vec<(u64, LaneEvent)> {
+    let mut midi = midi;
+    midi.sort_by_key(|m| m.position);
+    // Each note's slot in `out`, with its start, while it sounds.
+    let mut sounding: HashMap<(u8, u8), (usize, u64)> = HashMap::new();
+    let mut programs: HashMap<u8, u8> = HashMap::new();
+    let mut out: Vec<Option<(u64, LaneEvent)>> = Vec::new();
+    let mut voices = 0u32;
+    let end = |out: &mut Vec<Option<(u64, LaneEvent)>>, slot: usize, at: u64, from: u64| {
+        if let Some((_, LaneEvent::MidiNote { length, .. })) = out[slot].as_mut() {
+            *length = at - from;
+        }
+    };
+    let voice_of = |out: &[Option<(u64, LaneEvent)>], slot: usize| match out[slot] {
+        Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
+        _ => None,
+    };
+    for m in midi {
+        let byte = |i: usize| m.bytes.get(i).copied().unwrap_or(0);
+        let Some(message) = parse_midi1(byte(0), byte(1), byte(2)) else {
+            continue;
+        };
+        let at = m.position;
+        match message {
+            ChannelVoiceMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
+                if let Some((slot, from)) = sounding.remove(&(channel, note)) {
+                    end(&mut out, slot, at, from);
+                }
+                sounding.insert((channel, note), (out.len(), at));
+                out.push(Some((
+                    at,
+                    LaneEvent::MidiNote {
+                        channel,
+                        note,
+                        velocity,
+                        // Unset until its note-off, and dropped without one.
+                        length: u64::MAX,
+                        program: programs.get(&channel).copied(),
+                        voice: voices,
+                    },
+                )));
+                voices = voices.wrapping_add(1);
+            }
+            ChannelVoiceMessage::NoteOff { channel, note, .. } => {
+                if let Some((slot, from)) = sounding.remove(&(channel, note)) {
+                    end(&mut out, slot, at, from);
+                }
+            }
+            ChannelVoiceMessage::ProgramChange { channel, program } => {
+                programs.insert(channel, program);
+            }
+            ChannelVoiceMessage::PolyAftertouch { channel, note, .. } => {
+                let voices = sounding
+                    .get(&(channel, note))
+                    .and_then(|(slot, _)| voice_of(&out, *slot))
+                    .into_iter()
+                    .collect();
+                out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+            }
+            ChannelVoiceMessage::ChannelAftertouch { channel, .. }
+            | ChannelVoiceMessage::ControlChange { channel, .. }
+            | ChannelVoiceMessage::PitchBend { channel, .. } => {
+                let mut voices: Vec<u32> = sounding
+                    .iter()
+                    .filter(|((c, _), _)| *c == channel)
+                    .filter_map(|(_, (slot, _))| voice_of(&out, *slot))
+                    .collect();
+                voices.sort_unstable();
+                out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+            }
+        }
+    }
+    for (slot, _) in sounding.into_values() {
+        out[slot] = None;
+    }
+    out.into_iter().flatten().collect()
 }
 
 /// **The spans of position a transport plays next**, in playback order,
@@ -210,6 +287,7 @@ impl OscServer {
                 events: Vec::new(),
                 generation: 0,
                 queued: HashSet::new(),
+                voices: HashMap::new(),
             },
         );
         self.retune_timeout();
@@ -272,6 +350,7 @@ impl OscServer {
         };
         lane.generation = lane.generation.wrapping_add(1);
         lane.queued.clear();
+        lane.voices.clear();
         let transport = lane.transport;
         self.handle
             .send(Cmd::ClearLane {
@@ -434,6 +513,40 @@ impl OscServer {
             }
             LaneEvent::Message(message) => {
                 self.translator.translate(&message, &mut start)?;
+            }
+            LaneEvent::MidiNote {
+                channel,
+                note,
+                velocity,
+                length: held,
+                program,
+                voice,
+            } => {
+                let Some(node) = self.translator.lane_midi_note(
+                    channel,
+                    note,
+                    velocity,
+                    program,
+                    &mut start,
+                    &mut release,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if let Some(lane) = self.lanes.get_mut(&id) {
+                    lane.voices.insert(voice, node);
+                }
+                length = held;
+            }
+            LaneEvent::MidiSet { message, voices } => {
+                let nodes: Vec<i32> = voices
+                    .iter()
+                    .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
+                    .collect();
+                self.translator.lane_midi_set(message, &nodes, &mut start);
+                if start.is_empty() {
+                    return Ok(None);
+                }
             }
         }
         Ok(Some(Cmd::LaneEntry {

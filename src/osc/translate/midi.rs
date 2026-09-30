@@ -192,61 +192,19 @@ impl CmdTranslator {
                 }
             }
             NoteOff { channel, note, .. } => self.midi_note_off(channel, note, cmds),
-            PolyAftertouch {
-                channel,
-                note,
-                pressure,
-            } => {
-                if let Some(ctrl) = self
-                    .midi
-                    .channels
-                    .get(&channel)
-                    .and_then(|b| b.poly_control.clone())
+            PolyAftertouch { channel, note, .. } => {
+                if let Some((ctrl, value)) = self.midi_expression(msg)
                     && let Some(&id) = self.midi.voices.get(&(channel, note))
                 {
-                    self.midi_set(id, &ctrl, convert::aftertouch2control(pressure), cmds);
+                    self.midi_set(id, &ctrl, value, cmds);
                 }
                 Ok(())
             }
-            ChannelAftertouch { channel, pressure } => {
-                if let Some(ctrl) = self
-                    .midi
-                    .channels
-                    .get(&channel)
-                    .and_then(|b| b.pressure_control.clone())
-                {
-                    self.midi_set_channel(
-                        channel,
-                        &ctrl,
-                        convert::aftertouch2control(pressure),
-                        cmds,
-                    );
-                }
-                Ok(())
-            }
-            ControlChange {
-                channel,
-                controller,
-                value,
-            } => {
-                if let Some(ctrl) = self
-                    .midi
-                    .channels
-                    .get(&channel)
-                    .and_then(|b| b.cc.get(&controller).cloned())
-                {
-                    self.midi_set_channel(channel, &ctrl, convert::cc2control(value), cmds);
-                }
-                Ok(())
-            }
-            PitchBend { channel, value } => {
-                if let Some(ctrl) = self
-                    .midi
-                    .channels
-                    .get(&channel)
-                    .and_then(|b| b.bend_control.clone())
-                {
-                    self.midi_set_channel(channel, &ctrl, convert::bend2control(value), cmds);
+            ChannelAftertouch { channel, .. }
+            | ControlChange { channel, .. }
+            | PitchBend { channel, .. } => {
+                if let Some((ctrl, value)) = self.midi_expression(msg) {
+                    self.midi_set_channel(channel, &ctrl, value, cmds);
                 }
                 Ok(())
             }
@@ -270,15 +228,9 @@ impl CmdTranslator {
         velocity: u16,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
-        let Some(binding) = self.midi.channels.get(&channel) else {
+        if !self.midi.channels.contains_key(&channel) {
             return Ok(());
-        };
-        let instrument = binding.instrument.clone();
-        let target = binding.target;
-        let action = binding.action;
-        let freq_control = binding.freq_control.clone();
-        let amp_control = binding.amp_control.clone();
-        let graph_instance = binding.graph_instance;
+        }
         if self.midi.voices.contains_key(&(channel, note)) {
             self.midi_note_off(channel, note, cmds)?;
         }
@@ -286,36 +238,9 @@ impl CmdTranslator {
             .midi
             .alloc_id()
             .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
-        let freq = OscType::Float(convert::midi2freq(note as f32));
-        let amp = OscType::Float(convert::velocity2amp(velocity));
-        // A GraphDef binding spawns a per-voice sub-graph into the shared
-        // instance; a plain def spawns a synth. Both carry freq/amp as the
-        // surface/control values.
-        let msg = match graph_instance {
-            Some(instance) => midi_message(
-                "/graph_newVoice",
-                vec![
-                    OscType::Int(instance),
-                    OscType::Int(id),
-                    OscType::String(freq_control),
-                    freq,
-                    OscType::String(amp_control),
-                    amp,
-                ],
-            ),
-            None => midi_message(
-                "/synth_new",
-                vec![
-                    OscType::String(instrument),
-                    OscType::Int(id),
-                    OscType::Int(action),
-                    OscType::Int(target),
-                    OscType::String(freq_control),
-                    freq,
-                    OscType::String(amp_control),
-                    amp,
-                ],
-            ),
+        let Some(msg) = self.midi_voice(channel, note, velocity, id, None) else {
+            self.midi.release_id(id as i64);
+            return Ok(());
         };
         if let Err(e) = self.translate(&msg, cmds) {
             self.midi.release_id(id as i64);
@@ -330,8 +255,70 @@ impl CmdTranslator {
         let Some(id) = self.midi.voices.remove(&(channel, note)) else {
             return Ok(());
         };
-        let gate = self.midi.channels.get(&channel);
-        let msg = match gate.filter(|b| b.gate) {
+        let msg = self.midi_release(channel, id);
+        // A freed voice may already be gone; an unknown control is a no-op.
+        let _ = self.translate(&msg, cmds);
+        Ok(())
+    }
+
+    /// **The message that starts voice `id`** for a note on `channel`, as its
+    /// binding says: a `/graph_newVoice` into a GraphDef binding's shared
+    /// instance, else a `/synth_new` of the instrument -- `program`'s, when
+    /// one is given and the binding maps it, else the binding's own -- with
+    /// `freq`/`amp` from the conversions. `None` when the channel is unbound.
+    fn midi_voice(
+        &self,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        id: i32,
+        program: Option<u8>,
+    ) -> Option<rosc::OscMessage> {
+        let binding = self.midi.channels.get(&channel)?;
+        let freq = OscType::Float(convert::midi2freq(note as f32));
+        let amp = OscType::Float(convert::velocity2amp(velocity));
+        let freq_control = OscType::String(binding.freq_control.clone());
+        let amp_control = OscType::String(binding.amp_control.clone());
+        // A GraphDef binding spawns a per-voice sub-graph into the shared
+        // instance; a plain def spawns a synth. Both carry freq/amp as the
+        // surface/control values.
+        Some(match binding.graph_instance {
+            Some(instance) => midi_message(
+                "/graph_newVoice",
+                vec![
+                    OscType::Int(instance),
+                    OscType::Int(id),
+                    freq_control,
+                    freq,
+                    amp_control,
+                    amp,
+                ],
+            ),
+            None => {
+                let instrument = program
+                    .and_then(|p| binding.programs.get(&p))
+                    .unwrap_or(&binding.instrument);
+                midi_message(
+                    "/synth_new",
+                    vec![
+                        OscType::String(instrument.clone()),
+                        OscType::Int(id),
+                        OscType::Int(binding.action),
+                        OscType::Int(binding.target),
+                        freq_control,
+                        freq,
+                        amp_control,
+                        amp,
+                    ],
+                )
+            }
+        })
+    }
+
+    /// **The message that releases voice `id`** of `channel`: `/node_set
+    /// gate 0` for a gate-aware binding, else `/node_free`.
+    fn midi_release(&self, channel: u8, id: i32) -> rosc::OscMessage {
+        match self.midi.channels.get(&channel).filter(|b| b.gate) {
             Some(b) => midi_message(
                 "/node_set",
                 vec![
@@ -341,10 +328,91 @@ impl CmdTranslator {
                 ],
             ),
             None => midi_message("/node_free", vec![OscType::Int(id)]),
+        }
+    }
+
+    /// **The control an expressive message moves**, and its value, as the
+    /// channel's binding maps it: poly and channel pressure, a controller, a
+    /// bend. `None` for any other message, an unbound channel or an unmapped
+    /// one.
+    fn midi_expression(&self, msg: ChannelVoiceMessage) -> Option<(String, f32)> {
+        use ChannelVoiceMessage::*;
+        let (channel, control, value) = match msg {
+            PolyAftertouch {
+                channel, pressure, ..
+            } => (
+                channel,
+                Control::Poly,
+                convert::aftertouch2control(pressure),
+            ),
+            ChannelAftertouch { channel, pressure } => (
+                channel,
+                Control::Pressure,
+                convert::aftertouch2control(pressure),
+            ),
+            ControlChange {
+                channel,
+                controller,
+                value,
+            } => (channel, Control::Cc(controller), convert::cc2control(value)),
+            PitchBend { channel, value } => (channel, Control::Bend, convert::bend2control(value)),
+            _ => return None,
         };
-        // A freed voice may already be gone; an unknown control is a no-op.
-        let _ = self.translate(&msg, cmds);
-        Ok(())
+        let binding = self.midi.channels.get(&channel)?;
+        let name = match control {
+            Control::Poly => binding.poly_control.clone(),
+            Control::Pressure => binding.pressure_control.clone(),
+            Control::Cc(n) => binding.cc.get(&n).cloned(),
+            Control::Bend => binding.bend_control.clone(),
+        }?;
+        Some((name, value))
+    }
+
+    /// **A lane's MIDI note**, built as a live note-on and its note-off would
+    /// be through the channel's binding, into `start` and `release`: its voice
+    /// id is the MIDI range's, and `program` picks the instrument as a program
+    /// change on the lane before it did. Returns the voice id, or `None` when
+    /// the channel is unbound -- a lane's note on it sounds nothing, as a live
+    /// one does. The voice is not one of the channel's live voices: a live
+    /// message does not reach it, nor a lane's message a live one.
+    pub fn lane_midi_note(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        program: Option<u8>,
+        start: &mut Vec<Cmd>,
+        release: &mut Vec<Cmd>,
+    ) -> Result<Option<i32>, String> {
+        if !self.midi.channels.contains_key(&channel) {
+            return Ok(None);
+        }
+        let id = self
+            .midi
+            .alloc_id()
+            .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
+        let Some(msg) = self.midi_voice(channel, note, velocity, id, program) else {
+            self.midi.release_id(id as i64);
+            return Ok(None);
+        };
+        if let Err(e) = self.translate(&msg, start) {
+            self.midi.release_id(id as i64);
+            return Err(e);
+        }
+        let msg = self.midi_release(channel, id);
+        self.translate(&msg, release)?;
+        Ok(Some(id))
+    }
+
+    /// **A lane's expressive MIDI message** on `voices`, the lane's voices it
+    /// reaches: the control the binding maps it to, set on each. Nothing when
+    /// the binding maps none.
+    pub fn lane_midi_set(&mut self, msg: ChannelVoiceMessage, voices: &[i32], cmds: &mut Vec<Cmd>) {
+        if let Some((control, value)) = self.midi_expression(msg) {
+            for &id in voices {
+                self.midi_set(id, &control, value, cmds);
+            }
+        }
     }
 
     /// `/node_set` one control on one voice; tolerate a stale node / unknown name.
@@ -366,6 +434,14 @@ impl CmdTranslator {
             self.midi_set(id, control, value, cmds);
         }
     }
+}
+
+/// Which of a binding's controls an expressive message moves.
+enum Control {
+    Poly,
+    Pressure,
+    Cc(u8),
+    Bend,
 }
 
 /// A MIDI channel argument: 0-based, the classic 16 plus the extended UMP

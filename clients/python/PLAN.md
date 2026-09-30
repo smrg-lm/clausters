@@ -5393,3 +5393,13 @@ than being ticked here.
   would stop having an order between them), and **skipping the unappliable entry**
   loses an edit from the order, which `Application.step` already refuses to do
   and rightly.
+
+- ⬜ **No client binds a MIDI channel** *(found 2026-09-29, closing root
+  `PLAN.md` `T9`)*. `/midi_bind`, `/midi_unbind` and `/midi_map` say what a
+  server's MIDI plays -- its live input and, since `T9`, a lane's MIDI
+  messages -- and neither client has a builder for them: a script sends them
+  raw with `send_msg` (`examples/event_lane.py` does). The builders belong
+  beside `lane_set` on the server, the same verbs in both clients
+  (`clients/web/PLAN.md` follows this entry), with the docstrings saying what
+  a binding reaches.
+

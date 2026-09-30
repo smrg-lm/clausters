@@ -50,6 +50,8 @@
 //! - [`envshape`] -- the envelope segment shapes (the SuperCollider shape
 //!   curves), shared by the server's `EnvGen` and any client drawing or
 //!   editing envelopes, so what an editor draws is what the server plays.
+//! - [`lane`] -- an event lane's data, the shape `/lane_set` carries: written
+//!   by the client that places a sequence on a transport, read by the server.
 //! - [`registry`] -- the finite-resource id registry (node ids, buses,
 //!   buffers): a bounded occupancy map where every release is reusable and
 //!   exhaustion is explicit, shared so the server's reserved ranges and every
@@ -98,6 +100,7 @@ pub mod envshape;
 pub mod event;
 pub mod fft;
 pub mod ids;
+pub mod lane;
 pub mod loudness;
 pub mod measure;
 pub mod midi;

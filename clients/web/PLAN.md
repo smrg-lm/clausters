@@ -4649,3 +4649,9 @@ sound.
   notation's in both clients (the engraver's editable score) and stays so.
   **Related:** the server's own `Score` (root `PLAN.md`, Found by use, "The
   render's score is named `Score`, and the clients call it `OscScore`").
+
+- ⬜ **No client binds a MIDI channel** *(found 2026-09-29, closing root
+  `PLAN.md` `T9`)*. The port of `clients/python/PLAN.md`'s entry of the same
+  title: `/midi_bind`, `/midi_unbind` and `/midi_map` get their builders on
+  the server beside `laneSet`, in the shape Python's take.
+

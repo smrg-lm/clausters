@@ -35,12 +35,15 @@
 //! in seconds: [`placed`] places a sequence through its own tempo map, and a
 //! multitrack places each sequence its boxes read at the box's place on the
 //! timeline (`crate::multitrack::placed_notes`). [`data`] writes placed events
-//! as the lane's JSON, each note rendered by the core
-//! (`clausters_core::event::render::synth`), so a note's def, its controls and
-//! how it is released are the core's reading of its keys.
+//! as the lane's data (`clausters_core::lane::LaneData`), each event rendered
+//! by the core -- a note by `clausters_core::event::render::synth`, so its def,
+//! its controls and how it is released are the core's reading of its keys; a
+//! MIDI event by `render::midi`, as the message the server plays through the
+//! channel's binding; an OSC event as the message it names.
 
 use clausters_core::event::render::{self, Arg, Type};
 use clausters_core::ids::{IdError, IdSpaces};
+use clausters_core::lane::{LaneData, LaneMessage, LaneMidi, LaneNote, Release};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::EventSequence;
@@ -96,16 +99,15 @@ pub fn placed(sequence: &EventSequence) -> Vec<Placed> {
 }
 
 /// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
-/// a second: `{"notes": [[start, end, def, {controls}, "gate"|"free"]]}`. A
-/// note is what the core renders its keys to -- the def, `freq`, `amp` and
-/// every other numeric key, released by `gate 0` when its def is gated and by
-/// a free otherwise. A rest sounds nothing and a MIDI event has no OSC
-/// spelling; **an OSC event is a message to another application**, which the
-/// server cannot send, so it is not the lane's -- the lane's own `messages`
-/// are commands for the server, and a sequence holds none.
+/// a second (the shape is [`LaneData`]'s). A note is what the core renders its
+/// keys to -- the def, `freq`, `amp` and every other numeric key, released by
+/// `gate 0` when its def is gated and by a free otherwise. A MIDI event is the
+/// message the core spells it as, which the server plays as though it had
+/// reached its MIDI input; an OSC event is a message the server runs as
+/// written. A rest sounds nothing.
 pub fn data(placed: &[Placed], rate: f64) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
-    let mut notes = Vec::new();
+    let mut data = LaneData::default();
     for event in placed {
         match Type::of(&event.keys) {
             Type::Note => {
@@ -117,7 +119,7 @@ pub fn data(placed: &[Placed], rate: f64) -> Value {
                     Some(Arg::Str(def)) => def.clone(),
                     _ => continue,
                 };
-                let mut controls = Map::new();
+                let mut controls = Vec::new();
                 for pair in synth.start.get(5..).unwrap_or_default().chunks(2) {
                     if let [Arg::Str(name), value] = pair {
                         let value = match value {
@@ -125,25 +127,58 @@ pub fn data(placed: &[Placed], rate: f64) -> Value {
                             Arg::Int(i) => f64::from(*i),
                             Arg::Str(_) => continue,
                         };
-                        controls.insert(name.clone(), json!(value));
+                        controls.push((name.clone(), value));
                     }
                 }
                 let release = match synth.release.first() {
-                    Some(Arg::Str(addr)) if addr == "/node_set" => "gate",
-                    _ => "free",
+                    Some(Arg::Str(addr)) if addr == "/node_set" => Release::Gate,
+                    _ => Release::Free,
                 };
-                notes.push(json!([
-                    sample(event.start),
-                    sample(event.end.max(event.start)),
+                data.notes.push(LaneNote {
+                    start: sample(event.start),
+                    end: sample(event.end.max(event.start)),
                     def,
                     controls,
-                    release
-                ]));
+                    release,
+                });
             }
-            Type::Osc | Type::Rest | Type::Midi => {}
+            Type::Midi => {
+                // A `midi` event is one message, at its own start.
+                for message in render::midi(&event.keys, 0).unwrap_or_default() {
+                    data.midi.push(LaneMidi {
+                        position: sample(event.start),
+                        bytes: message.bytes,
+                    });
+                }
+            }
+            Type::Osc => {
+                let Some(addr) = event.keys.get("addr").and_then(Value::as_str) else {
+                    continue;
+                };
+                let args = event
+                    .keys
+                    .get("args")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|arg| match arg {
+                        Value::Number(n) if n.is_i64() => n.as_i64().map(|i| Arg::Int(i as i32)),
+                        Value::Number(n) => n.as_f64().map(|f| Arg::Float(f as f32)),
+                        Value::String(s) => Some(Arg::Str(s.clone())),
+                        Value::Bool(b) => Some(Arg::Int(i32::from(*b))),
+                        _ => None,
+                    })
+                    .collect();
+                data.messages.push(LaneMessage {
+                    position: sample(event.start),
+                    addr: addr.to_string(),
+                    args,
+                });
+            }
+            Type::Rest => {}
         }
     }
-    json!({ "notes": notes })
+    data.to_json()
 }
 
 fn map(sequence: &EventSequence) -> TempoMap {

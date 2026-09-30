@@ -115,6 +115,10 @@ already carry it.
   and give back takes now; the multitrack's entries do not state theirs yet,
   so a join undone is kept for the whole session.
 
+- ⬜ **No client binds a MIDI channel** *(`clients/python/PLAN.md`, Found by
+  use)*. `/midi_bind`, `/midi_unbind` and `/midi_map` have no builder in
+  either client.
+
 - ⬜ **The offline score and its carrier are named apart from Python's**
   *(`clients/web/PLAN.md`, Found by use)*. The web client has two classes
   named `Score`, the symbolic one and the OSC one; the second takes Python's
@@ -199,8 +203,8 @@ its plan; the plan is where its acceptance is read.
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
-  edits -- **`X3.11`** (CC lanes and per-note expression) is next after
-  **`T9`**, and its recording (`X3.10`) waits for `T10`, skipped for now;
+  edits -- **`X3.11`** (CC lanes and per-note expression) is next, and its
+  recording (`X3.10`) waits for `T10`, skipped for now;
   **`X4`** whether the points editor is one; **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application. **Related:** an application inside another,
@@ -215,15 +219,6 @@ its plan; the plan is where its acceptance is read.
   that opens out of line and shows the chosen name twice put right. **`G38`** — a
   tooltip. `G37`'s keyboard and `G38`'s text both read `G36`'s table, so the three
   are designed together.
-
-- ⬜ **`T9` — A lane plays MIDI** *(root `PLAN.md`, T track)*. A MIDI output
-  on the server through the live input's pipeline, and a MIDI event on a lane,
-  before anything is recorded (`T10`, skipped for now). **Related:** "A
-  lane's data is written twice and typed nowhere" (root `PLAN.md`, Found by use), whose type the MIDI event
-  is written into, and "A MIDI file and an OSC score are sources, as a sound
-  file is, and a session holds neither inside"
-  (`crates/clausters-document/PLAN.md`, Found by use), which `T10` needs.
-  Taken first, then `X3.11`.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the

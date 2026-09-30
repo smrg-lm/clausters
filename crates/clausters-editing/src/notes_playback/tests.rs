@@ -61,8 +61,9 @@ fn lane_data(steps: &[Step]) -> Option<Value> {
 }
 
 /// **A sequence is placed through its own tempo map, and its lane data is
-/// the core's rendering of each note** -- in samples, the def, the pitch as
-/// `freq`, the level as `amp`, and how it is released.
+/// the core's rendering of each event** -- a note in samples, the def, the
+/// pitch as `freq`, the level as `amp`, and how it is released; an OSC event
+/// as its message.
 #[test]
 fn a_sequence_becomes_lane_data_in_samples() {
     let data = data(&placed(&sequence()), SR);
@@ -79,10 +80,32 @@ fn a_sequence_becomes_lane_data_in_samples() {
         (notes[1][0].clone(), notes[1][1].clone()),
         (json!(100), json!(150))
     );
-    assert!(
-        data.get("messages").is_none(),
-        "an OSC event is for another application, not the server's lane"
+    // Beat 1 is sample 50: the marker is a message the server runs.
+    assert_eq!(data["messages"], json!([[50, "/cue", 1, "a"]]));
+    assert!(data.get("midi").is_none());
+}
+
+/// **A MIDI event is the message the core spells it as**, at its sample, for
+/// the server to play through the channel's binding.
+#[test]
+fn a_midi_event_becomes_a_lane_midi_message() {
+    let mut seq = EventSequence::new(vec![
+        Event::new(
+            1.0,
+            json!({"type": "midi", "midicmd": "note_on", "midinote": 60, "velocity": 100}),
+        ),
+        Event::new(
+            2.0,
+            json!({"type": "midi", "midicmd": "cc", "cc": 7, "value": 64, "channel": 2}),
+        ),
+    ]);
+    seq.tempo_map = Some(TempoMap::new(2.0));
+    let data = data(&placed(&seq), SR);
+    assert_eq!(
+        data["midi"],
+        json!([[50, 0x90, 60, 100], [100, 0xB2, 7, 64]])
     );
+    assert!(data.get("notes").is_none());
 }
 
 /// **A play makes the lane once, gives it the sequence, and hands the rest to

@@ -15,7 +15,12 @@ script sends one lane a four-note figure and then only moves the transport:
 - while the loop turns it sends the lane new data -- the same figure a fifth up
   -- and the next pass is the new one, while the note sounding keeps its end;
 - it stops in the middle of a note, which is released there and rings out,
-  as a DAW's stop sends its note-offs.
+  as a DAW's stop sends its note-offs;
+- it sends the lane the same figure as **MIDI messages** -- a note-on and a
+  note-off per note, on channel 0 -- and binds that channel to the default
+  instrument with `/midi_bind`: the server plays them as though they had
+  reached its MIDI input at those positions, and a locate releases the MIDI
+  note sounding as it released the synth.
 
 Listen for each change at the moment the script names it. Needs an audio
 device (it boots its own server and plays through the sound card). Run it:
@@ -54,6 +59,17 @@ def figure(transpose=1.0):
     return {"notes": notes}
 
 
+def midi_figure():
+    """The same four notes as MIDI messages on channel 0: a note-on and, most
+    of a beat later, its note-off, each ``[position, status, key, velocity]``."""
+    midi = []
+    for i, key in enumerate([57, 61, 64, 69]):  # A3, C#4, E4, A4
+        start = i * BEAT
+        midi.append([start, 0x90, key, 90])
+        midi.append([start + int(0.8 * BEAT), 0x80, key, 0])
+    return {"midi": midi}
+
+
 def main():
     with Session.live() as session:
         server = session.server
@@ -90,6 +106,22 @@ def main():
         time.sleep(0.25)
         server.transport_stop()
         time.sleep(1.0)
+
+        print("the figure as MIDI, through channel 0's binding")
+        # `/midi_bind channel instrument target addAction gate`: voices of
+        # the default instrument at the tail of `voices`, released by gate.
+        server.send_msg("/midi_bind", 0, "default", voices.id, 1, 1)
+        server.lane_set(LANE, midi_figure())
+        server.transport_locate_sample(0)
+        server.transport_play()
+        time.sleep(1.2)
+
+        print("back to its first beat: the MIDI note sounding is released")
+        server.transport_locate_sample(BEAT // 2)
+        time.sleep(2.0)
+        server.transport_stop()
+        server.send_msg("/midi_unbind", 0)
+        time.sleep(0.5)
 
         server.lane_free(LANE)
         server.transport_group(None)

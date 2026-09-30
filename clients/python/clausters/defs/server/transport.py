@@ -200,10 +200,13 @@ class ServerTransport:
     def lane_set(self, lane: int, data: dict, timeout: "float | None" = None):
         """Replace event lane ``lane``'s data whole (``/lane_set``):
         ``{"notes": [[start, end, def, {control: value}, "gate" | "free"],
-        ...], "messages": [[position, address, *args], ...]}``, every position
-        a sample of the transport's position. A note is released at ``end`` by
-        ``gate 0`` or by a free; a message is a command the server takes in a
-        timed bundle, run as written. What sounds
+        ...], "messages": [[position, address, *args], ...], "midi":
+        [[position, *bytes], ...]}``, every position a sample of the
+        transport's position and every list optional. A note is released at
+        ``end`` by ``gate 0`` or by a free; a message is a command the server
+        takes in a timed bundle, run as written; a MIDI message plays as though
+        it had reached the server's MIDI input there, through its channel's
+        ``/midi_bind`` binding. What sounds
         keeps its release, and the new data is heard from where the position
         is. The notes editor's playback writes it from a
         `clausters.seq.EventSequence`."""

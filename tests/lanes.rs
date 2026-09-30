@@ -278,3 +278,114 @@ fn the_end_mark_releases_what_the_lane_sounds() {
     play(&mut server);
     assert_eq!(sounding(&pull(&mut server, 200)), vec![(0, 6400)]);
 }
+
+/// Binds MIDI channel 0 to `dc`, its voices at the tail of the governed group,
+/// and a controller 7 to its `level`.
+fn bind_midi(server: &mut ClaustersHeadless) {
+    send(
+        server,
+        "/midi_bind",
+        vec![
+            OscType::Int(0),
+            OscType::String("dc".into()),
+            OscType::Int(GROUP),
+            OscType::Int(1),
+        ],
+    );
+    send(
+        server,
+        "/midi_map",
+        vec![
+            OscType::Int(0),
+            OscType::String("cc7".into()),
+            OscType::String("level".into()),
+        ],
+    );
+}
+
+fn set_midi(server: &mut ClaustersHeadless, midi: &[(u64, [u8; 3])]) {
+    let midi: Vec<String> = midi
+        .iter()
+        .map(|(at, [a, b, c])| format!("[{at}, {a}, {b}, {c}]"))
+        .collect();
+    let json = format!(r#"{{"midi": [{}]}}"#, midi.join(", "));
+    send(
+        server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json)],
+    );
+}
+
+/// **A lane's MIDI note-on and its note-off sound the channel's instrument**
+/// from one sample to the other, as the live input would have.
+#[test]
+fn a_lanes_midi_note_sounds_its_channels_instrument_on_its_samples() {
+    let mut server = server();
+    bind_midi(&mut server);
+    set_midi(
+        &mut server,
+        &[(4808, [0x90, 60, 100]), (9608, [0x80, 60, 0])],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 200);
+    assert_eq!(sounding(&out), vec![(4808, 9608)]);
+}
+
+/// **A locate releases a lane's MIDI note** as it releases a lane's synth.
+#[test]
+fn a_locate_releases_a_lanes_midi_note() {
+    let mut server = server();
+    bind_midi(&mut server);
+    set_midi(
+        &mut server,
+        &[(0, [0x90, 60, 100]), (48_000, [0x80, 60, 0])],
+    );
+    play(&mut server);
+    let before = pull(&mut server, 100);
+    assert_eq!(sounding(&before), vec![(0, 6400)]);
+    send(
+        &mut server,
+        "/transport_locateSample",
+        vec![OscType::Int(0), OscType::Long(9000)],
+    );
+    assert_eq!(sounding(&pull(&mut server, 100)), Vec::new());
+}
+
+/// **A controller on the lane moves the voice it sounds over**, on its
+/// sample, through the control the binding maps it to.
+#[test]
+fn a_lanes_controller_moves_its_sounding_voice() {
+    let mut server = server();
+    bind_midi(&mut server);
+    set_midi(
+        &mut server,
+        &[
+            (1000, [0x90, 60, 100]),
+            (6000, [0xB0, 7, 127]),
+            (9000, [0x80, 60, 0]),
+        ],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 200);
+    assert_eq!(out[5999], 0.5);
+    assert_eq!(out[6000], 1.0);
+    assert_eq!(sounding(&out), vec![(1000, 9000)]);
+}
+
+/// **A note on an unbound channel sounds nothing**, and a note-on the lane
+/// never turns off is not played.
+#[test]
+fn an_unbound_channel_and_an_unended_note_sound_nothing() {
+    let mut server = server();
+    bind_midi(&mut server);
+    set_midi(
+        &mut server,
+        &[
+            (1000, [0x91, 60, 100]),
+            (2000, [0x81, 60, 0]),
+            (3000, [0x90, 62, 100]),
+        ],
+    );
+    play(&mut server);
+    assert_eq!(sounding(&pull(&mut server, 100)), Vec::new());
+}

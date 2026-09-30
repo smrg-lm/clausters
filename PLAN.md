@@ -611,40 +611,59 @@ Cargo feature: every build has both clocks and both queues.
   `notes` verb), core ABI 76. `docs/decisions.md` has the reasoning and
   `examples/event_lane.py` is the manual test.
 
-- ⬜ **T9 — A lane plays MIDI** *(opened 2026-09-29 by the user, out of
+- ✅ **T9 — A lane plays MIDI** *(done 2026-09-29; opened 2026-09-29 by the user, out of
   `crates/clausters-apps/PLAN.md` `X3.10`: the server's lanes should carry
-  MIDI messages before anything is recorded (`T10`), since `T8` made the lane and
-  this completes it)*. `T8` left it open: "whether a lane plays MIDI out once
-  the server has a MIDI output". Today it cannot. The server has a MIDI
-  **input** (`src/midi/live.rs`, a virtual ALSA port whose messages reach
-  `/midi_bind` on the network thread) and no output. So the crate's
-  `notes_playback::data`, which writes a lane from an `EventSequence`, drops
-  every event of type `"midi"` -- and every one of type `"osc"`, on the
-  assumption that an OSC event is addressed to another application.
+  MIDI messages before anything is recorded (`T10`), since `T8` made the lane
+  and this completes it)*. The server plays MIDI: a message that reaches its
+  live input (`src/midi/live.rs`) goes through `CmdTranslator::translate_midi`
+  and sounds the instrument `/midi_bind` put on its channel. A lane cannot
+  carry one. The crate's `notes_playback::data`, which writes a lane from an
+  `EventSequence`, drops every event of type `"midi"` -- and every one of type
+  `"osc"`, on the assumption that an OSC event is addressed to another
+  application. *(First written as a MIDI output on the server, corrected the
+  same day by the user: the server plays the MIDI it is given, live or on a
+  lane, and sends it to no one, so no output is opened.)*
 
-  **The shape.**
-  - **A MIDI output on the server, through the input's own pipeline**: a
-    virtual port opened by the same `midir` hub, named for the server, and
-    used the way the input is in real time -- no second transport for MIDI.
-  - **A third lane event beside `Note` and `Message`**: MIDI bytes at a
-    position, sent to that port when the position reaches them, so a locate,
-    a loop and a stop are the transport's as they are for a note. A note-on a
-    jump leaves sounding gets its note-off, as a lane's synth gets its
-    release.
-  - **An `"osc"` event addressed to the server** is a lane `message`, as
-    written. Only one addressed elsewhere has no carrier, and that is the same
-    question as MIDI's: an output to the outside.
+  **The shape.** A lane's MIDI message goes down **the live input's own
+  path**, at its position on the transport, as though it had reached the port
+  then: the channel's binding says the instrument, where it goes, whether it
+  gates and which controls a message moves, and the same builders make the
+  same commands. Only *when* differs: the lane builds its entries ahead of the
+  position, as it builds its notes, so what the live path decides at the
+  moment a message arrives the lane decides from its own data.
+  - **A note-on and its note-off are one lane note**, paired on the lane's
+    data by channel and key, so a note is built once with its release, and a
+    jump, a stop or an edit releases it as it releases a lane's synth. Its id
+    is the MIDI range's, as a live voice's.
+  - **An expressive message** (a controller, bend, pressure) moves the lane's
+    own voices sounding on that channel at its position -- read off the
+    pairing, not off what sounds when it is built. A live voice and a lane's
+    voice do not reach each other.
+  - **A program change** chooses the instrument of the lane's notes after it on
+    that channel, from the binding's programs, and changes no binding.
+  - **An `"osc"` event is a lane `message`**, run by the server as written.
 
-  **Open:** the event's wire form in `/lane_set` (see "Found by use", "A
-  lane's data is written twice and typed nowhere"); whether an event names its
-  port or the lane does; the output ports' names and how a client lists them;
-  what an NRT render does with a MIDI event.
+  **Also:** "A lane's data is written twice and typed nowhere" (Found by
+  use) is fixed here, since the MIDI list is a third shape to write twice.
 
-  **Acceptance:** a lane's MIDI events leave the port on their positions
-  through a locate, a loop and an edit mid-pass; a jump sends the note-offs of
-  what sounds; the notes editor and a multitrack's notes regions play a
-  sequence's `"midi"` events. `docs/schemas.md`, both clients' builders and
-  the crate's `data` move in the same pass.
+  **Acceptance:** a lane's MIDI notes start and end on their samples through a
+  locate, a loop and an edit mid-pass, released on a jump; a controller on the
+  lane moves its sounding voices; a note on an unbound channel sounds nothing
+  and fails nothing; the notes editor and a multitrack's notes regions play a
+  sequence's `"midi"` and `"osc"` events. `docs/schemas.md`, both clients'
+  builders' docstrings and the crate's `data` move in the same pass.
+
+  **Shipped as that shape.** `/lane_set` takes a `"midi"` list,
+  `[[position, byte, ...]]`. The server pairs a lane's MIDI when it is set
+  (`lanes::midi_events`): a note-on and its note-off become one entry with a
+  release, a note-on the lane never turns off is not played, and a
+  controller names the lane's voices it reaches by a key the feed resolves to
+  the nodes built in the current generation. The translator's live path and
+  the lane share its builders (`midi_voice`, `midi_release`,
+  `midi_expression`), so a lane's voice is the same command a live note-on
+  makes. The lane's data is one type, `clausters_core::lane::LaneData`, which
+  the crate writes and the server reads. `tests/lanes.rs` has the MIDI cases
+  and `examples/event_lane.py` plays the figure as MIDI too.
 
 - ⬜ **T10 — The server records MIDI** *(opened 2026-09-29 by the user, moved
   out of `crates/clausters-apps/PLAN.md` `X3.10`: recording is a feature of
@@ -3962,7 +3981,7 @@ should confirm before the fix.
   same divergence (`clients/web/PLAN.md`, Found by use, "The offline score and
   its carrier are named apart from Python's").
 
-- ⬜ **A lane's data is written twice and typed nowhere** *(found 2026-09-29,
+- ✅ **A lane's data is written twice and typed nowhere** *(found 2026-09-29,
   with the user, reading what `/lane_set` carries)*. The JSON is right -- a
   lane is a sequencing structure, and `/lane_set` is the one command besides
   the defs that takes a JSON object. What is wrong is that no Rust type
@@ -3972,4 +3991,5 @@ should confirm before the fix.
   A field that moves on one side is found by no compiler on the other. The
   fix is one type (a lane's notes and messages, in samples) that both sides
   serialize, where the crate and the server can both depend on it. `T9`'s
-  MIDI event is written into that type, not into both halves.
+  MIDI event is written into that type, not into both halves. **Fixed
+  2026-09-29 with `T9`**: `clausters_core::lane::LaneData`.
