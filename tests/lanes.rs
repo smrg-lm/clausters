@@ -769,3 +769,40 @@ fn a_stop_holds_the_curves_a_releasing_note_reads() {
     );
     assert!(out.iter().any(|x| *x > 0.5), "and it is the release of 0.8");
 }
+
+/// **A loop that ends inside a note releases it at the wrap**, and the next
+/// pass plays it again from its start.
+#[test]
+fn a_loop_ending_inside_a_note_releases_it_at_the_wrap() {
+    let mut server = server();
+    set_lane(&mut server, &[(4000, 12_000)]);
+    send(
+        &mut server,
+        "/transport_loop",
+        vec![OscType::Int(0), OscType::Long(0), OscType::Long(9600)],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 3 * 9600 / BLOCK_SIZE);
+    assert_eq!(
+        sounding(&out),
+        vec![(4000, 9600), (13_600, 19_200), (23_200, 28_800)]
+    );
+}
+
+/// **A loop that ends where the last note does plays it on every pass.**
+#[test]
+fn a_loop_ending_at_the_last_notes_end_plays_it_every_pass() {
+    let mut server = server();
+    set_lane(&mut server, &[(1000, 9600)]);
+    send(
+        &mut server,
+        "/transport_loop",
+        vec![OscType::Int(0), OscType::Long(0), OscType::Long(9600)],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 3 * 9600 / BLOCK_SIZE);
+    assert_eq!(
+        sounding(&out),
+        vec![(1000, 9600), (10_600, 19_200), (20_200, 28_800)]
+    );
+}

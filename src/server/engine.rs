@@ -1430,6 +1430,11 @@ impl Engine {
                 t.position = t
                     .position
                     .wrapped_to(TransportPosition::new(start), t.at(here));
+                // **A wrap is a jump**, as a locate is: what the lanes were
+                // sounding is released on the seam, and the next pass plays
+                // it again from its start -- a note held across the loop's
+                // end would otherwise ring into the next pass beside itself.
+                take_releases(&mut t.sched, &mut self.released, None);
                 None
             }
             // **The end mark: stop here, on this sample**, as a
@@ -1481,8 +1486,8 @@ impl Engine {
             if ended {
                 self.push_garbage(Garbage::TransportEnded { transport: k });
             }
-            self.run_released();
         }
+        self.run_released();
     }
 
     /// **The lane entry transport `k`'s position has reached**, run: its start
