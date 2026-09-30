@@ -200,3 +200,22 @@ test("a sequence's curves go to a MIDI file and back", () => {
     assert.deepEqual(bent?.expression?.[0].target, { bend: true });
     assert.ok(Math.abs((bent?.expression?.[0].points[0].value ?? 0) - 6.0) < 1e-9);
 });
+
+test("a sequence goes to a MIDI 2.0 clip and back", () => {
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })]]);
+    seq.setMidi("2.0");
+    const first = seq.entries()[0][0];
+    seq.addExpression(first, { bend: true }, { points: [[0.0, 12.0]] });
+    seq.addExpression(first, { cc: 1 }, { points: [[0.0, 64.0]] });
+    const data = seq.toClip();
+    assert.equal(new TextDecoder().decode(data.slice(0, 8)), "SMF2CLIP");
+    const back = EventSequence.fromClip(data);
+    assert.equal(back.midi, "2.0");
+    const held = (back.data() as {
+        events: { expression: { target: Record<string, unknown>; points: { value: number }[] }[] }[];
+    }).events[0];
+    const values = Object.fromEntries(held.expression.map((c) => [Object.keys(c.target)[0], c.points[0].value]));
+    assert.ok(Math.abs(values.bend - 12.0) < 1e-6);
+    assert.ok(Math.abs(values.cc - 64.0) < 1e-3);
+    assert.throws(() => EventSequence.fromClip(new TextEncoder().encode("MThd")), /SMF2CLIP/);
+});

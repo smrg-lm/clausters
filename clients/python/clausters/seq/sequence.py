@@ -225,6 +225,31 @@ class EventSequence:
                            tempo=read["tempo"])
         return sequence
 
+    def to_clip(self, ppq: int = 480) -> bytes:
+        """The sequence as a MIDI 2.0 Clip File (SMF2CLIP), at ``ppq`` ticks
+        per beat: its notes at 16-bit velocity, its lanes as 32-bit channel
+        messages, its notes' expression as per-note ones -- per-note pitch
+        bend, poly pressure, the registered per-note controller 74 for timbre
+        and an assignable one for a CC -- and its tempo map as Set Tempo
+        messages. What its `midi` spec cannot say of one note is left out."""
+        from .. import _midi
+
+        written = self._seq.call("ump", ppq=int(ppq))
+        return _midi.write_clip_ump(written["events"], ppq)
+
+    @classmethod
+    def from_clip(cls, data: bytes) -> "EventSequence":
+        """The sequence a MIDI 2.0 Clip File holds: its notes, its channels'
+        messages as lanes and its per-note messages as the notes' expression,
+        its Set Tempo messages as the tempo map (120 quarter notes a minute
+        when it has none), and ``"2.0"`` as its `midi` spec."""
+        from .. import _midi
+
+        read = _midi.read_clip(data)
+        sequence = cls()
+        sequence._seq.call("loadump", ppq=read["ppq"], events=read["events"])
+        return sequence
+
     def __repr__(self):
         return f"EventSequence({len(self)} events)"
 

@@ -421,6 +421,84 @@ impl EventSequence {
         Ok(sequence)
     }
 
+    /// **The sequence as the packets a MIDI 2.0 clip of it holds**, at `ppq`
+    /// ticks per beat: its notes at 16-bit velocity, its lanes as 32-bit
+    /// channel messages and its notes' expression as per-note messages (see
+    /// `midi`), and its tempo as Set Tempo messages -- each packet its UMP
+    /// words, at its tick.
+    pub fn to_ump(&self, ppq: u16) -> Vec<(u32, Vec<u32>)> {
+        let tick = |beat: f64| (beat * f64::from(ppq)).round().max(0.0) as u32;
+        let mut packets: Vec<(u32, Vec<u32>)> = self
+            .tempo_map
+            .as_ref()
+            .map(|map| {
+                map.breakpoints()
+                    .iter()
+                    .map(|b| {
+                        (
+                            tick(b.beats),
+                            midi::set_tempo((1e6 / b.tempo).round() as u32),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        packets.extend(
+            midi::write_ump(self)
+                .into_iter()
+                .map(|(at, words)| (tick(at), words)),
+        );
+        // Stable: a tempo at a tick goes before what plays on it.
+        packets.sort_by_key(|(t, _)| *t);
+        packets
+    }
+
+    /// **The sequence a MIDI 2.0 clip holds**, at `ppq` ticks per beat: its
+    /// notes, its channels' messages as lanes and its per-note messages as
+    /// the notes' expression (see `midi`), its Set Tempo messages as the tempo
+    /// map -- 120 quarter notes a minute when it has none -- and MIDI 2.0 as
+    /// its spec.
+    ///
+    /// # Errors
+    /// A tempo the tempo map refuses.
+    pub fn from_ump(ppq: u16, packets: &[(u32, Vec<u32>)]) -> Result<Self, String> {
+        let beat = |tick: u32| f64::from(tick) / f64::from(ppq.max(1));
+        let mut tempo: Vec<clausters_core::tempomap::Breakpoint> = packets
+            .iter()
+            .filter_map(|(t, words)| {
+                let micros = midi::tempo_of(words)?;
+                Some(clausters_core::tempomap::Breakpoint {
+                    beats: beat(*t),
+                    tempo: 1e6 / f64::from(micros.max(1)),
+                    curve: clausters_core::tempomap::Curve::Step,
+                })
+            })
+            .collect();
+        if tempo.is_empty() {
+            tempo.push(clausters_core::tempomap::Breakpoint {
+                beats: 0.0,
+                tempo: 2.0,
+                curve: clausters_core::tempomap::Curve::Step,
+            });
+        }
+        let tempo_map =
+            TempoMap::from_breakpoints(&tempo).map_err(|e| format!("the clip's tempo: {e:?}"))?;
+        let in_beats: Vec<(f64, Vec<u32>)> = packets
+            .iter()
+            .map(|(t, words)| (beat(*t), words.clone()))
+            .collect();
+        let (events, lanes) = midi::read_ump(&in_beats);
+        let mut sequence = Self {
+            events,
+            lanes,
+            midi: Some(MidiSpec::Midi2),
+            tempo_map: Some(tempo_map),
+            ..Self::default()
+        };
+        sequence.hold();
+        Ok(sequence)
+    }
+
     /// The edit that puts the sequence back as it is now.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::Restore {
@@ -800,6 +878,11 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 /// - `"loadmidi"` with `ppq`, `events` and `tempo` as a reader gives them: the
 ///   sequence becomes the one the file holds ([`EventSequence::from_midi`]),
 ///   answering `{"len": n}`.
+/// - `"ump"` with `ppq`: `{"events": [[tick, [words]]]}` -- the packets a
+///   MIDI 2.0 clip writer takes ([`EventSequence::to_ump`]).
+/// - `"loadump"` with `ppq` and `events` as a clip reader gives them: the
+///   sequence becomes the one the clip holds ([`EventSequence::from_ump`]),
+///   answering `{"len": n}`.
 /// - `"event"` with `id`: the event, or `null`.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
@@ -857,6 +940,38 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
                 Err(error) => json!({ "error": error }),
             }
         }
+        Some("ump") => {
+            let ppq = request.get("ppq").and_then(Value::as_u64).unwrap_or(480) as u16;
+            let packets = sequence.to_ump(ppq);
+            json!({"events": packets.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>()})
+        }
+        Some("loadump") => {
+            let ppq = request.get("ppq").and_then(Value::as_u64).unwrap_or(480) as u16;
+            let packets: Vec<(u32, Vec<u32>)> = request
+                .get("events")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| {
+                    let tick = e.get(0)?.as_u64()? as u32;
+                    let words = e
+                        .get(1)?
+                        .as_array()?
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .map(|w| w as u32)
+                        .collect();
+                    Some((tick, words))
+                })
+                .collect();
+            match EventSequence::from_ump(ppq, &packets) {
+                Ok(read) => {
+                    *sequence = read;
+                    json!({"len": sequence.events.len()})
+                }
+                Err(error) => json!({ "error": error }),
+            }
+        }
         Some("event") => {
             let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
             serde_json::to_value(sequence.get(id)).unwrap_or(Value::Null)
@@ -887,12 +1002,12 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
 }
 
 /// Whether `request` is a verb that changes the sequence (`apply`,
-/// `loadmidi`). Every other verb reads.
+/// `loadmidi`, `loadump`). Every other verb reads.
 pub fn mutates(request: &str) -> bool {
     serde_json::from_str::<Value>(request)
         .ok()
         .and_then(|r| r.get("verb").and_then(Value::as_str).map(str::to_owned))
-        .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi"))
+        .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi" | "loadump"))
 }
 
 mod midi;

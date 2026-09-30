@@ -26,7 +26,7 @@ use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEv
 
 /// The C ABI version of this surface: a binding checks it first and refuses a
 /// library of another. What each version changed is in `docs/ipc.md`.
-pub const MIDI_ABI_VERSION: u32 = 4;
+pub const MIDI_ABI_VERSION: u32 = 5;
 
 /// One timed MIDI event: an absolute `tick` (in the file's PPQ time base) and
 /// up to three raw channel-voice bytes (`status`, `data1`, `data2`). The byte
@@ -294,6 +294,119 @@ pub fn write_clip(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
     out
 }
 
+/// **A MIDI 2.0 Clip File from UMP packets** at `ppq` ticks per quarter note:
+/// each event an absolute tick and one packet's words (a Channel Voice 2
+/// message is two, a Flex Data message four), written as they are between the
+/// clip's DCTPQ, Start of Clip and End of Clip. The packets are whoever
+/// built them's -- a sequence's notes, curves and tempo, say -- so every
+/// message MIDI 2.0 has fits, not only the notes [`write_clip`] widens.
+pub fn write_clip_ump(events: &[(u32, Vec<u32>)], ppq: u16) -> Vec<u8> {
+    let mut events: Vec<&(u32, Vec<u32>)> = events.iter().collect();
+    events.sort_by_key(|(tick, _)| *tick);
+    let mut words: Vec<u32> = Vec::new();
+    let mut dctpq = DeltaClockstampTpq::<[u32; 1]>::new();
+    dctpq.set_time_data(ppq);
+    words.push(dctpq.data()[0]);
+    words.extend_from_slice(StartOfClip::<[u32; 4]>::new().data());
+    let mut last = 0u32;
+    for (tick, packet) in events {
+        let mut delta = tick.saturating_sub(last);
+        last = *tick;
+        // A delta wider than a clockstamp's 20 bits is several of them.
+        while delta > 0 {
+            let step = delta.min(0x000F_FFFF);
+            let mut dc = DeltaClockstamp::<[u32; 1]>::new();
+            dc.set_time_data(u20::new(step));
+            words.push(dc.data()[0]);
+            delta -= step;
+        }
+        words.extend_from_slice(packet);
+    }
+    words.extend_from_slice(EndOfClip::<[u32; 4]>::new().data());
+    let mut out = Vec::with_capacity(8 + words.len() * 4);
+    out.extend_from_slice(b"SMF2CLIP");
+    for w in words {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    out
+}
+
+/// How many words a UMP packet of message type `mt` holds.
+fn ump_words(mt: u32) -> usize {
+    match mt {
+        0x0..=0x2 | 0x6 | 0x7 => 1,
+        0x3 | 0x4 | 0x8..=0xA => 2,
+        0xB | 0xC => 3,
+        _ => 4,
+    }
+}
+
+/// A MIDI 2.0 Clip File read back: its ticks per quarter note and its packets,
+/// each at its absolute tick.
+pub struct ReadClip {
+    pub ppq: u16,
+    pub events: Vec<(u32, Vec<u32>)>,
+}
+
+/// **Reads a MIDI 2.0 Clip File** ([`write_clip_ump`]'s, or any): the DCTPQ is
+/// the ticks per quarter, each Delta Clockstamp moves the clock, and every
+/// packet after the Start of Clip and before the End is an event at the tick
+/// the clock stands on. The clip's own framing (the utility and stream
+/// messages) is read and not kept.
+///
+/// # Errors
+/// Bytes with no `SMF2CLIP` header, or a stream cut inside a packet.
+pub fn read_clip(bytes: &[u8]) -> Result<ReadClip, String> {
+    let body = bytes
+        .strip_prefix(b"SMF2CLIP")
+        .ok_or("not a MIDI 2.0 clip file: no SMF2CLIP header")?;
+    if body.len() % 4 != 0 {
+        return Err("a clip's stream is whole 32-bit words".into());
+    }
+    let words: Vec<u32> = body
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_be_bytes(*w))
+        .collect();
+    let mut ppq = 96;
+    let mut tick = 0u32;
+    let mut events = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let mt = words[i] >> 28;
+        let size = ump_words(mt);
+        let packet = words
+            .get(i..i + size)
+            .ok_or("the clip's stream ends inside a packet")?;
+        match mt {
+            0x0 => match (packet[0] >> 20) & 0xF {
+                0x3 => ppq = (packet[0] & 0xFFFF) as u16,
+                0x4 => tick += packet[0] & 0x000F_FFFF,
+                _ => {}
+            },
+            // The clip's framing: Start and End of Clip.
+            0xF => {}
+            _ => events.push((tick, packet.to_vec())),
+        }
+        i += size;
+    }
+    Ok(ReadClip { ppq, events })
+}
+
+/// [`read_clip`] as the JSON its doors answer: `{"ppq", "events": [[tick,
+/// [words]]]}`, or `{"error": ...}`.
+pub fn read_clip_json(bytes: &[u8]) -> String {
+    match read_clip(bytes) {
+        Ok(read) => serde_json::json!({
+            "ppq": read.ppq,
+            "events": read.events.iter().map(|(t, w)| serde_json::json!([t, w])).collect::<Vec<_>>(),
+        }),
+        Err(error) => serde_json::json!({ "error": error }),
+    }
+    .to_string()
+}
+
 pub mod mpe;
 
 // ---- C ABI ----
@@ -388,6 +501,89 @@ pub unsafe extern "C" fn clausters_midi_write_clip(
         return std::ptr::null_mut();
     };
     leak_bytes(write_clip(&events, ppq), out_len)
+}
+
+/// Writes a MIDI 2.0 Clip File from `n` UMP packets ([`write_clip_ump`]):
+/// packet `i` sits at tick `ticks[i]` and is `sizes[i]` words of `words`, in
+/// order. Same return and freeing as [`clausters_midi_write_smf`].
+///
+/// # Safety
+/// `ticks` and `sizes` readable for `n` values, `words` for the sum of
+/// `sizes`, and `out_len` a valid `*mut usize`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_midi_write_clip_ump(
+    ticks: *const u32,
+    sizes: *const u8,
+    words: *const u32,
+    n: usize,
+    ppq: u16,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let events = if n == 0 || ticks.is_null() || sizes.is_null() {
+        Vec::new()
+    } else {
+        // SAFETY: caller guarantees the ranges.
+        let (ticks, sizes) = unsafe {
+            (
+                std::slice::from_raw_parts(ticks, n),
+                std::slice::from_raw_parts(sizes, n),
+            )
+        };
+        let total: usize = sizes.iter().map(|&s| usize::from(s)).sum();
+        if total > 0 && words.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: caller guarantees `words` holds the sizes' sum.
+        let words = if total == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(words, total) }
+        };
+        ump_events(ticks, sizes, words)
+    };
+    leak_bytes(write_clip_ump(&events, ppq), out_len)
+}
+
+/// Packets out of the flat `(ticks, sizes, words)` a door takes them in.
+pub fn ump_events(ticks: &[u32], sizes: &[u8], words: &[u32]) -> Vec<(u32, Vec<u32>)> {
+    let mut at = 0;
+    ticks
+        .iter()
+        .zip(sizes)
+        .map(|(&tick, &size)| {
+            let end = (at + usize::from(size)).min(words.len());
+            let packet = words[at..end].to_vec();
+            at = end;
+            (tick, packet)
+        })
+        .collect()
+}
+
+/// Reads a MIDI 2.0 Clip File ([`read_clip`]) and answers it as JSON in a
+/// malloc'd buffer, freed with [`clausters_midi_free`]: `{"ppq", "events":
+/// [[tick, [words]]]}`, or `{"error": ...}`.
+///
+/// # Safety
+/// As [`clausters_midi_read_smf`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_midi_read_clip(
+    data: *const u8,
+    len: usize,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let bytes = if data.is_null() {
+        &[][..]
+    } else {
+        // SAFETY: caller guarantees the range.
+        unsafe { std::slice::from_raw_parts(data, len) }
+    };
+    leak_bytes(read_clip_json(bytes).into_bytes(), out_len)
 }
 
 /// [`clausters_midi_write_smf`] with the file's tempo: `tn` marks, each an
@@ -731,6 +927,24 @@ mod tests {
         assert_eq!(parse_note(&[0xB0, 1, 64]), None); // control change
         assert_eq!(parse_note(&[0xF8]), None); // clock
         assert_eq!(parse_note(&[0x90, 60]), None); // truncated
+    }
+
+    /// **A clip of UMP packets reads back as it was written**: a packet of
+    /// two words and one of four, each at its tick, a delta wider than a
+    /// clockstamp's 20 bits included, and the clip's framing not kept.
+    #[test]
+    fn a_ump_clip_round_trips() {
+        let events = vec![
+            (0, vec![0x4090_3C00, 0xC000_0000]),
+            (0x0012_3456, vec![0xD010_0003, 0x0003_D090, 0, 0]),
+            (0x0012_3460, vec![0x4080_3C00, 0x0000_0000]),
+        ];
+        let bytes = write_clip_ump(&events, 480);
+        let read = read_clip(&bytes).unwrap();
+        assert_eq!(read.ppq, 480);
+        assert_eq!(read.events, events);
+        assert!(read_clip(b"MThd").is_err());
+        assert!(read_clip_json(&bytes).contains("\"ppq\":480"));
     }
 
     /// Write a couple of notes, read the file back, and check the timing and

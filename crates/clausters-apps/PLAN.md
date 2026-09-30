@@ -754,10 +754,18 @@ opened it.
         `midiMessages` is the render in beats, and a MIDI destination plays
         it. The example is `editors/edit_midi_file`, a pair; the page keeps
         its file in the origin private file system.)*
-      - ⬜ **X3.11d3 - SMF2CLIP in and out (2.0).** The clip file whole,
+      - ✅ **X3.11d3 - SMF2CLIP in and out (2.0).** The clip file whole,
         read and written: lanes as 32-bit channel messages, expression as
         per-note pitch bend, 32-bit poly pressure and a per-note controller
-        for timbre (assignable 74, CC 74's mirror).
+        for timbre. *(Shipped 2026-09-30. The timbre is the **registered**
+        per-note controller 74 -- Sound Controller 5, CC 74's meaning -- not
+        an assignable one, as the standard has it; a per-note CC is an
+        assignable per-note controller. `clausters-midi` writes a clip of any
+        UMP packets and reads one back (`write_clip_ump`, `read_clip`, MIDI ABI
+        5, in wasm too); the document encodes a sequence as Channel Voice 2
+        and Flex Data (`to_ump` / `from_ump`, the tempo map as Set Tempo);
+        both clients' `to_clip` / `from_clip` and `toClip` / `fromClip`. The
+        example pair writes the chord again as a clip.)*
       - ⬜ **X3.11d4 - MIDI 2.0 into the server** *(the user, 2026-09-30:
         MIDI 2.0 has to be an input for the server, by MIDI port or by a
         playback lane -- left for later if need be, but written down as

@@ -34,8 +34,10 @@ lowest note bends up a semitone, the top one bends down a quarter tone, the
 middle one swells in pressure, and a volume lane runs over the whole zone. The
 sequence goes to a Standard MIDI File (<code>toSmf</code>), written into the
 page's own filesystem (the origin private file system, <code>opfs</code>) as
-<code>out/mpe_chord.mid</code>, and comes back from it (<code>fromSmf</code>).
-The roll opens on what the file
+<code>out/mpe_chord.mid</code>, and comes back from it (<code>fromSmf</code>);
+written for MIDI 2.0 instead, it goes to a MIDI 2.0 Clip File
+(<code>toClip</code>) with no zone, each note's curves its own per-note
+messages. The roll opens on what the MPE file
 held: <b>MPE</b> under its keyboard, the bends drawn in the plane as the pitch
 each note takes, the volume lane as a row under the grid. Play sounds it on
 the engine, the bends heard.</div>
@@ -88,6 +90,16 @@ the engine, the bends heard.</div>
           const curves = (held.expression ?? []).map((c) => Object.keys(c.target)[0]);
           log(`  #${held.id} ${held.at.toFixed(2)}  midinote ${held.data.midinote.toFixed(1)}  ${JSON.stringify(curves)}`);
         }
+
+        // The same chord as a MIDI 2.0 clip: MIDI 2.0 says a note's bend,
+        // pressure and timbre natively -- a per-note message addressed to the
+        // note, not a channel spent on it -- so the chord written for 2.0 goes
+        // to a MIDI 2.0 Clip File with no zone at all, and comes back with the
+        // same curves.
+        chord.setMidi("2.0");
+        await opfs.writeFile("out/chord.midi2", chord.toClip());
+        const native = EventSequence.fromClip(await opfs.readFile("out/chord.midi2"));
+        log(`chord.midi2: ${native.midi}, ${native.length} notes`);
 
         // On the roll: it says which MIDI it is editing under its keyboard,
         // draws each bend as the pitch its note takes, and the volume as a row

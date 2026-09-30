@@ -138,6 +138,7 @@ JavaScript reaches the same surface through Node/Deno FFI; in a browser there is
 - **v2** — the live virtual **input** port (`clausters_midi_input_*`), for the client's responder layer; v1 unchanged.
 - **v3** — the tempo in a written file (`clausters_midi_write_smf_tempo`) and the reader (`clausters_midi_read_smf`); v2 unchanged.
 - **v4** — MPE: the decoder (`clausters_mpe_decoder_new`/`set_zone`/`feed`/`poll`/`free`, a 12-byte record per polled message) and the channel assigner (`clausters_mpe_assigner_new`/`note_on`/`note_off`/`free`) as opaque handles, and the zone and bend messages (`clausters_mpe_zone_messages`, `clausters_mpe_bend_message`); v3 unchanged. Why a handle and not a state block is in `docs/decisions.md`.
+- **v5** — MIDI 2.0 clips of any message: `clausters_midi_write_clip_ump` writes a clip from UMP packets (each a tick and its words, flat as ticks, sizes and words) and `clausters_midi_read_clip` reads one back as JSON (`{"ppq", "events": [[tick, [words]]]}`); `clausters_midi_write_clip` (notes only, from MIDI 1.0 bytes) and v4 unchanged.
 
 ## Synchronous calls
 

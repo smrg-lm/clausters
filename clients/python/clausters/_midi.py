@@ -21,7 +21,7 @@ from array import array
 
 from . import _libpath
 
-MIDI_ABI_VERSION = 4
+MIDI_ABI_VERSION = 5
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _MIDI_NAMES = ("libclausters_midi.so", "libclausters_midi.dylib", "clausters_midi.dll")
@@ -68,6 +68,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_midi_read_smf.restype = u8p
     lib.clausters_midi_read_smf.argtypes = [u8p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    # MIDI 2.0 clips of UMP packets, written and read back.
+    lib.clausters_midi_write_clip_ump.restype = u8p
+    lib.clausters_midi_write_clip_ump.argtypes = [
+        u32p, u8p, u32p, ctypes.c_size_t, ctypes.c_uint16, ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.clausters_midi_read_clip.restype = u8p
+    lib.clausters_midi_read_clip.argtypes = [u8p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
     # MPE: the output side's channel assigner and the messages a zone and a
     # note's expression are written as.
     lib.clausters_mpe_assigner_new.restype = ctypes.c_void_p
@@ -190,6 +197,42 @@ def read_smf(data: bytes) -> dict:
     out_len = ctypes.c_size_t(0)
     ptr = lib().clausters_midi_read_smf(ctypes.cast(buf, u8p) if buf else None, len(data),
                                         ctypes.byref(out_len))
+    answer = json.loads(_taken(ptr, out_len))
+    if "error" in answer:
+        raise ValueError(answer["error"])
+    return answer
+
+
+def write_clip_ump(events, ppq: int) -> bytes:
+    """MIDI 2.0 Clip File (SMF2CLIP) bytes from UMP packets: ``(tick,
+    words)`` pairs, each packet its 32-bit words (two for a Channel Voice 2
+    message, four for Flex Data)."""
+    events = list(events)
+    ticks = array("I", (int(t) & 0xFFFFFFFF for t, _ in events))
+    sizes = bytearray(len(w) for _, w in events)
+    words = array("I", (int(w) & 0xFFFFFFFF for _, packet in events for w in packet))
+    u32p = ctypes.POINTER(ctypes.c_uint32)
+    u8p = ctypes.POINTER(ctypes.c_uint8)
+
+    def ptr32(a):
+        return ctypes.cast(a.buffer_info()[0], u32p) if len(a) else None
+
+    sizes_ptr = ctypes.cast((ctypes.c_uint8 * len(sizes)).from_buffer(sizes), u8p) if sizes else None
+    out_len = ctypes.c_size_t(0)
+    ptr = lib().clausters_midi_write_clip_ump(ptr32(ticks), sizes_ptr, ptr32(words),
+                                              len(events), int(ppq), ctypes.byref(out_len))
+    return _taken(ptr, out_len)
+
+
+def read_clip(data: bytes) -> dict:
+    """A MIDI 2.0 Clip File as plain data: ``{"ppq", "events": [[tick,
+    [words]]]}``. `ValueError` for bytes that are not one."""
+    data = bytes(data)
+    u8p = ctypes.POINTER(ctypes.c_uint8)
+    buf = (ctypes.c_uint8 * len(data)).from_buffer_copy(data) if data else None
+    out_len = ctypes.c_size_t(0)
+    ptr = lib().clausters_midi_read_clip(ctypes.cast(buf, u8p) if buf else None, len(data),
+                                         ctypes.byref(out_len))
     answer = json.loads(_taken(ptr, out_len))
     if "error" in answer:
         raise ValueError(answer["error"])

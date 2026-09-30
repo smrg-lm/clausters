@@ -610,3 +610,83 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
         .unwrap();
     assert_eq!(bent.expression[0].points[0].value, 6.0);
 }
+
+/// **A MIDI 2.0 sequence is its clip's packets, and back**: a note at 16-bit
+/// velocity, its bend as a per-note pitch bend, its timbre as the registered
+/// per-note controller 74 and a CC as an assignable one, a lane as a 32-bit
+/// channel controller, the tempo as a Set Tempo -- and read back, the same
+/// sequence, MIDI 2.0.
+#[test]
+fn a_midi2_sequence_is_its_clips_packets_and_back() {
+    let curve = |target: Value, value: f64| {
+        let mut c = Automation::new(NodeId(0), Opaque(target));
+        c.points = vec![crate::Point {
+            at: 0.0,
+            value,
+            data: Opaque(json!({"shape": 0})),
+        }];
+        c
+    };
+    let mut s = EventSequence::new(vec![Event::new(
+        0.0,
+        json!({"midinote": 60, "velocity": 100, "sustain": 1.0}),
+    )]);
+    s.tempo_map = Some(TempoMap::new(2.0));
+    s.edit(EventsIntent::Midi {
+        midi: Some(MidiSpec::Midi2),
+    })
+    .unwrap();
+    let id = s.events[0].id;
+    for (target, value) in [
+        (json!({"bend": true}), 12.0),
+        (json!({"timbre": true}), 0.5),
+        (json!({"cc": 1}), 64.0),
+    ] {
+        s.edit(EventsIntent::Expression {
+            id,
+            automation: curve(target, value),
+        })
+        .unwrap();
+    }
+    s.edit(EventsIntent::Lane {
+        automation: curve(json!({"cc": 7, "channel": 0}), 100.0),
+    })
+    .unwrap();
+    let packets = s.to_ump(480);
+    let status = |words: &[u32]| (words[0] >> 28, (words[0] >> 20) & 0xF);
+    let kinds: Vec<(u32, u32)> = packets.iter().map(|(_, w)| status(w)).collect();
+    assert!(kinds.iter().any(|k| k.0 == 0xD), "a Set Tempo");
+    assert!(kinds.contains(&(0x4, 0x9)), "the note on");
+    assert!(kinds.contains(&(0x4, 0x6)), "a per-note pitch bend");
+    assert!(kinds.contains(&(0x4, 0x0)), "the registered per-note 74");
+    assert!(
+        kinds.contains(&(0x4, 0x1)),
+        "an assignable per-note controller"
+    );
+    assert!(kinds.contains(&(0x4, 0xB)), "the channel's CC");
+    let bend = packets
+        .iter()
+        .find(|(_, w)| status(w) == (0x4, 0x6))
+        .unwrap();
+    assert_eq!(bend.1[1], 0xA000_0000, "12 of 48 semitones up");
+
+    let back = EventSequence::from_ump(480, &packets).unwrap();
+    assert_eq!(back.midi, Some(MidiSpec::Midi2));
+    assert_eq!(back.tempo_map, Some(TempoMap::new(2.0)));
+    assert_eq!(back.events.len(), 1);
+    let keys = back.events[0].keys();
+    assert_eq!(keys["midinote"], json!(60.0));
+    assert!((keys["velocity"].as_f64().unwrap() - 100.0).abs() < 0.01);
+    let value_of = |target: Value| {
+        back.events[0]
+            .expression
+            .iter()
+            .find(|c| c.target.0 == target)
+            .map(|c| c.points[0].value)
+    };
+    assert_eq!(value_of(json!({"bend": true})), Some(12.0));
+    assert!((value_of(json!({"timbre": true})).unwrap() - 0.5).abs() < 1e-6);
+    assert!((value_of(json!({"cc": 1})).unwrap() - 64.0).abs() < 1e-4);
+    assert_eq!(back.lanes[0].target.0, json!({"cc": 7, "channel": 0}));
+    assert!((back.lanes[0].points[0].value - 100.0).abs() < 1e-4);
+}

@@ -14,7 +14,7 @@
 // a notes editor opened on it edits it in place, with no copy to write back.
 
 import { JsEventSequence, event_of_midi as coreEventOfMidi } from "../core/clausters_core_web.js";
-import { midiReadSmf, midiWriteSmfTempo, requireCore } from "../base/core.ts";
+import { midiReadClip, midiReadSmf, midiWriteClipUmp, midiWriteSmfTempo, requireCore } from "../base/core.ts";
 import { Moment } from "../base/moment.ts";
 import type { TempoClock } from "../base/clock.ts";
 import { TempoMap } from "../base/time.ts";
@@ -309,6 +309,38 @@ export class EventSequence {
         if (read.error) throw new Error(read.error);
         const sequence = new EventSequence();
         sequence.call("loadmidi", { ppq: read.ppq, events: read.events, tempo: read.tempo });
+        return sequence;
+    }
+
+    /**
+     * The sequence as a MIDI 2.0 Clip File (SMF2CLIP), at `ppq` ticks per
+     * beat: its notes at 16-bit velocity, its lanes as 32-bit channel
+     * messages, its notes' expression as per-note ones -- per-note pitch bend,
+     * poly pressure, the registered per-note controller 74 for timbre and an
+     * assignable one for a CC -- and its tempo map as Set Tempo messages. What
+     * its {@link EventSequence.midi} spec cannot say of one note is left out.
+     */
+    toClip(ppq = 480): Uint8Array {
+        const written = this.call("ump", { ppq }) as { events: [number, number[]][] };
+        return midiWriteClipUmp(
+            Uint32Array.from(written.events, ([tick]) => tick),
+            Uint8Array.from(written.events, ([, words]) => words.length),
+            Uint32Array.from(written.events.flatMap(([, words]) => words)),
+            ppq,
+        );
+    }
+
+    /**
+     * The sequence a MIDI 2.0 Clip File holds: its notes, its channels'
+     * messages as lanes and its per-note messages as the notes' expression,
+     * its Set Tempo messages as the tempo map (120 quarter notes a minute when
+     * it has none), and `"2.0"` as its {@link EventSequence.midi} spec.
+     */
+    static fromClip(data: Uint8Array): EventSequence {
+        const read = JSON.parse(midiReadClip(data));
+        if (read.error) throw new Error(read.error);
+        const sequence = new EventSequence();
+        sequence.call("loadump", { ppq: read.ppq, events: read.events });
         return sequence;
     }
 

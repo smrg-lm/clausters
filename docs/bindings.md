@@ -530,7 +530,8 @@ because the Python client loads them separately and because half that crate
 (`live`, a virtual OS port over midir) has no business inside the core's door.
 The left column is therefore empty on both rows and the C symbols are named here
 instead: `clausters_midi_write_smf`, `clausters_midi_write_smf_tempo`,
-`clausters_midi_write_clip` and `clausters_midi_read_smf`, argument for
+`clausters_midi_write_clip`, `clausters_midi_write_clip_ump`,
+`clausters_midi_read_smf` and `clausters_midi_read_clip`, argument for
 argument the same call.
 
 What a page needs is exactly the half that is pure Rust. It has no virtual port
@@ -546,6 +547,8 @@ the whole point of a shared core is not having one.
 | — | `midi_write_clip` | `idiom` — `clausters_midi_write_clip` on the same terms, `midiWriteClip` in JS |
 | — | `midi_write_smf_tempo` | `idiom` — `clausters_midi_write_smf_tempo`: the writer with the file's tempo marks, as two flat arrays (ticks, microseconds per quarter); `midiWriteSmfTempo` in JS |
 | — | `midi_read_smf` | `idiom` — `clausters_midi_read_smf`: a file read back as JSON, which C hands over in a malloc'd buffer and wasm as a string; `midiReadSmf` in JS |
+| — | `midi_write_clip_ump` | `idiom` — `clausters_midi_write_clip_ump`: a MIDI 2.0 clip from UMP packets, flat as ticks, sizes and words; `midiWriteClipUmp` in JS |
+| — | `midi_read_clip` | `idiom` — `clausters_midi_read_clip`: a clip read back as JSON, on the terms of the row above's reader; `midiReadClip` in JS |
 | — | — | **gap** — `clausters-midi`'s MPE (`clausters_mpe_decoder_*`, `clausters_mpe_assigner_*`, `clausters_mpe_zone_messages`, `clausters_mpe_expression_messages`, `clausters_mpe_bend_message`): Python's `MidiServer` binds them to put a note on an MPE zone's member channel; the web client has no MIDI surface to use them from (`clients/web/PLAN.md`, "MIDI is missing here entirely, not only MPE"). The symbols are in the wasm modules only because the crate is linked there; nothing binds them |
 
 ## The shared-memory segment

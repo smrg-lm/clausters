@@ -179,3 +179,21 @@ def test_a_sequences_curves_go_to_a_midi_file_and_back():
     bent = next(e for e in data["events"] if e.get("expression"))
     assert bent["expression"][0]["target"] == {"bend": True}
     assert bent["expression"][0]["points"][0]["value"] == pytest.approx(6.0)
+
+
+def test_a_sequence_goes_to_a_midi2_clip_and_back():
+    seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0))])
+    seq.set_midi("2.0")
+    first = seq.entries()[0][0]
+    seq.add_expression(first, {"bend": True}, [(0.0, 12.0)])
+    seq.add_expression(first, {"cc": 1}, [(0.0, 64.0)])
+    data = seq.to_clip()
+    assert data[:8] == b"SMF2CLIP"
+    back = EventSequence.from_clip(data)
+    assert back.midi == "2.0"
+    held = back.data()["events"][0]
+    values = {list(c["target"])[0]: c["points"][0]["value"] for c in held["expression"]}
+    assert values["bend"] == pytest.approx(12.0)
+    assert values["cc"] == pytest.approx(64.0, abs=1e-3)
+    with pytest.raises(ValueError, match="SMF2CLIP"):
+        EventSequence.from_clip(b"MThd")

@@ -3499,3 +3499,42 @@ pub fn midi_read_smf(bytes: &[u8]) -> String {
 pub fn midi_write_clip(ticks: &[u32], msgs: &[u8], ppq: u16) -> Result<Vec<u8>, JsError> {
     Ok(clausters_midi::write_clip(&midi_events(ticks, msgs)?, ppq))
 }
+
+/// A MIDI 2.0 Clip File from UMP packets: packet `i` at `ticks[i]`, `sizes[i]`
+/// words of `words` in order -- the C ABI's `clausters_midi_write_clip_ump`.
+///
+/// JS face: `midiWriteClipUmp(Uint32Array, Uint8Array, Uint32Array, ppq) ->
+/// Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiWriteClipUmp)]
+pub fn midi_write_clip_ump(
+    ticks: &[u32],
+    sizes: &[u8],
+    words: &[u32],
+    ppq: u16,
+) -> Result<Vec<u8>, JsError> {
+    if sizes.len() != ticks.len() {
+        return Err(JsError::new("a size per tick"));
+    }
+    let total: usize = sizes.iter().map(|&s| usize::from(s)).sum();
+    if total != words.len() {
+        return Err(JsError::new(&format!(
+            "the sizes add to {total} words, and {} were given",
+            words.len()
+        )));
+    }
+    Ok(clausters_midi::write_clip_ump(
+        &clausters_midi::ump_events(ticks, sizes, words),
+        ppq,
+    ))
+}
+
+/// A MIDI 2.0 Clip File read back as JSON -- the C ABI's
+/// `clausters_midi_read_clip`.
+///
+/// JS face: `midiReadClip(Uint8Array) -> string`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiReadClip)]
+pub fn midi_read_clip(bytes: &[u8]) -> String {
+    clausters_midi::read_clip_json(bytes)
+}

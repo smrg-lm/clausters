@@ -12,10 +12,11 @@ Here a three-note chord is written for MPE (`set_midi("mpe")`): the lowest
 note bends up a semitone, the top one bends down a quarter tone, the middle
 one swells in pressure, and a volume lane runs over the whole zone. The
 sequence goes to a Standard MIDI File (`to_smf`), into
-`clients/python/examples/out/`, and comes back from it (`from_smf`): the roll
-opens on what the file held -- **MPE** under its keyboard, the bends drawn in
-the plane as the pitch each note takes, the volume lane as a row under the
-grid. The space bar plays it on the server, the bends heard; a MIDI port
+`clients/python/examples/out/`, and comes back from it (`from_smf`); written
+for MIDI 2.0 instead, it goes to a MIDI 2.0 Clip File (`to_clip`) with no zone,
+each note's curves its own per-note messages. The roll opens on what the MPE
+file held -- **MPE** under its keyboard, the bends drawn in the plane as the
+pitch each note takes, the volume lane as a row under the grid. The space bar plays it on the server, the bends heard; a MIDI port
 (`editor.play(destination=MidiServer(...))`) would hear the same messages the
 file holds.
 
@@ -75,6 +76,21 @@ print(f"{path.name}: {notes.midi}, {len(notes)} notes")
 for held in notes.data()["events"]:
     curves = [list(c["target"])[0] for c in held.get("expression", [])]
     print(f"  #{held['id']:<3} {held['at']:5.2f}  midinote {held['data']['midinote']:5.1f}  {curves}")
+
+# %% [markdown]
+# ## The same chord as a MIDI 2.0 clip
+#
+# MIDI 2.0 says a note's bend, pressure and timbre natively -- a per-note
+# message addressed to the note, not a channel spent on it -- so the chord
+# written for 2.0 goes to a MIDI 2.0 Clip File (`to_clip`) with no zone at
+# all, and comes back (`from_clip`) with the same curves.
+
+# %%
+chord.set_midi("2.0")
+clip = OUT / "chord.midi2"
+clip.write_bytes(chord.to_clip())
+native = EventSequence.from_clip(clip.read_bytes())
+print(f"{clip.name}: {native.midi}, {len(native)} notes")
 
 # %% [markdown]
 # ## On the roll

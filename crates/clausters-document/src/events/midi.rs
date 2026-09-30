@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::SHAPE_STEP;
 use clausters_core::event::render;
@@ -303,15 +303,15 @@ fn message(
 /// **A curve as the messages that say it**, from beat `from` to `to`: a
 /// message at every point, and between two points of a ramp one wherever the
 /// message it samples to changes.
-fn sampled(
+fn sampled<T: PartialEq>(
     points: &[Point],
     from: f64,
     to: f64,
     origin: f64,
-    say: impl Fn(f64) -> Option<Vec<u8>>,
-) -> Vec<(f64, Vec<u8>)> {
-    let mut out: Vec<(f64, Vec<u8>)> = Vec::new();
-    let mut emit = |at: f64, bytes: Option<Vec<u8>>| {
+    say: impl Fn(f64) -> Option<T>,
+) -> Vec<(f64, T)> {
+    let mut out: Vec<(f64, T)> = Vec::new();
+    let mut emit = |at: f64, bytes: Option<T>| {
         if let Some(bytes) = bytes
             && out.last().is_none_or(|(_, last)| *last != bytes)
         {
@@ -477,4 +477,355 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
     }
     out.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     out.into_iter().map(|(at, _, bytes)| (at, bytes)).collect()
+}
+
+// ---- MIDI 2.0: Universal MIDI Packets ----
+
+/// A per-note pitch bend's range, in semitones, MIDI 2.0's default.
+const PER_NOTE_BEND: f64 = 48.0;
+
+/// The Registered Per-Note Controller that is Sound Controller 5 -- CC 74's
+/// meaning, brightness, which is what MPE's timbre is.
+const TIMBRE_CONTROLLER: u8 = 74;
+
+/// The full scale of a 32-bit value.
+const FULL: f64 = 4_294_967_295.0;
+
+/// The centre of a 32-bit bend.
+const CENTRE: f64 = 2_147_483_648.0;
+
+/// A Channel Voice 2 message: its status, channel, the two index bytes and the
+/// 32-bit data word.
+fn cv2(status: u8, channel: u8, index: u8, extra: u8, data: u32) -> Vec<u32> {
+    vec![
+        (0x4 << 28)
+            | (u32::from(status & 0xF) << 20)
+            | (u32::from(channel & 0xF) << 16)
+            | (u32::from(index) << 8)
+            | u32::from(extra),
+        data,
+    ]
+}
+
+/// A value from 0 to 1 as a 32-bit one.
+fn wide(value: f64) -> u32 {
+    (value.clamp(0.0, 1.0) * FULL).round() as u32
+}
+
+/// Semitones as a 32-bit bend over `range`.
+fn wide_bend(semitones: f64, range: f64) -> u32 {
+    (CENTRE + semitones / range * CENTRE)
+        .round()
+        .clamp(0.0, FULL) as u32
+}
+
+/// A 7-bit velocity (a fraction of it allowed) as MIDI 2.0's 16 bits.
+fn velocity16(velocity: f64) -> u32 {
+    ((velocity / 127.0).clamp(0.0, 1.0) * 65535.0).round() as u32
+}
+
+/// A Set Tempo message (Flex Data, to the whole group): microseconds per
+/// quarter note, carried in ten-nanosecond units.
+pub(super) fn set_tempo(micros: u32) -> Vec<u32> {
+    vec![(0xD << 28) | (0b01 << 20), micros.saturating_mul(100), 0, 0]
+}
+
+/// A Set Tempo message's microseconds per quarter note, if it is one.
+pub(super) fn tempo_of(packet: &[u32]) -> Option<u32> {
+    let head = *packet.first()?;
+    (head >> 28 == 0xD && head & 0xFFFF == 0).then(|| packet.get(1).copied().unwrap_or(0) / 100)
+}
+
+/// The message a curve's value is in MIDI 2.0 -- over a channel, or over the
+/// note `key` of `channel` (a per-note message).
+fn packet(kind: CurveKind, channel: u8, key: Option<u8>, value: f64) -> Option<Vec<u32>> {
+    Some(match (kind, key) {
+        (CurveKind::Control, _) => return None,
+        (CurveKind::Cc(n), None) => cv2(0xB, channel, n, 0, wide(value / 127.0)),
+        (CurveKind::Timbre, None) => cv2(0xB, channel, 74, 0, wide(value)),
+        (CurveKind::Bend, None) => cv2(0xE, channel, 0, 0, wide_bend(value, CHANNEL_BEND)),
+        (CurveKind::Pressure, None) => cv2(0xD, channel, 0, 0, wide(value)),
+        (CurveKind::Cc(n), Some(key)) => cv2(0x1, channel, key, n, wide(value / 127.0)),
+        (CurveKind::Timbre, Some(key)) => cv2(0x0, channel, key, TIMBRE_CONTROLLER, wide(value)),
+        (CurveKind::Bend, Some(key)) => cv2(0x6, channel, key, 0, wide_bend(value, PER_NOTE_BEND)),
+        (CurveKind::Pressure, Some(key)) => cv2(0xA, channel, key, 0, wide(value)),
+    })
+}
+
+/// A MIDI 1.0 message as the Channel Voice 2 message that says the same, at
+/// full resolution -- or `None` for one MIDI 2.0 has no channel voice for.
+fn widened(bytes: &[u8]) -> Option<Vec<u32>> {
+    let status = *bytes.first()?;
+    let (kind, ch) = (status & 0xF0, status & 0x0F);
+    let data = |i: usize| f64::from(bytes.get(i).copied().unwrap_or(0) & 0x7F);
+    Some(match kind {
+        0xB0 => cv2(0xB, ch, data(1) as u8, 0, wide(data(2) / 127.0)),
+        0xC0 => cv2(0xC, ch, 0, 0, (data(1) as u32) << 24),
+        0xD0 => cv2(0xD, ch, 0, 0, wide(data(1) / 127.0)),
+        0xA0 => cv2(0xA, ch, data(1) as u8, 0, wide(data(2) / 127.0)),
+        0xE0 => {
+            let fine = data(1) + data(2) * 128.0;
+            cv2(0xE, ch, 0, 0, (fine / 16383.0 * FULL).round() as u32)
+        }
+        _ => return None,
+    })
+}
+
+/// **A sequence as the Universal MIDI Packets a MIDI 2.0 clip of it holds**,
+/// in beats, sorted: its notes at 16-bit velocity, its other MIDI events
+/// widened, its lanes as 32-bit channel messages and its notes' expression
+/// as per-note ones -- per-note pitch bend, poly pressure, the registered
+/// per-note controller 74 for timbre and an assignable one for a CC. What a
+/// spec cannot say of one note is left out, as in a 1.0 file; MPE and 2.0
+/// both say it all, a note being its own address here.
+pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
+    let per_note = |kind: CurveKind| match sequence.midi {
+        None | Some(MidiSpec::Midi1) => kind == CurveKind::Pressure,
+        Some(MidiSpec::Mpe { .. }) => !matches!(kind, CurveKind::Cc(_) | CurveKind::Control),
+        Some(MidiSpec::Midi2) => kind != CurveKind::Control,
+    };
+    let mut out: Vec<(f64, Order, Vec<u32>)> = Vec::new();
+    let mut end = 0.0f64;
+    let mut channels_used: Vec<u8> = Vec::new();
+    for event in &sequence.events {
+        let keys = event.keys();
+        let at = event.at.0;
+        let is_note = render::Type::of(&keys) == render::Type::Note;
+        let Ok(messages) = render::midi(&keys, 0) else {
+            continue;
+        };
+        let channel = keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0) as u8 & 0x0F;
+        let sustain = render::sustain_of(&keys).max(0.0);
+        let reach = event
+            .expression
+            .iter()
+            .filter_map(|c| c.points.last())
+            .map(|p| p.at)
+            .fold(sustain, f64::max);
+        end = end.max(at + reach);
+        let mut key = None;
+        for m in messages {
+            let status = m.bytes.first().copied().unwrap_or(0) & 0xF0;
+            let packet = match (is_note, status) {
+                (true, 0x90) => {
+                    key = m.bytes.get(1).copied();
+                    let velocity = render::level_of(&keys).velocity();
+                    (
+                        Order::On,
+                        cv2(
+                            0x9,
+                            channel,
+                            key.unwrap_or(0),
+                            0,
+                            velocity16(velocity) << 16,
+                        ),
+                    )
+                }
+                (true, 0x80) => (Order::Off, cv2(0x8, channel, key.unwrap_or(0), 0, 0)),
+                _ => match widened(&m.bytes) {
+                    Some(packet) => (Order::After, packet),
+                    None => continue,
+                },
+            };
+            out.push((at + m.at, packet.0, packet.1));
+        }
+        if !is_note {
+            continue;
+        }
+        if !channels_used.contains(&channel) {
+            channels_used.push(channel);
+        }
+        for curve in event.expression.iter().filter(|c| c.enabled) {
+            let kind = CurveKind::of(&curve.target.0);
+            if !per_note(kind) {
+                continue;
+            }
+            let said = sampled(&curve.points, at, at + reach, at, |v| {
+                packet(kind, channel, key, v)
+            });
+            for (t, words) in said {
+                let order = if t <= at { Order::Before } else { Order::After };
+                out.push((t.max(at), order, words));
+            }
+        }
+    }
+    if channels_used.is_empty() {
+        channels_used.push(0);
+    }
+    for lane in sequence.lanes.iter().filter(|l| l.enabled) {
+        let kind = CurveKind::of(&lane.target.0);
+        if kind == CurveKind::Control {
+            continue;
+        }
+        let channels: Vec<u8> = match lane.target.0.get("channel") {
+            Some(channel) => vec![channel.as_f64().unwrap_or(0.0) as u8],
+            None => channels_used.clone(),
+        };
+        let last = lane.points.last().map_or(0.0, |p| p.at);
+        for channel in channels {
+            let said = sampled(&lane.points, 0.0, last.max(end), 0.0, |v| {
+                packet(kind, channel, None, v)
+            });
+            out.extend(said.into_iter().map(|(t, words)| (t, Order::After, words)));
+        }
+    }
+    out.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    out.into_iter().map(|(at, _, words)| (at, words)).collect()
+}
+
+/// **A MIDI 2.0 clip's packets as a sequence's events and curves**, in beats:
+/// note on and off paired into notes (the 16-bit velocity as a fraction of
+/// 127), a channel's controllers, bend and pressure as its lanes, each
+/// note's per-note bend, poly pressure, timbre (registered per-note 74) and
+/// assignable controllers as its expression, a program change as an event.
+/// What else the clip holds -- a tempo is the caller's -- is not a note's.
+pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automation>) {
+    let mut events: Vec<Event> = Vec::new();
+    // Each note's channel, key and span, as it is paired.
+    let mut spans: Vec<(u8, u8, f64, f64)> = Vec::new();
+    let mut open: HashMap<(u8, u8), Vec<usize>> = HashMap::new();
+    let end = packets.iter().map(|(at, _)| *at).fold(0.0, f64::max);
+    // The per-note and channel messages, kept until every note is paired.
+    let mut said: Vec<(f64, u8, u8, u8, u8, u32)> = Vec::new();
+    for (at, words) in packets {
+        let [head, data, ..] = words.as_slice() else {
+            continue;
+        };
+        if head >> 28 != 0x4 {
+            continue;
+        }
+        let status = ((head >> 20) & 0xF) as u8;
+        let channel = ((head >> 16) & 0xF) as u8;
+        let index = ((head >> 8) & 0xFF) as u8;
+        let extra = (head & 0xFF) as u8;
+        let velocity = f64::from(data >> 16);
+        match status {
+            0x9 if velocity > 0.0 => {
+                let mut keys = Map::new();
+                keys.insert("midinote".into(), json!(f64::from(index & 0x7F)));
+                let seven = (velocity / 65535.0 * 127.0 * 1000.0).round() / 1000.0;
+                keys.insert("velocity".into(), json!(seven));
+                if channel != 0 {
+                    keys.insert("channel".into(), json!(f64::from(channel)));
+                }
+                events.push(Event::new(*at, Value::Object(keys)));
+                spans.push((channel, index, *at, end));
+                open.entry((channel, index))
+                    .or_default()
+                    .push(events.len() - 1);
+            }
+            0x8 | 0x9 => {
+                if let Some(queue) = open.get_mut(&(channel, index))
+                    && !queue.is_empty()
+                {
+                    let note = queue.remove(0);
+                    spans[note].3 = *at;
+                    let length = json!((*at - spans[note].2).max(0.0));
+                    if let Some(keys) = events[note].data.0.as_object_mut() {
+                        keys.insert("sustain".into(), length.clone());
+                        keys.insert("dur".into(), length);
+                    }
+                }
+            }
+            0xC => {
+                let program = (data >> 24) as u8 & 0x7F;
+                events.push(Event::new(
+                    *at,
+                    Value::Object(render::from_midi(&[0xC0 | channel, program])),
+                ));
+                spans.push((255, 255, 0.0, 0.0));
+            }
+            _ => said.push((*at, status, channel, index, extra, *data)),
+        }
+    }
+    // A note still open sounds to the clip's last packet.
+    for queue in open.into_values() {
+        for note in queue {
+            let length = json!((end - spans[note].2).max(0.0));
+            if let Some(keys) = events[note].data.0.as_object_mut() {
+                keys.insert("sustain".into(), length.clone());
+                keys.insert("dur".into(), length);
+            }
+        }
+    }
+    let note_for = |channel: u8, key: u8, at: f64| -> Option<usize> {
+        let sounding = spans
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, &(c, k, from, to))| {
+                (c == channel && k == key && from <= at && at < to.max(from + f64::EPSILON))
+                    .then_some(i)
+            });
+        sounding.or_else(|| {
+            spans
+                .iter()
+                .enumerate()
+                .filter(|(_, (c, k, from, _))| *c == channel && *k == key && *from >= at)
+                .min_by(|a, b| a.1.2.total_cmp(&b.1.2))
+                .map(|(i, _)| i)
+        })
+    };
+    let mut lanes: Vec<(Value, Vec<Point>)> = Vec::new();
+    let mut notes: Vec<(usize, Value, Vec<Point>)> = Vec::new();
+    for (at, status, channel, index, extra, data) in said {
+        let fraction = f64::from(data) / FULL;
+        let bend = |range: f64| (f64::from(data) - CENTRE) / CENTRE * range;
+        let (target, value, key) = match status {
+            0xB => (
+                json!({"cc": index, "channel": channel}),
+                fraction * 127.0,
+                None,
+            ),
+            0xE => (
+                json!({"bend": true, "channel": channel}),
+                bend(CHANNEL_BEND),
+                None,
+            ),
+            0xD => (
+                json!({"pressure": true, "channel": channel}),
+                fraction,
+                None,
+            ),
+            0xA => (json!({"pressure": true}), fraction, Some(index)),
+            0x6 => (json!({"bend": true}), bend(PER_NOTE_BEND), Some(index)),
+            0x0 if extra == TIMBRE_CONTROLLER => (json!({"timbre": true}), fraction, Some(index)),
+            0x1 => (json!({"cc": extra}), fraction * 127.0, Some(index)),
+            _ => continue,
+        };
+        let value = (value * 1e6).round() / 1e6;
+        match key {
+            None => match lanes.iter_mut().find(|(t, _)| *t == target) {
+                Some((_, points)) => points.push(step(at, value)),
+                None => lanes.push((target, vec![step(at, value)])),
+            },
+            Some(key) => {
+                let Some(note) = note_for(channel, key, at) else {
+                    continue;
+                };
+                let point = step((at - spans[note].2).max(0.0), value);
+                match notes
+                    .iter_mut()
+                    .find(|(n, t, _)| *n == note && *t == target)
+                {
+                    Some((_, _, points)) => points.push(point),
+                    None => notes.push((note, target, vec![point])),
+                }
+            }
+        }
+    }
+    for (note, target, points) in notes {
+        let mut curve = Automation::new(NodeId(0), Opaque(target));
+        curve.points = points;
+        events[note].expression.push(curve);
+    }
+    let lanes = lanes
+        .into_iter()
+        .map(|(target, points)| {
+            let mut curve = Automation::new(NodeId(0), Opaque(target));
+            curve.points = points;
+            curve
+        })
+        .collect();
+    (events, lanes)
 }

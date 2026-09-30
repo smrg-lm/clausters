@@ -21,6 +21,8 @@ import initCore, {
     WidgetIds,
     graph_bus_reserved,
     midiWriteClip,
+    midiWriteClipUmp,
+    midiReadClip,
     midiReadSmf,
     midiWriteSmf,
     midiWriteSmfTempo,
@@ -33,7 +35,7 @@ export { IdSpaces, Registry, WidgetIds, coreShareOf };
 // re-exports: they take and return flat bytes, so there is nothing to convert
 // at the boundary -- and a page writing a `.mid` writes the same bytes the
 // Python client does, which is the whole reason they are not a TS function.
-export { midiReadSmf, midiWriteClip, midiWriteSmf, midiWriteSmfTempo };
+export { midiReadClip, midiReadSmf, midiWriteClip, midiWriteClipUmp, midiWriteSmf, midiWriteSmfTempo };
 
 let loaded: Promise<void> | null = null;
 let ready = false;
