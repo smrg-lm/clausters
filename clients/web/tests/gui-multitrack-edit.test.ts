@@ -22,7 +22,7 @@ import {
 import { Editing } from "../src/gui/editing/context.ts";
 import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, TakeLane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
-import { Event as SeqEvent } from "../src/seq/event.ts";
+import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
 await loadCore();
@@ -318,8 +318,8 @@ test("a region over a sequence draws its notes", () => {
     // A source that is an `EventSequence` has no buffer, and the boxes over it
     // draw its notes: in each box's own frames, named by the region.
     const notes = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, sustain: 0.5 })],
-        [1.0, new SeqEvent({ midinote: 64, sustain: 0.5 })],
+        [0.0, new Event({ midinote: 60, sustain: 0.5 })],
+        [1.0, new Event({ midinote: 64, sustain: 0.5 })],
     ]);
     const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
     assert.ok(clips(ed).every((b) => b[6] === -1), "no buffer behind it");
@@ -849,7 +849,7 @@ test("a double click on a box of notes opens its roll", () => {
     // The roll opens over the very sequence the box reads, in the
     // multitrack's context, so the two are one undo order; a box of samples
     // opens nothing.
-    const notes = new EventSequence([[0.0, new SeqEvent({ midinote: 60, sustain: 0.5 })]]);
+    const notes = new EventSequence([[0.0, new Event({ midinote: 60, sustain: 0.5 })]]);
     const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
     ed.draw();
     const wid = [...ed.view!.widgets.keys()][0];

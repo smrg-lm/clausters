@@ -19,7 +19,7 @@ import { Editing, NotesEditor, PointsEditor, edit, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { Bpf } from "../src/defs/ugens/index.ts";
-import { Event as SeqEvent } from "../src/seq/event.ts";
+import { Event } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import { Server } from "../src/defs/server/index.ts";
@@ -84,8 +84,8 @@ const aCurve = (): Bpf => new Bpf([[0.0, 200.0, "exp"], [2.0, 900.0]]);
 
 const aTimeline = (): Timeline =>
     new Timeline([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
-        [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [1.0, new Event({ midinote: 64, dur: 1.0 })],
     ]);
 
 
@@ -235,22 +235,25 @@ test("a timeline opens as the events it renders and is left as it was", async ()
         2, 2 * BEAT, BEAT, 72, 13, 0]), true);
     assert.deepEqual(midinotes(editor.sequence), [[0, 67], [2, 72]]);
     // The timeline is code, and the roll edited what it produced.
-    assert.deepEqual([...timeline].map(([beat, e]) => [beat, (e as SeqEvent).midinote()]), [[0, 60], [1, 64]]);
+    assert.deepEqual([...timeline].map(([beat, e]) => [beat, (e as Event).midinote()]), [[0, 60], [1, 64]]);
     assert.equal(editor.undo(), true);
     assert.deepEqual(midinotes(editor.sequence), [[0, 60], [1, 64]]);
 });
 
 test("a sequence is edited in place by id", async () => {
     const seq = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })],
-        [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0, instrument: "bell" })],
+        [1.0, new Event({ midinote: 64, dur: 1.0 })],
     ], { tempoMap: new TempoMap(TEMPO) });
     const editor = await edit(seq, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
+    const [first, second] = seq.events;
     // Note 1 is gone and note 2 moved: order is no identity, so note 2 keeps
     // its own keys and the one removed is the one named.
     editor.apply("/gui_event", [wid, 1, 0, "notes", 2, 2 * BEAT, BEAT, 65, 13, 0]);
-    assert.deepEqual(seq.entries().map(([id, beat, e]) => [id, beat, e.get("midinote")]), [[2, 2, 65]]);
+    assert.deepEqual([...seq.events], [second]);
+    assert.equal(first.sequence, null);
+    assert.deepEqual([second.at, second.get("midinote")], [2, 65]);
 });
 
 test("a roll's ruler reads the sequence's own map", async () => {
@@ -262,7 +265,7 @@ test("a roll's ruler reads the sequence's own map", async () => {
 });
 
 test("a note keeps what the roll cannot draw", async () => {
-    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0, instrument: "bell" })]],
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0, instrument: "bell" })]],
         { tempoMap: new TempoMap(TEMPO) });
     const editor = await edit(seq, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
@@ -279,7 +282,7 @@ test("a note the hand made gets an id and the roll is told", async () => {
         1, 0.0, BEAT * 0.8, 60, 13, 0,
         2, BEAT, BEAT * 0.8, 64, 13, 0,
         0, 3 * BEAT, BEAT, 67, 90, 0]);
-    assert.deepEqual(editor.sequence.entries().map(([id]) => id), [1, 2, 3]);
+    assert.deepEqual([...editor.sequence.events].map((e) => e.at), [0, 1, 3]);
     const [, corrections] = host.acks.at(-1)!;
     assert.deepEqual(corrections[0]![1].note_ids, [1, 2, 3]);
 });
@@ -354,7 +357,7 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     // The composed case: two structures, one editing context, one order.
     const context = new Editing();
     const curve = aCurve();
-    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
         { tempoMap: new TempoMap(TEMPO) });
     const curveEditor = await edit(curve, { sampleRate: SR, context, open: false });
     const roll = await edit(seq, { sampleRate: SR, context, open: false });
@@ -421,7 +424,7 @@ test("a sequence with a marker still draws its notes", async () => {
     // with nothing on it.
     await loadCore();
     const seq = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
         [3.0, OscItem("/mark", 1, "cue")],
     ]);
     const editor = new NotesEditor(seq, { sampleRate: SR });
@@ -544,8 +547,8 @@ class PlayingServer extends Server {
 test("the notes editor plays on its own transport and hears an edit", async () => {
     const server = new PlayingServer();
     const seq = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
-        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
     ], { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, server });
     const { wid } = await opened(editor);
@@ -573,7 +576,7 @@ test("the notes editor plays on its own transport and hears an edit", async () =
 
 test("the roll draws its play cursor from its transport and a locate cues it", async () => {
     const server = new PlayingServer();
-    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
         { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, server });
     const { host, wid } = await opened(editor);
@@ -593,7 +596,7 @@ test("the roll draws its play cursor from its transport and a locate cues it", a
 });
 
 test("a roll in hertz draws and edits frequencies", async () => {
-    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
         { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, yAxis: "hz" });
     const { host, wid } = await opened(editor);
@@ -612,8 +615,8 @@ test("a roll in hertz draws and edits frequencies", async () => {
 test("the space bar plays and stops the roll, and its end is the transport's", async () => {
     const server = new PlayingServer();
     const seq = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
-        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
     ], { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, server });
     const { host } = await opened(editor);
@@ -638,8 +641,8 @@ test("the space bar plays and stops the roll, and its end is the transport's", a
 test("the space bar plays the time range a sweep left", async () => {
     const server = new PlayingServer();
     const seq = new EventSequence([
-        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
-        [2.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
     ], { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, server });
     const { host, wid } = await opened(editor);

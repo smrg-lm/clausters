@@ -21,12 +21,16 @@ from .event import Event
 
 
 class EventSequence:
-    """A sequence of events in beats, each with an id.
+    """A sequence of events in beats, each with an identity of its own.
 
     Built from ``(beat, event)`` pairs, like a `clausters.seq.Timeline`; an
     event is an `Event` or anything a dict of its keys. Iterating yields
-    ``(beat, Event)`` pairs in beat order; `entries` adds each one's id, which is
-    what the edits name an event by.
+    ``(beat, Event)`` pairs in beat order, as copies. **What a script reads
+    and writes is objects**: `events` is the events as `SeqEvent`s, and
+    `automation` the curves over the whole sequence, each a view of what the
+    sequence holds -- so a change is made through the object it changes
+    (``event.at = 2.0``, ``event["midinote"] = 62``, ``event.remove()``),
+    and no call takes or answers an id.
 
     Args:
         events: ``(beat, event)`` pairs.
@@ -116,21 +120,11 @@ class EventSequence:
         return int(self._seq.call("len")["len"])
 
     def __iter__(self):
-        for _id, beat, event in self.entries():
-            yield beat, event
-
-    def entries(self) -> list:
-        """Every event as ``(id, beat, Event)``, in beat order."""
-        return [(e["id"], float(e["at"]), Event(e.get("data") or {}))
-                for e in self.data().get("events", [])]
-
-    def get(self, id: int) -> tuple:
-        """The event with this id as ``(beat, Event)``. `KeyError` when there is
-        none."""
-        event = self._seq.call("event", id=int(id))
-        if event is None:
-            raise KeyError(id)
-        return float(event["at"]), Event(event.get("data") or {})
+        """``(beat, Event)`` pairs in beat order: copies of the keys, as a
+        `clausters.seq.Timeline` iterates -- `events` is the events
+        themselves."""
+        for written in self.data().get("events", []):
+            yield float(written["at"]), Event(written.get("data") or {})
 
     def duration(self) -> float:
         """Where the last event stops sounding, in beats."""
@@ -146,7 +140,7 @@ class EventSequence:
     @tempo_map.setter
     def tempo_map(self, value):
         written = None if value is None else json.loads(value.dump())
-        self.apply({"intent": "tempo", "tempo_map": written})
+        self._edit({"intent": "tempo", "tempo_map": written}, "change the tempo map")
 
     @property
     def midi(self) -> "str | None":
@@ -171,101 +165,32 @@ class EventSequence:
             written = {"mpe": {"upper": bool(upper), "members": int(members)}}
         else:
             written = spec
-        self.apply({"intent": "midi", "midi": written})
+        self._edit({"intent": "midi", "midi": written}, "write it for another MIDI spec")
 
     # ---- editing ----
 
-    def apply(self, intent: dict) -> dict:
-        """Apply one edit in the sequence's vocabulary (``add``, ``remove``,
-        ``move``, ``set``, ``keys``, ``setevents``, ``tempo``,
-        ``automation``, ``removeautomation``, ``eventautomation``,
-        ``removeeventautomation``, ``automationtoevents``,
-        ``eventstoautomation``, ``midi``, ``restore``) and
-        answer ``{"applied", "current"}`` -- ``current`` the edit that puts it
-        back, read before this one landed -- with ``"id"`` for an add, a curve
-        of the sequence or of an event, or a curve gathered from the notes.
-        `ValueError` when refused."""
-        return self._seq.call("apply", intent=intent)
+    def _apply(self, intent: dict, *, inverse: bool = True) -> dict:
+        """Apply one edit in the sequence's vocabulary and answer
+        ``{"applied", "current"?, "id"?}`` -- ``current`` the edit that puts it
+        back, read before this one landed, unless ``inverse`` is ``False``.
+        `ValueError` when refused. The door the objects write through."""
+        return self._seq.call("apply", intent=intent, inverse=bool(inverse))
 
-    def add(self, beat: float, event) -> int:
-        """Add an event at ``beat``; its new id."""
-        answer = self.apply({"intent": "add",
-                             "event": {"at": float(beat), "data": _keys(event)}})
-        return int(answer["id"])
+    def _edit(self, intent: dict, label: str) -> dict:
+        """**One change a script makes through an object**: applied, and
+        answered as `_apply` answers. ``label`` is what an undo would call
+        it."""
+        return self._apply(intent, inverse=False)
 
-    def remove(self, id: int) -> None:
-        """Remove the event with this id."""
-        self.apply({"intent": "remove", "id": int(id)})
-
-    def move(self, id: int, beat: float) -> None:
-        """Move the event with this id to ``beat``."""
-        self.apply({"intent": "move", "id": int(id), "at": float(beat)})
-
-    def set(self, id: int, key: str, value) -> None:
-        """Write one key of an event, with its family's coherence: a moved
-        ``midinote`` moves the ``freq`` and the ``degree`` the event holds."""
-        self.apply({"intent": "set", "id": int(id), "key": key, "value": value})
-
-    # ---- curves ----
-
-    def add_automation(self, target: dict, points=(), name: str | None = None) -> int:
-        """Add a curve over the whole sequence -- its automation -- and answer
-        its id. ``target`` says what it moves: ``{"cc": 74}`` (0 to 127),
-        ``{"bend": True}`` (semitones), ``{"pressure": True}``, ``{"timbre":
-        True}`` (0 to 1) or ``{"control": "cutoff"}``, with ``min``/``max`` to
-        override the range and ``channel`` for the one channel it acts on
-        (counted from 0, as a note's; without it, every channel). ``points``
-        are ``(beat, value)`` pairs; ``name`` labels it. The notes editor draws
-        it as a row under the roll."""
-        return self._curve({"intent": "automation"}, target, points, name)
-
-    def add_event_automation(self, id: int, target: dict, points=(),
-                             name: str | None = None) -> int:
-        """Add a curve over the event with this id -- its own automation, as
-        MPE gives a note its bend, pressure and timbre -- and answer its id.
-        ``target`` as for `add_automation`; ``points`` are ``(beat, value)``
-        pairs, each beat counted from the event's start, and free to run past
-        the note's end into its release. The notes editor draws it inside the
-        note, and a bend in the plane over the pitches it spans."""
-        return self._curve({"intent": "eventautomation", "id": int(id)}, target, points, name)
-
-    def automation_to_events(self, curve: int) -> None:
-        """**Give the sequence's curve ``curve`` to the notes it reaches**:
-        each note on its channel (every note, for a curve that names none)
-        takes the stretch of the curve its span covers as a curve of its own --
-        sounding as it did, since a channel reaches a note from its on to its
-        off -- and the sequence's goes. A note with its own curve over that
-        control keeps it; over a bend, which adds, that is a `ValueError`, as
-        is a curve the sequence's `midi` spec cannot say of one note."""
-        self.apply({"intent": "automationtoevents", "curve": int(curve)})
-
-    def events_to_automation(self, target: dict, channel: "int | None" = None) -> int:
-        """**Gather the notes' curves over** ``target`` **into one of the
-        sequence's** -- of the notes on ``channel``, or of every note -- and
-        answer its id: each note's curve over its span, on the channel its
-        notes share. The notes' curves go. It holds where the notes agree: two
-        that sound at once with different curves are a `ValueError`, since one
-        channel cannot say both -- a chord whose curve was given to its notes
-        gives it back."""
-        intent = {"intent": "eventstoautomation", "target": dict(target)}
-        if channel is not None:
-            intent["channel"] = int(channel)
-        return int(self.apply(intent)["id"])
-
-    def remove_automation(self, curve: int) -> None:
-        """Remove the sequence's curve with this id."""
-        self.apply({"intent": "removeautomation", "curve": int(curve)})
-
-    def remove_event_automation(self, id: int, curve: int) -> None:
-        """Remove curve ``curve`` from the event with this id."""
-        self.apply({"intent": "removeeventautomation", "id": int(id), "curve": int(curve)})
-
-    def _curve(self, intent: dict, target: dict, points, name) -> int:
-        automation = {"id": 0, "target": dict(target),
-                      "points": [{"at": float(at), "value": float(v)} for at, v in points]}
-        if name is not None:
-            automation["name"] = str(name)
-        return int(self.apply({**intent, "automation": automation})["id"])
+    def _write_curve(self, event: "int | None", written: dict, label: str) -> int:
+        """Write a curve whole -- the sequence's when ``event`` is ``None``, else
+        that event's -- and answer its id: the one it had, or a new one for a
+        curve with ``id`` 0."""
+        if event is None:
+            intent = {"intent": "automation", "automation": written}
+        else:
+            intent = {"intent": "eventautomation", "id": int(event), "automation": written}
+        return int(self._edit(intent, label)["id"])
 
     # ---- MIDI files ----
 
@@ -376,13 +301,37 @@ class SeqEvent:
             return None
         return self._sequence
 
+    def _held(self) -> "EventSequence":
+        """The sequence, for a write -- which a detached event refuses."""
+        if self.sequence is None:
+            raise ValueError("the sequence no longer holds this event")
+        return self._sequence
+
     @property
     def at(self) -> float:
-        """Where the event sits, in the sequence's beats."""
+        """Where the event sits, in the sequence's beats. Setting it moves the
+        event, and it keeps its place among the events at the beat it goes
+        to."""
         return float(self._written()["at"])
+
+    @at.setter
+    def at(self, beat: float) -> None:
+        self._held()._edit({"intent": "move", "id": self._id, "at": float(beat)},
+                           "move an event")
 
     def __getitem__(self, key: str):
         return (self._written().get("data") or {})[key]
+
+    def __setitem__(self, key: str, value) -> None:
+        """Write one key, with its family's coherence: a moved ``midinote``
+        moves the ``freq`` and the ``degree`` the event holds."""
+        self._held()._edit({"intent": "set", "id": self._id, "key": str(key),
+                            "value": value}, f"set {key}")
+
+    def remove(self) -> None:
+        """Remove the event from its sequence. This object is left detached,
+        and an undo that brings the event back brings it back too."""
+        self._held()._edit({"intent": "remove", "id": self._id}, "remove an event")
 
     def get(self, key: str, default=None):
         """One key of the event, or ``default`` when it has none."""
@@ -439,6 +388,16 @@ class SeqEvents:
     def __getitem__(self, i: int) -> "SeqEvent":
         return self._sequence._event(self._sequence._ids()[i])
 
+    def add(self, beat: float, event) -> SeqEvent:
+        """**Add an event at** ``beat`` -- an `Event`, a dict of its keys, or
+        another `SeqEvent`, whose keys are copied -- and answer the `SeqEvent`
+        that is it. It goes after every event already at that beat."""
+        keys = event.event if isinstance(event, SeqEvent) else event
+        answer = self._sequence._edit(
+            {"intent": "add", "event": {"at": float(beat), "data": _keys(keys)}},
+            "add an event")
+        return self._sequence._event(int(answer["id"]))
+
     def at(self, beat: float) -> "list[SeqEvent]":
         """The events exactly at ``beat``, in the order they were placed."""
         return self._of(self._sequence._ids(at=float(beat)))
@@ -480,6 +439,75 @@ class SeqAutomation:
 
     def __getitem__(self, i: int):
         return self._views()[i]
+
+    def add(self, target, points=(), name: "str | None" = None):
+        """**Add a curve** and answer it, held: the `clausters.multitrack.
+        Automation` that is now a view of what the sequence holds.
+
+        ``target`` says what it moves -- ``{"cc": 74}`` (0 to 127), ``{"bend":
+        True}`` (semitones), ``{"pressure": True}``, ``{"timbre": True}`` (0 to
+        1) or ``{"control": "cutoff"}``, with ``min``/``max`` to override the
+        range and, on the sequence's curves, ``channel`` for the one channel
+        it acts on (counted from 0, as a note's; without it, every channel).
+        ``points`` are ``(beat, value)`` pairs or the document's points;
+        ``name`` labels it. Or ``target`` is a free `Automation`, which is
+        added as it is and becomes the view.
+
+        `ValueError` when the sequence's `EventSequence.midi` spec cannot say
+        such a curve here."""
+        from ..multitrack import Automation, _points
+
+        if isinstance(target, Automation):
+            curve = target
+            if curve._holder is not None:
+                raise ValueError("this curve is held already: add a copy of it "
+                                 "(Automation.read(curve.write()))")
+            written = {**curve.write(), "id": 0}
+        else:
+            curve = None
+            written = {"id": 0, "target": dict(target), "points": _points(points)}
+            if name is not None:
+                written["name"] = str(name)
+        if self._event is not None:
+            self._written()
+        id = self._sequence._write_curve(self._event, written, "add a curve")
+        if curve is None:
+            return self._sequence._curve_view(self._event, id)
+        curve._bind(self._sequence, self._event, id)
+        self._sequence._objects[("curve", id)] = curve
+        return curve
+
+    def to_events(self, curve) -> None:
+        """**Give one of the sequence's curves to the notes it reaches**: each
+        note on its channel (every note, for a curve that names none) takes
+        the stretch of the curve its span covers as a curve of its own --
+        sounding as it did, since a channel reaches a note from its on to its
+        off -- and the sequence's goes, leaving ``curve`` detached. A note
+        with its own curve over that control keeps it; over a bend, which
+        adds, that is a `ValueError`, as is a curve the sequence's
+        `EventSequence.midi` spec cannot say of one note."""
+        if self._event is not None:
+            raise ValueError("an event's curves are already its notes'")
+        if getattr(curve, "_holder", None) != (self._sequence, None):
+            raise ValueError("not one of this sequence's curves")
+        self._sequence._edit({"intent": "automationtoevents", "curve": curve.id},
+                             "give a curve to the notes")
+
+    def from_events(self, target: dict, channel: "int | None" = None):
+        """**Gather the notes' curves over** ``target`` **into one of the
+        sequence's** -- of the notes on ``channel``, or of every note -- and
+        answer it: each note's curve over its span, on the channel its notes
+        share. The notes' curves go. It holds where the notes agree: two that
+        sound at once with different curves are a `ValueError`, since one
+        channel cannot say both -- a chord whose curve was given to its notes
+        gives it back."""
+        if self._event is not None:
+            raise ValueError("an event's curves gather from nothing")
+        intent = {"intent": "eventstoautomation", "target": dict(target)}
+        if channel is not None:
+            intent["channel"] = int(channel)
+        answer = self._sequence._edit(intent, "gather the notes' curves")
+        return self._sequence._curve_view(None, int(answer["id"]))
 
     def __repr__(self) -> str:
         return f"<{len(self)} curves>"

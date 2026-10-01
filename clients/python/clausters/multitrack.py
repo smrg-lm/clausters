@@ -403,8 +403,8 @@ class Automation:
     that nothing holds. Added to a sequence or to one of its events
     (``seq.automation.add``, ``event.automation.add``) it is a **live view**
     of the curve the sequence holds: reading a field asks the sequence, so it
-    reads what an editor left there, and the same curve read twice is the same
-    object. A curve the sequence no longer holds -- removed, or undone away --
+    reads what an editor left there, writing one writes the curve back into
+    the sequence, and the same curve read twice is the same object. A curve the sequence no longer holds -- removed, or undone away --
     is **detached**: `held` is ``False`` and reading it raises `ValueError`,
     until an undo brings it back.
 
@@ -429,10 +429,14 @@ class Automation:
         """The view of curve ``id`` of ``sequence`` -- over the whole sequence
         when ``event`` is ``None``, else over that event."""
         curve = cls.__new__(cls)
-        curve._holder = (sequence, event)
-        curve._id = int(id)
-        curve._value = None
+        curve._bind(sequence, event, id)
         return curve
+
+    def _bind(self, sequence, event, id: int) -> None:
+        """Become the view of curve ``id`` the sequence now holds."""
+        self._holder = (sequence, event)
+        self._id = int(id)
+        self._value = None
 
     # ---- the fields ----
 
@@ -484,10 +488,34 @@ class Automation:
         return written.get(name, defaults[name])
 
     def _write(self, name: str, value) -> None:
+        """Write one field: into the value, or -- for a held curve -- the
+        whole curve back into the sequence, which keeps its id."""
         if self._holder is None:
             self._value[name] = value
             return
-        raise TypeError("a curve a sequence holds is not written here yet")
+        written = dict(self._written())
+        if name == "extra":
+            written = {k: v for k, v in written.items() if k in self._FIELDS}
+            written.update(value)
+        else:
+            written[name] = value
+        sequence, event = self._holder
+        sequence._write_curve(event, written, "edit a curve")
+
+    def remove(self) -> None:
+        """Remove the curve from the sequence that holds it. This object is
+        left detached, and an undo that brings the curve back brings it back
+        too. A free curve is held by nothing, so there is nothing to remove it
+        from: `ValueError`."""
+        if self._holder is None:
+            raise ValueError("a free curve is held by nothing")
+        self._written()
+        sequence, event = self._holder
+        if event is None:
+            intent = {"intent": "removeautomation", "curve": self._id}
+        else:
+            intent = {"intent": "removeeventautomation", "id": int(event), "curve": self._id}
+        sequence._edit(intent, "remove a curve")
 
     @property
     def target(self):

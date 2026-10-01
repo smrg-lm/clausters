@@ -18,7 +18,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { SESSION_FORMAT } from "../src/document.ts";
-import { Event as SeqEvent } from "../src/seq/event.ts";
+import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
 import { Multitrack, Content, Fade, FrozenSource, TakeLane, TakeLaneView, Region,
@@ -233,10 +233,10 @@ test("a sequence of events is a source held in the file", async () => {
     // The events are written into the file and read back as a sequence, the
     // handle itself held by the table, so a save writes what an editor did.
     await loadCore();
-    const notes = new EventSequence([[1.0, new SeqEvent({ midinote: 60, sustain: 0.5 })]]);
+    const notes = new EventSequence([[1.0, new Event({ midinote: 60, sustain: 0.5 })]]);
     const session = new Session();
     session.sources.set(900, Source.events(notes));
-    notes.add(2.0, new SeqEvent({ midinote: 64, sustain: 0.5 }));
+    notes.events.add(2.0, new Event({ midinote: 64, sustain: 0.5 }));
     const written = session.write();
     const location = ((written.sources as Record<string, Record<string, unknown>>)["900"]
         .location) as { at: string; sequence: { events: unknown[] } };

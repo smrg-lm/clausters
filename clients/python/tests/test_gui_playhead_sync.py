@@ -12,7 +12,7 @@ import pytest
 
 from clausters.base import TempoClock
 from clausters.gui.playhead_sync import PlayheadSync
-from clausters.seq.event import Event as SeqEvent
+from clausters.seq.event import Event
 from clausters.seq.timeline import Timeline
 
 SR = 48_000.0

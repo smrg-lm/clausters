@@ -21,7 +21,7 @@
 // half in `clausters_core::notation`. Every client writes the same document
 // from the same voice.
 
-import { NOTATION_KEYS, Event as SeqEvent } from "../../seq/event.ts";
+import { NOTATION_KEYS, Event } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import type { Interpretation, Sheet } from "./sheet.ts";
@@ -111,7 +111,7 @@ export interface MeiOptions {
  * express one -- writing it is the emission milestone.
  */
 export function fromNotes(
-    notes: Iterable<SeqEvent>,
+    notes: Iterable<Event>,
     { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
 ): string {
     return toMei(sheetFromNotes(notes, { meter, clef, key, beatUnit }));
@@ -152,7 +152,7 @@ export function fromTimeline(
  * as the events said -- starts here.
  */
 export function sheetFromNotes(
-    notes: Iterable<SeqEvent>,
+    notes: Iterable<Event>,
     { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
 ): Sheet {
     return fromVoice(voiceFromNotes(notes, beatUnit), { meter, clef, key });
@@ -225,8 +225,8 @@ export function toSequence(score: Sheet, options: PlaybackOptions = {}): EventSe
 function played(
     score: Sheet,
     { instruments, interp, event = {} }: PlaybackOptions,
-): [number, SeqEvent][] {
-    const out: [number, SeqEvent][] = [];
+): [number, Event][] {
+    const out: [number, Event][] = [];
     for (const note of toNotes(score, interp)) {
         const fields: Record<string, unknown> = {
             ...event,
@@ -242,7 +242,7 @@ function played(
         }
         const instrument = instrumentFor(instruments, note.staff);
         if (instrument !== undefined) fields.instrument = instrument;
-        out.push([note.t, new SeqEvent(fields)]);
+        out.push([note.t, new Event(fields)]);
     }
     return out;
 }
@@ -280,7 +280,7 @@ function posTicks(beat: number, beatUnit: number): number {
     return Math.round((Number(beat) * TPW) / beatUnit);
 }
 
-function voiceFromNotes(notes: Iterable<SeqEvent>, beatUnit: number): Slot[] {
+function voiceFromNotes(notes: Iterable<Event>, beatUnit: number): Slot[] {
     const voice: Slot[] = [];
     for (const event of notes) {
         const ticks = durTicks(Number(event.get("dur")), beatUnit);
@@ -315,7 +315,7 @@ function voiceFromNotes(notes: Iterable<SeqEvent>, beatUnit: number): Slot[] {
  * on the chord, so a staccato any of its notes carries is the chord's. A slot
  * cannot hold two notes marked differently, and that is the documented loss.
  */
-function writeMarks(slot: Slot, events: SeqEvent[], ticks: number, beatUnit: number): void {
+function writeMarks(slot: Slot, events: Event[], ticks: number, beatUnit: number): void {
     for (const key of NOTATION_KEYS) {
         for (const event of events) {
             const value = event.get(key);
@@ -343,11 +343,11 @@ function voiceFromTimeline(
     timeline: Timeline | Iterable<readonly [number, unknown]>,
     beatUnit: number,
 ): Slot[] {
-    const groups = new Map<number, SeqEvent[]>();
+    const groups = new Map<number, Event[]>();
     for (const [beat, item] of timeline) {
         // Only a note: a raw OSC or MIDI message has no pitch, and a rest is
         // silence.
-        if (!(item instanceof SeqEvent) || (item.get("type") ?? "note") !== "note") continue;
+        if (!(item instanceof Event) || (item.get("type") ?? "note") !== "note") continue;
         const at = Number(beat);
         const group = groups.get(at);
         if (group === undefined) groups.set(at, [item]);
@@ -359,7 +359,7 @@ function voiceFromTimeline(
     let end = 0; // ticks consumed so far
     for (let i = 0; i < beats.length; i++) {
         const beat = beats[i] as number;
-        const events = groups.get(beat) as SeqEvent[];
+        const events = groups.get(beat) as Event[];
         const onset = posTicks(beat, beatUnit);
         if (onset > end) voice.push({ ticks: onset - end }); // a gap -> a rest
         let ticks = durTicks(

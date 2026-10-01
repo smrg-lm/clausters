@@ -23,7 +23,7 @@ import type { Intent } from "../../document.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
 import type { MeiOptions } from "./mei.ts";
 import type { Op, Sheet } from "./sheet.ts";
-import type { Event as SeqEvent } from "../../seq/event.ts";
+import type { Event } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
 
 /**
@@ -129,7 +129,7 @@ export class Score {
      * {@link fromNotes} encoder handed straight to {@link Score.open}.
      */
     static fromNotes(
-        notes: Iterable<SeqEvent>,
+        notes: Iterable<Event>,
         options: MeiOptions & EngraveOptions = {},
     ): Promise<Score> {
         return Score.open(fromNotes(notes, options), options);

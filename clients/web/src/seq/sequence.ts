@@ -22,6 +22,7 @@ import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
 import { Automation } from "../multitrack.ts";
+import type { PointLike } from "../multitrack.ts";
 
 /** One event of a sequence as the document writes it. */
 interface Written {
@@ -32,12 +33,16 @@ interface Written {
 }
 
 /**
- * A sequence of events in beats, each with an id.
+ * A sequence of events in beats, each with an identity of its own.
  *
  * Built from `[beat, event]` pairs, like a `Timeline`; an event is an `Event` or
- * an object of its keys. Iterating yields `[beat, Event]` pairs in beat order;
- * {@link EventSequence.entries} adds each one's id, which is what the edits name
- * an event by.
+ * an object of its keys. Iterating yields `[beat, Event]` pairs in beat order,
+ * as copies. **What a page reads and writes is objects**:
+ * {@link EventSequence.events} is the events as {@link SeqEvent}s, and
+ * {@link EventSequence.automation} the curves over the whole sequence, each a
+ * view of what the sequence holds -- so a change is made through the object it
+ * changes (`event.at = 2.0`, `event.set("midinote", 62)`, `event.remove()`),
+ * and no call takes or answers an id.
  */
 export class EventSequence {
     /**
@@ -66,10 +71,12 @@ export class EventSequence {
 
     /** The sequence `data` wrote (or a bare list of `{at, data}`). */
     static fromData(data: unknown): EventSequence {
-        const sequence = Object.create(EventSequence.prototype) as EventSequence;
         requireCore("EventSequence.fromData");
-        (sequence as unknown as { seq: JsEventSequence }).seq =
-            new JsEventSequence(JSON.stringify(data));
+        const read = new JsEventSequence(JSON.stringify(data));
+        // Built empty and then given the sequence read, so the fields a
+        // constructor sets (the identity map) are set here too.
+        const sequence = new EventSequence();
+        (sequence as unknown as { seq: JsEventSequence }).seq = read;
         return sequence;
     }
 
@@ -167,21 +174,14 @@ export class EventSequence {
         return Number(this.call("len").len);
     }
 
+    /**
+     * `[beat, Event]` pairs in beat order: copies of the keys, as a `Timeline`
+     * iterates -- {@link EventSequence.events} is the events themselves.
+     */
     *[Symbol.iterator](): IterableIterator<[number, Event]> {
-        for (const [, beat, event] of this.entries()) yield [beat, event];
-    }
-
-    /** Every event as `[id, beat, Event]`, in beat order. */
-    entries(): [number, number, Event][] {
-        const events = (this.data().events ?? []) as Written[];
-        return events.map((e) => [e.id, Number(e.at), eventOfKeys(e.data ?? {})]);
-    }
-
-    /** The event with this id as `[beat, Event]`; throws when there is none. */
-    get(id: number): [number, Event] {
-        const event = this.call("event", { id }) as Written | null;
-        if (event === null) throw new RangeError(`the sequence holds no event ${id}`);
-        return [Number(event.at), eventOfKeys(event.data ?? {})];
+        for (const written of (this.data().events ?? []) as Written[]) {
+            yield [Number(written.at), eventOfKeys(written.data ?? {})];
+        }
     }
 
     /** Where the last event stops sounding, in beats. */
@@ -201,7 +201,7 @@ export class EventSequence {
 
     set tempoMap(value: TempoMap | null) {
         const written = value === null ? null : JSON.parse(value.dump());
-        this.apply({ intent: "tempo", tempo_map: written });
+        this.edit({ intent: "tempo", tempo_map: written }, "change the tempo map");
     }
 
     /**
@@ -228,132 +228,52 @@ export class EventSequence {
      */
     setMidi(spec: string | null, { upper = false, members = 15 }: { upper?: boolean; members?: number } = {}): void {
         const written = spec === "mpe" ? { mpe: { upper, members: Math.trunc(members) } } : spec;
-        this.apply({ intent: "midi", midi: written });
+        this.edit({ intent: "midi", midi: written }, "write it for another MIDI spec");
     }
 
     // ---- editing ----
 
     /**
-     * Applies one edit in the sequence's vocabulary (`add`, `remove`, `move`,
-     * `set`, `keys`, `setevents`, `tempo`, `automation`, `removeautomation`,
-     * `eventautomation`, `removeeventautomation`, `automationtoevents`,
-     * `eventstoautomation`, `midi`, `restore`) and answers `{applied, current}` --
-     * `current` the edit that puts it back, read before this one landed -- with
-     * `id` for an add, a curve of the sequence or of an event, or a curve
-     * gathered from the notes. Throws when refused.
+     * Applies one edit in the sequence's vocabulary and answers `{applied,
+     * current?, id?}` -- `current` the edit that puts it back, read before this
+     * one landed, unless `inverse` is `false`. Throws when refused. The door the
+     * objects write through.
+     *
+     * @internal
      */
-    apply(intent: Record<string, unknown>): { applied: boolean; current: unknown; id?: number } {
-        return this.call("apply", { intent });
-    }
-
-    /** Adds an event at `beat`; its new id. */
-    add(beat: number, event: Event | EventProps): number {
-        const answer = this.apply({ intent: "add", event: { at: Number(beat), data: keysOf(event) } });
-        return Number(answer.id);
-    }
-
-    /** Removes the event with this id. */
-    remove(id: number): void {
-        this.apply({ intent: "remove", id });
-    }
-
-    /** Moves the event with this id to `beat`. */
-    move(id: number, beat: number): void {
-        this.apply({ intent: "move", id, at: Number(beat) });
+    applyIntent(intent: Record<string, unknown>, inverse = true): { applied: boolean; current?: unknown; id?: number } {
+        return this.call("apply", { intent, inverse });
     }
 
     /**
-     * Writes one key of an event, with its family's coherence: a moved
-     * `midinote` moves the `freq` and the `degree` the event holds.
+     * **One change a page makes through an object**: applied, and answered as
+     * the door answers. `label` is what an undo would call it.
+     *
+     * @internal
      */
-    set(id: number, key: string, value: unknown): void {
-        this.apply({ intent: "set", id, key, value });
-    }
-
-    // ---- curves ----
-
-    /**
-     * Adds a curve over the whole sequence -- its automation -- and answers its
-     * id. `target` says what it moves: `{cc: 74}` (0 to 127), `{bend: true}`
-     * (semitones), `{pressure: true}`, `{timbre: true}` (0 to 1) or
-     * `{control: "cutoff"}`, with `min`/`max` to override the range and
-     * `channel` for the one channel it acts on (counted from 0, as a note's;
-     * without it, every channel). `points` are `[beat, value]` pairs; `name`
-     * labels it. The notes editor draws it as a row under the roll.
-     */
-    addAutomation(
-        target: Record<string, unknown>,
-        { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
-    ): number {
-        return this.curve({ intent: "automation" }, target, points, name);
+    edit(intent: Record<string, unknown>, label: string): { applied: boolean; id?: number } {
+        void label;
+        return this.applyIntent(intent, false);
     }
 
     /**
-     * Adds a curve over the event with this id -- its own automation, as MPE
-     * gives a note its bend, pressure and timbre -- and answers its id. `target`
-     * as for {@link EventSequence.addAutomation}; `points` are `[beat, value]`
-     * pairs, each beat counted from the event's start, and free to run past the
-     * note's end into its release. The notes editor draws it inside the note,
-     * and a bend in the plane over the pitches it spans.
+     * Writes a curve whole -- the sequence's for `event` `null`, else that
+     * event's -- and answers its id: the one it had, or a new one for a curve
+     * with `id` 0.
+     *
+     * @internal
      */
-    addEventAutomation(
-        id: number,
-        target: Record<string, unknown>,
-        { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
-    ): number {
-        return this.curve({ intent: "eventautomation", id }, target, points, name);
+    writeCurve(event: number | null, written: Record<string, unknown>, label: string): number {
+        const intent = event === null
+            ? { intent: "automation", automation: written }
+            : { intent: "eventautomation", id: event, automation: written };
+        return Number(this.edit(intent, label).id);
     }
 
-    /**
-     * **Gives the sequence's curve `curve` to the notes it reaches**: each note
-     * on its channel (every note, for a curve that names none) takes the
-     * stretch of the curve its span covers as a curve of its own -- sounding as
-     * it did, since a channel reaches a note from its on to its off -- and the
-     * sequence's goes. A note with its own curve over that control keeps it;
-     * over a bend, which adds, that throws, as does a curve the sequence's
-     * {@link EventSequence.midi} spec cannot say of one note.
-     */
-    automationToEvents(curve: number): void {
-        this.apply({ intent: "automationtoevents", curve: Math.trunc(curve) });
-    }
-
-    /**
-     * **Gathers the notes' curves over `target` into one of the sequence's** --
-     * of the notes on `channel`, or of every note -- and answers its id: each
-     * note's curve over its span, on the channel its notes share. The notes'
-     * curves go. It holds where the notes agree: two that sound at once with
-     * different curves throw, since one channel cannot say both -- a chord
-     * whose curve was given to its notes gives it back.
-     */
-    eventsToAutomation(target: Record<string, unknown>, { channel }: { channel?: number } = {}): number {
-        const intent: Record<string, unknown> = { intent: "eventstoautomation", target };
-        if (channel !== undefined) intent.channel = Math.trunc(channel);
-        return Number(this.apply(intent).id);
-    }
-
-    /** Removes the sequence's curve with this id. */
-    removeAutomation(curve: number): void {
-        this.apply({ intent: "removeautomation", curve });
-    }
-
-    /** Removes curve `curve` from the event with this id. */
-    removeEventAutomation(id: number, curve: number): void {
-        this.apply({ intent: "removeeventautomation", id, curve });
-    }
-
-    private curve(
-        intent: Record<string, unknown>,
-        target: Record<string, unknown>,
-        points: readonly (readonly [number, number])[],
-        name: string | undefined,
-    ): number {
-        const automation: Record<string, unknown> = {
-            id: 0,
-            target: { ...target },
-            points: points.map(([at, value]) => ({ at: Number(at), value: Number(value) })),
-        };
-        if (name !== undefined) automation.name = String(name);
-        return Number(this.apply({ ...intent, automation }).id);
+    /** Makes a free curve the view of curve `id`, in the identity map. @internal */
+    adoptCurve(curve: Automation, event: number | null, id: number): void {
+        curve.bind(this, event, id);
+        this.#objects.set(`curve:${id}`, new WeakRef(curve));
     }
 
     // ---- MIDI files ----
@@ -489,9 +409,37 @@ export class SeqEvent {
         return this.#sequence.writtenOf(this.#id) === null ? null : this.#sequence;
     }
 
-    /** Where the event sits, in the sequence's beats. */
+    #held(): EventSequence {
+        if (this.sequence === null) throw new Error("the sequence no longer holds this event");
+        return this.#sequence;
+    }
+
+    /**
+     * Where the event sits, in the sequence's beats. Setting it moves the
+     * event, and it keeps its place among the events at the beat it goes to.
+     */
     get at(): number {
         return Number(this.#written().at);
+    }
+
+    set at(beat: number) {
+        this.#held().edit({ intent: "move", id: this.#id, at: Number(beat) }, "move an event");
+    }
+
+    /**
+     * Writes one key, with its family's coherence: a moved `midinote` moves the
+     * `freq` and the `degree` the event holds.
+     */
+    set(key: string, value: unknown): void {
+        this.#held().edit({ intent: "set", id: this.#id, key: String(key), value }, `set ${key}`);
+    }
+
+    /**
+     * Removes the event from its sequence. This object is left detached, and
+     * an undo that brings the event back brings it back too.
+     */
+    remove(): void {
+        this.#held().edit({ intent: "remove", id: this.#id }, "remove an event");
     }
 
     /** One key of the event, or `undefined` when it has none. */
@@ -568,6 +516,21 @@ export class SeqEvents {
         return this.#sequence.eventOf(id);
     }
 
+    /**
+     * **Adds an event at** `beat` -- an `Event`, an object of its keys, or
+     * another {@link SeqEvent}, whose keys are copied -- and answers the
+     * {@link SeqEvent} that is it. It goes after every event already at that
+     * beat.
+     */
+    add(beat: number, event: Event | EventProps | SeqEvent): SeqEvent {
+        const keys = event instanceof SeqEvent ? event.event : event;
+        const answer = this.#sequence.edit(
+            { intent: "add", event: { at: Number(beat), data: keysOf(keys) } },
+            "add an event",
+        );
+        return this.#sequence.eventOf(Number(answer.id));
+    }
+
     /** The events exactly at `beat`, in the order they were placed. */
     at(beat: number): SeqEvent[] {
         return this.#of(this.#sequence.idsOf({ at: Number(beat) }));
@@ -618,6 +581,79 @@ export class SeqAutomation {
         const curve = this.#views().at(i);
         if (curve === undefined) throw new RangeError(`no curve at index ${i}`);
         return curve;
+    }
+
+    /**
+     * **Adds a curve** and answers it, held: the `Automation` that is now a
+     * view of what the sequence holds.
+     *
+     * `target` says what it moves -- `{cc: 74}` (0 to 127), `{bend: true}`
+     * (semitones), `{pressure: true}`, `{timbre: true}` (0 to 1) or
+     * `{control: "cutoff"}`, with `min`/`max` to override the range and, on the
+     * sequence's curves, `channel` for the one channel it acts on (counted
+     * from 0, as a note's; without it, every channel). `points` are `[beat,
+     * value]` pairs or the document's points; `name` labels it. Or `target` is
+     * a free `Automation`, which is added as it is and becomes the view.
+     *
+     * Throws when the sequence's {@link EventSequence.midi} spec cannot say
+     * such a curve here.
+     */
+    add(
+        target: Record<string, unknown> | Automation,
+        { points = [], name }: { points?: Iterable<PointLike>; name?: string } = {},
+    ): Automation {
+        let curve: Automation | null = null;
+        let written: Record<string, unknown>;
+        if (target instanceof Automation) {
+            curve = target;
+            if (curve.holder !== null) {
+                throw new Error("this curve is held already: add a copy of it (Automation.read(curve.write()))");
+            }
+            written = { ...curve.write(), id: 0 };
+        } else {
+            written = { id: 0, target: { ...target }, points: new Automation({ points }).points };
+            if (name !== undefined) written.name = String(name);
+        }
+        if (this.#event !== null) this.#written();
+        const id = this.#sequence.writeCurve(this.#event, written, "add a curve");
+        if (curve === null) return this.#sequence.curveOf(this.#event, id);
+        this.#sequence.adoptCurve(curve, this.#event, id);
+        return curve;
+    }
+
+    /**
+     * **Gives one of the sequence's curves to the notes it reaches**: each note
+     * on its channel (every note, for a curve that names none) takes the
+     * stretch of the curve its span covers as a curve of its own -- sounding as
+     * it did, since a channel reaches a note from its on to its off -- and the
+     * sequence's goes, leaving `curve` detached. A note with its own curve over
+     * that control keeps it; over a bend, which adds, that throws, as does a
+     * curve the sequence's {@link EventSequence.midi} spec cannot say of one
+     * note.
+     */
+    toEvents(curve: Automation): void {
+        if (this.#event !== null) throw new Error("an event's curves are already its notes'");
+        const holder = curve.holder;
+        if (holder === null || holder[0] !== this.#sequence || holder[1] !== null) {
+            throw new Error("not one of this sequence's curves");
+        }
+        this.#sequence.edit({ intent: "automationtoevents", curve: curve.id }, "give a curve to the notes");
+    }
+
+    /**
+     * **Gathers the notes' curves over `target` into one of the sequence's** --
+     * of the notes on `channel`, or of every note -- and answers it: each
+     * note's curve over its span, on the channel its notes share. The notes'
+     * curves go. It holds where the notes agree: two that sound at once with
+     * different curves throw, since one channel cannot say both -- a chord
+     * whose curve was given to its notes gives it back.
+     */
+    fromEvents(target: Record<string, unknown>, { channel }: { channel?: number } = {}): Automation {
+        if (this.#event !== null) throw new Error("an event's curves gather from nothing");
+        const intent: Record<string, unknown> = { intent: "eventstoautomation", target: { ...target } };
+        if (channel !== undefined) intent.channel = Math.trunc(channel);
+        const answer = this.#sequence.edit(intent, "gather the notes' curves");
+        return this.#sequence.curveOf(null, Number(answer.id));
     }
 }
 

@@ -127,16 +127,23 @@ leaves every other note its own.</div>
       let session = null;
       let notes = null; // what the roll edits, in place
 
-      /** Every event as it now stands, with its id and what the roll never drew. */
+      /**
+       * Every event as it now stands, with what the roll never drew. Five
+       * numbers per note -- start, length, pitch, velocity, channel -- and the
+       * event it is: the instrument, the amp and anything else the author
+       * wrote are none of them, and they are still there after an edit, since
+       * each SeqEvent reads what the sequence holds now.
+       */
       function readBack() {
-        for (const [id, beat, item] of notes.entries()) {
+        for (const event of notes.events) {
+          const item = event.event; // its keys, as a free Event
           if (item.get("type") === "osc") {
-            log(`  #${id} ${beat.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
+            log(`  ${event.at.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
             continue;
           }
           const extra = Object.fromEntries(
             Object.entries(item.props).filter(([k]) => ["instrument", "amp", "velocity"].includes(k)));
-          log(`  #${id} ${beat.toFixed(2)}  midinote ${item.midinote().toFixed(1)}`
+          log(`  ${event.at.toFixed(2)}  midinote ${item.midinote().toFixed(1)}`
             + `  freq ${item.freq().toFixed(1)}   ${JSON.stringify(extra)}`);
         }
       }
@@ -157,9 +164,9 @@ leaves every other note its own.</div>
         // note is held and falls back one in its release -- a note's curve
         // runs past its box, which is its on and its off.
         notes = await timeline.renderEvents(); // what the roll edits, in place
-        let level = notes.addAutomation({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
-        const first = notes.entries()[0][0];
-        notes.addEventAutomation(first, { bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
+        let level = notes.automation.add({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
+        const first = notes.events.item(0); // the first note, as an object
+        first.automation.add({ bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
         const editor = await gui.edit(notes, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "notes",
@@ -183,22 +190,22 @@ leaves every other note its own.</div>
         $("play").onclick = () => editor.play();
 
         // A curve given to its notes: the level curve is the channel's, and each
-        // note hears it from its on to its off. `automationToEvents` gives it to
-        // the notes it reaches -- each takes the stretch its span covers as a
-        // curve of its own, drawn inside it, and the row goes -- and they sound
-        // as they did. `eventsToAutomation` gathers the notes' curves back into
-        // one of the sequence, which holds where no two notes that sound together differ: here
-        // none overlap. Both are edits of the sequence; `adopt` brings the rolls
-        // in step with it.
+        // note hears it from its on to its off. `automation.toEvents` gives it
+        // to the notes it reaches -- each takes the stretch its span covers as
+        // a curve of its own, drawn inside it, and the row goes -- and they
+        // sound as they did. `automation.fromEvents` gathers the notes' curves
+        // back into one of the sequence, which holds where no two notes that
+        // sound together differ: here none overlap. Both are edits of the
+        // sequence; `adopt` brings the rolls in step with it.
         $("own").disabled = false;
         $("own").onclick = () => {
-          notes.automationToEvents(level);
+          notes.automation.toEvents(level);
           editor.adopt();
           hertz.adopt();
         };
         $("gather").disabled = false;
         $("gather").onclick = () => {
-          level = notes.eventsToAutomation({ control: "amp" });
+          level = notes.automation.fromEvents({ control: "amp" });
           editor.adopt();
           hertz.adopt();
         };

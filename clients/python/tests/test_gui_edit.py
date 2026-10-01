@@ -19,7 +19,7 @@ from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf
 from clausters.defs import Server
 from clausters.base import OscNrtInterface
-from clausters.seq.event import Event as SeqEvent
+from clausters.seq.event import Event
 
 SR = 48_000.0
 TEMPO = 2.0
@@ -93,8 +93,8 @@ def a_curve() -> Bpf:
 
 
 def a_timeline() -> Timeline:
-    return Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
-                     (1.0, SeqEvent(midinote=64, dur=1.0))])
+    return Timeline([(0.0, Event(midinote=60, dur=1.0)),
+                     (1.0, Event(midinote=64, dur=1.0))])
 
 
 def opened(editor):
@@ -245,14 +245,16 @@ def test_a_timeline_opens_as_the_events_it_renders_and_is_left_as_it_was():
 
 
 def test_a_sequence_is_edited_in_place_by_id():
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell")),
-                         (1.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell")),
+                         (1.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = edit(seq, sample_rate=SR, open=False)
     _host, wid = opened(editor)
+    first, second = seq.events
     # Note 1 is gone and note 2 moved: order is no identity, so note 2 keeps
     # its own keys and the one removed is the one named.
     editor.apply("/gui_event", [wid, 1, 0, "notes", 2, 2 * BEAT, BEAT, 65, 13, 0])
-    assert [(id, beat, e["midinote"]) for id, beat, e in seq.entries()] == [(2, 2.0, 65)]
+    assert list(seq.events) == [second] and first.sequence is None
+    assert (second.at, second["midinote"]) == (2.0, 65)
 
 
 def test_a_rolls_ruler_reads_the_sequences_own_map():
@@ -271,7 +273,7 @@ def _walk(node):
 
 
 def test_a_note_keeps_what_the_roll_cannot_draw():
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0, instrument="bell"))],
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell"))],
                         tempo_map=TempoMap(TEMPO))
     editor = edit(seq, sample_rate=SR, open=False)
     _host, wid = opened(editor)
@@ -288,7 +290,7 @@ def test_a_note_the_hand_made_gets_an_id_and_the_roll_is_told():
                                 1, 0.0, BEAT * 0.8, 60, 13, 0,
                                 2, BEAT, BEAT * 0.8, 64, 13, 0,
                                 0, 3 * BEAT, BEAT, 67, 90, 0])
-    assert [id for id, _b, _e in editor.sequence.entries()] == [1, 2, 3]
+    assert [e.at for e in editor.sequence.events] == [0.0, 1.0, 3.0]
     _seq, corrections, _reason = host.acks[-1]
     assert corrections[0][1]["note_ids"] == [1, 2, 3]
 
@@ -370,7 +372,7 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     # The composed case: two structures, one editing context, one order.
     context = Editing()
     curve = a_curve()
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     curve_editor = edit(curve, sample_rate=SR, context=context, open=False)
     roll = edit(seq, sample_rate=SR, context=context, open=False)
     _ch, curve_wid = opened(curve_editor)
@@ -421,7 +423,7 @@ def test_a_sequence_with_a_marker_still_draws_its_notes():
     # with nothing on it.
     from clausters.seq.timeline import OscItem
 
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
                          (3.0, OscItem("/mark", 1, "cue"))])
     editor = NotesEditor(seq, sample_rate=SR)
     roll = editor.view.build(editor)["children"][0]
@@ -511,8 +513,8 @@ class _PlayingServer(Server):
 
 def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     server = _PlayingServer()
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
-                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, server=server)
     _host, wid = opened(editor)
     editor.play()
@@ -538,7 +540,7 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
 
 def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it():
     server = _PlayingServer()
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, server=server)
     host, wid = opened(editor)
     transport = editor._playback.transport_id
@@ -554,7 +556,7 @@ def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it(
 
 
 def test_a_roll_in_hertz_draws_and_edits_frequencies():
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, y_axis="hz")
     host, wid = opened(editor)
     roll = host.trees[0]["children"][0]
@@ -568,8 +570,8 @@ def test_a_roll_in_hertz_draws_and_edits_frequencies():
 
 def test_the_space_bar_plays_and_stops_the_roll_and_its_end_is_the_transports():
     server = _PlayingServer()
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
-                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, server=server)
     host, wid = opened(editor)
     window = int(editor._window)
@@ -590,8 +592,8 @@ def test_the_space_bar_plays_and_stops_the_roll_and_its_end_is_the_transports():
 
 def test_the_space_bar_plays_the_time_range_a_sweep_left():
     server = _PlayingServer()
-    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0)),
-                         (2.0, SeqEvent(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, server=server)
     host, wid = opened(editor)
     window = int(editor._window)

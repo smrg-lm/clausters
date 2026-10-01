@@ -279,7 +279,7 @@ def test_a_sequence_of_events_is_a_source_held_in_the_file():
 
     notes = EventSequence([(1.0, Event(midinote=60, sustain=0.5))])
     session = Session(sources={900: Source.events(notes)})
-    notes.add(2.0, Event(midinote=64, sustain=0.5))
+    notes.events.add(2.0, Event(midinote=64, sustain=0.5))
     written = session.write()
     location = written["sources"]["900"]["location"]
     assert location["at"] == "events" and len(location["sequence"]["events"]) == 2

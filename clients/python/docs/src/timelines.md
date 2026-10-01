@@ -133,7 +133,7 @@ An **event pattern** is an item like any other, placed at its beat; a pattern of
 
 ## Event sequences: events as data
 
-A timeline holds **playables** — code that runs when it plays. An `EventSequence` holds **events**: concrete data, each with an id of its own, in beats, with the tempo map that times them. It is what a notes editor edits, and it lives in the document on the Rust side — the object a script holds is a handle to it, so an editor opened on it edits it in place and there is nothing to write back.
+A timeline holds **playables** — code that runs when it plays. An `EventSequence` holds **events**: concrete data, each with an identity of its own, in beats, with the tempo map that times them. It is what a notes editor edits, and it lives in the document on the Rust side — the object a script holds is a handle to it, so an editor opened on it edits it in place and there is nothing to write back.
 
 ```python
 from clausters import Event, EventSequence, TempoMap
@@ -148,15 +148,18 @@ first is seq.events.at(0.0)[0]            # True: one event, one object
 seq.events.range(0.0, 2.0)                # the events in [0, 2), in beat order
 first.automation                          # its own curves, as Automation objects
 
-id = seq.entries()[0][0]
-seq.move(id, 2.0)                         # by id: the other note keeps its data
-seq.set(id, "midinote", 62)               # one key, with its family's coherence
-seq.add(3.0, {"midinote": 67})            # its new id
+first.at = 2.0                            # a move: the other note keeps its data
+first["midinote"] = 62                    # one key, with its family's coherence
+last = seq.events.add(3.0, {"midinote": 67})        # the SeqEvent it made
+level = seq.automation.add({"control": "amp"}, [(0.0, 0.1), (4.0, 0.5)])
+first.automation.add({"bend": True}, [(0.0, 0.0), (0.5, 1.0)])
+level.points = [(0.0, 0.2), (4.0, 0.6)]   # the curve, written back whole
+last.remove()                             # last is detached from now on
 ```
 
 **What a script reads is objects.** `seq.events` is a live collection of `SeqEvent`s in beat order — iterate it, index it, ask it what is `at` a beat or in a `range` — and a `SeqEvent` is a view of one event the sequence holds, not a copy: its `at`, its keys (`event["midinote"]`) and its `automation` are read from the sequence each time, so after a hand moves the note in the roll the object reads where it now is. The same event read twice is the same object, so one works as a key of a `dict`. `event.event` is a free `Event` with the same keys, to play or to copy. The curves over the whole sequence are `seq.automation`, and each is a `clausters.multitrack.Automation` — the type a track's and a region's curves are — whose points are on the sequence's beats; an event's are measured from its start and may run past its end, into its release. An event the sequence no longer holds is **detached**: its `sequence` is `None` and reading it raises.
 
-An edit names its event **by id**, never by position: removing a note leaves every other note its own, and an id is never handed out twice. `apply` takes an edit in the sequence's vocabulary and answers the edit that puts it back, which is what an undo is. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
+**And what it writes, it writes through them.** Setting `at` moves the event, setting a key writes it with its family's coherence — a moved `midinote` moves the `freq` and the `degree` it holds — and `remove()` takes it out; `seq.events.add` answers the `SeqEvent` it made. A collection of curves takes `add(target, points, name=)` and answers the curve, and a curve is changed by assigning its fields (`points`, `name`, `target`, `enabled`) or with `set_points`, and removed with `remove()`. A free `Automation` a script built is added as it is, and from then on it is the view. `seq.automation.to_events(curve)` gives a curve of the sequence to the notes it reaches, and `seq.automation.from_events(target)` gathers the notes' curves back into one of the sequence's and answers it. No call takes or answers an id: each object holds its event's identity, which is what keeps an edit from naming the wrong note — removing one leaves every other note its own, and an identity is never handed out twice. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
 
 **A timeline becomes a sequence by rendering it.** `timeline.render_events()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until=` bounds a timeline that does not end on its own. An event pattern renders the same way, `Pbind(...).render_events()`.
 

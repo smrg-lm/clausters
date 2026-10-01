@@ -469,6 +469,10 @@ function documentPoints(points: Iterable<PointLike>): Extra[] {
 export interface CurveHolder {
     /** The curves as written -- the sequence's for `null`, else that event's; `null` when it holds no such event. */
     curvesOf(event: number | null): Extra[] | null;
+    /** Writes a curve whole, and answers its id. */
+    writeCurve(event: number | null, written: Extra, label: string): number;
+    /** One change, through the holder's vocabulary. */
+    edit(intent: Extra, label: string): unknown;
 }
 
 /** The fields a curve writes under their own names. */
@@ -489,8 +493,8 @@ const CURVE_FIELDS = ["id", "target", "name", "points", "visible", "enabled", "e
  * nothing holds. Added to a sequence or to one of its events
  * (`seq.automation.add`, `event.automation.add`) it is a **live view** of the
  * curve the sequence holds: reading a field asks the sequence, so it reads
- * what an editor left there, and the same curve read twice is the same
- * object. A curve the sequence no longer holds -- removed, or undone away --
+ * what an editor left there, writing one writes the curve back into the
+ * sequence, and the same curve read twice is the same object. A curve the sequence no longer holds -- removed, or undone away --
  * is **detached**: {@link Automation.held} is `false` and reading it throws,
  * until an undo brings it back.
  *
@@ -537,9 +541,15 @@ export class Automation {
      */
     static heldBy(holder: CurveHolder, event: number | null, id: number): Automation {
         const curve = new Automation({ id });
-        curve.#holder = [holder, event];
-        curve.#value = null;
+        curve.bind(holder, event, id);
         return curve;
+    }
+
+    /** Becomes the view of curve `id` the holder now holds. @internal */
+    bind(holder: CurveHolder, event: number | null, id: number): void {
+        this.#holder = [holder, event];
+        this.#id = Math.trunc(id);
+        this.#value = null;
     }
 
     /** @internal */
@@ -560,12 +570,42 @@ export class Automation {
         return found;
     }
 
+    /**
+     * Writes one field: into the value, or -- for a held curve -- the whole
+     * curve back into the sequence, which keeps its id.
+     */
     #write(name: string, value: unknown): void {
         if (this.#holder === null) {
             (this.#value as Record<string, unknown>)[name] = value;
             return;
         }
-        throw new Error("a curve a sequence holds is not written here yet");
+        let written: Extra = { ...this.#written() };
+        if (name === "extra") {
+            written = Object.fromEntries(Object.entries(written).filter(([k]) => CURVE_FIELDS.includes(k)));
+            Object.assign(written, value as Extra);
+        } else {
+            written[name] = value;
+        }
+        const [holder, event] = this.#holder;
+        holder.writeCurve(event, written, "edit a curve");
+    }
+
+    /**
+     * Removes the curve from the sequence that holds it. This object is left
+     * detached, and an undo that brings the curve back brings it back too. A
+     * free curve is held by nothing, so there is nothing to remove it from:
+     * that throws.
+     */
+    remove(): void {
+        if (this.#holder === null) throw new Error("a free curve is held by nothing");
+        this.#written();
+        const [holder, event] = this.#holder;
+        holder.edit(
+            event === null
+                ? { intent: "removeautomation", curve: this.#id }
+                : { intent: "removeeventautomation", id: event, curve: this.#id },
+            "remove a curve",
+        );
     }
 
     /**

@@ -1714,11 +1714,18 @@ kept beside the objects, and every call site is rewritten in the same pass
     and the sequence's door reads ids by beat (`ids`) and curves by holder
     (`automation`). A web `SeqEvent` reads its keys with `get`/`has`/`keys`
     and a collection indexes with `item(i)`, where Python indexes.)*
-  - ⬜ **C57.2 — Writing through the objects.** `seq.events.add` answers a
+  - ✅ **C57.2 — Writing through the objects.** `seq.events.add` answers a
     `SeqEvent`; `event.at = ...`, `event[key] = ...` and `remove()` are the
     vocabulary's `move`, `set` and `remove`; the curve collections answer
     `Automation`, which loses its constructor id; detaching and reattaching
     across a removal and its undo.
+    *(Done 2026-10-01. The number surface is gone in both clients: `add`,
+    `remove`, `move`, `set`, `entries`, `get`, `apply` and the six curve
+    verbs. A free `Automation` added to a collection becomes the view, and
+    the moves between the levels are the sequence collection's
+    `to_events(curve)` and `from_events(target)`. The web `SeqEvent` writes a
+    key with `set(key, value)`. Reattaching on an undo is the identity map's,
+    and is exercised with the history in `C57.3`.)*
   - ⬜ **C57.3 — `seq.history`.** The editing context outside `clausters.gui`,
     a script's change as a turn, `with seq.history(label)` as one entry. The
     acceptance is the roll: with it open, a script's change redraws it, is

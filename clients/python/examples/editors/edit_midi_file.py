@@ -54,11 +54,11 @@ chord = EventSequence([
     (0.0, Event(midinote=67, dur=4.0)),
 ])
 chord.set_midi("mpe")
-low, middle, top = (id for id, _beat, _event in chord.entries())
-chord.add_event_automation(low, {"bend": True}, [(0.0, 0.0), (2.0, 1.0)])
-chord.add_event_automation(middle, {"pressure": True}, [(0.0, 0.2), (3.0, 1.0)])
-chord.add_event_automation(top, {"bend": True}, [(1.0, 0.0), (3.0, -0.5)])
-chord.add_automation({"cc": 7}, [(0.0, 90.0), (4.0, 120.0)], name="volume")
+low, middle, top = chord.events
+low.automation.add({"bend": True}, [(0.0, 0.0), (2.0, 1.0)])
+middle.automation.add({"pressure": True}, [(0.0, 0.2), (3.0, 1.0)])
+top.automation.add({"bend": True}, [(1.0, 0.0), (3.0, -0.5)])
+chord.automation.add({"cc": 7}, [(0.0, 90.0), (4.0, 120.0)], name="volume")
 
 # %% [markdown]
 # ## To a file and back
@@ -73,9 +73,9 @@ path = OUT / "mpe_chord.mid"
 path.write_bytes(chord.to_smf())
 notes = EventSequence.from_smf(path.read_bytes())
 print(f"{path.name}: {notes.midi}, {len(notes)} notes")
-for held in notes.data()["events"]:
-    curves = [list(c["target"])[0] for c in held.get("automation", [])]
-    print(f"  #{held['id']:<3} {held['at']:5.2f}  midinote {held['data']['midinote']:5.1f}  {curves}")
+for event in notes.events:
+    curves = [list(curve.target)[0] for curve in event.automation]
+    print(f"  {event.at:5.2f}  midinote {event['midinote']:5.1f}  {curves}")
 
 # %% [markdown]
 # ## The same chord as a MIDI 2.0 clip

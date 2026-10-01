@@ -72,11 +72,11 @@ the engine, the bends heard.</div>
         [0.0, new Event({ midinote: 67, dur: 4.0 })],
       ]);
       chord.setMidi("mpe");
-      const [low, middle, top] = chord.entries().map(([id]) => id);
-      chord.addEventAutomation(low, { bend: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
-      chord.addEventAutomation(middle, { pressure: true }, { points: [[0.0, 0.2], [3.0, 1.0]] });
-      chord.addEventAutomation(top, { bend: true }, { points: [[1.0, 0.0], [3.0, -0.5]] });
-      chord.addAutomation({ cc: 7 }, { points: [[0.0, 90.0], [4.0, 120.0]], name: "volume" });
+      const [low, middle, top] = chord.events;
+      low.automation.add({ bend: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
+      middle.automation.add({ pressure: true }, { points: [[0.0, 0.2], [3.0, 1.0]] });
+      top.automation.add({ bend: true }, { points: [[1.0, 0.0], [3.0, -0.5]] });
+      chord.automation.add({ cc: 7 }, { points: [[0.0, 90.0], [4.0, 120.0]], name: "volume" });
 
       // To a file and back. The file is MIDI 1.0 bytes: the zone's
       // configuration first, then each note on a member channel with its bend
@@ -87,9 +87,9 @@ the engine, the bends heard.</div>
         await opfs.writeFile("out/mpe_chord.mid", chord.toSmf());
         const notes = EventSequence.fromSmf(await opfs.readFile("out/mpe_chord.mid"));
         log(`mpe_chord.mid: ${notes.midi}, ${notes.length} notes`);
-        for (const held of notes.data().events) {
-          const curves = (held.automation ?? []).map((c) => Object.keys(c.target)[0]);
-          log(`  #${held.id} ${held.at.toFixed(2)}  midinote ${held.data.midinote.toFixed(1)}  ${JSON.stringify(curves)}`);
+        for (const event of notes.events) {
+          const curves = [...event.automation].map((curve) => Object.keys(curve.target)[0]);
+          log(`  ${event.at.toFixed(2)}  midinote ${event.get("midinote").toFixed(1)}  ${JSON.stringify(curves)}`);
         }
 
         // The same chord as a MIDI 2.0 clip: MIDI 2.0 says a note's bend,
