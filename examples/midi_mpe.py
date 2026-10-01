@@ -60,7 +60,10 @@ def port_address(name: str) -> str | None:
 
 
 def main():
-    with Session.live(server_args=("--midi", SERVER_PORT)) as session:
+    # `--no-persist`: a server keeps its MIDI bindings in its data directory
+    # across restarts, and one left on a channel the zone covers would make
+    # the zone refused. This run starts from none and leaves none behind.
+    with Session.live(server_args=("--midi", SERVER_PORT, "--no-persist")) as session:
         server = session.server
         # The lower zone, fifteen members, gate-aware: a note-off closes the
         # def's gate rather than freeing it, and the release rings out.

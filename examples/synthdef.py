@@ -59,10 +59,10 @@ def py_default(name="py_default") -> SynthDef:
     `/synth_new`/`/node_set` parameters a `Pbind` drives).
 
     The tone is two saws detuned by +/-0.4 % and a sine on the fundamental,
-    through a resonant lowpass whose cutoff sits an octave above the note and
-    opens with `slide` (the timbre), `press` (the pressure, which also lifts
-    the level) and a **bloom** -- a 0.6 s decay on the cutoff, deeper the
-    louder the note. `press` and `slide` are smoothed over 50 ms.
+    through a resonant lowpass whose cutoff sits half an octave above the
+    note and opens with `slide` (the timbre), `press` (the pressure, which
+    also lifts the level) and a **bloom** -- a 0.6 s decay on the cutoff,
+    deeper the louder the note. `press` and `slide` are smoothed over 50 ms.
 
     The envelope is the built-in's own: a gated ASR on equal-power sine ramps
     (0.01 s attack, sustain at 1.0 while the gate is held, 0.3 s release) with
@@ -81,10 +81,10 @@ def py_default(name="py_default") -> SynthDef:
     )
     bloom = env_gen(Env.perc(attack=0.005, release=0.6))
     # `+`, `*` compose Add/Mul UGens; `**` and `.min` the generic BinaryOpUGen.
-    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.35 + sine(freq) * 0.3
-    octaves = 1.0 + slide * 3.0 + press * 2.0 + bloom * (0.5 + amp * 1.5)
+    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.3 + sine(freq) * 0.4
+    octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
-    sig = rlpf(tone, cutoff, rq=0.7) * env * amp * (1.0 + press * 0.5) * 1.6
+    sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
     return SynthDef(name, out(0.0, pan2(sig, pan)))
 
 def render_pbind(instrument: str, sdef: SynthDef | None):

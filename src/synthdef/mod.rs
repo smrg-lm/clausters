@@ -933,11 +933,11 @@ fn insert_lags(
 /// `default.json`, the wire format verbatim.
 ///
 /// The tone is two sawtooths detuned by +/-0.4 % plus a sine on the
-/// fundamental, through a resonant lowpass (`RLPF`, `rq` 0.7) whose cutoff
-/// follows the key -- an octave above it at rest -- and opens with:
+/// fundamental, through a resonant lowpass (`RLPF`, `rq` 0.8) whose cutoff
+/// follows the key -- half an octave above it at rest -- and opens with:
 ///
 /// - `slide` (0-1, 0.5 unless set; MPE's third dimension, CC 74): up to
-///   three octaves more;
+///   two and a half octaves more (so 1.75 above the key when centred);
 /// - `press` (0-1; pressure): up to two octaves more, and half again the
 ///   level;
 /// - `amp` (the velocity): a **bloom** -- the cutoff opens at the attack and
