@@ -56,11 +56,16 @@ the engine, the bends heard.</div>
       /examples/editors/edit-midi-file.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, opfs } from "../../dist/index.js";
+      import { Session, gui, loadCore, opfs } from "../../dist/index.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The numeric core is wasm here and is fetched before anything calls
+      // into it -- a sequence is held by it -- which a script does not need,
+      // since the same code is already in the process.
+      await loadCore();
 
       // A chord written for MPE: three notes on one beat, each with a curve
       // of its own -- the thing MIDI 1.0 cannot say, since one channel's bend
