@@ -560,7 +560,7 @@ impl OscServer {
                     warn!("engine rejected a timed bundle (schedule queue full)");
                     self.forget_unrun(&cmds);
                 }
-                Garbage::LaneSpent {
+                Garbage::EventLaneSpent {
                     tag, start, fired, ..
                 } => self.lane_spent(tag, &start, fired),
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {

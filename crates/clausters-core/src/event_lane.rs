@@ -36,7 +36,7 @@ pub enum Release {
 
 /// What a lane's note is made as.
 #[derive(Debug, Clone, PartialEq)]
-pub enum LaneVoice {
+pub enum EventLaneVoice {
     /// A synth of this def (`/synth_new`), its controls the def's.
     Def(String),
     /// One more of `slot` in the graph instance `graph` (`/graph_addSlot`),
@@ -46,10 +46,10 @@ pub enum LaneVoice {
 
 /// A note: a voice with `controls`, started at `start` and released at `end`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LaneNote {
+pub struct EventLaneNote {
     pub start: u64,
     pub end: u64,
-    pub voice: LaneVoice,
+    pub voice: EventLaneVoice,
     /// The controls it starts with, by name.
     pub controls: Vec<(String, f64)>,
     pub release: Release,
@@ -57,7 +57,7 @@ pub struct LaneNote {
 
 /// A command the server takes in a timed bundle, run at `position` as written.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LaneMessage {
+pub struct EventLaneMessage {
     pub position: u64,
     pub addr: String,
     pub args: Vec<Arg>,
@@ -66,7 +66,7 @@ pub struct LaneMessage {
 /// A MIDI message, played at `position` as though it had reached the server's
 /// MIDI input then.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LaneMidi {
+pub struct EventLaneMidi {
     pub position: u64,
     pub bytes: Vec<u8>,
 }
@@ -74,21 +74,21 @@ pub struct LaneMidi {
 /// A MIDI 2.0 packet -- a Universal MIDI Packet's words -- played at
 /// `position` as though it had reached the server's MIDI input then.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LaneUmp {
+pub struct EventLaneUmp {
     pub position: u64,
     pub words: Vec<u32>,
 }
 
 /// A lane's data whole.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct LaneData {
-    pub notes: Vec<LaneNote>,
-    pub messages: Vec<LaneMessage>,
-    pub midi: Vec<LaneMidi>,
-    pub ump: Vec<LaneUmp>,
+pub struct EventLaneData {
+    pub notes: Vec<EventLaneNote>,
+    pub messages: Vec<EventLaneMessage>,
+    pub midi: Vec<EventLaneMidi>,
+    pub ump: Vec<EventLaneUmp>,
 }
 
-impl LaneData {
+impl EventLaneData {
     /// The data as `/lane_set` carries it.
     #[must_use]
     pub fn to_json(&self) -> Value {
@@ -105,8 +105,8 @@ impl LaneData {
                     Release::Free => "free",
                 };
                 let voice = match &note.voice {
-                    LaneVoice::Def(def) => json!(def),
-                    LaneVoice::Slot { graph, slot } => json!({"graph": graph, "slot": slot}),
+                    EventLaneVoice::Def(def) => json!(def),
+                    EventLaneVoice::Slot { graph, slot } => json!({"graph": graph, "slot": slot}),
                 };
                 json!([note.start, note.end, voice, controls, release])
             });
@@ -164,8 +164,8 @@ impl LaneData {
                 return Err("a note is [start, end, voice, controls, release]".into());
             };
             let voice = match voice {
-                Value::String(def) => LaneVoice::Def(def.clone()),
-                Value::Object(slot) => LaneVoice::Slot {
+                Value::String(def) => EventLaneVoice::Def(def.clone()),
+                Value::Object(slot) => EventLaneVoice::Slot {
                     graph: slot
                         .get("graph")
                         .and_then(Value::as_i64)
@@ -192,7 +192,7 @@ impl LaneData {
                     return Err(format!("a note is released by gate or free, not {other}"));
                 }
             };
-            data.notes.push(LaneNote {
+            data.notes.push(EventLaneNote {
                 start: sample(start, "start")?,
                 end: sample(end, "end")?,
                 voice,
@@ -216,7 +216,7 @@ impl LaneData {
                     other => Arg::Str(other.to_string()),
                 })
                 .collect();
-            data.messages.push(LaneMessage {
+            data.messages.push(EventLaneMessage {
                 position: sample(position, "a message's position")?,
                 addr: addr.to_string(),
                 args,
@@ -235,7 +235,7 @@ impl LaneData {
                         .ok_or_else(|| "a MIDI byte is 0-255".to_string())
                 })
                 .collect::<Result<Vec<u8>, String>>()?;
-            data.midi.push(LaneMidi {
+            data.midi.push(EventLaneMidi {
                 position: sample(position, "a MIDI message's position")?,
                 bytes,
             });
@@ -253,7 +253,7 @@ impl LaneData {
                         .ok_or_else(|| "a packet's word is 32 bits".to_string())
                 })
                 .collect::<Result<Vec<u32>, String>>()?;
-            data.ump.push(LaneUmp {
+            data.ump.push(EventLaneUmp {
                 position: sample(position, "a MIDI 2.0 packet's position")?,
                 words,
             });
@@ -276,19 +276,19 @@ mod tests {
 
     #[test]
     fn a_lane_reads_back_what_it_writes() {
-        let data = LaneData {
+        let data = EventLaneData {
             notes: vec![
-                LaneNote {
+                EventLaneNote {
                     start: 10,
                     end: 20,
-                    voice: LaneVoice::Def("default".into()),
+                    voice: EventLaneVoice::Def("default".into()),
                     controls: vec![("amp".into(), 0.25), ("freq".into(), 440.0)],
                     release: Release::Free,
                 },
-                LaneNote {
+                EventLaneNote {
                     start: 12,
                     end: 30,
-                    voice: LaneVoice::Slot {
+                    voice: EventLaneVoice::Slot {
                         graph: 1000,
                         slot: "note.0".into(),
                     },
@@ -296,33 +296,36 @@ mod tests {
                     release: Release::Gate,
                 },
             ],
-            messages: vec![LaneMessage {
+            messages: vec![EventLaneMessage {
                 position: 5,
                 addr: "/node_set".into(),
                 args: vec![Arg::Int(3), Arg::Str("gate".into()), Arg::Float(1.0)],
             }],
-            midi: vec![LaneMidi {
+            midi: vec![EventLaneMidi {
                 position: 7,
                 bytes: vec![0x90, 60, 100],
             }],
-            ump: vec![LaneUmp {
+            ump: vec![EventLaneUmp {
                 position: 9,
                 words: vec![0x4090_3C00, 0xFFFF_0000],
             }],
         };
         let text = data.to_json().to_string();
-        assert_eq!(LaneData::from_json(text.as_bytes()), Ok(data));
+        assert_eq!(EventLaneData::from_json(text.as_bytes()), Ok(data));
     }
 
     #[test]
     fn an_empty_list_is_not_written_and_an_absent_one_is_empty() {
-        assert_eq!(LaneData::default().to_json(), json!({}));
-        assert_eq!(LaneData::from_json(b"{}"), Ok(LaneData::default()));
+        assert_eq!(EventLaneData::default().to_json(), json!({}));
+        assert_eq!(
+            EventLaneData::from_json(b"{}"),
+            Ok(EventLaneData::default())
+        );
     }
 
     #[test]
     fn a_byte_out_of_range_is_refused() {
-        assert!(LaneData::from_json(br#"{"midi": [[0, 300]]}"#).is_err());
-        assert!(LaneData::from_json(br#"{"midi": [[-1, 144, 60, 1]]}"#).is_err());
+        assert!(EventLaneData::from_json(br#"{"midi": [[0, 300]]}"#).is_err());
+        assert!(EventLaneData::from_json(br#"{"midi": [[-1, 144, 60, 1]]}"#).is_err());
     }
 }

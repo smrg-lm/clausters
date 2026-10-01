@@ -35,15 +35,17 @@
 //! in seconds: [`placed`] places a sequence through its own tempo map, and a
 //! multitrack places each sequence its boxes read at the box's place on the
 //! timeline (`crate::multitrack::placed_notes`). [`data`] writes placed events
-//! as the lane's data (`clausters_core::lane::LaneData`), each event rendered
+//! as the lane's data (`clausters_core::event_lane::EventLaneData`), each event rendered
 //! by the core -- a note by `clausters_core::event::render::synth`, so its def,
 //! its controls and how it is released are the core's reading of its keys; a
 //! MIDI event by `render::midi`, as the message the server plays through the
 //! channel's binding; an OSC event as the message it names.
 
 use clausters_core::event::render::{self, Arg, Type};
+use clausters_core::event_lane::{
+    EventLaneData, EventLaneMessage, EventLaneMidi, EventLaneNote, EventLaneVoice, Release,
+};
 use clausters_core::ids::{IdError, IdSpaces};
-use clausters_core::lane::{LaneData, LaneMessage, LaneMidi, LaneNote, LaneVoice, Release};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::{EventSequence, Point};
@@ -253,7 +255,7 @@ pub struct SlotNote {
 }
 
 /// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
-/// a second (the shape is [`LaneData`]'s). A note is what the core renders its
+/// a second (the shape is [`EventLaneData`]'s). A note is what the core renders its
 /// keys to -- the def, `freq`, `amp` and every other numeric key, released by
 /// `gate 0` when its def is gated and by a free otherwise -- as a synth, or as
 /// the slot `slots` names for it at its index, when curves shape it. A MIDI
@@ -262,7 +264,7 @@ pub struct SlotNote {
 /// runs as written. A rest sounds nothing.
 pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
-    let mut data = LaneData::default();
+    let mut data = EventLaneData::default();
     for (i, event) in placed.iter().enumerate() {
         match Type::of(&event.keys) {
             Type::Note => {
@@ -277,14 +279,14 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
                 let voice = match slots.get(i).and_then(Option::as_ref) {
                     Some(slot) => {
                         controls.extend(slot.ports.iter().cloned());
-                        LaneVoice::Slot {
+                        EventLaneVoice::Slot {
                             graph: slot.graph,
                             slot: slot.slot.clone(),
                         }
                     }
-                    None => LaneVoice::Def(def),
+                    None => EventLaneVoice::Def(def),
                 };
-                data.notes.push(LaneNote {
+                data.notes.push(EventLaneNote {
                     start: sample(event.start),
                     end: sample(event.end.max(event.start)),
                     voice,
@@ -295,7 +297,7 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
             Type::Midi => {
                 // A `midi` event is one message, at its own start.
                 for message in render::midi(&event.keys, 0).unwrap_or_default() {
-                    data.midi.push(LaneMidi {
+                    data.midi.push(EventLaneMidi {
                         position: sample(event.start),
                         bytes: message.bytes,
                     });
@@ -319,7 +321,7 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
                         _ => None,
                     })
                     .collect();
-                data.messages.push(LaneMessage {
+                data.messages.push(EventLaneMessage {
                     position: sample(event.start),
                     addr: addr.to_string(),
                     args,

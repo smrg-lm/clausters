@@ -6,7 +6,7 @@
 //! pass. A lane is the same thing for events. It holds its notes and messages
 //! as data, in samples of one transport's position, and this side keeps the
 //! stretch of it just ahead of the position **built** on the engine's lane
-//! queue (`Cmd::LaneEntry`), where an entry fires when the position reaches
+//! queue (`Cmd::EventLaneEntry`), where an entry fires when the position reaches
 //! it. Keyed by position, an entry needs nothing re-stamped when the transport
 //! jumps: one the position left behind waits for it to come back.
 //!
@@ -36,13 +36,15 @@
 use std::collections::{HashMap, HashSet};
 
 use clausters_core::event::render::Arg;
-use clausters_core::lane::{LaneData, LaneMidi, LaneUmp, LaneVoice, Release};
+use clausters_core::event_lane::{
+    EventLaneData, EventLaneMidi, EventLaneUmp, EventLaneVoice, Release,
+};
 use clausters_midi::mpe::{Decoder, MpeEvent};
 
 use super::*;
 use crate::midi::ump::{PerNote, UmpMessage, parse_ump};
 use crate::midi::{ChannelVoiceMessage, parse_midi1};
-use crate::server::engine::LaneTag;
+use crate::server::engine::EventLaneTag;
 
 /// How far ahead of the position a lane is kept built, in seconds. Far more
 /// than a turn of the loop (10 ms while a lane exists), so a turn spent on
@@ -52,11 +54,11 @@ pub(in crate::osc::server) const LOOKAHEAD_SECS: f64 = 0.5;
 
 /// One event of a lane, at a position of its transport.
 #[derive(Clone, Debug, PartialEq)]
-enum LaneEvent {
+enum EventLaneEvent {
     /// A note: a synth of a def, or one more of a graph's slot, with
     /// `controls`, released `length` samples after it starts.
     Note {
-        voice: LaneVoice,
+        voice: EventLaneVoice,
         controls: Vec<OscType>,
         length: u64,
         release: Release,
@@ -131,11 +133,11 @@ enum Heard {
 }
 
 /// One lane, as this side holds it.
-pub(in crate::osc::server) struct Lane {
+pub(in crate::osc::server) struct EventLane {
     transport: usize,
     target: i32,
     /// `(position, event)`, sorted by position.
-    events: Vec<(u64, LaneEvent)>,
+    events: Vec<(u64, EventLaneEvent)>,
     /// The generation of `events`, bumped by every new data and every clear,
     /// so an entry spent from an older one does not unmark a newer one.
     generation: u32,
@@ -146,10 +148,10 @@ pub(in crate::osc::server) struct Lane {
     voices: HashMap<u32, i32>,
 }
 
-/// Reads a lane's data (`clausters_core::lane::LaneData`, the JSON
+/// Reads a lane's data (`clausters_core::event_lane::EventLaneData`, the JSON
 /// `/lane_set` carries) into its events, sorted by position.
-fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, String> {
-    let data = LaneData::from_json(json)?;
+fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, EventLaneEvent)>, String> {
+    let data = EventLaneData::from_json(json)?;
     let mut events = Vec::new();
     for note in data.notes {
         let controls = note
@@ -159,7 +161,7 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
             .collect();
         events.push((
             note.start,
-            LaneEvent::Note {
+            EventLaneEvent::Note {
                 voice: note.voice,
                 controls,
                 length: note.end.saturating_sub(note.start),
@@ -179,7 +181,7 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
             .collect();
         events.push((
             message.position,
-            LaneEvent::Message(OscMessage {
+            EventLaneEvent::Message(OscMessage {
                 addr: message.addr,
                 args,
             }),
@@ -204,10 +206,10 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, LaneEvent)>, St
 /// own resolution, and a per-note message reaches the note sounding on its
 /// channel and key.
 fn midi_events(
-    midi: Vec<LaneMidi>,
-    ump: Vec<LaneUmp>,
+    midi: Vec<EventLaneMidi>,
+    ump: Vec<EventLaneUmp>,
     mut zones: Decoder,
-) -> Vec<(u64, LaneEvent)> {
+) -> Vec<(u64, EventLaneEvent)> {
     // Both lists in one order, bytes before packets at a position.
     let mut raw: Vec<(u64, Raw)> = midi
         .into_iter()
@@ -220,10 +222,10 @@ fn midi_events(
     // Each note's slot in `out`, with its start, while it sounds.
     let mut sounding: HashMap<(u8, u8), (usize, u64)> = HashMap::new();
     let mut programs: HashMap<u8, u8> = HashMap::new();
-    let mut out: Vec<Option<(u64, LaneEvent)>> = Vec::new();
+    let mut out: Vec<Option<(u64, EventLaneEvent)>> = Vec::new();
     let mut voices = 0u32;
-    let voice_of = |out: &[Option<(u64, LaneEvent)>], slot: usize| match out[slot] {
-        Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
+    let voice_of = |out: &[Option<(u64, EventLaneEvent)>], slot: usize| match out[slot] {
+        Some((_, EventLaneEvent::MidiNote { voice, .. })) => Some(voice),
         _ => None,
     };
     let mut decoded: Vec<(u64, Heard)> = Vec::new();
@@ -283,7 +285,7 @@ fn midi_events(
                 {
                     out.push(Some((
                         at,
-                        LaneEvent::PerNote {
+                        EventLaneEvent::PerNote {
                             channel,
                             note,
                             message,
@@ -312,7 +314,7 @@ fn midi_events(
                 zone_notes.insert(note, (out.len(), at, key, side.master()));
                 out.push(Some((
                     at,
-                    LaneEvent::ZoneNote {
+                    EventLaneEvent::ZoneNote {
                         master: side.master(),
                         key,
                         velocity,
@@ -328,7 +330,7 @@ fn midi_events(
             }
             MpeEvent::NoteOff { note, .. } => {
                 if let Some((slot, from, _, _)) = zone_notes.remove(&note)
-                    && let Some((_, LaneEvent::ZoneNote { length, .. })) = out[slot].as_mut()
+                    && let Some((_, EventLaneEvent::ZoneNote { length, .. })) = out[slot].as_mut()
                 {
                     *length = at - from;
                 }
@@ -343,11 +345,11 @@ fn midi_events(
                     _ => continue,
                 };
                 if let Some(&(slot, _, key, master)) = zone_notes.get(&note)
-                    && let Some((_, LaneEvent::ZoneNote { voice, .. })) = out[slot]
+                    && let Some((_, EventLaneEvent::ZoneNote { voice, .. })) = out[slot]
                 {
                     out.push(Some((
                         at,
-                        LaneEvent::ZoneSet {
+                        EventLaneEvent::ZoneSet {
                             master,
                             key,
                             voice,
@@ -377,7 +379,7 @@ fn midi_events(
 }
 
 /// A lane's events so far, as `Option`s so an unended note can be dropped.
-type Slots = Vec<Option<(u64, LaneEvent)>>;
+type Slots = Vec<Option<(u64, EventLaneEvent)>>;
 
 /// **One channel voice message into a lane's events**, at `at`: a note-on
 /// starts a note (ending one already sounding on its key), a note-off ends
@@ -392,12 +394,12 @@ fn push_voice(
     message: ChannelVoiceMessage,
 ) {
     let end = |out: &mut Slots, slot: usize, at: u64, from: u64| {
-        if let Some((_, LaneEvent::MidiNote { length, .. })) = out[slot].as_mut() {
+        if let Some((_, EventLaneEvent::MidiNote { length, .. })) = out[slot].as_mut() {
             *length = at - from;
         }
     };
     let voice_of = |out: &Slots, slot: usize| match out[slot] {
-        Some((_, LaneEvent::MidiNote { voice, .. })) => Some(voice),
+        Some((_, EventLaneEvent::MidiNote { voice, .. })) => Some(voice),
         _ => None,
     };
     match message {
@@ -412,7 +414,7 @@ fn push_voice(
             sounding.insert((channel, note), (out.len(), at));
             out.push(Some((
                 at,
-                LaneEvent::MidiNote {
+                EventLaneEvent::MidiNote {
                     channel,
                     note,
                     velocity,
@@ -438,7 +440,7 @@ fn push_voice(
                 .and_then(|(slot, _)| voice_of(out, *slot))
                 .into_iter()
                 .collect();
-            out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+            out.push(Some((at, EventLaneEvent::MidiSet { message, voices })));
         }
         ChannelVoiceMessage::ChannelAftertouch { channel, .. }
         | ChannelVoiceMessage::ControlChange { channel, .. }
@@ -449,7 +451,7 @@ fn push_voice(
                 .filter_map(|(_, (slot, _))| voice_of(out, *slot))
                 .collect();
             voices.sort_unstable();
-            out.push(Some((at, LaneEvent::MidiSet { message, voices })));
+            out.push(Some((at, EventLaneEvent::MidiSet { message, voices })));
         }
     }
 }
@@ -504,7 +506,7 @@ impl OscServer {
         }
         self.lanes.insert(
             lane,
-            Lane {
+            EventLane {
                 transport,
                 target,
                 events: Vec::new(),
@@ -680,7 +682,7 @@ impl OscServer {
             return Ok(None);
         };
         let (transport, target) = (lane.transport, lane.target);
-        let tag = LaneTag {
+        let tag = EventLaneTag {
             lane: id,
             generation: lane.generation,
             event: i,
@@ -689,7 +691,7 @@ impl OscServer {
         let mut release = Vec::new();
         let mut length = 0;
         match event {
-            LaneEvent::Note {
+            EventLaneEvent::Note {
                 voice,
                 controls,
                 length: held,
@@ -698,7 +700,7 @@ impl OscServer {
                 // A synth, or one more of a graph's slot -- whose group is the
                 // note, released through the slot's `gate` port or freed whole.
                 let message = match voice {
-                    LaneVoice::Def(def) => {
+                    EventLaneVoice::Def(def) => {
                         let mut args = vec![
                             OscType::String(def),
                             OscType::Int(-1),
@@ -711,7 +713,7 @@ impl OscServer {
                             args,
                         }
                     }
-                    LaneVoice::Slot { graph, slot } => {
+                    EventLaneVoice::Slot { graph, slot } => {
                         let mut args =
                             vec![OscType::Int(graph), OscType::String(slot), OscType::Int(-1)];
                         args.extend(controls);
@@ -748,10 +750,10 @@ impl OscServer {
                 }
                 length = held;
             }
-            LaneEvent::Message(message) => {
+            EventLaneEvent::Message(message) => {
                 self.translator.translate(&message, &mut start)?;
             }
-            LaneEvent::MidiNote {
+            EventLaneEvent::MidiNote {
                 channel,
                 note,
                 velocity,
@@ -775,7 +777,7 @@ impl OscServer {
                 }
                 length = held;
             }
-            LaneEvent::ZoneNote {
+            EventLaneEvent::ZoneNote {
                 master,
                 key,
                 velocity,
@@ -803,7 +805,7 @@ impl OscServer {
                 }
                 length = held;
             }
-            LaneEvent::ZoneSet {
+            EventLaneEvent::ZoneSet {
                 master,
                 key,
                 voice,
@@ -822,7 +824,7 @@ impl OscServer {
                     return Ok(None);
                 }
             }
-            LaneEvent::MidiSet { message, voices } => {
+            EventLaneEvent::MidiSet { message, voices } => {
                 let nodes: Vec<i32> = voices
                     .iter()
                     .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
@@ -832,7 +834,7 @@ impl OscServer {
                     return Ok(None);
                 }
             }
-            LaneEvent::PerNote {
+            EventLaneEvent::PerNote {
                 channel,
                 note,
                 message,
@@ -852,7 +854,7 @@ impl OscServer {
                 }
             }
         }
-        Ok(Some(Cmd::LaneEntry {
+        Ok(Some(Cmd::EventLaneEntry {
             transport,
             position,
             tag,
@@ -864,7 +866,12 @@ impl OscServer {
 
     /// **A lane entry left the engine**: it is no longer queued, and when it
     /// never ran, the nodes it would have made are forgotten.
-    pub(in crate::osc::server) fn lane_spent(&mut self, tag: LaneTag, start: &[Cmd], fired: bool) {
+    pub(in crate::osc::server) fn lane_spent(
+        &mut self,
+        tag: EventLaneTag,
+        start: &[Cmd],
+        fired: bool,
+    ) {
         if !fired {
             self.forget_unrun(start);
         }
@@ -926,7 +933,7 @@ mod tests {
         .unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].0, 0);
-        let LaneEvent::Message(m) = &events[0].1 else {
+        let EventLaneEvent::Message(m) = &events[0].1 else {
             panic!("the message first");
         };
         assert_eq!(
@@ -937,7 +944,7 @@ mod tests {
                 OscType::String("cue".into())
             ]
         );
-        let LaneEvent::Note {
+        let EventLaneEvent::Note {
             length, release, ..
         } = &events[1].1
         else {
