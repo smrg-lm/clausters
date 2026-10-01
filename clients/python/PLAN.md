@@ -1508,9 +1508,9 @@ the def already has removes the asymmetry rather than papering over it.
 ### A sequence's structures are objects (client arc, phased)
 
 *(Opened 2026-10-01 by the user, reading what a script can do with a sequence
-an editor holds: "Como API cliente no es bueno que los valores de retorno sean
-un número de id. Deberían ser un objeto que represente la estructura de datos.
-Es como si el DOM de una página web se manejara por ids, no se podría usar.")*
+an editor holds: a client API whose return values are id numbers is not
+usable; each should be an object that represents the data structure, as a web
+page's DOM would be unusable if it were driven by ids.)*
 
 **The defect.** `clausters.seq.EventSequence` answers and takes **numbers**:
 `add` answers an `int`, and so do `add_lane`, `add_expression` and
@@ -1679,8 +1679,8 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   among `Second` and `Beat` positions: a `Point` is shared with every other
   curve, so typing the axis per holder is a generic `Automation` (or a point
   per unit), a change of its own rather than a rename's.
-- ✅ **No structure is constructed with an id** *(the user, 2026-10-01: "es
-  algo a corregir")*. `clausters.multitrack.Automation` requires `id: int` in
+- ✅ **No structure is constructed with an id** *(the user, 2026-10-01: a
+  defect to correct)*. `clausters.multitrack.Automation` requires `id: int` in
   its constructor, and so do `Region` and `Track`: the same defect on the
   multitrack's side. `Automation` becomes one class that is a **value** when it
   is free (built by a script, held by nothing) and a **live view** once it
@@ -1723,11 +1723,10 @@ kept beside the objects, and every call site is rewritten in the same pass
 ### A script plays and holds what the editors do (client arc, phased)
 
 *(Opened 2026-10-01 by the user, with `C57`, from the same session: render a
-`Timeline` into a sequence, edit it in the roll, close the window, and "con
-los datos hacer play(x) en el cliente, sin gui". On what `play` answers: "el
-verbo play debería devolver un objeto que represente el transport del
-servidor donde está cargada la lane". On the default session: "Todo tiene que
-poder funcionar con una sesión por defecto para evitar with innecesarios".)*
+`Timeline` into a sequence, edit it in the roll, close the window, and play
+the result from the client with no GUI. `play` should answer an object that
+represents the server transport the lane is loaded on, and everything should
+work with the default session, with no `with` a script does not need.)*
 
 `C57` makes what a script holds of a sequence an object; this arc makes the
 rest of what the editors do reachable from a script with no window: playing
