@@ -340,6 +340,14 @@ fn a_scoped_plan_names_its_graphs_for_its_lane() {
             .any(|m| m["def"] == note),
         "the channel's slot plays the renamed note"
     );
+    assert!(
+        channel.graph["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["def"] == clausters_core::event_graph::curve_name()),
+        "a channel curve's reader plays the shared reader, which is sent unscoped"
+    );
 }
 
 /// **A playback that goes away gives its graphs back**, and not the four

@@ -102,16 +102,24 @@ impl CurvePlan {
     /// channel graph's slots pointed at the renamed notes. `scope` is the
     /// node id of the lane the notes play from, which the server holds unique,
     /// so a graph this sender gives back is one no other sender plays.
+    ///
+    /// Only the graphs are renamed. A channel's curve readers play the reader
+    /// every sender shares (`event_graph::curve_def`), which is sent under its
+    /// own name and never given back, so a reader renamed with the slots
+    /// names a def nobody sent.
     pub fn scoped(mut self, scope: i32) -> Self {
         for channel in &mut self.channels {
+            let mut renamed = BTreeMap::new();
             for note in &mut channel.notes {
-                let name = event_graph::scoped(note["name"].as_str().unwrap_or_default(), scope);
+                let was = note["name"].as_str().unwrap_or_default().to_string();
+                let name = event_graph::scoped(&was, scope);
                 note["name"] = json!(name);
+                renamed.insert(was, name);
             }
             if let Some(members) = channel.graph["members"].as_array_mut() {
                 for member in members {
-                    if let Some(def) = member["def"].as_str() {
-                        member["def"] = json!(event_graph::scoped(def, scope));
+                    if let Some(name) = member["def"].as_str().and_then(|def| renamed.get(def)) {
+                        member["def"] = json!(name);
                     }
                 }
             }
