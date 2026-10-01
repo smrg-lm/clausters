@@ -354,6 +354,14 @@ export class ClaustersBundle extends HTMLElement {
             }
             void guiHost().then((gui) => gui.bridge.resize(defId, width, height, scale));
         };
+        // **Measured once now, not only when the observer first fires.** The
+        // mount measured the box before the fetch, when it may not have been
+        // laid out yet, and an observer's first callback waits for the next
+        // rendering frame -- which one browser delivers after `clausters-ready`
+        // and the other before. Measuring here (the box is laid out by now)
+        // makes `clausters-ready` mean what it says in both: the canvas is the
+        // element's size, and the host has been told so.
+        report();
         this.resizeObserver = new ResizeObserver(report);
         this.resizeObserver.observe(this);
         this.unwatchScale = onScaleChange(report);
