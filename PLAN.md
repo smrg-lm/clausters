@@ -2739,7 +2739,8 @@ where it came from).
     **recipe** the server regenerates (`cheby [...]`, a few numbers and
     deterministic), or a **derivation** of another buffer of the def (the
     kernel `prepare_partconv` makes from the impulse response) -- and how a
-    member names one, since a string in `controls` already means a bus.
+    member's `controls` names one, since a string there already means a bus
+    (a voice names one by file name, below).
   - **A re-send while instances sound**: a UGen reads its buffer by number on
     every block, so freeing a number silences whatever reads it. A re-send
     makes new buffers under new numbers, and the old ones stay until the last
@@ -2751,17 +2752,22 @@ where it came from).
   SynthDef that plays one of several files, its voices a slot; every
   instance of the def shares the files, and a note makes only the synthesis
   nodes. Three things follow that the shape above does not say yet:
-  - **A bank**: several buffers declared as one ordered list and given
-    consecutive numbers, so one is chosen by index -- the convention `VOsc`
-    already reads consecutive buffers by.
-  - **A voice names its sample by index, never by number.** The numbers are
-    the server's, handed out at load, so a client cannot know them; a port
-    takes the index and the def resolves it against the bank's first number
-    (a surface target whose `add` is the bank's base, say), and
-    `/graph_newVoice ... sample 3` plays the fourth file.
-  - **The numbers can be asked for**: `/def_query` answers the buffers a def
-    holds and the numbers they were given, for a client that draws or reads
-    one (a waveform of a sample).
+  - **A voice names its sample by file name, never by number** *(decided
+    2026-10-01 by the user: "this is usually done by file name")*. The
+    numbers are the server's, handed out at load, so a client cannot know
+    them. The def keeps a **table, file name to buffer number**, built when
+    it loads; a surface port is declared a **buffer** port, and a string sent
+    to it (`/graph_newVoice ... sample "kick.wav"`, or a lane note's JSON,
+    which already carries strings) is resolved against that table when the
+    voice is made, on the network thread -- the node gets a number, as
+    today. A string is legal only on a port declared so, which keeps the
+    change to the wire a narrow one: every other port value stays a number.
+  - **A bank** stays useful beside the names: buffers declared as one ordered
+    list and given consecutive numbers, for what reads them by index -- the
+    convention `VOsc` morphs across consecutive buffers by.
+  - **The table can be asked for**: `/def_query` answers the buffers a def
+    holds, their names and the numbers they were given, for a client that
+    draws or reads one (a waveform of a sample).
   Which note plays which sample -- key and velocity zones over a bank -- is
   the next question, and the more complex defs start there; it is open here.
 
