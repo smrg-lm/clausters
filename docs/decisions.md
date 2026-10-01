@@ -1140,7 +1140,9 @@ Two out-of-the-box defaults, chosen for the common case of a **local** session:
   global event default stays `has_gate = False` (a gate-less custom def is still
   freed directly, so it can never leak); the player special-cases `instrument ==
   "default"` to gate-release. So the safety of the free-by-default choice is kept
-  while the built-in sounds clean.
+  while the built-in sounds clean. *(Its tone was replaced on 2026-10-01 — see
+  "The built-in `default` is a subtractive voice with the MPE controls"; the
+  envelope and the gate release stand.)*
 
 - **`Session.live()` and `Session.embed()` anchor to the server's sample clock
   by default** (config `[client].clock`, default `"sample"`), rather than
@@ -9148,3 +9150,39 @@ renderer is the wasm engine on the calling thread, so the samples exist in full
 before the file is written -- and the page's GUI host maps no file, so a view
 is still handed samples (`gui.source`) where a script names a `.f32` path.
 
+
+## The built-in `default` is a subtractive voice with the MPE controls
+
+*Decided 2026-10-01.* The `default` was a gated sine with `freq`, `amp` and
+`gate`, and a pattern that passed it `pan` — the render-then-load examples do
+— sounded centred with nothing to say why: the key reached no control. A sine
+is also the one tone where an MPE zone's dimensions have nothing to move. So
+the built-in became what a default instrument usually is: two sawtooths
+detuned by ±0.4 % and a sine on the fundamental, through a resonant lowpass
+whose cutoff follows the key and opens with the timbre, the pressure and a
+velocity-scaled bloom, placed at equal power by `pan`. The envelope and the
+gate release are the earlier decision's, unchanged.
+
+- **The controls are named `press` and `slide`**, not `pressure` and `timbre`:
+  short words beside `freq`, `amp`, `gate` and `pan`, and of a piece with the
+  `lift` selector the server already had for note-off velocity. A zone's
+  voice is started with those two names (the `/midi_map` *selectors* stay
+  `pressure` and `timbre`: they name the MIDI message, not the control), a
+  note curve over `{"pressure": ...}` or `{"timbre": ...}` drives them, and
+  the Python client's MPE destination reads them from an event — so one
+  pattern plays a server's zone and a MIDI port alike.
+- **A channel's timbre rests at the centre.** The MPE decoder started a
+  channel's timbre at 0 while the encoder sent 64 for a note that stated none:
+  a device that never sends CC 74 would have played every note at the
+  darkest. Both ends now agree on 64.
+- **The graph is `src/synthdef/default.json`**, the wire format verbatim,
+  rather than a hand-indexed `UGenSpec` list: at 35 UGens the indices were
+  unreadable either way, and JSON is the form a client-sent def has. The
+  Python twins (`examples/synthdef.py`, `tests/test_synthdef.py`) render it
+  byte-identically, which is what keeps the file and the client builder in
+  step.
+- **Tests that listen for a sine have their own.** The engine, mapping and
+  golden tests measured the old default's frequency and RMS; they now send or
+  compile `tests/common/sine.json`, the old graph, so a change of the default's
+  tone never moves what the engine is checked against — the arpeggio golden
+  stayed byte-identical.

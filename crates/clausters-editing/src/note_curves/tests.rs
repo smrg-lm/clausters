@@ -101,7 +101,11 @@ fn a_curve_drives_the_control_its_target_names() {
     assert_eq!(curve_control(&json!({"bend": true})), Some(BEND.into()));
     assert_eq!(
         curve_control(&json!({"timbre": true})),
-        Some("timbre".into())
+        Some("slide".into())
+    );
+    assert_eq!(
+        curve_control(&json!({"pressure": true})),
+        Some("press".into())
     );
     assert_eq!(curve_control(&json!({"cc": 74})), None);
 }
@@ -132,7 +136,7 @@ fn a_note_a_curve_reaches_is_a_slot_of_its_channel() {
     // The pressure runs from the note's start past its release to its last
     // point, at 1.5 s: 1500 frames, a sample every 64.
     let (control, table) = &first.curves[0];
-    assert_eq!(control, "pressure");
+    assert_eq!(control, "press");
     assert_eq!(table.at, 0.0);
     assert_eq!(
         table.table.len(),
@@ -234,7 +238,7 @@ fn a_slot_note_carries_its_readers_ports() {
     assert_eq!(Some(first.graph), applier.node("t/channel/#0/0"));
     assert_eq!(first.slot, plan.notes[0].as_ref().unwrap().slot);
     let names: Vec<&str> = first.ports.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["pressure/buf", "pressure/step"]);
+    assert_eq!(names, ["press/buf", "press/step"]);
     assert!(slots[1].as_ref().unwrap().ports.is_empty());
     assert!(slots[2].is_none());
 

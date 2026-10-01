@@ -6,6 +6,8 @@
 
 #[path = "common/signal.rs"]
 mod signal;
+#[path = "common/sine.rs"]
+mod sine;
 
 use std::sync::Arc;
 
@@ -13,7 +15,7 @@ use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
-use clausters::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
+use clausters::synthdef::{SynthDef, SynthDefSpec, compile};
 
 const SR: f32 = 48_000.0;
 const CHANNELS: usize = 2;
@@ -23,10 +25,6 @@ const SCRATCH_BUS: usize = 5;
 
 fn make_engine() -> (Engine, EngineHandle) {
     engine_pair(SR, CHANNELS)
-}
-
-fn default_def() -> Arc<SynthDef> {
-    Arc::new(compile(default_spec()).unwrap())
 }
 
 /// Writes its `level` control (default 660) into an audio bus every block --
@@ -45,8 +43,8 @@ fn dc_def() -> Arc<SynthDef> {
     Arc::new(compile(spec).unwrap())
 }
 
-fn add_default(id: i32, freq: f32, amp: f32) -> Cmd {
-    let mut synth = Box::new(UGenSynth::new(default_def(), SR, SEED_STRIDE));
+fn add_sine(id: i32, freq: f32, amp: f32) -> Cmd {
+    let mut synth = Box::new(UGenSynth::new(sine::sine_def(), SR, SEED_STRIDE));
     synth.set_control(CTL_FREQ, freq);
     synth.set_control(1, amp);
     Cmd::AddSynth {
@@ -104,7 +102,7 @@ fn assert_freq(engine: &mut Engine, expected: f32) {
 #[test]
 fn n_map_tracks_a_control_bus_live() {
     let (mut engine, mut handle) = make_engine();
-    handle.send(add_default(1000, 440.0, 0.2)).ok().unwrap();
+    handle.send(add_sine(1000, 440.0, 0.2)).ok().unwrap();
     handle
         .send(map(1000, CTL_FREQ, SCRATCH_BUS as i32, false))
         .ok()
@@ -133,7 +131,7 @@ fn n_map_tracks_a_control_bus_live() {
 #[test]
 fn unmap_holds_the_last_value() {
     let (mut engine, mut handle) = make_engine();
-    handle.send(add_default(1000, 440.0, 0.2)).ok().unwrap();
+    handle.send(add_sine(1000, 440.0, 0.2)).ok().unwrap();
     handle
         .send(map(1000, CTL_FREQ, SCRATCH_BUS as i32, false))
         .ok()
@@ -173,7 +171,7 @@ fn unmap_holds_the_last_value() {
 #[test]
 fn n_set_overrides_and_breaks_a_mapping() {
     let (mut engine, mut handle) = make_engine();
-    handle.send(add_default(1000, 440.0, 0.2)).ok().unwrap();
+    handle.send(add_sine(1000, 440.0, 0.2)).ok().unwrap();
     handle
         .send(map(1000, CTL_FREQ, SCRATCH_BUS as i32, false))
         .ok()
@@ -211,7 +209,7 @@ fn n_mapa_samples_an_audio_bus() {
     let (mut engine, mut handle) = make_engine();
     // Source runs first (added first), writing the scratch bus the target reads.
     handle.send(add_dc(900)).ok().unwrap();
-    handle.send(add_default(1000, 440.0, 0.2)).ok().unwrap();
+    handle.send(add_sine(1000, 440.0, 0.2)).ok().unwrap();
     handle
         .send(map(1000, CTL_FREQ, SCRATCH_BUS as i32, true))
         .ok()

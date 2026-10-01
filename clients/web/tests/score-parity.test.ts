@@ -112,8 +112,8 @@ test("an offline session renders the score it wrote", async () => {
     assert.equal(stats.channels, 1);
     assert.ok(stats.peak[0]! > 0.15, `silent render (peak ${stats.peak[0]})`);
     assert.ok(
-        Math.abs(stats.rms[0]! - stats.peak[0]! / Math.SQRT2) < 0.01,
-        "a sine's RMS is its peak over root two",
+        stats.rms[0]! > 0.05 && stats.rms[0]! < stats.peak[0]!,
+        `a held note is sounding, not a click (rms ${stats.rms[0]})`,
     );
 });
 
@@ -208,9 +208,10 @@ test("a bounce renders the last note's release", async () => {
     const pattern = () => new Pbind({ instrument: "default", degree: new Pseq([0, 4, 7]), dur: 0.25 });
     const cut = await render(pattern(), { tail: 0 });
     // With no tail the take stops on the gate closing on the last note, mid
-    // release: the last sample is a step, not silence.
+    // release: the take ends sounding, not in silence.
     assert.ok(Math.abs(cut.frames - 0.7 * 48_000) <= 1, `${cut.frames} frames`);
-    assert.ok(Math.abs(cut.samples!.at(-2)!) > 0.01, "the cut take ends on a step");
+    const last = cut.samples!.slice(-128);
+    assert.ok(Math.max(...Array.from(last, Math.abs)) > 0.01, "the cut take ends sounding");
     const whole = await render(pattern());
     // The default tail is a second past that gate, and the release is over.
     assert.ok(Math.abs(whole.frames - 1.7 * 48_000) <= 1, `${whole.frames} frames`);

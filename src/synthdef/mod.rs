@@ -24,8 +24,8 @@
 //! }
 //! ```
 //!
-//! The built-in `"default"` def ([`default_spec`]) is this same shape plus a
-//! gated envelope (see that function).
+//! The built-in `"default"` def ([`default_spec`]) is written in this same
+//! format, in `default.json` beside this module.
 
 pub mod instance;
 
@@ -926,95 +926,35 @@ fn insert_lags(
     ugens
 }
 
-/// The built-in "default" def, registered at startup:
-/// `Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 (the hardware outputs).
-/// Built through the same spec/compile path as client-sent defs.
+/// The built-in "default" def, registered at startup: a subtractive voice
+/// with a control for each dimension an MPE zone plays, so a note from a
+/// pattern, a MIDI channel or a zone sounds with nothing sent first.
+/// Built through the same spec/compile path as client-sent defs: the graph is
+/// `default.json`, the wire format verbatim.
 ///
-/// The envelope is a gated ASR (equal-power sine ramps: 0.01 s attack, sustain
-/// at 1.0 while the gate is held, 0.3 s release) with `doneAction = FREE_SELF`,
-/// so the note ramps in and out without a click and frees itself once the
-/// release finishes. A rising `gate` (re)triggers; a `gate 0` starts the
-/// release. The client releases this instrument via the gate (see the Python
-/// player's `play_event`), which is what lets the release ring out.
+/// The tone is two sawtooths detuned by +/-0.4 % plus a sine on the
+/// fundamental, through a resonant lowpass (`RLPF`, `rq` 0.7) whose cutoff
+/// follows the key -- an octave above it at rest -- and opens with:
+///
+/// - `slide` (0-1, 0.5 unless set; MPE's third dimension, CC 74): up to
+///   three octaves more;
+/// - `press` (0-1; pressure): up to two octaves more, and half again the
+///   level;
+/// - `amp` (the velocity): a **bloom** -- the cutoff opens at the attack and
+///   closes over 0.6 s, by more the harder the note.
+///
+/// The cutoff stops at 16 kHz. `press` and `slide` are smoothed over 50 ms,
+/// so a controller moves the tone without stepping. `pan` places the voice
+/// at equal power (`Pan2`, -1 left to 1 right) on buses 0 and 1.
+///
+/// The level follows a gated ASR (equal-power sine ramps: 0.01 s attack,
+/// sustain at 1.0 while the gate is held, 0.3 s release) with
+/// `doneAction = FREE_SELF`, so the note ramps in and out without a click and
+/// frees itself once the release finishes. A rising `gate` (re)triggers; a
+/// `gate 0` starts the release. The client releases this instrument via the
+/// gate (see the Python player's `play_event`), which is what lets the
+/// release ring out.
 pub fn default_spec() -> SynthDefSpec {
-    // EnvGen input layout (see `dsp::envgen::EnvGen::process`):
-    //   gate, levelScale, levelBias, timeScale, doneAction,
-    //   initLevel, numSegments, releaseNode, loopNode,
-    //   then [target, duration, shape, curve] per segment.
-    // Shape 3 is the equal-power sine curve (`envshape::SHAPE_SINE`); curve is
-    // unused for that shape. doneAction 2 is FREE_SELF.
-    const SINE: f32 = 3.0;
-    let env = UGenSpec {
-        kind: "EnvGen".into(),
-        inputs: vec![
-            InputSpec::Control(2),  // gate
-            InputSpec::Const(1.0),  // levelScale
-            InputSpec::Const(0.0),  // levelBias
-            InputSpec::Const(1.0),  // timeScale
-            InputSpec::Const(2.0),  // doneAction = FREE_SELF
-            InputSpec::Const(0.0),  // initLevel
-            InputSpec::Const(2.0),  // numSegments
-            InputSpec::Const(1.0),  // releaseNode (sustain at level index 1)
-            InputSpec::Const(-1.0), // loopNode (none)
-            // attack: 0 -> 1 over 0.01 s
-            InputSpec::Const(1.0),
-            InputSpec::Const(0.01),
-            InputSpec::Const(SINE),
-            InputSpec::Const(0.0),
-            // release: 1 -> 0 over 0.3 s
-            InputSpec::Const(0.0),
-            InputSpec::Const(0.3),
-            InputSpec::Const(SINE),
-            InputSpec::Const(0.0),
-        ],
-        ..Default::default()
-    };
-    SynthDefSpec {
-        name: "default".into(),
-        controls: vec![
-            ControlSpec {
-                name: "freq".into(),
-                default: 440.0,
-                ..Default::default()
-            },
-            ControlSpec {
-                name: "amp".into(),
-                default: 0.2,
-                ..Default::default()
-            },
-            ControlSpec {
-                name: "gate".into(),
-                default: 1.0,
-                ..Default::default()
-            },
-        ],
-        ugens: vec![
-            UGenSpec {
-                kind: "Sine".into(),
-                inputs: vec![InputSpec::Control(0)],
-                ..Default::default()
-            },
-            env,
-            UGenSpec {
-                kind: "Mul".into(),
-                inputs: vec![InputSpec::Ugen(0), InputSpec::Ugen(1)],
-                ..Default::default()
-            },
-            UGenSpec {
-                kind: "Mul".into(),
-                inputs: vec![InputSpec::Ugen(2), InputSpec::Control(1)],
-                ..Default::default()
-            },
-            UGenSpec {
-                kind: "Out".into(),
-                inputs: vec![InputSpec::Const(0.0), InputSpec::Ugen(3)],
-                ..Default::default()
-            },
-            UGenSpec {
-                kind: "Out".into(),
-                inputs: vec![InputSpec::Const(1.0), InputSpec::Ugen(3)],
-                ..Default::default()
-            },
-        ],
-    }
+    serde_json::from_str(include_str!("default.json"))
+        .expect("the built-in default def is valid JSON")
 }

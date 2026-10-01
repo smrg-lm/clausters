@@ -50,9 +50,13 @@ fn newest(t: &CmdTranslator) -> i32 {
 }
 
 fn freq(t: &CmdTranslator, id: i32) -> f32 {
+    control(t, id, "freq")
+}
+
+fn control(t: &CmdTranslator, id: i32, name: &str) -> f32 {
     let (_, controls) = t.mirror.synth_info(id).expect("voice mirrored");
-    let fi = t.node_defs.get(&id).unwrap().control_index("freq").unwrap();
-    controls[fi as usize]
+    let index = t.node_defs.get(&id).unwrap().control_index(name).unwrap();
+    controls[index as usize]
 }
 
 #[test]
@@ -162,6 +166,22 @@ fn a_zone_and_a_binding_over_one_channel_are_refused() {
         feed(&mut t, &msg);
     }
     assert_eq!(t.midi.decoder.zone(Side::Lower).map(|z| z.members), Some(3));
+}
+
+#[test]
+fn a_member_pressure_and_timbre_play_the_default_press_and_slide() {
+    let mut t = zone(7);
+    feed(&mut t, &[0x91, 69, 100]);
+    let voice = newest(&t);
+    assert_eq!(control(&t, voice, "press"), 0.0);
+    assert!(
+        (control(&t, voice, "slide") - 64.0 / 127.0).abs() < 1e-6,
+        "centred (CC 74 at 64) until the controller moves it"
+    );
+    feed(&mut t, &[0xD1, 127]);
+    feed(&mut t, &[0xB1, 74, 0]);
+    assert!((control(&t, voice, "press") - 1.0).abs() < 1e-3);
+    assert!(control(&t, voice, "slide").abs() < 1e-3);
 }
 
 #[test]

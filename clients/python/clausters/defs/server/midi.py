@@ -108,7 +108,8 @@ class ServerMidi:
         on 15 (descending from 14), ``members`` member channels, 0 to wait for
         the device's own layout -- which wins when it arrives. Each note is a
         voice whose own channel's bend, pressure and timbre are its own: a
-        voice starts with ``freq``, ``amp``, ``pressure`` and ``timbre``, so a
+        voice starts with ``freq``, ``amp``, ``press`` (the pressure) and
+        ``slide`` (the timbre) -- the built-in ``default``'s controls -- so a
         def with those controls plays all three with no `midi_map`. Refused
         when the zone would reach a channel `midi_bind` holds. Returns
         ``self``."""

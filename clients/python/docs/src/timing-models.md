@@ -121,7 +121,7 @@ MIDI output never uses the sample clock. A `MidiServer` writing a score keeps it
 
 ### An MPE zone as the destination
 
-`MidiServer(zone=15)` makes the destination an **MPE zone** — the lower one, master channel 0, unless `upper=True`. The RPN that declares it goes out first, and each note goes on a member channel of its own, preceded by its expression: the event's `bend` in semitones (through `bend_range`, 48 by default), and its `pressure` and `timbre`, 0..1. So three notes of one chord can be bent, pressed and coloured apart, which one channel cannot say. The channel is chosen by the shared crate's assigner (a free member first, else the one held longest), the same rule on every end. A server plays a zone the same way when one is bound with `Server.midi_bind_zone`; `examples/midi_mpe.py` does both.
+`MidiServer(zone=15)` makes the destination an **MPE zone** — the lower one, master channel 0, unless `upper=True`. The RPN that declares it goes out first, and each note goes on a member channel of its own, preceded by its expression: the event's `bend` in semitones (through `bend_range`, 48 by default), its `press` (the pressure) and its `slide` (the timbre), 0..1 — the controls a server's zone names, so one pattern plays either end. So three notes of one chord can be bent, pressed and coloured apart, which one channel cannot say. The channel is chosen by the shared crate's assigner (a free member first, else the one held longest), the same rule on every end. A server plays a zone the same way when one is bound with `Server.midi_bind_zone`; `examples/midi_mpe.py` does both.
 
 ## The API, at a glance
 

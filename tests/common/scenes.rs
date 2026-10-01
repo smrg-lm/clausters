@@ -48,26 +48,39 @@ fn f(v: f32) -> OscType {
     OscType::Float(v)
 }
 
-/// Two voices of the built-in "default" def overlapping, with mid-block
-/// entries, an `/node_set` retune and staggered frees: exercises the node tree,
-/// named controls and the sample-accurate scheduler end to end. 0.3 s mono.
+/// A gated sine (`sine.json`, beside this file): what the arpeggio plays, so
+/// its golden is the engine's and not the built-in default's tone.
+const SINE_DEF: &str = include_str!("sine.json");
+
+/// Two voices of a gated sine def overlapping, with mid-block entries, an
+/// `/node_set` retune and staggered frees: exercises the node tree, named
+/// controls and the sample-accurate scheduler end to end. 0.3 s mono.
 pub fn arpeggio() -> Score {
     Score::new([
         (
             t(0),
-            vec![msg(
-                "/synth_new",
-                vec![
-                    s("default"),
-                    i(1000),
-                    i(0),
-                    i(0),
-                    s("freq"),
-                    f(330.0),
-                    s("amp"),
-                    f(0.3),
-                ],
-            )],
+            vec![
+                msg(
+                    "/def_send",
+                    vec![
+                        OscType::String("synth".into()),
+                        OscType::Blob(SINE_DEF.as_bytes().to_vec()),
+                    ],
+                ),
+                msg(
+                    "/synth_new",
+                    vec![
+                        s("sine"),
+                        i(1000),
+                        i(0),
+                        i(0),
+                        s("freq"),
+                        f(330.0),
+                        s("amp"),
+                        f(0.3),
+                    ],
+                ),
+            ],
         ),
         (
             // Mid-block (5000 = 78*64 + 8): the engine must split the block.
@@ -76,7 +89,7 @@ pub fn arpeggio() -> Score {
                 msg(
                     "/synth_new",
                     vec![
-                        s("default"),
+                        s("sine"),
                         i(1001),
                         i(0),
                         i(0),
@@ -96,7 +109,7 @@ pub fn arpeggio() -> Score {
                 msg(
                     "/synth_new",
                     vec![
-                        s("default"),
+                        s("sine"),
                         i(1002),
                         i(0),
                         i(0),

@@ -18,6 +18,7 @@ from clausters.defs import (
     chans,
     control,
     env_gen,
+    lag,
     local_in,
     local_out,
     out,
@@ -25,6 +26,7 @@ from clausters.defs import (
     white_noise,
 )
 from clausters.defs import Server
+from clausters.defs.ugens import pan2, rlpf, saw
 from clausters.seq import Pbind, Pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
@@ -48,20 +50,29 @@ def _py_default(name="py_default") -> SynthDef:
 
 
 def _py_default_env(name="py_default_env") -> SynthDef:
-    """A faithful client-side replica of the server's built-in ``default``:
-    ``Sine(freq) * EnvGen(gate) * amp`` with a gated ASR (equal-power sine
-    ramps, 0.01 s attack, 0.3 s release, ``FREE_SELF``) -- the same graph the
-    server registers, so it must render sample-identically."""
+    """A faithful client-side replica of the server's built-in ``default``: two
+    saws detuned +/-0.4 % and a sine through a resonant lowpass whose cutoff
+    follows the key and opens with ``slide``, ``press`` and a velocity bloom,
+    under a gated ASR (equal-power sine ramps, 0.01 s attack, 0.3 s release,
+    ``FREE_SELF``) and placed by ``pan`` -- the same graph the server
+    registers, so it must render sample-identically."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     gate = control("gate", 1.0)
+    pan = control("pan", 0.0)
+    press = lag(control("press", 0.0), 0.05)
+    slide = lag(control("slide", 0.5), 0.05)
     env = env_gen(
         Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
         gate=gate,
         done_action=DoneAction.FREE_SELF,
     )
-    sig = sine(freq) * env * amp
-    return SynthDef(name, out(0.0, sig), out(1.0, sig))
+    bloom = env_gen(Env.perc(attack=0.005, release=0.6))
+    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.35 + sine(freq) * 0.3
+    octaves = 1.0 + slide * 3.0 + press * 2.0 + bloom * (0.5 + amp * 1.5)
+    cutoff = (freq * 2.0 ** octaves).min(16000.0)
+    sig = rlpf(tone, cutoff, rq=0.7) * env * amp * (1.0 + press * 0.5) * 1.6
+    return SynthDef(name, out(0.0, pan2(sig, pan)))
 
 
 # ---- structure (no server) ----

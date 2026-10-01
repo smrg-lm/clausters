@@ -1,0 +1,21 @@
+{
+  "name": "sine",
+  "controls": [
+    {"name": "freq", "default": 440.0},
+    {"name": "amp", "default": 0.2},
+    {"name": "gate", "default": 1.0}
+  ],
+  "ugens": [
+    {"kind": "Sine", "inputs": [{"control": 0}]},
+    {"kind": "EnvGen", "inputs": [
+      {"control": 2}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 2.0},
+      {"const": 0.0}, {"const": 2.0}, {"const": 1.0}, {"const": -1.0},
+      {"const": 1.0}, {"const": 0.01}, {"const": 3.0}, {"const": 0.0},
+      {"const": 0.0}, {"const": 0.3}, {"const": 3.0}, {"const": 0.0}
+    ]},
+    {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 1}]},
+    {"kind": "Mul", "inputs": [{"ugen": 2}, {"control": 1}]},
+    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]},
+    {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 3}]}
+  ]
+}

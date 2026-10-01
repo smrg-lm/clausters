@@ -10,6 +10,9 @@
 
 #[path = "common/signal.rs"]
 mod signal;
+#[cfg(feature = "synth")]
+#[path = "common/sine.rs"]
+mod sine;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -327,10 +330,9 @@ fn input_buses_feed_faust_synths() {
 #[test]
 fn ugen_and_faust_synths_mix_on_the_same_bus() {
     use clausters::synthdef::instance::UGenSynth;
-    use clausters::synthdef::{compile, default_spec};
 
     let fdef = compile_def("fsine", SINE_SRC);
-    let udef = Arc::new(compile(default_spec()).unwrap());
+    let udef = sine::sine_def();
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
 
     // Same freq and phase, both summing into bus 0: amplitudes add.

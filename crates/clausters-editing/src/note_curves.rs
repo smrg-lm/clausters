@@ -38,17 +38,18 @@ use crate::notes_playback::{PlacedCurve, Placement, SlotNote, Voice, voice_of};
 
 /// **The control a curve drives**, from its target: `{"control": name}` names
 /// it, and wins; `{"bend": ...}` is the pitch ([`BEND`]); `{"pressure": ...}`
-/// and `{"timbre": ...}` are the controls of those names, the ones an MPE zone
-/// drives. A bare `{"cc": n}` drives nothing on a synth.
+/// and `{"timbre": ...}` are `press` and `slide`, the controls an MPE zone
+/// drives (and the built-in `default` declares). A bare `{"cc": n}` drives
+/// nothing on a synth.
 pub fn curve_control(target: &Value) -> Option<String> {
     let target = target.as_object()?;
     if let Some(name) = target.get("control").and_then(Value::as_str) {
         return Some(name.to_string());
     }
-    [BEND, "pressure", "timbre"]
+    [(BEND, BEND), ("pressure", "press"), ("timbre", "slide")]
         .into_iter()
-        .find(|key| target.contains_key(*key))
-        .map(str::to_string)
+        .find(|(key, _)| target.contains_key(*key))
+        .map(|(_, control)| control.to_string())
 }
 
 /// The channel a lane's target names, or `None` for every channel.

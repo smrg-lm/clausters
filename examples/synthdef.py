@@ -41,9 +41,11 @@ from clausters.defs import (
     SynthDef,
     control,
     env_gen,
+    lag,
     out,
     sine,
 )
+from clausters.defs.ugens import pan2, rlpf, saw
 from clausters.seq import Pbind, Pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
@@ -51,25 +53,39 @@ SR = 48000.0
 
 
 def py_default(name="py_default") -> SynthDef:
-    """`Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 -- the client-side twin
-    of the server's built-in `default`. `freq`/`amp`/`gate` are named controls
-    (the `/synth_new`/`/node_set` parameters a `Pbind` drives).
+    """The client-side twin of the server's built-in `default`: a subtractive
+    voice with a control for each dimension an MPE zone plays.
+    `freq`/`amp`/`gate`/`pan`/`press`/`slide` are named controls (the
+    `/synth_new`/`/node_set` parameters a `Pbind` drives).
+
+    The tone is two saws detuned by +/-0.4 % and a sine on the fundamental,
+    through a resonant lowpass whose cutoff sits an octave above the note and
+    opens with `slide` (the timbre), `press` (the pressure, which also lifts
+    the level) and a **bloom** -- a 0.6 s decay on the cutoff, deeper the
+    louder the note. `press` and `slide` are smoothed over 50 ms.
 
     The envelope is the built-in's own: a gated ASR on equal-power sine ramps
     (0.01 s attack, sustain at 1.0 while the gate is held, 0.3 s release) with
     `done_action = FREE_SELF`, so the note ramps in and out without a click and
-    frees itself once the release finishes."""
+    frees itself once the release finishes. `pan2` places it at equal power."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     gate = control("gate", 1.0)
+    pan = control("pan", 0.0)
+    press = lag(control("press", 0.0), 0.05)
+    slide = lag(control("slide", 0.5), 0.05)
     env = env_gen(
         Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
         gate=gate,
         done_action=DoneAction.FREE_SELF,
     )
-    sig = sine(freq) * env * amp     # `*` composes a Mul UGen
-    return SynthDef(name, out(0.0, sig), out(1.0, sig))
-
+    bloom = env_gen(Env.perc(attack=0.005, release=0.6))
+    # `+`, `*` compose Add/Mul UGens; `**` and `.min` the generic BinaryOpUGen.
+    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.35 + sine(freq) * 0.3
+    octaves = 1.0 + slide * 3.0 + press * 2.0 + bloom * (0.5 + amp * 1.5)
+    cutoff = (freq * 2.0 ** octaves).min(16000.0)
+    sig = rlpf(tone, cutoff, rq=0.7) * env * amp * (1.0 + press * 0.5) * 1.6
+    return SynthDef(name, out(0.0, pan2(sig, pan)))
 
 def render_pbind(instrument: str, sdef: SynthDef | None):
     """Render the arpeggio on `instrument`; if `sdef` is given, score its

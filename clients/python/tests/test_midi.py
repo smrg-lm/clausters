@@ -148,7 +148,7 @@ def test_an_mpe_zone_puts_each_note_on_a_member_with_its_expression():
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     Pbind(
         instrument="default", midinote=Pseq([60, 64, 67, 72]), dur=0.5, legato=1.5,
-        bend=Pseq([12.0, 0.0, 0.0, 0.0]), pressure=Pseq([1.0, None, None, None]),
+        bend=Pseq([12.0, 0.0, 0.0, 0.0]), press=Pseq([1.0, None, None, None]),
     ).play(clock, midi)
     clock.render()
     events = midi.score.sorted()

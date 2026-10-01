@@ -165,9 +165,11 @@ class MidiServer:
     score, or down the port at once -- and each note goes on a member channel
     of its own (round robin, preferring a free one, reusing the one held
     longest), preceded by its expression: the event's ``bend`` in semitones
-    through ``bend_range`` (48, the zone's default), and its ``pressure`` and
-    ``timbre``, 0..1. A dimension the event does not state goes back to its
-    rest, so a reused channel does not carry the last note's."""
+    through ``bend_range`` (48, the zone's default), its ``press`` (the
+    pressure) and its ``slide`` (the timbre), 0..1 -- the keys a server's zone
+    names its voice's controls with, so one pattern plays either end. A
+    dimension the event does not state goes back to its rest, so a reused
+    channel does not carry the last note's."""
 
     def __init__(self, interface=None, channel: int = 0, ppq: int = 480,
                  zone: int | None = None, upper: bool = False, bend_range: float = 48.0):
@@ -221,7 +223,7 @@ class MidiServer:
         self._held.append((beat + off, channel, key))
         expression = self._midi.expression_messages(
             channel, float(keys.get("bend", 0.0)), self.bend_range,
-            keys.get("pressure"), keys.get("timbre"))
+            keys.get("press"), keys.get("slide"))
         return [(0.0, m) for m in expression] + moved
 
     def send_message(self, message):

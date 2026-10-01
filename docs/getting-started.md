@@ -63,7 +63,7 @@ oscsend localhost 57110 /node_set isf 1000 freq 330       # retune it
 oscsend localhost 57110 /node_free i 1000                 # stop it
 ```
 
-`default` is a built-in sine def; define your own with `/def_send synth` (see [Defs, UGens & the OSC protocol](schemas.md)).
+`default` is a built-in def — a subtractive voice with `freq`, `amp`, `gate`, `pan`, `press` and `slide` controls, the last two the pressure and the timbre an MPE zone plays; define your own with `/def_send synth` (see [Defs, UGens & the OSC protocol](schemas.md)).
 
 > Sandbox note for the test harness: some environments isolate the network between shell invocations, so a server started in one invocation is unreachable from the next. Run the server and client in the **same** invocation there (server in the background with `&`, then the client). See [Contributing](contributing.md).
 

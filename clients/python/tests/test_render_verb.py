@@ -102,9 +102,9 @@ def test_a_bounce_renders_the_last_notes_release():
     pattern = Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25)
     cut = render(pattern, tail=0, sample_rate=SR)
     # With no tail the take stops on the gate closing on the last note, mid
-    # release: the last sample is a step, not silence.
+    # release: the take ends sounding, not in silence.
     assert abs(cut.frames - 0.7 * SR) <= 1
-    assert abs(cut.samples[-2]) > 0.01
+    assert max(abs(s) for s in cut.samples[-128:]) > 0.01
     whole = render(pattern, sample_rate=SR)
     # The default tail is a second past that gate, and the release is over.
     assert abs(whole.frames - 1.7 * SR) <= 1

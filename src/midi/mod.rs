@@ -156,7 +156,7 @@ pub struct MidiBinding {
     /// Poly (per-note) aftertouch.
     pub poly_control: Option<String>,
     /// A zone's third dimension (its timbre controller). A zone defaults it to
-    /// `timbre`; a per-channel binding has none.
+    /// `slide`; a per-channel binding has none.
     #[serde(default)]
     pub timbre_control: Option<String>,
     /// Note-off velocity, set on the voice as it is released.
@@ -212,12 +212,13 @@ pub struct ZoneBinding {
 
 impl ZoneBinding {
     /// A zone of `members` playing `instrument`: a binding whose pressure and
-    /// timbre default to controls of those names, so a def that declares them
-    /// plays the three dimensions with nothing mapped.
+    /// timbre default to the controls `press` and `slide` -- the built-in
+    /// `default`'s -- so a def that declares them plays the three dimensions
+    /// with nothing mapped.
     pub fn new(members: u8, instrument: String, target: i32, action: i32, gate: bool) -> Self {
         let mut binding = MidiBinding::new(instrument, target, action, gate);
-        binding.pressure_control = Some("pressure".into());
-        binding.timbre_control = Some("timbre".into());
+        binding.pressure_control = Some("press".into());
+        binding.timbre_control = Some("slide".into());
         Self {
             binding,
             config: ZoneConfig {
