@@ -61,6 +61,12 @@ impl Takes {
         self.map.insert(source, take);
     }
 
+    /// **Forgets a source**, answering what it had resolved to: a join freed
+    /// once nothing can read it any more.
+    pub fn remove(&mut self, source: SourceId) -> Option<Take> {
+        self.map.remove(&source)
+    }
+
     /// **The source a buffer number came from** -- the lookup read the other
     /// way, which is what a box built by a hand needs: a picture names a server
     /// buffer and the document names a source, and this table is the only thing

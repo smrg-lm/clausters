@@ -779,3 +779,26 @@ def test_the_source_table_says_how_long_a_source_is_when_its_buffer_does():
                      2: 8}).table()
     assert table[1]["duration"] == 0.5
     assert "duration" not in table[2]
+
+
+def test_a_join_the_history_let_go_of_is_freed_and_leaves_the_table():
+    # The context hands a multitrack's released joins back by source id, under
+    # the multitrack's member; its domain frees the buffer it built for each
+    # and drops it from the table, and leaves the takes alone.
+    from types import SimpleNamespace
+
+    from clausters.gui.editing import Editing, MultitrackDomain
+
+    class Join:
+        freed = False
+
+        def free(self):
+            self.freed = True
+
+    join = Join()
+    domain = MultitrackDomain(SimpleNamespace(sources=Sources({1: 7, 5: join})))
+    editing = Editing()
+    editing._handlers[3] = (None, domain)
+    editing.release([{"member": 3, "sources": [5]}])
+    assert join.freed
+    assert domain.bridge.sources.buffers == {1: 7}

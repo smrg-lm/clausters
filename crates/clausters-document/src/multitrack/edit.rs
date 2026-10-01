@@ -343,6 +343,58 @@ impl MultitrackIntent {
             Self::SetTempoMap { .. } | Self::SetMeterMap { .. } => None,
         }
     }
+
+    /// **The sources this edit makes something read**: every source a region
+    /// it states windows, every source a content it states windows, and the
+    /// one a join mints -- in the order the edit names them, each once.
+    ///
+    /// What a history entry over this edit holds: a redo or an undo applies
+    /// this intent, and whatever it names has to still be there when it does.
+    /// An edit that only moves or reshapes a region names nothing, since what
+    /// the region reads does not change.
+    pub fn sources(&self) -> Vec<SourceId> {
+        let mut out: Vec<SourceId> = Vec::new();
+        let mut add = |source: Option<SourceId>| {
+            if let Some(source) = source
+                && !out.contains(&source)
+            {
+                out.push(source);
+            }
+        };
+        match self {
+            Self::SetTracks { tracks } => tracks
+                .iter()
+                .flat_map(|t| t.lanes.iter())
+                .flat_map(|l| l.regions.iter())
+                .for_each(|r| add(r.content.source())),
+            Self::SetLane { regions, .. } => regions.iter().for_each(|r| add(r.content.source())),
+            Self::TrimRegion { content, .. } => add(content.as_ref().and_then(Content::source)),
+            Self::SplitRegion {
+                left_content,
+                right_content,
+                ..
+            } => {
+                add(left_content.as_ref().and_then(Content::source));
+                add(right_content.as_ref().and_then(Content::source));
+            }
+            Self::JoinRegions {
+                content, source, ..
+            } => {
+                add(content.as_ref().and_then(Content::source));
+                add(source.as_ref().map(|m| m.id));
+            }
+            Self::SetActiveLane { .. }
+            | Self::PlaceRegion { .. }
+            | Self::FadeRegion { .. }
+            | Self::SetAutomation { .. }
+            | Self::SetMarker { .. }
+            | Self::RemoveMarker { .. }
+            | Self::SetRange { .. }
+            | Self::SetTempoMap { .. }
+            | Self::SetMeterMap { .. } => {}
+        }
+        out
+    }
 }
 
 /// Apply an edit to a multitrack.

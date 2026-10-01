@@ -310,6 +310,46 @@ impl MultitrackEditor {
         }
     }
 
+    /// **The joins an edit names**: the sources `payload` makes something read
+    /// that are joins this editor knows. What a leg holds, so a join stays
+    /// while an undo or a redo can still name it and comes back to be freed
+    /// once none can. A take is not one of them: it is the session's, loaded
+    /// from a file, and outlives every edit over it.
+    fn joins_named(&self, payload: &Value) -> Vec<u64> {
+        clausters_document::multitrack::edit::intent_of(&Opaque(payload.clone()))
+            .map(|intent| intent.sources())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|source| self.segments.contains_key(source))
+            .map(|source| source.0)
+            .collect()
+    }
+
+    /// Whether `source` is a join this editor knows: one it minted, or one a
+    /// session it was opened with held.
+    pub fn is_join(&self, source: SourceId) -> bool {
+        self.segments.contains_key(&source)
+    }
+
+    /// **The joins the multitrack reads now**: what a released join is checked
+    /// against before it is freed, since a region still windowing it is a
+    /// root the history does not know about.
+    pub fn joins_read(&self) -> Vec<SourceId> {
+        self.multitrack
+            .regions()
+            .filter_map(|region| region.content.source())
+            .filter(|source| self.segments.contains_key(source))
+            .collect()
+    }
+
+    /// **Forgets a join** nothing reaches any more: it leaves the editor's
+    /// table with its segments, so a later edit cannot read through it.
+    pub fn forget_join(&mut self, source: SourceId) {
+        self.segments.remove(&source);
+        self.sources.remove(&source);
+        self.lengths.remove(&source);
+    }
+
     /// **Binds source `source` to a sequence** the caller shares: a region
     /// over that source draws the sequence's notes, as it stands when drawn.
     pub fn bind_sequence(&mut self, source: SourceId, sequence: crate::notes::Shared) {
@@ -712,12 +752,15 @@ impl MultitrackEditor {
             }
             moved = true;
             if let Some(backward) = current {
+                let holds_forward = self.joins_named(payload);
+                let holds_backward = self.joins_named(&backward);
                 legs.push(Leg {
                     forward: json!({ "edit": payload }),
                     backward,
                     key: domain::coalesce_key(MULTITRACK, &Opaque(payload.clone()))
                         .unwrap_or_default(),
-                    ..Default::default()
+                    holds_forward,
+                    holds_backward,
                 });
             }
         }

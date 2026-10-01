@@ -265,6 +265,15 @@ class MultitrackDomain(Domain):
             sample_rate=float(made["rate"]), wait=False,
             server=self.bridge.server)
 
+    def free_sources(self, structure, sources) -> None:
+        """Free joins the context handed back: no box reads one and no undo or
+        redo can put one back. Its buffer is freed and it leaves the table, so
+        the next picture and the next save no longer name it."""
+        for source in sources:
+            held = self.bridge.sources.buffers.pop(int(source), None)
+            if held is not None and hasattr(held, "free"):
+                held.free()
+
 
 class MultitrackView(View):
     """The multitrack editor's window: the multitrack, ruled from above, with the
@@ -419,7 +428,11 @@ class MultitrackEditor(Editor):
             stepped = self.app.stepped(turned.get("stepped") or {}, self)
             self.echo.send(outcome.get("answer"))
             return stepped
-        return self._take(outcome)
+        changed = self._take(outcome)
+        # **A join the edit let go of** -- the redo it dropped was the last
+        # entry naming it -- is freed once the turn is carried out.
+        self._editing.release(turned.get("freed"), turned.get("stored"))
+        return changed
 
     def _route(self, args) -> bool:
         """One ``/gui_event`` payload, with the stamp already taken off: the
@@ -428,7 +441,9 @@ class MultitrackEditor(Editor):
         wid, tag, values = args[0], args[1], list(args[2:])
         turned = self._editing.event(self._member, "/gui_event",
                                      _plain([wid, 0, 0, tag, *values]))
-        return self._take(turned.get("outcome") or {})
+        changed = self._take(turned.get("outcome") or {})
+        self._editing.release(turned.get("freed"), turned.get("stored"))
+        return changed
 
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether

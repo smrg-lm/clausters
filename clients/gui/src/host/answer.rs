@@ -276,7 +276,10 @@ impl Host {
             return false;
         };
         let clausters_apps::editing::Turned {
-            outcome, stepped, ..
+            outcome,
+            stepped,
+            freed,
+            ..
         } = turned;
         let clausters_apps::editing::Outcome::Multitrack(outcome) = outcome else {
             return false;
@@ -287,6 +290,9 @@ impl Host {
         if outcome.turn == Kind::Step {
             return self.step_multitrack(def_id, stepped, outcome.answer);
         }
+        // **A join the edit let go of** -- the redo it dropped was the last
+        // entry naming it -- goes once the turn's own sources are made.
+        let let_go: Vec<u64> = freed.iter().flat_map(|f| f.sources.clone()).collect();
         if outcome.changed
             && let Some(edited) = owner.editor().map(|editor| editor.multitrack().clone())
         {
@@ -298,6 +304,7 @@ impl Host {
             .filter_map(|m| serde_json::from_value(m.clone()).ok())
             .collect();
         self.mint_sources(&minted);
+        self.free_joins(&let_go);
         let applied = document::Applied {
             effective: None,
             version: self.owner.as_ref().map_or(0, |o| o.multitrack.version),
@@ -384,6 +391,11 @@ impl Host {
         let applied = stepped.as_ref().map_or_else(Vec::new, |s| owner.carry(s));
         self.adopt(def_id, &applied);
         self.replay_writes(def_id, &applied);
+        let let_go: Vec<u64> = stepped
+            .iter()
+            .flat_map(|s| s.freed.iter().flat_map(|f| f.sources.clone()))
+            .collect();
+        self.free_joins(&let_go);
         if let Some(stepped) = stepped
             && stepped.stepped
         {

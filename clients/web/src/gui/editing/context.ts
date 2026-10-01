@@ -67,6 +67,12 @@ export interface StepHandler extends Applier {
     free?(structure: never | object, buffers: number[], spilled: number[]): void;
     /** An audio editor's: write a take to disk and free its buffer. */
     store?(structure: never | object, buffer: number, steps: unknown[]): void;
+    /**
+     * A multitrack's: free joins no box reads and no undo or redo can put
+     * back, by source id -- the buffer built for each, and its place in the
+     * table.
+     */
+    freeSources?(structure: never | object, sources: number[]): void;
 }
 
 /**
@@ -125,10 +131,12 @@ export interface Effect {
 export interface Freed {
     /** The member whose takes they were. */
     member: number;
-    /** The buffer numbers, to give back. */
-    buffers: number[];
+    /** The buffer numbers, to give back: an audio editor's takes. */
+    buffers?: number[];
     /** Those whose take was on disk: no buffer on the server to free. */
     spilled?: number[];
+    /** A multitrack's joins, by source id, to free and drop from its table. */
+    sources?: number[];
 }
 
 /**
@@ -467,7 +475,12 @@ export class Editing {
         for (const entry of freed ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
-            held.handler.free?.(held.structure as never, entry.buffers ?? [], entry.spilled ?? []);
+            if ((entry.buffers ?? []).length > 0) {
+                held.handler.free?.(held.structure as never, entry.buffers ?? [], entry.spilled ?? []);
+            }
+            if ((entry.sources ?? []).length > 0) {
+                held.handler.freeSources?.(held.structure as never, entry.sources ?? []);
+            }
         }
         for (const entry of stored ?? []) {
             const held = this.handlers.get(Number(entry.member));

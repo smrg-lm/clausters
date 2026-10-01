@@ -268,14 +268,19 @@ class Editing:
         """**Free the takes nothing reaches any more, and write to disk the
         ones past the resident budget** -- what a turn or a step hands back as
         ``freed`` and ``stored``, each under the member that made those takes,
-        whose server they are on. Called after the turn's own steps are
+        whose server they are on -- an audio editor's buffers, a multitrack's
+        joins by source id. Called after the turn's own steps are
         carried out, so no join is still reading them."""
         for entry in freed or ():
             structure, handler = self._handlers.get(int(entry.get("member", -1)),
                                                     (None, None))
-            if handler is not None and hasattr(handler, "free"):
+            if handler is None:
+                continue
+            if entry.get("buffers") and hasattr(handler, "free"):
                 handler.free(structure, entry.get("buffers") or [],
                              entry.get("spilled") or [])
+            if entry.get("sources") and hasattr(handler, "free_sources"):
+                handler.free_sources(structure, entry["sources"])
         for entry in stored or ():
             member = int(entry.get("member", -1))
             structure, handler = self._handlers.get(member, (None, None))

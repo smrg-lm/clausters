@@ -19,7 +19,8 @@ import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clau
 import {
     MultitrackEditor, MultitrackView, NotesEditor, Playback, edit,
 } from "../src/gui/editing/index.ts";
-import { Sources } from "../src/gui/editing/multitrack.ts";
+import { Editing } from "../src/gui/editing/context.ts";
+import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
@@ -864,4 +865,19 @@ test("a double click on a box of notes opens its roll", () => {
         [...audio.view!.widgets.keys()][0], "open", "12",
     ]);
     assert.equal(audio.rolls.size, 0);
+});
+
+test("a join the history let go of is freed and leaves the table", async () => {
+    // The context hands a multitrack's released joins back by source id, under
+    // the multitrack's member; its domain frees the buffer it built for each
+    // and drops it from the table, and leaves the takes alone.
+    await loadCore();
+    let freed = false;
+    const join = { free: () => { freed = true; } };
+    const domain = new MultitrackDomain({ sources: new Sources(new Map<number, number | object>([[1, 7], [5, join]])) } as never);
+    const editing = new Editing();
+    (editing as unknown as { handlers: Map<number, unknown> }).handlers.set(3, { structure: null, handler: domain });
+    editing.release([{ member: 3, sources: [5] }]);
+    assert.ok(freed);
+    assert.deepEqual([...domain.bridge.sources.buffers], [[1, 7]]);
 });

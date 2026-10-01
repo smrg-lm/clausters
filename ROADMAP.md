@@ -110,10 +110,7 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The multitrack's joins do not say which takes they hold**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. The history can hold
-  and give back takes now; the multitrack's entries do not state theirs yet,
-  so a join undone is kept for the whole session.
+None is open now.
 
 
 ## 2. Fixes that need a decision first

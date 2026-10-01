@@ -368,6 +368,23 @@ export class MultitrackDomain extends Domain<Multitrack> {
             }),
         );
     }
+
+    /**
+     * Free joins the context handed back: no box reads one and no undo or
+     * redo can put one back. Its buffer is freed and it leaves the table, so
+     * the next picture and the next save no longer name it.
+     *
+     * @internal
+     */
+    freeSources(_structure: Multitrack, sources: number[]): void {
+        for (const source of sources) {
+            const held = this.bridge.sources.buffers.get(Math.trunc(source));
+            this.bridge.sources.buffers.delete(Math.trunc(source));
+            if (held !== undefined && typeof held === "object" && "free" in held) {
+                (held as { free(): void }).free();
+            }
+        }
+    }
 }
 /**
  * One `multitrack` widget: the whole multitrack, in one of them.
@@ -645,7 +662,11 @@ export class MultitrackEditor extends Editor<Multitrack> {
             this.echo.send(outcome.answer);
             return stepped;
         }
-        return this.take(outcome);
+        const changed = this.take(outcome);
+        // **A join the edit let go of** -- the redo it dropped was the last
+        // entry naming it -- is freed once the turn is carried out.
+        this.editing.release(turned.freed, turned.stored);
+        return changed;
     }
 
     /**
@@ -660,7 +681,9 @@ export class MultitrackEditor extends Editor<Multitrack> {
             "/gui_event",
             plain([wid, 0, 0, tag, ...values]) as unknown[],
         );
-        return this.take((turned.outcome ?? {}) as Outcome);
+        const changed = this.take((turned.outcome ?? {}) as Outcome);
+        this.editing.release(turned.freed, turned.stored);
+        return changed;
     }
 
     /**

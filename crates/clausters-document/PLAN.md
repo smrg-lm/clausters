@@ -2147,14 +2147,19 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   the oldest to disk past a resident budget. What is left for the multitrack
   is the entry below.
 
-- ⬜ **The multitrack's joins do not say which takes they hold** *(found
+- ✅ **The multitrack's joins do not say which takes they hold** *(found
   2026-09-22, closing the entry above)*. The history can now hold and give
   back takes (`Entry::holding`, `History::released_sources`), and the audio
   editor uses it. A multitrack's entries go through the document's log and
   name no sources, so a join minted and undone is still kept for as long as
   the session runs. The mechanism exists; what is missing is the multitrack's
   entries stating the sources their two halves reach, and a caller (the
-  clients, the standalone host) freeing what comes back.
+  clients, the standalone host) freeing what comes back. **Fixed
+  2026-10-01**: a multitrack leg holds the joins its two halves name
+  (`MultitrackIntent::sources`), the editing context hands a released one
+  back under the multitrack's member (`Freed::sources`) once no region reads
+  it, and both clients and the standalone host free its buffer and drop it
+  from their table.
 
 - ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
   session holds neither inside** *(found 2026-09-29, with the user, designing

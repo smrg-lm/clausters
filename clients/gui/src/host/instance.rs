@@ -230,6 +230,48 @@ impl Host {
         self.send_multitrack();
     }
 
+    /// **Frees the joins the editing context let go of**: no box reads one and
+    /// no undo or redo can put one back. Its buffer is freed where
+    /// `mint_sources` made it -- the player's attachment first when a
+    /// player is apart from the session -- its number goes back to the host's
+    /// buffer space, and it leaves the session's table, so a save no longer
+    /// names it.
+    pub(crate) fn free_joins(&mut self, sources: &[u64]) {
+        if sources.is_empty() {
+            return;
+        }
+        let Some(owner) = self.owner.as_mut() else {
+            return;
+        };
+        let mut freed = Vec::new();
+        for source in sources {
+            let id = SourceId(*source);
+            if let Some(session) = owner.session.as_mut() {
+                session.sources.remove(&id);
+            }
+            if let Some(take) = owner.takes.remove(id) {
+                freed.push(take.bufnum);
+            }
+        }
+        let split = self.player.is_some() && self.server.is_some();
+        for bufnum in freed {
+            let free = OscMessage {
+                addr: "/buffer_free".into(),
+                args: vec![OscType::Int(bufnum)],
+            };
+            self.instance
+                .run
+                .push(Server::Sound, [Step::Send(free.clone())]);
+            if split {
+                self.instance.run.push(Server::Samples, [Step::Send(free)]);
+            }
+            if let Err(e) = self.ids.release(Space::Buffers, i64::from(bufnum), 1) {
+                diag::warn!("buffer {bufnum} of a freed join: {e}");
+            }
+        }
+        self.send_multitrack();
+    }
+
     /// **Which server a leg is**: the player sounds; the server leg holds the
     /// samples when a player is attached apart from it, and is the one server
     /// otherwise.

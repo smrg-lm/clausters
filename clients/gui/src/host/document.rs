@@ -2555,6 +2555,29 @@ mod window_verb_tests {
         let (_, bufnum, frames) = minted[0];
         assert_ne!(bufnum, 7, "and in a buffer of its own, not over the take");
         assert!(frames.is_some_and(|f| f > 0), "as long as its parts");
+
+        // **Undone, it stays for the redo; overtaken, it goes.** An edit after
+        // the undo -- the track muted -- drops the one entry that named the
+        // join, and the host frees what it built for it.
+        let (join, _, _) = minted[0];
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        let held = |host: &Host| {
+            host.owner
+                .as_ref()
+                .and_then(|o| o.takes.get(clausters_document::SourceId(join)))
+        };
+        assert!(held(&host).is_some(), "a redo can still name it");
+        let buffers = |host: &Host| host.ids().in_use(clausters_core::ids::Space::Buffers);
+        let before = buffers(&host);
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(def_id, view, seq, &lanes(&[("10", true, false, 1.0)])));
+        assert!(held(&host).is_none(), "nothing can name it any more");
+        assert_eq!(
+            buffers(&host),
+            before - 1,
+            "and its buffer number went back"
+        );
     }
 
     /// **A take whose length nobody stated learns it once it is read**

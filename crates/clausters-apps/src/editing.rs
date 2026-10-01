@@ -226,17 +226,24 @@ pub enum Effect {
 }
 
 /// **Takes a member made that nothing reaches any more**: the buffers to free,
-/// on that member's server.
+/// on that member's server -- or, for a multitrack, the joins.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Freed {
     /// The member whose take they were.
     pub member: MemberId,
-    /// The buffer numbers, to give back.
+    /// The buffer numbers, to give back: an audio editor's takes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub buffers: Vec<i64>,
     /// Those of them whose take was on disk: the number goes back, and there
     /// is no buffer on the server to free.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub spilled: Vec<i64>,
+    /// **A multitrack's joins**, by source id: no region reads one and no
+    /// entry can put one back, so the buffer the caller built for it is freed
+    /// and the source leaves its table. The multitrack's editor has already
+    /// forgotten them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<u64>,
 }
 
 /// **A take leaving memory**: only the history holds it, and the resident
@@ -337,7 +344,16 @@ impl Editing {
                 _ => None,
             })
             .collect();
-        let rooted: Vec<SourceId> = editors.iter().flat_map(|e| e.rooted()).collect();
+        // A join a region still windows is a root the history does not see,
+        // as a take an audio editor shows is.
+        let rooted: Vec<SourceId> = editors
+            .iter()
+            .flat_map(|e| e.rooted())
+            .chain(self.seats.iter().flat_map(|seat| match &seat.member {
+                Member::Multitrack(editor) => editor.joins_read(),
+                _ => Vec::new(),
+            }))
+            .collect();
         if let Some(bytes) = self.bytes {
             let size_of = |source: SourceId| {
                 editors
@@ -358,11 +374,36 @@ impl Editing {
         // Each take goes back under the member that made it: the one that
         // knows its size is the one whose server it is on.
         let mut out: Vec<Freed> = Vec::new();
+        let at_member = |out: &mut Vec<Freed>, member: MemberId| match out
+            .iter()
+            .position(|f| f.member == member)
+        {
+            Some(at) => at,
+            None => {
+                out.push(Freed {
+                    member,
+                    buffers: Vec::new(),
+                    spilled: Vec::new(),
+                    sources: Vec::new(),
+                });
+                out.len() - 1
+            }
+        };
         for buffer in released {
             let owner = self.seats.iter().position(|seat| {
                 matches!(&seat.member, Member::Audio(editor) if editor.bytes(buffer).is_some())
             });
             let Some(owner) = owner else {
+                // **A join goes back under the multitrack that knows it**,
+                // which is the one whose caller built its buffer.
+                let source = SourceId(buffer as u64);
+                let owner = self.seats.iter().position(|seat| {
+                    matches!(&seat.member, Member::Multitrack(editor) if editor.is_join(source))
+                });
+                if let Some(owner) = owner {
+                    let at = at_member(&mut out, owner as MemberId);
+                    out[at].sources.push(source.0);
+                }
                 continue;
             };
             let member = owner as MemberId;
@@ -370,29 +411,25 @@ impl Editing {
                 &self.seats[owner].member,
                 Member::Audio(editor) if editor.is_spilled(buffer)
             );
-            let at = match out.iter().position(|f| f.member == member) {
-                Some(at) => at,
-                None => {
-                    out.push(Freed {
-                        member,
-                        buffers: Vec::new(),
-                        spilled: Vec::new(),
-                    });
-                    out.len() - 1
-                }
-            };
+            let at = at_member(&mut out, member);
             out[at].buffers.push(buffer);
             if spilled {
                 out[at].spilled.push(buffer);
             }
         }
         for seat in &mut self.seats {
-            if let Member::Audio(editor) = &mut seat.member {
-                for freed in &out {
-                    for buffer in &freed.buffers {
+            match &mut seat.member {
+                Member::Audio(editor) => {
+                    for buffer in out.iter().flat_map(|f| &f.buffers) {
                         editor.forget(*buffer);
                     }
                 }
+                Member::Multitrack(editor) => {
+                    for source in out.iter().flat_map(|f| &f.sources) {
+                        editor.forget_join(SourceId(*source));
+                    }
+                }
+                _ => {}
             }
         }
         let stored = self.store();
@@ -1176,6 +1213,102 @@ mod tests {
         editor.window(40, 41);
         editor.set_window(Some(39));
         Member::Multitrack(Box::new(editor))
+    }
+
+    /// **A join no region reads and no entry can put back is handed back to
+    /// free**, under the multitrack that minted it: an undo keeps it for the
+    /// redo, and the edit after the undo lets it go.
+    #[test]
+    fn a_join_undone_and_overtaken_is_freed() {
+        let half = |id: u64, at: f64, start: f64| {
+            let mut region = region(id, at);
+            region.length = Second(1.0);
+            region.content = Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start,
+                duration: 1.0,
+            });
+            region
+        };
+        // The take's halves swapped: no window onto the take reads them in
+        // this order, so the join mints a source.
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.lanes[0].regions = vec![half(12, 0.0, 1.0), half(13, 1.0, 0.0)];
+        let mut editor = MultitrackEditor::new(
+            Multitrack {
+                tracks: vec![track],
+                ..Multitrack::default()
+            },
+            SR,
+            FIRST_VERSION,
+        );
+        editor.set_sources(HashMap::from([(SourceId(1), 7)]));
+        editor.chrome(
+            None,
+            crate::multitrack::Transport::Unnumbered,
+            "multitrack",
+            (1000, 560),
+        );
+        editor.window(40, 41);
+        editor.set_window(Some(39));
+        let mut editing = Editing::default();
+        let member = editing.join("multitrack", Member::Multitrack(Box::new(editor)));
+
+        let joined = editing
+            .event(
+                member,
+                &event(40, 1, "join", vec![json!("12"), json!("13")]),
+            )
+            .unwrap();
+        let Outcome::Multitrack(outcome) = &joined.outcome else {
+            panic!("a multitrack's outcome");
+        };
+        let join = SourceId(outcome.minted[0]["id"].as_u64().unwrap());
+        assert!(joined.freed.is_empty(), "the joined box reads it");
+
+        let undone = editing.step(Direction::Undo);
+        assert!(undone.freed.is_empty(), "a redo can still name it");
+
+        // The two boxes are back as they were; the first moves to 3 s.
+        let boxes = vec![
+            json!("12"),
+            json!("10"),
+            json!(3.0 * SR),
+            json!(SR),
+            json!(SR),
+            json!(""),
+            json!(7),
+            json!("13"),
+            json!("10"),
+            json!(SR),
+            json!(SR),
+            json!(0.0),
+            json!(""),
+            json!(7),
+        ];
+        let overtaken = editing
+            .event(member, &event(40, 2, "clips", boxes))
+            .unwrap();
+        assert!(overtaken.outcome.changed());
+        assert_eq!(
+            overtaken.freed,
+            [Freed {
+                member,
+                buffers: Vec::new(),
+                spilled: Vec::new(),
+                sources: vec![join.0],
+            }],
+            "the edit after the undo dropped the only entry that named it"
+        );
+        let Some(Member::Multitrack(editor)) = editing.member_mut(member) else {
+            panic!("the multitrack is still there");
+        };
+        assert!(!editor.is_join(join), "and the editor forgot it");
     }
 
     /// A mono take in buffer 7, a hundred frames, edited by an audio editor

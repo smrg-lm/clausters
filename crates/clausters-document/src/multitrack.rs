@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::timebase::{Beat, Second};
-use crate::{Node, NodeId, Opaque, SegmentRef};
+use crate::{Node, NodeId, Opaque, SegmentRef, SourceId};
 
 pub mod edit;
 pub mod nodes;
@@ -183,6 +183,11 @@ impl Content {
             Content::Window { window, .. } => Some(window),
             _ => None,
         }
+    }
+
+    /// The samples this content windows, when it is a window onto samples.
+    pub fn source(&self) -> Option<SourceId> {
+        self.as_window()?.source.samples().map(|s| s.source)
     }
 
     /// The tree this content places, when it is a composite.
@@ -888,7 +893,7 @@ impl Multitrack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Lifetime, SegmentSource, SourceId, SourceRef};
+    use crate::{Lifetime, SegmentSource, SourceRef};
 
     fn window(source: u64) -> SegmentRef {
         SegmentRef {
