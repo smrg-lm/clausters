@@ -4653,6 +4653,9 @@ implementations of one wire drift without any test going red.
 
 ## The third carrier writes time, and a page's render has no file at the end
 
+*(Its second half -- "a page has no file at the end" -- is superseded by "A
+path in a page is its own storage", below.)*
+
 The web client's offline drive had two things to decide, and the second is the
 one that does not follow from the first.
 
@@ -9110,3 +9113,38 @@ stayed in the mirror. A lane's own id is the client's; a playback that owns one
 lane gives it the id of the group it plays into, which is unique among a
 client's ids and lives exactly as long as the lane, so no new id space was
 added for it.
+
+## A path in a page is its own storage
+
+*(2026-09-30, superseding the second half of "The third carrier writes time".)*
+The web client's `render` took no `path`, and the reason given was that a page
+had no filesystem to write to and no honest path to offer. That stopped being
+true when the engine's file commands moved into a Worker over the origin
+private file system: `/buffer_allocRead`, `/buffer_write` and `Buffer.read` all
+name paths in a tab, and they name that storage. A render that could not write
+to the same place left a hole the examples filled by hand: a dozen pages
+downloaded a blob with `wavBytes` where their scripts rendered to a path, one
+script (`render_then_load`) had no page at all, and a global parity row
+declared `Buffer.read` and `Buffer.fromSamples` the same call because "a tab
+has no path".
+
+**So a path means the same storage to every verb that takes one**: the page's
+origin private file system in a tab, the disk under node (`base/files.ts`).
+`render({ path, sampleFormat })` writes the take there and answers with
+`samples: null`, as the Python client does; `readSoundfile` reads one back;
+`RenderStats` gained `path` and `events`, and `channels`/`interleave` joined
+`channel`. `wavBytes` is gone: it was a surface the Python client lacks, and its
+WAV header was written in TypeScript.
+
+**The bytes are the server crate's.** The WAV framing, the int16/int24
+conversion and the decoder are the ones the NRT worker already binds from
+`clausters-nrt-web` for `/buffer_write` and `/buffer_allocRead`, loaded on
+demand on the rendering thread (`engine/codec.ts`). A second rounding or a
+second reader would be a second answer, and a file that differs by a bit
+between a tab and a window is the divergence nothing names.
+
+**What is still the platform's**: a page cannot stream while it renders -- its
+renderer is the wasm engine on the calling thread, so the samples exist in full
+before the file is written -- and the page's GUI host maps no file, so a view
+is still handed samples (`gui.source`) where a script names a `.f32` path.
+

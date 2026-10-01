@@ -38,8 +38,11 @@ any other session. The <i>server's</i> seed is a separate one, reported as
 for sample.
 
 Nothing here needs a gesture except hearing it: an offline render has no
-<code>AudioContext</code> to unlock. That is the point of it -- the sessioe is
-evaluated, not performed. Needs <code>./build.sh</code> in
+<code>AudioContext</code> to unlock. That is the point of it -- the session is
+evaluated, not performed. The take is written to
+<code>out/offline_render.wav</code> in the page's own storage (the origin
+private file system), as the script writes it to disk, and <b>hear it</b> reads
+that file into the engine and plays it. Needs <code>./build.sh</code> in
 <code>clients/web</code> first (<code>dist/</code> is git-ignored); serve it
 over HTTP (<code>python3 -m http.server</code>) and open
 <code>/examples/buffers/offline-render.html</code>.</div>
@@ -47,7 +50,6 @@ over HTTP (<code>python3 -m http.server</code>) and open
       <div class="row">
         <button id="render">render the phrase</button>
         <button id="hear" disabled>hear it</button>
-        <button id="save" disabled>save the wav</button>
       </div>
 
       <pre id="log"></pre>
@@ -55,7 +57,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
 
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, play, seq, wavBytes,
+        Buffer, Routine, Server, Session, play, seq,
       } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -97,7 +99,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
         }).play();
 
         const started = performance.now();
-        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/offline_render.wav" });
+        log(`wrote ${stats.path}`);
         const elapsed = (performance.now() - started) / 1000;
         session.deactivate();
         session.close();
@@ -114,7 +117,6 @@ over HTTP (<code>python3 -m http.server</code>) and open
         log("rendering...");
         take = await renderPhrase();
         $("hear").disabled = false;
-        $("save").disabled = false;
         $("render").disabled = false;
       }
 
@@ -124,28 +126,13 @@ over HTTP (<code>python3 -m http.server</code>) and open
       // AudioContext to unlock.
       async function hear() {
         const server = await new Server().boot();
-        const buffer = await Buffer.fromSamples(
-          take.samples, take.channels, take.sampleRate, { server },
-        );
+        const buffer = await Buffer.read(take.path, { server });
         log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
         play(buffer);
       }
 
-      // The blob a click downloads -- a path is the one thing a tab has no
-      // counterpart for.
-      function save() {
-        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "offline_render.wav";
-        link.click();
-        URL.revokeObjectURL(link.href);
-        log("wrote offline_render.wav");
-      }
-
       $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
       $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
-      $("save").onclick = save;
     </script>
   </body>
 </html>

@@ -41,7 +41,6 @@ and nothing to unlock until you ask to hear it.</div>
       <div class="row">
         <button id="render">render the score</button>
         <button id="hear" disabled>hear it</button>
-        <button id="save" disabled>save the wav</button>
       </div>
       <label>wipe <input id="wipe" type="range" min="-0.95" max="0.95"
                          step="0.01" value="0.75" disabled />
@@ -57,18 +56,19 @@ and nothing to unlock until you ask to hear it.</div>
       call: the same two defs, the same two-second score with the same gates,
       rendered offline.
 
-      The one line that differs is the last: the script writes the render to a
-      WAV and tells the reader to play it with `pw-play`, because it has a
-      filesystem. A tab has none, so the take goes back into the engine with
-      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
-      click downloads.
+      The take is written to out/chain.wav in the page's own storage (the origin
+      private file system), where the script writes it to
+      clients/python/examples/out/. The one line that differs is the last:
+      the script tells the reader to play the file with `pw-play`, and a page
+      has no shell, so `hear` reads the file into the engine's buffer pool and
+      plays it there.
 
       Serve clients/web (the package root) and open
       /examples/spectral/chain.html. Build it first: ./build.sh
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
+        Buffer, Routine, Server, Session, Synth, SynthDef, play,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, control, envGen, fft, ifft, out, pvBrickWall,
@@ -138,7 +138,9 @@ and nothing to unlock until you ask to hear it.</div>
           session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
 
-        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/chain.wav" });
+
+        log(`wrote ${stats.path}`);
         session.deactivate();
         session.close();
         const peak = Math.max(...stats.peak, 0.0);
@@ -153,7 +155,6 @@ and nothing to unlock until you ask to hear it.</div>
         log("rendering...");
         take = await renderScore();
         $("hear").disabled = false;
-        $("save").disabled = false;
         $("render").disabled = false;
       }
 
@@ -161,28 +162,13 @@ and nothing to unlock until you ask to hear it.</div>
       // and a `playBuf` reads them. This is the page's `pw-play`.
       async function hear() {
         const server = await new Server().boot();
-        const buffer = await Buffer.fromSamples(
-          take.samples, take.channels, take.sampleRate, { server },
-        );
+        const buffer = await Buffer.read(take.path, { server });
         log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
         play(buffer);
       }
 
-      // The blob a click downloads -- a path is the one thing a tab has no
-      // counterpart for.
-      function save() {
-        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "chain.wav";
-        link.click();
-        URL.revokeObjectURL(link.href);
-        log("wrote chain.wav");
-      }
-
       $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
       $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
-      $("save").onclick = save;
     </script>
   </body>
 </html>

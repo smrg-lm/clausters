@@ -32,21 +32,18 @@
 // what it was given (a convolution kernel it cannot use whole) fails the
 // render with the reason instead.
 //
-// **Where this client stops, and why.** The reference client's verb also
-// writes a file, through the server's own `--nrt` renderer: it hands a score to
-// a process that streams straight to disk, so a long bounce never builds
-// millions of floats just to be written out. A page has no such process -- its
-// renderer is the same wasm engine that makes its sound, and what it produces
-// is a `Float32Array` in this tab.
-//
-// It is not that a page cannot write a file: it has OPFS, and `Buffer.write`
-// goes out to it. What it cannot do is write to a *path the caller names* --
-// OPFS is the page's own store, not the machine's -- nor stream while
-// rendering, since the samples exist in full before anything can be written.
-// So `path` and the `sampleFormat` that only means anything beside it stay
-// out, and `wavBytes(stats)` is the browser's version of the same intent: a
-// finished render as WAV bytes, which the page then downloads, writes to OPFS,
-// or feeds back into a buffer.
+// **Where the audio goes.** With no `path` the samples come back in
+// `stats.samples`; with one the take is written to that file and
+// `stats.samples` is `null` -- the path chooses where the output goes, not
+// whether there is one, as in the reference client. The file is where every
+// path this client takes is: the disk under node, the page's own storage
+// (`opfs`) in a tab, which is also what `Buffer.read` and the server's
+// `/buffer_allocRead` read there. The framing and the int16/int24 conversion
+// are the server crate's (`engine/codec.ts`), so the file is the one a native
+// render writes. What a page cannot do is stream while rendering: its
+// renderer is the wasm engine in this tab, so the samples exist in full before
+// the file is written. `readSoundfile` reads a file back through the server's
+// own decoder.
 //
 // `workers` stays out for a harder reason: the wasm entry point renders on the
 // calling thread (`workers: 0`, fixed in `crates/clausters-web`), and wasm
@@ -76,6 +73,8 @@ import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
 import { renderScoreBytes } from "./engine/render.ts";
+import { decodeSoundfile, encodeWav } from "./engine/codec.ts";
+import { readFileAt, writeFileAt } from "./base/files.ts";
 
 /**
  * How many events -- or values -- a render takes before it decides its source
@@ -102,6 +101,14 @@ export interface RenderOptions {
      * take exactly.
      */
     seed?: number | bigint;
+    /**
+     * Where the audio goes. Absent, the samples come back in `stats.samples`;
+     * given, the take is written to this file -- on the disk under node, in the
+     * page's own storage (`opfs`) in a tab -- and `stats.samples` is `null`.
+     */
+    path?: string;
+    /** The file's sample format beside a `path`: `"float"` (the default), `"int24"` or `"int16"`. */
+    sampleFormat?: "int16" | "int24" | "float";
 }
 
 /** What a render did -- the one thing every render resolves with. */
@@ -111,6 +118,8 @@ export interface RenderStats {
     /** Interleaved channel count. */
     channels: number;
     sampleRate: number;
+    /** Score events the render ran; 0 for a file read back. */
+    events: number;
     /** Length in seconds. */
     duration: number;
     /** Peak magnitude per channel, in channel order. */
@@ -122,15 +131,60 @@ export interface RenderStats {
      * fresh one, so **this is how you get a take back**.
      */
     seed: bigint;
-    /** The audio, interleaved. */
-    samples: Float32Array;
+    /** The file the take was written to, or `null` when it was kept in memory. */
+    path: string | null;
+    /** The audio, interleaved -- `null` when a `path` sent it to a file instead. */
+    samples: Float32Array | null;
+}
+
+/** A finished render's samples, or why there are none. */
+function samplesOf(stats: RenderStats): Float32Array {
+    if (stats.samples === null) {
+        throw new Error(`clausters: the take went to ${stats.path}: read it with readSoundfile`);
+    }
+    return stats.samples;
+}
+
+/**
+ * Splits interleaved `samples` into `count` per-channel arrays.
+ *
+ * Interleaved is the currency everywhere in Clausters -- it is the server's own
+ * buffer layout (`/buffer_getRange` indexes `frame * channels + channel`), so
+ * audio *going to* the server needs no conversion. Deinterleaving is for
+ * analysis on this side. `interleave` is the inverse.
+ */
+export function channels(samples: ArrayLike<number>, count: number): Float32Array[] {
+    const frames = count > 0 ? Math.floor(samples.length / count) : 0;
+    const out = Array.from({ length: count }, () => new Float32Array(frames));
+    for (let i = 0; i < frames; i++) {
+        for (let c = 0; c < count; c++) out[c]![i] = samples[i * count + c]!;
+    }
+    return out;
+}
+
+/**
+ * Weaves per-channel arrays back into one interleaved `Float32Array` -- the
+ * inverse of `channels`, and the layout the server wants. Throws when the
+ * channels differ in length.
+ */
+export function interleave(...chans: ArrayLike<number>[]): Float32Array {
+    if (chans.length === 0) return new Float32Array(0);
+    const n = chans[0]!.length;
+    if (chans.some((c) => c.length !== n)) {
+        throw new Error("every channel must have the same length");
+    }
+    const out = new Float32Array(n * chans.length);
+    chans.forEach((c, k) => {
+        for (let i = 0; i < n; i++) out[i * chans.length + k] = c[i]!;
+    });
+    return out;
 }
 
 /** One channel of a finished render, deinterleaved. */
 export function channel(stats: RenderStats, index: number): Float32Array {
     const out = new Float32Array(stats.frames);
     for (let i = 0; i < stats.frames; i++) {
-        out[i] = stats.samples[i * stats.channels + index]!;
+        out[i] = samplesOf(stats)[i * stats.channels + index]!;
     }
     return out;
 }
@@ -144,9 +198,12 @@ export function channel(stats: RenderStats, index: number): Float32Array {
  */
 export async function renderScore(
     score: Uint8Array,
-    { sampleRate = 48_000.0, channels = 2, seed }: RenderOptions = {},
+    { sampleRate = 48_000.0, channels = 2, seed, path, sampleFormat = "float" }: RenderOptions = {},
 ): Promise<RenderStats> {
-    const { samples, seed: used } = await renderScoreBytes(score, sampleRate, channels, seed);
+    const { samples, seed: used, events } = await renderScoreBytes(score, sampleRate, channels, seed);
+    if (path !== undefined) {
+        await writeFileAt(path, await encodeWav(samples, channels, sampleRate, sampleFormat));
+    }
     const frames = channels > 0 ? Math.floor(samples.length / channels) : 0;
     const peak: number[] = [];
     const rms: number[] = [];
@@ -159,11 +216,48 @@ export async function renderScore(
         frames,
         channels,
         sampleRate,
+        events,
         duration: sampleRate > 0 ? frames / sampleRate : 0,
         peak,
         rms,
         seed: used,
-        samples,
+        path: path ?? null,
+        samples: path === undefined ? samples : null,
+    };
+}
+
+/**
+ * Reads a soundfile through **the server's own decoder** -- WAV, FLAC,
+ * OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest -- from the disk under
+ * node or the page's own storage (`opfs`) in a tab: `frames` frames from
+ * `start` (`-1`, the default, to the end), interleaved `float32` scaled to
+ * `[-1, 1]` at the file's own rate. The same decoder `/buffer_allocRead` uses,
+ * so the samples are the ones a server buffer holds. Resolves with a
+ * `RenderStats` whose `samples` are filled.
+ */
+export async function readSoundfile(
+    path: string,
+    { start = 0, frames = -1 }: { start?: number; frames?: number } = {},
+): Promise<RenderStats> {
+    const decoded = await decodeSoundfile(await readFileAt(path), path, start, frames);
+    const peak: number[] = [];
+    const rms: number[] = [];
+    for (let ch = 0; ch < decoded.channels; ch++) {
+        const [p = 0, r = 0] = channelStats(decoded.samples, decoded.channels, ch);
+        peak.push(p);
+        rms.push(r);
+    }
+    return {
+        frames: decoded.frames,
+        channels: decoded.channels,
+        sampleRate: decoded.sampleRate,
+        events: 0,
+        duration: decoded.sampleRate > 0 ? decoded.frames / decoded.sampleRate : 0,
+        peak,
+        rms,
+        seed: 0n,
+        path,
+        samples: decoded.samples,
     };
 }
 
@@ -442,38 +536,4 @@ function asRoutine(obj: unknown): Routine | null {
         return new Routine(() => obj as Generator<number | undefined, unknown, unknown>);
     }
     return null;
-}
-
-/**
- * A finished render as **WAV bytes** (32-bit float, the format the render is
- * already in), for a page to download or hand back to a `Buffer`.
- *
- * The browser's answer to the reference client's `path`: there is no
- * filesystem to write to and no server process to write it, so the file is a
- * blob the page decides what to do with.
- */
-export function wavBytes(stats: RenderStats): Uint8Array {
-    const { samples, channels, sampleRate } = stats;
-    const dataBytes = samples.length * 4;
-    const out = new Uint8Array(44 + dataBytes);
-    const view = new DataView(out.buffer);
-    const ascii = (offset: number, text: string) => {
-        for (let i = 0; i < text.length; i++) out[offset + i] = text.charCodeAt(i);
-    };
-    ascii(0, "RIFF");
-    view.setUint32(4, 36 + dataBytes, true);
-    ascii(8, "WAVEfmt ");
-    view.setUint32(16, 16, true); // fmt chunk size
-    view.setUint16(20, 3, true); // IEEE float
-    view.setUint16(22, channels, true);
-    view.setUint32(24, Math.round(sampleRate), true);
-    view.setUint32(28, Math.round(sampleRate) * channels * 4, true); // byte rate
-    view.setUint16(32, channels * 4, true); // block align
-    view.setUint16(34, 32, true); // bits per sample
-    ascii(36, "data");
-    view.setUint32(40, dataBytes, true);
-    for (let i = 0; i < samples.length; i++) {
-        view.setFloat32(44 + i * 4, samples[i]!, true);
-    }
-    return out;
 }

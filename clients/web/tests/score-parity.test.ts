@@ -152,11 +152,11 @@ test("the seed is the take, and handing it back replays it", async () => {
     // source, so the client forwards a word from the platform that does --
     // without that, every take here would be the same take.
     assert.notEqual(fresh.seed, first.seed, "a seedless render is a new take");
-    assert.notDeepEqual([...fresh.samples], [...first.samples]);
+    assert.notDeepEqual([...fresh.samples!], [...first.samples!]);
 
     const again = await render(noisy(), { dur: 0.1, channels: 1, seed: first.seed });
     assert.equal(again.seed, first.seed);
-    assert.deepEqual([...again.samples], [...first.samples]);
+    assert.deepEqual([...again.samples!], [...first.samples!]);
 });
 
 test("a bare expression renders through the ephemeral-def coercion", async () => {
@@ -210,11 +210,11 @@ test("a bounce renders the last note's release", async () => {
     // With no tail the take stops on the gate closing on the last note, mid
     // release: the last sample is a step, not silence.
     assert.ok(Math.abs(cut.frames - 0.7 * 48_000) <= 1, `${cut.frames} frames`);
-    assert.ok(Math.abs(cut.samples.at(-2)!) > 0.01, "the cut take ends on a step");
+    assert.ok(Math.abs(cut.samples!.at(-2)!) > 0.01, "the cut take ends on a step");
     const whole = await render(pattern());
     // The default tail is a second past that gate, and the release is over.
     assert.ok(Math.abs(whole.frames - 1.7 * 48_000) <= 1, `${whole.frames} frames`);
-    const end = whole.samples.slice(-Math.round(0.05 * 48_000) * 2);
+    const end = whole.samples!.slice(-Math.round(0.05 * 48_000) * 2);
     assert.equal(Math.max(...Array.from(end, Math.abs)), 0);
 });
 
@@ -278,4 +278,43 @@ test("a render of a value pattern is the values it generates", async () => {
     assert.deepEqual(await render(new Pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
     assert.deepEqual(await render(new Pseq([1, 2], Infinity), { count: 5 }), [1, 2, 1, 2, 1]);
     await assert.rejects(render(new Pseq([1, 2], Infinity)), /count/);
+});
+
+test("a render with a path writes the take, and readSoundfile reads it back", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { readSoundfile } = await import("../src/render.ts");
+    const dir = await mkdtemp(join(tmpdir(), "clausters-take-"));
+    try {
+        const kept = await render(sine(440.0).mul(0.5), { dur: 0.25, channels: 2, seed: 7 });
+        // The path chooses where the output goes, not whether there is one.
+        const path = join(dir, "take.wav");
+        const sent = await render(sine(440.0).mul(0.5), { dur: 0.25, channels: 2, seed: 7, path });
+        assert.equal(sent.samples, null);
+        assert.equal(sent.path, path);
+        assert.deepEqual(sent.peak, kept.peak);
+        assert.ok(sent.events > 0, "a render reports the events it ran");
+        assert.equal(sent.events, kept.events);
+
+        // A float file is the take, sample for sample, through the server's decoder.
+        const back = await readSoundfile(path);
+        assert.equal(back.frames, kept.frames);
+        assert.equal(back.channels, 2);
+        assert.equal(back.sampleRate, 48_000);
+        assert.deepEqual([...back.samples!], [...kept.samples!]);
+        const tail = await readSoundfile(path, { start: 100, frames: 10 });
+        assert.deepEqual([...tail.samples!], [...kept.samples!.slice(200, 220)]);
+
+        // int16 is the server's own conversion: within a step of the take.
+        const short = join(dir, "short.wav");
+        await render(sine(440.0).mul(0.5), {
+            dur: 0.25, channels: 2, seed: 7, path: short, sampleFormat: "int16",
+        });
+        const quantized = await readSoundfile(short);
+        const worst = Math.max(...quantized.samples!.map((v, i) => Math.abs(v - kept.samples![i]!)));
+        assert.ok(worst <= 1 / 32768 + 1e-9, `int16 error ${worst}`);
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
 });

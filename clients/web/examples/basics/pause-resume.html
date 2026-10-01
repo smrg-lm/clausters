@@ -36,7 +36,6 @@ paused: it is still there.</div>
       <div class="row">
         <button id="render">render the score</button>
         <button id="hear" disabled>hear it</button>
-        <button id="save" disabled>save the wav</button>
       </div>
 
       <pre id="log"></pre>
@@ -47,19 +46,19 @@ paused: it is still there.</div>
       for call: the same bare drone, the same tone-pause-tone score of timed
       `/node_run` bundles, rendered offline and checked by the numbers.
 
-      The one line that differs is the last: the script writes the render to a
-      WAV and tells the reader to play it with `pw-play`, because it has a
-      filesystem. A tab has none, so the take goes back into the engine with
-      `Buffer.fromSamples` and sounds there, and the wav is offered as a blob a
-      click downloads. The beat RMS is read off the take the render answered
-      with, where the script reads back the file the server wrote.
+      The take is written to out/pause_resume.wav in the page's own storage (the origin
+      private file system), where the script writes it to
+      clients/python/examples/out/. The one line that differs is the last:
+      the script tells the reader to play the file with `pw-play`, and a page
+      has no shell, so `hear` reads the file into the engine's buffer pool and
+      plays it there.
 
       Serve clients/web (the package root) and open
       /examples/basics/pause-resume.html. Build it first: ./build.sh
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, play, wavBytes,
+        Buffer, Routine, Server, Session, Synth, SynthDef, channel, play, readSoundfile,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
 
@@ -102,23 +101,23 @@ paused: it is still there.</div>
           session.server.sendBundle([["/node_free", ["i", node.id]]]);
         }).play();
 
-        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/pause_resume.wav" });
         session.deactivate();
         session.close();
 
         // The middle beat is silent and the outer beats are not. That needs the
         // samples per beat rather than the whole-render RMS the stats carry, so
-        // the take is read for them -- the script reads back the file the
-        // server wrote, which is the same numbers.
-        const third = Math.trunc(stats.frames / 3);
+        // the file the render wrote is read back for them.
+        const audio = await readSoundfile(stats.path);
+        const third = Math.trunc(audio.frames / 3);
         const rms = (a) => Math.sqrt(
           a.reduce((sum, s) => sum + s * s, 0) / Math.max(1, a.length));
-        const mono = Float32Array.from(
-          { length: stats.frames }, (_, i) => stats.samples[i * stats.channels]);
+        const mono = channel(audio, 0);
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s)`);
         log(`beat RMS: ${rms(mono.subarray(0, third)).toFixed(3)} (on) `
           + `${rms(mono.subarray(third, 2 * third)).toFixed(3)} (paused) `
           + `${rms(mono.subarray(2 * third)).toFixed(3)} (resumed)`);
+        log(`wrote ${stats.path}`);
         return stats;
       }
 
@@ -127,7 +126,6 @@ paused: it is still there.</div>
         log("rendering...");
         take = await renderScore();
         $("hear").disabled = false;
-        $("save").disabled = false;
         $("render").disabled = false;
       }
 
@@ -135,28 +133,13 @@ paused: it is still there.</div>
       // and a `playBuf` reads them. This is the page's `pw-play`.
       async function hear() {
         const server = await new Server().boot();
-        const buffer = await Buffer.fromSamples(
-          take.samples, take.channels, take.sampleRate, { server },
-        );
+        const buffer = await Buffer.read(take.path, { server });
         log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
         play(buffer);
       }
 
-      // The blob a click downloads -- a path is the one thing a tab has no
-      // counterpart for.
-      function save() {
-        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "pause_resume.wav";
-        link.click();
-        URL.revokeObjectURL(link.href);
-        log("wrote pause_resume.wav");
-      }
-
       $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
       $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
-      $("save").onclick = save;
     </script>
   </body>
 </html>

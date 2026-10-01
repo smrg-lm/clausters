@@ -91,10 +91,10 @@ Schedule a closing event — freeing the root group, or whatever ends the take �
 
 ```js
 const stats = await render(myPattern, { defs: [myInstrument], channels: 2 });
-// { frames, channels, sampleRate, duration, peak, rms, seed, samples }
+// { frames, channels, sampleRate, events, duration, peak, rms, seed, path, samples }
 ```
 
-`peak` and `rms` are **per channel**, measured by the shared core, so they are the same numbers the server and the Python client report for the same audio. `samples` is interleaved `Float32Array`.
+`peak` and `rms` are **per channel**, measured by the shared core, so they are the same numbers the server and the Python client report for the same audio. `events` is how many score events the render ran. `samples` is interleaved `Float32Array` — or `null`, when a `path` sent the audio to a file.
 
 `seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy score in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
 
@@ -102,19 +102,29 @@ Every offline path with no `clock` starts from an **empty** session of its own, 
 
 ## Where the audio goes
 
-The Python client's `render` takes a `path` and the **server** writes the file, streaming straight to disk. A page has no such process and no filesystem, so there is no `path` here: the render produces a `Float32Array` in this tab, and what to do with it is the page's.
+Without a `path` the samples come back in `stats.samples`. With one the take is written to that file and `stats.samples` is `null` — the path chooses where the output goes, not whether there is one, as in the Python client:
 
 ```js
-const wav = wavBytes(stats);                       // a float32 WAV, in memory
-const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
-// ...or feed it straight back into the engine:
-const buffer = await Buffer.fromSamples(stats.samples, stats.channels, stats.sampleRate);
-play(buffer);
+const stats = await session.render({ sampleRate: 48_000, channels: 2, path: "out/take.wav" });
+stats.samples;         // null - the audio is in out/take.wav
+stats.path;            // "out/take.wav"
 ```
 
-`Buffer.fromSamples` is the browser's render-then-load with the file taken out of the middle — the samples go into a buffer on the page's engine directly, since the carrier shares memory with it. The render is *samples* now: random-access audio, sliceable and playable like any other.
+The file is where every path this client takes is: the page's own storage — the origin private file system, `opfs` — in a tab, and the disk under node. It is also what `Buffer.read` and the engine's `/buffer_allocRead` read in a tab, so a take written by a render loads straight into a buffer. `sampleFormat` is `"float"` (the default), `"int24"` or `"int16"`, and the framing and the conversion are the server crate's, so the file is the one a native render writes. What a page cannot do is stream while rendering: its renderer is the wasm engine in the tab, so the samples exist in full before the file is written.
 
-`examples/buffers/offline-render.html` runs the whole loop — render, look, download, play back.
+### Reading a file back
+
+`readSoundfile` decodes through **the server's decoder** — WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF — the one `/buffer_allocRead` uses, so the client and the engine never disagree about a file:
+
+```js
+const audio = await readSoundfile("out/take.wav");
+audio.frames; audio.channels; audio.sampleRate;
+const [left, right] = channels(audio.samples, audio.channels);
+```
+
+Integer files are scaled to `[-1, 1]`, nothing resamples, and `start`/`frames` read a span. `channels` deinterleaves and `interleave` weaves back.
+
+`examples/buffers/render-then-load.html` runs the whole loop — render to a file, read it back, load it into a buffer and play it.
 
 ## See also
 

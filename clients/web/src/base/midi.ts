@@ -18,9 +18,9 @@
 // a page the ports that already exist and lets it create none, so where the
 // Python client's `port` names a *virtual* port to open, here it names an
 // existing one to select. Everything above that -- the parsing, the score, the
-// event mapping, the dispatch -- is the same client in two languages. A page
-// also has no filesystem, so `MidiScore` hands back the file's bytes and the
-// page decides what to do with them, exactly as `wavBytes` does for a take.
+// event mapping, the dispatch -- is the same client in two languages, and
+// `MidiScore` hands back the file's bytes in both, for the caller to keep
+// where it keeps files.
 
 import { Moment } from "./moment.ts";
 import { midiWriteClip, midiWriteSmf } from "./core.ts";
@@ -144,10 +144,9 @@ export class MidiScore {
     /**
      * Standard MIDI File (`.mid`) bytes, written by the shared core.
      *
-     * A page has no filesystem, so this hands the bytes back rather than
-     * taking a path -- the same split `render`/`wavBytes` already makes for a
-     * take. The writer is `clausters-midi`'s, the one the Python client calls,
-     * so the two produce the same file.
+     * The bytes, as the Python client's `to_smf` hands them back. The writer is
+     * `clausters-midi`'s, the one the Python client calls, so the two produce
+     * the same file.
      */
     toSmf(ppq: number): Uint8Array {
         const [ticks, msgs] = this.ticked(ppq);

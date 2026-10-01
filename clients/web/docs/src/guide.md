@@ -278,7 +278,7 @@ Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, 
 
 **The graph composes by method.** `sine(freq).mul(amp).add(bias)` where Python writes `sine(freq) * amp + bias`, TypeScript having no operator overloading. Because of that, parity between the clients is asserted on the **emitted spec**, never on the source text.
 
-**A render comes back as samples, not as a file.** `render(...)` resolves with the take in memory and `wavBytes(stats)` turns it into WAV bytes the page downloads, writes to OPFS or feeds back into a `Buffer`. The reference client's `path` and `sample_format` have no counterpart because a page cannot write to a path the caller names — OPFS is the page's own store — and cannot stream while rendering, the samples existing in full before anything is written. `workers` has none either: the wasm renderer runs on the calling thread, and wasm threads need a cross-origin isolation the embedding page has to grant.
+**A path is the page's own storage.** Wherever a verb takes a path — `render`'s `path`, `readSoundfile`, `Buffer.read`, a saved session — a tab means its origin private file system (`opfs`) and node means the disk, so a take a render writes is a file the engine reads back. What a page cannot do is stream while rendering, the samples existing in full before the file is written. `workers` has no counterpart: the wasm renderer runs on the calling thread, and wasm threads need a cross-origin isolation the embedding page has to grant.
 
 **Nothing pumps.** There is no drain call and no event loop of ours: a page subscribes once (`onEvent`, `onClosed`, an [`OscFunc`](responders.md) or the raw `onReply` under it) and the host's or server's messages arrive as calls, while a query resolves a promise.
 

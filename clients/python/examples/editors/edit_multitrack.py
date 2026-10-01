@@ -236,8 +236,8 @@ multitrack = Multitrack(tracks=[
 # two side by side. The takes are written as floats, because the last one is hot
 # on purpose and a 16-bit file would clip it into a different take. The files go
 # to `examples/out/`, the git-ignored directory every generator in this tree
-# writes to. **A page cannot do this**: a tab has no filesystem to write a take
-# into, so the web twin has no such cell.
+# writes to; the web twin writes the same session into its page's own storage,
+# where `load-multitrack.html` reopens it.
 
 # %%
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")

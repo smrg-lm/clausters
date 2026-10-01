@@ -24,6 +24,8 @@ export interface RenderResult {
     samples: Float32Array;
     /** The seed this take started from -- hand it back to replay it. */
     seed: bigint;
+    /** How many score events the render ran. */
+    events: number;
 }
 
 /**
@@ -42,6 +44,8 @@ export type EngineModule = {
         seed?: bigint | null,
     ) => Float32Array;
     last_render_seed: () => bigint;
+    /** How many score events the last render ran. */
+    last_render_events: () => number;
     /** What the last render logged, one `LEVEL<TAB>message` line per entry. */
     last_render_log: () => string;
     /** The Faust defs a score sends, as JSON -- see `prepareFaust`. */
@@ -128,7 +132,7 @@ export async function renderScoreBytes(
         seed === undefined ? entropySeed() : BigInt(seed),
     );
     consoleRenderLog(engine.last_render_log());
-    return { samples, seed: engine.last_render_seed() };
+    return { samples, seed: engine.last_render_seed(), events: engine.last_render_events() };
 }
 
 /**

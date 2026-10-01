@@ -176,7 +176,7 @@ fn faust_score_bytes() -> Vec<u8> {
 /// Renders one scene natively, asserts it is denormal-free and writes the pair
 /// the page compares: `<score>.bin` and `<take>.f32`.
 fn emit(dir: &Path, score_name: &str, take_name: &str, score: &[u8]) -> usize {
-    let (samples, _seed, _log) =
+    let (samples, _seed, _log, _events) =
         clausters_web::render(score, SAMPLE_RATE, CHANNELS, Some(PARITY_SEED))
             .expect("native render succeeds");
     let subnormals = samples.iter().filter(|x| x.is_subnormal()).count();

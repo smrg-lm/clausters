@@ -56,8 +56,9 @@ right one is switched live by the menu under it.</div>
       One difference is the platform's and is the same one the plan already
       records for the heavy views: the script writes the take to a `.f32` file
       for the host to **map** (`samples_to_file`) and the widgets name a `path`.
-      A page has no filesystem and no mapping, so the samples travel as the
-      bulk payload a `source` carries -- the browser's half of the same door.
+      The page's host maps no file -- its storage is the page's, not the host's
+      -- so the samples travel as the bulk payload a `source` carries: the
+      browser's half of the same door.
       The other two are the usual: the host draws into an element rather than an
       OS window, and nothing is pumped.
 

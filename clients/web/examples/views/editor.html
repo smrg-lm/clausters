@@ -61,17 +61,18 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       the same phrase bounced offline, the same two defs, the same window, the
       same clipboard round trip and the same anchored pass.
 
-      Two lines differ, and both are the filesystem: the script writes the
-      bounce to a WAV and reads it back for the views, where the page hands the
-      samples the render answered with straight over; and it writes a peak cache
-      beside them for a host that maps files, which a tab's host has nothing to
-      map.
+      The bounce goes to a WAV in the page's own storage (the origin private
+      file system), where the script writes it to a temporary directory, and
+      the same file feeds the views and the buffer in both. One line differs:
+      the script writes the samples and a peak cache beside them for a host
+      that maps files, and the page's host maps nothing -- it is handed the
+      samples (`gui.source`) and builds its pyramid from them.
 
       Serve clients/web (the package root) and open /examples/views/editor.html.
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { Buffer, Session, Synth, SynthDef, gui, seq } from "../../dist/index.js";
+      import { Buffer, Session, Synth, SynthDef, gui, readSoundfile, seq } from "../../dist/index.js";
       import { control, out, playBuf } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -89,21 +90,20 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       });
 
       /**
-       * Bounces the phrase and hands its samples back.
+       * Bounces the phrase to `path` and reads it back.
        *
-       * The script renders to a WAV so the same file feeds two consumers --
+       * The render writes the WAV, so the same file feeds two consumers --
        * `/buffer_allocRead` loads it into a buffer for the playhead to sound,
-       * and `read_soundfile` brings the samples back for the waveform view. A
-       * tab has no file, so the render's own samples do both: interleaved f32,
-       * the layout everything downstream already speaks.
+       * and `readSoundfile` brings the samples here for the waveform view --
+       * interleaved f32, the layout everything downstream already speaks.
        */
-      async function renderStereo() {
+      async function renderStereo(path) {
         const nrt = await Session.nrt();
         nrt.clock.setTempo(2.0);
         nrt.play(phrase());
-        const stats = await nrt.render({ sampleRate: SR, channels: 2 });
-        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s)`);
-        return stats;
+        const stats = await nrt.render({ sampleRate: SR, channels: 2, path });
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) -> ${path}`);
+        return (await readSoundfile(path)).samples;
       }
 
       const SELECT_PLAN = { drag: "select", ctrl: "select_box select" };
@@ -123,16 +123,18 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       async function run() {
         $("start").disabled = true;
 
-        const take = await renderStereo();
-        const inter = take.samples;
-        const frames = take.frames;
+        const wavPath = "out/editor_phrase.wav";
+        const inter = await renderStereo(wavPath);
+        const frames = inter.length / 2;
         const samples = gui.source(inter);
 
         const session = await Session.embed();
         const server = session.server;
         await session.gui();
 
-        const buffer = await Buffer.fromSamples(inter, 2, SR, { server });
+        // The playhead's sound source: the very file the render wrote, in a
+        // server buffer, played by a synth. Nothing converts it.
+        const buffer = await Buffer.read(wavPath, { server });
 
         await new SynthDef(
           "sampler",

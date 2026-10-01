@@ -129,12 +129,15 @@ change. The tour ends on all three.
         play(tl);
         await wait(PAUSE + 1000);
 
-        log("rendering a phrase (offline, no audio device)");
-        const rendered = await render(new seq.Pbind({
+        // A pattern bounces offline to samples -- and with `path`, to a WAV
+        // in the page's own storage -- with no engine involved.
+        log("rendering a phrase to a WAV (offline, no audio device)");
+        const wav = "out/verbs.wav";
+        await render(new seq.Pbind({
           instrument: "default",
           degree: new seq.Pseq([0, 4, 7, 12]),
           dur: 0.25,
-        }));
+        }), { path: wav });
 
         log("a session that never sounds: the same verbs, rendered");
         const offline = await Session.nrt();
@@ -148,11 +151,10 @@ change. The tour ends on all three.
         log(`  offline session -> ${stats.frames} frames, `
           + `${stats.duration.toFixed(2)} s, peak ${stats.peak[0].toFixed(3)}`);
 
+        // ...and the circle closes: the rendered file, loaded as a buffer and
+        // played through the stock playbuf instrument.
         log("playing the rendered take back as a buffer");
-        // The script renders to a WAV and reads the path back; a tab has none,
-        // so the samples the render answered with go straight into a buffer.
-        const take = await Buffer.fromSamples(
-          rendered.samples, rendered.channels, rendered.sampleRate);
+        const take = await Buffer.read(wav);
         play(take, { controls: { amp: 0.8 } });
         await wait(2000);
         log("done");

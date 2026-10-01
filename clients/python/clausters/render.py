@@ -192,7 +192,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            ports=None, dur: float = 1.0, controls=None, defs=(),
            until: float | None = None, count: int | None = None,
            tail: float = 1.0, sample_rate: float = 48_000.0, channels: int = 2,
-           workers: int = 0, path=None, seed: int | None = None):
+           workers: int = 0, path=None, seed: int | None = None,
+           sample_format: str = "float"):
     """Render ``obj`` -- offline to a `RenderStats`, or onto a live
     ``destination`` when it has one to sound on.
 
@@ -244,6 +245,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         workers: renderer worker threads for the ``bytes`` score path.
         path: send the audio to this file instead of returning it; the
             server writes it (see `render_to_file`).
+        sample_format: the file's sample format beside a ``path``:
+            ``"float"``, ``"int24"`` or ``"int16"``.
         seed: starting seed for the render's stochastic UGens. ``None`` draws
             a fresh one, so anything with noise in it renders a new take every
             call; ``stats.seed`` reports the one used, and handing it back
@@ -265,12 +268,12 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
 
     if isinstance(obj, (bytes, bytearray)):
         return render_score(bytes(obj), sample_rate, channels, workers, path,
-                            seed)
+                            seed, sample_format)
 
     if isinstance(obj, (Expr, SynthDef, FaustDef, GraphDef)):
         _check_expr_width(obj, channels)
         return bounce_def(as_def(obj), dur, controls, defs, sample_rate,
-                          channels, seed, path)
+                          channels, seed, path, sample_format)
 
     if isinstance(obj, Element):
         if destination is not None:
@@ -279,14 +282,16 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             return render_element(obj, destination, clock, at=at, quant=quant,
                                   ports=ports)
         return _bounce(lambda session, on: _start_element(obj, session, on, at),
-                       clock, until, tail, sample_rate, channels, path, seed, defs)
+                       clock, until, tail, sample_rate, channels, path, seed, defs,
+                       sample_format=sample_format)
 
     if isinstance(obj, Timeline):
         if destination is not None:
             return obj.play(at=at, quant=quant, destination=destination)
         return _bounce(
             lambda session, on: obj.play(at=at, destination=session.server),
-            clock, until, tail, sample_rate, channels, path, seed, defs)
+            clock, until, tail, sample_rate, channels, path, seed, defs,
+                       sample_format=sample_format)
 
     if isinstance(obj, Pattern) and not isinstance(obj, EventPattern):
         if destination is not None:
@@ -321,9 +326,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         return _bounce(
             lambda session, on: playable.play(on, session.server),
             clock, until, tail, sample_rate, channels, path, seed, defs,
-            guard="event pattern")
+            guard="event pattern", sample_format=sample_format)
     return _bounce(lambda session, on: playable.play(on),
-                   clock, until, tail, sample_rate, channels, path, seed, defs)
+                   clock, until, tail, sample_rate, channels, path, seed, defs,
+                       sample_format=sample_format)
 
 
 def _values(pattern, count):
@@ -368,7 +374,7 @@ def _check_expr_width(obj, channels):
 
 
 def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
-               path=None):
+               path=None, sample_format: str = "float"):
     """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
     plus the def itself sent at score time 0, one instance with ``controls``,
     freed at ``dur`` seconds. Returns the whole `RenderStats` -- `plot` draws
@@ -394,13 +400,13 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
         node = Synth(obj.name, controls, server=server)
     server.send_bundle_after(float(dur), ("/node_free", node.id))
     return session.render(sample_rate=sample_rate, channels=channels, seed=seed,
-                          path=path)
+                          path=path, sample_format=sample_format)
 
 
 # ---- the offline bounce ----
 
 def _bounce(start, clock, until, tail, sample_rate, channels, path, seed,
-            defs=(), guard=None):
+            defs=(), guard=None, sample_format: str = "float"):
     """An offline session: ``start(session, clock)`` schedules the source on
     the clock it plays on and the session's server, and the drained score
     renders to samples.
@@ -453,7 +459,7 @@ def _bounce(start, clock, until, tail, sample_rate, channels, path, seed,
     if end is not None and tail > 0:
         session.server.interface.send_bundle(session.server.target, end + float(tail))
     return session.server.render(sample_rate=sample_rate, channels=channels,
-                                 path=path, seed=seed)
+                                 path=path, seed=seed, sample_format=sample_format)
 
 
 def _start_element(element, session, clock, at):

@@ -237,6 +237,13 @@ export function abi_version(): number;
 export function faustJobs(score: Uint8Array): string;
 
 /**
+ * How many score events the last [`render`] on this thread ran -- the
+ * `events` a native render reports beside its samples. A double rather than
+ * the `u64` it is counted in, so the JS face is a plain number.
+ */
+export function last_render_events(): number;
+
+/**
  * What the last [`render`] logged at `info` and above -- a node the engine
  * rejected, a `Poll`'s line -- as the embed ABI's `clausters_render_log`
  * gives it: one line per entry, `LEVEL<TAB>message`, the level one of
@@ -249,7 +256,7 @@ export function last_render_log(): string;
  * The seed the last [`render`] on this thread used -- how a caller gets back
  * to a take it liked. Separate from `render`'s return because the JS face
  * returns a bare `Float32Array`; a stats object is the shape to grow into if
- * the web client ever needs the frame, event and level counts too.
+ * the web client ever needs the frame and level counts too.
  */
 export function last_render_seed(): bigint;
 
@@ -268,8 +275,9 @@ export function linkFaust(name: string, compute: number, init: number, json: str
 /**
  * JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
  * throwing a `JsError` with the render's message on failure. The seed the
- * render used is read back with [`last_render_seed`], and what it logged
- * with [`last_render_log`].
+ * render used is read back with [`last_render_seed`], what it logged with
+ * [`last_render_log`], and how many score events it ran with
+ * [`last_render_events`].
  */
 export function render(score: Uint8Array, sample_rate: number, channels: number, seed?: bigint | null): Float32Array;
 
@@ -311,6 +319,7 @@ export interface InitOutput {
     readonly webserver_takeFaustJobs: (a: number) => [number, number];
     readonly webserver_writeChunk: (a: number, b: number, c: number) => [number, number];
     readonly last_render_seed: () => bigint;
+    readonly last_render_events: () => number;
     readonly abi_version: () => number;
     readonly _abs: (a: number) => number;
     readonly _acos: (a: number) => number;

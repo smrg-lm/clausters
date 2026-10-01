@@ -48,7 +48,7 @@ fn render_score(
     sample_rate: f64,
     channels: u32,
     seed: Option<u64>,
-) -> Result<(Vec<f32>, u64, String), String> {
+) -> Result<(Vec<f32>, u64, String, u64), String> {
     let score = Score::from_bytes(score)?;
     let cfg = RenderConfig {
         sample_rate,
@@ -61,26 +61,28 @@ fn render_score(
     };
     render_to_vec(&score, &cfg).map(|(samples, stats)| {
         let log = clausters::server::render_log::encode(&stats.log);
-        (samples, stats.seed, log)
+        (samples, stats.seed, log, stats.events as u64)
     })
 }
 
-/// Native face of [`render`], for the in-crate tests: the samples, the seed
-/// and the log (what the wasm face hands out through `last_render_log`).
+/// Native face of [`render`], for the in-crate tests: the samples, the seed,
+/// the log and the events run (what the wasm face hands out through
+/// `last_render_seed`, `last_render_log` and `last_render_events`).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn render(
     score: &[u8],
     sample_rate: f64,
     channels: u32,
     seed: Option<u64>,
-) -> Result<(Vec<f32>, u64, String), String> {
+) -> Result<(Vec<f32>, u64, String, u64), String> {
     render_score(score, sample_rate, channels, seed)
 }
 
 /// JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
 /// throwing a `JsError` with the render's message on failure. The seed the
-/// render used is read back with [`last_render_seed`], and what it logged
-/// with [`last_render_log`].
+/// render used is read back with [`last_render_seed`], what it logged with
+/// [`last_render_log`], and how many score events it ran with
+/// [`last_render_events`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn render(
@@ -92,13 +94,14 @@ pub fn render(
     let result = render_score(score, sample_rate, channels, seed);
     LAST_LOG.with(|l| {
         *l.borrow_mut() = match &result {
-            Ok((_, _, log)) => log.clone(),
+            Ok((_, _, log, _)) => log.clone(),
             Err(_) => String::new(),
         }
     });
     result
-        .map(|(samples, seed, _)| {
+        .map(|(samples, seed, _, events)| {
             LAST_SEED.with(|s| s.set(seed));
+            LAST_EVENTS.with(|e| e.set(events));
             samples
         })
         .map_err(|e| JsError::new(&e))
@@ -107,6 +110,7 @@ pub fn render(
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static LAST_SEED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static LAST_EVENTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static LAST_LOG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
@@ -174,11 +178,20 @@ pub fn link_faust(name: &str, compute: u32, init: u32, json: &str) -> Result<(),
 /// The seed the last [`render`] on this thread used -- how a caller gets back
 /// to a take it liked. Separate from `render`'s return because the JS face
 /// returns a bare `Float32Array`; a stats object is the shape to grow into if
-/// the web client ever needs the frame, event and level counts too.
+/// the web client ever needs the frame and level counts too.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn last_render_seed() -> u64 {
     LAST_SEED.with(|s| s.get())
+}
+
+/// How many score events the last [`render`] on this thread ran -- the
+/// `events` a native render reports beside its samples. A double rather than
+/// the `u64` it is counted in, so the JS face is a plain number.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn last_render_events() -> f64 {
+    LAST_EVENTS.with(|e| e.get()) as f64
 }
 
 /// The live engine in pulled mode: a 1:1 JS face over
@@ -692,13 +705,14 @@ mod tests {
     /// default-def note comes out with signal in it.
     #[test]
     fn shell_renders_a_score() {
-        let (out, seed, _) = super::render(&tiny_score(), 48000.0, 2, None).unwrap();
+        let (out, seed, _, events) = super::render(&tiny_score(), 48000.0, 2, None).unwrap();
+        assert!(events > 0, "a score runs its events");
         assert_eq!(out.len(), 2 * 48000);
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
         assert!(rms > 0.05, "audible signal expected, rms = {rms}");
         assert!(out.iter().all(|x| x.is_finite()));
         // Whatever the shell picked, it says which: a take is repeatable.
-        let (again, _, _) = super::render(&tiny_score(), 48000.0, 2, Some(seed)).unwrap();
+        let (again, _, _, _) = super::render(&tiny_score(), 48000.0, 2, Some(seed)).unwrap();
         assert_eq!(out, again);
     }
 

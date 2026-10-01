@@ -44,9 +44,12 @@ structural parameters);</li>
 previous stage).</li>
 </ul>
 
-<b>The one difference from the script</b>, and it is the platform's: a page has
-no filesystem, so where the script writes <code>out.wav</code> this offers the
-take as a download. Everything else is the same call. And the compiler is in
+The take is written to <code>out/boxes_library.wav</code> in the page's own
+filesystem (the origin private file system), where the script writes it to
+<code>clients/python/examples/out/</code>. <b>The one difference from the
+script</b> is how it is heard: the script says <code>pw-play</code>, and a page
+has no shell, so <b>hear</b> reads the file into the engine's buffer pool and
+plays it. Everything else is the same call. And the compiler is in
 the tab -- the render compiles the score's Faust defs with
 <code>libfaust-wasm</code> in the NRT worker before it starts, so no server
 process is involved anywhere.
@@ -58,7 +61,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
       <div class="row">
         <button id="render">render the phrase</button>
-        <span id="download"></span>
+        <button id="hear" disabled>hear it</button>
       </div>
 
       <pre id="log"></pre>
@@ -66,7 +69,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
     <script type="module">
       import {
-        FaustDef, Routine, Session, Synth, wavBytes,
+        Buffer, FaustDef, Routine, Server, Session, Synth, play,
       } from "../../dist/index.js";
       import * as box from "../../dist/defs/boxes.js";
 
@@ -153,25 +156,35 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
         // ---- the render ----
         log("rendering...");
-        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        const stats = await session.render({
+          sampleRate: SR, channels: 2, path: "out/boxes_library.wav",
+        });
         session.deactivate();   // the score is rendered; nothing is ambient now
         const peak = Math.max(0.0, ...stats.peak);
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
           + `| peak ${peak.toFixed(3)}`);
+        log(`wrote ${stats.path}`);
+        take = stats;
+        $("hear").disabled = false;
+      }
 
-        const blob = new Blob([wavBytes(stats)], { type: "audio/wav" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = "boxes_library.wav";
-        link.textContent = "download boxes_library.wav";
-        $("download").replaceChildren(link);
-        log("listen with: pw-play boxes_library.wav");
+      let take = null;
+
+      // The take, heard: the file goes into the engine's buffer pool and is
+      // played there. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.read(take.path, { server });
+        // `boot` adopted this server as the default session's, so the ambient
+        // verb finds it: a buffer is one of the kinds `play` sounds.
+        play(buffer);
       }
 
       $("render").onclick = () => run().catch((err) => {
         log(`error: ${err}`);
         $("render").disabled = false;
       });
+      $("hear").onclick = () => hear().catch((err) => log(`error: ${err}`));
     </script>
   </body>
 </html>

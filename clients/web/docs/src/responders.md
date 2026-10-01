@@ -91,7 +91,7 @@ new seq.Pbind({ midinote: new seq.Pseq([60, 64, 67]), dur: 0.5 }).play(midi);
 
 Each `Event` becomes a note on/off pair — the note from `midinote()`, the velocity from `velocity()`, the release at `sustain()` — and `MidiItem` makes an event of raw bytes for a `Timeline` the way `OscItem` makes one of a raw message (types `"midi"` and `"osc"`). **Timing is best-effort by design**, as it is there, but the browser gives some of it back: `MIDIOutput.send` takes a `performance.now()` deadline, so a note-off two beats out is handed its deadline rather than slept to.
 
-Constructed with no interface, a `MidiServer` accumulates a **score** instead: `server.score.toSmf(480)` and `.toClip(480)` return the bytes of a Standard MIDI File or a MIDI 2.0 clip, written by the same `clausters-midi` the reference client writes with — so a `.mid` saved from a tab is the file a script would have saved. A page has no filesystem, so the bytes come back and the page decides (a download, a `fetch`, a buffer), exactly as `wavBytes` does for a take.
+Constructed with no interface, a `MidiServer` accumulates a **score** instead: `server.score.toSmf(480)` and `.toClip(480)` return the bytes of a Standard MIDI File or a MIDI 2.0 clip, written by the same `clausters-midi` the reference client writes with — so a `.mid` saved from a tab is the file a script would have saved. The bytes come back, as they do in the Python client, and the page keeps them where it keeps files (`opfs.writeFile`) or hands them on.
 
 ## Examples
 

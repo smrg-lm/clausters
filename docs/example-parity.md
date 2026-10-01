@@ -53,7 +53,6 @@ one. Each row says which.
 |---|---|
 | `basics/server_load` | reads `/server_load`, whose whole content is time measured with a monotonic clock -- and `wasm32` has none, so the engine a page boots reports every role at zero, exactly as it reports zero for `/server_status`'s CPU fields. The *surface* is ported (`Server.load`, `formatLoad`, `loadName`, covered in `tests/server.test.ts` against a native server); what a page cannot do is have anything to look at. The gap is `clients/web/PLAN.md`, Future directions: an engine in a page has no clock |
 | `editors/session` | drives the GUI host as a **separate process** over the session's transport, which is what a page has instead of, not as well as: its host is a canvas in the same page |
-| `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |
 | `io/embedded` | the in-process embedded server through the bundled native library — the page's engine is that same server compiled to wasm, so every page is this example |
 | `io/live_udp` | a UDP socket to a server process; a tab has no UDP, and `io/servers.html` shows the same two-server split over its own carriers |
 | `io/osc_destination` | sends OSC to a **foreign** application over UDP; same reason |
@@ -99,7 +98,6 @@ to.
 | `Score` | `open` | `idiom` — a score is engraved when it is built, and libverovio in a page is fetched asynchronously; a TypeScript constructor cannot await, so the same act is the static factory `Score.open` |
 | — | `call` | `idiom` — applying a Faust box to its inputs. Python's `Box` is callable, so an unapplied fragment is wired up by writing `box.faust("os.osc")(freq)`; TypeScript has no callable object and spells the same application `.call(freq)` |
 | `Part` | — | `idiom` — one span of a join, as `Buffer.stitch` takes it. Python's `Part` is a named tuple, built by a call; TypeScript's `Part` is an interface, so a page writes the same span as an object literal and there is no call to pair it with |
-| `read` | `fromSamples` | `idiom` — loading a take into a server buffer. A script renders it to a `.wav` and the server reads the path (`/buffer_read`); a tab has no path, so the samples go straight in |
 | `segments` | `tempoSegments` | `idiom` — every segment of a tempo map, in order. Same reason as the row below: the wasm `TempoMap` cannot grow a method, so the wrapper takes the map |
 | `env` | `tempoEnv` | `idiom` — writing a tempo envelope onto a map. The Python client's `TempoMap` carries the method; the wasm one is a handle with no room for it, so the same act is the free function `tempoEnv(map, …)` |
 | — | `at` | `idiom` — the last element of a list. Python subscripts it (`upper[-1]`), which is no call at all; JavaScript has no negative index and spells the same reach `.at(-1)` |
@@ -107,7 +105,7 @@ to.
 | — | `keys` | `idiom` — looping over a mapping's keys. `for k in mapping` yields them in Python; a JavaScript `Map` yields entries, so the same loop says `.keys()` |
 | `IdShare` | — | `idiom` — the slice of an id space two clients divide. Python's is a class that validates its pair; TypeScript's is an **interface**, so the same value is the object literal it describes (`{ index: 0, of: 2 }`) and there is nothing to construct |
 | `subscribe` | `onMessage` | `idiom` — listening to every inbound host message, ahead of the per-widget callbacks. A script hands over a function of `(addr, args)`, the decoded pair its OSC layer already carries; a page's host carries whole `OscMessage` objects and hands one over, so the same seam takes the message rather than its two halves |
-| `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; a tab has no filesystem, so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
+| `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; the page's host maps no file -- the page's storage is not the host's -- so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
 | — | `writeFile` | `idiom` — writing a file a page keeps. A page's files live in its origin private file system, through the client's `opfs`; a script writes its file with the language's own `pathlib`, which is no call on the client surface |
 | — | `readFile` | `idiom` — the other half of the row above: reading that file back |
 
@@ -238,7 +236,6 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `wavBytes` | the script's `render` writes the take to the path it was given and says `pw-play out.wav`; a tab has no path, so the same take leaves as a download |
 
 ### `panels/panel`
 
@@ -257,44 +254,42 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `spectral/convolution`
 
 | Only in | Call | Why |
 |---|---|---|
-| web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
-| web | `boot` | the other half of the row above |
+| python | `read` (first) | the impulse response, read from the WAV the script writes with Python's own `wave` module, which no client wraps. The page puts the same samples straight into a buffer |
 | web | `fromSamples` | the other half of the row above |
+| web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `spectral/cross`
 
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `spectral/kernel`
 
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `transport/freeze`
 
@@ -307,57 +302,50 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `basics/graph_maths`
 
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `basics/multichannel`
 
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `basics/wavetables`
 
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `basics/pause_resume`
 
 | Only in | Call | Why |
 |---|---|---|
-| python | `read_soundfile` | the beat RMS is read off the file the server wrote, because the script asked `render` for a path. The page's render answers with the take itself, and reads the same numbers off that |
-| python | `channel` | the other half of the row above |
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `panels/attach`
 
@@ -385,11 +373,10 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `buffers/loudness`
 
@@ -407,7 +394,7 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| python | `send_msg` | `/buffer_allocRead`: the script writes a WAV to a temp file and asks the server to read it. A tab has no filesystem, so the page makes the samples and writes them into the buffer it allocated |
+| python | `send_msg` | `/buffer_allocRead`: the script writes a WAV to a temp file with Python's own `wave` module, which no client wraps, and asks the server to read it. The page makes the same samples and writes them into the buffer it allocated |
 | web | `setSamples` | the other half of the row above |
 | web | `onClosed` | the script's animation loop asks `win.closed` on every turn, which is a property and no call at all; a page's interval has to be told when to stop |
 
@@ -428,11 +415,10 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a tab has neither a path nor a shell, so hearing the take is booting an engine, putting the samples in a buffer and playing that |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
 | web | `boot` | the other half of the row above |
-| web | `fromSamples` | the other half of the row above |
+| web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-| web | `wavBytes` | the take, saved. `render(path=...)` writes the file for the script; a page has no path, so the same bytes leave as a download |
 
 ### `io/osc_responder`
 
@@ -465,6 +451,15 @@ in the middle of an example.
 | web | `pause` | the script hands the button the bound method (`on_click(transport.pause)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
 | web | `stop` | the other half of the row above |
 
+### `faust/boxes_library`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `read` | the other half of the row above |
+| web | `play` | the other half of the row above |
+
 ### `notation/score_editor`
 
 | Only in | Call | Why |
@@ -475,7 +470,6 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| python | `read_soundfile` | the script bounces to a WAV so the same file feeds two consumers -- the buffer the playhead sounds and the samples the views draw -- and reads it back for the second. A tab has no file, so the render's own samples do both |
 | python | `peaks_cache_file` | a peak cache written beside the take, for a host that **maps** it. A page's host maps nothing: it is sent the overview instead, and builds its pyramid from that |
 | python | `free` ×3 | the script's ending: it frees the clipboard voice, the clipboard buffer and the take before closing the session |
 

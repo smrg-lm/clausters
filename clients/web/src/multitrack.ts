@@ -76,36 +76,21 @@ import type { Curve as CurveSpec, PointsLike } from "./defs/ugens/env.ts";
 import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
 import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
-import * as opfs from "./engine/opfs.ts";
+import { readFileAt, writeFileAt } from "./base/files.ts";
 import { EventSequence } from "./seq/sequence.ts";
 import { runSteps } from "./steps.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
 
-/** Whether this is node rather than a browser (a real `process.versions.node`). */
-function underNode(): boolean {
-    const proc = (globalThis as { process?: { versions?: { node?: string } } }).process;
-    return typeof proc?.versions?.node === "string";
-}
-
-/** A file's text: from the disk under node, from the page's storage in a tab. */
+/** A file's text, where `base/files.ts` keeps files. */
 async function readText(path: string): Promise<string> {
-    if (underNode()) {
-        const { readFile } = await import("node:fs/promises");
-        return readFile(path, "utf8");
-    }
-    return new TextDecoder().decode(await opfs.readFile(path));
+    return new TextDecoder().decode(await readFileAt(path));
 }
 
 /** Writes a file's text where {@link readText} reads it. */
 async function writeText(path: string, text: string): Promise<void> {
-    if (underNode()) {
-        const { writeFile } = await import("node:fs/promises");
-        await writeFile(path, text);
-        return;
-    }
-    await opfs.writeFile(path, new TextEncoder().encode(text));
+    await writeFileAt(path, new TextEncoder().encode(text));
 }
 
 /** The folder a path is in, `.` for a bare name. */

@@ -345,10 +345,9 @@ class Buffer:
         rate wants. ``channels`` says how the flat sequence is laid out --
         interleaved ``L R L R ...``, as everywhere else.
 
-        The same call exists in the web client, where a page has no filesystem
-        and this is the *only* way back from a render to something that sounds.
-        There it can hand the samples to a shared-memory engine in one copy;
-        here the bulk path is `set_samples`' blob runs, which every carrier has.
+        The same call exists in the web client, where it can hand the samples
+        to a shared-memory engine in one copy; here the bulk path is
+        `set_samples`' blob runs, which every carrier has.
         """
         srv = _resolve(server)
         frames = len(samples) // max(1, int(channels))

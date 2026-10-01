@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: render, then load</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Bounce a phrase offline, then play it back from the file the
+render wrote.
+
+This is the <b>change of state</b> the <code>render</code> verb is named for: a
+generator thing (a pattern -- an algorithm that describes sound) becomes a
+generated one (a file -- random-access audio you can slice, loop and read
+backwards). The file needs no conversion in between, because the same server
+code wrote it and reads it:
+
+<ol>
+<li>An offline session plays the phrase and renders it with a
+<code>path</code>: the take is written to <code>out/phrase.wav</code> in the
+page's own filesystem (the origin private file system). What comes back is the
+stats -- frames, events, per-channel peak and RMS -- and no samples.</li>
+<li><code>readSoundfile</code> brings the samples into the page through the
+server's own decoder, and the numbers match the render's own stats.</li>
+<li>A live session starts and <code>Buffer.read</code>
+(<code>/buffer_allocRead</code>) loads that same file into a server buffer:
+float32 WAV, read by the decoder the server already ships.</li>
+<li>A <code>playBuf</code> synth plays the buffer -- the take, sounding as a
+sample.</li>
+</ol>
+
+Needs <code>./build.sh</code> in <code>clients/web</code> first
+(<code>dist/</code> is git-ignored); serve it over HTTP and open
+<code>/examples/buffers/render-then-load.html</code>.</div>
+
+      <div class="row">
+        <button id="render">bounce, read back and load</button>
+        <button id="play" disabled>play the take</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/buffers/render_then_load.py,
+      call for call. The take goes to the page's origin private file system,
+      where the script writes it to a temporary directory; the bytes of the
+      file are the server crate's framing in both.
+
+      Serve clients/web (the package root) and open
+      /examples/buffers/render-then-load.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Buffer, Session, Synth, channels, readSoundfile,
+      } from "../../dist/index.js";
+      import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
+      import { Pbind, Pseq, Pwhite } from "../../dist/seq/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48_000.0;
+
+      const phrase = () => new Pbind({
+        instrument: "default", dur: 0.25, legato: 0.9, amp: 0.22,
+        freq: new Pseq([220.0, 277.2, 330.0, 440.0, 330.0, 277.2], 2),
+        pan: new Pwhite(-0.6, 0.6),
+      });
+
+      /**
+       * `playBuf` is mono -- one call per channel, selected by `chan` -- which
+       * is also a reminder that a server buffer is interleaved: the UGen walks
+       * the stride, exactly as `channels` does on the client side.
+       */
+      function sampler(name = "take") {
+        const bufnum = control("bufnum", 0.0);
+        const rate = control("rate", 1.0);
+        const amp = control("amp", 1.0);
+        const left = playBuf(bufnum, 0.0, rate);
+        const right = playBuf(bufnum, 1.0, rate);
+        return new SynthDef(name, out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
+      }
+
+      let live = null, buf = null, stats = null;
+
+      async function run() {
+        $("render").disabled = true;
+
+        // ---- 1. bounce it ----
+        // The render writes the file; the stats come back here.
+        const wav = "out/phrase.wav";
+        const offline = await Session.nrt();
+        offline.clock.setTempo(2.0);
+        offline.play(phrase());
+        stats = await offline.render({ sampleRate: SR, channels: 2, path: wav });
+        log(`rendered ${stats.events} score events -> ${stats.frames} frames `
+          + `(${stats.duration.toFixed(2)} s) at ${stats.sampleRate.toFixed(0)} Hz`);
+        log(`  peak ${JSON.stringify(stats.peak.map((p) => +p.toFixed(3)))}  `
+          + `rms ${JSON.stringify(stats.rms.map((r) => +r.toFixed(3)))}`);
+        log(`  samples in this page: ${stats.samples}  (they went to the file)`);
+        log(`  wrote ${wav} (float32)`);
+
+        // ---- 2. read it back ----
+        // The same decoder `/buffer_allocRead` uses, so the samples are the
+        // ones a server buffer holds.
+        const audio = await readSoundfile(wav);
+        const [left, right] = channels(audio.samples, audio.channels);
+        log(`read back: ${audio.frames} frames x ${audio.channels} ch, `
+          + `${left.length} + ${right.length} samples deinterleaved`);
+        const same = audio.peak.every((a, i) => Math.abs(a - stats.peak[i]) < 1e-9);
+        log(`  peak matches the render's own measurement: ${same}`);
+
+        // ---- 3. load it into a running server and play it ----
+        live = await Session.embed({ latency: 0.15 });
+        live.clock.setTempo(2.0);
+        buf = await Buffer.read(wav, { server: live.server });   // /buffer_allocRead, by content
+        const info = await buf.info();
+        log(`buffer ${buf.bufnum} on the server: ${info.frames} frames, `
+          + `${info.channels} ch, ${info.sampleRate.toFixed(0)} Hz`);
+        await sampler().send(live.server);
+        log("buffer loaded -- play the take");
+        $("play").disabled = false;
+      }
+
+      /** Play the take back from the buffer. */
+      async function play() {
+        const node = new Synth("take", { bufnum: buf.bufnum }, { server: live.server });
+        log("playing the take back from the buffer...");
+        await live.run(stats.duration + 0.5);
+        node.free();
+        log("done - the bounce, the file and the playback were one artifact.");
+      }
+
+      $("render").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("play").onclick = () => play().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -57,7 +57,7 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
       /examples/editors/load-multitrack.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session } from "../../dist/index.js";
+      import { Session, loadCore } from "../../dist/index.js";
       import { gui } from "../../dist/index.js";
       import { Session as SavedSession } from "../../dist/multitrack.js";
 
@@ -66,6 +66,10 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
 
       async function run() {
         $("run").disabled = true;
+
+        // The shared core is wasm here and has to be fetched before the first
+        // call into it; the script's is already in the process.
+        await loadCore();
 
         // ---- open ----
         // The multitrack and its table, as the file says them.

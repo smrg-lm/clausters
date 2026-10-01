@@ -382,14 +382,15 @@ async function resolve(
         const stats = await bounceDef(asDef(obj), {
             dur, controls, defs, sampleRate, channels: width,
         });
-        return { samples: stats.samples, channels: width, sampleRate, label: "expr" };
+        // No `path` was given, so the take is in memory.
+        return { samples: stats.samples!, channels: width, sampleRate, label: "expr" };
     }
     if (obj instanceof SynthDef || obj instanceof FaustDef || obj instanceof GraphDef) {
         const width = channels ?? 2;
         const stats = await bounceDef(obj, {
             dur, controls, defs, sampleRate, channels: width,
         });
-        return { samples: stats.samples, channels: width, sampleRate, label: obj.name };
+        return { samples: stats.samples!, channels: width, sampleRate, label: obj.name };
     }
     if (obj instanceof Buffer || typeof obj === "number") {
         return fetchBuffer(obj, sampleRate);
@@ -441,7 +442,7 @@ async function renderEnv(
     }
     server.sendBundleAfter(total, [["/node_free", ["i", node.id]]]);
     const stats = await session.render({ sampleRate, channels: 1 });
-    return { samples: stats.samples, channels: 1, sampleRate, label };
+    return { samples: stats.samples!, channels: 1, sampleRate, label };
 }
 
 /**
