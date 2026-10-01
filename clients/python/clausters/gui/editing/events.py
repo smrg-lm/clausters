@@ -86,6 +86,9 @@ class _NotesPlayback:
         self._rate = None
         #: The sequence the lane holds, if any: the one played last.
         self.planned = None
+        #: ``(sequence, version)`` the lane last took: every editor over the
+        #: sequence is told of a change, and the lane takes it once.
+        self._taken = None
         #: The transport it plays on -- the crate's word for it.
         self.transport_id = int(self._native.call(
             "state", _native.SequenceHandle(), server.ids)["transport"])
@@ -99,6 +102,16 @@ class _NotesPlayback:
     def state(self) -> dict:
         """The transport as the engine has it."""
         return self.server.transport_at(self.transport_id).transport_state()
+
+    def update(self, sequence, version: int) -> None:
+        """**The lane takes ``sequence`` again**, when it is the one the lane
+        holds and it has not taken it at this ``version`` of its context
+        already: every editor over a sequence is told of a change -- the one
+        that made it, and the others adopting it -- and the lane is one."""
+        if self.planned is not sequence or self._taken == (id(sequence), version):
+            return
+        self._taken = (id(sequence), version)
+        self.call("update", sequence)
 
     def call(self, verb: str, sequence, **args) -> dict:
         """One verb over ``sequence``, its steps carried out."""
@@ -310,10 +323,7 @@ class NotesEditor(Editor):
         it again, and the server plays it on from where the position is."""
         if self._server is None:
             return
-        playback = self._playback
-        if playback.planned is not self.structure:
-            return
-        playback.call("update", self.structure)
+        self._playback.update(self.structure, self._editing.version)
 
     # ---- the crate's turns ----
 

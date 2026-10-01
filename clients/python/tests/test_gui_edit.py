@@ -588,6 +588,32 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     assert "/transport_locateSample" in [addr for addr, _ in server.sent]
 
 
+def test_two_rolls_over_one_sequence_send_the_lane_one_change_once():
+    """Every roll over a sequence is told of a change -- the one that made it,
+    and the other adopting it -- and the lane they share takes it once: the
+    same for a gesture and for a script's change."""
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    keys = NotesEditor(seq, sample_rate=SR, server=server)
+    hertz = NotesEditor(seq, sample_rate=SR, server=server, y_axis="hz")
+    _host, wid = opened(keys)
+    opened(hertz)
+    keys.play()
+
+    def lane_sets():
+        return [addr for addr, _ in server.sent].count("/lane_set")
+
+    server.sent.clear()
+    keys.apply("/gui_event", [wid, 1, 0, "notes",
+                              1, 0.0, BEAT * 0.8, 60, 13, 0,
+                              2, 3 * BEAT, BEAT * 0.8, 67, 13, 0])
+    assert lane_sets() == 1 and server.lane() == [0, 150]
+    server.sent.clear()
+    seq.events[0].at = 1.0
+    assert lane_sets() == 1 and server.lane() == [50, 150]
+
+
 def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it():
     server = _PlayingServer()
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))

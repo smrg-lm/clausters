@@ -626,6 +626,40 @@ test("the notes editor plays on its own transport and hears an edit", async () =
     assert.ok(server.sent.map(([addr]) => addr).includes("/transport_locateSample"));
 });
 
+test("two rolls over one sequence send the lane one change once", async () => {
+    // Every roll over a sequence is told of a change -- the one that made it,
+    // and the other adopting it -- and the lane they share takes it once: the
+    // same for a gesture and for a page's change. Twice, the two updates'
+    // steps interleaved on the shared runner, and one waited on a step the
+    // other sent.
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const keys = new NotesEditor(seq, { sampleRate: SR, server });
+    const hertz = new NotesEditor(seq, { sampleRate: SR, server, yAxis: "hz" });
+    const { wid } = await opened(keys);
+    await opened(hertz);
+    await keys.play();
+    const laneSets = () => server.sent.filter(([addr]) => addr === "/lane_set").length;
+
+    server.sent = [];
+    keys.apply("/gui_event", [wid, 1, 0, "notes",
+        1, 0.0, BEAT * 0.8, 60, 13, 0,
+        2, 3 * BEAT, BEAT * 0.8, 67, 13, 0]);
+    await keys.settled();
+    await hertz.settled();
+    assert.equal(laneSets(), 1);
+    assert.deepEqual(server.lane(), [0, 150]);
+    server.sent = [];
+    seq.events.item(0).at = 1.0;
+    await keys.settled();
+    await hertz.settled();
+    assert.equal(laneSets(), 1);
+    assert.deepEqual(server.lane(), [50, 150]);
+});
+
 test("the roll draws its play cursor from its transport and a locate cues it", async () => {
     const server = new PlayingServer();
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
