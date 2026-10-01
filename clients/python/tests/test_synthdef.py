@@ -68,7 +68,7 @@ def _py_default_env(name="py_default_env") -> SynthDef:
         done_action=DoneAction.FREE_SELF,
     )
     bloom = env_gen(Env.perc(attack=0.005, release=0.6))
-    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.3 + sine(freq) * 0.4
+    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.3
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
