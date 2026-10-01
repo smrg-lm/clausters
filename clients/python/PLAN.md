@@ -5178,7 +5178,7 @@ work, where a pending item reads as done.)*
   rename. Open: whether the drawing word stays "lane" — the DAW's word for a
   strip, as in "automation lane" — or every band is named for what it shows.
 
-- ⬜ **The composition chapter's "Mixing is the multitrack's" describes the
+- ✅ **The composition chapter's "Mixing is the multitrack's" describes the
   tree that was walked off** *(found 2026-10-01, renaming take lanes in
   `C57.0`)*. `clients/python/docs/src/composition.md` says every *element*
   carries `mute`, `solo` and `level`, inherited down an aggregate, and shows
@@ -5187,6 +5187,10 @@ work, where a pending item reads as done.)*
   own (`Track.muted`, `Track.soloed`, its strip). The web chapter has no such
   section, so the two books also disagree. The section is to be rewritten
   over the multitrack's own mixing, in both books, or removed.
+  *(Fixed 2026-10-01: both books say a track's `muted`, `soloed` and
+  `level`, and the rule `multitrack/nodes.rs` applies. The web chapter did
+  have the section, with the same tree and `bassLane` names, so what was
+  stale was one section in two books.)*
 
 ## Future directions (a design that is not a fix)
 

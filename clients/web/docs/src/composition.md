@@ -445,19 +445,20 @@ language's and not a different call.
 
 ## Mixing is the multitrack's
 
-Every element carries `mute`, `solo` and `level`, and all three are inherited
-down the tree: muting an aggregate silences its members, one soloed element
-anywhere silences every branch that is not on a soloed path, and a level
-multiplies into the `amp` of the events under it.
+A **track** carries its own mix: `muted`, `soloed` and `level`, the fader as
+a linear gain. A muted track is silent, and so is every track that is not
+soloed while any track is: the rule is the multitrack's, applied where it is
+played, and the document only marks the track.
 
 ```ts
-bassLane.mute = true;
-leadLane.level = 0.5;
+const [bass, lead] = multitrack.tracks;
+bass.muted = true;
+lead.level = 0.5;
 ```
 
-They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's track header is drawing the multitrack rather than
-remembering something of its own — pressing mute there goes through the log and
+They are fields of the track and are written with it, so a multitrack reopens
+mixed the way it was left, and the editor's track header is drawing the
+multitrack rather than remembering something of its own — pressing mute there goes through the log and
 undoes like any other edit. What is *drawn* is read unmixed: a muted track keeps
 its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
