@@ -1609,7 +1609,7 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   `play()` writes into itself (`node`, `server`, the derived keys), so an
   `Event` inside a sequence would write the document every time it was played.
   A `SeqEvent` answers a free `Event` (`.event`) to play or to copy.
-- ⬜ **"Lane" names four things, and each gets its own name first** — a
+- ✅ **"Lane" names four things, and each gets its own name first** — a
   rename that lands **before** `C57`, so the objects are written once with
   the right names. The inventory (2026-10-01):
   - the multitrack's **take lane**: the several lanes a track holds, one of
@@ -1673,10 +1673,12 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   seconds from the region's; the sequence: beats from its start; an event:
   beats from the note's, running past its end) and the target's vocabulary
   (`{"port": ...}` on a track, `{control|bend|pressure|timbre|cc}` with
-  `channel`, `min`, `max` in a sequence). The type's doc comment says "`at` is
-  in seconds", which is false in two of its four uses, and `at` is an untyped
-  `f64` among `Second` and `Beat` positions: both are corrected with the
-  rename.
+  `channel`, `min`, `max` in a sequence). ✅ The type's doc comment said "`at`
+  is in seconds", which was false in two of its four uses; it says what each
+  holder makes of it now *(with the rename)*. ⬜ `at` is still an untyped `f64`
+  among `Second` and `Beat` positions: a `Point` is shared with every other
+  curve, so typing the axis per holder is a generic `Automation` (or a point
+  per unit), a change of its own rather than a rename's.
 - ✅ **No structure is constructed with an id** *(the user, 2026-10-01: "es
   algo a corregir")*. `clausters.multitrack.Automation` requires `id: int` in
   its constructor, and so do `Region` and `Track`: the same defect on the
@@ -1694,11 +1696,16 @@ kept beside the objects, and every call site is rewritten in the same pass
 `clients/web`).
 
 - ⬜ **C57 — A sequence's structures are objects.**
-  - ⬜ **C57.0 — The lanes renamed.** Every rename of the inventory above, in
+  - ✅ **C57.0 — The lanes renamed.** Every rename of the inventory above, in
     the crates, the host, both clients, the wire's JSON where a field moves
     (with the session format's migration), the books and the examples — its
     own commit, before any object exists. `clausters.form`, frozen, is not
     touched: its `Track` keeps the name.
+    *(Done 2026-10-01, one commit per rename: `EventLane`, `TrackRow` with
+    the wire and the widget-level `Multitrack` deleted, `automation`,
+    `TakeLane`, `OscMarker`, and `Automation`'s doc comment. The session
+    format is 5. Left open: `at`'s type, above, and the fifth sense of
+    "lane" found on the way, in Found by use.)*
   - ⬜ **C57.1 — Reading.** `seq.events` with its identity map, `SeqEvent`
     (`at`, its keys, `automation`, `.event`), `at`/`range`/
     iteration on the pattern of `Timeline`'s.

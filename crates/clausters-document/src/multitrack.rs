@@ -364,13 +364,23 @@ impl TakeLane {
     }
 }
 
-/// A curve over one parameter, in the arrangement's own time.
+/// A curve over one parameter, in the time of whatever holds it.
 ///
 /// The points are [`crate::Point`]s and this crate reads nothing about their
 /// shape, for the reason that module states. What is *here* rather than there
-/// is the placement: which parameter, whose track, and whether the curve is
-/// showing -- because a curve with no arrangement around it has no parameter to
-/// be about.
+/// is the placement: which parameter, and whether the curve is showing --
+/// because a curve with nothing around it has no parameter to be about.
+///
+/// **One type, four holders, and the holder says what a point's `at` is.** A
+/// [`Track`]'s curve is in seconds from the multitrack's start and a
+/// [`Region`]'s in seconds from the region's; an
+/// [`EventSequence`](crate::events::EventSequence)'s is in beats from the
+/// sequence's start and an event's in beats from the note's -- running past
+/// its end into the release. The target's vocabulary is the holder's too:
+/// `{"port": ...}` on a track, `{"control" | "bend" | "pressure" | "timbre" |
+/// "cc": ...}` with a `channel` in a sequence. What is the same in all four --
+/// the points, their editing, their drawing, their tabulation -- is why it is
+/// one type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
     /// Its identity.
@@ -384,7 +394,8 @@ pub struct Automation {
     /// belong to whoever wrote the def.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub target: Opaque,
-    /// The curve. `at` is in seconds, like every other placement here.
+    /// The curve, `at` in the unit and from the origin of whatever holds it
+    /// (see the type).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<crate::Point>,
     /// Whether the curve is shown. **The view's**, and here rather than in the
