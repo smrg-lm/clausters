@@ -448,47 +448,216 @@ export function flatPoints(
     return out;
 }
 
+/** A point of a curve as a script may spell it: the document's, or `[at, value]`. */
+export type PointLike = Extra | readonly [number, number];
+
+/** Points as the document writes them: a pair becomes `{at, value}`. */
+function documentPoints(points: Iterable<PointLike>): Extra[] {
+    return [...points].map((point) =>
+        Array.isArray(point)
+            ? { at: Number(point[0]), value: Number(point[1]) }
+            : { ...(point as Extra) },
+    );
+}
+
 /**
- * A curve over one parameter, in the arrangement's own time.
+ * What holds a curve that is not a free value: a sequence, which reads its
+ * curves for a view and writes them back.
+ *
+ * @internal
+ */
+export interface CurveHolder {
+    /** The curves as written -- the sequence's for `null`, else that event's; `null` when it holds no such event. */
+    curvesOf(event: number | null): Extra[] | null;
+}
+
+/** The fields a curve writes under their own names. */
+const CURVE_FIELDS = ["id", "target", "name", "points", "visible", "enabled", "extra"];
+
+/**
+ * A curve over one parameter, in its holder's time.
  *
  * `target` says **what this automates** in the client's terms and is never read
  * here -- a control name, a bus, a plugin's parameter index -- the same door a
- * leaf's configuration is, and for the same reason.
+ * leaf's configuration is, and for the same reason. The points are `{at, value,
+ * data}`, the shape the document's points vocabulary carries; `[at, value]`
+ * pairs are read as such points. What `at` counts is the holder's: seconds on
+ * a {@link Track}, seconds from the region's start on a {@link Region}, beats
+ * on an `EventSequence`, beats from the note's start on one of its events.
+ *
+ * **One class, free or held.** Built by a script, a curve is a **value** that
+ * nothing holds. Added to a sequence or to one of its events
+ * (`seq.automation.add`, `event.automation.add`) it is a **live view** of the
+ * curve the sequence holds: reading a field asks the sequence, so it reads
+ * what an editor left there, and the same curve read twice is the same
+ * object. A curve the sequence no longer holds -- removed, or undone away --
+ * is **detached**: {@link Automation.held} is `false` and reading it throws,
+ * until an undo brings it back.
+ *
+ * A curve on a multitrack is a value either way, written whole with the
+ * multitrack; its `id` is the multitrack's to keep.
  */
 export class Automation {
-    id: number;
-    target?: unknown;
-    name?: string;
-    points: Extra[];
+    #holder: [CurveHolder, number | null] | null = null;
+    #id: number;
+    #value: {
+        target?: unknown;
+        name?: string;
+        points: Extra[];
+        visible: boolean;
+        enabled: boolean;
+        extra: Extra;
+    } | null;
+
+    constructor(fields: {
+        target?: unknown;
+        points?: Iterable<PointLike>;
+        name?: string;
+        visible?: boolean;
+        enabled?: boolean;
+        extra?: Extra;
+        id?: number;
+    } = {}) {
+        this.#id = Math.trunc(fields.id ?? 0);
+        this.#value = {
+            target: fields.target,
+            name: fields.name,
+            points: documentPoints(fields.points ?? []),
+            visible: fields.visible ?? false,
+            enabled: fields.enabled ?? true,
+            extra: { ...(fields.extra ?? {}) },
+        };
+    }
+
+    /**
+     * The view of curve `id` of `holder` -- over the whole sequence when
+     * `event` is `null`, else over that event.
+     *
+     * @internal
+     */
+    static heldBy(holder: CurveHolder, event: number | null, id: number): Automation {
+        const curve = new Automation({ id });
+        curve.#holder = [holder, event];
+        curve.#value = null;
+        return curve;
+    }
+
+    /** @internal */
+    get holder(): [CurveHolder, number | null] | null {
+        return this.#holder;
+    }
+
+    // ---- the fields ----
+
+    #written(): Extra {
+        if (this.#holder === null) {
+            const value = this.#value!;
+            return { id: this.#id, ...value, points: [...value.points] };
+        }
+        const [holder, event] = this.#holder;
+        const found = (holder.curvesOf(event) ?? []).find((c) => Number(c.id) === this.#id);
+        if (found === undefined) throw new Error("the sequence no longer holds this curve");
+        return found;
+    }
+
+    #write(name: string, value: unknown): void {
+        if (this.#holder === null) {
+            (this.#value as Record<string, unknown>)[name] = value;
+            return;
+        }
+        throw new Error("a curve a sequence holds is not written here yet");
+    }
+
+    /**
+     * Whether a sequence holds the curve: `false` for a free value, and for a
+     * view whose curve was removed.
+     */
+    get held(): boolean {
+        if (this.#holder === null) return false;
+        try {
+            this.#written();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** The curve's identity in its holder; `0` for a value nothing holds yet. */
+    get id(): number {
+        return this.#id;
+    }
+
+    set id(value: number) {
+        if (this.#holder !== null) throw new Error("a held curve keeps the id its sequence gave it");
+        this.#id = Math.trunc(value);
+    }
+
+    /** What the curve drives, in its holder's vocabulary. */
+    get target(): unknown {
+        return this.#written().target ?? undefined;
+    }
+
+    set target(value: unknown) {
+        this.#write("target", value);
+    }
+
+    /** What a reader calls the curve. */
+    get name(): string | undefined {
+        return (this.#written().name as string | null | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        this.#write("name", value);
+    }
+
+    /**
+     * The points, `{at, value, data}`, in order. A copy: change a curve by
+     * assigning its points, or with {@link Automation.setPoints}.
+     */
+    get points(): Extra[] {
+        return [...((this.#written().points as Extra[] | undefined) ?? [])];
+    }
+
+    set points(value: Iterable<PointLike>) {
+        this.#write("points", documentPoints(value));
+    }
+
     /**
      * Whether the curve is shown. The **view's**, and kept here because which
-     * curves a person had open is part of reopening the multitrack as they left it.
+     * curves a person had open is part of reopening the work as they left it.
      */
-    visible: boolean;
+    get visible(): boolean {
+        return Boolean(this.#written().visible);
+    }
+
+    set visible(value: boolean) {
+        this.#write("visible", Boolean(value));
+    }
+
     /**
      * Whether the curve is being applied. A curve can be kept and switched off
      * without being deleted, which is what an arm or a bypass is.
      */
-    enabled: boolean;
-    extra: Extra;
-
-    constructor(fields: {
-        id: number;
-        target?: unknown;
-        name?: string;
-        points?: Extra[];
-        visible?: boolean;
-        enabled?: boolean;
-        extra?: Extra;
-    }) {
-        this.id = fields.id;
-        this.target = fields.target;
-        this.name = fields.name;
-        this.points = fields.points ?? [];
-        this.visible = fields.visible ?? false;
-        this.enabled = fields.enabled ?? true;
-        this.extra = fields.extra ?? {};
+    get enabled(): boolean {
+        return this.#written().enabled !== false;
     }
+
+    set enabled(value: boolean) {
+        this.#write("enabled", Boolean(value));
+    }
+
+    /** Fields a newer writer wrote, carried as they are. */
+    get extra(): Extra {
+        const written = this.#written();
+        if (this.#holder === null) return { ...(written.extra as Extra) };
+        return rest(written, ...CURVE_FIELDS);
+    }
+
+    set extra(value: Extra) {
+        this.#write("extra", { ...value });
+    }
+
+    // ---- the curve protocol ----
 
     /**
      * The curve as the flat `[t, v, shape, curve, ...]` break points the `bpf`
@@ -515,13 +684,17 @@ export class Automation {
         return this;
     }
 
+    // ---- as data ----
+
     write(): Extra {
-        const out: Extra = { id: this.id };
-        if (this.name !== undefined) out.name = this.name;
-        if (this.target !== undefined) out.target = this.target;
-        if (this.points.length) out.points = [...this.points];
-        if (this.visible) out.visible = true;
-        if (!this.enabled) out.enabled = false;
+        const written = this.#written();
+        const out: Extra = { id: this.#id };
+        if (written.name !== undefined && written.name !== null) out.name = written.name;
+        if (written.target !== undefined && written.target !== null) out.target = written.target;
+        const points = (written.points as Extra[] | undefined) ?? [];
+        if (points.length) out.points = [...points];
+        if (written.visible) out.visible = true;
+        if (written.enabled === false) out.enabled = false;
         return { ...out, ...this.extra };
     }
 

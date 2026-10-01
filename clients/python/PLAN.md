@@ -1706,9 +1706,14 @@ kept beside the objects, and every call site is rewritten in the same pass
     `TakeLane`, `OscMarker`, and `Automation`'s doc comment. The session
     format is 5. Left open: `at`'s type, above, and the fifth sense of
     "lane" found on the way, in Found by use.)*
-  - ⬜ **C57.1 — Reading.** `seq.events` with its identity map, `SeqEvent`
+  - ✅ **C57.1 — Reading.** `seq.events` with its identity map, `SeqEvent`
     (`at`, its keys, `automation`, `.event`), `at`/`range`/
     iteration on the pattern of `Timeline`'s.
+    *(Done 2026-10-01: `SeqEvents` and `SeqAutomation` are the live
+    collections, `Automation` is one class that is a value or a held view,
+    and the sequence's door reads ids by beat (`ids`) and curves by holder
+    (`automation`). A web `SeqEvent` reads its keys with `get`/`has`/`keys`
+    and a collection indexes with `item(i)`, where Python indexes.)*
   - ⬜ **C57.2 — Writing through the objects.** `seq.events.add` answers a
     `SeqEvent`; `event.at = ...`, `event[key] = ...` and `remove()` are the
     vocabulary's `move`, `set` and `remove`; the curve collections answer

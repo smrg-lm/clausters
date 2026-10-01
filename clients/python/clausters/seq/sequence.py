@@ -14,6 +14,7 @@ notes editor opened on it edits it in place, with no copy to write back.
 """
 
 import json
+import weakref
 
 from .. import _native
 from .event import Event
@@ -51,6 +52,63 @@ class EventSequence:
         """The sequence as plain data: its events with their ids, its tempo map
         and its automation -- what a session stores and `from_data` reads."""
         return self._seq.call("state")
+
+    # ---- its structures, as objects ----
+
+    @property
+    def _objects(self) -> "weakref.WeakValueDictionary":
+        """The identity map: ``(kind, id) ->`` the one object that represents
+        that event or curve, while anything holds it."""
+        objects = self.__dict__.get("_identity")
+        if objects is None:
+            objects = self.__dict__["_identity"] = weakref.WeakValueDictionary()
+        return objects
+
+    def _event(self, id: int) -> "SeqEvent":
+        """The object of the event with this id -- the same one every time."""
+        found = self._objects.get(("event", id))
+        if found is None:
+            found = SeqEvent._of(self, id)
+            self._objects[("event", id)] = found
+        return found
+
+    def _curve_view(self, event: "int | None", id: int):
+        """The object of curve ``id`` -- of the sequence when ``event`` is
+        ``None``, else of that event -- the same one every time."""
+        from ..multitrack import Automation
+
+        found = self._objects.get(("curve", id))
+        if found is None:
+            found = Automation._held_by(self, event, id)
+            self._objects[("curve", id)] = found
+        return found
+
+    def _curves(self, event: "int | None") -> "list | None":
+        """The curves as written -- the sequence's when ``event`` is ``None``,
+        else that event's, and ``None`` when it holds no such event."""
+        args = {} if event is None else {"id": int(event)}
+        written = self._seq.call("automation", **args)
+        return None if written is None else list(written.get("automation") or ())
+
+    def _ids(self, **window) -> list:
+        return [int(i) for i in self._seq.call("ids", **window)["ids"]]
+
+    @property
+    def events(self) -> "SeqEvents":
+        """**The events, as objects**, in beat order: a live collection --
+        iterate it, index it, ask it what is `SeqEvents.at` a beat or in a
+        `SeqEvents.range` -- whose members are `SeqEvent`s, each a view of
+        one event the sequence holds. The same event read twice is the same
+        object."""
+        return SeqEvents(self)
+
+    @property
+    def automation(self) -> "SeqAutomation":
+        """**The curves over the whole sequence**: a live collection of
+        `clausters.multitrack.Automation` views, their points on the
+        sequence's beats. The notes editor draws each as a row under the
+        roll."""
+        return SeqAutomation(self, None)
 
     # ---- reading ----
 
@@ -277,6 +335,154 @@ class EventSequence:
 
     def __repr__(self):
         return f"EventSequence({len(self)} events)"
+
+
+class SeqEvent:
+    """**One event of a sequence**, as an object: a live view of the event the
+    sequence holds under its id, never a copy. Reading it asks the sequence,
+    so after a hand moves the note in the roll the object reads where it now
+    is.
+
+    It is made by the sequence -- `EventSequence.events` hands them out, one
+    object per event -- and is not built directly. Its keys read as a mapping
+    (``event["midinote"]``); `event` answers a free `clausters.seq.Event`
+    with the same keys, to play or to copy.
+
+    An event the sequence no longer holds is **detached**: `sequence` is
+    ``None`` and reading it raises `ValueError`. An undo that brings the event
+    back brings this same object back with it.
+    """
+
+    __slots__ = ("_sequence", "_id", "__weakref__")
+
+    @classmethod
+    def _of(cls, sequence, id: int) -> "SeqEvent":
+        event = cls.__new__(cls)
+        event._sequence = sequence
+        event._id = int(id)
+        return event
+
+    def _written(self) -> dict:
+        written = self._sequence._seq.call("event", id=self._id)
+        if written is None:
+            raise ValueError("the sequence no longer holds this event")
+        return written
+
+    @property
+    def sequence(self) -> "EventSequence | None":
+        """The sequence that holds the event, or ``None`` once it holds it no
+        more."""
+        if self._sequence._seq.call("event", id=self._id) is None:
+            return None
+        return self._sequence
+
+    @property
+    def at(self) -> float:
+        """Where the event sits, in the sequence's beats."""
+        return float(self._written()["at"])
+
+    def __getitem__(self, key: str):
+        return (self._written().get("data") or {})[key]
+
+    def get(self, key: str, default=None):
+        """One key of the event, or ``default`` when it has none."""
+        return (self._written().get("data") or {}).get(key, default)
+
+    def __contains__(self, key) -> bool:
+        return key in (self._written().get("data") or {})
+
+    def __iter__(self):
+        return iter(list(self._written().get("data") or {}))
+
+    @property
+    def event(self) -> Event:
+        """The event's keys as a free `clausters.seq.Event` -- a copy, to play
+        or to add elsewhere; changing it changes nothing here."""
+        return Event(self._written().get("data") or {})
+
+    @property
+    def automation(self) -> "SeqAutomation":
+        """**The curves over this event alone** -- its own automation, as MPE
+        gives a note its bend, pressure and timbre: a live collection of
+        `clausters.multitrack.Automation` views, each point's beat counted
+        from the event's start and free to run past the note's end into its
+        release."""
+        return SeqAutomation(self._sequence, self._id)
+
+    def __repr__(self) -> str:
+        try:
+            written = self._written()
+        except ValueError:
+            return "<SeqEvent, detached>"
+        return f"<SeqEvent at {float(written['at']):g} {written.get('data') or {}}>"
+
+
+class SeqEvents:
+    """**A sequence's events, as a live collection** of `SeqEvent`s in beat
+    order (`EventSequence.events`). It reads the sequence each time it is
+    asked, so it is never out of date and never needs refreshing."""
+
+    __slots__ = ("_sequence",)
+
+    def __init__(self, sequence):
+        self._sequence = sequence
+
+    def _of(self, ids) -> "list[SeqEvent]":
+        return [self._sequence._event(i) for i in ids]
+
+    def __len__(self) -> int:
+        return len(self._sequence)
+
+    def __iter__(self):
+        return iter(self._of(self._sequence._ids()))
+
+    def __getitem__(self, i: int) -> "SeqEvent":
+        return self._sequence._event(self._sequence._ids()[i])
+
+    def at(self, beat: float) -> "list[SeqEvent]":
+        """The events exactly at ``beat``, in the order they were placed."""
+        return self._of(self._sequence._ids(at=float(beat)))
+
+    def range(self, t0: float, t1: float) -> "list[SeqEvent]":
+        """The events in the half-open beat window ``[t0, t1)``."""
+        return self._of(self._sequence._ids(**{"from": float(t0), "to": float(t1)}))
+
+    def __repr__(self) -> str:
+        return f"<{len(self)} events>"
+
+
+class SeqAutomation:
+    """**Curves a sequence holds, as a live collection** of
+    `clausters.multitrack.Automation` views: the sequence's own
+    (`EventSequence.automation`) or one event's (`SeqEvent.automation`)."""
+
+    __slots__ = ("_sequence", "_event")
+
+    def __init__(self, sequence, event: "int | None"):
+        self._sequence = sequence
+        self._event = event
+
+    def _written(self) -> list:
+        written = self._sequence._curves(self._event)
+        if written is None:
+            raise ValueError("the sequence no longer holds this event")
+        return written
+
+    def _views(self) -> list:
+        return [self._sequence._curve_view(self._event, int(c["id"]))
+                for c in self._written()]
+
+    def __len__(self) -> int:
+        return len(self._written())
+
+    def __iter__(self):
+        return iter(self._views())
+
+    def __getitem__(self, i: int):
+        return self._views()[i]
+
+    def __repr__(self) -> str:
+        return f"<{len(self)} curves>"
 
 
 class _Recorder:

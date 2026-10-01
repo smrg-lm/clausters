@@ -373,28 +373,181 @@ def flat_points(points) -> list:
     return out
 
 
-@dataclass
+def _points(points) -> list:
+    """Points as the document writes them: a ``{"at", "value", ...}`` dict is
+    taken as it is, and an ``(at, value)`` pair becomes one."""
+    out = []
+    for point in points:
+        if isinstance(point, dict):
+            out.append(dict(point))
+        else:
+            at, value = point
+            out.append({"at": float(at), "value": float(value)})
+    return out
+
+
 class Automation:
-    """A curve over one parameter, in the arrangement's own time.
+    """A curve over one parameter, in its holder's time.
 
     `target` says **what this automates** in the client's terms and is never
     read here -- a control name, a bus, a plugin's parameter index -- the same
     door a leaf's configuration is, and for the same reason. The points are
-    `{"at": seconds, "value": v, "data": ...}`, the shape `clausters.document`'s
-    points vocabulary already carries.
+    `{"at": t, "value": v, "data": ...}`, the shape `clausters.document`'s
+    points vocabulary already carries; ``(at, value)`` pairs are read as
+    such points. What ``at`` counts is the holder's: seconds on a `Track`,
+    seconds from the region's start on a `Region`, beats on a
+    `clausters.seq.EventSequence`, beats from the note's start on one of its
+    events.
+
+    **One class, free or held.** Built by a script, a curve is a **value**
+    that nothing holds. Added to a sequence or to one of its events
+    (``seq.automation.add``, ``event.automation.add``) it is a **live view**
+    of the curve the sequence holds: reading a field asks the sequence, so it
+    reads what an editor left there, and the same curve read twice is the same
+    object. A curve the sequence no longer holds -- removed, or undone away --
+    is **detached**: `held` is ``False`` and reading it raises `ValueError`,
+    until an undo brings it back.
+
+    A curve on a multitrack is a value either way, written whole with the
+    multitrack; its ``id`` is the multitrack's to keep.
     """
 
-    id: int
-    target: "dict | None" = None
-    name: "str | None" = None
-    points: list = field(default_factory=list)
-    #: Whether the curve is shown. The **view's**, and kept here because which
-    #: curves a person had open is part of reopening the multitrack as they left it.
-    visible: bool = False
-    #: Whether the curve is being applied. A curve can be kept and switched off
-    #: without being deleted, which is what an arm or a bypass is.
-    enabled: bool = True
-    extra: dict = field(default_factory=dict)
+    _FIELDS = ("id", "target", "name", "points", "visible", "enabled", "extra")
+
+    def __init__(self, target=None, points=(), name: "str | None" = None, *,
+                 visible: bool = False, enabled: bool = True,
+                 extra: "dict | None" = None, id: int = 0):
+        #: ``(sequence, event id or None)`` while a sequence holds it.
+        self._holder = None
+        self._id = int(id)
+        self._value = {"target": target, "name": name, "points": _points(points),
+                       "visible": bool(visible), "enabled": bool(enabled),
+                       "extra": dict(extra or {})}
+
+    @classmethod
+    def _held_by(cls, sequence, event, id: int) -> "Automation":
+        """The view of curve ``id`` of ``sequence`` -- over the whole sequence
+        when ``event`` is ``None``, else over that event."""
+        curve = cls.__new__(cls)
+        curve._holder = (sequence, event)
+        curve._id = int(id)
+        curve._value = None
+        return curve
+
+    # ---- the fields ----
+
+    def _written(self) -> dict:
+        """The curve as its holder writes it: the value, or what the sequence
+        holds now."""
+        if self._holder is None:
+            out = {"id": self._id, **self._value}
+            out["points"] = list(out["points"])
+            return out
+        sequence, event = self._holder
+        for written in sequence._curves(event) or ():
+            if int(written.get("id", 0)) == self._id:
+                return written
+        raise ValueError("the sequence no longer holds this curve")
+
+    @property
+    def held(self) -> bool:
+        """Whether a sequence holds the curve: ``False`` for a free value, and
+        for a view whose curve was removed."""
+        if self._holder is None:
+            return False
+        try:
+            self._written()
+        except ValueError:
+            return False
+        return True
+
+    @property
+    def id(self) -> int:
+        """The curve's identity in its holder; ``0`` for a value nothing holds
+        yet."""
+        return self._id
+
+    @id.setter
+    def id(self, value: int) -> None:
+        if self._holder is not None:
+            raise AttributeError("a held curve keeps the id its sequence gave it")
+        self._id = int(value)
+
+    def _field(self, name: str):
+        written = self._written()
+        defaults = {"target": None, "name": None, "points": [], "visible": False,
+                    "enabled": True}
+        if name == "extra":
+            if self._holder is None:
+                return written["extra"]
+            return {k: v for k, v in written.items() if k not in self._FIELDS}
+        return written.get(name, defaults[name])
+
+    def _write(self, name: str, value) -> None:
+        if self._holder is None:
+            self._value[name] = value
+            return
+        raise TypeError("a curve a sequence holds is not written here yet")
+
+    @property
+    def target(self):
+        """What the curve drives, in its holder's vocabulary."""
+        return self._field("target")
+
+    @target.setter
+    def target(self, value) -> None:
+        self._write("target", value)
+
+    @property
+    def name(self) -> "str | None":
+        """What a reader calls the curve."""
+        return self._field("name")
+
+    @name.setter
+    def name(self, value: "str | None") -> None:
+        self._write("name", value)
+
+    @property
+    def points(self) -> list:
+        """The points, ``{"at", "value", "data"}``, in order. A copy: change a
+        curve by assigning its points, or with `set_points`."""
+        return list(self._field("points"))
+
+    @points.setter
+    def points(self, value) -> None:
+        self._write("points", _points(value))
+
+    @property
+    def visible(self) -> bool:
+        """Whether the curve is shown. The **view's**, and kept here because
+        which curves a person had open is part of reopening the work as they
+        left it."""
+        return bool(self._field("visible"))
+
+    @visible.setter
+    def visible(self, value: bool) -> None:
+        self._write("visible", bool(value))
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the curve is being applied. A curve can be kept and switched
+        off without being deleted, which is what an arm or a bypass is."""
+        return bool(self._field("enabled"))
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._write("enabled", bool(value))
+
+    @property
+    def extra(self) -> dict:
+        """Fields a newer writer wrote, carried as they are."""
+        return dict(self._field("extra"))
+
+    @extra.setter
+    def extra(self, value: dict) -> None:
+        self._write("extra", dict(value))
+
+    # ---- the curve protocol ----
 
     def to_points(self) -> list:
         """The curve as the flat ``[t, v, shape, curve, ...]`` break points the
@@ -417,19 +570,22 @@ class Automation:
         self.points = crate_points(points, curve)
         return self
 
+    # ---- as data ----
+
     def write(self) -> dict:
-        out: dict = {"id": self.id}
-        if self.name is not None:
-            out["name"] = self.name
-        if self.target is not None:
-            out["target"] = self.target
-        if self.points:
-            out["points"] = list(self.points)
-        if self.visible:
+        written = self._written()
+        out: dict = {"id": self._id}
+        if written.get("name") is not None:
+            out["name"] = written["name"]
+        if written.get("target") is not None:
+            out["target"] = written["target"]
+        if written.get("points"):
+            out["points"] = list(written["points"])
+        if written.get("visible"):
             out["visible"] = True
-        if not self.enabled:
+        if written.get("enabled") is False:
             out["enabled"] = False
-        out.update(self.extra)
+        out.update(self._field("extra"))
         return out
 
     @classmethod
@@ -444,6 +600,24 @@ class Automation:
             enabled=bool(written.get("enabled", True)),
             extra=_rest(written, *known),
         )
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Automation):
+            return NotImplemented
+        if self._holder is not None or other._holder is not None:
+            return self is other
+        return self.write() == other.write()
+
+    __hash__ = object.__hash__
+
+    def __repr__(self) -> str:
+        if self._holder is not None and not self.held:
+            return "<Automation, detached>"
+        written = self._written()
+        name = f" {written['name']!r}" if written.get("name") else ""
+        count = len(written.get("points") or ())
+        return (f"<Automation{name} {written.get('target')!r}, "
+                f"{count} point{'' if count == 1 else 's'}>")
 
 
 @dataclass

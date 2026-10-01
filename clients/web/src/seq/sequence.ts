@@ -21,12 +21,14 @@ import { TempoMap } from "../base/time.ts";
 import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
+import { Automation } from "../multitrack.ts";
 
 /** One event of a sequence as the document writes it. */
 interface Written {
     id: number;
     at: number;
     data?: Record<string, unknown>;
+    automation?: Record<string, unknown>[];
 }
 
 /**
@@ -86,6 +88,76 @@ export class EventSequence {
      */
     data(): Record<string, unknown> {
         return this.call("state");
+    }
+
+    // ---- its structures, as objects ----
+
+    /** The identity map: `kind:id` to the one object that represents it. */
+    #objects = new Map<string, WeakRef<SeqEvent | Automation>>();
+
+    #object<T extends SeqEvent | Automation>(key: string, make: () => T): T {
+        const found = this.#objects.get(key)?.deref();
+        if (found !== undefined) return found as T;
+        const made = make();
+        this.#objects.set(key, new WeakRef(made));
+        return made;
+    }
+
+    /** The object of the event with this id -- the same one every time. @internal */
+    eventOf(id: number): SeqEvent {
+        return this.#object(`event:${id}`, () => SeqEvent.of(this, id));
+    }
+
+    /**
+     * The object of curve `id` -- of the sequence for `event` `null`, else of
+     * that event -- the same one every time.
+     *
+     * @internal
+     */
+    curveOf(event: number | null, id: number): Automation {
+        return this.#object(`curve:${id}`, () => Automation.heldBy(this, event, id));
+    }
+
+    /**
+     * The curves as written -- the sequence's for `null`, else that event's,
+     * and `null` when it holds no such event.
+     *
+     * @internal
+     */
+    curvesOf(event: number | null): Record<string, unknown>[] | null {
+        const written = this.call("automation", event === null ? {} : { id: event }) as
+            { automation?: Record<string, unknown>[] } | null;
+        return written === null ? null : [...(written.automation ?? [])];
+    }
+
+    /** The events' ids in beat order, of a window when one is given. @internal */
+    idsOf(window: { at?: number; from?: number; to?: number } = {}): number[] {
+        return (this.call("ids", window).ids as number[]).map(Number);
+    }
+
+    /** One event as written, or `null`. @internal */
+    writtenOf(id: number): Written | null {
+        return this.call("event", { id }) as Written | null;
+    }
+
+    /**
+     * **The events, as objects**, in beat order: a live collection -- iterate
+     * it, index it, ask it what is {@link SeqEvents.at} a beat or in a
+     * {@link SeqEvents.range} -- whose members are {@link SeqEvent}s, each a
+     * view of one event the sequence holds. The same event read twice is the
+     * same object.
+     */
+    get events(): SeqEvents {
+        return new SeqEvents(this);
+    }
+
+    /**
+     * **The curves over the whole sequence**: a live collection of
+     * `Automation` views, their points on the sequence's beats. The notes
+     * editor draws each as a row under the roll.
+     */
+    get automation(): SeqAutomation {
+        return new SeqAutomation(this, null);
     }
 
     // ---- reading ----
@@ -375,6 +447,177 @@ export class EventSequence {
 
     toString(): string {
         return `EventSequence(${this.length} events)`;
+    }
+}
+
+/**
+ * **One event of a sequence**, as an object: a live view of the event the
+ * sequence holds under its id, never a copy. Reading it asks the sequence, so
+ * after a hand moves the note in the roll the object reads where it now is.
+ *
+ * It is made by the sequence -- {@link EventSequence.events} hands them out,
+ * one object per event -- and is not built directly. Its keys read through
+ * {@link SeqEvent.get}; {@link SeqEvent.event} answers a free `Event` with
+ * the same keys, to play or to copy.
+ *
+ * An event the sequence no longer holds is **detached**:
+ * {@link SeqEvent.sequence} is `null` and reading it throws. An undo that
+ * brings the event back brings this same object back with it.
+ */
+export class SeqEvent {
+    readonly #sequence: EventSequence;
+    readonly #id: number;
+
+    private constructor(sequence: EventSequence, id: number) {
+        this.#sequence = sequence;
+        this.#id = id;
+    }
+
+    /** @internal */
+    static of(sequence: EventSequence, id: number): SeqEvent {
+        return new SeqEvent(sequence, id);
+    }
+
+    #written(): Written {
+        const written = this.#sequence.writtenOf(this.#id);
+        if (written === null) throw new Error("the sequence no longer holds this event");
+        return written;
+    }
+
+    /** The sequence that holds the event, or `null` once it holds it no more. */
+    get sequence(): EventSequence | null {
+        return this.#sequence.writtenOf(this.#id) === null ? null : this.#sequence;
+    }
+
+    /** Where the event sits, in the sequence's beats. */
+    get at(): number {
+        return Number(this.#written().at);
+    }
+
+    /** One key of the event, or `undefined` when it has none. */
+    get(key: string): unknown {
+        return (this.#written().data ?? {})[key];
+    }
+
+    /** Whether the event has this key. */
+    has(key: string): boolean {
+        return key in (this.#written().data ?? {});
+    }
+
+    /** The names of the event's keys. */
+    keys(): string[] {
+        return Object.keys(this.#written().data ?? {});
+    }
+
+    /**
+     * The event's keys as a free `Event` -- a copy, to play or to add
+     * elsewhere; changing it changes nothing here.
+     */
+    get event(): Event {
+        return eventOfKeys(this.#written().data ?? {});
+    }
+
+    /**
+     * **The curves over this event alone** -- its own automation, as MPE gives
+     * a note its bend, pressure and timbre: a live collection of `Automation`
+     * views, each point's beat counted from the event's start and free to run
+     * past the note's end into its release.
+     */
+    get automation(): SeqAutomation {
+        return new SeqAutomation(this.#sequence, this.#id);
+    }
+
+    toString(): string {
+        const written = this.#sequence.writtenOf(this.#id);
+        if (written === null) return "SeqEvent(detached)";
+        return `SeqEvent(at ${Number(written.at)} ${JSON.stringify(written.data ?? {})})`;
+    }
+}
+
+/**
+ * **A sequence's events, as a live collection** of {@link SeqEvent}s in beat
+ * order ({@link EventSequence.events}). It reads the sequence each time it is
+ * asked, so it is never out of date and never needs refreshing.
+ */
+export class SeqEvents {
+    readonly #sequence: EventSequence;
+
+    /** @internal */
+    constructor(sequence: EventSequence) {
+        this.#sequence = sequence;
+    }
+
+    #of(ids: number[]): SeqEvent[] {
+        return ids.map((id) => this.#sequence.eventOf(id));
+    }
+
+    /** How many events the sequence holds. */
+    get length(): number {
+        return this.#sequence.length;
+    }
+
+    [Symbol.iterator](): IterableIterator<SeqEvent> {
+        return this.#of(this.#sequence.idsOf())[Symbol.iterator]();
+    }
+
+    /** The event at index `i` in beat order (negative counts from the end). */
+    item(i: number): SeqEvent {
+        const ids = this.#sequence.idsOf();
+        const id = ids.at(i);
+        if (id === undefined) throw new RangeError(`the sequence holds no event at index ${i}`);
+        return this.#sequence.eventOf(id);
+    }
+
+    /** The events exactly at `beat`, in the order they were placed. */
+    at(beat: number): SeqEvent[] {
+        return this.#of(this.#sequence.idsOf({ at: Number(beat) }));
+    }
+
+    /** The events in the half-open beat window `[t0, t1)`. */
+    range(t0: number, t1: number): SeqEvent[] {
+        return this.#of(this.#sequence.idsOf({ from: Number(t0), to: Number(t1) }));
+    }
+}
+
+/**
+ * **Curves a sequence holds, as a live collection** of `Automation` views: the
+ * sequence's own ({@link EventSequence.automation}) or one event's
+ * ({@link SeqEvent.automation}).
+ */
+export class SeqAutomation {
+    readonly #sequence: EventSequence;
+    readonly #event: number | null;
+
+    /** @internal */
+    constructor(sequence: EventSequence, event: number | null) {
+        this.#sequence = sequence;
+        this.#event = event;
+    }
+
+    #written(): Record<string, unknown>[] {
+        const written = this.#sequence.curvesOf(this.#event);
+        if (written === null) throw new Error("the sequence no longer holds this event");
+        return written;
+    }
+
+    #views(): Automation[] {
+        return this.#written().map((c) => this.#sequence.curveOf(this.#event, Number(c.id)));
+    }
+
+    /** How many curves it holds. */
+    get length(): number {
+        return this.#written().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<Automation> {
+        return this.#views()[Symbol.iterator]();
+    }
+
+    /** The curve at index `i` (negative counts from the end). */
+    item(i: number): Automation {
+        const curve = this.#views().at(i);
+        if (curve === undefined) throw new RangeError(`no curve at index ${i}`);
+        return curve;
     }
 }
 

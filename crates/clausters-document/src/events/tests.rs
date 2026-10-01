@@ -187,6 +187,48 @@ fn the_verb_door_answers_in_json() {
 }
 
 #[test]
+fn the_door_reads_ids_by_beat_and_curves_by_holder() {
+    let mut sequence = EventSequence::new(vec![note(0.0, 60), note(1.0, 62), note(1.0, 64)]);
+    let ask = |sequence: &mut EventSequence, request: Value| -> Value {
+        serde_json::from_str(&call_json(sequence, &request.to_string())).unwrap()
+    };
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "ids"}))["ids"],
+        json!([1, 2, 3])
+    );
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "ids", "at": 1.0}))["ids"],
+        json!([2, 3])
+    );
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "ids", "from": 0.5}))["ids"],
+        json!([2, 3])
+    );
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "ids", "to": 1.0}))["ids"],
+        json!([1]),
+        "the window is half-open"
+    );
+    let curve = json!({"id": 0, "target": {"cc": 1}, "points": [{"at": 0.0, "value": 1.0}]});
+    let added = ask(
+        &mut sequence,
+        json!({"verb": "apply", "inverse": false,
+               "intent": {"intent": "eventautomation", "id": 2, "automation": curve}}),
+    );
+    assert!(added.get("current").is_none(), "no inverse was asked for");
+    let held = ask(&mut sequence, json!({"verb": "automation", "id": 2}));
+    assert_eq!(held["automation"][0]["id"], added["id"]);
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "automation"}))["automation"],
+        json!([])
+    );
+    assert_eq!(
+        ask(&mut sequence, json!({"verb": "automation", "id": 99})),
+        Value::Null
+    );
+}
+
+#[test]
 fn coalescing_is_per_verb_and_event() {
     let key = |intent: EventsIntent| coalesce_key(&payload(&intent));
     assert_eq!(

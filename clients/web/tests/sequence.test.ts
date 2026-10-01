@@ -74,6 +74,52 @@ test("the data round-trips, ids and all", () => {
     assert.equal(EventSequence.fromData([{ at: 1.0, data: { midinote: 60 } }]).entries()[0][0], 1);
 });
 
+test("the events are objects, and one event is one object", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60 })],
+        [1.0, new Event({ midinote: 62 })],
+        [1.0, new Event({ midinote: 64 })],
+        [3.0, new Event({ midinote: 67 })],
+    ]);
+    const first = seq.events.item(0);
+    assert.ok(first === seq.events.item(0) && first === [...seq.events][0], "the identity map");
+    assert.ok(first.at === 0 && first.get("midinote") === 60 && first.has("midinote"));
+    assert.ok(first.event instanceof Event && first.event.get("midinote") === 60);
+    assert.deepEqual(seq.events.at(1.0).map((e) => e.get("midinote")), [62, 64]);
+    assert.deepEqual(seq.events.range(0.5, 3.0).map((e) => e.get("midinote")), [62, 64], "half-open");
+    assert.ok(seq.events.item(-1).get("midinote") === 67 && seq.events.length === 4);
+    assert.equal(new Map([[first, "a key"]]).get(seq.events.item(0)), "a key");
+});
+
+test("a read sees what the sequence holds now", () => {
+    const seq = sequence();
+    const second = seq.events.item(1);
+    seq.apply({ intent: "move", id: 2, at: 5.0 }); // as a hand on the roll
+    assert.ok(second.at === 5.0 && seq.events.item(-1) === second);
+    seq.apply({ intent: "remove", id: 2 });
+    assert.equal(second.sequence, null);
+    assert.throws(() => second.at, /no longer holds/);
+});
+
+test("the curves read as automation, with their holder", () => {
+    const seq = sequence();
+    seq.apply({ intent: "automation", automation: {
+        id: 0, target: { cc: 74 }, name: "brightness",
+        points: [{ at: 0.0, value: 0.0 }, { at: 2.0, value: 127.0 }],
+    } });
+    seq.apply({ intent: "eventautomation", id: 1, automation: {
+        id: 0, target: { bend: true }, points: [{ at: 0.0, value: 1.0 }],
+    } });
+    const [brightness] = seq.automation;
+    assert.ok(brightness.name === "brightness" && brightness.held);
+    assert.deepEqual(brightness.target, { cc: 74 });
+    assert.deepEqual(brightness.toPoints().slice(0, 2), [0, 0]);
+    const bend = seq.events.item(0).automation.item(0);
+    assert.equal(bend, seq.events.item(0).automation.item(0));
+    assert.deepEqual(bend.target, { bend: true });
+    assert.equal(seq.events.item(1).automation.length, 0);
+});
+
 test("a refused edit says why", () => {
     assert.throws(() => sequence().remove(9), /no event 9/);
 });

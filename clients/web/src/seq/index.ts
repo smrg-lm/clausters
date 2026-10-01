@@ -34,5 +34,5 @@ export {
 } from "./pattern.ts";
 export type { Bindings } from "./pattern.ts";
 export { Entry, Timeline, itemData, itemFromData } from "./timeline.ts";
-export { EventSequence } from "./sequence.ts";
+export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./sequence.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

@@ -67,6 +67,45 @@ def test_the_data_round_trips_ids_and_all():
     assert EventSequence.from_data([{"at": 1.0, "data": {"midinote": 60}}]).entries()[0][0] == 1
 
 
+def test_the_events_are_objects_and_one_event_is_one_object():
+    seq = EventSequence([(0.0, Event(midinote=60)), (1.0, Event(midinote=62)),
+                         (1.0, Event(midinote=64)), (3.0, Event(midinote=67))])
+    first = seq.events[0]
+    assert first is seq.events[0] is next(iter(seq.events)), "the identity map"
+    assert first.at == 0.0 and first["midinote"] == 60 and "midinote" in first
+    assert first.event["midinote"] == 60 and isinstance(first.event, Event)
+    assert [e["midinote"] for e in seq.events.at(1.0)] == [62, 64]
+    assert [e["midinote"] for e in seq.events.range(0.5, 3.0)] == [62, 64], "half-open"
+    assert seq.events[-1]["midinote"] == 67 and len(seq.events) == 4
+    assert {first: "a key"}[seq.events[0]] == "a key"
+
+
+def test_a_read_sees_what_the_sequence_holds_now():
+    seq = _sequence()
+    second = seq.events[1]
+    seq.apply({"intent": "move", "id": 2, "at": 5.0})   # as a hand on the roll
+    assert second.at == 5.0 and seq.events[-1] is second
+    seq.apply({"intent": "remove", "id": 2})
+    assert second.sequence is None
+    with pytest.raises(ValueError, match="no longer holds"):
+        second.at
+
+
+def test_the_curves_read_as_automation_with_their_holder():
+    seq = _sequence()
+    seq.apply({"intent": "automation", "automation": {
+        "id": 0, "target": {"cc": 74}, "name": "brightness",
+        "points": [{"at": 0.0, "value": 0.0}, {"at": 2.0, "value": 127.0}]}})
+    seq.apply({"intent": "eventautomation", "id": 1, "automation": {
+        "id": 0, "target": {"bend": True}, "points": [{"at": 0.0, "value": 1.0}]}})
+    brightness, = seq.automation
+    assert brightness.name == "brightness" and brightness.target == {"cc": 74}
+    assert brightness.to_points()[:2] == [0.0, 0.0] and brightness.held
+    bend = seq.events[0].automation[0]
+    assert bend is seq.events[0].automation[0]
+    assert bend.target == {"bend": True} and len(seq.events[1].automation) == 0
+
+
 def test_a_refused_edit_says_why():
     with pytest.raises(ValueError, match="no event 9"):
         _sequence().remove(9)

@@ -923,9 +923,16 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   sequence becomes the one the clip holds ([`EventSequence::from_ump`]),
 ///   answering `{"len": n}`.
 /// - `"event"` with `id`: the event, or `null`.
+/// - `"ids"`: `{"ids": [id]}`, the events' ids in beat order -- of those at
+///   exactly `at`, when it is given, or of those in the half-open window
+///   `[from, to)`, either end left open when it is not.
+/// - `"automation"`: `{"automation": [curve]}`, the sequence's curves -- or,
+///   with `id`, that event's, and `null` when it holds no such event.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
-///   edit -- plus `"id"` for an add, or `{"error"}` when refused.
+///   edit -- plus `"id"` for an add, or `{"error"}` when refused. With
+///   `"inverse": false` it leaves `current` out: a caller that records
+///   nothing does not pay for a copy of the whole sequence per edit.
 ///
 /// A request that does not read answers `{"error": ...}`.
 ///
@@ -1015,15 +1022,49 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
             let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
             serde_json::to_value(sequence.get(id)).unwrap_or(Value::Null)
         }
+        Some("ids") => {
+            let bound = |key: &str| request.get(key).and_then(Value::as_f64);
+            let ids: Vec<u64> = match bound("at") {
+                Some(at) => sequence
+                    .events
+                    .iter()
+                    .filter(|e| e.at.0 == at)
+                    .map(|e| e.id)
+                    .collect(),
+                None => {
+                    let (from, to) = (bound("from"), bound("to"));
+                    sequence
+                        .events
+                        .iter()
+                        .filter(|e| from.is_none_or(|f| e.at.0 >= f))
+                        .filter(|e| to.is_none_or(|t| e.at.0 < t))
+                        .map(|e| e.id)
+                        .collect()
+                }
+            };
+            json!({ "ids": ids })
+        }
+        Some("automation") => match request.get("id").and_then(Value::as_u64) {
+            Some(id) => sequence
+                .get(id)
+                .map_or(Value::Null, |e| json!({ "automation": e.automation })),
+            None => json!({ "automation": sequence.automation }),
+        },
         Some("apply") => {
             let intent = request.get("intent").cloned().unwrap_or(Value::Null);
+            let inverse = request
+                .get("inverse")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
             match serde_json::from_value::<EventsIntent>(intent) {
                 Ok(intent) => {
-                    let current = payload(&sequence.state());
+                    let current = inverse.then(|| payload(&sequence.state()));
                     match sequence.edit(intent) {
                         Ok(change) => {
-                            let mut answer =
-                                json!({"applied": change.applied, "current": current.0});
+                            let mut answer = json!({ "applied": change.applied });
+                            if let Some(current) = current {
+                                answer["current"] = current.0;
+                            }
                             if let Some(id) = change.added {
                                 answer["id"] = json!(id);
                             }

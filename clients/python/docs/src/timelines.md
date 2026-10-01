@@ -140,14 +140,21 @@ from clausters import Event, EventSequence, TempoMap
 
 seq = EventSequence([(0.0, Event(midinote=60)), (1.0, Event(midinote=64))],
                     tempo_map=TempoMap(2.0))
-for id, beat, event in seq.entries():
-    print(id, beat, event.midinote())     # 1 0.0 60.0, then 2 1.0 64.0
+for event in seq.events:
+    print(event.at, event["midinote"])    # 0.0 60, then 1.0 64
 
-first = seq.entries()[0][0]
-seq.move(first, 2.0)                      # by id: the other note keeps its data
-seq.set(first, "midinote", 62)            # one key, with its family's coherence
+first = seq.events[0]                     # a SeqEvent: a view of one event
+first is seq.events.at(0.0)[0]            # True: one event, one object
+seq.events.range(0.0, 2.0)                # the events in [0, 2), in beat order
+first.automation                          # its own curves, as Automation objects
+
+id = seq.entries()[0][0]
+seq.move(id, 2.0)                         # by id: the other note keeps its data
+seq.set(id, "midinote", 62)               # one key, with its family's coherence
 seq.add(3.0, {"midinote": 67})            # its new id
 ```
+
+**What a script reads is objects.** `seq.events` is a live collection of `SeqEvent`s in beat order — iterate it, index it, ask it what is `at` a beat or in a `range` — and a `SeqEvent` is a view of one event the sequence holds, not a copy: its `at`, its keys (`event["midinote"]`) and its `automation` are read from the sequence each time, so after a hand moves the note in the roll the object reads where it now is. The same event read twice is the same object, so one works as a key of a `dict`. `event.event` is a free `Event` with the same keys, to play or to copy. The curves over the whole sequence are `seq.automation`, and each is a `clausters.multitrack.Automation` — the type a track's and a region's curves are — whose points are on the sequence's beats; an event's are measured from its start and may run past its end, into its release. An event the sequence no longer holds is **detached**: its `sequence` is `None` and reading it raises.
 
 An edit names its event **by id**, never by position: removing a note leaves every other note its own, and an id is never handed out twice. `apply` takes an edit in the sequence's vocabulary and answers the edit that puts it back, which is what an undo is. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
 
