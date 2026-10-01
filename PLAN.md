@@ -2747,6 +2747,24 @@ where it came from).
   - **Atomicity**: a buffer that fails to load leaves the def neither stored
     nor replacing the previous one, as `/graph_new` builds nothing by halves.
 
+  **The simplest case it has to cover, as the user put it: a sampler.** One
+  SynthDef that plays one of several files, its voices a slot; every
+  instance of the def shares the files, and a note makes only the synthesis
+  nodes. Three things follow that the shape above does not say yet:
+  - **A bank**: several buffers declared as one ordered list and given
+    consecutive numbers, so one is chosen by index -- the convention `VOsc`
+    already reads consecutive buffers by.
+  - **A voice names its sample by index, never by number.** The numbers are
+    the server's, handed out at load, so a client cannot know them; a port
+    takes the index and the def resolves it against the bank's first number
+    (a surface target whose `add` is the bank's base, say), and
+    `/graph_newVoice ... sample 3` plays the fourth file.
+  - **The numbers can be asked for**: `/def_query` answers the buffers a def
+    holds and the numbers they were given, for a client that draws or reads
+    one (a waveform of a sample).
+  Which note plays which sample -- key and velocity zones over a bank -- is
+  the next question, and the more complex defs start there; it is open here.
+
   **Related:** "The graphs a note plays in are never freed"
   (`crates/clausters-apps/PLAN.md`, Found by use), whose open decision --
   whether generated defs are persisted at all -- now has to say whether a
