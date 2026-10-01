@@ -43,3 +43,8 @@ node_modules/
 # The documentation book: the API pages TypeDoc generates and mdBook's output.
 /docs/src/api/
 /docs/book/
+# The browsers' throwaway profiles while test.sh runs, one per page: in the
+# package rather than in the system temp directory because a confined browser
+# (a snap, a flatpak) has a temp directory of its own and reads only what is
+# under the user's home.
+/browser-profiles/

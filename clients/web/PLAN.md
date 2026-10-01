@@ -3229,7 +3229,7 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   the vectors are regenerated and committed, and the sweep fails again when a
   surface drifts rather than when somebody remembers to regenerate it.
 
-- ⬜ **The page suite is one browser, and the second one found a defect it had
+- ✅ **The page suite is one browser, and the second one found a defect it had
   been passing over** *(found 2026-09-16: the user opened
   `examples/basics/group-order.html` in Firefox and got `Uncaught (in promise)
   DOMException: Can't close an AudioContext twice` -- the fix is below, the gap
@@ -3250,6 +3250,26 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   browser in the suite, and it is worth pricing rather than assuming: a
   Firefox-only pass over the same pages, run by hand before a release the way
   the feature matrix is, would probably do.
+
+  **Decided 2026-10-01 with the user, and done.** Priced first: the suite is
+  about 128 s, 42 of them node and 85 the 26 pages, so a second browser is
+  +65 % on every run -- too much for a step repeated many times a day.
+  Development stays on Chrome; `./test.sh --browsers chrome,firefox` runs the
+  pages once per browser and is **required before a release** (the
+  `release-versioning` skill's procedure, `docs/contributing.md`, CLAUDE.md)
+  and run on request otherwise. The harness is portable: each browser's
+  profile is made in the package (`browser-profiles/`, git-ignored), which a
+  confined install (a snap, a flatpak) can read where it cannot read the
+  system temp directory, and a system without `setsid` reaps the browser by
+  its pid. The first passes found two things Chrome had been passing over: a
+  component announced `clausters-ready` before its canvas had its size --
+  Firefox delivers the first `ResizeObserver` callback after the event, so
+  the host drew its first frames at 1x1 and the page saw 1x1 four runs in six
+  -- fixed in the component, which measures once before the event; and
+  `disk.html` waited a fixed 1.2 s for a disk stream to start, which a
+  browser under load missed, so it now waits for the sound, up to a bound.
+  The rule for the pages -- assert the mechanism, not the absence of an
+  exception -- stands as written above.
 
 - ✅ **A handle whose server stopped keeps a dead carrier, and this client had
   no way to reopen one** *(the twin of the fix made in `clients/python/PLAN.md`

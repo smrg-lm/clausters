@@ -79,15 +79,18 @@
           out(playBus.index, diskIn(0, { path: PATH, loop: true }))).send(server);
         const playing = new Synth("play", {}, { server });
         // A stream starts after a longer lead here than natively: the first
-        // span has to be asked for, read, decoded and moved across a port.
-        await wait(1200);
+        // span has to be asked for, read, decoded and moved across a port --
+        // and how long that takes is the browser's, so the page waits for the
+        // sound rather than for a fixed time (one browser under load missed a
+        // fixed 1.2 s and read silence), up to a bound that says it never came.
         const taps = await data.TapStream.open(server, [playBus.index],
           { frames: 1024, periodMs: 20 });
-        await wait(600);
-        const window = taps.window(playBus.index);
-        const peak = window
-          ? Math.max(...window.samples.map(Math.abs))
-          : 0;
+        let peak = 0;
+        for (let waited = 0; waited < 5000 && peak <= 0.1; waited += 100) {
+          await wait(100);
+          const window = taps.window(playBus.index);
+          peak = window ? Math.max(...window.samples.map(Math.abs)) : 0;
+        }
         playing.free();
         log(`streamed back: peak ${peak.toFixed(3)} on bus ${playBus.index}`);
 

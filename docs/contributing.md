@@ -187,6 +187,14 @@ is reproducible with the same line:
   repository needs a `pypi` environment. There is deliberately **no sdist**:
   the package compiles cdylibs from the Rust workspace, which an sdist of
   `clients/python` would not contain.
+- **The web pages run in every browser before a release, by hand.**
+  `clients/web/test.sh` runs its acceptance pages under headless Chrome alone
+  -- they are the slow half of the suite, and a feature is tested many times a
+  day -- and `--browsers chrome,firefox` runs them once per browser. Browsers
+  disagree about what an API *refuses*, so a page wrong everywhere passes
+  whenever Chrome is the lenient one; the multi-browser pass is required
+  before tagging (the `release-versioning` skill's procedure) and run on
+  request otherwise.
 - **Nothing publishes before the tag is verified.** The `verify` job runs the
   fmt + clippy + rustdoc feature matrix (`.claude/skills/feature-matrix/check.sh`
   — nine of its fourteen configurations are covered by no other automation) and

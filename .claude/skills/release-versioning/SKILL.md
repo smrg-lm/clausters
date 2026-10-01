@@ -127,6 +127,14 @@ its own commit first, then release.
    to be tagged; the two packages it built are the run's artifacts. On a tag, `verify` runs *after* the tag exists, so
    a red one leaves a tag to delete and re-cut; the rehearsal moves that
    discovery earlier and costs nothing but runner time.
+
+   **And the web pages in every browser, by hand, on the same commit:**
+   `clients/web/build.sh && clients/web/test.sh --browsers chrome,firefox`.
+   Development runs the pages under Chrome alone, because they are the slow
+   half of the suite; but browsers disagree about what an API refuses, and a
+   page that is wrong everywhere passes whenever Chrome is the lenient one.
+   Nothing in CI runs a second browser, so this is the one place it happens.
+   A browser added to the suite (Safari, later) joins this line.
 4. **Tag and push.** `git tag vX.Y.Z && git push origin vX.Y.Z`. From here it is
    one-way: `publish-npm` and `publish-pypi` cannot be taken back, and a version
    is never re-published. If something is wrong after the tag, the fix is the

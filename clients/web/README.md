@@ -20,6 +20,7 @@ This is the repo's **one web directory**: every browser artifact (the package mo
                           # `npm install` once)
 python3 -m http.server    # then open /examples/components/demo.html
 ./test.sh                 # type-check + node suites + the headless-Chrome smoke
+./test.sh --browsers chrome,firefox   # the pages in every browser (before a release)
 ./tools/profile-bus-stream.sh [canvases] [seconds]
                           # a profile, not a test: what a frame of /bus_stream
                           # costs a page of N canvases (default 40)

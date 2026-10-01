@@ -208,6 +208,11 @@ on trust, so that is where drift accumulates:
   thing that proves the package works — and `dist/` is git-ignored, so build
   before testing, always. Re-run the generators and commit whatever vectors
   move.
+- **The pages run in one browser while developing.** `clients/web/test.sh`
+  runs its acceptance pages under headless Chrome; `--browsers chrome,firefox`
+  runs them in every browser the suite knows, and that pass is **required
+  before a release and run on request otherwise** -- never as part of a
+  feature's ordinary testing, since it repeats the slowest half of the suite.
 - **CI does not lint everything.** It skips the def-family feature matrix and
   never builds the docs, so between a push and a tag rustdoc's lints are watched
   by nothing: `.claude/skills/feature-matrix/check.sh`. A release runs the whole

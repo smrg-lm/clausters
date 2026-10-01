@@ -118,16 +118,6 @@ None is open now.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **The page suite is one browser, and the second one found a defect it had
-  been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
-  disagree about what an API **refuses**, so a page that is wrong everywhere
-  passes here whenever Chrome is the lenient one — two known instances, the
-  wheel's units and closing an `AudioContext` twice.
-  **The decision:** the rule the pages assert by (the mechanism, rather than the
-  absence of an exception), and whether a by-hand Firefox pass over the same
-  pages joins the release checks the way the feature matrix does. The plan
-  prices both halves; neither is typing.
-
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --

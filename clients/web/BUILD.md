@@ -131,6 +131,8 @@ npm install       # once: typescript + @types/node + esbuild into node_modules/
                   # into dist/, then `npm run build` (tsc emit src/ -> dist/)
 ./test.sh         # the full acceptance: type-check + node suites + the
                   # page-carrier smoke under headless Chrome
+./test.sh --browsers chrome,firefox   # the pages once per browser: required
+                  # before a release, on request otherwise
 python3 -m http.server    # serve; open /examples/components/demo.html
 ```
 
