@@ -5410,3 +5410,16 @@ than being ticked here.
   clients at once (`midiBind` ... `midiQuery`, a `Map` for the dict); the
   root examples that sent them raw use them.
 
+
+- ⬜ **Eight example pairs drifted while the audit could not say so**
+  *(found 2026-09-30, fixing the pair audit)*. From 2026-09-19 to 2026-09-30
+  the audit read an empty side of a parity row as a call, so 68 of 71 pairs
+  differed and nobody read the list. With that fixed, eight differ for real,
+  each to be read verb by verb and either ported or declared with a reason:
+  `editors/edit_curve` (a `MonotonicTimebase` only Python makes),
+  `editors/edit_env` (an `Env` built at different places), `editors/edit_multitrack`
+  (an `events` call only Python makes), `editors/patch2` (an `entries` only the
+  page reads), `panels/standalone` (three `join`s on the page),
+  `transport/conductor` (a `queryInfo` and a `free` only Python has, a
+  `refresh` only the page), `transport/sync` (a `refresh` on the page) and
+  `views/layers` (an `onClosed` on the page).

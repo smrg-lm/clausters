@@ -110,6 +110,10 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
+- ⬜ **Eight example pairs drifted while the audit could not say so**
+  *(`clients/python/PLAN.md`, Found by use)*. The pair audit reads them again;
+  each is ported or declared.
+
 - ⬜ **The multitrack's joins do not say which takes they hold**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The history can hold
   and give back takes now; the multitrack's entries do not state theirs yet,
