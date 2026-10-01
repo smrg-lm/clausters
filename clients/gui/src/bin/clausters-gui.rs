@@ -741,10 +741,10 @@ fn run_session(
     // A session written before the turn is a tree rather than a multitrack, and it
     // still draws through the tree's own walk, with a take editor per source
     // under the tracks.
-    let (def, drawn_clips, drawn_lanes, editors) = if owner.draws_multitrack() {
+    let (def, drawn_clips, drawn_tracks, editors) = if owner.draws_multitrack() {
         let def = owner.open_editor(def_id, &title, (1000, 640));
         let shown = owner.shown();
-        (def, shown.clips.len(), shown.lanes.len(), 0)
+        (def, shown.clips.len(), shown.tracks.len(), 0)
     } else {
         let drawn = tree::draw(
             &owner.document,
@@ -756,7 +756,7 @@ fn run_session(
             &title,
         );
         // The take editors are bound one by one -- each is a widget drawing a
-        // node -- and the multitrack is bound once: the multitrack names its lanes
+        // node -- and the multitrack is bound once: the multitrack names its tracks
         // and clips by the nodes' own numbers, so there is nothing per clip to
         // record.
         for bound in &drawn.bindings {
@@ -767,7 +767,7 @@ fn run_session(
         (
             drawn.def,
             drawn.picture.clips.len(),
-            drawn.picture.lanes.len(),
+            drawn.picture.tracks.len(),
             editors,
         )
     };
@@ -797,7 +797,7 @@ fn run_session(
     // hand presses play because the governed group is created stopped.
     let readers = host.sound_multitrack();
     tracing::info!(
-        "session: opened {path} -- {drawn_clips} clip(s) on {drawn_lanes} lane(s), \
+        "session: opened {path} -- {drawn_clips} clip(s) on {drawn_tracks} track(s), \
          {editors} take editor(s), {readers} reader(s)",
     );
     match save_to {

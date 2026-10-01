@@ -31,7 +31,6 @@ import {
     envToPoints,
     label,
     knob,
-    multitrack,
     layout,
     menu,
     meter,
@@ -207,13 +206,6 @@ const trees: Record<string, () => GuiNode> = {
                 id: 2, min: 36, max: 96, activeMin: 48, activeMax: 84,
                 velocity: 100, channel: 0, voice: "piano_voice",
                 voiceArgs: [["amp", 0.3]], overview: true, pan: true,
-            }),
-            multitrack({
-                id: 3, label: "drums", lanes: [["d", "drums"]],
-                clips: [["t", "d", 0.0, 48000.0, 0.0, "take", 7]],
-                snap: 1200.0, ruler: "time", sampleRate: 48000.0,
-                playheadAt: 0.0, playhead: 12000.0, playheadLoopStart: 0.0,
-                playheadLoopLen: 96000.0, link: 7,
             }),
         ),
 

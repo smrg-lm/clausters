@@ -10,8 +10,8 @@
 // The host renders containers, the standard controls, the editor-grade
 // `waveform`/`spectrogram` views, the bus-backed `meter`/`scope`, the
 // audio-tap `scope`/`phasescope`/`spectrum`, a playable `piano`, a live
-// `nodetree`, a static `plot`, a drawable `bpf` envelope, a multitrack
-// `track`/`clip` timeline, an engraved `score` page and a `patch` patcher;
+// `nodetree`, a static `plot`, a drawable `bpf` envelope, the `multitrack`
+// the multitrack editor draws, an engraved `score` page and a `patch` patcher;
 // live updates flow through `set` and interactions come back as
 // `/gui_event`/`/gui_closed`. A widget can also be **bound** (`GuiHost.bind`)
 // so its value flows straight to the audio server, bypassing this script.
@@ -43,10 +43,6 @@ export { PlayheadSync } from "./playhead-sync.ts";
 export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "./playhead-sync.ts";
 
 export * from "./guidef.ts";
-export { Clip, Lane, Multitrack } from "./multitrack.ts";
-export type {
-    ClipLike, LaneLike, MultitrackOptions, MultitrackWidget, MultitrackWindow,
-} from "./multitrack.ts";
 
 // Engraving, as its own namespace for the same reason the Python client keeps
 // it a submodule: it is a layer (an engraver, an encoder, a view) rather than a

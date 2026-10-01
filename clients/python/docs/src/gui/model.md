@@ -57,8 +57,8 @@ from clausters.gui import layout, node, plane, view
 | `field` | `node("field", ...)` | 2, independent | nothing: it is the free-standing ruler of a navigation group |
 
 A `field` is only a ruler: an `axes` pair and nothing placed on it, which the
-`timeruler` shortcut writes with its props named. It was once a lane and a clip
-too, told apart by what was on it, and both are `multitrack` props now — a lane
+`timeruler` shortcut writes with its props named. It was once a track and a clip
+too, told apart by what was on it, and both are `multitrack` props now — a track
 cannot sit in a void, so it is a row of the one widget that owns it, and a clip
 is a row of that widget's `clips`. So `field` has no builder of its own, and
 `node` writes one:

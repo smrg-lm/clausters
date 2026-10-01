@@ -106,9 +106,9 @@ const near = (a: number, b: number, why?: string) =>
 
 test("a row per track and a box per region", () => {
     const ed = editor(multitrack());
-    const lanes = props(ed).lanes as unknown[];
-    assert.deepEqual([lanes[0], lanes[7]], ["10", "20"], "named by their track ids");
-    assert.equal(lanes[1], "one");
+    const rows = props(ed).tracks as unknown[];
+    assert.deepEqual([rows[0], rows[7]], ["10", "20"], "named by their track ids");
+    assert.equal(rows[1], "one");
     const boxes = clips(ed);
     assert.deepEqual(boxes.map((b) => b[0]), ["12", "13", "22"]);
     assert.deepEqual(boxes.map((b) => b[1]), ["10", "10", "20"]);
@@ -131,8 +131,8 @@ test("the widget is told the flat rows and not one row per number", () => {
     const ed = editor(multitrack());
     const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] })
         .children.find((c) => c.type === "multitrack")!;
-    assert.equal((drawn.lanes as unknown[]).length, 2 * 7, "two tracks, seven numbers each");
-    assert.deepEqual((drawn.lanes as unknown[]).slice(0, 3), ["10", "one", 96.0]);
+    assert.equal((drawn.tracks as unknown[]).length, 2 * 7, "two tracks, seven numbers each");
+    assert.deepEqual((drawn.tracks as unknown[]).slice(0, 3), ["10", "one", 96.0]);
     assert.equal((drawn.clips as unknown[]).length, 3 * 7, "three regions, seven numbers each");
     assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
 });
@@ -203,9 +203,9 @@ class AdoptingHost {
         this.pushes += 1;
         for (const [, props] of corrections) {
             const clips = props.clips as unknown[] | undefined;
-            const lanes = props.lanes as unknown[] | undefined;
+            const rows = props.tracks as unknown[] | undefined;
             if (clips) this.names = clips.filter((_v, i) => i % 7 === 0).map(String);
-            if (lanes) this.rows = lanes.filter((_v, i) => i % 7 === 0).map(String);
+            if (rows) this.rows = rows.filter((_v, i) => i % 7 === 0).map(String);
         }
     }
     ack(): void {}
@@ -278,8 +278,8 @@ test("a name the host minted is answered with the one the multitrack kept", () =
     assert.deepEqual(ids(), split, "nothing was minted a second time");
 
     // And a track made in the host: the same rule.
-    const rows = [...(props(ed).lanes as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0, 0];
-    apply(3, "lanes", rows);
+    const rows = [...(props(ed).tracks as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0, 0];
+    apply(3, "tracks", rows);
     assert.deepEqual(host.rows, held.tracks.map((t) => String(t.id)));
     assert.equal(held.tracks.length, 3);
 });
@@ -427,7 +427,7 @@ test("the strip is the multitrack's and undoes", () => {
     const wid = [...ed.view!.widgets.keys()][0];
     assert.ok(
         (ed as unknown as { route(args: unknown[]): boolean }).route([
-            wid, "lanes",
+            wid, "tracks",
             "10", "", 96.0, 0, 0, 1.0, 0,
             "20", "", 96.0, 1, 0, 0.5, 0,
         ]),

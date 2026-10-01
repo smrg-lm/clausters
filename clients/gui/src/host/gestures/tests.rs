@@ -2238,7 +2238,7 @@ fn the_headers_automation_toggle_answers_where_it_is_drawn() {
         r#"{"type":"window","margin":0,"layout":"col","children":[
             {"id":70,"type":"multitrack","link":9,"snap":0,"h":300,
              "sample_rate":48000,
-             "lanes":["10", "bass", 120, 0, 0, 1.0, 0],
+             "tracks":["10", "bass", 120, 0, 0, 1.0, 0],
              "meters":["10", 0, 2, 2],
              "clips":["a","10",0,1000,0,"",-1]}]}"#,
     );
@@ -2279,9 +2279,9 @@ fn the_headers_automation_toggle_answers_where_it_is_drawn() {
             GestureEffect::Emit { args, .. } => Some(args.clone()),
             _ => None,
         })
-        .find(|args| args.first() == Some(&OscType::String("lanes".into())))
+        .find(|args| args.first() == Some(&OscType::String("tracks".into())))
         .expect("the press reports the lanes");
-    assert_eq!(args[0], OscType::String("lanes".into()));
+    assert_eq!(args[0], OscType::String("tracks".into()));
     assert_eq!(
         args[7],
         OscType::Int(1),
@@ -2301,7 +2301,7 @@ fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
             {"id":60,"type":"field","link":9,"h":20},
             {"id":70,"type":"multitrack","link":9,"snap":0,"h":200,
              "sample_rate":48000,
-             "lanes":["one", "", 120, 0, 0, 1.0, 1],
+             "tracks":["one", "", 120, 0, 0, 1.0, 1],
              "clips":["a","one",0,1000,0,"",-1]}]}"#,
     );
     host.sync_track_totals();
@@ -3710,7 +3710,7 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
         r#"{"type":"window","status":0,"margin":0,"layout":"col","children":[
             {"id":70,"type":"multitrack","link":"a","ruler":"samples",
              "sample_rate":48000,
-             "lanes":["one", "", 120, 0, 0, 1.0, 1],
+             "tracks":["one", "", 120, 0, 0, 1.0, 1],
              "clips":["a","one",0,1000,0,"",-1, "b","one",9000,1000,0,"",-1]}]}"#,
     );
     host.sync_track_totals();

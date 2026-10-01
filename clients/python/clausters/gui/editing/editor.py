@@ -113,9 +113,8 @@ class Editor:
         #: data** -- this window's, another window's over the same structure, or
         #: a step of the history. ``None`` to be told nothing.
         #:
-        #: The script's door onto an edit, and the same verb
-        #: `clausters.gui.Multitrack.on_change` carries. One call per gesture
-        #: however many edits it took, because that is what a hand did.
+        #: The script's door onto an edit. One call per gesture however many
+        #: edits it took, because that is what a hand did.
         self.on_change = None
         #: Called with the beat the **position cursor** was placed at, whenever
         #: a click moves it -- on the time ruler, or on the slack a click lands

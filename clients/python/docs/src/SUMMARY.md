@@ -103,7 +103,6 @@
     - [handle](api/clausters.gui.handle.md)
     - [host](api/clausters.gui.host.md)
     - [ids](api/clausters.gui.ids.md)
-    - [multitrack](api/clausters.gui.multitrack.md)
     - [playhead_sync](api/clausters.gui.playhead_sync.md)
     - [editing](api/clausters.gui.editing.md)
       - [application](api/clausters.gui.editing.application.md)

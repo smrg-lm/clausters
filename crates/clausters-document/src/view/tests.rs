@@ -161,7 +161,7 @@ fn the_routing_table_names_screen_state_and_nothing_a_domain_reads() {
     for tag in super::NOT_AN_EDIT {
         assert!(super::is_screen_state(tag), "{tag}");
     }
-    for tag in ["clips", "lanes", "notes", "points", "samples", "level"] {
+    for tag in ["clips", "tracks", "notes", "points", "samples", "level"] {
         assert!(!super::is_screen_state(tag), "{tag} is an edit");
     }
 }

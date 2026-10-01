@@ -5052,6 +5052,19 @@ work, where a pending item reads as done.)*
   manual test differ from the package. `BUILD.md`'s artifact table and
   `docs/contributing.md` say what the wheel's host is.
 
+- ⬜ **"Lane" has a fifth sense in the host: a horizontal band of a
+  drawing** *(found 2026-10-01, renaming the multitrack widget's row to
+  `TrackRow` in `C57.0`)*. Beside the four structures `C57.0` names, the host
+  calls any horizontal strip of a view a lane: the theme's `lane` and
+  `lane_alt` roles (a background a track and a roll's grid share), the
+  `waveform`'s and the `plot`'s channel rows ("multichannel lanes", the
+  waveform's `LANE` rect), the analysis lanes a `spectrogram` counts for a
+  y gesture, `host/bands.rs`'s "a pitch row and a lane", and the roll's
+  velocity strip. None of them is a structure, so `C57.0` left them; a theme
+  role is a name on the wire (`theme={"lane": ...}`) and moves with any
+  rename. Open: whether the drawing word stays "lane" — the DAW's word for a
+  strip, as in "automation lane" — or every band is named for what it shows.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A timeline of concrete events could play from an event lane**

@@ -30,7 +30,7 @@ things:
 
 The builders named after the old catalog — `panel`, `stack`, `scroll`,
 `waveform`, `plot`, `scope`, `spectrum`, `spectrogram`, `phasescope`,
-`multitrack`, `timeruler`, `pianoroll`, `bpf`, `piano`, `nodetree`, `patch` —
+`timeruler`, `pianoroll`, `bpf`, `piano`, `nodetree`, `patch` —
 are **shortcuts** onto those nodes with the props of one common case. `layout`,
 `plane` and `signal` are the general ones beside them; a `field` is only a
 free-standing ruler, which `timeruler` writes. Both emit the
@@ -299,14 +299,14 @@ win.widget("page").onEvent((tag, id, position) => {
 holds no score at all — and what they walk is the **editing context's** pile,
 not a stack of the score's own. A page registers in `Editing.of(score)` like a
 curve, a take or a roll, and each edit is recorded as the MEI it produced with
-the previous one as its inverse, so a window holding a page beside a lane has
+the previous one as its inverse, so a window holding a page beside a roll has
 one Ctrl+Z, in the order the hand made the edits. `score.canUndo` answers for
 that order and may well be an edit to something else.
 
 To **play** the page with the cursor following the sound, `gui.PlayheadSync` is
-the same object every time view uses — a lane, a piano roll, an engraved page —
+the same object every time view uses — a multitrack, a piano roll, an engraved page —
 and `notation.playheadSync` only fills in the page's unit, since a score places
-its cursor in milliseconds where a lane places it in samples. It holds no tempo:
+its cursor in milliseconds where a multitrack places it in samples. It holds no tempo:
 beats cross through the map of the timeline a pass plays, or of `structure` when
 nothing is playing.
 

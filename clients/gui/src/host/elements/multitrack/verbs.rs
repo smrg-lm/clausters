@@ -4,14 +4,14 @@
 //! stands -- or with a refusal, in the words the reader needs ("these boxes are
 //! already on the grid"). The box arithmetic under them is
 //! `structures::boxes`, which a roll's verbs call too; what is here is what a
-//! *clip* is: the name a new one is minted with, the lane a join is confined
+//! *clip* is: the name a new one is minted with, the track a join is confined
 //! to, the source window a trim moves.
 
 use super::*;
 
 impl Multitrack {
     /// **The edit-back: the clips as they now are.** One payload for every
-    /// gesture there is -- a move, a trim, a lane crossed, a block -- because
+    /// gesture there is -- a move, a trim, a track crossed, a block -- because
     /// what is reported is the multitrack and not what the hand did to it.
     pub(super) fn clips_event(&self) -> Events {
         let mut args = vec![OscType::String("clips".into())];
@@ -21,12 +21,12 @@ impl Multitrack {
         Events::message(args)
     }
 
-    /// **The edit-back for the mixer: the lanes as they now are.** The second
+    /// **The edit-back for the mixer: the tracks as they now are.** The second
     /// of the two payloads, and separate from the clips for the reason they are
     /// two structures -- a fader moved must not resend every clip.
-    pub(super) fn lanes_event(&self) -> Events {
-        let mut args = vec![OscType::String("lanes".into())];
-        if let Value::Array(flat) = model::lanes_json(&self.lanes) {
+    pub(super) fn tracks_event(&self) -> Events {
+        let mut args = vec![OscType::String("tracks".into())];
+        if let Value::Array(flat) = model::tracks_json(&self.tracks) {
             args.extend(flat.into_iter().map(json_arg));
         }
         Events::message(args)
@@ -38,26 +38,26 @@ impl Multitrack {
     /// never said, and what makes it a *new* track to whoever reads the report
     /// is precisely that it names no track they know -- the same rule a new box
     /// travels under. The client mints the id; the host mints the word.
-    pub(super) fn add_lane(&mut self, at: usize) -> Claim {
-        let at = at.min(self.lanes.len());
-        let height = self.lanes.first().map_or(LANE_H, |l| l.height);
-        let mut made = Lane::new(self.fresh_lane_name(), height);
+    pub(super) fn add_track(&mut self, at: usize) -> Claim {
+        let at = at.min(self.tracks.len());
+        let height = self.tracks.first().map_or(LANE_H, |l| l.height);
+        let mut made = TrackRow::new(self.fresh_lane_name(), height);
         // **A track a hand makes asks for no automation** *(found 2026-09-12 by
         // the user: "todas las pistas agregadas aparecen con automatizacion de
-        // gain visible")*. A lane is shown-by-default because a row a *multitrack*
+        // gain visible")*. A track is shown-by-default because a row a *multitrack*
         // drew is a row it meant to be seen -- and a row nobody has drawn yet
         // has nothing to show, so the default said "show me this track's
         // automation" and the owner, reading that as the verb it is, made one.
         // Adding a track and adding a curve are two gestures, and the second
         // one is the `A` beside it.
         made.curves = false;
-        self.lanes.insert(at, made);
+        self.tracks.insert(at, made);
         // The hand keeps hold of what it asked for, and the boxes it was
         // holding are on rows that may have moved under them.
         self.track = Some(at);
         self.selected.clear();
         Claim::Take(Take {
-            events: self.lanes_event(),
+            events: self.tracks_event(),
             ..Take::default()
         })
     }
@@ -69,16 +69,16 @@ impl Multitrack {
     /// tracks, and a track that is not in it is gone with its contents. So this
     /// sends one payload where a removal per box would send two and undo in
     /// two steps.
-    pub(super) fn remove_lane(&mut self) -> Option<Events> {
+    pub(super) fn remove_track(&mut self) -> Option<Events> {
         let at = self.track?;
-        if at >= self.lanes.len() {
+        if at >= self.tracks.len() {
             return None;
         }
-        let name = self.lanes.remove(at).name;
-        self.clips.retain(|c| c.lane != name);
+        let name = self.tracks.remove(at).name;
+        self.clips.retain(|c| c.track != name);
         self.selected.clear();
-        self.track = (!self.lanes.is_empty()).then(|| at.min(self.lanes.len() - 1));
-        Some(self.lanes_event())
+        self.track = (!self.tracks.is_empty()).then(|| at.min(self.tracks.len() - 1));
+        Some(self.tracks_event())
     }
 
     /// **What the samples behind box `n` allow an edge to do**: how many frames
@@ -129,13 +129,13 @@ impl Multitrack {
         self.loops.iter().any(|n| n == name)
     }
 
-    /// A name no lane here has yet -- a word, since the client's own names are
+    /// A name no track here has yet -- a word, since the client's own names are
     /// ids and a word can never be mistaken for one.
     pub(super) fn fresh_lane_name(&self) -> String {
         let mut n = 1;
         loop {
             let name = format!("track {n}");
-            if !self.lanes.iter().any(|l| l.name == name) {
+            if !self.tracks.iter().any(|l| l.name == name) {
                 return name;
             }
             n += 1;
@@ -188,7 +188,7 @@ impl Multitrack {
     /// A join is the one verb here that is *asked for* rather than performed.
     /// Every other one edits the picture and reports it, and what it meant is
     /// read back out of the difference -- but a join and a "delete one, lengthen
-    /// the other" leave a lane holding exactly the same thing, and a box in a
+    /// the other" leave a track holding exactly the same thing, and a box in a
     /// `clips` report names **one** source and one start, so fragments joined
     /// into one box have no report that describes them.
     ///
@@ -279,7 +279,7 @@ impl Multitrack {
     }
 
     /// The bodies a new list of curves gets: **the elements that survive keep
-    /// their points**, so renaming a lane or adding a curve does not flatten
+    /// their points**, so renaming a track or adding a curve does not flatten
     /// the ones that were already drawn.
     pub(super) fn rebuilt(
         &self,

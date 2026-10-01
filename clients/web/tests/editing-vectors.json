@@ -313,15 +313,6 @@
         40.0
       ],
       "hidden": "5",
-      "lanes": [
-        "1",
-        "drums",
-        96.0,
-        true,
-        false,
-        0.5,
-        true
-      ],
       "layers": [
         "5",
         "3",
@@ -354,7 +345,16 @@
         0.0
       ],
       "rates": [],
-      "segments": []
+      "segments": [],
+      "tracks": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5,
+        true
+      ]
     }
   },
   {
@@ -466,15 +466,6 @@
         40.0
       ],
       "hidden": "5",
-      "lanes": [
-        "1",
-        "drums",
-        96.0,
-        true,
-        false,
-        0.5,
-        true
-      ],
       "layers": [
         "5",
         "3",
@@ -507,7 +498,16 @@
         0.0
       ],
       "rates": [],
-      "segments": []
+      "segments": [],
+      "tracks": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5,
+        true
+      ]
     }
   },
   {
@@ -635,15 +635,6 @@
         40.0
       ],
       "hidden": "5",
-      "lanes": [
-        "1",
-        "drums",
-        96.0,
-        true,
-        false,
-        0.5,
-        true
-      ],
       "layers": [
         "5",
         "3",
@@ -676,7 +667,16 @@
         0.0
       ],
       "rates": [],
-      "segments": []
+      "segments": [],
+      "tracks": [
+        "1",
+        "drums",
+        96.0,
+        true,
+        false,
+        0.5,
+        true
+      ]
     }
   },
   {
@@ -1113,7 +1113,7 @@
     "name": "a fader moved",
     "kind": "intake",
     "domain": "multitrack",
-    "tag": "lanes",
+    "tag": "tracks",
     "request": {
       "values": [
         "1",
@@ -2446,7 +2446,7 @@
     },
     "turns": [
       {
-        "name": "a box moved on its lane",
+        "name": "a box moved on its track",
         "target": "multitrack",
         "seq": 1,
         "against": "now",
@@ -2598,7 +2598,19 @@
                   "cursor": 0.0,
                   "curves": [],
                   "hidden": "",
-                  "lanes": [
+                  "layers": [],
+                  "link": 10000,
+                  "loops": "",
+                  "meters": [],
+                  "notes": [],
+                  "playhead_at": 0.0,
+                  "points": [],
+                  "rates": [],
+                  "ruler": "beats",
+                  "sample_rate": 48000.0,
+                  "segments": [],
+                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
+                  "tracks": [
                     "10",
                     "one",
                     96.0,
@@ -2614,18 +2626,6 @@
                     1.0,
                     false
                   ],
-                  "layers": [],
-                  "link": 10000,
-                  "loops": "",
-                  "meters": [],
-                  "notes": [],
-                  "playhead_at": 0.0,
-                  "points": [],
-                  "rates": [],
-                  "ruler": "beats",
-                  "sample_rate": 48000.0,
-                  "segments": [],
-                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }
               ]
@@ -2965,7 +2965,19 @@
                   "cursor": 0.0,
                   "curves": [],
                   "hidden": "",
-                  "lanes": [
+                  "layers": [],
+                  "link": 10000,
+                  "loops": "",
+                  "meters": [],
+                  "notes": [],
+                  "playhead_at": 0.0,
+                  "points": [],
+                  "rates": [],
+                  "ruler": "beats",
+                  "sample_rate": 48000.0,
+                  "segments": [],
+                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
+                  "tracks": [
                     "10",
                     "one",
                     96.0,
@@ -2981,18 +2993,6 @@
                     1.0,
                     false
                   ],
-                  "layers": [],
-                  "link": 10000,
-                  "loops": "",
-                  "meters": [],
-                  "notes": [],
-                  "playhead_at": 0.0,
-                  "points": [],
-                  "rates": [],
-                  "ruler": "beats",
-                  "sample_rate": 48000.0,
-                  "segments": [],
-                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }
               ],
@@ -3105,7 +3105,19 @@
                   "cursor": 0.0,
                   "curves": [],
                   "hidden": "",
-                  "lanes": [
+                  "layers": [],
+                  "link": 10000,
+                  "loops": "",
+                  "meters": [],
+                  "notes": [],
+                  "playhead_at": 0.0,
+                  "points": [],
+                  "rates": [],
+                  "ruler": "beats",
+                  "sample_rate": 48000.0,
+                  "segments": [],
+                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
+                  "tracks": [
                     "10",
                     "one",
                     96.0,
@@ -3121,18 +3133,6 @@
                     1.0,
                     false
                   ],
-                  "layers": [],
-                  "link": 10000,
-                  "loops": "",
-                  "meters": [],
-                  "notes": [],
-                  "playhead_at": 0.0,
-                  "points": [],
-                  "rates": [],
-                  "ruler": "beats",
-                  "sample_rate": 48000.0,
-                  "segments": [],
-                  "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "weight": 1.0
                 }
               ]

@@ -393,7 +393,7 @@ score.undo()                                        # the model goes back too
 **And the undo is the editing context's**, not the score's own. A page registers
 in `Editing.of(score)` like a curve, a take or a roll, and each edit is recorded
 as the MEI it produced with the previous one as its inverse — so a window
-holding a page beside a lane has **one** Ctrl+Z, walked in the order the hand
+holding a page beside a roll has **one** Ctrl+Z, walked in the order the hand
 made the edits, whichever of the two the pointer was over. `score.can_undo`
 answers for that order and may well be an edit to something else.
 

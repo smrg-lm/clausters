@@ -18,7 +18,7 @@
 //!
 //! # A name on the wire is an id
 //!
-//! The same rule the tree's drawing follows: a lane is named by its track's id
+//! The same rule the tree's drawing follows: a row is named by its track's id
 //! and a clip by its region's, so an edit-back is read with no map on the side.
 //!
 //! # What the picture is measured in
@@ -37,7 +37,7 @@ use clausters_document::multitrack::picture;
 use clausters_editing::multitrack as projection;
 
 use super::sources::Takes;
-use super::tree::{ClipRow, LaneRow, Picture};
+use super::tree::{ClipRow, Picture, PictureRow};
 
 /// How the picture is scaled.
 #[derive(Debug, Clone)]
@@ -107,9 +107,9 @@ pub fn shown(multitrack: &Multitrack, look: &Look<'_>) -> Picture {
     let rows = picture::rows(multitrack);
     let boxes = picture::boxes(multitrack);
     Picture {
-        lanes: rows
+        tracks: rows
             .iter()
-            .map(|row| LaneRow {
+            .map(|row| PictureRow {
                 node: row.track,
                 holder: row.lane,
                 // A track has no offset: the multitrack's timeline is one, and a
@@ -121,7 +121,7 @@ pub fn shown(multitrack: &Multitrack, look: &Look<'_>) -> Picture {
             .iter()
             .map(|box_| ClipRow {
                 node: box_.region,
-                lane: box_.row,
+                track: box_.row,
             })
             .collect(),
         // **All of it.** Which keys a picture has is the projection's to say,
@@ -218,12 +218,12 @@ pub fn read_clips(
 /// Mute, solo and the fader are one [`MultitrackIntent::SetTracks`] because the
 /// multitrack's only verb over a track is the whole list, which is what makes adding,
 /// removing and reordering one verb and costs the inverse a copy of the tracks.
-pub fn read_lanes(
+pub fn read_tracks(
     multitrack: &Multitrack,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    read(multitrack, "lanes", args, look)
+    read(multitrack, "tracks", args, look)
 }
 
 #[cfg(test)]
@@ -288,13 +288,13 @@ mod tests {
         }
     }
 
-    /// The `"clips"` payload the widget leaves, from `(name, lane, at, dur)`.
+    /// The `"clips"` payload the widget leaves, from `(name, track, at, dur)`.
     fn clips(entries: &[(&str, &str, f32, f32)]) -> Vec<OscType> {
         let mut args = Vec::new();
-        for (name, lane, at, dur) in entries {
+        for (name, track, at, dur) in entries {
             args.extend([
                 OscType::String((*name).into()),
-                OscType::String((*lane).into()),
+                OscType::String((*track).into()),
                 OscType::Float(*at),
                 OscType::Float(*dur),
                 OscType::Float(0.0),
@@ -311,17 +311,17 @@ mod tests {
     fn a_multitrack_draws_a_row_per_track_naming_ids() {
         let shown = shown(&multitrack(), &look());
         assert_eq!(
-            shown.lanes.iter().map(|l| l.node).collect::<Vec<_>>(),
+            shown.tracks.iter().map(|l| l.node).collect::<Vec<_>>(),
             vec![NodeId(10), NodeId(20)]
         );
         assert_eq!(
-            shown.lanes.iter().map(|l| l.holder).collect::<Vec<_>>(),
+            shown.tracks.iter().map(|l| l.holder).collect::<Vec<_>>(),
             vec![NodeId(11), NodeId(21)],
             "a row's clips are its active lane's, which is what a region joins"
         );
-        let lanes = shown.props["lanes"].as_array().expect("flat");
-        assert_eq!(lanes[0], "10", "named by the track's id");
-        assert_eq!(lanes[1], "t10", "and labelled by its name");
+        let tracks = shown.props["tracks"].as_array().expect("flat");
+        assert_eq!(tracks[0], "10", "named by the track's id");
+        assert_eq!(tracks[1], "t10", "and labelled by its name");
         let clips = shown.props["clips"].as_array().expect("flat");
         assert_eq!(clips[0], "12");
         assert_eq!(clips[1], "10", "on the row of the track that holds it");
@@ -460,7 +460,7 @@ mod tests {
     }
 
     /// **A box the multitrack has no region for becomes one.** A split's tail, a
-    /// paste, anything a hand made: the payload says which lane it landed on,
+    /// paste, anything a hand made: the payload says which track it landed on,
     /// which buffer it is a window onto and where in that buffer it opens,
     /// which is everything a region needs -- so it is *built* rather than
     /// inferred, and the same rule serves whatever gesture produced it.
@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn only_the_strip_that_moved_rewrites_the_tracks() {
         let multitrack = multitrack();
-        let lanes = |entries: &[(&str, bool, f32)]| {
+        let tracks = |entries: &[(&str, bool, f32)]| {
             let mut args = Vec::new();
             for (name, muted, level) in entries {
                 args.extend([
@@ -596,17 +596,17 @@ mod tests {
             args
         };
         assert!(
-            read_lanes(
+            read_tracks(
                 &multitrack,
-                &lanes(&[("10", false, 1.0), ("20", false, 1.0)]),
+                &tracks(&[("10", false, 1.0), ("20", false, 1.0)]),
                 &look()
             )
             .is_empty(),
             "the strips as they were drawn are not an edit"
         );
-        let edits = read_lanes(
+        let edits = read_tracks(
             &multitrack,
-            &lanes(&[("10", false, 1.0), ("20", true, 0.5)]),
+            &tracks(&[("10", false, 1.0), ("20", true, 0.5)]),
             &look(),
         );
         let [(MultitrackIntent::SetTracks { tracks }, _)] = edits.as_slice() else {

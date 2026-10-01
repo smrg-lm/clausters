@@ -2,15 +2,15 @@
 //!
 //! The Python client has one and it is the reference; this is the port a
 //! standalone host needs, because a host with no language client still has to
-//! show what it holds. It is deliberately the **same picture**: lanes of clips
+//! show what it holds. It is deliberately the **same picture**: tracks of clips
 //! over one shared time axis, a beat ruler under them, ids allocated as it goes
 //! and every clip bound to the node it draws.
 //!
 //! # One container name, three widgets
 //!
-//! A lane, a clip and a time ruler are all **`field`** on the wire, told apart
+//! A track, a clip and a time ruler are all **`field`** on the wire, told apart
 //! by the props they carry (`dur` makes a clip, a bare ruler makes a ruler,
-//! anything else is a lane) -- the protocol's "generic on the wire, typed in the
+//! anything else is a track) -- the protocol's "generic on the wire, typed in the
 //! renderer" invariant, which the Python builders' names hide and this had to
 //! learn the hard way: a tree that says `"type": "track"` builds nothing, and
 //! an empty window is all it says about it.
@@ -39,7 +39,7 @@ use serde_json::{Map, Value, json};
 
 use super::sources::Takes;
 
-/// One clip or lane the tree drew, and the node it draws.
+/// One clip or track the tree drew, and the node it draws.
 ///
 /// The binding is the whole reason this returns anything besides JSON: an
 /// intent names a node, a gesture names a widget, and only what built the tree
@@ -125,34 +125,34 @@ pub struct Drawn {
     pub next_id: i32,
 }
 
-/// One lane of the multitrack, and the two things a lane change has to know
+/// One track of the multitrack, and the two things a track change has to know
 /// about it.
 ///
-/// A lane is not a container in the document -- the document has aggregates --
+/// A track is not a container in the document -- the document has aggregates --
 /// so a picture of one has to record which aggregate its clips are *members
 /// of*, and where that aggregate sits on the shared axis. Without the first, a
 /// clip that crossed the stack has nowhere to be moved to; without the second,
 /// it arrives at the right pixel and the wrong beat.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LaneRow {
-    /// The node the lane draws. Its **identity on the wire is its number**, as
+pub struct PictureRow {
+    /// The node the track draws. Its **identity on the wire is its number**, as
     /// a string, which is what makes a `"clips"` payload readable with no map
     /// on the side: a name is a node id and nothing else.
     pub node: NodeId,
-    /// The aggregate whose members are this lane's clips.
+    /// The aggregate whose members are this track's clips.
     pub holder: NodeId,
     /// Where that aggregate starts, in beats -- the offsets its members are
     /// relative to.
     pub base: Beats,
 }
 
-/// One clip, and the lane it was drawn on.
+/// One clip, and the track it was drawn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClipRow {
     /// The node the box draws; its name on the wire is this number.
     pub node: NodeId,
-    /// The lane it sits on ([`LaneRow::node`]).
-    pub lane: NodeId,
+    /// The track it sits on ([`PictureRow::node`]).
+    pub track: NodeId,
 }
 
 /// The multitrack as the `multitrack` widget takes it, and as the owner reads it
@@ -163,15 +163,15 @@ pub struct ClipRow {
 /// and deriving them separately is how a name comes to mean two nodes.
 #[derive(Debug, Clone, Default)]
 pub struct Picture {
-    /// The lanes, top to bottom.
-    pub lanes: Vec<LaneRow>,
+    /// The tracks, top to bottom.
+    pub tracks: Vec<PictureRow>,
     /// The clips, in document order.
     pub clips: Vec<ClipRow>,
     /// **The picture, as props** -- every key the widget draws from, exactly as
     /// the projection wrote it.
     ///
     /// A map rather than the two fields this was, and the difference is the
-    /// whole of a defect: the projection produces **seven** props (`lanes`,
+    /// whole of a defect: the projection produces **seven** props (`tracks`,
     /// `clips`, `curves`, `layers`, `points`, `hidden`, `loops`) and the host
     /// kept two, so in a host with no client attached a curve was never drawn
     /// and a curve the multitrack *minted* -- the `A` toggle's whole purpose --
@@ -182,15 +182,15 @@ pub struct Picture {
 }
 
 impl Picture {
-    /// The lane of this node, if the multitrack has one.
-    pub fn lane(&self, node: NodeId) -> Option<&LaneRow> {
-        self.lanes.iter().find(|l| l.node == node)
+    /// The track of this node, if the multitrack has one.
+    pub fn track(&self, node: NodeId) -> Option<&PictureRow> {
+        self.tracks.iter().find(|l| l.node == node)
     }
 
-    /// The lane a clip is drawn on, if the multitrack holds it.
-    pub fn lane_of(&self, clip: NodeId) -> Option<&LaneRow> {
+    /// The track a clip is drawn on, if the multitrack holds it.
+    pub fn track_of(&self, clip: NodeId) -> Option<&PictureRow> {
         let row = self.clips.iter().find(|c| c.node == clip)?;
-        self.lane(row.lane)
+        self.track(row.track)
     }
 }
 
@@ -206,16 +206,16 @@ pub(crate) fn node_named(name: &str) -> Option<NodeId> {
     name.parse::<u64>().ok().map(NodeId)
 }
 
-/// The lane height a lane is drawn at, in logical pixels.
+/// The track height a track is drawn at, in logical pixels.
 const LANE_H: f64 = 96.0;
 
-/// The lanes and clips a document draws as -- the whole multitrack, in the widget's
+/// The tracks and clips a document draws as -- the whole multitrack, in the widget's
 /// own vocabulary.
 ///
-/// One lane per top-level member: an **aggregate** becomes a lane of its
-/// members' clips (which is what a track is), and anything else becomes a lane
+/// One track per top-level member: an **aggregate** becomes a track of its
+/// members' clips (which is what a track is), and anything else becomes a track
 /// holding one clip. Nesting deeper than that is drawn flat for now -- an
-/// aggregate inside an aggregate is one lane of its own, in document order --
+/// aggregate inside an aggregate is one track of its own, in document order --
 /// because an expanded/collapsed state is a thing the *editor* holds and this
 /// has nowhere yet to keep one.
 pub fn multitrack(document: &Document, look: &Look<'_>) -> Picture {
@@ -223,53 +223,53 @@ pub fn multitrack(document: &Document, look: &Look<'_>) -> Picture {
         content: Some(&document.content),
         ..*look
     };
-    let mut built: Vec<LaneBuild> = Vec::new();
+    let mut built: Vec<TrackBuild> = Vec::new();
     match &document.root.body {
         Body::Aggregate { members, .. } => {
             for member in members {
-                lane_of(member, document.root.id, 0.0, look, &mut built);
+                track_of(member, document.root.id, 0.0, look, &mut built);
             }
         }
-        // A document that is one thing is one lane holding it.
+        // A document that is one thing is one track holding it.
         _ => {
             let member = Member {
                 offset: 0.0,
                 dur: None,
                 node: document.root.clone(),
             };
-            lane_of(&member, document.root.id, 0.0, look, &mut built);
+            track_of(&member, document.root.id, 0.0, look, &mut built);
         }
     }
-    let mut lanes = Vec::with_capacity(built.len());
+    let mut tracks = Vec::with_capacity(built.len());
     let mut clips = Vec::new();
-    let mut lanes_prop = Vec::with_capacity(built.len() * 7);
+    let mut tracks_prop = Vec::with_capacity(built.len() * 7);
     let mut clips_prop = Vec::new();
-    for lane in built {
-        lanes.push(LaneRow {
-            node: lane.node,
-            holder: lane.holder,
-            base: lane.base,
+    for track in built {
+        tracks.push(PictureRow {
+            node: track.node,
+            holder: track.holder,
+            base: track.base,
         });
-        lanes_prop.extend([
-            json!(name_of(lane.node)),
-            json!(lane.label),
+        tracks_prop.extend([
+            json!(name_of(track.node)),
+            json!(track.label),
             json!(LANE_H),
-            json!(lane.mute),
-            json!(lane.solo),
-            json!(lane.gain),
-            // **A tree's lane has no automation rows under it**, so the toggle
+            json!(track.mute),
+            json!(track.solo),
+            json!(track.gain),
+            // **A tree's track has no automation rows under it**, so the toggle
             // is not offered at all and what this says is never drawn. Shown is
             // the default a row carries when nothing hid it.
             json!(true),
         ]);
-        for clip in lane.clips {
+        for clip in track.clips {
             clips.push(ClipRow {
                 node: clip.node,
-                lane: lane.node,
+                track: track.node,
             });
             clips_prop.extend([
                 json!(name_of(clip.node)),
-                json!(name_of(lane.node)),
+                json!(name_of(track.node)),
                 json!(clip.offset),
                 json!(clip.dur),
                 json!(clip.start),
@@ -282,10 +282,10 @@ pub fn multitrack(document: &Document, look: &Look<'_>) -> Picture {
     // automation hangs on it -- so its picture is the two props the multitrack's
     // projection starts from.
     let mut props = Map::new();
-    props.insert("lanes".into(), Value::Array(lanes_prop));
+    props.insert("tracks".into(), Value::Array(tracks_prop));
     props.insert("clips".into(), Value::Array(clips_prop));
     Picture {
-        lanes,
+        tracks,
         clips,
         props,
     }
@@ -294,9 +294,9 @@ pub fn multitrack(document: &Document, look: &Look<'_>) -> Picture {
 /// Draws `document` as a window: **one `multitrack`**, and the take editors
 /// under it.
 ///
-/// One widget for the whole multitrack rather than a lane per track and a clip per
+/// One widget for the whole multitrack rather than a track per track and a clip per
 /// element, because the multitrack is what a gesture reports: a block move and a
-/// lane change say *the clips are now these*, and nothing has to say which of
+/// track change say *the clips are now these*, and nothing has to say which of
 /// them the hand touched. It is the same shape a `pianoroll` has always had,
 /// and the reason this driver had a bug the roll never could.
 ///
@@ -326,7 +326,7 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     }
     // **The window is the reader's.** A session host is an editor, and in an
     // editor a content change is mostly the reader's own edit -- undoing a
-    // trim, splitting a clip, dragging one onto another lane -- so the axis
+    // trim, splitting a clip, dragging one onto another track -- so the axis
     // does not re-frame itself on one. The extent is still registered; only the
     // window stays put.
     props.insert("autofit".into(), json!(false));
@@ -371,8 +371,8 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
 const EDITOR_ROW_H: f64 = 120.0;
 
 /// The tallest a take's editor is built, however many channels it holds. Past
-/// this the lanes get thinner instead -- a pane taller than the window would
-/// push the arrangement off the screen, which is worse than a cramped lane.
+/// this the tracks get thinner instead -- a pane taller than the window would
+/// push the arrangement off the screen, which is worse than a cramped track.
 const EDITOR_MAX_H: f64 = 360.0;
 
 /// **The pane a take opens in is as tall as the take is wide**: samples with
@@ -407,8 +407,8 @@ impl Ids {
     }
 }
 
-/// One lane under construction: the row, plus what the props need.
-struct LaneBuild {
+/// One track under construction: the row, plus what the props need.
+struct TrackBuild {
     node: NodeId,
     holder: NodeId,
     base: Beats,
@@ -430,12 +430,12 @@ struct ClipBuild {
     source: i32,
 }
 
-/// Turns one member into lanes, **recursing while it is aggregates all the way
+/// Turns one member into tracks, **recursing while it is aggregates all the way
 /// down**.
 ///
 /// The rule is the shape of the multitrack rather than a depth: an aggregate whose
-/// members are leaves is a lane of clips (that is what a lane *is*), and an
-/// aggregate of aggregates is not one lane but each of theirs. A multitrack is
+/// members are leaves is a track of clips (that is what a track *is*), and an
+/// aggregate of aggregates is not one track but each of theirs. A multitrack is
 /// nested as deeply as the author nested it -- a multitrack of aggregates of tracks
 /// of clangs is three deep before a single note is reached -- so anything that
 /// stops at a fixed depth draws the containers and calls it a picture, which is
@@ -444,13 +444,13 @@ struct ClipBuild {
 /// `base` accumulates the offsets on the way down, because a clip's offset is
 /// absolute on the shared axis while a member's is relative to its aggregate;
 /// `parent` is the aggregate `member` is a member of, which is where a clip
-/// this lane holds is removed from when it crosses to another lane.
-fn lane_of(
+/// this track holds is removed from when it crosses to another track.
+fn track_of(
     member: &Member,
     parent: NodeId,
     base: Beats,
     look: &Look<'_>,
-    out: &mut Vec<LaneBuild>,
+    out: &mut Vec<TrackBuild>,
 ) {
     let here = base + member.offset;
     if let Body::Aggregate { members, .. } = &member.node.body
@@ -459,16 +459,16 @@ fn lane_of(
             .any(|inner| matches!(inner.node.body, Body::Aggregate { .. }))
     {
         for inner in members {
-            lane_of(inner, member.node.id, here, look, out);
+            track_of(inner, member.node.id, here, look, out);
         }
         return;
     }
     let (mute, solo, gain) = mixing_of(&member.node);
-    // Which aggregate holds this lane's clips, and what their offsets are
-    // relative to. A lane of clips holds its own; a lane that *is* one element
+    // Which aggregate holds this track's clips, and what their offsets are
+    // relative to. A track of clips holds its own; a track that *is* one element
     // borrows its parent's, because that is where the element is a member.
     let (holder, clip_base, clips) = match &member.node.body {
-        // **An aggregate of clangs is one clip**, not a lane of clips: that is
+        // **An aggregate of clangs is one clip**, not a track of clips: that is
         // what a track *is* in every editor, and drawing each note as its own
         // box gives a row of empty rectangles where the music was.
         Body::Aggregate { members, .. } if !members.is_empty() && notes_of(members).is_some() => {
@@ -485,7 +485,7 @@ fn lane_of(
         ),
         _ => (parent, base, vec![clip_of(member, base, look)]),
     };
-    out.push(LaneBuild {
+    out.push(TrackBuild {
         node: member.node.id,
         holder,
         base: clip_base,
@@ -700,7 +700,7 @@ fn windowed_notes(node: &Node, look: &Look<'_>) -> Option<Vec<(Beats, Beats, f32
 /// caller.
 ///
 /// `None` unless *every* member is a clang carrying a pitch: an aggregate holding
-/// takes, generators or anything else is a lane of clips and not a roll, and
+/// takes, generators or anything else is a track of clips and not a roll, and
 /// half a roll would be a picture that leaves samples out without saying so.
 fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     let mut out = Vec::with_capacity(members.len());
@@ -730,16 +730,16 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     (!out.is_empty()).then_some(out)
 }
 
-/// The mixing a lane's strip draws, as the node carries it: muted, soloed and
+/// The mixing a track's strip draws, as the node carries it: muted, soloed and
 /// its fader.
 ///
 /// The keys are the clients' own (`clausters.form.document`'s `MIXING`), which
-/// is what makes a multitrack muted in a script open muted here. A lane whose
+/// is what makes a multitrack muted in a script open muted here. A track whose
 /// configuration says nothing is not muted and is at unity -- the widget's props
 /// are three values and not three optional ones, so *absent* is drawn as the
 /// default rather than left unsaid.
 ///
-/// `Owner::read_lanes` writes the same three keys back, which is what makes a
+/// `Owner::read_tracks` writes the same three keys back, which is what makes a
 /// strip pressed here a fact about the multitrack rather than about the window.
 fn mixing_of(node: &Node) -> (bool, bool, f64) {
     let table = node
@@ -810,20 +810,20 @@ mod tests {
         flat.chunks_exact(n).map(<[Value]>::to_vec).collect()
     }
 
-    fn lanes(def: &Value) -> Vec<Vec<Value>> {
-        groups(&view(def)["lanes"], 7)
+    fn tracks(def: &Value) -> Vec<Vec<Value>> {
+        groups(&view(def)["tracks"], 7)
     }
 
     fn clips(def: &Value) -> Vec<Vec<Value>> {
         groups(&view(def)["clips"], 7)
     }
 
-    /// **One widget for the whole multitrack**, and the lanes are its data. The
+    /// **One widget for the whole multitrack**, and the tracks are its data. The
     /// milestone's shape, and the thing the old tree could not say: with the
     /// stack spread over N widgets there was nowhere to report *the
     /// arrangement*, so a gesture reported what the hand did.
     #[test]
-    fn a_document_draws_as_one_multitrack_holding_every_lane() {
+    fn a_document_draws_as_one_multitrack_holding_every_track() {
         let doc = Document::new(aggregate(
             1,
             vec![
@@ -841,12 +841,12 @@ mod tests {
         ));
         let drawn = draw(&doc, &Look::default(), "session");
         let kids = drawn.def["children"].as_array().expect("children");
-        assert_eq!(kids.len(), 1, "one widget, not a lane each and a ruler");
+        assert_eq!(kids.len(), 1, "one widget, not a track each and a ruler");
         assert_eq!(view(&drawn.def)["type"], "multitrack");
         assert_eq!(view(&drawn.def)["id"], drawn.widget);
         // It draws its own ruler, which is why there is no strip beside it.
         assert_eq!(view(&drawn.def)["ruler"], "beats");
-        assert_eq!(lanes(&drawn.def).len(), 2, "one lane per track");
+        assert_eq!(tracks(&drawn.def).len(), 2, "one track per track");
         assert_eq!(clips(&drawn.def).len(), 2, "one clip each");
     }
 
@@ -867,7 +867,7 @@ mod tests {
             )],
         ));
         let drawn = draw(&doc, &Look::default(), "session");
-        assert_eq!(lanes(&drawn.def)[0][0], "2", "the lane is the track");
+        assert_eq!(tracks(&drawn.def)[0][0], "2", "the track is the track");
         let boxes = clips(&drawn.def);
         let names: Vec<&str> = boxes
             .iter()
@@ -876,9 +876,9 @@ mod tests {
         assert_eq!(names, vec!["7", "8"], "the clips, in document order");
         let on: Vec<&str> = boxes
             .iter()
-            .map(|c| c[1].as_str().expect("a lane"))
+            .map(|c| c[1].as_str().expect("a track"))
             .collect();
-        assert_eq!(on, vec!["2", "2"], "both on the lane that holds them");
+        assert_eq!(on, vec!["2", "2"], "both on the track that holds them");
 
         // ...and the rows say the same thing to the owner, which is what an
         // edit-back is resolved against.
@@ -892,21 +892,21 @@ mod tests {
             vec![NodeId(7), NodeId(8)]
         );
         assert_eq!(
-            drawn.picture.lane_of(NodeId(7)).map(|l| l.holder),
+            drawn.picture.track_of(NodeId(7)).map(|l| l.holder),
             Some(NodeId(2))
         );
     }
 
     /// A clip's offset is **absolute on the shared axis** while a member's is
-    /// relative to its aggregate: the two are added once, here, or every lane
-    /// after the first would draw in the wrong place -- and the lane records
+    /// relative to its aggregate: the two are added once, here, or every track
+    /// after the first would draw in the wrong place -- and the track records
     /// what they were added *to*, so an edit-back can subtract it again.
     #[test]
     fn a_nested_placement_is_absolute_on_the_shared_axis() {
         let doc = Document::new(aggregate(
             1,
             vec![placed(
-                4.0, // the lane starts at beat 4
+                4.0, // the track starts at beat 4
                 None,
                 aggregate(2, vec![placed(1.0, Some(2.0), clang(3))]), // the clip at 1 within it
             )],
@@ -920,8 +920,8 @@ mod tests {
         assert_eq!(clip[2], 500.0, "4 + 1 beats, in units");
         assert_eq!(clip[3], 200.0);
         assert_eq!(
-            drawn.picture.lanes[0].base, 4.0,
-            "and the lane says what the offset was measured from"
+            drawn.picture.tracks[0].base, 4.0,
+            "and the track says what the offset was measured from"
         );
     }
 
@@ -931,7 +931,7 @@ mod tests {
     fn a_document_that_is_not_an_aggregate_still_draws() {
         let doc = Document::new(clang(1));
         let drawn = draw(&doc, &Look::default(), "one thing");
-        assert_eq!(lanes(&drawn.def).len(), 1);
+        assert_eq!(tracks(&drawn.def).len(), 1);
         assert_eq!(clips(&drawn.def).len(), 1);
         assert_eq!(drawn.picture.clips[0].node, NodeId(1));
     }
@@ -946,13 +946,13 @@ mod tests {
         }
         let doc = Document::new(aggregate(1, vec![placed(0.0, None, track)]));
         let drawn = draw(&doc, &Look::default(), "session");
-        let lane = &lanes(&drawn.def)[0];
-        assert_eq!(lane[3], true, "muted");
-        assert_eq!(lane[4], false, "and not soloed");
-        assert_eq!(lane[5], 0.25, "at the fader the multitrack carries");
+        let track = &tracks(&drawn.def)[0];
+        assert_eq!(track[3], true, "muted");
+        assert_eq!(track[4], false, "and not soloed");
+        assert_eq!(track[5], 0.25, "at the fader the multitrack carries");
     }
 
-    /// A lane with no strip in its configuration is not muted and is at unity:
+    /// A track with no strip in its configuration is not muted and is at unity:
     /// the widget's props are three values, not three optional ones.
     #[test]
     fn a_lane_with_no_mixing_is_audible_at_unity() {
@@ -965,9 +965,9 @@ mod tests {
             )],
         ));
         let drawn = draw(&doc, &Look::default(), "session");
-        let lane = &lanes(&drawn.def)[0];
+        let track = &tracks(&drawn.def)[0];
         assert_eq!(
-            (&lane[3], &lane[4], &lane[5]),
+            (&track[3], &track[4], &track[5]),
             (&json!(false), &json!(false), &json!(1.0))
         );
     }
@@ -1248,7 +1248,7 @@ mod take_tests {
         assert_eq!(
             editor_height(Some(16)),
             EDITOR_MAX_H,
-            "an ambisonic take is drawn whole, in thinner lanes: a pane taller \
+            "an ambisonic take is drawn whole, in thinner tracks: a pane taller \
              than the window would push the arrangement off the screen"
         );
     }
@@ -1464,11 +1464,11 @@ mod depth_tests {
             ],
         ));
         let drawn = draw(&doc, &Look::default(), "deep");
-        let names: Vec<NodeId> = drawn.picture.lanes.iter().map(|l| l.node).collect();
+        let names: Vec<NodeId> = drawn.picture.tracks.iter().map(|l| l.node).collect();
         assert_eq!(
             names,
             vec![NodeId(3), NodeId(6), NodeId(8)],
-            "a lane per track, wherever it sits -- not one per container"
+            "a track per track, wherever it sits -- not one per container"
         );
         let clips: Vec<NodeId> = drawn.picture.clips.iter().map(|c| c.node).collect();
         assert_eq!(clips, vec![NodeId(4), NodeId(5), NodeId(7), NodeId(9)]);
@@ -1493,8 +1493,8 @@ mod depth_tests {
         let clips = drawn.def["children"][0]["clips"].as_array().expect("clips");
         assert_eq!(clips[2], 90.0, "2 + 3 + 4 beats, in units");
         assert_eq!(
-            drawn.picture.lanes[0].base, 5.0,
-            "and the lane holds the 2 + 3 its member's own offset is measured from"
+            drawn.picture.tracks[0].base, 5.0,
+            "and the track holds the 2 + 3 its member's own offset is measured from"
         );
     }
 }
@@ -1561,14 +1561,14 @@ mod roll_tests {
         assert_eq!(drawn.picture.clips.len(), 1, "one clip, not one per note");
         // The clip draws the **aggregate**, so a drag on it moves the track.
         assert_eq!(drawn.picture.clips[0].node, NodeId(2));
-        // ...and its lane is the track too, held by the multitrack above it: a lane
+        // ...and its track is the track too, held by the multitrack above it: a track
         // that *is* one element borrows its parent's members, because that is
         // where the element is a member.
-        assert_eq!(drawn.picture.lanes[0].node, NodeId(2));
-        assert_eq!(drawn.picture.lanes[0].holder, NodeId(1));
+        assert_eq!(drawn.picture.tracks[0].node, NodeId(2));
+        assert_eq!(drawn.picture.tracks[0].holder, NodeId(1));
     }
 
-    /// An aggregate that is **not** all pitched clangs stays a lane of clips: a
+    /// An aggregate that is **not** all pitched clangs stays a track of clips: a
     /// roll drawn over half an aggregate would leave elements out without
     /// saying so.
     #[test]
@@ -1605,12 +1605,12 @@ mod roll_tests {
                 .map(|c| c.node)
                 .collect::<Vec<_>>(),
             vec![NodeId(3), NodeId(4)],
-            "two boxes on the lane, not one carrying half a roll"
+            "two boxes on the track, not one carrying half a roll"
         );
         assert_eq!(
-            drawn.picture.lanes[0].holder,
+            drawn.picture.tracks[0].holder,
             NodeId(2),
-            "and the lane holds them"
+            "and the track holds them"
         );
     }
 }

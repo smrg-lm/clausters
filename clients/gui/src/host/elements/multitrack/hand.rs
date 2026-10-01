@@ -25,8 +25,8 @@ pub(super) struct Grab {
     pub(super) part: Part,
     /// Where it sat when the press landed.
     pub(super) orig: Placement,
-    /// The lane it was on when the press landed, by index.
-    pub(super) lane: usize,
+    /// The track it was on when the press landed, by index.
+    pub(super) track: usize,
     /// The pointer's time at the press, so a body drag moves by the travel
     /// rather than by where inside the box the hand grabbed it.
     pub(super) grabbed_at: f64,
@@ -43,7 +43,7 @@ pub(super) struct Grab {
 /// The row a hand is resizing, and what it was when the press landed.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Sizing {
-    pub(super) lane: usize,
+    pub(super) track: usize,
     pub(super) from: f32,
     pub(super) at: f64,
 }
@@ -52,7 +52,7 @@ pub(super) struct Sizing {
 /// the value is read from the pointer against what the press found.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Fading {
-    pub(super) lane: usize,
+    pub(super) track: usize,
     /// The knob's own cell -- how far a full turn is, in pixels.
     pub(super) cell: Rect,
     /// The level the press found: a turn is measured from it.
@@ -70,20 +70,20 @@ impl Multitrack {
     /// since a later clip is drawn over an earlier one and the eye takes the
     /// one it can see.
     pub(super) fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
-        let i = self.lane_at(input.rect, at.1)?;
-        let rect = self.lane_rects(input.rect)[i];
-        // A band carries its gap, and nothing of a lane is drawn there: a press
+        let i = self.track_at(input.rect, at.1)?;
+        let rect = self.track_rects(input.rect)[i];
+        // A band carries its gap, and nothing of a track is drawn there: a press
         // in it is a press on bare stack, which the container sweeps.
         if (at.1 as f32) >= rect.y + rect.h {
             return None;
         }
-        let body = track::lane_body(rect, false, input.indent, input.metrics);
+        let body = track::track_body(rect, false, input.indent, input.metrics);
         let nav = self.view(input.time);
         self.clips
             .iter()
             .enumerate()
             .rev()
-            .filter(|(_, c)| c.lane == self.lanes[i].name)
+            .filter(|(_, c)| c.track == self.tracks[i].name)
             .find_map(|(n, c)| {
                 let (x0, x1) = stack::clip_x(c, body, &nav, MIN_CLIP_W)?;
                 let cr = track::clip_rect(body, x0, x1);
@@ -110,7 +110,7 @@ impl Multitrack {
     /// it, else the grabbed one alone.
     ///
     /// **Grabbing an unselected clip lets go of the block**, which is the rule a
-    /// lane already had: a hand that reaches past its selection meant the box it
+    /// track already had: a hand that reaches past its selection meant the box it
     /// reached for.
     pub(super) fn held(&self, clip: usize) -> Vec<usize> {
         if self.selected.contains(&clip) {
@@ -120,48 +120,48 @@ impl Multitrack {
         }
     }
 
-    /// A press on a lane's header: the two toggles land on the press, the fader
+    /// A press on a track's header: the two toggles land on the press, the fader
     /// takes the drag.
     ///
     /// **The mixer state is the document's**, so all three report -- and they
-    /// report the `"lanes"` list, not the one lane, because what a report says
+    /// report the `"tracks"` list, not the one track, because what a report says
     /// here is the multitrack as it now stands.
     pub(super) fn press_header(
         &mut self,
-        lane: usize,
+        track: usize,
         part: track::HeaderPart,
         at: (f64, f64),
         input: &Input,
     ) -> Claim {
-        let rect = self.lane_rects(input.rect)[lane];
+        let rect = self.track_rects(input.rect)[track];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
         let parts = track::header_parts(
             band,
-            &self.header(&self.lanes[lane], input.indent),
+            &self.header(&self.tracks[track], input.indent),
             input.metrics,
         );
         match part {
             track::HeaderPart::Mute => {
-                self.lanes[lane].mute = !self.lanes[lane].mute;
+                self.tracks[track].mute = !self.tracks[track].mute;
                 Claim::Take(Take {
-                    events: self.lanes_event(),
+                    events: self.tracks_event(),
                     ..Take::default()
                 })
             }
             track::HeaderPart::Solo => {
-                self.lanes[lane].solo = !self.lanes[lane].solo;
+                self.tracks[track].solo = !self.tracks[track].solo;
                 Claim::Take(Take {
-                    events: self.lanes_event(),
+                    events: self.tracks_event(),
                     ..Take::default()
                 })
             }
             // **Show or hide this track's automation rows.** A statement about
-            // the track, so it rides the `lanes` report the mute and the solo
+            // the track, so it rides the `tracks` report the mute and the solo
             // beside it ride, and the owner answers it by saying which curves
             // are visible -- which is where that fact lives.
             track::HeaderPart::Curves => {
-                let showing = !self.lanes[lane].curves;
-                self.lanes[lane].curves = showing;
+                let showing = !self.tracks[track].curves;
+                self.tracks[track].curves = showing;
                 // **And the rows go with it, here** *(found 2026-09-12 by the
                 // user: "la A sigue sin ocultar ni mostrar")*. What `stack`
                 // draws from is `hidden`, which is the owner's answer, and the
@@ -179,7 +179,7 @@ impl Multitrack {
                 let named: Vec<String> = self
                     .curves
                     .iter()
-                    .filter(|c| c.owner == self.lanes[lane].name)
+                    .filter(|c| c.owner == self.tracks[track].name)
                     .map(|c| c.name.clone())
                     .collect();
                 if showing {
@@ -192,7 +192,7 @@ impl Multitrack {
                     }
                 }
                 Claim::Take(Take {
-                    events: self.lanes_event(),
+                    events: self.tracks_event(),
                     ..Take::default()
                 })
             }
@@ -207,9 +207,9 @@ impl Multitrack {
                 // The press itself changes nothing; what it takes is the level
                 // it found and the pixel it found it at.
                 self.fading = Some(Fading {
-                    lane,
+                    track,
                     cell,
-                    from: self.lanes[lane].gain,
+                    from: self.tracks[track].gain,
                     at: at.1,
                 });
                 Claim::take()
@@ -220,8 +220,8 @@ impl Multitrack {
             // the scroll: nothing on the wire sets or reports it.
             track::HeaderPart::Edge => {
                 self.sizing = Some(Sizing {
-                    lane,
-                    from: self.lanes[lane].height,
+                    track,
+                    from: self.tracks[track].height,
                     at: at.1,
                 });
                 Claim::take()
@@ -235,9 +235,9 @@ impl Multitrack {
             // row means it.
             track::HeaderPart::Body => {
                 if input.clicks >= 2 {
-                    return self.add_lane(lane + 1);
+                    return self.add_track(track + 1);
                 }
-                self.track = Some(lane);
+                self.track = Some(track);
                 Claim::take()
             }
         }
@@ -345,12 +345,12 @@ impl Multitrack {
         self.block.clear();
         // The header band first: it is drawn over the gutter, and nothing of
         // the axis is there.
-        if let Some((lane, part)) = self.header_at(input, at) {
-            return self.press_header(lane, part, at, input);
+        if let Some((track, part)) = self.header_at(input, at) {
+            return self.press_header(track, part, at, input);
         }
         if at.0 < f64::from(input.rect.x + input.indent) {
             // **An automation row's header is the track's picture, not the
-            // track.** A curve is drawn in a row of its own under the lane it
+            // track.** A curve is drawn in a row of its own under the track it
             // belongs to, and the band beside it is that row's label -- so a
             // press there addresses no track: it selects none, lets go of none
             // and asks for none. The press is consumed rather than declined,
@@ -364,7 +364,7 @@ impl Multitrack {
             // lets go of the track the hand had, the way a click on bare stack
             // lets go of the boxes.
             if input.clicks >= 2 {
-                return self.add_lane(self.lanes.len());
+                return self.add_track(self.tracks.len());
             }
             self.track = None;
             return Claim::take();
@@ -400,7 +400,7 @@ impl Multitrack {
             boxes::toggle_selected(&mut self.selected, clip);
             return Claim::take();
         }
-        let Some(lane) = self.lane_of(&self.clips[clip]) else {
+        let Some(track) = self.track_of(&self.clips[clip]) else {
             return Claim::Decline;
         };
         // **An edge is always one clip's**: two clips of different lengths have
@@ -411,7 +411,7 @@ impl Multitrack {
                 .into_iter()
                 .map(|i| (i, self.clips[i].place.offset, self.row(i)))
                 .collect(),
-            _ => vec![(clip, self.clips[clip].place.offset, lane as f32)],
+            _ => vec![(clip, self.clips[clip].place.offset, track as f32)],
         };
         if part != Part::Body && !self.selected.contains(&clip) {
             self.selected.clear();
@@ -420,7 +420,7 @@ impl Multitrack {
             clip,
             part,
             orig: self.clips[clip].place,
-            lane,
+            track,
             grabbed_at: self.time_at(input, at.0),
             axis: self.view(input.time),
         });
@@ -436,19 +436,19 @@ impl Multitrack {
 
 impl Multitrack {
     /// **What a rectangle swept over the stack caught.** The marquee's one
-    /// question, answered with the clips the rectangle covered -- of every lane
-    /// it crossed, since a selection the stack's sweep made is not one lane's.
+    /// question, answered with the clips the rectangle covered -- of every track
+    /// it crossed, since a selection the stack's sweep made is not one track's.
     pub(super) fn swept(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
         let before = self.selected.len();
         let (t0, t1) = (self.time_at(input, from.0), self.time_at(input, to.0));
         // The same continuous answer a drag takes: a corner in a gap or past
-        // an end still means the sweep passed through those lanes.
-        let r0 = self.lane_toward(input.rect, from.1) as f32;
-        let r1 = self.lane_toward(input.rect, to.1) as f32;
+        // an end still means the sweep passed through those tracks.
+        let r0 = self.track_toward(input.rect, from.1) as f32;
+        let r1 = self.track_toward(input.rect, to.1) as f32;
         self.selected = boxes::in_rect(self, t0, t1, r0, r1);
         Swept {
             changed: before != self.selected.len() || !self.selected.is_empty(),
-            // **No band.** A multitrack's second axis is the stack of lanes,
+            // **No band.** A multitrack's second axis is the stack of tracks,
             // not a value, so a rectangle over it restricts no value range --
             // the vertical half said *which clips*, and nothing else.
             band: None,
@@ -478,13 +478,13 @@ impl Multitrack {
         }
         if let Some(s) = self.sizing {
             let height = (s.from + (at.1 - s.at) as f32).clamp(MIN_LANE_H, MAX_LANE_H);
-            self.lanes[s.lane].height = height;
-            self.zoom.insert(self.lanes[s.lane].name.clone(), height);
+            self.tracks[s.track].height = height;
+            self.zoom.insert(self.tracks[s.track].name.clone(), height);
             return Events::none();
         }
         if let Some(f) = self.fading {
-            self.lanes[f.lane].gain = track::level_after(f.from, at.1 - f.at, f.cell);
-            return self.lanes_event();
+            self.tracks[f.track].gain = track::level_after(f.from, at.1 - f.at, f.cell);
+            return self.tracks_event();
         }
         let Some(grab) = self.grab else {
             return Events::none();
@@ -496,7 +496,7 @@ impl Multitrack {
             // fold against it, and no clip is resized.
             Part::Body => {
                 let dt = boxes::snap(now - grab.grabbed_at, self.snap);
-                let dr = self.lane_toward(input.rect, at.1) as f32 - grab.lane as f32;
+                let dr = self.track_toward(input.rect, at.1) as f32 - grab.track as f32;
                 // **The grabbed box's own two edges look for a neighbour.** The
                 // box under the hand is what the hand is aiming with, so it is
                 // the one that snaps; the rest of a block travels with it, as
@@ -509,7 +509,7 @@ impl Multitrack {
                         &self.block.iter().map(|&(i, ..)| i).collect::<Vec<_>>(),
                         &[orig.offset + dt, orig.offset + orig.dur + dt],
                     );
-                let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
+                let rows = (0.0, self.tracks.len().saturating_sub(1) as f32);
                 let block = std::mem::take(&mut self.block);
                 boxes::move_block(self, &block, dt, dr, rows, 1.0, None);
                 self.block = block;
@@ -599,8 +599,8 @@ impl Multitrack {
     ///   that fits does not move at all, and one that does not cannot be pushed
     ///   past its last row, which is the difference between a scroll and a
     ///   surface that can be lost.
-    /// - `Ctrl` **zooms the row under the cursor**, a lane or an automation row
-    ///   alike and each on its own. The bottom-edge drag already zooms a lane
+    /// - `Ctrl` **zooms the row under the cursor**, a track or an automation row
+    ///   alike and each on its own. The bottom-edge drag already zooms a track
     ///   and is the better gesture for one; this is the one that reaches a
     ///   curve row, which has no edge to pull, and it is how one row is read
     ///   closely while the rest stay where they are.
@@ -624,10 +624,10 @@ impl Multitrack {
             // Up zooms in, which is the direction every other zoom here takes.
             let factor = 1.1f32.powf(steps as f32);
             match row {
-                stack::Row::Lane(i) => {
-                    let lane = self.lanes.get_mut(i)?;
-                    lane.height = (lane.height * factor).clamp(MIN_LANE_H, MAX_LANE_H);
-                    self.zoom.insert(lane.name.clone(), lane.height);
+                stack::Row::TrackRow(i) => {
+                    let track = self.tracks.get_mut(i)?;
+                    track.height = (track.height * factor).clamp(MIN_LANE_H, MAX_LANE_H);
+                    self.zoom.insert(track.name.clone(), track.height);
                 }
                 stack::Row::Curve(n) => {
                     let curve = self.curves.get_mut(n)?;
@@ -657,7 +657,7 @@ impl Multitrack {
 impl Multitrack {
     /// The verbs a hand has over what it is holding.
     ///
-    /// `q` quantizes onto the lane's own `snap` grid -- the grid a drag already
+    /// `q` quantizes onto the track's own `snap` grid -- the grid a drag already
     /// lands on -- `e` splits at the window's cursor and `j` joins a touching
     /// run, Delete removes (the **selected track**, with everything on it, when
     /// no box is held), and `Ctrl`+`C`/`X`/`V` move a block through the
@@ -672,7 +672,7 @@ impl Multitrack {
     /// a correct refusal nobody is told about is indistinguishable from a key
     /// that does not work.
     ///
-    /// **The letters are the ones a clip already answered to on a lane.** Which
+    /// **The letters are the ones a clip already answered to on a track.** Which
     /// keys they are is not settled -- see `clients/gui/PLAN.md`, "A shortcut is
     /// the application's, not the widget's".
     pub(super) fn keyed(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
@@ -685,7 +685,7 @@ impl Multitrack {
             && self.selected.is_empty()
             && self.track.is_some()
         {
-            return self.remove_lane();
+            return self.remove_track();
         }
         if self.selected.is_empty() && !matches!(key, Key::Char('v') | Key::Char('V')) {
             return None;
@@ -781,7 +781,10 @@ impl Multitrack {
                 //
                 // With no track selected the rows are the ones it came from,
                 // which is what a paste back into the same multitrack means.
-                let rows: Vec<usize> = block.iter().map(|c| self.lane_of(c).unwrap_or(0)).collect();
+                let rows: Vec<usize> = block
+                    .iter()
+                    .map(|c| self.track_of(c).unwrap_or(0))
+                    .collect();
                 let base = rows.iter().copied().min().unwrap_or(0);
                 let depth = rows.iter().copied().max().unwrap_or(0) - base;
                 let onto = self.track.unwrap_or(base);
@@ -790,16 +793,16 @@ impl Multitrack {
                 // which silently made a block of four tracks into a pile on
                 // one -- the one thing a paste promises not to do. The multitrack
                 // gains no track here either: making one is a verb of its own
-                // (a double click on a header), reported as `lanes`, and a
+                // (a double click on a header), reported as `tracks`, and a
                 // paste is not the place to grow the thing it is pasting into.
-                if onto + depth >= self.lanes.len() {
+                if onto + depth >= self.tracks.len() {
                     let need = onto + depth + 1;
                     return Some(Events::refused(
                         "paste",
                         &format!(
                             "this block is {} track(s) tall and needs {need} here; the multitrack has {}",
                             depth + 1,
-                            self.lanes.len()
+                            self.tracks.len()
                         ),
                     ));
                 }
@@ -807,8 +810,8 @@ impl Multitrack {
                 for (i, mut clip) in block.into_iter().enumerate() {
                     clip.place.offset = placed[i];
                     let row = rows[i] - base + onto;
-                    if let Some(lane) = self.lanes.get(row) {
-                        clip.lane = lane.name.clone();
+                    if let Some(track) = self.tracks.get(row) {
+                        clip.track = track.name.clone();
                     }
                     clip.name = self.fresh_name(&clip.name);
                     self.clips.push(clip);

@@ -18,10 +18,10 @@ events, optionally host-managed server voices), a
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
 edits flow back as flat ``"points"`` events -- see `env_to_points` /
-`points_to_env` for the `clausters.defs.Env` round trip), a ``multitrack``
-(one widget holding the lanes and the clips on them, on one shared time axis
--- the DAW-style track editor, whose boxes draw a take or a piano-roll and
-carry editable automation curves) and a ``patch`` **patcher** of a
+`points_to_env` for the `clausters.defs.Env` round trip), the
+``multitrack`` the multitrack editor draws (its tracks and their boxes on one
+shared time axis, a box drawing a take or a piano-roll and carrying editable
+automation curves) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.edit` opens an editor over a
@@ -47,7 +47,6 @@ for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
 oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_editor`` for the editor-grade waveform + spectrogram,
 ``gui_bpf`` for the drawable envelope editor,
-``gui_multitrack`` for the DAW-style track timeline,
 ``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
@@ -101,24 +100,14 @@ from .guidef import (
     text,
     toggle,
     view,
-    multitrack,
     timeruler,
     waveform,
     window,
 )
 from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost, WidgetInfo
-from .multitrack import Clip, Lane, Multitrack
 from .playhead_sync import PlayheadSync
 
-#: **The builder, not the submodule.** Importing `clausters.gui.multitrack`
-#: binds the module as an attribute of this package, which overwrites the
-#: `multitrack` the `guidef` import above put here -- so a script asking for
-#: `clausters.gui.multitrack` got a module it could not call. Re-bound here,
-#: after every submodule is in, because the widget is what the name means on
-#: this surface: the module is reached as `clausters.gui.multitrack` only by
-#: `import`, and everything else about it is `Multitrack`.
-multitrack = guidef.multitrack
 
 #: The host registered by `set_ambient_host`, if any.
 _ambient = None
@@ -223,10 +212,6 @@ __all__ = [
     "points_to_env",
     "plot",
     "score",
-    "multitrack",
-    "Multitrack",
-    "Lane",
-    "Clip",
     "timeruler",
     "patch",
     "canvas",

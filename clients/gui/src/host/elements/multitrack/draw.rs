@@ -98,7 +98,7 @@ impl Multitrack {
     /// the geometry the drawing and the texture pass both read, so a picture
     /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
     ///
-    /// A box whose lane is gone, whose lane is scrolled off, or which is off
+    /// A box whose track is gone, whose track is scrolled off, or which is off
     /// the window is absent rather than reported at zero size: what a caller
     /// wants is what it can draw.
     pub(super) fn boxes_on_screen(
@@ -109,14 +109,14 @@ impl Multitrack {
         time: Option<TimeSpace>,
     ) -> Vec<(usize, Rect, View)> {
         let nav = self.view(time);
-        let at = self.lane_rects(rect);
+        let at = self.track_rects(rect);
         let shown = |r: Rect| r.y + r.h >= rect.y && r.y <= rect.y + rect.h;
         let mut out = Vec::new();
         for (n, clip) in self.clips.iter().enumerate() {
-            let Some(i) = self.lane_of(clip).filter(|i| shown(at[*i])) else {
+            let Some(i) = self.track_of(clip).filter(|i| shown(at[*i])) else {
                 continue;
             };
-            let body = track::lane_body(at[i], false, indent, metrics);
+            let body = track::track_body(at[i], false, indent, metrics);
             if body.w <= 0.0 || body.h <= 0.0 {
                 continue;
             }
@@ -131,7 +131,7 @@ impl Multitrack {
     }
 
     /// **Where every drawn curve is, and the space it is drawn against** -- the
-    /// rows under their lanes and the layers inside their boxes, in the order
+    /// rows under their tracks and the layers inside their boxes, in the order
     /// they are drawn.
     ///
     /// One answer for the drawing and for the hit test, which is what keeps a
@@ -167,7 +167,7 @@ impl Multitrack {
             if !shown(*row) {
                 continue;
             }
-            let body = track::lane_body(*row, false, indent, metrics);
+            let body = track::track_body(*row, false, indent, metrics);
             if body.w <= 0.0 || body.h <= 0.0 {
                 continue;
             }
@@ -199,25 +199,25 @@ impl Multitrack {
 impl Multitrack {
     pub(super) fn paint(&self, d: &mut Draw, ctx: &Ctx) {
         let nav = self.view(ctx.time);
-        let at = self.lane_rects(ctx.rect);
-        // A lane scrolled off either end is skipped rather than drawn and
-        // clipped: `stack` reports every lane so a hit test reads the same
+        let at = self.track_rects(ctx.rect);
+        // A track scrolled off either end is skipped rather than drawn and
+        // clipped: `stack` reports every track so a hit test reads the same
         // rects, and the drawing is what decides it has nothing to do.
         let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
-        for (i, lane) in self.lanes.iter().enumerate() {
+        for (i, track) in self.tracks.iter().enumerate() {
             if shown(at[i]) {
                 track::draw(
                     d,
                     at[i],
-                    Some(lane.shown()),
-                    &self.live_header(lane, ctx),
+                    Some(track.shown()),
+                    &self.live_header(track, ctx),
                     false,
                     ctx.indent,
                     self.track == Some(i),
                 );
             }
         }
-        // **A track automation is a row of its own**, under the lane it names
+        // **A track automation is a row of its own**, under the track it names
         // and with no boxes on it: what it draws runs the whole timeline the
         // track does, so it is a row and not a layer.
         let stack = self.stack();
@@ -249,8 +249,8 @@ impl Multitrack {
                 );
             }
         }
-        // **One pass over the clips, each onto the lane it names.** A clip
-        // whose lane is gone draws nowhere and is still held, which is what
+        // **One pass over the clips, each onto the track it names.** A clip
+        // whose track is gone draws nowhere and is still held, which is what
         // lets it come back in a report to be re-homed.
         for (n, cr, local) in self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time) {
             let clip = &self.clips[n];
@@ -288,7 +288,7 @@ impl Multitrack {
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
             // off screen has no grip, because a handle for an edge nobody can
-            // see is a handle for nothing -- the same rule a lane's clip keeps.
+            // see is a handle for nothing -- the same rule a track's clip keeps.
             // **A grip is an affordance, so it is shown where the hand is.**
             // Drawn always, every clip carries two marks nobody is reaching
             // for; drawn on the side the pointer is over, it says *this edge
@@ -317,10 +317,10 @@ impl Multitrack {
             }
         }
         // **The axis' own chrome, over the clips**: the shared selection band
-        // and the playhead. A lane widget gets these drawn for it by the frame;
+        // and the playhead. A track widget gets these drawn for it by the frame;
         // an element draws its own, from the same facts (`Ctx::time`).
         if let Some(time) = ctx.time {
-            let over = track::lane_body(ctx.rect, false, ctx.indent, ctx.metrics);
+            let over = track::track_body(ctx.rect, false, ctx.indent, ctx.metrics);
             crate::host::graphics::selection::draw_span(
                 d,
                 over,
@@ -359,7 +359,7 @@ impl Multitrack {
     }
 
     /// **What the hover reads over a curve**: its label and its value, in the
-    /// bottom-right corner of the lanes -- a break-point's own value when the
+    /// bottom-right corner of the tracks -- a break-point's own value when the
     /// pointer is on one. A row answers anywhere over its body, a clip
     /// envelope on its line or its points, as a press does.
     fn draw_readout(&self, d: &mut Draw, ctx: &Ctx) {
@@ -369,7 +369,7 @@ impl Multitrack {
         let Some(text) = self.curve_readout(at, ctx.rect, ctx.indent, ctx.metrics, ctx.time) else {
             return;
         };
-        let over = track::lane_body(ctx.rect, false, ctx.indent, ctx.metrics);
+        let over = track::track_body(ctx.rect, false, ctx.indent, ctx.metrics);
         let (_, m, theme) = d.parts();
         let room = over.w - 2.0 * m.pad;
         let w = font::width(&text, m.caption_scale).min(room);

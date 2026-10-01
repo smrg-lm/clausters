@@ -397,7 +397,7 @@ view(
 ```
 
 `hug` is asked of the whole subtree, so a plain panel nested inside a hugging
-one is measured too, and an axis a child leaves elastic — a plane, a lane, a
+one is measured too, and an axis a child leaves elastic — a plane, a multitrack, a
 heavy view — is one the container hands back to the layout. On the `window`
 itself it sizes the window: a window holding one knob opens knob-sized instead
 of putting a strip at the top of an empty pane.
@@ -844,76 +844,20 @@ Scroll one; the other follows.
 
 ## The multitrack, and the ruler over it
 
-A **multitrack is one widget**. `multitrack` holds the stack of lanes and the boxes
-on them as *props* — flat lists, the way a roll holds its notes — so a script
-**describes** the multitrack and never composes a tree of lanes: a lane cannot sit in
-a void, and there is exactly one thing that owns it.
+A **multitrack is one widget**, and it is the multitrack editor's.
+`edit(multitrack)` over a `clausters.multitrack.Multitrack` opens it: the shared
+crate draws the document — a row per track, a box per region, the automation
+over both — and every edit a hand makes there lands on the document, in its
+history, rather than in the widget (the [composition](composition.md) chapter
+is where that is taught). There is no builder for it on this surface: a
+multitrack drawn with nothing behind it would have nowhere to keep what a hand
+did to it.
 
 A `field` is what is left of the old three-in-one container: the free-standing
 **ruler** of a navigation group (`timeruler`), a strip with nothing placed on
-it.
-
-```python
-from clausters.gui import multitrack, timeruler, view
-
-BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
-
-v = view(
-    timeruler(link=1, ruler="beats", tempo=2.0, h=22.0),
-    multitrack(
-        name="multitrack", link=1, ruler="beats", tempo=2.0, snap=BEAT,
-        lanes=[("drums", "drums"), ("filter", "filter")],
-        # name, lane, offset, dur, start, label, source (a server buffer)
-        clips=[("a", "drums", 0.0, 4 * BEAT, 0.0, "take", take.bufnum),
-               ("b", "drums", 4 * BEAT, 2 * BEAT, 0.0, "", take.bufnum)],
-        weight=1.0,
-    ),
-    title="a multitrack", w=900, h=420, layout="col")
-
-win = v.open()
-```
-
-**A name is the identity.** A lane and a box are named by your own word, never
-by a widget id, so what you draw and what comes back are addressed by what your
-script already calls them — and a box naming a lane that is not there is kept
-and drawn nowhere, so renaming a lane loses nothing.
-
-**The samples never cross this wire.** `source` is a **server buffer** number
-and the host reads it out of the shared segment or fetches it over its own leg,
-so six boxes over one take are one download. A negative number is a box with no
-contents — negative and not zero, because buffer 0 is a buffer.
-
-The ruler is its **own** strip above the stack rather than part of the
-multitrack, so ruling a multitrack costs no lane a pixel. A ruler with no `link`
-joins the window's own group.
-
-### Edits come back as intents
-
-Drag a box, or its edge. The host draws the move as it happens and, on release,
-emits **the multitrack as it now stands** — not pixels, and not the gesture:
-
-```python
-win["multitrack"].on_event(lambda tag, *payload: print(tag, payload))
-# "clips" (name, lane, offset, dur, start, label, source, ...)
-#                       the whole multitrack, after any gesture at all -- a move, a
-#                       trim, a block drag, a lane crossing, a split, a delete
-# "lanes" (name, label, height, mute, solo, gain, ...)
-#                       the lanes as they now stand, after a header control
-# "locate" (position)   when the axis is clicked -- the ruler, empty stack
-#                       space, a roll's grid, or a box or note drawn on any
-#                       of them: one cursor, placed regardless of content
-# "view" (start, len)   when the axis is zoomed or panned
-# "selection" (start, len[, min, max])   the span, and the value band a
-#                                        sweep with height restricted it to
-# "cut" (start, len)                     Ctrl+X: cut this span, says the host
-# "paste" (position, kind, json, blob…)  Ctrl+V, with the clipboard beside it
-# "refused" (verb, reason)               the host could not do its own half
-# "notes" / "points"    when a roll or a curve is edited
-```
-
-The host holds geometry, never your document: it tells you what was asked for,
-in *your* units, and you apply it and send back a fresh drawing. That is what
-lets one renderer host editing for data it cannot interpret.
+it. It is its **own** strip above whatever it rules rather than part of it, so
+ruling a stack costs none of its members a pixel; a ruler with no `link` joins
+the window's own group.
 
 ## The rest of the elements
 
@@ -1031,7 +975,7 @@ waveform(data=take, gestures={"drag": "pan", "shift": "select"})
 
 The steps are `element` (hand the press to whatever is under the cursor, which
 may decline), `pan`, `select`, `select_box`, `marquee`, `locate` and `none`. The
-order is the point: `"element marquee"` is a lane — grab the clip under the
+order is the point: `"element marquee"` is a multitrack's — grab the clip under the
 cursor, and if there is none, sweep for the clips. A plan that consumes nothing
 falls outward to the container around it.
 

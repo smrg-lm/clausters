@@ -110,8 +110,8 @@ def gestures(multitrack, sources):
                                      {int(k): v for k, v in sources.items()})
     clips = list(props["clips"])
     clips[2] = float(clips[2]) + 4.0 * 48_000.0
-    lanes = list(props["lanes"])
-    lanes[5] = 0.25
+    tracks = list(props["tracks"])
+    tracks[5] = 0.25
     points = list(props["points"])
     points[len(points) - 3] = 0.75
     # A sequence with no tempo map is one beat a second, so `rate` is the
@@ -140,8 +140,8 @@ def gestures(multitrack, sources):
           "rate": 480.0, "editable": True}),
         ("a box dragged four seconds along", "multitrack", "clips",
          {"values": clips, **multitrack_request}),
-        ("a fader moved", "multitrack", "lanes",
-         {"values": lanes, **multitrack_request}),
+        ("a fader moved", "multitrack", "tracks",
+         {"values": tracks, **multitrack_request}),
         ("a layer's break-point, on its box's own axis", "multitrack", "points",
          {"values": points, **multitrack_request}),
         ("and every curve reported back is no edit", "multitrack", "points",
@@ -321,7 +321,7 @@ def editor_exchange():
         return out
 
     script = [
-        ("a box moved on its lane", "multitrack", "clips", lambda: moved("12", 2.0), "now"),
+        ("a box moved on its track", "multitrack", "clips", lambda: moved("12", 2.0), "now"),
         ("a box split under a name the host minted", "multitrack", "clips",
          lambda: split("13"), "now"),
         ("the cursor placed on the ruler", "ruler", "locate", lambda: [4.0 * SR], "now"),

@@ -19,20 +19,20 @@ fn input<'a>(m: &'a Metrics, rect: Rect, len: f64) -> Input<'a> {
     }
 }
 
-/// Two lanes of 100, and a clip on each: `a` over the first half of the
+/// Two tracks of 100, and a clip on each: `a` over the first half of the
 /// multitrack on `noise`, `b` over the second on `tone`.
 fn multitrack() -> Multitrack {
     from_props(&props(
-        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
             "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0]}"#,
     ))
 }
 
-/// The x a time lands at, and the y the middle of lane `i` is at.
+/// The x a time lands at, and the y the middle of track `i` is at.
 fn xy(mt: &Multitrack, m: &Metrics, rect: Rect, t: f64, len: f64, i: usize) -> (f64, f64) {
-    let body = track::lane_body(rect, false, 100.0, m);
+    let body = track::track_body(rect, false, 100.0, m);
     let x = f64::from(body.x) + t / len * f64::from(body.w);
-    let at = mt.lane_rects(rect);
+    let at = mt.track_rects(rect);
     (x, f64::from(at[i].y + at[i].h / 2.0))
 }
 
@@ -44,7 +44,7 @@ fn props(json: &str) -> Map<String, Value> {
 }
 
 const TWO: &str = r#"{
-    "lanes": ["noise", "", 100, 0, 0, 0.8, 1, "tone", "Lead", 60, 1, 0, 0.5, 1],
+    "tracks": ["noise", "", 100, 0, 0, 0.8, 1, "tone", "Lead", 60, 1, 0, 0.5, 1],
     "clips": ["a", "noise", 0, 48000, 0, "", 0,
               "b", "tone", 96000, 48000, 0, "take 2", 0]
 }"#;
@@ -71,7 +71,7 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
     }
 
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1, "two", "", 100, 0, 0, 1.0, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1, "two", "", 100, 0, 0, 1.0, 1],
             "meters": ["one", 10, 12, 2]}"#,
     ));
     assert_eq!(
@@ -97,10 +97,10 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
         focused: false,
         clock: 0.0,
     };
-    let live = mt.live_header(&mt.lanes[0], &ctx);
+    let live = mt.live_header(&mt.tracks[0], &ctx);
     assert_eq!(live.meters, vec![(1.0, 1.0), (0.0, 0.0)]);
     assert!(
-        mt.live_header(&mt.lanes[1], &ctx).meters.is_empty(),
+        mt.live_header(&mt.tracks[1], &ctx).meters.is_empty(),
         "a track with no meter draws no strip"
     );
 
@@ -115,7 +115,7 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
         &Value::from(r#"["one", 10, 12, 2, "two", 10, 12, 2]"#)
     ));
     assert_eq!(
-        mt.live_header(&mt.lanes[1], &ctx).meters,
+        mt.live_header(&mt.tracks[1], &ctx).meters,
         vec![(1.0, 1.0), (0.0, 0.0)],
         "the track that was told about later has its strip"
     );
@@ -128,16 +128,16 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
 #[test]
 fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1], "meters": ["one", 10, 12, 2]}"#,
+        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1], "meters": ["one", 10, 12, 2]}"#,
     ));
     let m = crate::host::metrics::Metrics::default();
-    let plain = from_props(&props(r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1]}"#));
+    let plain = from_props(&props(r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1]}"#));
     assert!(
         mt.gutter(&m) > plain.gutter(&m),
         "the band holds the strip beside the name rather than over it"
     );
 
-    let mut quiet = mt.header(&mt.lanes[0], 0.0);
+    let mut quiet = mt.header(&mt.tracks[0], 0.0);
     let loud = {
         let mut h = quiet.clone();
         h.meters = vec![(1.0, 1.0); 2];
@@ -164,7 +164,7 @@ fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
 fn a_box_of_notes_is_a_roll_and_a_box_of_samples_is_a_take() {
     let mt = from_props(&props(
         r#"{
-        "lanes": ["one", "", 100, 0, 0, 1.0, 1],
+        "tracks": ["one", "", 100, 0, 0, 1.0, 1],
         "clips": ["a", "one", 0, 48000, 0, "", 0,
                   "b", "one", 96000, 48000, 0, "", -1],
         "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0,
@@ -188,7 +188,7 @@ fn a_spectral_box_names_the_take_its_texture_is() {
     use crate::host::widget::element::SlotKey;
     let mut mt = from_props(&props(
         r#"{"view": "spectrogram",
-            "lanes": ["one", "", 100, 0, 0, 1.0, 1],
+            "tracks": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["a", "one", 0, 48000, 0, "", 3]}"#,
     ));
     let world = crate::host::world::World::default();
@@ -243,36 +243,36 @@ fn a_roll_body_is_fitted_by_the_crates_own_rule() {
 #[test]
 fn the_lanes_and_the_clips_are_props_of_one_widget() {
     let mt = from_props(&props(TWO));
-    assert_eq!(mt.lanes.len(), 2);
+    assert_eq!(mt.tracks.len(), 2);
     assert_eq!(mt.clips.len(), 2);
 
-    assert_eq!(mt.lanes[1].name, "tone");
+    assert_eq!(mt.tracks[1].name, "tone");
     assert_eq!(
-        mt.lanes[1].shown(),
+        mt.tracks[1].shown(),
         "Lead",
         "the label draws, the name addresses"
     );
-    assert!(mt.lanes[1].mute);
-    assert_eq!(mt.lanes[1].gain, 0.5);
+    assert!(mt.tracks[1].mute);
+    assert_eq!(mt.tracks[1].gain, 0.5);
 
-    assert_eq!(mt.clips[1].lane, "tone");
+    assert_eq!(mt.clips[1].track, "tone");
     assert_eq!(mt.clips[1].place.offset, 96_000.0);
     assert_eq!(mt.clips[1].shown(), "take 2");
 }
 
-/// A trailing partial group is dropped rather than half-read, and a lane
-/// with no name is not a lane -- the one field that is the identity.
+/// A trailing partial group is dropped rather than half-read, and a track
+/// with no name is not a track -- the one field that is the identity.
 #[test]
 fn a_partial_group_is_dropped_rather_than_half_read() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, "two", ""],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, "two", ""],
             "clips": ["a", "one", 0, 10, 0, ""]}"#,
     ));
-    assert_eq!(mt.lanes.len(), 1, "the second group is short");
+    assert_eq!(mt.tracks.len(), 1, "the second group is short");
     assert!(mt.clips.is_empty(), "so is the only clip");
 
-    let unnamed = from_props(&props(r#"{"lanes": [7, "", 100, 0, 0, 1, 1]}"#));
-    assert!(unnamed.lanes.is_empty(), "a lane with no name is not one");
+    let unnamed = from_props(&props(r#"{"tracks": [7, "", 100, 0, 0, 1, 1]}"#));
+    assert!(unnamed.tracks.is_empty(), "a track with no name is not one");
 }
 
 /// **A `/gui_set` of a structure is the same parse**, so what a query
@@ -284,9 +284,9 @@ fn a_set_reads_what_a_query_reported() {
     let reported: Map<String, Value> = mt.info().into_iter().collect();
 
     let mut empty = Multitrack::default();
-    assert!(empty.set("lanes", &reported["lanes"]));
+    assert!(empty.set("tracks", &reported["tracks"]));
     assert!(empty.set("clips", &reported["clips"]));
-    assert_eq!(empty.lanes, mt.lanes);
+    assert_eq!(empty.tracks, mt.tracks);
     assert_eq!(empty.clips, mt.clips);
 
     // And the same through the string carrier a `/gui_set` actually uses.
@@ -296,18 +296,18 @@ fn a_set_reads_what_a_query_reported() {
     assert_eq!(mt.clips.len(), 2);
 }
 
-/// A clip naming a lane that is not here is **kept**, not dropped: what
-/// cannot be placed can still be reported, so a script that renamed a lane
+/// A clip naming a track that is not here is **kept**, not dropped: what
+/// cannot be placed can still be reported, so a script that renamed a track
 /// gets its clips back to re-home instead of losing them.
 #[test]
 fn a_clip_on_a_lane_that_is_gone_is_kept_and_not_placed() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 10, 0, "", 0, "b", "vanished", 0, 10, 0, "", 0]}"#,
     ));
     assert_eq!(mt.clips.len(), 2);
-    assert!(mt.lane_of(&mt.clips[0]).is_some());
-    assert!(mt.lane_of(&mt.clips[1]).is_none());
+    assert!(mt.track_of(&mt.clips[0]).is_some());
+    assert!(mt.track_of(&mt.clips[1]).is_none());
     // It is still in what the widget reports, which is how it comes back.
     let Value::Array(written) = model::clips_json(&mt.clips) else {
         panic!("an array");
@@ -315,21 +315,21 @@ fn a_clip_on_a_lane_that_is_gone_is_kept_and_not_placed() {
     assert_eq!(written.len(), 14);
 }
 
-/// **Its size is the caller's, never its content's.** A lane added by a
+/// **Its size is the caller's, never its content's.** A track added by a
 /// `/gui_set` must not relayout the window.
 #[test]
 fn a_lane_added_never_changes_how_big_the_widget_wants_to_be() {
     let m = Metrics::default();
     let mut mt = Multitrack::default();
     let bare = mt.natural(&m, 1.0);
-    mt.set("lanes", &props(TWO)["lanes"]);
+    mt.set("tracks", &props(TWO)["tracks"]);
     assert_eq!(mt.natural(&m, 1.0), bare);
     // What *does* follow the content is how far the axis reaches.
     assert_eq!(mt.content_span(), Some(0.0));
     mt.set("clips", &props(TWO)["clips"]);
     assert_eq!(mt.content_span(), Some(144_000.0));
 }
-/// **The three tags are gone.** A move, a trim and a lane crossing each
+/// **The three tags are gone.** A move, a trim and a track crossing each
 /// leave as one `"clips"` payload carrying the multitrack as it now stands -- so
 /// there is nothing for a reader to choose between, and no state a gesture
 /// can put it in where the report changes shape.
@@ -347,7 +347,7 @@ fn every_gesture_reports_the_multitrack_and_never_the_gesture() {
         None => "<nothing>".into(),
     };
 
-    // A move inside its lane.
+    // A move inside its track.
     let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let to = xy(&mt, &m, rect, 350.0, len, 0);
@@ -374,7 +374,7 @@ fn every_gesture_reports_the_multitrack_and_never_the_gesture() {
     assert!(mt.clips[0].place.dur < 500.0, "it got shorter");
     assert_eq!(mt.clips[0].place.offset, 0.0, "and stayed where it began");
 
-    // A lane crossed.
+    // A track crossed.
     let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let down = xy(&mt, &m, rect, 250.0, len, 1);
@@ -386,7 +386,7 @@ fn every_gesture_reports_the_multitrack_and_never_the_gesture() {
     let crossed = mt.release(down, true, &input(&m, rect, len));
     assert_eq!(tag(crossed), "clips", "the same one tag, again");
     assert_eq!(
-        mt.clips[0].lane, "tone",
+        mt.clips[0].track, "tone",
         "one field, not a remove and an add"
     );
 }
@@ -426,7 +426,7 @@ fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
-    // Past `a`'s end, on its lane -- bare lane, and `b` is on the other one.
+    // Past `a`'s end, on its track -- bare track, and `b` is on the other one.
     let bare = xy(&mt, &m, rect, 800.0, len, 0);
     assert!(matches!(
         mt.press(bare, &input(&m, rect, len)),
@@ -439,7 +439,7 @@ fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
 /// an envelope inside the box `a`.
 fn curved() -> Multitrack {
     from_props(&props(
-        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
             "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0],
             "curves": ["gain", "noise", "Gain", 0, 1, 40],
             "layers": ["env", "a", "", 0, 1],
@@ -449,7 +449,7 @@ fn curved() -> Multitrack {
 }
 
 /// **The same element in two places, and the places are the difference.**
-/// A track automation takes a row of its own under its lane and runs the
+/// A track automation takes a row of its own under its track and runs the
 /// whole timeline; a clip envelope is a layer inside its box and runs as
 /// long as the box does.
 #[test]
@@ -459,11 +459,11 @@ fn an_automation_is_a_row_and_an_envelope_is_a_layer() {
     let mt = curved();
     assert_eq!(mt.bodies.len(), 2, "one element per curve, however placed");
 
-    // The row is under `noise`, and the second lane sits below it.
+    // The row is under `noise`, and the second track sits below it.
     let stack = mt.stack();
     assert_eq!(stack.len(), 3);
     assert_eq!(stack.row(1), Some(stack::Row::Curve(0)));
-    assert_eq!(mt.lane_rects(rect)[1].y, 100.0 + 40.0 + 2.0 * GAP);
+    assert_eq!(mt.track_rects(rect)[1].y, 100.0 + 40.0 + 2.0 * GAP);
 
     let drawn = mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0));
     let row = drawn.iter().find(|(n, ..)| *n == "gain").expect("the row");
@@ -543,8 +543,8 @@ fn a_press_beside_the_line_still_moves_the_box() {
     let mut mt = curved();
     // The envelope on `a` runs from its floor to its ceiling, so the top
     // left corner of the box is far from the line.
-    let at = mt.lane_rects(rect);
-    let body = track::lane_body(at[0], false, 100.0, &m);
+    let at = mt.track_rects(rect);
+    let body = track::track_body(at[0], false, 100.0, &m);
     let corner = (f64::from(body.x) + 2.0, f64::from(at[0].y) + 3.0);
     assert!(matches!(
         mt.press(corner, &input(&m, rect, len)),
@@ -623,7 +623,7 @@ fn a_second_press_on_a_box_is_a_press() {
 }
 
 /// **A track is zoomed vertically by pulling its header's bottom edge**, and
-/// the height a hand set survives what the multitrack says next: a `lanes`
+/// the height a hand set survives what the multitrack says next: a `tracks`
 /// payload states a height on every row, so a fader moved or a track added
 /// would otherwise take the zoom away with it.
 #[test]
@@ -633,15 +633,15 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
     let len = 1000.0;
     let mut mt = multitrack();
     let inp = input(&m, rect, len);
-    let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], 100.0);
+    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
     let edge = (f64::from(band.x) + 4.0, f64::from(band.y + band.h) - 1.0);
-    let was = mt.lanes[0].height;
+    let was = mt.tracks[0].height;
 
     assert!(matches!(mt.press(edge, &inp), Claim::Take(_)));
-    assert_eq!(mt.lanes[0].height, was, "the press resizes nothing");
+    assert_eq!(mt.tracks[0].height, was, "the press resizes nothing");
     mt.drag((edge.0, edge.1 + 60.0), &inp);
-    assert_eq!(mt.lanes[0].height, was + 60.0, "the row follows the hand");
-    assert_eq!(mt.lanes[1].height, was, "and only that row");
+    assert_eq!(mt.tracks[0].height, was + 60.0, "the row follows the hand");
+    assert_eq!(mt.tracks[1].height, was, "and only that row");
     assert!(
         mt.release((edge.0, edge.1 + 60.0), true, &inp)
             .into_messages()
@@ -652,18 +652,18 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
     // The client redraws its rows -- a fader moved, a track added -- and
     // the height a hand set is still the height.
     assert!(mt.set(
-        "lanes",
+        "tracks",
         &serde_json::json!(["noise", "", 100, 0, 0, 0.5, 1, "tone", "", 100, 0, 0, 1, 1]),
     ));
     assert_eq!(
-        mt.lanes[0].height,
+        mt.tracks[0].height,
         was + 60.0,
         "the zoom outlived the payload"
     );
-    assert_eq!(mt.lanes[0].gain, 0.5, "and the payload landed");
+    assert_eq!(mt.tracks[0].gain, 0.5, "and the payload landed");
 
     // A row that is gone takes its height with it.
-    assert!(mt.set("lanes", &serde_json::json!(["tone", "", 100, 0, 0, 1, 1])));
+    assert!(mt.set("tracks", &serde_json::json!(["tone", "", 100, 0, 0, 1, 1])));
     assert!(mt.zoom.is_empty());
 }
 
@@ -692,11 +692,11 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     }];
     let inp = input(&m, rect, len);
     let plain = |mods: Mods| Input { mods, ..inp };
-    let on_lane = (10.0, f64::from(mt.lane_rects(rect)[0].y) + 5.0);
+    let on_track = (10.0, f64::from(mt.track_rects(rect)[0].y) + 5.0);
 
     // The plain wheel is the axis', so nothing here answers it.
     assert!(
-        mt.wheel(on_lane, (0.0, 1.0), &plain(Mods::default()))
+        mt.wheel(on_track, (0.0, 1.0), &plain(Mods::default()))
             .is_none()
     );
     assert_eq!(mt.scroll, 0.0);
@@ -706,33 +706,33 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
         shift: true,
         ..Mods::default()
     };
-    assert!(mt.wheel(on_lane, (0.0, -1.0), &plain(shift)).is_some());
+    assert!(mt.wheel(on_track, (0.0, -1.0), &plain(shift)).is_some());
     assert!(mt.scroll > 0.0, "it moved down: {}", mt.scroll);
     let over = mt.stack().content_height() - rect.h;
     for _ in 0..50 {
-        mt.wheel(on_lane, (0.0, -1.0), &plain(shift));
+        mt.wheel(on_track, (0.0, -1.0), &plain(shift));
     }
     assert_eq!(mt.scroll, over, "and stops at the last row");
     assert!(
-        mt.wheel(on_lane, (0.0, -1.0), &plain(shift)).is_some(),
+        mt.wheel(on_track, (0.0, -1.0), &plain(shift)).is_some(),
         "and is still taken there: a stack at its end does nothing, rather \
          than letting the multitrack zoom under the hand"
     );
     assert_eq!(mt.scroll, over, "and nothing moved");
     for _ in 0..60 {
-        mt.wheel(on_lane, (0.0, 1.0), &plain(shift));
+        mt.wheel(on_track, (0.0, 1.0), &plain(shift));
     }
     assert_eq!(mt.scroll, 0.0, "and back at the top, never above it");
 
-    // Ctrl zooms the row the pointer is on, a lane and a curve alike.
+    // Ctrl zooms the row the pointer is on, a track and a curve alike.
     let ctrl = Mods {
         ctrl: true,
         ..Mods::default()
     };
-    let was = mt.lanes[0].height;
-    assert!(mt.wheel(on_lane, (0.0, 1.0), &plain(ctrl)).is_some());
-    assert!(mt.lanes[0].height > was, "the lane grew");
-    assert_eq!(mt.lanes[1].height, was, "and only that row");
+    let was = mt.tracks[0].height;
+    assert!(mt.wheel(on_track, (0.0, 1.0), &plain(ctrl)).is_some());
+    assert!(mt.tracks[0].height > was, "the track grew");
+    assert_eq!(mt.tracks[1].height, was, "and only that row");
 
     let row = mt.stack().rects(rect, mt.scroll)[1];
     let on_curve = (10.0, f64::from(row.y) + 5.0);
@@ -744,15 +744,15 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     assert!(mt.wheel(on_curve, (0.0, 1.0), &plain(ctrl)).is_some());
     assert!(mt.curves[0].height > was, "a curve row has no edge to pull");
 
-    // And both survive the payload that redraws them, the way a lane's
+    // And both survive the payload that redraws them, the way a track's
     // height set by a header drag does.
-    let tall = (mt.lanes[0].height, mt.curves[0].height);
+    let tall = (mt.tracks[0].height, mt.curves[0].height);
     assert!(mt.set(
-        "lanes",
+        "tracks",
         &serde_json::json!(["noise", "", 100, 0, 0, 0.5, 1, "tone", "", 100, 0, 0, 1, 1]),
     ));
     assert!(mt.set("curves", &Value::from(r#"["c", "noise", "", 0, 1, 40]"#)));
-    assert_eq!((mt.lanes[0].height, mt.curves[0].height), tall);
+    assert_eq!((mt.tracks[0].height, mt.curves[0].height), tall);
 }
 
 /// **The user's own sequence**: make a track, press its `A`, and the row
@@ -779,7 +779,7 @@ fn the_toggle_hides_the_row_and_shows_it_again() {
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
     let len = 1000.0;
     let mut mt = from_props(&props(
-        r#"{"lanes": ["10", "noise", 96, 0, 0, 1, 1],
+        r#"{"tracks": ["10", "noise", 96, 0, 0, 1, 1],
             "curves": ["100", "10", "gain", 0, 1, 40],
             "hidden": ""}"#,
     ));
@@ -795,8 +795,8 @@ fn the_toggle_hides_the_row_and_shows_it_again() {
             .collect::<Vec<_>>()
     };
     let press = |mt: &mut Multitrack| {
-        let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent);
-        let cell = track::header_parts(band, &mt.header(&mt.lanes[0], indent), &m)
+        let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent);
+        let cell = track::header_parts(band, &mt.header(&mt.tracks[0], indent), &m)
             .curves
             .expect("the toggle");
         let at = (
@@ -809,13 +809,16 @@ fn the_toggle_hides_the_row_and_shows_it_again() {
         take.events.into_messages()
     };
 
-    assert_eq!(rows(&mt), vec![stack::Row::Lane(0), stack::Row::Curve(0)]);
+    assert_eq!(
+        rows(&mt),
+        vec![stack::Row::TrackRow(0), stack::Row::Curve(0)]
+    );
 
     let msgs = press(&mut mt);
     assert_eq!(msgs[0][7], OscType::Int(0), "the row says it is hidden");
     assert_eq!(
         rows(&mt),
-        vec![stack::Row::Lane(0)],
+        vec![stack::Row::TrackRow(0)],
         "and the row is gone from the stack, under the hand"
     );
 
@@ -823,7 +826,10 @@ fn the_toggle_hides_the_row_and_shows_it_again() {
     // exactly why the press has to state it here.
     let msgs = press(&mut mt);
     assert_eq!(msgs[0][7], OscType::Int(1));
-    assert_eq!(rows(&mt), vec![stack::Row::Lane(0), stack::Row::Curve(0)]);
+    assert_eq!(
+        rows(&mt),
+        vec![stack::Row::TrackRow(0), stack::Row::Curve(0)]
+    );
 }
 
 #[test]
@@ -832,7 +838,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
     let len = 1000.0;
     let mut mt = from_props(&props(
-        r#"{"lanes": ["10", "noise", 96, 0, 0, 1, 0], "clips": []}"#,
+        r#"{"tracks": ["10", "noise", 96, 0, 0, 1, 0], "clips": []}"#,
     ));
     let indent = mt.gutter(&m);
     let inp = Input {
@@ -843,25 +849,25 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     // The double click under the last header: a track, at the end.
     let under = (
         f64::from(rect.x) + 5.0,
-        f64::from(mt.lane_rects(rect)[0].y + mt.lanes[0].height) + 20.0,
+        f64::from(mt.track_rects(rect)[0].y + mt.tracks[0].height) + 20.0,
     );
     let twice = Input { clicks: 2, ..inp };
     let Claim::Take(_) = mt.press(under, &twice) else {
         panic!("the band under the last header makes one")
     };
-    assert_eq!(mt.lanes.len(), 2);
-    assert_eq!(mt.lanes[1].name, "track 1", "a word this minted");
-    assert!(!mt.lanes[1].curves, "and it asks for no automation");
+    assert_eq!(mt.tracks.len(), 2);
+    assert_eq!(mt.tracks[1].name, "track 1", "a word this minted");
+    assert!(!mt.tracks[1].curves, "and it asks for no automation");
 
     // The owner made the track and named it by its id.
     assert!(mt.set(
-        "lanes",
+        "tracks",
         &Value::from(r#"["10", "noise", 96, 0, 0, 1, 0, "101", "track 101", 96, 0, 0, 1, 0]"#)
     ));
 
     // `A` on the new row.
-    let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[1], indent);
-    let cell = track::header_parts(band, &mt.header(&mt.lanes[1], indent), &m)
+    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[1], indent);
+    let cell = track::header_parts(band, &mt.header(&mt.tracks[1], indent), &m)
         .curves
         .expect("the toggle");
     let Claim::Take(take) = mt.press(
@@ -878,7 +884,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
 
     // The owner made the curve and answers with the whole picture.
     assert!(mt.set(
-        "lanes",
+        "tracks",
         &Value::from(r#"["10", "noise", 96, 0, 0, 1, 0, "101", "track 101", 96, 0, 0, 1, 1]"#)
     ));
     assert!(mt.set(
@@ -893,8 +899,8 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     assert_eq!(
         rows,
         vec![
-            stack::Row::Lane(0),
-            stack::Row::Lane(1),
+            stack::Row::TrackRow(0),
+            stack::Row::TrackRow(1),
             stack::Row::Curve(0)
         ],
         "the curve row is there, under its track"
@@ -933,11 +939,11 @@ fn a_hidden_curve_gives_its_row_back() {
         with_row - (CURVE_H + mt.gap),
         "and the stack is shorter by exactly that row"
     );
-    // The lane under it moves up, which is the whole of what a hand sees.
-    let after = mt.lane_rects(rect)[1].y;
+    // The track under it moves up, which is the whole of what a hand sees.
+    let after = mt.track_rects(rect)[1].y;
     assert!(mt.set("hidden", &Value::from("")));
     assert!(
-        mt.lane_rects(rect)[1].y > after,
+        mt.track_rects(rect)[1].y > after,
         "and showing it puts the row back"
     );
     assert_eq!(mt.stack().len(), rows);
@@ -946,12 +952,12 @@ fn a_hidden_curve_gives_its_row_back() {
 /// **`A` in a track's header shows and hides its automation rows** *(asked
 /// for by the user 2026-09-12, as a facility for trying the example)*.
 ///
-/// It rides the `lanes` report the mute and the solo beside it ride, and
+/// It rides the `tracks` report the mute and the solo beside it ride, and
 /// the owner answers by saying which curves are visible -- a row a multitrack
 /// shows is the multitrack's, and this is a control over that rather than a
 /// second place for it to be recorded.
 #[test]
-fn the_headers_automation_toggle_reports_the_lanes() {
+fn the_headers_automation_toggle_reports_the_tracks() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
     let len = 1000.0;
@@ -971,16 +977,16 @@ fn the_headers_automation_toggle_reports_the_lanes() {
     // button nobody could reach to make the first.
     assert!(
         track::header_parts(
-            crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent),
-            &mt.header(&mt.lanes[0], indent),
+            crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent),
+            &mt.header(&mt.tracks[0], indent),
             &m,
         )
         .curves
         .is_some(),
         "a track with nothing to show still offers the verb"
     );
-    let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], indent);
-    let cell = track::header_parts(band, &mt.header(&mt.lanes[0], indent), &m)
+    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent);
+    let cell = track::header_parts(band, &mt.header(&mt.tracks[0], indent), &m)
         .curves
         .expect("the track has automation, so it has the toggle");
     let at = (
@@ -990,9 +996,9 @@ fn the_headers_automation_toggle_reports_the_lanes() {
     let Claim::Take(take) = mt.press(at, &inp) else {
         panic!("the header takes it")
     };
-    assert!(!mt.lanes[0].curves, "it flipped");
+    assert!(!mt.tracks[0].curves, "it flipped");
     let msgs = take.events.into_messages();
-    assert_eq!(msgs[0][0], OscType::String("lanes".into()));
+    assert_eq!(msgs[0][0], OscType::String("tracks".into()));
     assert_eq!(
         msgs[0][7],
         OscType::Int(0),
@@ -1022,12 +1028,12 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
     };
     // Seven tracks, and three boxes whose rows and whose onsets disagree:
     // the earliest box is on track 2 and the topmost is on track 1.
-    let lanes: String = (0..7)
+    let tracks: String = (0..7)
         .map(|i| format!(r#""t{i}", "", 100, 0, 0, 1, 1"#))
         .collect::<Vec<_>>()
         .join(", ");
     let mut mt = from_props(&props(&format!(
-        r#"{{"lanes": [{lanes}],
+        r#"{{"tracks": [{tracks}],
              "clips": ["x", "t2", 200, 100, 0, "", 0,
                        "y", "t4", 400, 100, 0, "", 0,
                        "z", "t1", 100, 100, 0, "", 0]}}"#
@@ -1048,7 +1054,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
     mt.track = Some(3);
     keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
     assert_eq!(mt.clips.len(), 6);
-    let landed: Vec<&str> = mt.clips[3..].iter().map(|c| c.lane.as_str()).collect();
+    let landed: Vec<&str> = mt.clips[3..].iter().map(|c| c.track.as_str()).collect();
     assert_eq!(
         landed,
         ["t4", "t6", "t3"],
@@ -1063,7 +1069,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
     // back into the same multitrack is the block where it was.
     mt.track = None;
     keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
-    let landed: Vec<&str> = mt.clips[6..].iter().map(|c| c.lane.as_str()).collect();
+    let landed: Vec<&str> = mt.clips[6..].iter().map(|c| c.track.as_str()).collect();
     assert_eq!(landed, ["t2", "t4", "t1"]);
 }
 
@@ -1108,12 +1114,12 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
     mt.track = Some(0);
     keys(&mut mt, Key::Char('v'), Some(100.0)).expect("pasted");
     assert_eq!(mt.clips.len(), 4);
-    assert_eq!(mt.clips[2].lane, "noise");
-    assert_eq!(mt.clips[3].lane, "tone");
+    assert_eq!(mt.clips[2].track, "noise");
+    assert_eq!(mt.clips[3].track, "tone");
 }
 
 /// **An automation row's header is the track's picture, not the track.** A
-/// curve is drawn in a row of its own under the lane it belongs to, so a
+/// curve is drawn in a row of its own under the track it belongs to, so a
 /// press on the band beside it addresses no track: it selects none, lets go
 /// of none, and asks for none.
 #[test]
@@ -1132,7 +1138,7 @@ fn an_automation_rows_header_addresses_no_track() {
     mt.track = Some(0);
     assert!(matches!(mt.press(on, &inp), Claim::Take(_)));
     assert_eq!(mt.track, Some(0), "the track a hand had is still in hand");
-    assert_eq!(mt.lanes.len(), 2, "and nothing was added");
+    assert_eq!(mt.tracks.len(), 2, "and nothing was added");
 
     // Nor does a double click there ask for a track: the band under the
     // *last* header is where there is nothing to point at.
@@ -1141,7 +1147,7 @@ fn an_automation_rows_header_addresses_no_track() {
         ..input(&m, rect, len)
     };
     mt.press(on, &twice);
-    assert_eq!(mt.lanes.len(), 2, "a curve row is not empty header space");
+    assert_eq!(mt.tracks.len(), 2, "a curve row is not empty header space");
 }
 
 /// **The header's level is a knob, and a knob turns by a drag.** A header
@@ -1155,12 +1161,12 @@ fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
-    mt.lanes[0].gain = 0.5;
+    mt.tracks[0].gain = 0.5;
     let inp = input(&m, rect, len);
-    let at = mt.lane_rects(rect);
+    let at = mt.track_rects(rect);
     let band = crate::host::timeline::gutter_band(at[0], 100.0);
-    let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
-    let cell = parts.level.expect("the lane offers a level");
+    let parts = track::header_parts(band, &mt.header(&mt.tracks[0], 100.0), &m);
+    let cell = parts.level.expect("the track offers a level");
     assert!(
         (cell.w - cell.h).abs() < 1.0,
         "a square cell, like the toggles beside it"
@@ -1171,20 +1177,20 @@ fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
         f64::from(cell.y + cell.h * 0.5),
     );
     assert!(matches!(mt.press(on, &inp), Claim::Take(_)));
-    assert_eq!(mt.lanes[0].gain, 0.5, "the press turns nothing");
+    assert_eq!(mt.tracks[0].gain, 0.5, "the press turns nothing");
 
     // Up raises, and by the distance travelled rather than to where the
     // pointer is.
     mt.drag((on.0, on.1 - f64::from(cell.h)), &inp);
-    assert!(mt.lanes[0].gain > 0.5, "a turn upward raises it");
-    let raised = mt.lanes[0].gain;
+    assert!(mt.tracks[0].gain > 0.5, "a turn upward raises it");
+    let raised = mt.tracks[0].gain;
     mt.drag((on.0, on.1 + f64::from(cell.h)), &inp);
-    assert!(mt.lanes[0].gain < raised, "and back down lowers it");
+    assert!(mt.tracks[0].gain < raised, "and back down lowers it");
     // It reports as it goes, like every other control.
-    assert!(!mt.lanes_event().into_messages().is_empty());
+    assert!(!mt.tracks_event().into_messages().is_empty());
 }
 
-/// **A drag snaps to the edges of the boxes already on the lane**, which is
+/// **A drag snaps to the edges of the boxes already on the track**, which is
 /// what makes two of them meetable at the sample: with no quantization a
 /// hand never lands one box exactly where another ends, so `j` never had
 /// two boxes to join. A hand that keeps pulling past the tolerance goes on
@@ -1197,7 +1203,7 @@ fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
     // The two halves of a cut: `b` reads on from where `a` stops, which is
     // the other half of what a join needs.
     let mut mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 200, 0, "", 0, "b", "one", 500, 200, 200, "", 0]}"#,
     ));
     let inp = input(&m, rect, len);
@@ -1243,7 +1249,7 @@ fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
 }
 
 // **What a join may be over is the material's question, and it moved.**
-// Two boxes that read different runs of a source, two on two lanes, a hand
+// Two boxes that read different runs of a source, two on two tracks, a hand
 // holding one: the answers are
 // `clausters_document::multitrack::picture::read_join`'s, which is the only
 // place that knows what each box *reads* rather than what it is called. The
@@ -1257,7 +1263,7 @@ fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
 #[test]
 fn a_box_that_loops_may_be_pulled_past_its_source_and_one_that_does_not_may_not() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 500, 0, "", 0, "b", "one", 500, 500, 0, "", 0],
             "loops": "a"}"#,
     ));
@@ -1324,9 +1330,9 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     let len = 1000.0;
     let mut mt = multitrack();
     let inp = input(&m, rect, len);
-    // The band beside the controls, on the second lane's row: the top of it,
+    // The band beside the controls, on the second track's row: the top of it,
     // which is where the name is drawn and no control is.
-    let at = mt.lane_rects(rect);
+    let at = mt.track_rects(rect);
     let beside = |i: usize| (f64::from(rect.x) + 4.0, f64::from(at[i].y) + 2.0);
 
     assert!(matches!(mt.press(beside(1), &inp), Claim::Take(_)));
@@ -1347,10 +1353,10 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     };
     let msgs = take.events.into_messages();
     let args = msgs.first().expect("the rows as they now stand");
-    assert_eq!(args[0], OscType::String("lanes".into()));
+    assert_eq!(args[0], OscType::String("tracks".into()));
     assert_eq!(args.len(), 1 + 3 * 7, "three rows, seven fields each");
-    assert_eq!(mt.lanes.len(), 3);
-    assert_eq!(mt.lanes[1].name, "track 1", "a word, never an id");
+    assert_eq!(mt.tracks.len(), 3);
+    assert_eq!(mt.tracks[1].name, "track 1", "a word, never an id");
     assert_eq!(mt.track, Some(1), "and the hand holds what it asked for");
 
     // Delete with a track in hand is the track's, and the boxes on it go
@@ -1369,10 +1375,10 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
         )
         .expect("a track in hand is what Delete acts on");
     let msgs = events.into_messages();
-    assert_eq!(msgs[0][0], OscType::String("lanes".into()));
-    assert_eq!(mt.lanes.len(), 2);
+    assert_eq!(msgs[0][0], OscType::String("tracks".into()));
+    assert_eq!(mt.tracks.len(), 2);
     assert!(
-        !mt.clips.iter().any(|c| c.lane == "noise"),
+        !mt.clips.iter().any(|c| c.track == "noise"),
         "and the boxes on it went with it"
     );
 }
@@ -1400,7 +1406,7 @@ fn the_curves_read_back_as_they_were_reported() {
     let mt = curved();
     let reported: Map<String, Value> = mt.info().into_iter().collect();
     let mut echo = Multitrack::default();
-    assert!(echo.set("lanes", &reported["lanes"]));
+    assert!(echo.set("tracks", &reported["tracks"]));
     assert!(echo.set("clips", &reported["clips"]));
     assert!(echo.set("curves", &reported["curves"]));
     assert!(echo.set("layers", &reported["layers"]));
@@ -1447,8 +1453,8 @@ fn what_comes_back_is_what_a_set_would_take() {
     assert_eq!(echo.clips, mt.clips);
     assert_eq!(args.len(), 1 + 7 * 2, "the tag, then a septuple per clip");
 }
-/// **A marquee catches the clips it covered, of every lane it crossed** -- a
-/// selection the stack's sweep made is not one lane's. And it writes no
+/// **A marquee catches the clips it covered, of every track it crossed** -- a
+/// selection the stack's sweep made is not one track's. And it writes no
 /// band: the second axis here is the stack, not a value.
 #[test]
 fn a_sweep_catches_what_it_covered_across_the_stack() {
@@ -1460,11 +1466,11 @@ fn a_sweep_catches_what_it_covered_across_the_stack() {
     let from = xy(&mt, &m, rect, 100.0, len, 0);
     let to = xy(&mt, &m, rect, 900.0, len, 1);
     let swept = mt.select_in(from, to, &input(&m, rect, len));
-    assert_eq!(mt.selected.len(), 2, "one from each lane");
+    assert_eq!(mt.selected.len(), 2, "one from each track");
     assert!(swept.changed);
     assert!(swept.band.is_none(), "the stack is not a value axis");
 
-    // A sweep over one lane's time only catches that lane's.
+    // A sweep over one track's time only catches that track's.
     let a = xy(&mt, &m, rect, 100.0, len, 0);
     let b = xy(&mt, &m, rect, 400.0, len, 0);
     mt.select_in(a, b, &input(&m, rect, len));
@@ -1536,7 +1542,7 @@ fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
 }
 
 /// **The mixer is the second payload.** A fader and the two toggles report
-/// `"lanes"` -- the lanes as they now stand -- and never the clips, which is
+/// `"tracks"` -- the tracks as they now stand -- and never the clips, which is
 /// the whole reason the multitrack is written as two structures.
 #[test]
 fn the_header_reports_the_lanes_and_never_the_clips() {
@@ -1544,11 +1550,11 @@ fn the_header_reports_the_lanes_and_never_the_clips() {
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
-    let at = mt.lane_rects(rect);
+    let at = mt.track_rects(rect);
     let band = crate::host::timeline::gutter_band(at[0], 100.0);
-    let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
+    let parts = track::header_parts(band, &mt.header(&mt.tracks[0], 100.0), &m);
 
-    let mute = parts.mute.expect("the lane offers a mute");
+    let mute = parts.mute.expect("the track offers a mute");
     let claim = mt.press(
         (
             f64::from(mute.x + mute.w / 2.0),
@@ -1560,12 +1566,12 @@ fn the_header_reports_the_lanes_and_never_the_clips() {
         panic!("the header takes the press")
     };
     let msgs = take.events.into_messages();
-    assert_eq!(msgs[0][0], OscType::String("lanes".into()));
-    assert!(mt.lanes[0].mute, "and it flipped");
+    assert_eq!(msgs[0][0], OscType::String("tracks".into()));
+    assert!(mt.tracks[0].mute, "and it flipped");
     assert_eq!(
         msgs[0].len(),
         1 + 7 * 2,
-        "the tag, then seven fields per lane"
+        "the tag, then seven fields per track"
     );
 }
 
@@ -1642,7 +1648,7 @@ fn a_clip_splits_at_the_cursor_and_joins_back() {
         tail.name, "a 2",
         "a name the client never said, minted here"
     );
-    assert_eq!(tail.lane, "noise", "and it stayed on its lane");
+    assert_eq!(tail.track, "noise", "and it stayed on its track");
 
     // Both halves are in the hand, so `j` names both -- the one the client
     // said and the one this minted.
@@ -1777,14 +1783,14 @@ fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
     );
 }
 
-/// **A cut half is a clip like any other, and it changes lanes.** The old
-/// projection stopped emitting lane changes once a split had happened,
+/// **A cut half is a clip like any other, and it changes tracks.** The old
+/// projection stopped emitting track changes once a split had happened,
 /// because the half was a box the view had minted and the gesture state
-/// still named the lane the press had captured. Here the halves are clips
+/// still named the track the press had captured. Here the halves are clips
 /// on the stack the drag reads, so the second one drags across like the
 /// first.
 #[test]
-fn a_half_left_by_a_split_still_changes_lanes() {
+fn a_half_left_by_a_split_still_changes_tracks() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
@@ -1812,7 +1818,7 @@ fn a_half_left_by_a_split_still_changes_lanes() {
         .iter()
         .find(|c| c.name == "a 2")
         .expect("the second half");
-    assert_eq!(half.lane, "tone", "the half went to the lane under it");
+    assert_eq!(half.track, "tone", "the half went to the track under it");
     assert_eq!(half.place.offset, 200.0, "and it did not move in time");
 }
 
@@ -1892,54 +1898,54 @@ fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
     );
     assert_eq!(mt.clips[1].place.offset, 600.0, "and the shape kept");
     assert_eq!(
-        mt.clips[0].lane, "noise",
-        "each on the lane it was cut from"
+        mt.clips[0].track, "noise",
+        "each on the track it was cut from"
     );
-    assert_eq!(mt.clips[1].lane, "tone");
+    assert_eq!(mt.clips[1].track, "tone");
 }
-/// **A drag over the gap between two lanes must not jump.** The pointer
-/// crosses pixels no lane is drawn on, and a hit test that answers
+/// **A drag over the gap between two tracks must not jump.** The pointer
+/// crosses pixels no track is drawn on, and a hit test that answers
 /// "nowhere" there makes the block snap back to the row the press found --
 /// for those frames only, so it flickers, and it jumps two rows at once
 /// when the gap is not the one it started beside. That is the glitch the
 /// window's own edges had, twice.
 ///
 /// The rule is `graphics::multitrack::bands`', and it is `gestures/nav.rs`'
-/// for the widget-tree stack: **a gap belongs to the lane above it**, so a
-/// pointer between two lanes is on one rather than on nothing.
+/// for the widget-tree stack: **a gap belongs to the track above it**, so a
+/// pointer between two tracks is on one rather than on nothing.
 #[test]
 fn a_drag_through_the_gap_between_lanes_does_not_jump() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 420.0);
     let len = 1000.0;
     let mut mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1, "three", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1, "three", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 500, 0, "", 0]}"#,
     ));
     mt.gap = 8.0;
 
-    let at = mt.lane_rects(rect);
+    let at = mt.track_rects(rect);
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     mt.press(from, &input(&m, rect, len));
 
-    // The gap between the **second** and the third lane: two rows from
+    // The gap between the **second** and the third track: two rows from
     // where the press was, so answering "nowhere" reads as the origin and
     // jumps two rows rather than none.
     let in_gap = f64::from(at[1].y + at[1].h + mt.gap / 2.0);
     mt.drag((from.0, in_gap), &input(&m, rect, len));
-    assert_eq!(mt.clips[0].lane, "two", "the gap is the lane above's");
+    assert_eq!(mt.clips[0].track, "two", "the gap is the track above's");
 
     // On into the third, and back through the gap: one step each way, and
     // never a return to where the press was.
     mt.drag(xy(&mt, &m, rect, 250.0, len, 2), &input(&m, rect, len));
-    assert_eq!(mt.clips[0].lane, "three");
+    assert_eq!(mt.clips[0].track, "three");
     mt.drag((from.0, in_gap), &input(&m, rect, len));
-    assert_eq!(mt.clips[0].lane, "two", "and not back to \"one\"");
+    assert_eq!(mt.clips[0].track, "two", "and not back to \"one\"");
 }
 
 /// **Held past the end of the stack, a block stops rather than folding.**
 /// The continuous index is clamped, so a hand dragged off the bottom leaves
-/// the clip on the last lane instead of oscillating back to the first.
+/// the clip on the last track instead of oscillating back to the first.
 #[test]
 fn a_drag_past_the_last_lane_stops_at_it() {
     let m = Metrics::default();
@@ -1950,10 +1956,10 @@ fn a_drag_past_the_last_lane_stops_at_it() {
 
     mt.press(from, &input(&m, rect, len));
     mt.drag((from.0, 10_000.0), &input(&m, rect, len));
-    assert_eq!(mt.clips[0].lane, "tone", "the last one, not the first");
+    assert_eq!(mt.clips[0].track, "tone", "the last one, not the first");
     mt.drag((from.0, -10_000.0), &input(&m, rect, len));
     assert_eq!(
-        mt.clips[0].lane, "noise",
+        mt.clips[0].track, "noise",
         "and the first going the other way"
     );
 }
@@ -2007,7 +2013,7 @@ fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
     let len = 1000.0;
     let mt = multitrack();
 
-    let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
+    let body = track::track_body(mt.track_rects(rect)[0], false, 100.0, &m);
     let nav = View { start: 0.0, len };
     let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
     let cr = track::clip_rect(body, x0, x1);
@@ -2057,7 +2063,7 @@ fn a_take_is_asked_for_once_and_again_when_forgotten() {
 
     // A join names a new buffer: the next repaint asks for it and no other.
     let joined = from_props(&props(
-        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["noise", "", 100, 0, 0, 1, 1],
             "clips": ["a", "noise", 0, 500, 0, "", 0, "j", "noise", 500, 500, 0, "", 3]}"#,
     ));
     mt.clips = joined.clips;
@@ -2078,7 +2084,7 @@ fn a_take_is_asked_for_once_and_again_when_forgotten() {
 #[test]
 fn a_clip_over_buffer_zero_has_a_source() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 10, 0, "", 0,
                       "b", "one", 20, 10, 0, "", -1]}"#,
     ));
@@ -2089,13 +2095,13 @@ fn a_clip_over_buffer_zero_has_a_source() {
     // A clip written with no source at all is a window onto nothing, not
     // onto buffer 0.
     let bare = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1], "clips": ["a", "one", 0, 10, 0, ""]}"#,
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1], "clips": ["a", "one", 0, 10, 0, ""]}"#,
     ));
     assert!(bare.clips.is_empty(), "six fields is a partial septuple");
 }
-/// **A lane's header is a gutter the group reserves.** It is asked of the
+/// **A track's header is a gutter the group reserves.** It is asked of the
 /// element and stamped by the layout as the widest wish on the axis, so a
-/// ruler stacked with these lanes starts its ticks over the same sample.
+/// ruler stacked with these tracks starts its ticks over the same sample.
 /// Answering zero is a stack with no names and no controls on it.
 #[test]
 fn the_lanes_ask_for_the_band_their_headers_need() {
@@ -2127,7 +2133,7 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
     let len = 1000.0;
     let mut mt = multitrack();
 
-    let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
+    let body = track::track_body(mt.track_rects(rect)[0], false, 100.0, &m);
     let nav = View { start: 0.0, len };
     let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
     let cr = track::clip_rect(body, x0, x1);
@@ -2165,7 +2171,7 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
 #[test]
 fn a_join_asks_for_the_takes_its_spans_read_and_not_for_its_own_buffer() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["join", "one", 0, 400, 0, "", 9,
                       "plain", "one", 400, 100, 0, "", 5],
             "segments": ["join", 7, 200, 200, 1, "join", 7, 0, 200, 1]}"#,
@@ -2192,7 +2198,7 @@ fn a_join_asks_for_the_takes_its_spans_read_and_not_for_its_own_buffer() {
 #[test]
 fn a_span_that_reads_nothing_is_dropped() {
     let mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["join", "one", 0, 400, 0, "", 9],
             "segments": ["join", -1, 0, 200, 1, "join", 7, 0, 0, 1, "join", 7]}"#,
     ));
@@ -2212,7 +2218,7 @@ fn a_join_is_trimmed_no_further_than_its_spans() {
     let len = 1000.0;
     // Two 300-frame spans of take 0; the join's own buffer, 5, is never asked for.
     let mut mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 400, 0, "", 5],
             "segments": ["a", 0, 0, 300, 1, "a", 0, 300, 300, 1]}"#,
     ));
@@ -2251,7 +2257,7 @@ fn an_edge_stops_where_the_samples_do_at_the_sources_own_rate() {
     // 44100 frames of a 44.1 kHz take, drawn on a 48 kHz axis: 0.91875 frames
     // of source per sample of box, so the whole take is 48000 samples long.
     let mut mt = from_props(&props(
-        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 20000, 0, "", 0],
             "rates": ["a", 0.91875]}"#,
     ));
@@ -2308,7 +2314,7 @@ fn a_double_click_opens_a_box_of_notes_and_no_take() {
     let rect = Rect::new(0.0, 0.0, 800.0, 200.0);
     let len = 1000.0;
     let mut mt = from_props(&props(
-        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
+        r#"{"tracks": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
             "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", -1],
             "notes": ["b", 0.0, 100.0, 60.0, 100.0, 0.0]}"#,
     ));

@@ -171,7 +171,7 @@ impl Host {
             // The **tree's** description of the same two payloads, for a
             // document written before the multitrack existed: one vocabulary or the
             // other, and either way the run is one entry in one history.
-            Some(OscType::String(tag)) if tag == "clips" || tag == "lanes" => {
+            Some(OscType::String(tag)) if tag == "clips" || tag == "tracks" => {
                 let against = clausters_document::Against::default();
                 let intents = owner.read_events(widget_id, args);
                 let applied = owner.apply_all(&intents, &against);
