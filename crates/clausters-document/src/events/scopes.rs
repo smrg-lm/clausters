@@ -1,16 +1,17 @@
-//! **A curve moved between its two scopes**: a channel's lane into the notes
-//! it reaches, and the notes' curves back into a lane.
+//! **A curve moved between its two scopes**: a curve of the sequence into the
+//! notes it reaches, and the notes' curves back into one of the sequence.
 //!
-//! A lane is a channel's function, and a note hears it from its on to its
-//! off; a note's expression is the note's own. So a lane given to its notes
-//! -- each one the stretch of the lane its span covers -- sounds exactly as
-//! it did, and the note now carries, as part of what it is, the curve that
-//! shaped it. That is the direction that always holds, and the lane goes:
-//! kept beside the notes' copies, a bend would be heard twice.
+//! A curve of the sequence is a channel's function, and a note hears it from
+//! its on to its off; a note's automation is the note's own. So a sequence's
+//! curve given to its notes -- each one the stretch of the curve its span
+//! covers -- sounds exactly as it did, and the note now carries, as part of
+//! what it is, the curve that shaped it. That is the direction that always
+//! holds, and the sequence's curve goes: kept beside the notes' copies, a
+//! bend would be heard twice.
 //!
 //! The other direction holds when the notes agree: where two of them sound
 //! at once, one channel can only have said one value, so their curves must be
-//! the same over the time they share -- a chord whose lane was given to its
+//! the same over the time they share -- a chord whose curve was given to its
 //! notes gives it back. Where they differ it is refused and says which.
 
 use serde_json::{Value, json};
@@ -30,7 +31,7 @@ fn channel_of(keys: &serde_json::Map<String, Value>) -> i64 {
     keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0) as i64
 }
 
-/// A target without the channel a lane names -- what a note's curve over the
+/// A target without the channel a sequence's curve names -- what a note's curve over the
 /// same control is written as.
 fn without_channel(target: &Value) -> Value {
     let mut target = target.clone();
@@ -40,7 +41,7 @@ fn without_channel(target: &Value) -> Value {
     target
 }
 
-/// **A lane's stretch from beat `from` to `to`, as a curve of its own** that
+/// **A curve's stretch from beat `from` to `to`, as a curve of its own** that
 /// starts at 0: the value where it begins -- shaped as the segment it falls
 /// in -- every point inside, and the value where it ends.
 fn stretch(points: &[Point], from: f64, to: f64) -> Vec<Point> {
@@ -76,26 +77,26 @@ fn stretch(points: &[Point], from: f64, to: f64) -> Vec<Point> {
 }
 
 impl EventSequence {
-    /// **Lane `lane` given to the notes it reaches**: each note on its channel
-    /// (every note, for a lane that names none) takes the stretch of the lane
-    /// its span covers as a curve of its own, and the lane goes. A note with a
-    /// curve of its own over the same control keeps it -- it was already what
-    /// the note heard -- unless the control is the bend, which adds and so
-    /// would be heard twice: that is refused. So is a lane the sequence's
-    /// spec cannot say of one note.
-    pub(super) fn lane_to_expression(&mut self, lane: NodeId) -> Result<(), String> {
+    /// **The sequence's curve `curve` given to the notes it reaches**: each
+    /// note on its channel (every note, for a curve that names none) takes the
+    /// stretch of the curve its span covers as a curve of its own, and the
+    /// sequence's goes. A note with a curve of its own over the same control
+    /// keeps it -- it was already what the note heard -- unless the control is
+    /// the bend, which adds and so would be heard twice: that is refused. So
+    /// is a curve the sequence's spec cannot say of one note.
+    pub(super) fn automation_to_events(&mut self, curve: NodeId) -> Result<(), String> {
         let index = self
-            .lanes
+            .automation
             .iter()
-            .position(|l| l.id == lane)
-            .ok_or_else(|| format!("the sequence holds no lane {}", lane.0))?;
-        let held = self.lanes[index].clone();
+            .position(|l| l.id == curve)
+            .ok_or_else(|| format!("the sequence holds no curve {}", curve.0))?;
+        let held = self.automation[index].clone();
         let kind = CurveKind::of(&held.target.0);
         if let Some(spec) = self.midi
             && !spec.says_note(&without_channel(&held.target.0))
         {
             return Err(format!(
-                "the lane cannot be the notes' own: {}",
+                "the curve cannot be the notes' own: {}",
                 refusal(spec, &held.target.0)
             ));
         }
@@ -114,19 +115,19 @@ impl EventSequence {
             .collect();
         for &i in &reached {
             let own = self.events[i]
-                .expression
+                .automation
                 .iter()
                 .any(|c| CurveKind::of(&c.target.0) == kind);
             if own && kind == CurveKind::Bend {
                 return Err(format!(
-                    "event {} has a bend of its own, and a bend adds: the lane given to it would be heard twice",
+                    "event {} has a bend of its own, and a bend adds: the curve given to it would be heard twice",
                     self.events[i].id
                 ));
             }
         }
         for i in reached {
             if self.events[i]
-                .expression
+                .automation
                 .iter()
                 .any(|c| CurveKind::of(&c.target.0) == kind)
             {
@@ -138,26 +139,27 @@ impl EventSequence {
             let mut curve = Automation::new(id, Opaque(target.clone()));
             curve.name = held.name.clone();
             curve.points = stretch(&held.points, at, at + sustain);
-            self.events[i].expression.push(curve);
+            self.events[i].automation.push(curve);
         }
-        self.lanes.remove(index);
+        self.automation.remove(index);
         Ok(())
     }
 
-    /// **The notes' curves over `target` gathered into a lane** -- of the
-    /// notes on `channel`, or of every note -- and answered by the lane's id:
+    /// **The notes' curves over `target` gathered into a curve of the
+    /// sequence** -- of the notes on `channel`, or of every note -- and
+    /// answered by its id:
     /// each note's curve over its span, in the sequence's beats. Refused where
     /// two notes that sound at once have different curves over the time they
-    /// share, since one channel can only say one value; the lane names the
+    /// share, since one channel can only say one value; the curve names the
     /// channel its notes share, if they share one.
-    pub(super) fn expression_to_lane(
+    pub(super) fn events_to_automation(
         &mut self,
         target: &Value,
         channel: Option<i64>,
     ) -> Result<u64, String> {
         let kind = CurveKind::of(target);
         if let Some(spec) = self.midi
-            && !spec.says_lane(target)
+            && !spec.says_channel(target)
         {
             return Err(refusal(spec, target));
         }
@@ -171,7 +173,7 @@ impl EventSequence {
                 continue;
             }
             let Some(curve) = event
-                .expression
+                .automation
                 .iter()
                 .find(|c| CurveKind::of(&c.target.0) == kind)
             else {
@@ -244,25 +246,25 @@ impl EventSequence {
         points.dedup_by(|b, a| (a.at - b.at).abs() <= SAME && (a.value - b.value).abs() <= SAME);
         let name = spans.iter().find_map(|(i, ..)| {
             self.events[*i]
-                .expression
+                .automation
                 .iter()
                 .find(|c| CurveKind::of(&c.target.0) == kind)
                 .and_then(|c| c.name.clone())
         });
         for (i, ..) in &spans {
             self.events[*i]
-                .expression
+                .automation
                 .retain(|c| CurveKind::of(&c.target.0) != kind);
         }
-        let mut lane_target = target.clone();
-        if let (Some(c), Some(map)) = (shared, lane_target.as_object_mut()) {
+        let mut channel_target = target.clone();
+        if let (Some(c), Some(map)) = (shared, channel_target.as_object_mut()) {
             map.insert("channel".into(), json!(c));
         }
         let id = self.mint();
-        let mut lane = Automation::new(NodeId(id), Opaque(lane_target));
-        lane.name = name;
-        lane.points = points;
-        self.lanes.push(lane);
+        let mut gathered = Automation::new(NodeId(id), Opaque(channel_target));
+        gathered.name = name;
+        gathered.points = points;
+        self.automation.push(gathered);
         Ok(id)
     }
 }

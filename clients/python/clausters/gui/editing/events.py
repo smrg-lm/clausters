@@ -231,16 +231,16 @@ class NotesEditor(Editor):
         ``destination`` is for a MIDI port (a `clausters.base.MidiServer`): the
         server has no MIDI output, so the sequence is played on this client's
         clock to that destination instead, as the MIDI messages a file of it
-        holds (`clausters.seq.EventSequence.midi_messages`) -- its lanes and
-        its notes' expression included -- and an edit is heard from the next
+        holds (`clausters.seq.EventSequence.midi_messages`) -- its automation
+        and its notes' included -- and an edit is heard from the next
         play."""
         start = float(beat if beat is not None else (self.cursor or 0.0))
         if destination is not None:
             from ...seq.event import MidiItem
             from ...seq.timeline import Timeline
 
-            # The render a file of it holds: its notes, its lanes and its
-            # notes' expression, as its MIDI spec says them.
+            # The render a file of it holds: its notes, its automation and
+            # its notes', as its MIDI spec says them.
             played = Timeline([(beat, MidiItem(message))
                                for beat, message in self.structure.midi_messages()])
             if self.structure.tempo_map is not None:

@@ -5,7 +5,7 @@
 //! are two graphs, one inside the other:
 //!
 //! - **A channel** is an instance of [`channel_graph`]: a private control bus
-//!   per curve over the channel (a sequence's lane), each written by a reader
+//!   per curve over the channel (a curve of the sequence), each written by a reader
 //!   of the curve's table on the transport's position ([`curve_def`]), shared
 //!   as the channel is. Its notes are its slots.
 //! - **A note** is one of those slots, an instance of [`note_graph`]: the def
@@ -109,7 +109,7 @@ pub fn pitch_name() -> String {
 }
 
 /// **A note's pitch**, onto the control bus `out`: `base` (the frequency the
-/// note is started at) raised by `lane` plus `note` semitones -- the channel's
+/// note is started at) raised by `channel` plus `note` semitones -- the channel's
 /// bend and the note's own, each mapped from the bus its reader writes.
 pub fn pitch_def() -> Value {
     json!({
@@ -117,7 +117,7 @@ pub fn pitch_def() -> Value {
         "controls": [
             {"name": OUT_BUS, "default": 0.0},
             {"name": "base", "default": 440.0},
-            {"name": "lane", "default": 0.0},
+            {"name": "channel", "default": 0.0},
             {"name": "note", "default": 0.0},
         ],
         "ugens": [
@@ -140,20 +140,20 @@ pub struct Shape {
     pub def: String,
     pub controls: Vec<String>,
     pub own: Vec<String>,
-    pub lanes: Vec<String>,
+    pub channel: Vec<String>,
 }
 
 impl Shape {
     /// Whether either scope bends it, and the note has a frequency to bend.
     pub fn bends(&self) -> bool {
         self.controls.iter().any(|c| c == FREQ)
-            && (self.own.iter().any(|c| c == BEND) || self.lanes.iter().any(|c| c == BEND))
+            && (self.own.iter().any(|c| c == BEND) || self.channel.iter().any(|c| c == BEND))
     }
 }
 
 /// The bus a channel's curve over `control` writes.
-pub fn lane_bus(control: &str) -> String {
-    format!("lane/{control}")
+pub fn channel_bus(control: &str) -> String {
+    format!("channel/{control}")
 }
 
 /// The bus a note's own curve over `control` writes.
@@ -167,9 +167,9 @@ pub fn curve_port(control: &str, what: &str) -> String {
     format!("{control}/{what}")
 }
 
-/// The port of a channel's curve over `control`: `lane/<control>/<what>`.
-pub fn lane_port(control: &str, what: &str) -> String {
-    format!("lane/{control}/{what}")
+/// The port of a channel's curve over `control`: `channel/<control>/<what>`.
+pub fn channel_port(control: &str, what: &str) -> String {
+    format!("channel/{control}/{what}")
 }
 
 /// The bus a note keeps a channel's curve over `control` on, held from its
@@ -268,9 +268,9 @@ fn reader_ports(surface: &mut Map<String, Value>, member: usize, port: impl Fn(&
 /// the listing only says it the way it runs.
 pub fn note_graph(shape: &Shape) -> Value {
     let mut buses: Vec<Value> = shape
-        .lanes
+        .channel
         .iter()
-        .map(|c| json!({"name": lane_bus(c), "rate": "control", "external": true}))
+        .map(|c| json!({"name": channel_bus(c), "rate": "control", "external": true}))
         .collect();
     let mut members = Vec::new();
     let mut surface = Map::new();
@@ -293,7 +293,7 @@ pub fn note_graph(shape: &Shape) -> Value {
     // The channel's curves the note reads -- those it has none of its own
     // for, and a bend, which adds -- each held from the note's release.
     for control in shape
-        .lanes
+        .channel
         .iter()
         .filter(|c| if *c == BEND { bends } else { !own(c) })
     {
@@ -302,15 +302,15 @@ pub fn note_graph(shape: &Shape) -> Value {
         members.push(json!({
             "def": hold_name(),
             "controls": {OUT_BUS: held_bus(control)},
-            "maps": {"in": lane_bus(control)},
+            "maps": {"in": channel_bus(control)},
         }));
     }
     let mut maps = Map::new();
     if bends {
         buses.push(json!({"name": "pitch", "rate": "control"}));
         let mut pitch_maps = Map::new();
-        if shape.lanes.iter().any(|c| c == BEND) {
-            pitch_maps.insert("lane".into(), json!(held_bus(BEND)));
+        if shape.channel.iter().any(|c| c == BEND) {
+            pitch_maps.insert("channel".into(), json!(held_bus(BEND)));
         }
         if own(BEND) {
             pitch_maps.insert("note".into(), json!(note_bus(BEND)));
@@ -326,7 +326,7 @@ pub fn note_graph(shape: &Shape) -> Value {
         }));
         maps.insert(FREQ.into(), json!("pitch"));
     }
-    for control in shape.lanes.iter().filter(|c| *c != BEND && !own(c)) {
+    for control in shape.channel.iter().filter(|c| *c != BEND && !own(c)) {
         maps.insert(control.clone(), json!(held_bus(control)));
     }
     for control in shape.own.iter().filter(|c| *c != BEND) {
@@ -369,20 +369,22 @@ pub fn note_graph(shape: &Shape) -> Value {
 /// its own, and a slot per shape of note -- each a [`note_graph`], handed the
 /// channel's buses. The slots are named `note.0`, `note.1`, ... in the order of
 /// `notes`.
-pub fn channel_graph(lanes: &[String], notes: &[Value]) -> Value {
-    let buses: Vec<Value> = lanes
+pub fn channel_graph(controls: &[String], notes: &[Value]) -> Value {
+    let buses: Vec<Value> = controls
         .iter()
-        .map(|c| json!({"name": lane_bus(c), "rate": "control"}))
+        .map(|c| json!({"name": channel_bus(c), "rate": "control"}))
         .collect();
     let mut members = Vec::new();
     let mut surface = Map::new();
-    for control in lanes {
-        reader_ports(&mut surface, members.len(), |what| lane_port(control, what));
-        members.push(reader(&lane_bus(control)));
+    for control in controls {
+        reader_ports(&mut surface, members.len(), |what| {
+            channel_port(control, what)
+        });
+        members.push(reader(&channel_bus(control)));
     }
-    let handed: Map<String, Value> = lanes
+    let handed: Map<String, Value> = controls
         .iter()
-        .map(|c| (lane_bus(c), json!(lane_bus(c))))
+        .map(|c| (channel_bus(c), json!(channel_bus(c))))
         .collect();
     for (i, note) in notes.iter().enumerate() {
         members.push(json!({
@@ -444,12 +446,12 @@ fn fnv(text: &str) -> u64 {
 mod tests {
     use super::*;
 
-    fn shape(own: &[&str], lanes: &[&str]) -> Shape {
+    fn shape(own: &[&str], channel: &[&str]) -> Shape {
         Shape {
             def: "default".into(),
             controls: vec!["amp".into(), FREQ.into(), "pressure".into()],
             own: own.iter().map(|s| s.to_string()).collect(),
-            lanes: lanes.iter().map(|s| s.to_string()).collect(),
+            channel: channel.iter().map(|s| s.to_string()).collect(),
         }
     }
 
@@ -475,7 +477,7 @@ mod tests {
             "its own curve in its own time"
         );
         assert_eq!(members[1]["def"], hold_name(), "the channel's cutoff, held");
-        assert_eq!(members[1]["maps"]["in"], "lane/cutoff");
+        assert_eq!(members[1]["maps"]["in"], "channel/cutoff");
         assert_eq!(
             members.len(),
             3,
@@ -502,7 +504,7 @@ mod tests {
         assert_eq!(members[1]["def"], hold_name());
         let pitch = &members[2];
         assert_eq!(pitch["def"], pitch_name());
-        assert_eq!(pitch["maps"]["lane"], "held/bend");
+        assert_eq!(pitch["maps"]["channel"], "held/bend");
         assert_eq!(pitch["maps"]["note"], "note/bend");
         assert_eq!(members[3]["maps"][FREQ], "pitch");
         assert_eq!(graph["surface"][FREQ][0]["member"], 2);
@@ -514,18 +516,18 @@ mod tests {
     /// every slot; the same content is the same name.
     #[test]
     fn a_channel_shares_its_curves_with_its_slots() {
-        let lanes = vec![BEND.to_string()];
+        let channel = vec![BEND.to_string()];
         let note = note_graph(&shape(
             &[],
-            &lanes.iter().map(String::as_str).collect::<Vec<_>>(),
+            &channel.iter().map(String::as_str).collect::<Vec<_>>(),
         ));
-        let graph = channel_graph(&lanes, std::slice::from_ref(&note));
+        let graph = channel_graph(&channel, std::slice::from_ref(&note));
         let members = graph["members"].as_array().unwrap();
-        assert_eq!(members[0]["controls"][OUT_BUS], "lane/bend");
+        assert_eq!(members[0]["controls"][OUT_BUS], "channel/bend");
         assert_eq!(members[1]["slot"], "note.0");
         assert_eq!(members[1]["def"], note["name"]);
-        assert_eq!(members[1]["controls"]["lane/bend"], "lane/bend");
-        assert!(graph["surface"]["lane/bend/buf"].is_array());
-        assert_eq!(graph["name"], channel_graph(&lanes, &[note])["name"]);
+        assert_eq!(members[1]["controls"]["channel/bend"], "channel/bend");
+        assert!(graph["surface"]["channel/bend/buf"].is_array());
+        assert_eq!(graph["name"], channel_graph(&channel, &[note])["name"]);
     }
 }

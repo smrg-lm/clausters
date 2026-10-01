@@ -1,12 +1,13 @@
-//! **A roll's curves**: the lanes under its plane and each note's own.
+//! **A roll's curves**: the sequence's under its plane and each note's own.
 //!
 //! A roll is a plane of events, and it holds curves the way a multitrack
-//! holds automation: a **lane** is a curve over the whole sequence (a CC, a
-//! bend, a pressure, a control), drawn as a row of its own under the plane;
-//! a note's **expression** is a curve over that note alone, drawn as a layer
+//! holds automation: the **sequence's** is a curve over the whole sequence
+//! (a CC, a bend, a pressure, a control), drawn as a row of its own under the
+//! plane; a **note's** is a curve over that note alone, drawn as a layer
 //! inside its box -- and past the box's end when it runs into the release,
-//! the box itself staying the span between the note's on and its off. A bend is the one expression drawn in the plane rather than
-//! normalized inside the box: its layer spans the pitches its range covers, so
+//! the box itself staying the span between the note's on and its off. A bend
+//! is the one note curve drawn in the plane rather than normalized inside the
+//! box: its layer spans the pitches its range covers, so
 //! the line is the trajectory the note's pitch takes.
 //!
 //! Each curve is a `curve` element's body -- the same one a multitrack's rows
@@ -16,7 +17,7 @@
 //!
 //! The wire:
 //!
-//! - `curves`: flat `name label min max height` quintuples, one lane each;
+//! - `curves`: flat `name label min max height` quintuples, one row each;
 //! - `layers`: flat `name note label min max pitch` sextuples -- `note` the id
 //!   of the note it is over, `pitch` true for a bend drawn in the plane;
 //! - `points`: flat `name at value shape curve` quintuples, `at` in the roll's
@@ -28,7 +29,7 @@ use super::*;
 use crate::host::elements::curve;
 use crate::host::graphics::track;
 
-/// A lane under the plane.
+/// A curve of the sequence, as a row under the plane.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Row {
     pub(super) name: String,
@@ -52,7 +53,7 @@ pub(super) struct Layer {
 }
 
 /// The rows' share of a roll's height is at most this much of it, so a roll
-/// with many lanes still has a plane.
+/// with many rows still has a plane.
 const MAX_ROWS_SHARE: f32 = 0.5;
 
 pub(super) fn parse_rows(props: &Map<String, Value>) -> Vec<Row> {
@@ -270,7 +271,7 @@ impl Notes {
     /// **What the hover reads over a curve**, or `None` when the pointer is on
     /// none: the curve's whole label -- the row's cell is too narrow to hold it
     /// -- and its value, a break-point's own when the pointer is on one. A
-    /// lane answers anywhere over its row, a layer on its line or its points,
+    /// row answers anywhere over itself, a layer on its line or its points,
     /// the active layer before the rest.
     pub(super) fn curve_readout(
         &self,

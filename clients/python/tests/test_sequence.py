@@ -126,22 +126,22 @@ def test_a_score_reads_into_a_sequence_and_a_sequence_engraves():
         "the osc event has no pitch, so no note on the page"
 
 
-def test_a_lane_and_a_notes_expression_are_curves_the_sequence_holds():
+def test_a_sequence_curve_and_a_notes_curve_are_curves_the_sequence_holds():
     seq = _sequence()
     first = seq.entries()[0][0]
-    lane = seq.add_lane({"cc": 74}, [(0.0, 0.0), (2.0, 127.0)], name="brightness")
-    bend = seq.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.5, 1.0)])
+    curve = seq.add_automation({"cc": 74}, [(0.0, 0.0), (2.0, 127.0)], name="brightness")
+    bend = seq.add_event_automation(first, {"bend": True}, [(0.0, 0.0), (0.5, 1.0)])
     data = seq.data()
-    assert [(c["id"], c["name"], len(c["points"])) for c in data["lanes"]] == [
-        (lane, "brightness", 2)]
+    assert [(c["id"], c["name"], len(c["points"])) for c in data["automation"]] == [
+        (curve, "brightness", 2)]
     held = next(e for e in data["events"] if e["id"] == first)
-    assert [c["id"] for c in held["expression"]] == [bend]
-    assert lane != bend != first, "one counter for events and curves"
-    seq.remove_expression(first, bend)
-    seq.remove_lane(lane)
+    assert [c["id"] for c in held["automation"]] == [bend]
+    assert curve != bend != first, "one counter for events and curves"
+    seq.remove_event_automation(first, bend)
+    seq.remove_automation(curve)
     data = seq.data()
-    assert not data.get("lanes")
-    assert not next(e for e in data["events"] if e["id"] == first).get("expression")
+    assert not data.get("automation")
+    assert not next(e for e in data["events"] if e["id"] == first).get("automation")
 
 
 def test_a_midi_spec_admits_the_curves_it_can_say():
@@ -150,13 +150,13 @@ def test_a_midi_spec_admits_the_curves_it_can_say():
     assert seq.midi is None, "a sequence for the server"
     seq.set_midi("1.0")
     assert seq.midi == "1.0"
-    seq.add_expression(first, {"pressure": True}, [(0.0, 0.5)])
+    seq.add_event_automation(first, {"pressure": True}, [(0.0, 0.5)])
     with pytest.raises(ValueError, match="MIDI 1.0"):
-        seq.add_expression(first, {"bend": True}, [(0.0, 0.0)])
+        seq.add_event_automation(first, {"bend": True}, [(0.0, 0.0)])
     seq.set_midi("mpe", members=7)
     assert seq.midi == "mpe"
     assert seq.data()["midi"] == {"mpe": {"upper": False, "members": 7}}
-    seq.add_expression(first, {"bend": True}, [(0.0, 0.0)])
+    seq.add_event_automation(first, {"bend": True}, [(0.0, 0.0)])
     with pytest.raises(ValueError, match="bend"):
         seq.set_midi("1.0")
     seq.set_midi(None)
@@ -168,52 +168,52 @@ def test_a_sequences_curves_go_to_a_midi_file_and_back():
                          (0.0, Event(midinote=64, velocity=100, sustain=1.0))])
     seq.set_midi("mpe")
     first = seq.entries()[0][0]
-    seq.add_lane({"cc": 7}, [(0.0, 100.0)])
-    seq.add_expression(first, {"bend": True}, [(0.0, 6.0)])
+    seq.add_automation({"cc": 7}, [(0.0, 100.0)])
+    seq.add_event_automation(first, {"bend": True}, [(0.0, 6.0)])
     messages = seq.midi_messages()
     assert messages[0] == (0.0, bytes([0xB0, 101, 0])), "the zone first"
     back = EventSequence.from_smf(seq.to_smf())
     assert back.midi == "mpe"
     data = back.data()
-    assert [lane["target"] for lane in data["lanes"]] == [{"cc": 7}], "the master's: the zone's"
-    bent = next(e for e in data["events"] if e.get("expression"))
-    assert bent["expression"][0]["target"] == {"bend": True}
-    assert bent["expression"][0]["points"][0]["value"] == pytest.approx(6.0)
+    assert [curve["target"] for curve in data["automation"]] == [{"cc": 7}], "the master's: the zone's"
+    bent = next(e for e in data["events"] if e.get("automation"))
+    assert bent["automation"][0]["target"] == {"bend": True}
+    assert bent["automation"][0]["points"][0]["value"] == pytest.approx(6.0)
 
 
 def test_a_sequence_goes_to_a_midi2_clip_and_back():
     seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0))])
     seq.set_midi("2.0")
     first = seq.entries()[0][0]
-    seq.add_expression(first, {"bend": True}, [(0.0, 12.0)])
-    seq.add_expression(first, {"cc": 1}, [(0.0, 64.0)])
+    seq.add_event_automation(first, {"bend": True}, [(0.0, 12.0)])
+    seq.add_event_automation(first, {"cc": 1}, [(0.0, 64.0)])
     data = seq.to_clip()
     assert data[:8] == b"SMF2CLIP"
     back = EventSequence.from_clip(data)
     assert back.midi == "2.0"
     held = back.data()["events"][0]
-    values = {list(c["target"])[0]: c["points"][0]["value"] for c in held["expression"]}
+    values = {list(c["target"])[0]: c["points"][0]["value"] for c in held["automation"]}
     assert values["bend"] == pytest.approx(12.0)
     assert values["cc"] == pytest.approx(64.0, abs=1e-3)
     with pytest.raises(ValueError, match="SMF2CLIP"):
         EventSequence.from_clip(b"MThd")
 
 
-def test_a_lane_goes_to_its_notes_and_a_chord_gives_it_back():
+def test_a_sequence_curve_goes_to_its_notes_and_a_chord_gives_it_back():
     seq = EventSequence([(1.0, Event(midinote=m, sustain=2.0)) for m in (60, 64, 67)])
-    lane = seq.add_lane({"bend": True, "channel": 0}, [(0.0, 0.0), (4.0, 4.0)])
-    seq.lane_to_expression(lane)
+    curve = seq.add_automation({"bend": True, "channel": 0}, [(0.0, 0.0), (4.0, 4.0)])
+    seq.automation_to_events(curve)
     data = seq.data()
-    assert not data.get("lanes")
+    assert not data.get("automation")
     for held in data["events"]:
-        points = [(p["at"], p["value"]) for p in held["expression"][0]["points"]]
+        points = [(p["at"], p["value"]) for p in held["automation"][0]["points"]]
         assert points == [(0.0, 1.0), (2.0, 3.0)]
-    back = seq.expression_to_lane({"bend": True})
-    lanes = seq.data()["lanes"]
-    assert lanes[0]["id"] == back
-    assert lanes[0]["target"] == {"bend": True, "channel": 0}
+    back = seq.events_to_automation({"bend": True})
+    held = seq.data()["automation"]
+    assert held[0]["id"] == back
+    assert held[0]["target"] == {"bend": True, "channel": 0}
     first, second = seq.entries()[0][0], seq.entries()[1][0]
-    seq.add_expression(first, {"pressure": True}, [(0.0, 0.0), (2.0, 1.0)])
-    seq.add_expression(second, {"pressure": True}, [(0.0, 0.0), (2.0, 0.5)])
+    seq.add_event_automation(first, {"pressure": True}, [(0.0, 0.0), (2.0, 1.0)])
+    seq.add_event_automation(second, {"pressure": True}, [(0.0, 0.0), (2.0, 0.5)])
     with pytest.raises(ValueError, match="cannot say both"):
-        seq.expression_to_lane({"pressure": True})
+        seq.events_to_automation({"pressure": True})

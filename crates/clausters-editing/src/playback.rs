@@ -879,7 +879,7 @@ mod tests {
         };
         let placement = Placement {
             events: vec![note],
-            lanes: Vec::new(),
+            curves: Vec::new(),
         };
         let steps = playback.notes(&placement, &mut ids).unwrap();
         assert_eq!(addrs(&steps), ["/lane_new", "/lane_set"]);

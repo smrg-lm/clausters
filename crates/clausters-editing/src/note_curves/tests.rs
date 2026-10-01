@@ -53,7 +53,8 @@ fn curve(target: Value, points: Vec<Point>) -> PlacedCurve {
 }
 
 /// Three notes -- one with a pressure of its own and one plain on channel 0,
-/// one on channel 1 -- and two lanes on channel 0: a cutoff and a bend.
+/// one on channel 1 -- and two curves of the sequence on channel 0: a cutoff
+/// and a bend.
 fn placement() -> Placement {
     Placement {
         events: vec![
@@ -77,7 +78,7 @@ fn placement() -> Placement {
                 curves: Vec::new(),
             },
         ],
-        lanes: vec![
+        curves: vec![
             curve(
                 json!({"control": "cutoff", "cc": 74, "channel": 0}),
                 vec![point(0.0, 200.0), point(3.0, 2000.0)],
@@ -119,7 +120,7 @@ fn a_note_a_curve_reaches_is_a_slot_of_its_channel() {
     assert_eq!(plan.channels.len(), 1, "channel 1 has no curve");
     let channel = &plan.channels[0];
     assert_eq!(channel.key, "#0");
-    let controls: Vec<&str> = channel.lanes.iter().map(|(c, _)| c.as_str()).collect();
+    let controls: Vec<&str> = channel.curves.iter().map(|(c, _)| c.as_str()).collect();
     assert_eq!(controls, [BEND, "cutoff"]);
     assert_eq!(
         channel.notes.len(),
@@ -144,23 +145,23 @@ fn a_note_a_curve_reaches_is_a_slot_of_its_channel() {
     );
     assert_eq!(*table.table.last().unwrap(), 1.0);
 
-    // The bend lane runs from its first point to its last, on the axis.
-    let (_, bend) = &channel.lanes[0];
+    // The channel's bend runs from its first point to its last, on the axis.
+    let (_, bend) = &channel.curves[0];
     assert_eq!(bend.at, 1000.0);
     assert_eq!(*bend.table.last().unwrap(), 2.0);
 }
 
-/// **A lane reaches the notes of its own scope**: two boxes over one
-/// sequence are two scopes, and a lane of one is not the other's.
+/// **A sequence curve reaches the notes of its own scope**: two boxes over
+/// one sequence are two scopes, and a curve of one is not the other's.
 #[test]
-fn a_lane_reaches_the_notes_of_its_scope_alone() {
+fn a_sequence_curve_reaches_the_notes_of_its_scope_alone() {
     let mut placement = placement();
     for event in &mut placement.events {
         event.scope = "a".into();
         event.curves.clear();
     }
-    for lane in &mut placement.lanes {
-        lane.scope = "b".into();
+    for curve in &mut placement.curves {
+        curve.scope = "b".into();
     }
     assert!(plan(&placement, RATE).channels.is_empty());
 }
@@ -200,7 +201,7 @@ fn the_ops_make_what_the_plan_says_and_no_more() {
             .filter(|op| matches!(op, Op::Buffer { .. }))
             .count(),
         3,
-        "two lanes and a pressure"
+        "two channel curves and a pressure"
     );
     assert!(
         curves
@@ -209,7 +210,7 @@ fn the_ops_make_what_the_plan_says_and_no_more() {
     );
 
     let mut moved = placement();
-    moved.lanes[0].points[1].value = 1000.0;
+    moved.curves[0].points[1].value = 1000.0;
     let second = curves.ops(&plan(&moved, RATE), "parent", false);
     assert!(matches!(&second[..], [Op::Buffer { .. }, Op::Set { .. }]));
     let third = curves.ops(&plan(&moved, RATE), "parent", false);
@@ -276,15 +277,15 @@ fn a_notes_old_table_is_given_back_on_the_next_pass() {
 
 /// **A curve added while the notes sound does not cut them**: the channel's
 /// graph changes, so its new instance is made beside the old one, which keeps
-/// the notes it is sounding and the tables they read -- a lane's moved table
+/// the notes it is sounding and the tables they read -- a channel curve's moved table
 /// waits with them -- and both are given back on the next pass.
 #[test]
 fn a_channel_made_again_keeps_its_old_instance_until_the_next_pass() {
     let mut curves = NoteCurves::new("t");
     curves.ops(&plan(&placement(), RATE), "parent", true);
     let mut grown = placement();
-    grown.lanes[0].points[1].value = 1000.0;
-    grown.lanes.push(curve(
+    grown.curves[0].points[1].value = 1000.0;
+    grown.curves.push(curve(
         json!({"timbre": true, "channel": 0}),
         vec![point(0.0, 0.0), point(1.0, 1.0)],
     ));
@@ -378,7 +379,7 @@ fn a_channel_whose_curves_go_finishes_its_notes() {
     let mut curves = NoteCurves::new("t");
     curves.ops(&plan(&placement(), RATE), "parent", true);
     let mut bare = placement();
-    bare.lanes.clear();
+    bare.curves.clear();
     bare.events[0].curves.clear();
     let edit = curves.ops(&plan(&bare, RATE), "parent", false);
     assert!(edit.is_empty(), "nothing freed under the notes");

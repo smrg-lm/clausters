@@ -230,11 +230,18 @@ fn a_sequence_goes_to_midi_and_back() {
     assert_eq!(tempo, vec![(0, 250_000)]);
 
     let back = EventSequence::from_midi(96, &events, &tempo).unwrap();
-    assert_eq!(back.events.len(), 1, "the note; the CC is a lane now");
-    assert_eq!(back.events[0].data.0["sustain"], json!(1.0));
-    assert_eq!(back.lanes[0].target.0, json!({"cc": 7, "channel": 0}));
     assert_eq!(
-        (back.lanes[0].points[0].at, back.lanes[0].points[0].value),
+        back.events.len(),
+        1,
+        "the note; the CC is a sequence curve now"
+    );
+    assert_eq!(back.events[0].data.0["sustain"], json!(1.0));
+    assert_eq!(back.automation[0].target.0, json!({"cc": 7, "channel": 0}));
+    assert_eq!(
+        (
+            back.automation[0].points[0].at,
+            back.automation[0].points[0].value
+        ),
         (1.0, 99.0)
     );
     assert_eq!(back.tempo_map, Some(TempoMap::new(4.0)));
@@ -248,7 +255,7 @@ fn a_sequence_goes_to_midi_and_back() {
 }
 
 #[test]
-fn a_lane_and_a_notes_curve_are_set_whole_and_removed() {
+fn a_sequence_curve_and_a_notes_curve_are_set_whole_and_removed() {
     use crate::NodeId;
     use crate::multitrack::Automation;
     let mut sequence = EventSequence::new(vec![Event::new(0.0, json!({"midinote": 60}))]);
@@ -259,66 +266,71 @@ fn a_lane_and_a_notes_curve_are_set_whole_and_removed() {
         value: 0.5,
         data: Opaque::none(),
     });
-    let lane = sequence
-        .edit(EventsIntent::Lane {
+    let sequence_curve = sequence
+        .edit(EventsIntent::Automation {
             automation: cc.clone(),
         })
         .unwrap()
         .added
         .unwrap();
-    assert!(lane > note, "a curve's id comes off the events' counter");
-    cc.id = NodeId(lane);
+    assert!(
+        sequence_curve > note,
+        "a curve's id comes off the events' counter"
+    );
+    cc.id = NodeId(sequence_curve);
     cc.points.push(crate::Point {
         at: 1.0,
         value: 1.0,
         data: Opaque::none(),
     });
     sequence
-        .edit(EventsIntent::Lane {
+        .edit(EventsIntent::Automation {
             automation: cc.clone(),
         })
         .unwrap();
-    assert_eq!(sequence.lanes.len(), 1, "set whole, not added again");
-    assert_eq!(sequence.lanes[0].points.len(), 2);
+    assert_eq!(sequence.automation.len(), 1, "set whole, not added again");
+    assert_eq!(sequence.automation[0].points.len(), 2);
 
     let bend = Automation::new(NodeId(0), Opaque(json!({"bend": true})));
     let curve = sequence
-        .edit(EventsIntent::Expression {
+        .edit(EventsIntent::EventAutomation {
             id: note,
             automation: bend,
         })
         .unwrap()
         .added
         .unwrap();
-    assert_eq!(sequence.events[0].expression[0].id, NodeId(curve));
+    assert_eq!(sequence.events[0].automation[0].id, NodeId(curve));
     sequence
-        .edit(EventsIntent::RemoveExpression {
+        .edit(EventsIntent::RemoveEventAutomation {
             id: note,
-            lane: NodeId(curve),
+            curve: NodeId(curve),
         })
         .unwrap();
-    assert!(sequence.events[0].expression.is_empty());
+    assert!(sequence.events[0].automation.is_empty());
     sequence
-        .edit(EventsIntent::RemoveLane { lane: NodeId(lane) })
+        .edit(EventsIntent::RemoveAutomation {
+            curve: NodeId(sequence_curve),
+        })
         .unwrap();
-    assert!(sequence.lanes.is_empty());
+    assert!(sequence.automation.is_empty());
     assert!(
         sequence
-            .edit(EventsIntent::RemoveLane { lane: NodeId(99) })
+            .edit(EventsIntent::RemoveAutomation { curve: NodeId(99) })
             .is_err()
     );
 }
 
 /// **A MIDI spec admits the curves it can say**: MIDI 1.0 a note's pressure
 /// and not its bend, MPE a bend and not a per-note CC, 2.0 both; no spec
-/// admits a lane over a bare control; and a spec the curves already there
+/// admits a sequence curve over a bare control; and a spec the curves already there
 /// cannot be said in is refused, the sequence left as it was.
 #[test]
 fn a_midi_spec_admits_the_curves_it_can_say() {
     let curve = |target: Value| Automation::new(NodeId(0), Opaque(target));
     let mut sequence = EventSequence::new(vec![note(0.0, 60)]);
     let id = sequence.events[0].id;
-    let expression = |target: Value| EventsIntent::Expression {
+    let note_curve = |target: Value| EventsIntent::EventAutomation {
         id,
         automation: curve(target),
     };
@@ -327,14 +339,14 @@ fn a_midi_spec_admits_the_curves_it_can_say() {
             midi: Some(MidiSpec::Midi1),
         })
         .unwrap();
-    assert!(sequence.edit(expression(json!({"pressure": true}))).is_ok());
+    assert!(sequence.edit(note_curve(json!({"pressure": true}))).is_ok());
     let refused = sequence
-        .edit(expression(json!({"bend": true})))
+        .edit(note_curve(json!({"bend": true})))
         .unwrap_err();
     assert!(refused.contains("MIDI 1.0"), "{refused}");
     assert!(
         sequence
-            .edit(EventsIntent::Lane {
+            .edit(EventsIntent::Automation {
                 automation: curve(json!({"control": "cutoff"}))
             })
             .is_err(),
@@ -342,7 +354,7 @@ fn a_midi_spec_admits_the_curves_it_can_say() {
     );
     assert!(
         sequence
-            .edit(EventsIntent::Lane {
+            .edit(EventsIntent::Automation {
                 automation: curve(json!({"cc": 74, "control": "cutoff"}))
             })
             .is_ok(),
@@ -356,14 +368,14 @@ fn a_midi_spec_admits_the_curves_it_can_say() {
     sequence
         .edit(EventsIntent::Midi { midi: Some(mpe) })
         .unwrap();
-    assert!(sequence.edit(expression(json!({"bend": true}))).is_ok());
-    assert!(sequence.edit(expression(json!({"cc": 1}))).is_err());
+    assert!(sequence.edit(note_curve(json!({"bend": true}))).is_ok());
+    assert!(sequence.edit(note_curve(json!({"cc": 1}))).is_err());
     sequence
         .edit(EventsIntent::Midi {
             midi: Some(MidiSpec::Midi2),
         })
         .unwrap();
-    assert!(sequence.edit(expression(json!({"cc": 1}))).is_ok());
+    assert!(sequence.edit(note_curve(json!({"cc": 1}))).is_ok());
 
     let before = sequence.clone();
     let back = sequence
@@ -401,13 +413,13 @@ fn ticks(messages: &[(f64, Vec<u8>)]) -> Vec<(u32, Vec<u8>)> {
         .collect()
 }
 
-/// **A channel's streams are lanes, and a note's pressure its own**: a CC,
+/// **A channel's streams are sequence curves, and a note's pressure its own**: a CC,
 /// the bend (through the channel's RPN 0 range) and channel pressure on
-/// channel 2 are that channel's lanes, each message a step; poly pressure is
-/// the expression of the note on its key; the RPN is consumed and a program
+/// channel 2 are that channel's sequence curves, each message a step; poly pressure is
+/// the note's own curve on its key; the RPN is consumed and a program
 /// change stays an event.
 #[test]
-fn a_files_streams_are_lanes_and_a_notes_pressure_its_own() {
+fn a_files_streams_are_sequence_curves_and_a_notes_pressure_its_own() {
     let file = ticks(&[
         (0.0, vec![0xB2, 101, 0]),
         (0.0, vec![0xB2, 100, 0]),
@@ -423,17 +435,17 @@ fn a_files_streams_are_lanes_and_a_notes_pressure_its_own() {
     ]);
     let s = EventSequence::from_midi(4, &file, &[]).unwrap();
     assert_eq!(s.midi, Some(MidiSpec::Midi1));
-    let lane = |target: Value| s.lanes.iter().find(|l| l.target.0 == target).unwrap();
-    let volume = lane(json!({"cc": 7, "channel": 2}));
+    let curve = |target: Value| s.automation.iter().find(|l| l.target.0 == target).unwrap();
+    let volume = curve(json!({"cc": 7, "channel": 2}));
     let points: Vec<(f64, f64)> = volume.points.iter().map(|p| (p.at, p.value)).collect();
     assert_eq!(points, [(0.0, 100.0), (1.0, 50.0)]);
     // 0x60 << 7 is 12288, a half of the way up: 6 of the channel's 12.
     assert_eq!(
-        lane(json!({"bend": true, "channel": 2})).points[0].value,
+        curve(json!({"bend": true, "channel": 2})).points[0].value,
         6.0
     );
     assert_eq!(
-        lane(json!({"pressure": true, "channel": 2})).points[0].value,
+        curve(json!({"pressure": true, "channel": 2})).points[0].value,
         1.0
     );
     let note = s
@@ -441,9 +453,9 @@ fn a_files_streams_are_lanes_and_a_notes_pressure_its_own() {
         .iter()
         .find(|e| e.keys().get("midinote").is_some())
         .unwrap();
-    assert_eq!(note.expression[0].target.0, json!({"pressure": true}));
+    assert_eq!(note.automation[0].target.0, json!({"pressure": true}));
     assert_eq!(
-        note.expression[0].points[0].at, 0.5,
+        note.automation[0].points[0].at, 0.5,
         "from the note's start"
     );
     let kept: Vec<String> = s
@@ -457,13 +469,18 @@ fn a_files_streams_are_lanes_and_a_notes_pressure_its_own() {
         })
         .collect();
     assert_eq!(kept, ["program"], "the RPN is consumed, the program kept");
-    assert!(s.lanes.iter().chain(&note.expression).all(|c| c.id.0 != 0));
+    assert!(
+        s.automation
+            .iter()
+            .chain(&note.automation)
+            .all(|c| c.id.0 != 0)
+    );
 }
 
 /// **An MPE zone's member channels are its notes'**: the configuration
 /// declares the lower zone, each member channel's bend (48 semitones by
-/// default), pressure and CC 74 are the expression of the note on it -- the
-/// first sent just before its note-on -- and the master's bend is a lane over
+/// default), pressure and CC 74 are the note's own curve on it -- the
+/// first sent just before its note-on -- and the master's bend is a sequence curve over
 /// the whole zone.
 #[test]
 fn an_mpe_zones_members_are_its_notes() {
@@ -491,22 +508,22 @@ fn an_mpe_zones_members_are_its_notes() {
     );
     let notes: Vec<&Event> = s.events.iter().collect();
     assert_eq!(notes.len(), 2, "no message is left an event");
-    let bend = &notes[0].expression[0];
+    let bend = &notes[0].automation[0];
     assert_eq!(bend.target.0, json!({"bend": true}));
     // 0x48 << 7 is 9216: 1024 of 8192 up, an eighth of 48.
     assert_eq!(bend.points[0].value, 6.0);
     let second: Vec<Value> = notes[1]
-        .expression
+        .automation
         .iter()
         .map(|c| c.target.0.clone())
         .collect();
     assert!(second.contains(&json!({"pressure": true})));
     assert!(second.contains(&json!({"timbre": true})));
-    let master = &s.lanes[0];
+    let master = &s.automation[0];
     assert_eq!(master.target.0, json!({"bend": true}), "the whole zone's");
 }
 
-/// **What is read is what is written**: a sequence's lanes as its channels'
+/// **What is read is what is written**: a sequence's sequence curves as its channels'
 /// messages, a note's pressure as poly pressure, and a ramp sampled where the
 /// message changes; in MPE a member channel per note, the configuration first
 /// and a note's first bend before its on.
@@ -529,7 +546,7 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
         midi: Some(MidiSpec::Midi1),
     })
     .unwrap();
-    s.edit(EventsIntent::Lane {
+    s.edit(EventsIntent::Automation {
         automation: curve(
             json!({"cc": 1, "channel": 0}),
             &[(0.0, 0.0, 1), (1.0, 127.0, 0)],
@@ -537,7 +554,7 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
     })
     .unwrap();
     let id = s.events[0].id;
-    s.edit(EventsIntent::Expression {
+    s.edit(EventsIntent::EventAutomation {
         id,
         automation: curve(json!({"pressure": true}), &[(0.0, 0.5, 0)]),
     })
@@ -564,7 +581,7 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
     })
     .unwrap();
     let first = mpe.events[0].id;
-    mpe.edit(EventsIntent::Expression {
+    mpe.edit(EventsIntent::EventAutomation {
         id: first,
         automation: curve(json!({"bend": true}), &[(0.0, 6.0, 0)]),
     })
@@ -608,12 +625,12 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
         .iter()
         .find(|e| e.keys().get("midinote").and_then(Value::as_f64) == Some(60.0))
         .unwrap();
-    assert_eq!(bent.expression[0].points[0].value, 6.0);
+    assert_eq!(bent.automation[0].points[0].value, 6.0);
 }
 
 /// **A MIDI 2.0 sequence is its clip's packets, and back**: a note at 16-bit
 /// velocity, its bend as a per-note pitch bend, its timbre as the registered
-/// per-note controller 74 and a CC as an assignable one, a lane as a 32-bit
+/// per-note controller 74 and a CC as an assignable one, a sequence curve as a 32-bit
 /// channel controller, the tempo as a Set Tempo -- and read back, the same
 /// sequence, MIDI 2.0.
 #[test]
@@ -642,13 +659,13 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
         (json!({"timbre": true}), 0.5),
         (json!({"cc": 1}), 64.0),
     ] {
-        s.edit(EventsIntent::Expression {
+        s.edit(EventsIntent::EventAutomation {
             id,
             automation: curve(target, value),
         })
         .unwrap();
     }
-    s.edit(EventsIntent::Lane {
+    s.edit(EventsIntent::Automation {
         automation: curve(json!({"cc": 7, "channel": 0}), 100.0),
     })
     .unwrap();
@@ -679,7 +696,7 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
     assert!((keys["velocity"].as_f64().unwrap() - 100.0).abs() < 0.01);
     let value_of = |target: Value| {
         back.events[0]
-            .expression
+            .automation
             .iter()
             .find(|c| c.target.0 == target)
             .map(|c| c.points[0].value)
@@ -687,8 +704,8 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
     assert_eq!(value_of(json!({"bend": true})), Some(12.0));
     assert!((value_of(json!({"timbre": true})).unwrap() - 0.5).abs() < 1e-6);
     assert!((value_of(json!({"cc": 1})).unwrap() - 64.0).abs() < 1e-4);
-    assert_eq!(back.lanes[0].target.0, json!({"cc": 7, "channel": 0}));
-    assert!((back.lanes[0].points[0].value - 100.0).abs() < 1e-4);
+    assert_eq!(back.automation[0].target.0, json!({"cc": 7, "channel": 0}));
+    assert!((back.automation[0].points[0].value - 100.0).abs() < 1e-4);
 }
 
 /// A curve's points as `(at, value)`, linear.
@@ -716,15 +733,15 @@ fn chord() -> EventSequence {
     EventSequence::new(vec![note(60, 0), note(64, 0), note(67, 0), note(72, 1)])
 }
 
-/// **A lane given to its notes becomes each one's own**: the notes on its
+/// **A sequence curve given to its notes becomes each one's own**: the notes on its
 /// channel take the stretch their span covers -- from the value where they
-/// begin to the value where they end -- the lane goes, and a note on another
+/// begin to the value where they end -- the sequence curve goes, and a note on another
 /// channel is untouched.
 #[test]
-fn a_lane_given_to_its_notes_is_each_ones_own() {
+fn a_sequence_curve_given_to_its_notes_is_each_ones_own() {
     let mut s = chord();
-    let lane = s
-        .edit(EventsIntent::Lane {
+    let curve = s
+        .edit(EventsIntent::Automation {
             automation: ramp(
                 json!({"bend": true, "channel": 0}),
                 &[(0.0, 0.0), (4.0, 4.0)],
@@ -733,29 +750,34 @@ fn a_lane_given_to_its_notes_is_each_ones_own() {
         .unwrap()
         .added
         .unwrap();
-    s.edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
-        .unwrap();
-    assert!(s.lanes.is_empty(), "the lane is the notes' now");
+    s.edit(EventsIntent::AutomationToEvents {
+        curve: NodeId(curve),
+    })
+    .unwrap();
+    assert!(
+        s.automation.is_empty(),
+        "the sequence curve is the notes' now"
+    );
     for event in &s.events[..3] {
-        let bend = &event.expression[0];
+        let bend = &event.automation[0];
         assert_eq!(bend.target.0, json!({"bend": true}));
         let points: Vec<(f64, f64)> = bend.points.iter().map(|p| (p.at, p.value)).collect();
         assert_eq!(points, [(0.0, 1.0), (2.0, 3.0)], "beat 1 to 3 of the ramp");
     }
     assert!(
-        s.events[3].expression.is_empty(),
-        "channel 1 is not the lane's"
+        s.events[3].automation.is_empty(),
+        "channel 1 is not the sequence curve's"
     );
 }
 
-/// **A chord gives its lane back**: its notes' curves agree where they sound
-/// at once, so gathering them is the lane over their span, on their channel;
+/// **A chord gives its sequence curve back**: its notes' curves agree where they sound
+/// at once, so gathering them is the sequence curve over their span, on their channel;
 /// the notes' curves go.
 #[test]
-fn a_chords_curves_gather_back_into_its_lane() {
+fn a_chords_curves_gather_back_into_its_sequence_curve() {
     let mut s = chord();
-    let lane = s
-        .edit(EventsIntent::Lane {
+    let curve = s
+        .edit(EventsIntent::Automation {
             automation: ramp(
                 json!({"bend": true, "channel": 0}),
                 &[(0.0, 0.0), (4.0, 4.0)],
@@ -764,37 +786,46 @@ fn a_chords_curves_gather_back_into_its_lane() {
         .unwrap()
         .added
         .unwrap();
-    s.edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
-        .unwrap();
+    s.edit(EventsIntent::AutomationToEvents {
+        curve: NodeId(curve),
+    })
+    .unwrap();
     let back = s
-        .edit(EventsIntent::ExpressionToLane {
+        .edit(EventsIntent::EventsToAutomation {
             target: Opaque(json!({"bend": true})),
             channel: None,
         })
         .unwrap()
         .added
         .unwrap();
-    assert_eq!(s.lanes[0].id, NodeId(back));
-    assert_eq!(s.lanes[0].target.0, json!({"bend": true, "channel": 0}));
-    let points: Vec<(f64, f64)> = s.lanes[0].points.iter().map(|p| (p.at, p.value)).collect();
+    assert_eq!(s.automation[0].id, NodeId(back));
+    assert_eq!(
+        s.automation[0].target.0,
+        json!({"bend": true, "channel": 0})
+    );
+    let points: Vec<(f64, f64)> = s.automation[0]
+        .points
+        .iter()
+        .map(|p| (p.at, p.value))
+        .collect();
     assert_eq!(
         points,
         [(1.0, 1.0), (3.0, 3.0)],
         "the stretch the notes held"
     );
-    assert!(s.events.iter().all(|e| e.expression.is_empty()));
+    assert!(s.events.iter().all(|e| e.automation.is_empty()));
 }
 
 /// **Notes that disagree cannot be one channel's**: two sounding at once with
-/// different curves are refused, and say which; a bend lane over a note with
-/// a bend of its own is refused, since a bend adds; and a lane the spec
-/// cannot say of one note stays a lane.
+/// different curves are refused, and say which; a bend curve of the sequence over a note with
+/// a bend of its own is refused, since a bend adds; and a sequence curve the spec
+/// cannot say of one note stays a sequence curve.
 #[test]
 fn the_scopes_refuse_what_they_cannot_hold() {
     let mut s = chord();
     let (a, b) = (s.events[0].id, s.events[1].id);
     for (id, to) in [(a, 1.0), (b, 0.5)] {
-        s.edit(EventsIntent::Expression {
+        s.edit(EventsIntent::EventAutomation {
             id,
             automation: ramp(json!({"pressure": true}), &[(0.0, 0.0), (2.0, to)]),
         })
@@ -802,7 +833,7 @@ fn the_scopes_refuse_what_they_cannot_hold() {
     }
     let before = s.clone();
     let refused = s
-        .edit(EventsIntent::ExpressionToLane {
+        .edit(EventsIntent::EventsToAutomation {
             target: Opaque(json!({"pressure": true})),
             channel: None,
         })
@@ -813,20 +844,22 @@ fn the_scopes_refuse_what_they_cannot_hold() {
     );
     assert_eq!(s, before, "refused, nothing moved");
 
-    s.edit(EventsIntent::Expression {
+    s.edit(EventsIntent::EventAutomation {
         id: a,
         automation: ramp(json!({"bend": true}), &[(0.0, 1.0)]),
     })
     .unwrap();
-    let lane = s
-        .edit(EventsIntent::Lane {
+    let curve = s
+        .edit(EventsIntent::Automation {
             automation: ramp(json!({"bend": true}), &[(0.0, 2.0)]),
         })
         .unwrap()
         .added
         .unwrap();
     let twice = s
-        .edit(EventsIntent::LaneToExpression { lane: NodeId(lane) })
+        .edit(EventsIntent::AutomationToEvents {
+            curve: NodeId(curve),
+        })
         .unwrap_err();
     assert!(twice.contains("heard twice"), "{twice}");
 
@@ -836,14 +869,14 @@ fn the_scopes_refuse_what_they_cannot_hold() {
     })
     .unwrap();
     let cc = one
-        .edit(EventsIntent::Lane {
+        .edit(EventsIntent::Automation {
             automation: ramp(json!({"cc": 7}), &[(0.0, 100.0)]),
         })
         .unwrap()
         .added
         .unwrap();
     assert!(
-        one.edit(EventsIntent::LaneToExpression { lane: NodeId(cc) })
+        one.edit(EventsIntent::AutomationToEvents { curve: NodeId(cc) })
             .unwrap_err()
             .contains("MIDI 1.0")
     );

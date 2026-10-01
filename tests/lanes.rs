@@ -476,7 +476,7 @@ fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
         def: "probe".into(),
         controls: vec!["freq".into()],
         own: vec!["bend".into(), "level".into()],
-        lanes: vec!["bend".into()],
+        channel: vec!["bend".into()],
     };
     let note = note_graph(&shape);
     let channel = channel_graph(&["bend".to_string()], std::slice::from_ref(&note));
@@ -514,7 +514,7 @@ fn a_note_in_a_graph_hears_its_channels_curves_and_its_own() {
             OscType::Int(500),
             OscType::Int(1),
             OscType::Int(0),
-            OscType::String("lane/bend/buf".into()),
+            OscType::String("channel/bend/buf".into()),
             OscType::Float(0.0),
         ],
     );
@@ -584,7 +584,7 @@ fn a_note_in_a_graph_is_released_through_its_gate() {
         def: "gated".into(),
         controls: vec!["level".into()],
         own: vec!["level".into()],
-        lanes: Vec::new(),
+        channel: Vec::new(),
     };
     let note = note_graph(&shape);
     let channel = channel_graph(&[], std::slice::from_ref(&note));
@@ -692,7 +692,7 @@ fn a_stop_holds_the_curves_a_releasing_note_reads() {
         def: "gated".into(),
         controls: Vec::new(),
         own: Vec::new(),
-        lanes: vec!["level".into()],
+        channel: vec!["level".into()],
     };
     let note = note_graph(&shape);
     let channel = channel_graph(&["level".to_string()], std::slice::from_ref(&note));
@@ -745,9 +745,9 @@ fn a_stop_holds_the_curves_a_releasing_note_reads() {
             OscType::Int(500),
             OscType::Int(1),
             OscType::Int(200),
-            OscType::String("lane/level/buf".into()),
+            OscType::String("channel/level/buf".into()),
             OscType::Float(0.0),
-            OscType::String("lane/level/step".into()),
+            OscType::String("channel/level/step".into()),
             OscType::Float(4800.0),
         ],
     );
@@ -865,7 +865,7 @@ fn a_wrap_leaves_a_releasing_note_its_channels_last_value() {
         def: "gated".into(),
         controls: Vec::new(),
         own: Vec::new(),
-        lanes: vec!["level".into()],
+        channel: vec!["level".into()],
     };
     let note = note_graph(&shape);
     let channel = channel_graph(&["level".to_string()], std::slice::from_ref(&note));
@@ -916,9 +916,9 @@ fn a_wrap_leaves_a_releasing_note_its_channels_last_value() {
             OscType::Int(500),
             OscType::Int(1),
             OscType::Int(200),
-            OscType::String("lane/level/buf".into()),
+            OscType::String("channel/level/buf".into()),
             OscType::Float(0.0),
-            OscType::String("lane/level/step".into()),
+            OscType::String("channel/level/step".into()),
             OscType::Float(4800.0),
         ],
     );

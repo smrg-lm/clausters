@@ -237,9 +237,9 @@ def test_a_session_round_trips_with_its_table():
 def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a multitrack, possibly
     # empty, so nothing downstream has to ask whether there is one.
-    session = Session.read({"format": 3})
+    session = Session.read({"format": SESSION_FORMAT})
     assert session.multitrack.tracks == []
-    assert session.write() == {"format": 3}
+    assert session.write() == {"format": SESSION_FORMAT}
 
 
 def test_a_save_knows_what_it_cannot_promise():
@@ -303,7 +303,7 @@ def test_a_frozen_source_keeps_what_the_table_said():
 
 
 def test_a_session_field_a_newer_writer_added_survives():
-    written = {"format": 3, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
+    written = {"format": SESSION_FORMAT, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
     assert Session.read(written).write() == written
 
 

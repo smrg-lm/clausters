@@ -674,11 +674,11 @@ pub fn placed_notes(
                 curves,
             });
         }
-        for lane in placement.lanes {
-            out.lanes.push(PlacedCurve {
-                id: format!("{scope}:{}", lane.id),
+        for curve in placement.curves {
+            out.curves.push(PlacedCurve {
+                id: format!("{scope}:{}", curve.id),
                 scope: scope.clone(),
-                points: lane
+                points: curve
                     .points
                     .into_iter()
                     .map(|p| clausters_document::Point {
@@ -686,7 +686,7 @@ pub fn placed_notes(
                         ..p
                     })
                     .collect(),
-                target: lane.target,
+                target: curve.target,
             });
         }
     }

@@ -47,7 +47,7 @@ by its **label**, the address it sends, so the message survives the drag. Adding
 one *there* is refused and says why: the lane has no way to type an address.
 
 **Curves are drawn and edited like a multitrack's automation, and heard.** The
-row under the grid, *level*, is a lane of the sequence -- a curve over the
+row under the grid, *level*, is the sequence's automation -- a curve over the
 first channel driving every note's `amp`, a crescendo -- and the first note
 carries a curve of its own, a **bend**, drawn in the plane as the pitch it
 glides to and running on into its release. **Drag a point** to move it,
@@ -99,7 +99,7 @@ timeline = Timeline([
 # `edit(timeline)` renders the timeline into the events it plays and opens
 # them as a `clausters.gui.editing.NotesEditor`: one roll, each note with its
 # id. Here the render is its own line, so the sequence gets its curves before
-# it opens: a level lane on the first channel, and a bend on its first note that
+# it opens: a level curve on the first channel, and a bend on its first note that
 # glides up two semitones while the note is held and falls back one in its
 # release -- a note's curve runs past its box, which is its on and its off.
 
@@ -110,10 +110,10 @@ timeline = Timeline([
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 notes = timeline.render_events()   # what the roll edits, in place
-level = notes.add_lane({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.0, 0.4)],
+level = notes.add_automation({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.0, 0.4)],
                        name="level")
 first = notes.entries()[0][0]
-notes.add_expression(first, {"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
+notes.add_event_automation(first, {"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
 editor = edit(notes,
               sample_rate=session.server.query_info().nominal_sample_rate,
               title="notes")
@@ -143,28 +143,28 @@ def play():
 
 
 # %% [markdown]
-# ## A lane given to its notes
+# ## A curve given to its notes
 #
-# The level lane is the channel's: each note hears it from its on to its off.
-# `lane_to_expression` gives it to the notes it reaches -- each takes the
+# The level curve is the channel's: each note hears it from its on to its off.
+# `automation_to_events` gives it to the notes it reaches -- each takes the
 # stretch its span covers as a curve of its own, drawn inside it, and the row
-# goes -- and they sound as they did. `expression_to_lane` gathers the notes'
-# curves back into a lane, which holds where no two notes that sound together
+# goes -- and they sound as they did. `events_to_automation` gathers the notes'
+# curves back into one of the sequence, which holds where no two notes that sound together
 # differ: here none overlap. Both are edits of the sequence; `adopt` brings the
 # rolls in step with it.
 
 # %%
 def own_the_level():
-    """Give the level lane to the notes it reaches."""
-    notes.lane_to_expression(level)
+    """Give the level curve to the notes it reaches."""
+    notes.automation_to_events(level)
     editor.adopt()
     hertz.adopt()
 
 
 def gather_the_level():
-    """Gather the notes' level curves back into a lane."""
+    """Gather the notes' level curves back into the sequence's."""
     global level
-    level = notes.expression_to_lane({"control": "amp"})
+    level = notes.events_to_automation({"control": "amp"})
     editor.adopt()
     hertz.adopt()
 

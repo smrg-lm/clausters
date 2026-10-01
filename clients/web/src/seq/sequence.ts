@@ -81,7 +81,7 @@ export class EventSequence {
 
     /**
      * The sequence as plain data: its events with their ids, its tempo map and
-     * its lanes -- what a session stores and {@link EventSequence.fromData}
+     * its automation -- what a session stores and {@link EventSequence.fromData}
      * reads.
      */
     data(): Record<string, unknown> {
@@ -163,11 +163,12 @@ export class EventSequence {
 
     /**
      * Applies one edit in the sequence's vocabulary (`add`, `remove`, `move`,
-     * `set`, `keys`, `setevents`, `tempo`, `lane`, `removelane`, `expression`,
-     * `removeexpression`, `lanetoexpression`, `expressiontolane`, `midi`,
-     * `restore`) and answers `{applied, current}` --
+     * `set`, `keys`, `setevents`, `tempo`, `automation`, `removeautomation`,
+     * `eventautomation`, `removeeventautomation`, `automationtoevents`,
+     * `eventstoautomation`, `midi`, `restore`) and answers `{applied, current}` --
      * `current` the edit that puts it back, read before this one landed -- with
-     * `id` for an add, a lane or an expression. Throws when refused.
+     * `id` for an add, a curve of the sequence or of an event, or a curve
+     * gathered from the notes. Throws when refused.
      */
     apply(intent: Record<string, unknown>): { applied: boolean; current: unknown; id?: number } {
         return this.call("apply", { intent });
@@ -200,72 +201,72 @@ export class EventSequence {
     // ---- curves ----
 
     /**
-     * Adds a curve over the whole sequence -- a lane -- and answers its id.
-     * `target` says what it moves: `{cc: 74}` (0 to 127), `{bend: true}`
+     * Adds a curve over the whole sequence -- its automation -- and answers its
+     * id. `target` says what it moves: `{cc: 74}` (0 to 127), `{bend: true}`
      * (semitones), `{pressure: true}`, `{timbre: true}` (0 to 1) or
      * `{control: "cutoff"}`, with `min`/`max` to override the range and
      * `channel` for the one channel it acts on (counted from 0, as a note's;
      * without it, every channel). `points` are `[beat, value]` pairs; `name`
      * labels it. The notes editor draws it as a row under the roll.
      */
-    addLane(
+    addAutomation(
         target: Record<string, unknown>,
         { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
     ): number {
-        return this.curve({ intent: "lane" }, target, points, name);
+        return this.curve({ intent: "automation" }, target, points, name);
     }
 
     /**
-     * Adds a curve over the event with this id -- its own expression, as MPE
+     * Adds a curve over the event with this id -- its own automation, as MPE
      * gives a note its bend, pressure and timbre -- and answers its id. `target`
-     * as for {@link EventSequence.addLane}; `points` are `[beat, value]` pairs,
-     * each beat counted from the event's start, and free to run past the
+     * as for {@link EventSequence.addAutomation}; `points` are `[beat, value]`
+     * pairs, each beat counted from the event's start, and free to run past the
      * note's end into its release. The notes editor draws it inside the note,
      * and a bend in the plane over the pitches it spans.
      */
-    addExpression(
+    addEventAutomation(
         id: number,
         target: Record<string, unknown>,
         { points = [], name }: { points?: readonly (readonly [number, number])[]; name?: string } = {},
     ): number {
-        return this.curve({ intent: "expression", id }, target, points, name);
+        return this.curve({ intent: "eventautomation", id }, target, points, name);
     }
 
     /**
-     * **Gives lane `lane` to the notes it reaches**: each note on its channel
-     * (every note, for a lane that names none) takes the stretch of the lane
-     * its span covers as a curve of its own -- sounding as it did, since a
-     * channel reaches a note from its on to its off -- and the lane goes. A
-     * note with its own curve over that control keeps it; over a bend, which
-     * adds, that throws, as does a lane the sequence's
+     * **Gives the sequence's curve `curve` to the notes it reaches**: each note
+     * on its channel (every note, for a curve that names none) takes the
+     * stretch of the curve its span covers as a curve of its own -- sounding as
+     * it did, since a channel reaches a note from its on to its off -- and the
+     * sequence's goes. A note with its own curve over that control keeps it;
+     * over a bend, which adds, that throws, as does a curve the sequence's
      * {@link EventSequence.midi} spec cannot say of one note.
      */
-    laneToExpression(lane: number): void {
-        this.apply({ intent: "lanetoexpression", lane: Math.trunc(lane) });
+    automationToEvents(curve: number): void {
+        this.apply({ intent: "automationtoevents", curve: Math.trunc(curve) });
     }
 
     /**
-     * **Gathers the notes' curves over `target` into a lane** -- of the notes
-     * on `channel`, or of every note -- and answers its id: each note's curve
-     * over its span, on the channel its notes share. The notes' curves go. It
-     * holds where the notes agree: two that sound at once with different
-     * curves throw, since one channel cannot say both -- a chord whose lane
-     * was given to its notes gives it back.
+     * **Gathers the notes' curves over `target` into one of the sequence's** --
+     * of the notes on `channel`, or of every note -- and answers its id: each
+     * note's curve over its span, on the channel its notes share. The notes'
+     * curves go. It holds where the notes agree: two that sound at once with
+     * different curves throw, since one channel cannot say both -- a chord
+     * whose curve was given to its notes gives it back.
      */
-    expressionToLane(target: Record<string, unknown>, { channel }: { channel?: number } = {}): number {
-        const intent: Record<string, unknown> = { intent: "expressiontolane", target };
+    eventsToAutomation(target: Record<string, unknown>, { channel }: { channel?: number } = {}): number {
+        const intent: Record<string, unknown> = { intent: "eventstoautomation", target };
         if (channel !== undefined) intent.channel = Math.trunc(channel);
         return Number(this.apply(intent).id);
     }
 
-    /** Removes the lane with this id. */
-    removeLane(lane: number): void {
-        this.apply({ intent: "removelane", lane });
+    /** Removes the sequence's curve with this id. */
+    removeAutomation(curve: number): void {
+        this.apply({ intent: "removeautomation", curve });
     }
 
-    /** Removes curve `lane` from the event with this id. */
-    removeExpression(id: number, lane: number): void {
-        this.apply({ intent: "removeexpression", id, lane });
+    /** Removes curve `curve` from the event with this id. */
+    removeEventAutomation(id: number, curve: number): void {
+        this.apply({ intent: "removeeventautomation", id, curve });
     }
 
     private curve(
@@ -298,8 +299,8 @@ export class EventSequence {
     /**
      * The sequence as a Standard MIDI File, at `ppq` ticks per beat: every
      * event's MIDI messages -- a note as its on and off, a `"midi"` event as its
-     * message -- its lanes as its channels' messages and its notes' expression
-     * as theirs, as its {@link EventSequence.midi} spec says them (MIDI 1.0
+     * message -- its automation as its channels' messages and its notes' as
+     * theirs, as its {@link EventSequence.midi} spec says them (MIDI 1.0
      * when it names none; a 2.0 sequence as MPE), and the tempo map as the
      * file's tempo. An `"osc"` event has no MIDI spelling and is left out, as
      * is a curve the spec cannot say; a ramp is sampled where the MIDI value
@@ -326,8 +327,8 @@ export class EventSequence {
     /**
      * The sequence a Standard MIDI File holds: its notes -- each note-on with the
      * note-off that closes it -- its streams as curves (a channel's CC, bend and
-     * pressure as lanes; poly pressure, and an MPE zone's member channels, as
-     * the notes' expression), its other messages as `"midi"` events, in beats,
+     * pressure as the sequence's automation; poly pressure, and an MPE zone's
+     * member channels, as the notes'), its other messages as `"midi"` events, in beats,
      * with the file's tempo as the tempo map (its default 120 quarter notes a
      * minute when it states none). Its {@link EventSequence.midi} spec is MPE
      * when the file declares a zone, else MIDI 1.0.
@@ -342,8 +343,8 @@ export class EventSequence {
 
     /**
      * The sequence as a MIDI 2.0 Clip File (SMF2CLIP), at `ppq` ticks per
-     * beat: its notes at 16-bit velocity, its lanes as 32-bit channel
-     * messages, its notes' expression as per-note ones -- per-note pitch bend,
+     * beat: its notes at 16-bit velocity, its automation as 32-bit channel
+     * messages, its notes' as per-note ones -- per-note pitch bend,
      * poly pressure, the registered per-note controller 74 for timbre and an
      * assignable one for a CC -- and its tempo map as Set Tempo messages. What
      * its {@link EventSequence.midi} spec cannot say of one note is left out.
@@ -360,7 +361,7 @@ export class EventSequence {
 
     /**
      * The sequence a MIDI 2.0 Clip File holds: its notes, its channels'
-     * messages as lanes and its per-note messages as the notes' expression,
+     * messages as its automation and its per-note messages as the notes',
      * its Set Tempo messages as the tempo map (120 quarter notes a minute when
      * it has none), and `"2.0"` as its {@link EventSequence.midi} spec.
      */

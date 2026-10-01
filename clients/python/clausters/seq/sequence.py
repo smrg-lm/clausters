@@ -49,7 +49,7 @@ class EventSequence:
 
     def data(self) -> dict:
         """The sequence as plain data: its events with their ids, its tempo map
-        and its lanes -- what a session stores and `from_data` reads."""
+        and its automation -- what a session stores and `from_data` reads."""
         return self._seq.call("state")
 
     # ---- reading ----
@@ -119,12 +119,13 @@ class EventSequence:
 
     def apply(self, intent: dict) -> dict:
         """Apply one edit in the sequence's vocabulary (``add``, ``remove``,
-        ``move``, ``set``, ``keys``, ``setevents``, ``tempo``, ``lane``,
-        ``removelane``, ``expression``, ``removeexpression``,
-        ``lanetoexpression``, ``expressiontolane``, ``midi``, ``restore``) and
+        ``move``, ``set``, ``keys``, ``setevents``, ``tempo``,
+        ``automation``, ``removeautomation``, ``eventautomation``,
+        ``removeeventautomation``, ``automationtoevents``,
+        ``eventstoautomation``, ``midi``, ``restore``) and
         answer ``{"applied", "current"}`` -- ``current`` the edit that puts it
-        back, read before this one landed -- with ``"id"`` for an add, a lane,
-        an expression or a lane gathered from the notes.
+        back, read before this one landed -- with ``"id"`` for an add, a curve
+        of the sequence or of an event, or a curve gathered from the notes.
         `ValueError` when refused."""
         return self._seq.call("apply", intent=intent)
 
@@ -149,55 +150,57 @@ class EventSequence:
 
     # ---- curves ----
 
-    def add_lane(self, target: dict, points=(), name: str | None = None) -> int:
-        """Add a curve over the whole sequence -- a lane -- and answer its id.
-        ``target`` says what it moves: ``{"cc": 74}`` (0 to 127), ``{"bend":
-        True}`` (semitones), ``{"pressure": True}``, ``{"timbre": True}``
-        (0 to 1) or ``{"control": "cutoff"}``, with ``min``/``max`` to override
-        the range and ``channel`` for the one channel it acts on (counted from
-        0, as a note's; without it, every channel). ``points`` are ``(beat,
-        value)`` pairs; ``name`` labels it. The notes editor draws it as a row
-        under the roll."""
-        return self._curve({"intent": "lane"}, target, points, name)
+    def add_automation(self, target: dict, points=(), name: str | None = None) -> int:
+        """Add a curve over the whole sequence -- its automation -- and answer
+        its id. ``target`` says what it moves: ``{"cc": 74}`` (0 to 127),
+        ``{"bend": True}`` (semitones), ``{"pressure": True}``, ``{"timbre":
+        True}`` (0 to 1) or ``{"control": "cutoff"}``, with ``min``/``max`` to
+        override the range and ``channel`` for the one channel it acts on
+        (counted from 0, as a note's; without it, every channel). ``points``
+        are ``(beat, value)`` pairs; ``name`` labels it. The notes editor draws
+        it as a row under the roll."""
+        return self._curve({"intent": "automation"}, target, points, name)
 
-    def add_expression(self, id: int, target: dict, points=(), name: str | None = None) -> int:
-        """Add a curve over the event with this id -- its own expression, as
+    def add_event_automation(self, id: int, target: dict, points=(),
+                             name: str | None = None) -> int:
+        """Add a curve over the event with this id -- its own automation, as
         MPE gives a note its bend, pressure and timbre -- and answer its id.
-        ``target`` as for `add_lane`; ``points`` are ``(beat, value)`` pairs,
-        each beat counted from the event's start, and free to run past the
-        note's end into its release. The notes editor draws it inside the
+        ``target`` as for `add_automation`; ``points`` are ``(beat, value)``
+        pairs, each beat counted from the event's start, and free to run past
+        the note's end into its release. The notes editor draws it inside the
         note, and a bend in the plane over the pitches it spans."""
-        return self._curve({"intent": "expression", "id": int(id)}, target, points, name)
+        return self._curve({"intent": "eventautomation", "id": int(id)}, target, points, name)
 
-    def lane_to_expression(self, lane: int) -> None:
-        """**Give lane ``lane`` to the notes it reaches**: each note on its
-        channel (every note, for a lane that names none) takes the stretch of
-        the lane its span covers as a curve of its own -- sounding as it did,
-        since a channel reaches a note from its on to its off -- and the lane
-        goes. A note with its own curve over that control keeps it; over a
-        bend, which adds, that is a `ValueError`, as is a lane the sequence's
-        `midi` spec cannot say of one note."""
-        self.apply({"intent": "lanetoexpression", "lane": int(lane)})
+    def automation_to_events(self, curve: int) -> None:
+        """**Give the sequence's curve ``curve`` to the notes it reaches**:
+        each note on its channel (every note, for a curve that names none)
+        takes the stretch of the curve its span covers as a curve of its own --
+        sounding as it did, since a channel reaches a note from its on to its
+        off -- and the sequence's goes. A note with its own curve over that
+        control keeps it; over a bend, which adds, that is a `ValueError`, as
+        is a curve the sequence's `midi` spec cannot say of one note."""
+        self.apply({"intent": "automationtoevents", "curve": int(curve)})
 
-    def expression_to_lane(self, target: dict, channel: "int | None" = None) -> int:
-        """**Gather the notes' curves over** ``target`` **into a lane** -- of
-        the notes on ``channel``, or of every note -- and answer its id: each
-        note's curve over its span, on the channel its notes share. The notes'
-        curves go. It holds where the notes agree: two that sound at once with
-        different curves are a `ValueError`, since one channel cannot say both
-        -- a chord whose lane was given to its notes gives it back."""
-        intent = {"intent": "expressiontolane", "target": dict(target)}
+    def events_to_automation(self, target: dict, channel: "int | None" = None) -> int:
+        """**Gather the notes' curves over** ``target`` **into one of the
+        sequence's** -- of the notes on ``channel``, or of every note -- and
+        answer its id: each note's curve over its span, on the channel its
+        notes share. The notes' curves go. It holds where the notes agree: two
+        that sound at once with different curves are a `ValueError`, since one
+        channel cannot say both -- a chord whose curve was given to its notes
+        gives it back."""
+        intent = {"intent": "eventstoautomation", "target": dict(target)}
         if channel is not None:
             intent["channel"] = int(channel)
         return int(self.apply(intent)["id"])
 
-    def remove_lane(self, lane: int) -> None:
-        """Remove the lane with this id."""
-        self.apply({"intent": "removelane", "lane": int(lane)})
+    def remove_automation(self, curve: int) -> None:
+        """Remove the sequence's curve with this id."""
+        self.apply({"intent": "removeautomation", "curve": int(curve)})
 
-    def remove_expression(self, id: int, lane: int) -> None:
-        """Remove curve ``lane`` from the event with this id."""
-        self.apply({"intent": "removeexpression", "id": int(id), "lane": int(lane)})
+    def remove_event_automation(self, id: int, curve: int) -> None:
+        """Remove curve ``curve`` from the event with this id."""
+        self.apply({"intent": "removeeventautomation", "id": int(id), "curve": int(curve)})
 
     def _curve(self, intent: dict, target: dict, points, name) -> int:
         automation = {"id": 0, "target": dict(target),
@@ -218,8 +221,8 @@ class EventSequence:
     def to_smf(self, ppq: int = 480) -> bytes:
         """The sequence as a Standard MIDI File, at ``ppq`` ticks per beat:
         every event's MIDI messages -- a note as its on and off, a ``"midi"``
-        event as its message -- its lanes as its channels' messages and its
-        notes' expression as theirs, as its `midi` spec says them (MIDI 1.0
+        event as its message -- its automation as its channels' messages and
+        its notes' as theirs, as its `midi` spec says them (MIDI 1.0
         when it names none; a 2.0 sequence as MPE), and the tempo map as the
         file's tempo. An ``"osc"`` event has no MIDI spelling and is left out,
         as is a curve the spec cannot say; a ramp is sampled where the MIDI
@@ -234,8 +237,8 @@ class EventSequence:
     def from_smf(cls, data: bytes) -> "EventSequence":
         """The sequence a Standard MIDI File holds: its notes -- each note-on
         with the note-off that closes it -- its streams as curves (a channel's
-        CC, bend and pressure as lanes; poly pressure, and an MPE zone's
-        member channels, as the notes' expression), its other messages as
+        CC, bend and pressure as the sequence's automation; poly pressure, and
+        an MPE zone's member channels, as the notes'), its other messages as
         ``"midi"`` events, in beats, with the file's tempo as the tempo map
         (its default 120 quarter notes a minute when it states none). Its
         `midi` spec is MPE when the file declares a zone, else MIDI 1.0."""
@@ -249,8 +252,8 @@ class EventSequence:
 
     def to_clip(self, ppq: int = 480) -> bytes:
         """The sequence as a MIDI 2.0 Clip File (SMF2CLIP), at ``ppq`` ticks
-        per beat: its notes at 16-bit velocity, its lanes as 32-bit channel
-        messages, its notes' expression as per-note ones -- per-note pitch
+        per beat: its notes at 16-bit velocity, its automation as 32-bit
+        channel messages, its notes' as per-note ones -- per-note pitch
         bend, poly pressure, the registered per-note controller 74 for timbre
         and an assignable one for a CC -- and its tempo map as Set Tempo
         messages. What its `midi` spec cannot say of one note is left out."""
@@ -262,7 +265,7 @@ class EventSequence:
     @classmethod
     def from_clip(cls, data: bytes) -> "EventSequence":
         """The sequence a MIDI 2.0 Clip File holds: its notes, its channels'
-        messages as lanes and its per-note messages as the notes' expression,
+        messages as its automation and its per-note messages as the notes',
         its Set Tempo messages as the tempo map (120 quarter notes a minute
         when it has none), and ``"2.0"`` as its `midi` spec."""
         from .. import _midi

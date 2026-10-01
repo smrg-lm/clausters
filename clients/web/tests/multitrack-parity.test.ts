@@ -272,9 +272,9 @@ test("the multitrack inside the session is the same multitrack", async () => {
 });
 
 test("an absent multitrack reads as an empty one rather than as nothing", () => {
-    const session = Session.read({ format: 3 });
+    const session = Session.read({ format: SESSION_FORMAT });
     assert.deepEqual(session.multitrack.tracks, []);
-    assert.deepEqual(session.write(), { format: 3 });
+    assert.deepEqual(session.write(), { format: SESSION_FORMAT });
 });
 
 test("a frozen source keeps what the table said", () => {
@@ -287,7 +287,7 @@ test("a frozen source keeps what the table said", () => {
 });
 
 test("a session field a newer writer added survives", () => {
-    const written = { format: 3, mixer: { buses: [{ id: 1, name: "reverb" }] } };
+    const written = { format: SESSION_FORMAT, mixer: { buses: [{ id: 1, name: "reverb" }] } };
     assert.deepEqual(Session.read(written).write(), written);
 });
 

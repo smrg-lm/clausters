@@ -68,7 +68,7 @@ const CURVES: &str = "notes/curves";
 /// **One event placed on a transport's axis**: where it starts and, for a
 /// note, where it is released, in seconds of that axis, and its keys.
 ///
-/// What a lane's data is written from, so it is written once for every axis an
+/// What an event lane's data is written from, so it is written once for every axis an
 /// event is heard on: the notes editor places a sequence through its own tempo
 /// map ([`placed`]), and a multitrack places each sequence its boxes read at
 /// the box's place on the timeline.
@@ -83,7 +83,7 @@ pub struct Placed {
     /// Its identity, stable across edits: what its curves' tables are kept by.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
-    /// Which sequence it is of, as a lane's curves name it: a curve over a
+    /// Which sequence it is of, as the sequence's curves name it: a curve over a
     /// channel reaches the notes of its own sequence alone.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scope: String,
@@ -93,13 +93,13 @@ pub struct Placed {
 }
 
 /// **A curve placed on a transport's axis**: what it drives and its points in
-/// seconds -- a note's from the note's start, a lane's on the axis itself.
+/// seconds -- a note's from the note's start, a sequence's on the axis itself.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlacedCurve {
-    /// A lane's identity, stable across edits.
+    /// Its identity, stable across edits.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
-    /// A lane's sequence, as its notes name it ([`Placed::scope`]).
+    /// Its sequence, as the sequence's notes name it ([`Placed::scope`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scope: String,
     /// What it drives, as the sequence's curve names it.
@@ -114,8 +114,8 @@ pub struct PlacedCurve {
 pub struct Placement {
     /// The events, in the order of their start.
     pub events: Vec<Placed>,
-    /// The lanes: each a curve over a channel of its sequence.
-    pub lanes: Vec<PlacedCurve>,
+    /// The sequences' own curves: each over a channel of its sequence.
+    pub curves: Vec<PlacedCurve>,
 }
 
 /// What a placement is read from: the object it writes, or a bare list of
@@ -127,8 +127,10 @@ enum Written {
     Whole {
         #[serde(default)]
         events: Vec<Placed>,
-        #[serde(default)]
-        lanes: Vec<PlacedCurve>,
+        /// Read under `lanes` too, its name before the sequence's curves
+        /// were its automation.
+        #[serde(default, alias = "lanes")]
+        curves: Vec<PlacedCurve>,
     },
 }
 
@@ -137,9 +139,9 @@ impl From<Written> for Placement {
         match written {
             Written::List(events) => Self {
                 events,
-                lanes: Vec::new(),
+                curves: Vec::new(),
             },
-            Written::Whole { events, lanes } => Self { events, lanes },
+            Written::Whole { events, curves } => Self { events, curves },
         }
     }
 }
@@ -157,7 +159,7 @@ pub fn placed(sequence: &EventSequence) -> Placement {
             let sustain = render::sustain_of(&keys).max(0.0);
             let start = map.secs_at(event.at.0);
             let curves = event
-                .expression
+                .automation
                 .iter()
                 .filter(|curve| curve.enabled && !curve.points.is_empty())
                 .map(|curve| PlacedCurve {
@@ -184,8 +186,8 @@ pub fn placed(sequence: &EventSequence) -> Placement {
             }
         })
         .collect();
-    let lanes = sequence
-        .lanes
+    let curves = sequence
+        .automation
         .iter()
         .filter(|curve| curve.enabled && !curve.points.is_empty())
         .map(|curve| PlacedCurve {
@@ -202,7 +204,7 @@ pub fn placed(sequence: &EventSequence) -> Placement {
                 .collect(),
         })
         .collect();
-    Placement { events, lanes }
+    Placement { events, curves }
 }
 
 /// **A note as its voice is started**: the def the core renders its keys to,

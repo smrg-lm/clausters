@@ -100,7 +100,7 @@ pub struct Notes {
     /// it, which reads as a broken editor rather than as samples that cannot
     /// be edited here. So the refusal happens at the press, where it is seen.
     editable: bool,
-    /// The lanes under the plane: curves over the whole sequence.
+    /// The rows under the plane: the sequence's curves.
     rows: Vec<curves::Row>,
     /// The notes' own curves, each over the note it names.
     layers: Vec<curves::Layer>,

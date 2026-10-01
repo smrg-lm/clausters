@@ -198,7 +198,7 @@ The **edit-back payloads**:
 |---|---|---|
 | `"points"` | `t v shape curve` per break-point | the `bpf` editor — one payload, whichever view drew the curve |
 | `"notes"` | `start dur pitch velocity channel` per note, the pitch in the roll's unit (hertz on a roll whose `axes.y.unit` is `"hz"`), or `id start dur pitch velocity channel` when the roll was given `note_ids` (`0` for a note the hand made) | the `pianoroll` view — MIDI notes edited |
-| `"points"` (on a `pianoroll`) | `name time value shape curve` per break-point of every curve, a layer's `time` from its note's start | the `pianoroll` view — its lanes or a note's curves edited |
+| `"points"` (on a `pianoroll`) | `name time value shape curve` per break-point of every curve, a layer's `time` from its note's start | the `pianoroll` view — its automation rows or a note's curves edited |
 | `"markers"` | `time label color` per marker | a **ruler** — the labelled points on the time axis, after one was added or removed by hand. The whole list every time, as the lists above do, so the owner replaces what it holds rather than reconciling. The time and the text are what it keeps; the colour is `""` for the theme's |
 | `"note"` | `pitch velocity state channel` (ints; state 1 = press, 0 = release) | the `piano` keyboard played — MIDI-shaped, translatable 1:1 to note-on/note-off |
 | `"range"` | `min max` (MIDI notes) | the `piano`'s visible range panned or zoomed |

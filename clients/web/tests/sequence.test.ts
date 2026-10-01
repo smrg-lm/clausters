@@ -141,24 +141,24 @@ test("a score reads into a sequence and a sequence engraves", async () => {
     );
 });
 
-test("a lane and a note's expression are curves the sequence holds", () => {
+test("a sequence curve and a note's curve are curves the sequence holds", () => {
     const seq = sequence();
     const first = seq.entries()[0][0];
-    const lane = seq.addLane({ cc: 74 }, { points: [[0.0, 0.0], [2.0, 127.0]], name: "brightness" });
-    const bend = seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0], [0.5, 1.0]] });
+    const curve = seq.addAutomation({ cc: 74 }, { points: [[0.0, 0.0], [2.0, 127.0]], name: "brightness" });
+    const bend = seq.addEventAutomation(first, { bend: true }, { points: [[0.0, 0.0], [0.5, 1.0]] });
     let data = seq.data() as {
-        lanes?: { id: number; name: string; points: unknown[] }[];
-        events: { id: number; expression?: { id: number }[] }[];
+        automation?: { id: number; name: string; points: unknown[] }[];
+        events: { id: number; automation?: { id: number }[] }[];
     };
-    assert.deepEqual(data.lanes?.map((c) => [c.id, c.name, c.points.length]), [[lane, "brightness", 2]]);
+    assert.deepEqual(data.automation?.map((c) => [c.id, c.name, c.points.length]), [[curve, "brightness", 2]]);
     const held = data.events.find((e) => e.id === first);
-    assert.deepEqual(held?.expression?.map((c) => c.id), [bend]);
-    assert.ok(lane !== bend && bend !== first, "one counter for events and curves");
-    seq.removeExpression(first, bend);
-    seq.removeLane(lane);
+    assert.deepEqual(held?.automation?.map((c) => c.id), [bend]);
+    assert.ok(curve !== bend && bend !== first, "one counter for events and curves");
+    seq.removeEventAutomation(first, bend);
+    seq.removeAutomation(curve);
     data = seq.data() as typeof data;
-    assert.ok(!data.lanes?.length);
-    assert.ok(!data.events.find((e) => e.id === first)?.expression?.length);
+    assert.ok(!data.automation?.length);
+    assert.ok(!data.events.find((e) => e.id === first)?.automation?.length);
 });
 
 test("a MIDI spec admits the curves it can say", () => {
@@ -167,12 +167,12 @@ test("a MIDI spec admits the curves it can say", () => {
     assert.equal(seq.midi, null, "a sequence for the server");
     seq.setMidi("1.0");
     assert.equal(seq.midi, "1.0");
-    seq.addExpression(first, { pressure: true }, { points: [[0.0, 0.5]] });
-    assert.throws(() => seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0]] }), /MIDI 1\.0/);
+    seq.addEventAutomation(first, { pressure: true }, { points: [[0.0, 0.5]] });
+    assert.throws(() => seq.addEventAutomation(first, { bend: true }, { points: [[0.0, 0.0]] }), /MIDI 1\.0/);
     seq.setMidi("mpe", { members: 7 });
     assert.equal(seq.midi, "mpe");
     assert.deepEqual(seq.data().midi, { mpe: { upper: false, members: 7 } });
-    seq.addExpression(first, { bend: true }, { points: [[0.0, 0.0]] });
+    seq.addEventAutomation(first, { bend: true }, { points: [[0.0, 0.0]] });
     assert.throws(() => seq.setMidi("1.0"), /bend/);
     seq.setMidi(null);
     assert.equal(seq.midi, null);
@@ -185,59 +185,59 @@ test("a sequence's curves go to a MIDI file and back", () => {
     ]);
     seq.setMidi("mpe");
     const first = seq.entries()[0][0];
-    seq.addLane({ cc: 7 }, { points: [[0.0, 100.0]] });
-    seq.addExpression(first, { bend: true }, { points: [[0.0, 6.0]] });
+    seq.addAutomation({ cc: 7 }, { points: [[0.0, 100.0]] });
+    seq.addEventAutomation(first, { bend: true }, { points: [[0.0, 6.0]] });
     const messages = seq.midiMessages();
     assert.deepEqual([messages[0][0], [...messages[0][1]]], [0, [0xb0, 101, 0]], "the zone first");
     const back = EventSequence.fromSmf(seq.toSmf());
     assert.equal(back.midi, "mpe");
     const data = back.data() as {
-        lanes: { target: unknown }[];
-        events: { expression?: { target: unknown; points: { value: number }[] }[] }[];
+        automation: { target: unknown }[];
+        events: { automation?: { target: unknown; points: { value: number }[] }[] }[];
     };
-    assert.deepEqual(data.lanes.map((l) => l.target), [{ cc: 7 }], "the master's: the zone's");
-    const bent = data.events.find((e) => e.expression !== undefined);
-    assert.deepEqual(bent?.expression?.[0].target, { bend: true });
-    assert.ok(Math.abs((bent?.expression?.[0].points[0].value ?? 0) - 6.0) < 1e-9);
+    assert.deepEqual(data.automation.map((l) => l.target), [{ cc: 7 }], "the master's: the zone's");
+    const bent = data.events.find((e) => e.automation !== undefined);
+    assert.deepEqual(bent?.automation?.[0].target, { bend: true });
+    assert.ok(Math.abs((bent?.automation?.[0].points[0].value ?? 0) - 6.0) < 1e-9);
 });
 
 test("a sequence goes to a MIDI 2.0 clip and back", () => {
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })]]);
     seq.setMidi("2.0");
     const first = seq.entries()[0][0];
-    seq.addExpression(first, { bend: true }, { points: [[0.0, 12.0]] });
-    seq.addExpression(first, { cc: 1 }, { points: [[0.0, 64.0]] });
+    seq.addEventAutomation(first, { bend: true }, { points: [[0.0, 12.0]] });
+    seq.addEventAutomation(first, { cc: 1 }, { points: [[0.0, 64.0]] });
     const data = seq.toClip();
     assert.equal(new TextDecoder().decode(data.slice(0, 8)), "SMF2CLIP");
     const back = EventSequence.fromClip(data);
     assert.equal(back.midi, "2.0");
     const held = (back.data() as {
-        events: { expression: { target: Record<string, unknown>; points: { value: number }[] }[] }[];
+        events: { automation: { target: Record<string, unknown>; points: { value: number }[] }[] }[];
     }).events[0];
-    const values = Object.fromEntries(held.expression.map((c) => [Object.keys(c.target)[0], c.points[0].value]));
+    const values = Object.fromEntries(held.automation.map((c) => [Object.keys(c.target)[0], c.points[0].value]));
     assert.ok(Math.abs(values.bend - 12.0) < 1e-6);
     assert.ok(Math.abs(values.cc - 64.0) < 1e-3);
     assert.throws(() => EventSequence.fromClip(new TextEncoder().encode("MThd")), /SMF2CLIP/);
 });
 
-test("a lane goes to its notes and a chord gives it back", () => {
+test("a sequence curve goes to its notes and a chord gives it back", () => {
     const seq = new EventSequence([60, 64, 67].map((m) => [1.0, new Event({ midinote: m, sustain: 2.0 })]));
-    const lane = seq.addLane({ bend: true, channel: 0 }, { points: [[0.0, 0.0], [4.0, 4.0]] });
-    seq.laneToExpression(lane);
+    const curve = seq.addAutomation({ bend: true, channel: 0 }, { points: [[0.0, 0.0], [4.0, 4.0]] });
+    seq.automationToEvents(curve);
     let data = seq.data() as {
-        lanes?: { id: number; target: unknown }[];
-        events: { expression: { points: { at: number; value: number }[] }[] }[];
+        automation?: { id: number; target: unknown }[];
+        events: { automation: { points: { at: number; value: number }[] }[] }[];
     };
-    assert.ok(data.lanes === undefined || data.lanes.length === 0);
+    assert.ok(data.automation === undefined || data.automation.length === 0);
     for (const held of data.events) {
-        assert.deepEqual(held.expression[0].points.map((p) => [p.at, p.value]), [[0, 1], [2, 3]]);
+        assert.deepEqual(held.automation[0].points.map((p) => [p.at, p.value]), [[0, 1], [2, 3]]);
     }
-    const back = seq.expressionToLane({ bend: true });
+    const back = seq.eventsToAutomation({ bend: true });
     data = seq.data() as typeof data;
-    assert.equal(data.lanes?.[0].id, back);
-    assert.deepEqual(data.lanes?.[0].target, { bend: true, channel: 0 });
+    assert.equal(data.automation?.[0].id, back);
+    assert.deepEqual(data.automation?.[0].target, { bend: true, channel: 0 });
     const [first, second] = seq.entries().map(([id]) => id);
-    seq.addExpression(first, { pressure: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
-    seq.addExpression(second, { pressure: true }, { points: [[0.0, 0.0], [2.0, 0.5]] });
-    assert.throws(() => seq.expressionToLane({ pressure: true }), /cannot say both/);
+    seq.addEventAutomation(first, { pressure: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
+    seq.addEventAutomation(second, { pressure: true }, { points: [[0.0, 0.0], [2.0, 0.5]] });
+    assert.throws(() => seq.eventsToAutomation({ pressure: true }), /cannot say both/);
 });

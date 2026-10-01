@@ -311,14 +311,14 @@ export class NotesEditor extends Editor<EventSequence> {
      * `destination` is for a MIDI port (a `MidiServer`): the server has no MIDI
      * output, so the sequence is played on this page's clock to that
      * destination instead, as the MIDI messages a file of it holds
-     * ({@link EventSequence.midiMessages}) -- its lanes and its notes'
-     * expression included -- and an edit is heard from the next play.
+     * ({@link EventSequence.midiMessages}) -- its automation and its
+     * notes' included -- and an edit is heard from the next play.
      */
     async play(beat?: number, destination?: PlayDestination, pass: Pass = {}): Promise<this> {
         const start = beat ?? this.cursor ?? 0;
         if (destination !== undefined) {
-            // The render a file of it holds: its notes, its lanes and its
-            // notes' expression, as its MIDI spec says them.
+            // The render a file of it holds: its notes, its automation and
+            // its notes', as its MIDI spec says them.
             const played = new Timeline(
                 this.structure.midiMessages().map(([beat, message]) => [beat, MidiItem(message)] as const),
             );

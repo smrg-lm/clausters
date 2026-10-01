@@ -1,7 +1,7 @@
 //! **How a sequence's curves reach its notes**: the graphs they play in, the
 //! tables their readers follow, and the slots the lane adds.
 //!
-//! A curve acts on a channel (a sequence's lane) or on one note (its own
+//! A curve acts on a channel (a curve of the sequence) or on one note (its own
 //! expression), and the two are two graphs one inside the other
 //! (`clausters_core::event_graph`): an instance per channel that has a note
 //! a curve shapes, reading the channel's curves once, and a slot of it per such
@@ -52,7 +52,7 @@ pub fn curve_control(target: &Value) -> Option<String> {
         .map(|(_, control)| control.to_string())
 }
 
-/// The channel a lane's target names, or `None` for every channel.
+/// The channel a sequence curve's target names, or `None` for every channel.
 fn curve_channel(target: &Value) -> Option<i64> {
     target
         .get("channel")
@@ -77,7 +77,7 @@ pub struct ChannelPlan {
     pub key: String,
     pub graph: Value,
     pub notes: Vec<Value>,
-    pub lanes: Vec<(String, Table)>,
+    pub curves: Vec<(String, Table)>,
 }
 
 /// One note that plays in a graph: its channel (an index into
@@ -156,15 +156,16 @@ fn table(key: String, points: &[Point], first: f64, last: f64, origin: f64, rate
 /// **The graphs a placement's curves need**, at `rate` frames a second.
 ///
 /// A note plays in a graph when it has a curve of its own or its channel has
-/// one: its channel is `scope` and the note's `channel` key, and a lane
-/// reaches it when it is of the same scope and names that channel or none. A
+/// one: its channel is `scope` and the note's `channel` key, and a curve of
+/// the sequence reaches it when it is of the same scope and names that channel
+/// or none. A
 /// note's own table is in the note's own time, from its start to the later of
 /// its release and its last point -- a curve may run into the release -- and a
-/// lane's on the transport's, from its first point to its last; past either
+/// sequence's on the transport's, from its first point to its last; past either
 /// end a reader holds.
 pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
     struct Channel {
-        lanes: Vec<(String, Table)>,
+        curves: Vec<(String, Table)>,
         shapes: Vec<Shape>,
     }
     let mut channels: BTreeMap<String, Channel> = BTreeMap::new();
@@ -186,30 +187,30 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
         let key = format!("{}#{channel}", event.scope);
         let own = by_control(event.curves.iter());
         if !channels.contains_key(&key) {
-            let lanes = by_control(placement.lanes.iter().filter(|lane| {
-                lane.scope == event.scope
-                    && curve_channel(&lane.target).is_none_or(|c| c == channel)
+            let curves = by_control(placement.curves.iter().filter(|curve| {
+                curve.scope == event.scope
+                    && curve_channel(&curve.target).is_none_or(|c| c == channel)
             }));
-            let lanes = lanes
+            let curves = curves
                 .into_iter()
                 .map(|(control, curve)| {
                     let points = &curve.points;
                     let first = points[0].at * rate;
                     let last = points[points.len() - 1].at * rate;
-                    let key = format!("lane/{key}/{control}");
+                    let key = format!("channel/{key}/{control}");
                     (control, table(key, points, first, last, 0.0, rate))
                 })
                 .collect();
             channels.insert(
                 key.clone(),
                 Channel {
-                    lanes,
+                    curves,
                     shapes: Vec::new(),
                 },
             );
         }
         let entry = channels.get_mut(&key).expect("inserted above");
-        if own.is_empty() && entry.lanes.is_empty() {
+        if own.is_empty() && entry.curves.is_empty() {
             continue;
         }
         let mut names: Vec<String> = controls.into_iter().map(|(name, _)| name).collect();
@@ -219,7 +220,7 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
             def,
             controls: names,
             own: own.iter().map(|(c, _)| c.clone()).collect(),
-            lanes: entry.lanes.iter().map(|(c, _)| c.clone()).collect(),
+            channel: entry.curves.iter().map(|(c, _)| c.clone()).collect(),
         };
         let slot = match entry.shapes.iter().position(|s| *s == shape) {
             Some(slot) => slot,
@@ -255,13 +256,13 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
             continue;
         }
         let graphs: Vec<Value> = channel.shapes.iter().map(event_graph::note_graph).collect();
-        let lanes: Vec<String> = channel.lanes.iter().map(|(c, _)| c.clone()).collect();
+        let controls: Vec<String> = channel.curves.iter().map(|(c, _)| c.clone()).collect();
         index.insert(key.clone(), out.channels.len());
         out.channels.push(ChannelPlan {
-            graph: event_graph::channel_graph(&lanes, &graphs),
+            graph: event_graph::channel_graph(&controls, &graphs),
             key,
             notes: graphs,
-            lanes: channel.lanes,
+            curves: channel.curves,
         });
     }
     out.notes = notes
@@ -493,17 +494,17 @@ impl NoteCurves {
         let mut alive = BTreeSet::new();
         for channel in &plan.channels {
             let mut ports = Ports::new();
-            for (control, t) in &channel.lanes {
+            for (control, t) in &channel.curves {
                 alive.insert(t.key.clone());
                 let (changed, handle) = self.table(t, &mut ops);
                 if changed || fresh.contains(&channel.key) {
                     ports.insert(
-                        event_graph::lane_port(control, BUF),
+                        event_graph::channel_port(control, BUF),
                         Port::Buffer { buffer: handle },
                     );
-                    ports.insert(event_graph::lane_port(control, AT), Port::Number(t.at));
+                    ports.insert(event_graph::channel_port(control, AT), Port::Number(t.at));
                     ports.insert(
-                        event_graph::lane_port(control, "step"),
+                        event_graph::channel_port(control, "step"),
                         Port::Number(CURVE_STEP),
                     );
                 }
