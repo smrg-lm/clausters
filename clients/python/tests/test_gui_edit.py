@@ -431,6 +431,26 @@ def test_a_roll_opened_in_a_context_it_was_handed_claims_the_sequence():
     assert Editing.of(seq) is context
 
 
+def test_a_window_over_a_held_curve_and_the_roll_are_one_order():
+    """A note's curve opened on its own is the sequence's, so its window joins
+    the roll's history: one gesture is one entry, the roll redraws it, and
+    either window takes it back."""
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    bend = seq.events[0].automation.add({"bend": True}, [(0.0, 0.0), (1.0, 2.0)])
+    roll = edit(seq, sample_rate=SR, open=False)
+    roll_host, _wid = opened(roll)
+    curve = edit(bend, sample_rate=SR, open=False)
+    _host, wid = opened(curve)
+    assert curve._editing is roll._editing
+    drawn = len(roll_host.acks)
+    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 5.0, 1, 0.0])
+    assert [p["value"] for p in bend.points] == [0.0, 5.0]
+    assert len(roll_host.acks) > drawn, "the roll is redrawn"
+    assert roll.undo() is True and not roll.can_undo, "one gesture, one entry"
+    assert [p["value"] for p in bend.points] == [0.0, 2.0]
+    assert curve.redo() is True and [p["value"] for p in bend.points] == [0.0, 5.0]
+
+
 def test_a_sequence_nobody_asked_a_history_of_records_nothing():
     from clausters.history import ATTR
 

@@ -682,7 +682,9 @@ class Editor:
         if self.domain is None:
             return False
         before = self.domain.current(self.structure, payload)
-        if not self.domain.project(self.structure, payload):
+        with self._editing.applying():
+            projected = self.domain.project(self.structure, payload)
+        if not projected:
             return False
         log.debug("record [%s] %s", label, payload.get("intent"))
         if before is not None:
@@ -713,7 +715,9 @@ class Editor:
         moved = False
         for payload in payloads:
             before = self.domain.current(self.structure, payload)
-            if not self.domain.project(self.structure, payload):
+            with self._editing.applying():
+                projected = self.domain.project(self.structure, payload)
+            if not projected:
                 continue
             moved = True
             if before is not None:

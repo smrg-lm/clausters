@@ -94,6 +94,11 @@ class Editing:
         #: history(label)`` blocks open over a structure: one entry, recorded
         #: when the outermost closes.
         self._blocks: dict = {}
+        #: How deep an editor's or a step's own write is. A change it makes
+        #: through a structure's objects -- a points editor over a held curve
+        #: writes the curve into its sequence -- is part of the entry that
+        #: editor or step records, not one of its own.
+        self._applying = 0
 
     @classmethod
     def of(cls, structure) -> "Editing":
@@ -101,8 +106,13 @@ class Editing:
 
         Cached on the object, so every editor over it gets the same one -- the
         whole point, and the reason this is a classmethod rather than a
-        constructor.
+        constructor. A structure another one holds -- a curve a sequence holds
+        -- names that one as its ``_history_owner``, and shares its context: a
+        window over the curve and a roll over the sequence are one order.
         """
+        owner = getattr(structure, "_history_owner", None)
+        if owner is not None:
+            return cls.of(owner)
         context = getattr(structure, ATTR, None)
         if context is None:
             context = cls()
@@ -173,6 +183,17 @@ class Editing:
                                 {"domain": _native.EVENTS}, sequence, _SequenceSteps())
         return identity
 
+    @contextmanager
+    def applying(self):
+        """An editor's or a step's own write: a change made through objects
+        inside it is applied and told to the views, and recorded by nobody but
+        the entry the editor or the step already stands for."""
+        self._applying += 1
+        try:
+            yield
+        finally:
+            self._applying -= 1
+
     def script_edit(self, sequence, intent: dict, label: str) -> dict:
         """**One change a script makes to a sequence in this context**, as a
         turn: applied, recorded -- as its own entry, or into the ``with
@@ -180,6 +201,11 @@ class Editing:
         it told. Answers what the sequence's door answers."""
         block = self._blocks.get(id(sequence))
         with self.turn(None):
+            if self._applying:
+                answer = sequence._apply(intent, inverse=False)
+                if answer.get("applied"):
+                    self.changed()
+                return answer
             if block is not None:
                 answer = sequence._apply(intent, inverse=False)
                 if answer.get("applied"):
@@ -331,6 +357,11 @@ class Editing:
         written back, a take's writes projected, an audio editor's join
         stitched again, an external member's payloads applied -- and then the
         takes the step let go of freed."""
+        with self.applying():
+            self._carry(stepped)
+        self.release(stepped.get("freed"), stepped.get("stored"))
+
+    def _carry(self, stepped: dict) -> None:
         for effect in stepped.get("effects") or ():
             structure, handler = self._handlers.get(int(effect.get("member", -1)),
                                                     (None, None))
@@ -345,7 +376,6 @@ class Editing:
             for payload in effect.get("payloads") or ():
                 if isinstance(payload, dict):
                     handler.project(structure, payload)
-        self.release(stepped.get("freed"), stepped.get("stored"))
 
     def release(self, freed, stored=None) -> None:
         """**Free the takes nothing reaches any more, and write to disk the

@@ -420,6 +420,28 @@ test("a roll opened in a context it was handed claims the sequence", async () =>
     assert.equal(Editing.of(seq), context);
 });
 
+test("a window over a held curve and the roll are one order", async () => {
+    // A note's curve opened on its own is the sequence's, so its window joins
+    // the roll's history: one gesture is one entry, the roll redraws it, and
+    // either window takes it back.
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const bend = seq.events.item(0).automation.add({ bend: true }, { points: [[0.0, 0.0], [1.0, 2.0]] });
+    const roll = await edit(seq, { sampleRate: SR, open: false });
+    const { host: rollHost } = await opened(roll);
+    const curve = await edit(bend, { sampleRate: SR, open: false });
+    const { wid } = await opened(curve);
+    const values = () => bend.points.map((p) => p.value);
+    const drawn = rollHost.acks.length;
+    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 5.0, 1, 0.0]);
+    assert.deepEqual(values(), [0, 5]);
+    assert.ok(rollHost.acks.length > drawn, "the roll is redrawn");
+    assert.ok(roll.undo() && !roll.canUndo, "one gesture, one entry");
+    assert.deepEqual(values(), [0, 2]);
+    assert.ok(curve.redo());
+    assert.deepEqual(values(), [0, 5]);
+});
+
 test("a sequence nobody asked a history of records nothing", async () => {
     const { contexts } = await import("../src/history.ts");
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]]);

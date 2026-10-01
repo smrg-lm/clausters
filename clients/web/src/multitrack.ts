@@ -557,6 +557,16 @@ export class Automation {
         return this.#holder;
     }
 
+    /**
+     * The sequence that holds the curve, whose history it shares
+     * (`Editing.of`), or `null` for a free value.
+     *
+     * @internal
+     */
+    get historyOwner(): object | null {
+        return this.#holder === null ? null : this.#holder[0];
+    }
+
     // ---- the fields ----
 
     #written(): Extra {

@@ -250,14 +250,26 @@ export class Editing {
      * recorded when the outermost closes.
      */
     readonly #blocks = new Map<object, { depth: number; before: unknown; changed: boolean }>();
+    /**
+     * How deep an editor's or a step's own write is. A change it makes through
+     * a structure's objects -- a points editor over a held curve writes the
+     * curve into its sequence -- is part of the entry that editor or step
+     * records, not one of its own.
+     */
+    #applying = 0;
 
     /**
      * The context of this structure, made on first ask.
      *
      * Every editor over one element gets the same one -- the whole point, and
-     * the reason this is a static rather than a constructor.
+     * the reason this is a static rather than a constructor. A structure
+     * another one holds -- a curve a sequence holds -- names that one as its
+     * `historyOwner`, and shares its context: a window over the curve and a
+     * roll over the sequence are one order.
      */
     static of<T extends Editing>(this: new () => T, structure: object): T {
+        const owner = (structure as { historyOwner?: object | null }).historyOwner;
+        if (owner !== undefined && owner !== null) return (this as unknown as typeof Editing).of(owner) as T;
         let context = contexts.get(structure);
         if (context === undefined) {
             context = new this();
@@ -367,6 +379,20 @@ export class Editing {
      * block open over the sequence -- and every view over it told. Answers
      * what the sequence's door answers.
      */
+    /**
+     * Runs an editor's or a step's own write: a change made through objects
+     * inside it is applied and told to the views, and recorded by nobody but
+     * the entry the editor or the step already stands for.
+     */
+    applying<T>(run: () => T): T {
+        this.#applying += 1;
+        try {
+            return run();
+        } finally {
+            this.#applying -= 1;
+        }
+    }
+
     scriptEdit(
         sequence: EventSequence,
         intent: Record<string, unknown>,
@@ -374,6 +400,11 @@ export class Editing {
     ): { applied: boolean; current?: unknown; id?: number } {
         const block = this.#blocks.get(sequence);
         return this.turn(null, () => {
+            if (this.#applying > 0) {
+                const answer = sequence.applyIntent(intent, false);
+                if (answer.applied) this.changed();
+                return answer;
+            }
             if (block !== undefined) {
                 const answer = sequence.applyIntent(intent, false);
                 if (answer.applied) {
@@ -553,6 +584,11 @@ export class Editing {
      * step let go of freed.
      */
     carry(stepped: Stepped): void {
+        this.applying(() => this.#carry(stepped));
+        this.release(stepped.freed, stepped.stored);
+    }
+
+    #carry(stepped: Stepped): void {
         for (const effect of stepped.effects ?? []) {
             const held = this.handlers.get(Number(effect.member));
             if (held === undefined || held.handler === null) continue;
@@ -570,7 +606,6 @@ export class Editing {
                 }
             }
         }
-        this.release(stepped.freed, stepped.stored);
     }
 
     /**

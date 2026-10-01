@@ -454,6 +454,12 @@ class Automation:
         raise ValueError("the sequence no longer holds this curve")
 
     @property
+    def _history_owner(self):
+        """The sequence that holds the curve, whose history it shares
+        (`clausters.history.Editing.of`), or ``None`` for a free value."""
+        return None if self._holder is None else self._holder[0]
+
+    @property
     def held(self) -> bool:
         """Whether a sequence holds the curve: ``False`` for a free value, and
         for a view whose curve was removed."""

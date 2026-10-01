@@ -855,7 +855,8 @@ export class Editor<S = unknown> implements Adopting {
     protected edit(payload: unknown, label: string, coalesce = false): boolean {
         if (this.domain === null) return false;
         const before = this.domain.current(this.structure, payload);
-        if (!this.domain.project(this.structure, payload)) return false;
+        const domain = this.domain;
+        if (!this.editing.applying(() => domain.project(this.structure, payload))) return false;
         log.debug("record [%s] %s", label, (payload as { intent?: unknown }).intent);
         if (before !== null && before !== undefined) {
             this.editing.record(
@@ -892,7 +893,8 @@ export class Editor<S = unknown> implements Adopting {
         let moved = false;
         for (const payload of payloads) {
             const before = this.domain.current(this.structure, payload);
-            if (!this.domain.project(this.structure, payload)) continue;
+            const domain = this.domain;
+            if (!this.editing.applying(() => domain.project(this.structure, payload))) continue;
             moved = true;
             if (before !== null && before !== undefined) {
                 legs.push({
