@@ -410,6 +410,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             name: string;
             kind: string;
             def: string;
+            cached: boolean;
         }[];
         for (const job of jobs) {
             this.compiling.set(job.ticket, job.name);
@@ -419,6 +420,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 name: job.name,
                 kind: job.kind,
                 def: job.def,
+                cached: job.cached,
             });
         }
     }

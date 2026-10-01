@@ -199,5 +199,11 @@ cp "$faustdir/emcc"/libfaust-wasm.js \
 # Worker can import it.
 python3 "$here/faust-wasm-esm.py" "$out/libfaust-wasm.js"
 
+# Which Faust the three were built from, beside them: a page keys the modules
+# it caches on this (`nrt-worker.ts`), so one compiled by another compiler is
+# never handed to the engine, and reading it costs a few bytes where loading
+# the compiler to ask it costs megabytes.
+git -C "$src" rev-parse HEAD > "$out/version" 2>/dev/null || echo unknown > "$out/version"
+
 echo "== staged into $out"
 ls -la "$out"

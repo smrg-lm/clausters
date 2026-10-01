@@ -148,10 +148,11 @@ pub fn faust_jobs(score: &[u8]) -> Result<String, JsError> {
             out.push(',');
         }
         out.push_str(&format!(
-            r#"{{"name":{},"kind":{},"def":{}}}"#,
+            r#"{{"name":{},"kind":{},"def":{},"cached":{}}}"#,
             json_string(name),
             json_string(kind),
             json_string(def),
+            clausters::server::defstore::is_ephemeral(name),
         ));
     }
     out.push(']');
@@ -573,11 +574,12 @@ impl WebServer {
             // Printed by hand rather than through serde: one shape, one place,
             // and the shell keeps carrying no dependency it does not need.
             out.push_str(&format!(
-                r#"{{"ticket":{},"name":{},"kind":{},"def":{}}}"#,
+                r#"{{"ticket":{},"name":{},"kind":{},"def":{},"cached":{}}}"#,
                 job.ticket,
                 json_string(&job.name),
                 json_string(job.kind),
                 json_string(&job.def),
+                job.cached,
             ));
         }
         out.push(']');

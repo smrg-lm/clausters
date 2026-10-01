@@ -25,7 +25,7 @@
 // worklet's business and is paced there, a run at a time.
 
 /// <reference lib="webworker" />
-import { extensionOf, readFile, readRange, writeFile } from "./opfs.ts";
+import { extensionOf, readFile, readRange, trimDirectory, writeFile } from "./opfs.ts";
 import { HEAD_BYTES, parseShape, wrapSpan, type WavShape } from "./wav.ts";
 
 /** What the worklet asks for. `ticket` comes back untouched. */
@@ -66,6 +66,11 @@ interface FaustRequest {
     /** `"source"`, `"boxes"` or `"signals"` -- which format `def` is in. */
     kind: string;
     def: string;
+    /**
+     * Cache it by content: an ephemeral def (`tmp_...`), whose name is new
+     * every time it is sent. The server decides, the worker keeps the cache.
+     */
+    cached?: boolean;
 }
 
 /**
@@ -574,11 +579,105 @@ let reloads = 0;
  * too deep for a tab, and saying so is the honest answer.
  */
 async function compile(request: FaustRequest): Promise<Response> {
-    const first = await compileOnce(request);
-    const failure = first.type === "faust" && "error" in first ? first.error : "";
-    if (!OUT_OF_STACK.test(failure)) return first;
-    discardCompiler();
-    return compileOnce(request);
+    const key = await contentKey(request);
+    if (key !== null) {
+        const hit = await fromCache(key);
+        if (hit !== null) return { type: "faust", ticket: request.ticket, ...hit };
+    }
+    let result = await compileOnce(request);
+    const failure = result.type === "faust" && "error" in result ? result.error : "";
+    if (OUT_OF_STACK.test(failure)) {
+        discardCompiler();
+        result = await compileOnce(request);
+    }
+    if (key !== null && result.type === "faust" && "bytes" in result) {
+        await toCache(key, result.bytes, result.json);
+    }
+    return result;
+}
+
+// ---- the cache of compiled ephemeral defs ----
+//
+// A native server keeps an ephemeral def's bitcode in its temp directory,
+// under the def's content, so the same expression evaluated again skips the
+// compile (`faust::cache::content_key`). The page keeps the compiled module
+// and the compiler's JSON in its own storage, in a directory of the same name
+// -- and a hit skips more here than there: the compiler itself, megabytes this
+// Worker never has to load.
+
+/** Where, at the root of the page's storage. */
+const EPHEMERAL_DIR = "clausters-tmpdefs";
+
+/** How many files it keeps -- a module and its JSON per def -- oldest out first. */
+const EPHEMERAL_KEEP = 512;
+
+let compilerVersion: Promise<string | null> | null = null;
+
+/**
+ * Which Faust compiled what is cached: the commit the vendored compiler was
+ * built from, written beside it at build time. Read rather than asked of the
+ * compiler, which a hit never loads. `null` when it is not there -- a compiler
+ * built before the stamp existed -- and then nothing is cached at all, since a
+ * module from another compiler must never reach the engine.
+ */
+function version(): Promise<string | null> {
+    compilerVersion ??= (async () => {
+        try {
+            const reply = await fetch(new URL("../vendor/faust/version", import.meta.url));
+            if (!reply.ok) return null;
+            const stamp = (await reply.text()).trim();
+            return stamp.length > 0 && stamp !== "unknown" ? stamp : null;
+        } catch {
+            return null;
+        }
+    })();
+    return compilerVersion;
+}
+
+/**
+ * The key a def is cached under: the compiler's version, the format, the
+ * compiler's arguments and the payload, hashed -- never the name, which is new
+ * on every send. `null` when the def is not one to cache or the page cannot.
+ */
+async function contentKey(request: FaustRequest): Promise<string | null> {
+    if (request.cached !== true) return null;
+    if (typeof crypto === "undefined" || crypto.subtle === undefined) return null;
+    if (typeof navigator === "undefined" || navigator.storage === undefined) return null;
+    const stamp = await version();
+    if (stamp === null) return null;
+    const text = `${stamp}\n${request.kind}\n${FAUST_ARGS}\n${request.def}`;
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+    return Array.from(digest.subarray(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** A def compiled before from the same content, or `null` on a miss. */
+async function fromCache(key: string): Promise<{ bytes: ArrayBuffer; json: string } | null> {
+    try {
+        const json = new TextDecoder().decode(await readFile(`${EPHEMERAL_DIR}/${key}.json`));
+        const module = await readFile(`${EPHEMERAL_DIR}/${key}.wasm`);
+        const bytes = module.buffer.slice(
+            module.byteOffset,
+            module.byteOffset + module.byteLength,
+        ) as ArrayBuffer;
+        return { bytes, json };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Keeps a fresh compile. The module goes first and the JSON last, so a JSON
+ * that is there names a module that is whole. Best-effort: a write that fails
+ * only means the next identical def compiles again.
+ */
+async function toCache(key: string, bytes: ArrayBuffer, json: string): Promise<void> {
+    try {
+        await writeFile(`${EPHEMERAL_DIR}/${key}.wasm`, new Uint8Array(bytes));
+        await writeFile(`${EPHEMERAL_DIR}/${key}.json`, new TextEncoder().encode(json));
+        await trimDirectory(EPHEMERAL_DIR, EPHEMERAL_KEEP);
+    } catch {
+        // Nothing to undo: a miss next time.
+    }
 }
 
 async function compileOnce(request: FaustRequest): Promise<Response> {

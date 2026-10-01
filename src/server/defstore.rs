@@ -57,8 +57,13 @@ pub fn is_ephemeral(name: &str) -> bool {
 /// recompile while the persistent store stays clean, and the OS reclaims the
 /// directory on its own schedule.
 pub fn ephemeral_dir() -> PathBuf {
-    std::env::temp_dir().join("clausters-tmpdefs")
+    std::env::temp_dir().join(EPHEMERAL_DIR)
 }
+
+/// The directory an ephemeral def's cache is kept in: under the OS temp
+/// directory natively ([`ephemeral_dir`]), and at the root of the page's own
+/// storage in a tab.
+pub const EPHEMERAL_DIR: &str = "clausters-tmpdefs";
 
 /// Env var overriding the data directory (highest priority after an explicit
 /// CLI path).

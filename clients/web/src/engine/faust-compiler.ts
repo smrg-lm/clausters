@@ -25,6 +25,8 @@ export interface FaustJob {
     /** `"source"`, `"boxes"` or `"signals"`. */
     kind: string;
     def: string;
+    /** An ephemeral def, which the compiler caches by its content. */
+    cached?: boolean;
 }
 
 /** One compiled def: the module's bytes and the compiler's own JSON. */

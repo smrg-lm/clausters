@@ -187,6 +187,43 @@ pub fn load_records(dir: &Path) -> Vec<FaustRecord> {
         .collect()
 }
 
+/// **The key a compile is cached under by its content**: the libfaust version,
+/// the front-end, the compiler's arguments and the payload, hashed -- and not
+/// the def's name, which nothing compiled carries. An ephemeral def is named
+/// afresh every time it is sent (`tmp_<family>_<uuid>`), so a key with the
+/// name in it would never be met twice; the same expression evaluated again
+/// is the same key.
+pub fn content_key(payload: &CompilePayload) -> String {
+    let (kind, body) = match payload {
+        CompilePayload::Source(s) => ("source", s),
+        CompilePayload::Json(s) => ("json", s),
+        CompilePayload::Signal(s) => ("signal", s),
+    };
+    sha256_hex(format!("{}\n{kind}\n-ftz 2\n{body}", faust_version()).as_bytes())
+}
+
+/// Where a compile cached by content keeps its bitcode.
+fn content_path(dir: &Path, key: &str) -> PathBuf {
+    dir.join(format!("{}.bc", &key[..32]))
+}
+
+/// Restores a factory compiled before from the same content, skipping the
+/// Faust front-end. `Err` on a miss, which is the ordinary case for a def
+/// never compiled here.
+pub fn restore_content(dir: &Path, payload: &CompilePayload) -> Result<FaustFactory, String> {
+    let path = content_path(dir, &content_key(payload));
+    if !path.exists() {
+        return Err("not cached".into());
+    }
+    read_bitcode(&path)
+}
+
+/// Caches a fresh compile under its content key. Best-effort: a write that
+/// fails only means the next identical def compiles again.
+pub fn persist_content(factory: &FaustFactory, payload: &CompilePayload, dir: &Path) {
+    write_bitcode(factory, &content_path(dir, &content_key(payload)));
+}
+
 /// Removes a def's record and its bitcode (for `/def_free`).
 pub fn remove(dir: &Path, name: &str) {
     let _ = std::fs::remove_file(record_path(dir, name));

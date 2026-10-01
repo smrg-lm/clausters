@@ -80,33 +80,39 @@ impl OscServer {
         let (name, def) = crate::osc::translate::parse_def_send_faust(args)?;
         let payload = CompilePayload::classify(def);
         self.claim_def_name(&name, DefKind::Faust);
-        // A live faust /def_send always compiles fresh from the given def and, with
-        // persistence on, (re)writes the cache (restore = None). An ephemeral
-        // def never reaches the store: its bitcode speed-cache goes to the OS
-        // temp directory instead, so replaying the same expression still skips
-        // the recompile without leaving a record behind.
+        // A named def compiles fresh from the given def and, with persistence
+        // on, (re)writes its record and bitcode in the store. An ephemeral def
+        // never reaches the store: it is cached **by content** instead -- the
+        // same expression evaluated again skips the recompile, under a name
+        // that is new every time -- in the OS temp directory natively and in
+        // the page's own storage in a tab, where the host that compiles reads
+        // and writes it (`clients/web/src/engine/nrt-worker.ts`).
         let cache = if defstore::is_ephemeral(&name) {
-            // The in-tab engine has no temp directory wired -- asking for
-            // one there is a panic rather than an empty answer -- so it
-            // compiles an ephemeral def every time. The page's own storage
-            // could hold this cache; that is a gap of the port, not of the
-            // platform (`clients/web/PLAN.md`, Found by use).
             #[cfg(target_arch = "wasm32")]
             {
-                None::<Box<CacheJob>>
+                Some(Box::new(CacheJob {
+                    dir: std::path::PathBuf::from(defstore::EPHEMERAL_DIR),
+                    restore: None,
+                    by_content: true,
+                }))
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let dir = defstore::ephemeral_dir();
-                std::fs::create_dir_all(&dir)
-                    .is_ok()
-                    .then(|| Box::new(CacheJob { dir, restore: None }))
+                std::fs::create_dir_all(&dir).is_ok().then(|| {
+                    Box::new(CacheJob {
+                        dir,
+                        restore: None,
+                        by_content: true,
+                    })
+                })
             }
         } else {
             self.store.as_ref().map(|s| {
                 Box::new(CacheJob {
                     dir: s.faustdefs_dir().to_path_buf(),
                     restore: None,
+                    by_content: false,
                 })
             })
         };

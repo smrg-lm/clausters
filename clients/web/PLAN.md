@@ -4638,14 +4638,23 @@ sound.
   `doc.ARRANGEMENT`, which no import names. On the old pages it reports the
   three this entry found.
 
-- ⬜ **The engine in a page caches no ephemeral Faust def** *(found
+- ✅ **The engine in a page caches no ephemeral Faust def** *(found
   2026-10-01, making generated defs `tmp_`)*. A native server writes an
   ephemeral def's record and bitcode to a temp directory, so a replayed
   expression skips the recompile; the in-tab engine has no temp directory
   wired and compiles it every time (`src/osc/server/async_pipes.rs`). The
   page has storage for it -- the origin private file system its file commands
   already use -- so this is the port's gap: a directory of that storage as
-  the ephemeral cache.
+  the ephemeral cache. **Fixed 2026-10-01, and the premise was half wrong**:
+  the native cache was written and never read -- a live `/def_send faust`
+  always compiled, and the bitcode was filed under the def's name, which for
+  an ephemeral def is a fresh uuid every send. Decided with the user to make
+  it real on both: an ephemeral def is cached **by its content**
+  (`faust::cache::content_key`), the bitcode in the OS temp directory
+  natively and the compiled module with its JSON in the page's storage
+  (`engine/nrt-worker.ts`), keyed there by the commit the vendored compiler
+  was built from (`vendor/faust/version`, written by
+  `third_party/build-faust-wasm.sh`), so a hit loads no compiler at all.
 
 - ✅ **The offline score and its carrier are named apart from Python's**
   *(found 2026-09-27, listing every class named after a score)*. The page's

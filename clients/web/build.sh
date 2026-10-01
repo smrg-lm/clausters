@@ -132,6 +132,9 @@ if [ -d vendor/faust ]; then
     mkdir -p dist/vendor/faust
     cp vendor/faust/libfaust-wasm.js vendor/faust/libfaust-wasm.wasm \
        vendor/faust/libfaust-wasm.data dist/vendor/faust/
+    # Which Faust they are, for the page's cache of compiled defs; a vendor
+    # directory built before it was written caches nothing.
+    if [ -f vendor/faust/version ]; then cp vendor/faust/version dist/vendor/faust/; fi
 else
     echo "note: vendor/faust missing -- run third_party/build-faust-wasm.sh" \
          "if you need a Faust compiler in the page" >&2

@@ -34,6 +34,11 @@ pub struct CacheJob {
     /// bitcode first and recompiles only on a miss. `None` for a live
     /// `/def_send faust`, which always compiles fresh and then (re)writes the cache.
     pub restore: Option<FaustRecord>,
+    /// **Cached by content** rather than by name: an ephemeral def, whose
+    /// name is new every time it is sent. The thread looks for a compile of
+    /// the same content first and writes one after a miss (`cache::content_key`);
+    /// no record is kept, since nothing reloads an ephemeral def.
+    pub by_content: bool,
 }
 
 pub struct CompileRequest {
@@ -203,9 +208,9 @@ pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String>
 }
 
 /// Runs one request: on a startup reload, tries the bitcode cache first
-/// (skipping the Faust front-end); otherwise -- and on any cache miss --
-/// compiles from source. When persistence is on, a fresh compile (re)writes
-/// the cache. The cache is non-authoritative: a miss is silent and always
+/// (skipping the Faust front-end), and an ephemeral def tries a compile of
+/// the same content; otherwise -- and on any cache miss -- compiles from
+/// source. A fresh compile then (re)writes whichever cache it has. The cache is non-authoritative: a miss is silent and always
 /// recoverable.
 fn run_request(req: &CompileRequest) -> Result<FaustDef, String> {
     // The cache path skips the Faust front-end but still runs LLVM's JIT,
@@ -218,9 +223,21 @@ fn run_request(req: &CompileRequest) -> Result<FaustDef, String> {
     {
         return Ok(def);
     }
+    if let Some(job) = &req.cache
+        && job.by_content
+        && let Ok(def) = crate::dsp::denormals::normal_precision(|| {
+            cache::restore_content(&job.dir, &req.payload).and_then(FaustDef::probe)
+        })
+    {
+        return Ok(def);
+    }
     let def = compile(&req.name, &req.payload)?;
-    if let Some(job) = &req.cache {
-        cache::persist(def.factory(), &req.name, &req.payload, &job.dir);
+    match &req.cache {
+        Some(job) if job.by_content => {
+            cache::persist_content(def.factory(), &req.payload, &job.dir)
+        }
+        Some(job) => cache::persist(def.factory(), &req.name, &req.payload, &job.dir),
+        None => {}
     }
     Ok(def)
 }

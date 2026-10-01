@@ -274,3 +274,60 @@ mod osc {
         server.quit();
     }
 }
+
+/// **An ephemeral def is cached by its content**: the same expression sent
+/// again under a fresh `tmp_` name is restored from the bitcode the first
+/// compile left, not compiled again. Proved by planting: the cached bitcode is
+/// replaced with a different DSP's (two outputs, not one), and the second
+/// request answers with that DSP -- which only a read of the cache can do.
+#[test]
+fn an_ephemeral_def_is_cached_by_its_content() {
+    use clausters::faust::cache;
+    use clausters::faust::compiler::CacheJob;
+
+    let dir = std::env::temp_dir().join(format!("clausters-content-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let job = || {
+        Some(Box::new(CacheJob {
+            dir: dir.clone(),
+            restore: None,
+            by_content: true,
+        }))
+    };
+    let compiler = CompilerThread::spawn(None, clausters::server::meters::Meters::detached());
+    let ask = |name: &str, src: &str| {
+        compiler
+            .submit(CompileRequest {
+                name: name.into(),
+                payload: CompilePayload::Source(src.into()),
+                client: Some(dummy_client()),
+                cache: job(),
+            })
+            .ok()
+            .unwrap();
+        compiler
+            .recv_result_timeout(COMPILE_DEADLINE)
+            .expect("compilation must finish")
+            .outcome
+            .expect("compiles")
+    };
+
+    let mono = "process = 0.1;";
+    let first = ask("tmp_faustdef_a", mono);
+    assert_eq!(first.num_outputs, 1);
+    let cached: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
+    assert_eq!(cached.len(), 1, "one bitcode, named by content");
+
+    // Plant a two-output DSP's bitcode under the mono expression's key.
+    let stereo = ask("tmp_faustdef_s", "process = 0.1, 0.2;");
+    assert_eq!(stereo.num_outputs, 2);
+    let planted = cached[0].path();
+    assert!(cache::write_bitcode(stereo.factory(), &planted));
+
+    let again = ask("tmp_faustdef_b", mono);
+    assert_eq!(
+        again.num_outputs, 2,
+        "the second send of the expression read the cache, under a new name"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

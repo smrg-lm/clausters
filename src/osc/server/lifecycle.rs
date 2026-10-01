@@ -181,6 +181,7 @@ impl OscServer {
                 cache: Some(Box::new(CacheJob {
                     dir: store.faustdefs_dir().to_path_buf(),
                     restore: Some(record),
+                    by_content: false,
                 })),
             };
             if self.faust_compiler.submit(request).is_err() {

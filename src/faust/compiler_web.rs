@@ -29,12 +29,15 @@ use crate::osc::wake::Waker;
 
 pub use crate::faust::CompilePayload;
 
-/// Disk-cache work attached to a compile request. A page has no def store, so
-/// nothing ever constructs one; the type exists so the command paths above are
-/// one piece of code on both targets.
+/// Cache work attached to a compile request. In a page only an ephemeral def
+/// carries one -- cached by content in the page's own storage, by the host
+/// that compiles it ([`CompileJob::cached`]) -- since the engine there keeps
+/// no def store yet; the fields mirror the native type so the command paths
+/// above are one piece of code on both targets.
 pub struct CacheJob {
     pub dir: std::path::PathBuf,
     pub restore: Option<()>,
+    pub by_content: bool,
 }
 
 pub struct CompileRequest {
@@ -61,6 +64,10 @@ pub struct CompileJob {
     /// the payload is in, so the host calls the right libfaust entry point.
     pub kind: &'static str,
     pub def: String,
+    /// **Cache it by content**: an ephemeral def, which the host looks for in
+    /// its cache before compiling and writes there after. Named afresh each
+    /// time it is sent, so its content is the only key that is ever met twice.
+    pub cached: bool,
 }
 
 struct Inner {
@@ -136,6 +143,7 @@ impl CompilerThread {
                 name: req.name.clone(),
                 kind: req.payload.kind(),
                 def: req.payload.text().to_string(),
+                cached: req.cache.as_ref().is_some_and(|c| c.by_content),
             });
             inner.outstanding.push((ticket, req.name, req.client));
         }

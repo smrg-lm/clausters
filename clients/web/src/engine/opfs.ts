@@ -146,3 +146,30 @@ export function extensionOf(path: string): string {
     const dot = name.lastIndexOf(".");
     return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
 }
+
+/**
+ * **Keeps the `keep` newest files of a directory** and removes the rest,
+ * oldest first: the bound of a cache that would otherwise grow for as long as
+ * the origin lives. A directory that is not there has nothing to trim.
+ */
+export async function trimDirectory(path: string, keep: number): Promise<void> {
+    let dir: FileSystemDirectoryHandle;
+    try {
+        dir = await navigator.storage.getDirectory();
+        for (const segment of parts(path)) dir = await dir.getDirectoryHandle(segment);
+    } catch {
+        return;
+    }
+    const files: { name: string; at: number }[] = [];
+    const listing = (dir as unknown as {
+        entries(): AsyncIterable<[string, FileSystemHandle]>;
+    }).entries();
+    for await (const [name, handle] of listing) {
+        if (handle.kind !== "file") continue;
+        const file = await (handle as FileSystemFileHandle).getFile();
+        files.push({ name, at: file.lastModified });
+    }
+    if (files.length <= keep) return;
+    files.sort((a, b) => a.at - b.at);
+    for (const { name } of files.slice(0, files.length - keep)) await dir.removeEntry(name);
+}

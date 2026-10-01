@@ -213,6 +213,37 @@
         const soundfileOk = sfLength === SF_FRAMES
           && Math.abs(sfSample - SF_VALUE) < 0.01;
 
+        // An **ephemeral** def is cached by its content in the page's own
+        // storage: the same expression sent again under a new `tmp_` name is
+        // the module the first send left, not a second compile. A constant no
+        // earlier run used makes the first send a miss; the cached JSON's
+        // modification time then says whether the second send wrote it again
+        // (a compile) or only read it (a hit).
+        const salt = Math.random().toFixed(9);
+        const ephemeralSrc = `process = ${salt} * 0.1;`;
+        const cacheDir = async () => {
+          const root = await navigator.storage.getDirectory();
+          return root.getDirectoryHandle("clausters-tmpdefs", { create: true });
+        };
+        const jsons = async () => {
+          const out = new Map();
+          for await (const [name, handle] of (await cacheDir()).entries()) {
+            if (name.endsWith(".json")) out.set(name, (await handle.getFile()).lastModified);
+          }
+          return out;
+        };
+        const before = await jsons();
+        await FaustDef.fromSource(`tmp_faustdef_${salt.slice(2)}a`, ephemeralSrc).send(server);
+        const afterFirst = await jsons();
+        const fresh = [...afterFirst.keys()].filter((k) => !before.has(k));
+        await wait(50);
+        await FaustDef.fromSource(`tmp_faustdef_${salt.slice(2)}b`, ephemeralSrc).send(server);
+        const afterSecond = await jsons();
+        const cacheOk = fresh.length === 1
+          && afterSecond.get(fresh[0]) === afterFirst.get(fresh[0]);
+        log(`ephemeral cache: ${fresh.length} entry written on the first send, `
+            + `${cacheOk ? "read" : "not read"} on the second`);
+
         await session.close();
 
         // And the same three defs **offline**, which is the other half of the
@@ -254,7 +285,8 @@
         // Offline: the three summed sines are in phase at the same pitch, so
         // the crossing count still reads 300 Hz and the peak is their sum.
         const offlineOk = nrtPeak > 0.6 && Math.abs(nrtHz - 300) < 25;
-        const ok = allSound && Math.abs(high - 900) < 40 && offlineOk && soundfileOk;
+        const ok = allSound && Math.abs(high - 900) < 40 && offlineOk && soundfileOk
+          && cacheOk;
         const shape = heard
           .map(([l, p, hz]) => `${l} ${p.toFixed(2)}/${Math.round(hz)}Hz`)
           .join(", ");
@@ -262,10 +294,11 @@
           ? `PASS: source, boxes and signals all compiled in the page and ` +
             `sounded (${shape}), /node_set moved freq to ~${Math.round(high)} Hz, ` +
             `an offline render of the three peaked ${nrtPeak.toFixed(2)} at ` +
-            `~${Math.round(nrtHz)} Hz, and a soundfile read a ${sfLength}-frame ` +
-            `buffer at ${sfSample.toFixed(2)}`
+            `~${Math.round(nrtHz)} Hz, a soundfile read a ${sfLength}-frame ` +
+            `buffer at ${sfSample.toFixed(2)}, and an ephemeral def sent twice ` +
+            `compiled once`
           : `FAIL: ${shape}; after /node_set ${Math.round(high)} Hz; ` +
-            `soundfile ${sfLength}/${sfSample.toFixed(2)} | ` +
+            `soundfile ${sfLength}/${sfSample.toFixed(2)}; cache ${cacheOk} | ` +
             document.getElementById("log").textContent.replace(/\n/g, " / "));
       }
 
