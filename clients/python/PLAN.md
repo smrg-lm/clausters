@@ -1686,7 +1686,7 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   is free (built by a script, held by nothing) and a **live view** once it
   belongs to a sequence or an event; the id is the document's to assign. The
   multitrack's own dataclasses follow when the multitrack is held as a handle,
-  which has no milestone yet.
+  which is `C60`.
 
 **The steps**, each a commit with both clients in it — the surface is one in
 two languages, so neither ships ahead — the books, and `editors/edit_notes`
@@ -1719,6 +1719,85 @@ kept beside the objects, and every call site is rewritten in the same pass
     acceptance is the roll: with it open, a script's change redraws it, is
     heard from the lane, and one Ctrl+Z in the window takes back a whole
     `with` block.
+
+### A script plays and holds what the editors do (client arc, phased)
+
+*(Opened 2026-10-01 by the user, with `C57`, from the same session: render a
+`Timeline` into a sequence, edit it in the roll, close the window, and "con
+los datos hacer play(x) en el cliente, sin gui". On what `play` answers: "el
+verbo play debería devolver un objeto que represente el transport del
+servidor donde está cargada la lane". On the default session: "Todo tiene que
+poder funcionar con una sesión por defecto para evitar with innecesarios".)*
+
+`C57` makes what a script holds of a sequence an object; this arc makes the
+rest of what the editors do reachable from a script with no window: playing
+a sequence, putting it back into a `Timeline`, and holding a multitrack the
+way a sequence is held. Each milestone is a commit with both clients in it,
+the books, and the existing examples extended.
+
+- ⬜ **C58 — `play(seq)` answers a transport.** A sequence sounds only
+  through `NotesEditor.play()` (`gui/editing/events.py`): `_NotesPlayback`,
+  one per server, loads its event lane and drives it, and nothing outside the
+  window reaches it. `play(sequence)` is not one of the free `play`'s kinds.
+  - **A transport object.** `TransportView` (`defs/server/transport.py`) is
+    "a `Server` addressed through one of its transports": the server's
+    `transport_*` methods with the id filled in and `__getattr__` delegating
+    the rest, made so a `Timeline` or a GUI playback had something to point
+    at (the web client's `transportAt` answers a `Server` the same way). It
+    becomes an object of its own whose verbs are the transport's —
+    `play`, `pause`, `stop`, `locate`, `loop`, `end`, `state`, and a `wait`
+    a script may call or not — and it behaves as a routine does: a live
+    session drives it with the same commands, an automated script waits on
+    it. The GUI's playbacks and `Timeline.transport` take it too, so there
+    is one.
+  - **The playback leaves `clausters.gui`.** What `_NotesPlayback` does is
+    the client's, not the window's; `NotesEditor` uses it instead of owning
+    it. `play(sequence)` loads the lane and answers the transport it is on.
+  - **Which transport.** Today each editor's is a constant in
+    `clausters-editing` (`MULTITRACK_TRANSPORT` 0, `AUDIO_EDITOR_TRANSPORT`
+    1, `NOTES_EDITOR_TRANSPORT` 3), so two plays of two sequences would share
+    one. To decide when it is taken: one shared transport for every
+    `play(sequence)`, or one handed out per play by an allocator, as node ids
+    and buses are (`C55`).
+  - **The end.** `wait()` returns when the contents end, with no end mark
+    set by hand.
+  - **The default session.** `play(sequence)` with no `with` and no server
+    works: today `main.resolve_server` raises unless a server was booted, so
+    the default session boots one on first use.
+- ⬜ **C59 — A sequence back in a `Timeline`.** `X3` decided that no
+  timeline is rebuilt from its values (`crates/clausters-apps/PLAN.md`):
+  `render_events` is the one-way change, and what the roll edits lives in the
+  `EventSequence`. Reloading the *sequence* already works — inline in a
+  session's `Source`, or as a `.mid`. What is open is a `Timeline` that holds
+  the edited sequence, and it is **decided when it is taken**, between:
+  - `Timeline.from_sequence`, which contradicts `X3` and would answer a flat
+    list of fixed events — no generator, no nesting comes back;
+  - an `EventSequence` as an entry of a `Timeline`, played in place as its
+    other items are, with nothing rebuilt *(the recommendation)*.
+  The reason to want either was playing the sequence from the client; with
+  `C58` that is `play(sequence)`, so what is left is placing an edited
+  sequence among a `Timeline`'s other entries.
+- ⬜ **C60 — The multitrack is held as a handle.** A sequence is a handle
+  over the Rust structure: one tree. A `Multitrack` is a mirror —
+  `Multitrack`, `Track`, `Region`, `Source` are dataclasses
+  (`clausters/multitrack.py`) that cross as JSON (`write`/`read`): two
+  trees. The editor's core is already a handle (`MultitrackEditorCore`);
+  what a script holds is still the mirror. So `Region` and `Track` take an
+  `id: int` in their constructor — the numbers `C57` removes from the
+  sequence — `mt.track(id)` and `mt.region(id)` look up by number, and a
+  script's change to a track, a region or their automation is no turn the
+  editor sees. (A notes region's sequence is already the source table's
+  handle, so with `C57.3` a script's edit of it reaches the roll; the
+  multitrack around it is what is not.)
+  - The `C57` model on the multitrack: one tree in Rust; tracks, take lanes,
+    regions, sources and automation as live objects with an identity map
+    (`mt.tracks.add(...)` answers a `Track`, `region.position = ...`); ids
+    the crate assigns; `mt.history(label)` making a script's change a turn.
+  - It revises `O10`'s rule in `crates/clausters-document/PLAN.md` ("the
+    clients round-trip; they do not hold handles"), whose tension `O12`
+    wrote down and answered for the edit, not for the objects. The revision
+    is written there in the same commit.
+  - After `C57`, which settles the shape on the smaller structure.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
