@@ -1263,6 +1263,66 @@ opened it.
   In the multitrack with the setting on, playback stops at the last clip's end.
   Both clients and the standalone host, and the example names `L`.
 
+- ⬜ **X9 - The multitrack editor, continued.** *(Opened 2026-10-01 by the
+  user, to hold what waits for the multitrack's development to resume: the
+  clone "is to be postponed until the multitrack's development continues, in a
+  nested X milestone".)* The multitrack editor's milestones so far are the
+  document's (`crates/clausters-document/PLAN.md`, `O25`-`O33`) and this
+  crate's `X8`; what is gathered here is taken up when that work starts again,
+  each part opening on its own decision.
+
+  - ⬜ **X9.1 - A clone: a new sequence made from a clip, or from a segment of
+    one.** *(Moved here 2026-10-01 from `clients/python/PLAN.md`, Future
+    directions, where it was written; the decision it waits on is
+    `crates/clausters-document/PLAN.md`'s `O21`(a) -- whether a region is one
+    object or two, the slot and what fills it -- since if it is two, swapping
+    what fills a slot while keeping the slot is a copy by construction.)*
+    *(named 2026-09-03 by the user, reading the window/copy question above: "crear
+    una nueva secuencia a partir de un clip o un segmento de un clip clonado, ahí
+    sí el contenido del nuevo clip sería una copia de los datos en otra
+    estructura")*. Today the arrangement has one way of making a second thing out
+    of a first, and it is a **window**: a split, a trim and a join all refer, and
+    nothing is copied. The verb that is missing is the other one, and it is a
+    **deliberate act rather than a side effect** -- take this clip, or this stretch
+    of it, and give me its contents as **a structure of their own**: a new
+    timeline of notes, a new take of samples, independent from that moment on.
+
+    It is worth having on its own terms. A window is right for a cut, and wrong
+    for "I want to develop this phrase without touching the one it came from" --
+    which today can only be done by writing the timeline out in a script. It is
+    also the verb whose absence makes a split *feel* like it should copy, so
+    naming it separates the two questions instead of letting one answer both.
+
+    **And it is a candidate answer to the entry above** ("A window onto notes is a
+    window while the session lasts and a copy once it is written"): if a split of
+    notes *cloned* rather than windowed, each half would hold its own timeline
+    with its own node ids, nothing would collide, and the crate would need no
+    change at all. What that costs is exactly what the windows buy -- the cut
+    would stop hiding and start deleting, so dragging a half's edge back out would
+    bring back nothing, and a join would no longer be the inverse of a split but a
+    merge of two independent copies. The two are therefore read together, and the
+    decision is one decision:
+
+    - **windows all the way** -- the crate learns to let a segment name a node,
+      the split stays reversible, and the clone is added beside it as its own
+      verb;
+    - **clone for notes** -- the split over notes copies, the crate is untouched,
+      and the reversibility a take has is not a thing a phrase has;
+    - **both, with the window as the default** -- which is what a DAW's "make
+      unique" does to a shared clip, and is probably where this lands, but it is
+      written here as an option rather than chosen.
+
+    Whatever it is, the *verb* belongs in the vocabulary in one shape for every
+    contents, like the others: a clone of a stretch of samples is a bounce of that
+    window into a new take, which is the same act one unit over.
+
+    *Re-read 2026-09-14: still missing, in today's terms.* A piece is regions
+    windowing sources, and a join mints a source made of segments; every verb
+    refers and none copies. The clone is still the other verb — consolidate a
+    region, or a stretch of one, into a source of its own (a bounce, for samples;
+    a copied timeline, for notes) — and the choice it names between windows and
+    copies is now a choice about sources rather than about `form`'s tree.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,

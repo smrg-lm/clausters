@@ -2891,7 +2891,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
   The decision behind the shape -- windows all the way, against a split that
   clones -- is in `docs/decisions.md`, and the clone stays written down as a
-  verb worth having on its own.
+  verb worth having on its own (`crates/clausters-apps/PLAN.md`, `X9.1`).
 
 - ✅ **Which edits a clip admits is asked of `form`'s classes, not of the data**
   *(found 2026-09-03 while chasing "the clip does not respond"; re-framed the
@@ -4855,53 +4855,6 @@ work, where a pending item reads as done.)*
   (`Timeline.render_events` already makes them a sequence), leaving the plan to
   what only code can say. Whether a timeline splits its items that way, and
   what a mixed one does at a locate, is the design.
-
-- ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
-  *(named 2026-09-03 by the user, reading the window/copy question above: "crear
-  una nueva secuencia a partir de un clip o un segmento de un clip clonado, ahí
-  sí el contenido del nuevo clip sería una copia de los datos en otra
-  estructura")*. Today the arrangement has one way of making a second thing out
-  of a first, and it is a **window**: a split, a trim and a join all refer, and
-  nothing is copied. The verb that is missing is the other one, and it is a
-  **deliberate act rather than a side effect** -- take this clip, or this stretch
-  of it, and give me its contents as **a structure of their own**: a new
-  timeline of notes, a new take of samples, independent from that moment on.
-
-  It is worth having on its own terms. A window is right for a cut, and wrong
-  for "I want to develop this phrase without touching the one it came from" --
-  which today can only be done by writing the timeline out in a script. It is
-  also the verb whose absence makes a split *feel* like it should copy, so
-  naming it separates the two questions instead of letting one answer both.
-
-  **And it is a candidate answer to the entry above** ("A window onto notes is a
-  window while the session lasts and a copy once it is written"): if a split of
-  notes *cloned* rather than windowed, each half would hold its own timeline
-  with its own node ids, nothing would collide, and the crate would need no
-  change at all. What that costs is exactly what the windows buy -- the cut
-  would stop hiding and start deleting, so dragging a half's edge back out would
-  bring back nothing, and a join would no longer be the inverse of a split but a
-  merge of two independent copies. The two are therefore read together, and the
-  decision is one decision:
-
-  - **windows all the way** -- the crate learns to let a segment name a node,
-    the split stays reversible, and the clone is added beside it as its own
-    verb;
-  - **clone for notes** -- the split over notes copies, the crate is untouched,
-    and the reversibility a take has is not a thing a phrase has;
-  - **both, with the window as the default** -- which is what a DAW's "make
-    unique" does to a shared clip, and is probably where this lands, but it is
-    written here as an option rather than chosen.
-
-  Whatever it is, the *verb* belongs in the vocabulary in one shape for every
-  contents, like the others: a clone of a stretch of samples is a bounce of that
-  window into a new take, which is the same act one unit over.
-
-  *Re-read 2026-09-14: still missing, in today's terms.* A piece is regions
-  windowing sources, and a join mints a source made of segments; every verb
-  refers and none copies. The clone is still the other verb — consolidate a
-  region, or a stretch of one, into a source of its own (a bounce, for samples;
-  a copied timeline, for notes) — and the choice it names between windows and
-  copies is now a choice about sources rather than about `form`'s tree.
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather

@@ -118,18 +118,7 @@ None is open now.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
-  *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
-  a second thing out of a first by **referring** to it; the verb that copies --
-  deliberately, into a structure of its own -- does not exist. It was also the
-  alternative to the windows the split now cuts (a split that clones needs no
-  crate change, at the price of a cut that deletes instead of hiding), and that
-  half is decided and recorded in `docs/decisions.md`; what is left here is the
-  verb itself, whose three shapes are named in the plan. **The decision is
-  `O21`(a), asked from the model's side**: if a region is two objects rather
-  than one, swapping what fills a slot while keeping the slot is a copy by
-  construction, and the verb's shape follows that answer.
-
+None is open now.
 
 ## 3. Tests and reviews pending
 
@@ -172,7 +161,8 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
-- ⬜ **The applications after the multitrack, `X2`-`X6`**
+- ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
+  continued, `X9`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
   **`X2`** a buffer editor that draws a table by
@@ -182,8 +172,11 @@ its plan; the plan is where its acceptance is read.
   edits -- its recording (`X3.10`) waits for `T10`, skipped for now;
   **`X4`** whether the points editor is one; **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
-  spectrogram) get an application. **Related:** an application inside another,
-  under "The larger questions" below.
+  spectrogram) get an application; and **`X9`**, the multitrack editor
+  continued, whose first part is the clone (`X9.1`: a new sequence made from a
+  clip or a stretch of one), postponed by the user until the multitrack's
+  development resumes and waiting on `O21`(a). **Related:** an application
+  inside another, under "The larger questions" below.
 
 - ⬜ **`G36` - `G38` — key bindings, menus and a tooltip, each a design first**
   *(`clients/gui/PLAN.md`, sections "G36", "G37", "G38")*. **The decision is the

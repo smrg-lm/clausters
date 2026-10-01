@@ -879,7 +879,8 @@ rejected because the live model and the written one disagreed, which is the one
 disagreement a save cannot survive. The clone is worth having as **its own
 verb** — "make this stretch a structure of its own" is a real act, and the
 absence of it is what made a split feel like it should copy — and it is written
-down as one rather than as the answer to this.
+down as one rather than as the answer to this (`crates/clausters-apps/PLAN.md`,
+`X9.1`, since 2026-10-01).
 
 **Consequence.** The client writes a timeline **two elements hold** as content
 and each reader as a window naming it; a timeline one element holds is written
