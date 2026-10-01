@@ -236,7 +236,10 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         const info = await win.widget("stack").query();
         log(`after asking for two layers on one axis, the stack is still: ${info.props.layers}`);
 
-        win.onClosed(() => log("closed"));
+        // The script's ending: there `wait()` blocks so the process stays
+        // alive while the window is on screen. Here nothing exits and nothing
+        // may block, so the same verb is a promise.
+        win.wait().then(() => log("closed"));
       }
 
       $("start").onclick = () => run().catch((e) => log(`error: ${e}`));

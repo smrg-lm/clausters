@@ -333,6 +333,11 @@ def _py_root(node: ast.expr) -> str | None:
         elif isinstance(node, ast.Call):
             node = node.func
         elif isinstance(node, ast.Subscript):
+            # One element of a container the script named is not the
+            # container: `BUFS[take].write(...)` is a call on what the dict
+            # holds, which may well be the client's.
+            if isinstance(node.value, ast.Name):
+                return None
             node = node.value
         elif isinstance(node, ast.Name):
             return node.id
@@ -585,9 +590,31 @@ def _js_scripts(path: Path) -> list[tuple[int, str]]:
     return blocks
 
 
+def _js_aliases(src: str) -> dict[str, str]:
+    """`import { Session as SavedSession } from ...` -> `{"SavedSession":
+    "Session"}`: the page's twin of `_py_aliases`."""
+    out: dict[str, str] = {}
+    for group in re.findall(r"\bimport\s*\{([^}]*)\}", src):
+        for name, alias in re.findall(r"([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)", group):
+            out[alias] = name
+    return out
+
+
+def _js_platform_imports(src: str) -> set[str]:
+    """The names a script imports from node's own modules (`import { join }
+    from "node:path"`): the platform's, whatever they collide with."""
+    out: set[str] = set()
+    for group in re.findall(r"\bimport\s*\{([^}]*)\}\s*from\s*[\"']node:", src):
+        for name in re.findall(r"(?:[A-Za-z_$][\w$]*\s+as\s+)?([A-Za-z_$][\w$]*)", group):
+            out.add(name)
+    return out
+
+
 def _js_calls(path: Path) -> list[str]:
     names: list[str] = []
     for _offset, block in _js_scripts(path):
+        aliases = _js_aliases(block)
+        imported = _js_platform_imports(block)
         src = _js_strip(block)
         tokens = [(m.start(), m.group()) for m in _JS_TOKEN.finditer(src)]
         funcs = _js_functions(src, tokens)
@@ -618,6 +645,7 @@ def _js_calls(path: Path) -> list[str]:
                 receiver = tokens[idx - 2][1] if (prev == "." and idx >= 2) else None
                 if (receiver not in PLATFORM_RECEIVERS
                         and not (receiver is None and tok in PLATFORM_CALLEES)
+                        and not (receiver is None and tok in imported)
                         and not (tok in OPERATOR_METHODS
                                  and _js_argc(tokens, idx + 1) <= 1)
                         and not (_js_argc(tokens, idx + 1)
@@ -625,7 +653,7 @@ def _js_calls(path: Path) -> list[str]:
                         and not (receiver is not None and tok in LANGUAGE_METHODS)
                         and not (tok in CONTAINER_METHODS
                                  and _js_on_container(tokens, idx, containers))):
-                    events.append(((pos, 0), "call", tok))
+                    events.append(((pos, 0), "call", aliases.get(tok, tok)))
         events.sort(key=lambda e: (e[0], 0 if e[1] == "ref" else 1))
         names.extend(_splice(events, funcs))
     return names

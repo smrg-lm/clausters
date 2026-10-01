@@ -102,11 +102,11 @@ there.</div>
       notes, the same multitrack written plainly, and the same one `edit` over it.
 
       The platform's differences are the usual two: the host is the wasm one in
-      this tab and draws into an element, and nothing is pumped. And one more:
-      the script also writes the multitrack down as a session -- its takes as files,
-      the join as its parts -- so the standalone editor can open the same
-      material, and a tab has no filesystem to write a take into, so this page
-      has no such cell.
+      this tab and draws into an element, and nothing is pumped. The session
+      the script writes into clients/python/examples/out/ this page writes into
+      its own filesystem (the origin private file system, `opfs`), as
+      out/edit_multitrack.json beside its takes, where
+      load-multitrack.html opens it again.
 
       Serve clients/web (the package root) and open
       /examples/editors/edit-multitrack.html. Build it first: ./build.sh
@@ -117,7 +117,7 @@ there.</div>
       import { Buffer, Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
       import {
-        Automation, Content, Lane, Multitrack, Region, Track,
+        Automation, Content, Lane, Multitrack, Region, Session as SavedSession, Source, Track,
       } from "../../dist/multitrack.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
@@ -248,6 +248,43 @@ there.</div>
             lanes: [new Lane({ id: 17, regions: [box(26, 12.0, 7, "keys")] })],
           }),
         ];
+
+        // ---- the same multitrack, written down as a session ----
+        // The takes above exist only on this page's engine, so a program that
+        // cannot run this page cannot open this multitrack. Written down as a
+        // **session** -- every take as a file, the join as the parts it is made
+        // of, and the multitrack that names them -- it opens with nothing else:
+        // load-multitrack.html reopens it from here. The takes are written as
+        // floats, because the last one is hot on purpose and a 16-bit file would
+        // clip it into a different take. The page's files are in its origin
+        // private file system, `out/` there as `examples/out/` is for a script.
+        const FRAMES = Math.trunc(TAKE_DUR * SR);
+        const ID = Object.fromEntries(Object.entries(SOURCES).map(([id, take]) => [take, Number(id)]));
+        const saved = new SavedSession();
+        saved.multitrack = multitrack;
+        for (const [id, take] of Object.entries(SOURCES)) {
+          if (take === "comp") continue;
+          const name = `edit_multitrack-${take}.wav`;
+          await bufs[take].write(`out/${name}`, { sampleFormat: "float" });
+          saved.sources.set(Number(id), Source.file(name).shaped(1, FRAMES, SR));
+        }
+        // **The join is its recipe, not its samples**: the same two spans and
+        // fades the `Buffer.stitch` above was made from, so a reader builds the
+        // same buffer.
+        const part = (take, start, frames, fades) => ({
+          source: { source: ID[take], lifetime: "session", generation: 0,
+                    range: { start, end: start + frames } },
+          ...fades,
+        });
+        saved.sources.set(ID.comp, new Source({ location: { at: "segments", parts: [
+          part("glide", 0, HALF, { fade_out: FADE }),
+          part("saw", HALF, HALF, { fade_in: FADE }),
+        ] } }).shaped(1, 2 * HALF, SR));
+        // **The notes are in the file itself**: a sequence is data the size of
+        // a score, and the table holds the handle, so a save writes what the
+        // roll did to it.
+        saved.sources.set(7, Source.events(keys));
+        log(`wrote ${await saved.save("out/edit_multitrack.json")}`);
 
         // ---- one verb ----
         // A `Multitrack` opens as a `MultitrackEditor` -- one `multitrack` widget

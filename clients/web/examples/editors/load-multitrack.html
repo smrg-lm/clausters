@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: reopening a multitrack</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 64rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 1000px; max-width: 100%; height: 560px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Reopening a multitrack: a saved session opened, loaded and
+edited.
+
+<code>edit-multitrack.html</code> builds its multitrack in memory and saves it as
+a <b>session</b> -- its takes as files, the join as the parts it is made of, and
+the multitrack that names them -- into the page's own filesystem (the origin
+private file system, <code>opfs</code>). This opens that file the way any
+program would.
+
+<b>Opening</b> (<code>Session.open</code>) gives the multitrack and its source
+table back, and nothing more: every box names a source id and nothing has been
+loaded. <b>Loading</b> (<code>Session.load</code>) reads each take from the
+file beside the session and stitches the join from the takes it is made of,
+once they are there. What is read and in what order is the shared crate's, so
+this is the same load the standalone editor runs. <b>Editing</b> is
+<code>edit</code>, with the loaded buffers and the session's sequences as its
+sources (<code>Session.sequences</code>). The join plays the glide's first half
+and then the saw's second, the parts the file states; the box on the keys track
+plays the notes the file holds -- double click it to open the roll again.
+
+<b>What it needs:</b> open <code>edit-multitrack.html</code> once first, on the
+same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</div>
+
+      <button id="run">reopen the multitrack</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/load_multitrack.py,
+      call for call. The session it opens is the one edit-multitrack.html
+      wrote into this origin's private file system, where the script opens
+      the one edit_multitrack.py wrote into clients/python/examples/out/.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/load-multitrack.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session } from "../../dist/index.js";
+      import { gui } from "../../dist/index.js";
+      import { Session as SavedSession } from "../../dist/multitrack.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- open ----
+        // The multitrack and its table, as the file says them.
+        const saved = await SavedSession.open("out/edit_multitrack.json");
+        for (const [id, source] of [...saved.sources].sort(([a], [b]) => a - b)) {
+          log(`  source ${id}: ${source.location.at}`);
+        }
+        // A sequence is read back as the handle the table holds: the notes it has.
+        for (const [id, sequence] of saved.sequences()) {
+          log(`  source ${id} holds ${sequence.length} events`);
+        }
+
+        // ---- load ----
+        // A buffer per source, keyed by source id. A relative path is read
+        // against the folder the session was opened from. A sequence takes no
+        // buffer: it is in the file, and `Session.sequences` hands it over.
+        const session = await Session.embed({ latency: 0.1 });
+        const server = session.server;
+        const buffers = await saved.load(server);
+        for (const [id, source] of saved.sources) {
+          if (source.location.at === "segments") {
+            log(`  source ${id} is a join of ${JSON.stringify(await buffers.get(id).parts())}`);
+          }
+        }
+
+        // ---- edit ----
+        // The multitrack and the buffers it was loaded into, at the rate the
+        // table states for its takes.
+        const rate = [...saved.sources.values()].find((source) => source.sampleRate).sampleRate;
+        await session.gui();
+        const editor = await gui.edit(saved.multitrack, {
+          sampleRate: rate, server,
+          sources: new Map([...buffers, ...saved.sequences()]),
+          title: "reopened", width: 1000, height: 560, stage: $("stage"),
+        });
+
+        // The script's ending: there `wait()` blocks so the process stays alive
+        // while the window is on screen. Here nothing exits and nothing may
+        // block, so the same verb is a promise.
+        editor.wait().then(() => log("the window is closed"));
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

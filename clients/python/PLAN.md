@@ -5411,7 +5411,7 @@ than being ticked here.
   root examples that sent them raw use them.
 
 
-- ⬜ **Eight example pairs drifted while the audit could not say so**
+- ✅ **Eight example pairs drifted while the audit could not say so**
   *(found 2026-09-30, fixing the pair audit)*. From 2026-09-19 to 2026-09-30
   the audit read an empty side of a parity row as a call, so 68 of 71 pairs
   differed and nobody read the list. With that fixed, eight differ for real,
@@ -5422,4 +5422,13 @@ than being ticked here.
   page reads), `panels/standalone` (three `join`s on the page),
   `transport/conductor` (a `queryInfo` and a `free` only Python has, a
   `refresh` only the page), `transport/sync` (a `refresh` on the page) and
-  `views/layers` (an `onClosed` on the page).
+  `views/layers` (an `onClosed` on the page). **Fixed 2026-09-30**: four were
+  ported (`edit_env` builds its envelope after the session, `edit_multitrack`'s
+  page writes the session into its origin private file system as the script
+  writes it to disk, and `load_multitrack` gained the page that reopens it;
+  `layers` ends on `wait`), one lost a dead line (`conductor`'s unused
+  `query_info`), three are the platform's and declared (`edit_curve`'s
+  wall-clock timebase, the `refresh` a page awaits where a Python setter
+  reads), and three were the audit's own: a JavaScript `import { A as B }`
+  and a call on a dict's element were misread, and names imported from
+  node's modules were taken for the client's.

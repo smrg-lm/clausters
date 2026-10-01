@@ -63,19 +63,13 @@ gesture.
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // A familiar ADSR-shaped `Env`: levels, segment times in seconds, and a
-      // shape per segment (a name, or a numeric curvature). Nothing about this
-      // object knows it is going to be edited.
-      const env = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2],
-        ["exp", -4.0, "sin"]);
-
       // The curve specs the menu offers -- shape names plus two custom
       // curvatures, exactly the values an `Env`'s `curve` takes. "hold" is the
       // constant lane (each point's value held until the next); `Env.step`
       // builds SuperCollider's "step" sequences separately.
       const CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0];
 
-      let server = null, editor = null;
+      let server = null, editor = null, env = null;
 
       /** One note through the envelope as currently drawn. */
       async function play() {
@@ -106,6 +100,11 @@ gesture.
         const session = await Session.embed();
         server = session.server;
         await session.gui();
+
+        // A familiar ADSR-shaped `Env`: levels, segment times in seconds, and
+        // a shape per segment (a name, or a numeric curvature). Nothing about
+        // this object knows it is going to be edited.
+        env = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"]);
 
         // One verb, with two widgets of the page's own. `edit` dispatches on
         // **what the structure holds**: an `Env` can give and take break

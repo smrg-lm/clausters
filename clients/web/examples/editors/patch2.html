@@ -102,14 +102,14 @@ and no audio server is involved either way.</div>
       const patch = DefPatch.fromSynthdef(synthDef);
       log(`${synthDef.name} decoded into ${patch.boxes.length} boxes, `
         + `${patch.cords.length} cords`);
-      for (const [i, box] of patch.boxes.entries()) {
+      patch.boxes.forEach((box, i) => {
         const inlets = box.ports
           .filter((p) => p.dir === "in")
           .map((p) => p.name || "-");
         log(`  box ${i}: ${box.def.padEnd(10)} `
           + `[${(box.role ?? "object").padStart(7)}] `
           + `inlets=${JSON.stringify(inlets)}`);
-      }
+      });
 
       // The decode is faithful: rebuilding the SynthDef reproduces the spec.
       const rebuilt = patch.toSynthdef(synthDef.name);

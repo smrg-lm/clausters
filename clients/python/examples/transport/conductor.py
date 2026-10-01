@@ -57,7 +57,6 @@ TEMPO = 2.0
 conductor = Server(share=IdShare(0, 3)).boot()   # `close` stops it again
 governed = Group(server=conductor)
 conductor.transport_group(governed.id)
-rate = conductor.query_info().nominal_sample_rate
 
 
 # %% [markdown]

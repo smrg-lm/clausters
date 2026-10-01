@@ -52,7 +52,6 @@ one. Each row says which.
 | Example | Why |
 |---|---|
 | `basics/server_load` | reads `/server_load`, whose whole content is time measured with a monotonic clock -- and `wasm32` has none, so the engine a page boots reports every role at zero, exactly as it reports zero for `/server_status`'s CPU fields. The *surface* is ported (`Server.load`, `formatLoad`, `loadName`, covered in `tests/server.test.ts` against a native server); what a page cannot do is have anything to look at. The gap is `clients/web/PLAN.md`, Future directions: an engine in a page has no clock |
-| `editors/load_multitrack` | reopens the session `editors/edit_multitrack.py` writes into `examples/out/`; the page writes no session, since a tab has no filesystem to write its takes into, so there is nothing for a page to reopen |
 | `editors/session` | drives the GUI host as a **separate process** over the session's transport, which is what a page has instead of, not as well as: its host is a canvas in the same page |
 | `buffers/render_then_load` | renders a take to a **file** and loads it back through `/buffer_read`, a round trip through a path; a tab has no filesystem, and `buffers/offline-render.html` shows the same take reaching the engine as samples |
 | `io/embedded` | the in-process embedded server through the bundled native library — the page's engine is that same server compiled to wasm, so every page is this example |
@@ -131,6 +130,25 @@ would be tearing down the thing the reader is still looking at. `close` and
 `wait` are dropped globally for that reason; the verb each script ends on
 (`free`, `stop`) is named per pair, because those same verbs are ordinary work
 in the middle of an example.
+
+### `editors/edit_curve`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `MonotonicTimebase` | nothing here plays, so the script boots no server, and with no server there is no sample clock for its session's clocks: it names wall-clock time. A page's session always has its in-page engine, whose clock it keeps |
+
+### `transport/conductor`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `refresh` (first) | a follower's timeline put on the transport: the script's `timeline.transport = server` reads the transport's state before it returns, and a setter in TypeScript cannot await, so the page awaits the same read |
+| python | `free` | the script's ending: it frees the governed group it made before closing the clients |
+
+### `transport/sync`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `refresh` | the timeline put on the transport, as in `transport/conductor` |
 
 ### `panels/oscsend`
 
@@ -465,10 +483,5 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| python | `save` | the script saves the multitrack as a session in `examples/out/`, so `clausters-gui --session` opens the standalone editor on the same material: each take becomes a file. A tab has no filesystem to write a take into |
-| python | `Session` | the same cell: the session the multitrack and its source table are written as |
-| python | `file` | the same cell: a take's entry in the source table, naming the file it was written to |
-| python | `shaped` ×2 | the same cell: the shape a take's entry and the join's entry state |
-| python | `Source` | the same cell: the join's entry, stated as the parts it is made of rather than as a file |
 | web | `push` | the clip envelope added to the first box's automation: `Array.push`, which the audit reads as the host's `push`. The script's `list.append` is the same line and is no call on the client |
-
+| web | `set` ×3 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
