@@ -121,7 +121,10 @@ on each one; none of them is being taken by this file.
 - ⬜ **The graphs a note plays in are never freed**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Every new shape is a new
   def, sent and never given back. **The decision:** whether generated defs are
-  persisted at all, before when one is freed.
+  persisted at all, before when one is freed. **Related:** "A GraphDef
+  carries the buffers it plays" (root `PLAN.md`, Future directions), a design
+  in which a persisted def keeps its buffers' files in its own folder -- so
+  the two are decided together.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox

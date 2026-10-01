@@ -2701,6 +2701,57 @@ where it came from).
   Whichever it is ends at `CmdTranslator::translate_ump`, which the lane and
   `/midi_ump` already reach.
 
+- ⬜ **A GraphDef carries the buffers it plays** *(named 2026-10-01, with the
+  user, asking how a GraphDef loads an impulse response)*. A `GraphDefSpec` is
+  `name`, `buses`, `members`, `surface` and `defaults`: the private buses are
+  the one resource it takes per instance, and a buffer it plays -- a
+  waveshaper's transfer function, a reverb's impulse response, a wavetable --
+  is the caller's to make before `/graph_new` and to hand over as a port
+  value (as `clausters_editing::instance` does with a curve's table,
+  `Op::Buffer`). So the def is not whole: every client that instantiates it has
+  to know to read, generate or prepare its tables first, in the right order
+  (an impulse response is `/buffer_allocRead`, then `/buffer_gen ...
+  prepare_partconv` into a second buffer, then the instance). A FaustDef is
+  whole in the same situation, since its `waveform` tables travel in its
+  source.
+
+  **The shape, as the user put it:** the buffers belong to the **def**, its
+  files are kept **in the def's own folder** of the data directory
+  (`defs/graphdefs/<name>/`, beside its JSON), the server manages them -- a
+  `/def_free` removes them, a re-send replaces them -- and the def and its
+  buffers **load together**: `/def_send graph` answers `/done` once its
+  buffers are read and prepared on the NRT thread, the barrier a client
+  already waits on, and a boot reloads them with the graphdefs. Loading at
+  the def keeps `/graph_new` synchronous and atomic, and every instance reads
+  one copy of a table nothing writes. The page is no exception: its data
+  directory is a directory of the origin private file system, and a page that
+  does not persist defs yet is a gap of the port, not of the design.
+
+  It fits what exists -- the async buffer jobs and their `/done`, the data
+  directory and its reload order, and the pattern of a reserved range (the
+  graph buses, the auto node ids) for buffer numbers the server hands out --
+  and leaves four things to decide:
+  - **How the bytes reach the server**: inline in `/def_send` (TCP or a
+    WebSocket; no impulse response fits a UDP datagram), or a path on the
+    server's machine that it copies into the folder (a local client only).
+    Probably both.
+  - **The vocabulary**: where a buffer's contents come from -- a file, a
+    **recipe** the server regenerates (`cheby [...]`, a few numbers and
+    deterministic), or a **derivation** of another buffer of the def (the
+    kernel `prepare_partconv` makes from the impulse response) -- and how a
+    member names one, since a string in `controls` already means a bus.
+  - **A re-send while instances sound**: a UGen reads its buffer by number on
+    every block, so freeing a number silences whatever reads it. A re-send
+    makes new buffers under new numbers, and the old ones stay until the last
+    instance of the old version ends.
+  - **Atomicity**: a buffer that fails to load leaves the def neither stored
+    nor replacing the previous one, as `/graph_new` builds nothing by halves.
+
+  **Related:** "The graphs a note plays in are never freed"
+  (`crates/clausters-apps/PLAN.md`, Found by use), whose open decision --
+  whether generated defs are persisted at all -- now has to say whether a
+  persisted def carries its resources too.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

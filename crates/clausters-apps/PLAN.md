@@ -1526,7 +1526,9 @@ wrong.
   runs, and on a server with a data directory they are persisted, so they
   outlive it. What is missing is giving a def back once no instance and no
   channel graph names it (`/def_free`), and deciding whether generated defs
-  are persisted at all.
+  are persisted at all. **Related:** "A GraphDef carries the buffers it
+  plays" (root `PLAN.md`, Future directions): if a def keeps its buffers,
+  persisting one persists them too.
 
 - ✅ **A curve added while a sequence plays cuts its channel** *(found
   2026-09-30, writing `X3.11c`)*. A slot's members are fixed by its def, so a
