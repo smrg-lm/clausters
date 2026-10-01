@@ -1001,7 +1001,9 @@ def _table_rows(section: str) -> list[list[str]]:
 
 def _cell_name(cell: str) -> str | None:
     cell = cell.strip()
-    if cell in ("", "--", "-", "--"):
+    # The tables mark an empty side with an em dash; written as its escape,
+    # since a source file is ASCII.
+    if cell in ("", "-", "--", "\u2014"):
         return None
     m = re.search(r"`([^`]+)`", cell)
     text = m.group(1) if m else cell
