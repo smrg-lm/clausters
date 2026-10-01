@@ -1505,6 +1505,214 @@ the def already has removes the asymmetry rather than papering over it.
   done, the two spellings are one, and the pair of every ported example is read
   side by side, verb by verb.
 
+### A sequence's structures are objects (client arc, phased)
+
+*(Opened 2026-10-01 by the user, reading what a script can do with a sequence
+an editor holds: "Como API cliente no es bueno que los valores de retorno sean
+un número de id. Deberían ser un objeto que represente la estructura de datos.
+Es como si el DOM de una página web se manejara por ids, no se podría usar.")*
+
+**The defect.** `clausters.seq.EventSequence` answers and takes **numbers**:
+`add` answers an `int`, and so do `add_lane`, `add_expression` and
+`expression_to_lane`; `move`, `set`, `remove`, `remove_lane`,
+`remove_expression` and `lane_to_expression` take one. Reading is worse:
+`entries`, `get` and iteration build `Event(keys)` and drop the event's
+`expression`, so a note's curves are seen only in `data()`, as JSON. The web
+port has the same surface (`clients/web/src/seq/sequence.ts`). It is the
+document's identity leaking through the JSON door into the API. Every other
+resource this client has is an object holding its number — a `Bus`, a
+`Buffer`, a `Synth` — and so is `Timeline`, whose `add` answers an entry and
+whose `remove` and `move` take one. A script holding a sequence has to carry
+the document's ids by hand, and nothing tells it what one of them names.
+
+**The principle**, which is the DOM's and holds for every structure a client
+reaches through a handle:
+
+1. **What a script creates or reads is an object that represents the
+   structure.** The id is inside it; no call takes or answers a number.
+2. **The objects are live views over the Rust document** (the handle and an
+   id), not copies. A read asks the document, so after a hand moves a note in
+   the roll, the object the script holds reads where it now is. A write goes
+   through the structure's vocabulary, and through its history when it has one.
+3. **One structure, one object.** The sequence keeps an identity map (id to a
+   weak reference), so an event read twice is the same object, and objects work
+   as keys of a `dict` or members of a `set`.
+4. **A view can be detached.** An event that is removed leaves its object
+   detached (`sequence is None`, and a write raises); an undo restores the same
+   id, and with it the same object.
+5. **A collection carries its own verbs**, as `element.children` does: `add`
+   answers the object made, and each object has `remove()`.
+
+**The shape.**
+
+```
+EventSequence
+ ├─ .events        live collection in time order: add, at, range, iteration
+ │    └─ SeqEvent       .at  [key]  .automation  .remove()  .event (a free Event)
+ │         └─ .automation   collection: add -> Automation
+ ├─ .automation    collection: add -> Automation   (curves over the whole sequence)
+ │    └─ Automation     .target  .points  to_points/set_points  .remove()
+ ├─ .history       History: (label) as a context, undo, redo, undo_label
+ ├─ .tempo_map     TempoMap
+ └─ .midi          MidiSpec
+```
+
+```python
+seq = timeline.render_events()
+
+level = seq.automation.add({"control": "amp"}, [(0.0, 0.05), (6.0, 0.4)])
+top = seq.events.at(4.0)[0]
+bend = top.automation.add({"bend": True}, [(0.0, 0.0), (2.0, 1.0)])
+coda = seq.events.add(6.0, Event(midinote=74, dur=1.0))
+
+roll = edit(seq)
+
+with seq.history("humanize"):            # one entry, labelled "humanize"
+    for event in seq.events.range(0.0, 4.0):
+        event.at += 0.01                 # a move
+        if event["midinote"] >= 67:
+            event["velocity"] = 90       # a set, with the core's coherence
+coda.remove()
+
+edit(bend)                               # the points editor, over one note's curve
+```
+
+**The history, made public.** What `"humanize"` labels is an **entry of the
+structure's history**: the text an undo names, as `"draw a curve"` is the
+label of a gesture in the notes editor's intake. The history is the editing
+context `clausters.gui.editing.Editing.of` already makes on first ask and every
+window over the structure shares; today it is private to the GUI, which is why
+a script's edit beside an open editor records nothing, redraws nothing and is
+not heard until the next gesture — the gap `crates/clausters-document/PLAN.md`
+names under `O4` ("the document moved by a route that is not a gesture"). It
+becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
+
+- a structure with **no** history — no editor opened on it, nobody asked —
+  changes freely and records nothing, so a script that writes ten thousand
+  notes keeps no ten thousand inverses;
+- a structure **with** one records each change through its objects as an entry,
+  and the change is a turn: the other views are brought in step, the playback
+  reading it is synced, and `on_change` is called;
+- `with seq.history(label):` makes everything inside it **one** entry;
+- `seq.history.undo()`, `.redo()` and `.undo_label` walk the same order the
+  windows' Ctrl+Z walks.
+
+**Decisions:**
+
+- ✅ **`SeqEvent`, not `SequenceEvent` and not `Event`** *(the user,
+  2026-10-01)*. An event of the sequence; the abbreviation keeps it apart from
+  `EventSequence`, where the same two words swapped would be hard to remember.
+  Not `SeqItem` on the pattern of `OscItem`/`MidiItem`: those are events of
+  their `type` now (`crates/clausters-apps/PLAN.md`, `X3.1`), and what a
+  sequence holds is events. Not `Event` itself, although the DOM keeps one
+  class for a node in and out of a document: `Event` is a `dict`, and its
+  `play()` writes into itself (`node`, `server`, the derived keys), so an
+  `Event` inside a sequence would write the document every time it was played.
+  A `SeqEvent` answers a free `Event` (`.event`) to play or to copy.
+- ⬜ **"Lane" names four things, and each gets its own name first** — a
+  rename that lands **before** `C57`, so the objects are written once with
+  the right names. The inventory (2026-10-01):
+  - the multitrack's **take lane**: the several lanes a track holds, one of
+    which plays (`Track.active`) — comping. `multitrack::Lane` and
+    `view::LaneView` in Rust, `Lane`/`LaneView` in both clients.
+    ✅ **`TakeLane`** *(the user, 2026-10-01)*, and `TakeLaneView`: the
+    prefix says what it holds, and leaves no "lane" in the project
+    unqualified.
+  - the multitrack widget's **row**, which draws a *track* (`picture.rs`: "a
+    row is a track, showing the lane it plays") and is named `Lane` anyway —
+    `clausters.gui.multitrack.Lane`, `gui/multitrack.ts`'s `Lane`, the host's
+    `structures/clips.rs::Lane` and `document/tree.rs::LaneRow`. It is the
+    whole row — its identity (a clip names the row it is on), its height, and
+    the state its header is drawn from (`track::Header`, built from it on every
+    draw) — and it is not a `Track`, nor the `TrackView` the session saves
+    beside one. ✅ **`TrackRow`** *(the user, 2026-10-01)*, which also tells it
+    from the automation rows stacked under it. **The wire follows** *(the
+    user, 2026-10-01)*: the `multitrack` widget's `lanes` prop becomes
+    `tracks`, a clip's `lane` field `track`, and the host's `"lanes"` report
+    `"tracks"` — in `docs/gui-protocol.md`, the host, `clausters-editing`'s
+    projection and reader, and both clients' builders.
+  - `clausters.gui.multitrack.Multitrack`, the client's record of what one
+    multitrack widget draws, under the document's `Multitrack`'s name: a
+    second way to hold a multitrack, with no document, no history, no sources
+    and no playback, which nothing but the tests uses. ✅ **Deleted** *(the
+    user, 2026-10-01)*, in both clients, with its `Clip` and its row class,
+    and **the `multitrack` builder with it** (`guidef.multitrack`, its port in
+    `guidef.ts`): a multitrack drawn with no document has nowhere for an edit
+    to live, the editor's window is composed by the crate and never by the
+    builder, and its one other caller is a column of `panels/gestures` (both
+    clients), which goes — the waveform, the roll and the ruler there show the
+    same gesture table. `TrackRow` is the host's alone, the host's `multitrack`
+    element stays (the editor draws with it), and `edit(multitrack)` over the
+    document is the one way a script holds a multitrack.
+  - the server's **event lane** (`/lane_new`, a transport's events as data).
+    ✅ **`EventLane`** *(the user, 2026-10-01)*: `clausters_core::lane`'s
+    `LaneData`, `LaneNote`, `LaneVoice`, `LaneMessage`, `LaneMidi`,
+    `LaneUmp` and the engine's `LaneTag` take the prefix; the commands, and
+    the `Server.lane_*` methods named after them, stay.
+  - `EventSequence.lanes`, the **curves over the whole sequence**: an
+    `Automation`, the one Rust type a `Track` and a `Region` hang too.
+    ✅ **`automation`** *(the user, 2026-10-01: the multitrack's document uses
+    the multitrack's names)*, as `Track.automation` is — the field, the intents
+    and both clients' verbs. **An event's curves are its `automation` too**,
+    as a region's are, and not its `expression` *(the user, 2026-10-01)*: what
+    MPE's word added, the target already says (`{"bend": true}`), and the two
+    moves between the levels (`lane_to_expression`, `expression_to_lane`) are
+    renamed with them.
+  - the roll's **markers**, which the code calls a lane (`osc_lane`, "the
+    marker lane", "the markers lane", the `osc` tag) and are not one: the
+    sequence's events of type `"osc"`, drawn as `(time, label)` marks on the
+    roll's axis, read-only. The strip that shows them is not a structure, so
+    "lane" goes. ✅ **`OscMarker`** *(the user, 2026-10-01)*: the prefix keeps
+    them apart from `Multitrack.markers` (`Marker`, a named point on the
+    timeline that sends nothing), which keeps its name.
+
+  **`Automation` is one object read by four containers**, and stays one name.
+  The struct, its points, its `points` vocabulary, the host's curve element
+  and the tabulation are the same in all four; what differs is the container's
+  reading — the axis (`Track`: seconds from the multitrack's start; `Region`:
+  seconds from the region's; the sequence: beats from its start; an event:
+  beats from the note's, running past its end) and the target's vocabulary
+  (`{"port": ...}` on a track, `{control|bend|pressure|timbre|cc}` with
+  `channel`, `min`, `max` in a sequence). The type's doc comment says "`at` is
+  in seconds", which is false in two of its four uses, and `at` is an untyped
+  `f64` among `Second` and `Beat` positions: both are corrected with the
+  rename.
+- ✅ **No structure is constructed with an id** *(the user, 2026-10-01: "es
+  algo a corregir")*. `clausters.multitrack.Automation` requires `id: int` in
+  its constructor, and so do `Region` and `Track`: the same defect on the
+  multitrack's side. `Automation` becomes one class that is a **value** when it
+  is free (built by a script, held by nothing) and a **live view** once it
+  belongs to a sequence or an event; the id is the document's to assign. The
+  multitrack's own dataclasses follow when the multitrack is held as a handle,
+  which has no milestone yet.
+
+**The steps**, each a commit with both clients in it — the surface is one in
+two languages, so neither ships ahead — the books, and `editors/edit_notes`
+extended rather than a new example. The number surface is **deleted**, not
+kept beside the objects, and every call site is rewritten in the same pass
+(`npx pyright` in `clients/python`, `./build.sh && ./test.sh` in
+`clients/web`).
+
+- ⬜ **C57 — A sequence's structures are objects.**
+  - ⬜ **C57.0 — The lanes renamed.** Every rename of the inventory above, in
+    the crates, the host, both clients, the wire's JSON where a field moves
+    (with the session format's migration), the books and the examples — its
+    own commit, before any object exists. `clausters.form`, frozen, is not
+    touched: its `Track` keeps the name.
+  - ⬜ **C57.1 — Reading.** `seq.events` with its identity map, `SeqEvent`
+    (`at`, its keys, `automation`, `.event`), `at`/`range`/
+    iteration on the pattern of `Timeline`'s.
+  - ⬜ **C57.2 — Writing through the objects.** `seq.events.add` answers a
+    `SeqEvent`; `event.at = ...`, `event[key] = ...` and `remove()` are the
+    vocabulary's `move`, `set` and `remove`; the curve collections answer
+    `Automation`, which loses its constructor id; detaching and reattaching
+    across a removal and its undo.
+  - ⬜ **C57.3 — `seq.history`.** The editing context outside `clausters.gui`,
+    a script's change as a turn, `with seq.history(label)` as one entry. The
+    acceptance is the roll: with it open, a script's change redraws it, is
+    heard from the lane, and one Ctrl+Z in the window takes back a whole
+    `with` block.
+
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
 Shipped 2026-08-03/04 and taken off `main` on 2026-08-05. The package worked,

@@ -1370,6 +1370,19 @@ Every entry carries a checkbox.
   whether the files share one position or each locates to its own cursor on
   a switch, is open.
 
+- ⬜ **A roll with no sequence: whether the bare `pianoroll` stays** *(the
+  user, 2026-10-01, deleting the bare `multitrack` builder in
+  `clients/python/PLAN.md`, `C57.0`; one question of `X6`)*. Both clients
+  still build a `pianoroll` widget by hand, over no `EventSequence`: in
+  `editors/pianoroll` and `editors/pianoroll_midi`, and in a column of
+  `panels/gestures`. The two editor examples predate the notes editor (`X3`)
+  and teach what it no longer is — their docstring edits an "OSC lane" that
+  is read-only markers now, which `C57.0` names `OscMarker` — and `edit_notes` and
+  `edit_midi_file` show the same through the application. Open: whether a
+  roll drawn with no sequence has any use (a multitrack's had none: an edit
+  has nowhere to live), and so whether the builder and those two examples go,
+  as the bare `multitrack` did, or stay as a view.
+
 ## Found by use: the running list of fixes
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
