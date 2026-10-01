@@ -31,7 +31,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Group, Synth } from "../src/defs/node.ts";
-import { formatLoad, loadName, Server } from "../src/defs/server/index.ts";
+import { formatLoad, formatMidiBinding, loadName, Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
 import { GraphDef } from "../src/defs/graphdef.ts";
@@ -636,5 +636,35 @@ test("a buffer is written to a file and read back into another", {
         } finally {
             await rm(dir, { recursive: true, force: true });
         }
+    });
+});
+
+test("a MIDI binding is made, mapped, read back and removed", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        server.midiBind(2, "default", { gate: true });
+        server.midiMap(2, "cc74", "cutoff");
+        server.midiBindZone(15, 3, "default");
+        server.midiMap(15, "timbre", "bright", 71);
+        // MIDI 2.0 packets: a note-on whose velocity word has its top bit set.
+        server.midiUmp(0x4092_3c00, 0xc000_0000);
+        const bindings = await server.midiQuery();
+        assert.deepEqual([...bindings.keys()].sort((a, b) => a - b), [2, 15]);
+        const channel = bindings.get(2)!;
+        assert.equal(channel.kind, "channel");
+        assert.equal(channel.gate, true);
+        assert.equal(channel.controls.cc74, "cutoff");
+        assert.equal(channel.timbreCc, null);
+        const zone = bindings.get(15)!;
+        assert.equal(zone.kind, "zone");
+        assert.equal(zone.members, 3);
+        assert.equal(zone.controls.timbre, "bright");
+        assert.equal(zone.timbreCc, 71);
+        assert.match(formatMidiBinding(zone), /^zone on 15 \(3 members\): default/);
+
+        server.midiUnbind(2);
+        const left = await server.midiQuery([2, 15]);
+        assert.deepEqual([...left.keys()], [15]);
     });
 });

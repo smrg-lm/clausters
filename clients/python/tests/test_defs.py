@@ -883,3 +883,54 @@ def test_introspection_batch_raises_on_fail():
     iface.queue_reply("/fail", "/def_query", "expected string def names")
     with pytest.raises(CommandError):
         srv.query_defs()
+
+
+def test_midi_bindings_go_out_as_the_server_reads_them():
+    from clausters.defs import AddAction
+
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    srv.midi_bind(0, "default", target=1001, action=AddAction.TAIL, gate=True)
+    srv.midi_bind_zone(15, 0, "mpe_voice")
+    srv.midi_map(0, "cc74", "cutoff")
+    srv.midi_map(15, "timbre", "bright", cc=71)
+    srv.midi_unbind(0)
+    assert iface.sent[-5:] == [
+        ("/midi_bind", [0, "default", 1001, 1, 1]),
+        ("/midi_bindZone", [15, 0, "mpe_voice", 0, 0, 0]),
+        ("/midi_map", [0, "cc74", "cutoff"]),
+        ("/midi_map", [15, "timbre", "bright", 71]),
+        ("/midi_unbind", [0]),
+    ]
+
+
+def test_midi_ump_words_keep_their_bits_as_int32():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    # A MIDI 2.0 note-on: its first word's top bit is clear, the velocity
+    # word's is set -- it goes out as the int32 with the same bits.
+    srv.midi_ump(0x4090_3C00, 0xFFFF_0000)
+    assert iface.sent[-1] == ("/midi_ump", [0x4090_3C00, 0xFFFF_0000 - (1 << 32)])
+
+
+def test_midi_query_reads_channels_and_zones_by_channel():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/midi_query.reply", "channel", 1, 0, "default", 0, 0, 1,
+                      "note", "freq", "vel", "amp", "gate", "gate", "cc7", "level")
+    iface.queue_reply("/midi_query.reply", "zone", 0, 15, "mpe_voice", 0, 0, 1,
+                      "note", "freq", "vel", "amp", "gate", "gate",
+                      "pressure", "pressure", "timbre", "timbre", "timbreCc", 74)
+    iface.queue_reply("/midi_query.reply", "none", 9)
+    iface.queue_reply("/done", "/midi_query")
+
+    bindings = srv.midi_query(1, 0, 9)
+    assert iface.sent[-1] == ("/midi_query", [1, 0, 9])
+    assert sorted(bindings) == [0, 1]
+    channel, zone = bindings[1], bindings[0]
+    assert channel.kind == "channel" and channel.gate is True
+    assert channel.controls["cc7"] == "level"
+    assert channel.timbre_cc is None
+    assert zone.kind == "zone" and zone.members == 15
+    assert zone.controls["timbre"] == "timbre" and zone.timbre_cc == 74
+    assert str(zone).startswith("zone on 0 (15 members): mpe_voice")

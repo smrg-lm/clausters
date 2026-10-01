@@ -46,7 +46,8 @@ from .info import (
     UgenInfo,
     UgenInput,
 )
-from .server import Load, Server, ServerInfo, ServerOptions, ServerStatus, format_load
+from .server import (Load, MidiBinding, Server, ServerInfo, ServerOptions, ServerStatus,
+                     format_load)
 from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
@@ -274,6 +275,7 @@ __all__ = ["IdSpaces",
     "Server",
     "ServerOptions",
     "ServerInfo",
+    "MidiBinding",
     "ServerStatus",
     "Load",
     "format_load",

@@ -23,8 +23,9 @@
 // connection, the allocators, the raw OSC paths, the request machinery and the
 // server's own lifecycle. Beside it, `options` (the configuration it is sized
 // from and the configuration it reports), `queries` (what a running server
-// holds), `streams` (the subscriptions the server pushes) and `transport` (the
-// shared beat grid, and the group it governs) -- the same split the Python
+// holds), `streams` (the subscriptions the server pushes), `transport` (the
+// shared beat grid, and the group it governs) and `midi` (what the server's
+// MIDI plays) -- the same split the Python
 // package makes, as mixins rather than collaborators precisely so no attribute
 // path moves.
 //
@@ -82,6 +83,7 @@ import {
     DEFAULT_TAPS,
 } from "./options.ts";
 import type { ServerSizing } from "./options.ts";
+import { ServerMidi } from "./midi.ts";
 import { ServerQueries } from "./queries.ts";
 import { ServerStreams } from "./streams.ts";
 import { ServerTransport } from "./transport.ts";
@@ -107,6 +109,8 @@ export {
 } from "./options.ts";
 export type { Load, ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
 import type { Load, ServerStatus } from "./options.ts";
+export { ServerMidi, formatMidiBinding } from "./midi.ts";
+export type { MidiBinding, MidiBindOptions } from "./midi.ts";
 export { ServerQueries } from "./queries.ts";
 export { ServerStreams } from "./streams.ts";
 export { ServerTransport } from "./transport.ts";
@@ -184,7 +188,7 @@ interface Pending {
 }
 
 /** The mixin surface, merged so `server.queryTree(...)` types as its own. */
-export interface Server extends ServerQueries, ServerStreams, ServerTransport {}
+export interface Server extends ServerQueries, ServerStreams, ServerTransport, ServerMidi {}
 
 /**
  * What {@link Server.boot} and {@link Server.attach} take: the same three
@@ -1540,7 +1544,7 @@ export class Server {
 // their own modules but are still `Server`'s own methods, exactly as the
 // Python package's mixins are -- copying the prototypes is what makes
 // `server.queryTree(...)` the same call it was before the split.
-for (const mixin of [ServerQueries, ServerStreams, ServerTransport]) {
+for (const mixin of [ServerQueries, ServerStreams, ServerTransport, ServerMidi]) {
     for (const name of Object.getOwnPropertyNames(mixin.prototype)) {
         if (name === "constructor") continue;
         const descriptor = Object.getOwnPropertyDescriptor(mixin.prototype, name);

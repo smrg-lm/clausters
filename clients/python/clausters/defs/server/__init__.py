@@ -17,7 +17,8 @@ Where things live: this module holds the `Server` itself -- the interface, the
 allocators, the raw OSC paths and the server's own lifecycle. Beside it,
 `options` (the configuration it is booted with and the configuration it
 reports), `queries` (what a running server holds), `transport` (the shared beat
-grid) and `streams` (the subscriptions the server pushes).
+grid), `streams` (the subscriptions the server pushes) and `midi` (what the
+server's MIDI plays).
 """
 
 import time
@@ -62,6 +63,7 @@ from .options import (
     ServerOptions,
     format_load,
 )
+from .midi import MidiBinding, ServerMidi
 from .queries import ServerQueries
 from .streams import ServerStreams
 from .transport import ServerTransport
@@ -76,6 +78,8 @@ __all__ = [
     "ServerInfo",
     "ServerStatus",
     "ServerOptions",
+    "MidiBinding",
+    "ServerMidi",
     "ServerQueries",
     "ServerStreams",
     "ServerTransport",
@@ -129,7 +133,7 @@ def _answers(addr: str, reply: str, args) -> bool:
     return not named.startswith("/") or named == addr
 
 
-class Server(ServerQueries, ServerStreams, ServerTransport):
+class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
                  transport: "str | None" = None, timeout: float = 5.0,

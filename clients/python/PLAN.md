@@ -5394,7 +5394,7 @@ than being ticked here.
   loses an edit from the order, which `Application.step` already refuses to do
   and rightly.
 
-- ⬜ **No client binds a MIDI channel** *(found 2026-09-29, closing root
+- ✅ **No client binds a MIDI channel** *(found 2026-09-29, closing root
   `PLAN.md` `T9`)*. `/midi_bind`, `/midi_unbind` and `/midi_map` say what a
   server's MIDI plays -- its live input and, since `T9`, a lane's MIDI
   messages -- and neither client has a builder for them: a script sends them
@@ -5403,5 +5403,10 @@ than being ticked here.
   (`clients/web/PLAN.md` follows this entry), with the docstrings saying what
   a binding reaches. `/midi_bindZone`, `/midi_query` and `/midi_ump` (MIDI 2.0
   packets in, `crates/clausters-apps/PLAN.md` `X3.11d4`) joined the set
-  without builders either.
+  without builders either. **Fixed 2026-09-30**: `ServerMidi`, a mixin of
+  `Server` beside `ServerTransport` -- `midi_bind`, `midi_bind_zone`,
+  `midi_unbind`, `midi_map`, `midi_ump` sent and not awaited, as `Node.map`
+  is, and `midi_query` answered as a `MidiBinding` per channel -- in both
+  clients at once (`midiBind` ... `midiQuery`, a `Map` for the dict); the
+  root examples that sent them raw use them.
 

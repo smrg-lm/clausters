@@ -78,6 +78,7 @@
     - [signals](api/clausters.defs.signals.md)
     - [synthdef](api/clausters.defs.synthdef.md)
     - [server](api/clausters.defs.server.md)
+      - [midi](api/clausters.defs.server.midi.md)
       - [options](api/clausters.defs.server.options.md)
       - [queries](api/clausters.defs.server.queries.md)
       - [streams](api/clausters.defs.server.streams.md)

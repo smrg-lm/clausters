@@ -79,7 +79,7 @@ def main():
         voice().send(server)
         # The lower zone, fifteen members, gate-aware: a note-off closes the
         # def's gate rather than freeing it.
-        server.send_msg("/midi_bindZone", 0, 15, "mpe_voice", 0, 0, 1)
+        server.midi_bind_zone(0, 15, "mpe_voice", gate=True)
 
         interface = MidiRtInterface(port=OUR_PORT)
         try:
@@ -111,7 +111,7 @@ def main():
             clock.run(2.5)
         finally:
             interface.close()
-        server.send_msg("/midi_unbind", 0)
+        server.midi_unbind(0)
         print("done")
 
 

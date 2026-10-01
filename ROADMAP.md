@@ -115,10 +115,6 @@ already carry it.
   and give back takes now; the multitrack's entries do not state theirs yet,
   so a join undone is kept for the whole session.
 
-- ⬜ **No client binds a MIDI channel** *(`clients/python/PLAN.md`, Found by
-  use)*. `/midi_bind`, `/midi_unbind` and `/midi_map` have no builder in
-  either client.
-
 - ⬜ **The offline score and its carrier are named apart from Python's**
   *(`clients/web/PLAN.md`, Found by use)*. The web client has two classes
   named `Score`, the symbolic one and the OSC one; the second takes Python's
