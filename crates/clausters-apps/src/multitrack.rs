@@ -301,7 +301,7 @@ mod tests {
             Content::Unknown(Value::Null),
         );
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0].regions.push(region);
+        track.take_lanes[0].regions.push(region);
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
         multitrack.tempo.push(Tempo::at(Beat(0.0), 2.0));

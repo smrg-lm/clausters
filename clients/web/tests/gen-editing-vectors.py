@@ -83,7 +83,7 @@ def multitracks():
         "automation": [layer],
     }
     track = {"id": 1, "name": "drums", "level": 0.5, "muted": True,
-             "lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
+             "take_lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
     multitrack = {"version": 1, "tracks": [track]}
     ramped = json.loads(json.dumps(multitrack))
     ramped["tempo"] = [{"at": 0.0, "tempo": 1.0},
@@ -236,8 +236,8 @@ def editor_exchange():
 
     written = {"version": 1, "tracks": [
         {"id": 10, "name": "one",
-         "lanes": [{"id": 11, "regions": [box(12, 0.0), box(13, 4.0)]}]},
-        {"id": 20, "name": "two", "lanes": [{"id": 21, "regions": [box(22, 0.0)]}]},
+         "take_lanes": [{"id": 11, "regions": [box(12, 0.0), box(13, 4.0)]}]},
+        {"id": 20, "name": "two", "take_lanes": [{"id": 21, "regions": [box(22, 0.0)]}]},
     ]}
     sources = {"1": 7}
     controls = {"rewind": 50, "play": 51, "stop": 52, "clock": 53}
@@ -354,7 +354,7 @@ def editor_exchange():
                 for kind, s, version, reason, corrections in host.messages],
             "playback": list(playback.calls),
             "regions": [[t.id, r.id, r.position, r.length]
-                        for t in multitrack.tracks for lane in t.lanes
+                        for t in multitrack.tracks for lane in t.take_lanes
                         for r in lane.regions],
         })
     return {

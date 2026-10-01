@@ -1754,7 +1754,7 @@ mod window_verb_tests {
 
         let source = SourceId(5);
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].place(Region::new(
+        track.take_lanes[0].place(Region::new(
             NodeId(20),
             Second(0.0),
             Second(4.0),
@@ -2029,7 +2029,7 @@ mod window_verb_tests {
                 .tracks
                 .iter()
                 .flat_map(|t| {
-                    t.lanes.iter().flat_map(move |lane| {
+                    t.take_lanes.iter().flat_map(move |lane| {
                         lane.regions.iter().map(move |r| {
                             serde_json::json!([t.id.0, r.id.0, r.position.0, r.length.0])
                         })
@@ -2076,7 +2076,7 @@ mod window_verb_tests {
                 start,
                 duration: 1.0,
             });
-            track.lanes[0].regions.push(region);
+            track.take_lanes[0].regions.push(region);
         }
         let def_id = 1;
         let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
@@ -2123,7 +2123,7 @@ mod window_verb_tests {
             ],
         ));
         let owner = host.owner.as_ref().unwrap();
-        let joined = &owner.multitrack.tracks[0].lanes[0].regions;
+        let joined = &owner.multitrack.tracks[0].take_lanes[0].regions;
         assert_eq!(joined.len(), 1, "one box");
         let minted = match &joined[0].content {
             Content::Window { window, .. } => window.source.samples().map(|s| s.source),
@@ -2514,7 +2514,7 @@ mod window_verb_tests {
         {
             window.start = 0.0;
         }
-        track.lanes[0].regions = vec![first, second];
+        track.take_lanes[0].regions = vec![first, second];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -2648,7 +2648,7 @@ mod window_verb_tests {
 
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
-        track.lanes[0].regions = vec![region(12, 0.0, 4.0)];
+        track.take_lanes[0].regions = vec![region(12, 0.0, 4.0)];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -2692,7 +2692,7 @@ mod window_verb_tests {
 
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
-        track.lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
+        track.take_lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -3009,7 +3009,7 @@ mod window_verb_tests {
         };
         let mut multitrack = Multitrack::default();
         let mut first = Track::new(NodeId(10), NodeId(11));
-        first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
+        first.take_lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let second = Track::new(NodeId(20), NodeId(21));
         multitrack.tracks = vec![first, second];
 
@@ -3054,7 +3054,7 @@ mod window_verb_tests {
         let on = |host: &Host, region: u64| {
             host.owner.as_ref().and_then(|o| {
                 o.multitrack.tracks.iter().find_map(|t| {
-                    t.lanes
+                    t.take_lanes
                         .iter()
                         .any(|l| l.regions.iter().any(|r| r.id == NodeId(region)))
                         .then_some(t.id)

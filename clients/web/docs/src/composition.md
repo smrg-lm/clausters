@@ -56,7 +56,7 @@ why the curve row below names three unrelated types:
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
-| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
 
 **An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `null` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `yAxis: "hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history.
 
@@ -115,7 +115,7 @@ run it replaced. The page's buffer calls are asynchronous, so a stroke's write i
 **queued in order** rather than awaited; the Python client writes synchronously,
 and that is the only difference between the two.
 
-## The arrangement: tracks, lanes, regions
+## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
@@ -129,23 +129,23 @@ The vocabulary is the field's own:
   long, its fades, which of the overlapping ones is on top) plus what fills it.
   Six regions over one source are six identities and one source, referenced
   rather than copied. That is the whole of non-destructive editing.
-- A **lane** is one of a track's several contents, an ordered list of regions.
-- A **track** holds several lanes and **plays one**, which is what comping is:
-  record six passes into six lanes, then take from each.
+- A **take lane** is one of a track's several contents, an ordered list of regions.
+- A **track** holds several take lanes and **plays one**, which is what comping is:
+  record six passes into six take lanes, then take from each.
 - An **automation** is a curve over one parameter, in the multitrack's time.
 - The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
 ```javascript
-import { Content, Lane, Multitrack, Region, Tempo, Track } from "clausters";
+import { Content, TakeLane, Multitrack, Region, Tempo, Track } from "clausters";
 
 const multitrack = new Multitrack();
 multitrack.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
 const bar = multitrack.tempoMap().secsAt(4);             // where the second bar begins
 
-const drums = new Track({ id: 1, name: "drums", lanes: [new Lane({ id: 2 })] });
-drums.activeLane.place(new Region({
+const drums = new Track({ id: 1, name: "drums", takeLanes: [new TakeLane({ id: 2 })] });
+drums.activeTakeLane.place(new Region({
     id: 3, position: bar, length: 2.5, content: Content.onto(take),
 }));
 multitrack.tracks.push(drums);
@@ -154,7 +154,7 @@ const written = multitrack.write();   // the crate's JSON
 Multitrack.read(written);
 ```
 
-A **region** is the model's word and a **clip** is the picture's: a clip, a lane
+A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
 everything placed is placed in **seconds** — a region, its fades, a curve's
 points, a marker, the loop — while what fills a region is measured in its own
@@ -174,7 +174,7 @@ multitrack as it now stands and the edit that puts it back.
 import { document as doc } from "clausters";
 
 const edited = doc.domainEdit(doc.MULTITRACK, multitrack.write(), {
-    intent: "placeregion", region: 3, track: 1, lane: 2,
+    intent: "placeregion", region: 3, track: 1, take_lane: 2,
     position: 16, layer: 0,
 });
 edited.applied;                     // true
@@ -184,8 +184,8 @@ edited.current;                     // the edit that puts it back
 
 Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
-say the same thing) and `setactivelane`, which is comping's one verb. What a
-**region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
+say the same thing) and `setactivetakelane`, which is comping's one verb. What a
+**region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
 span), `settempomap` and `setmetermap`.
@@ -193,9 +193,9 @@ span), `settempomap` and `setmetermap`.
 Three things about them are worth knowing before you write against them.
 
 **Moving a region to another track is one edit.** Where a region is means track,
-lane *and* second, and an intent is absolute — so `placeregion` states all three
+take lane *and* second, and an intent is absolute — so `placeregion` states all three
 together. One entry in a history, one undo, and no moment in between where the
-region is on no lane at all.
+region is on no take lane at all.
 
 **A crossfade is two fades over an overlap**, not a third object: `faderegion`
 on each of the two regions, which is what the model already holds. There is no
@@ -209,7 +209,7 @@ and this document converts between the two *never*. So `splitregion` takes
 `left_content` and `right_content` and `joinregions` takes `content`, from you,
 who knows how the content is read. Omit them and both halves go on reading what
 the region read.
-Both also invert as `setlane`, the lane's previous contents: nothing smaller
+Both also invert as `settakelane`, the take lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 
 Everything else the vocabulary does it does the way the tree's does — absolute,
@@ -299,7 +299,7 @@ window.name = "arranger";
 window.visible = new Span(0, 48);
 window.quant = 4;
 window.trackView(10).height = 96;
-window.trackView(10).lanesShown = true;      // comping open
+window.trackView(10).takeLanesShown = true;      // comping open
 window.selected = [20, 32];
 
 const session = new Session();
@@ -387,7 +387,7 @@ how, which is the same rule the opaque generator follows one level down.
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.openEdits()` is what is still undecided, and `session.dangling()` is
-what the multitrack names and the table does not hold — **every** lane walked, not
+what the multitrack names and the table does not hold — **every** take lane walked, not
 only the ones that play, because an alternate take names its source whether or
 not anyone has chosen it yet.
 
@@ -456,14 +456,14 @@ leadLane.level = 0.5;
 ```
 
 They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the multitrack rather than
+was left, and the editor's track header is drawing the multitrack rather than
 remembering something of its own — pressing mute there goes through the log and
-undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
+undoes like any other edit. What is *drawn* is read unmixed: a muted track keeps
 its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
 
-A lane's **height** is the other kind of thing and is in no document. It says
-nothing about what the multitrack is; resizing a lane (Ctrl+wheel) changes the view
+A track's **height** is the other kind of thing and is in no document. It says
+nothing about what the multitrack is; resizing a track (Ctrl+wheel) changes the view
 and no file.
 
 ## What a multitrack is as nodes: the channel strip, three times

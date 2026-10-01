@@ -89,7 +89,7 @@ pub struct Playing {
     /// What plays a roll's window on the notes editor's own transport, made
     /// the first time one is played -- as a client's notes editor has it.
     notes: Option<NotesPlayback>,
-    /// The source whose sequence the notes lane holds: the roll played last.
+    /// The source whose sequence the notes' event lane holds: the roll played last.
     notes_played: Option<SourceId>,
     /// Each roll's position cursor, as a beat of its sequence.
     notes_cursor: HashMap<SourceId, f64>,
@@ -677,8 +677,8 @@ impl Host {
         self.send_multitrack();
     }
 
-    /// **A sequence changed**: when it is the one the notes lane holds, the
-    /// lane takes it again and the server plays it on from where it is.
+    /// **A sequence changed**: when it is the one the notes' event lane holds, the
+    /// event lane takes it again and the server plays it on from where it is.
     pub fn update_notes(&mut self) {
         let (Some(owner), Some(source)) = (self.owner.as_ref(), self.instance.notes_played) else {
             return;
@@ -747,14 +747,14 @@ mod tests {
     fn multitrack() -> Multitrack {
         let mut first = Track::new(NodeId(10), NodeId(11));
         first.name = Some("one".into());
-        first.lanes[0].regions = vec![Region::new(
+        first.take_lanes[0].regions = vec![Region::new(
             NodeId(12),
             Second(2.0),
             Second(4.0),
             window(1, 0.5),
         )];
         let mut second = Track::new(NodeId(20), NodeId(21));
-        second.lanes[0].regions = vec![Region::new(
+        second.take_lanes[0].regions = vec![Region::new(
             NodeId(22),
             Second(0.0),
             Second(2.0),
@@ -890,7 +890,7 @@ mod tests {
             drain(&mut playing).is_empty(),
             "a multitrack that did not move costs nothing"
         );
-        multitrack.tracks[0].lanes[0].regions[0].position = Second(6.0);
+        multitrack.tracks[0].take_lanes[0].regions[0].position = Second(6.0);
         sync(&mut playing, &multitrack, &mut ids);
         let messages = drain(&mut playing);
         assert!(!messages.is_empty(), "the box moved");

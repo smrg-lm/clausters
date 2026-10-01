@@ -28,7 +28,7 @@ So the boundaries are:
   none of it.
 
 A multitrack application is this class plus what only a tree has: a
-held document, several views of one multitrack, the lanes and clips, and a
+held document, several views of one multitrack, the tracks and boxes, and a
 transport. **Transport and render are not here** -- a bare structure at most
 sounds; it has no multitrack to move over.
 """

@@ -5,7 +5,7 @@
    {
     "id": 10,
     "name": "vocals",
-    "lanes": [
+    "take_lanes": [
      {
       "id": 11,
       "name": "take 1",
@@ -84,7 +84,7 @@
    {
     "id": 30,
     "name": "guitars",
-    "lanes": [
+    "take_lanes": [
      {
       "id": 31,
       "regions": [
@@ -190,7 +190,7 @@
    {
     "id": 40,
     "name": "sections",
-    "lanes": [
+    "take_lanes": [
      {
       "id": 41,
       "regions": [
@@ -287,13 +287,13 @@
    "tracks": {
     "10": {
      "height": 96.0,
-     "lanes_shown": true
+     "take_lanes_shown": true
     },
     "30": {
      "color": "#4488cc"
     }
    },
-   "lanes": {
+   "take_lanes": {
     "12": {
      "height": 32.0
     }

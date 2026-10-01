@@ -2053,30 +2053,6 @@ def _held(value, flatten):
     return flatten(value)
 
 
-def _flat_lanes(lanes) -> list:
-    """Normalizes ``lanes`` to the flat ``name label height mute solo gain``
-    sextuples the host reads.
-
-    A lane is a mapping, or a sequence starting with its name; everything after
-    the name has a default, so ``("drums",)`` is a lane at the host's own
-    thickness with no mixer state set."""
-    out: list = []
-    for lane in lanes:
-        if isinstance(lane, dict):
-            got = (lane.get("name"), lane.get("label"), lane.get("height"),
-                   lane.get("mute"), lane.get("solo"), lane.get("gain"))
-        elif isinstance(lane, (tuple, list)):
-            got = tuple(lane) + (None,) * (6 - len(lane))
-        else:
-            got = (lane, None, None, None, None, None)
-        name, label, height, mute, solo, gain = got[:6]
-        out += [str(name), "" if label is None else str(label),
-                96.0 if height is None else float(height),
-                int(bool(mute)), int(bool(solo)),
-                1.0 if gain is None else float(gain)]
-    return out
-
-
 def _flat_curve_points(points) -> list:
     """Normalizes ``points`` to the flat ``curve time value shape amount``
     quintuples the host reads -- a break-point per entry, each naming the curve
@@ -2422,7 +2398,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
 
     Curves, drawn and edited as a `multitrack`'s automation is:
 
-    - ``curves`` -- the **lanes**, curves over the whole roll, each a row under
+    - ``curves`` -- the sequence's **automation**, curves over the whole roll, each a row under
       the grid: ``(name, label, min, max, height)``.
     - ``layers`` -- each note's own curves: ``(name, note_id, label, min, max,
       pitch)``, drawn inside the note named by ``note_id`` (see ``note_ids``) --

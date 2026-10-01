@@ -81,7 +81,7 @@ export interface EngraveOptions {
  * structure's. A score registers in `Editing.of(score)` under the `"score"`
  * vocabulary and records each edit as the MEI it produced, with the previous one
  * as its inverse -- an absolute payload, so a step is idempotent and carries no
- * direction. That is what makes a window holding a lane and a page walk **one**
+ * direction. That is what makes a window holding a roll and a page walk **one**
  * order: before this, an engraved page had a real history of its own and Ctrl+Z
  * meant one of two different things depending on what the pointer was over.
  *
@@ -300,7 +300,7 @@ export class Score {
      * `false` when there is nothing to undo.
      *
      * The step is the **context's**, not this score's: a page edited beside a
-     * lane steps in the order the two were edited in, and a leg naming another
+     * roll steps in the order the two were edited in, and a leg naming another
      * structure is projected by whoever holds it.
      */
     undo(): boolean {

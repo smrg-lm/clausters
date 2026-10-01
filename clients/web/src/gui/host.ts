@@ -614,8 +614,8 @@ export class GuiHost {
      *
      * Why it exists at all: a widget that appeared or went can only arrive by a
      * definition, and doing that to the **window** rebuilds every widget in it --
-     * so a clip dropped on one lane took the zoom, the scroll and the selection
-     * of every other lane with it. `/gui_def` names any widget, so the answer is
+     * so a clip dropped on one track took the zoom, the scroll and the selection
+     * of every other track with it. `/gui_def` names any widget, so the answer is
      * to name the smallest one that changed.
      */
     redefine(

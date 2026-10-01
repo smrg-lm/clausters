@@ -75,11 +75,13 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 /// held in the file itself -- a multitrack's notes. A format-3 file reads
 /// unchanged; the counter moves for the reason **2** gives.
 ///
-/// **5** names a sequence's curves as the multitrack names a track's: a
-/// sequence's `lanes` are its `automation`, and so are an event's
-/// `expression`. An older reader would find no curves under the new names and
-/// drop them silently, which is the counter's case; a sequence reads its old
-/// names itself, so a format-4 file needs no migration beyond the number.
+/// **5** renames what was called a lane: a track's lanes -- the takes it
+/// comps between -- are its `take_lanes` (and a view's `take_lanes`, a track
+/// view's `take_lanes_shown`), and a sequence's curves are named as the
+/// multitrack names a track's: its `lanes` are its `automation`, and so are an
+/// event's `expression`. An older reader would find none of them under the
+/// new names and drop them silently, which is the counter's case. [`migrate`]
+/// renames the multitrack's keys; a sequence reads its old names itself.
 pub const FORMAT: u32 = 5;
 
 /// The tempo a format-2 multitrack that stated none was read at, in beats per
@@ -112,8 +114,38 @@ pub fn migrate(mut written: Value) -> Value {
     if format < 3 {
         to_format_3(&mut written);
     }
+    to_format_5(&mut written);
     written["format"] = json!(FORMAT);
     written
+}
+
+/// From 4 to 5: a track's lanes are its take lanes, in the multitrack and in
+/// every view of it. See [`FORMAT`].
+fn to_format_5(written: &mut Value) {
+    fn rename(object: &mut Value, from: &str, to: &str) {
+        if let Some(map) = object.as_object_mut()
+            && let Some(value) = map.remove(from)
+        {
+            map.insert(to.to_string(), value);
+        }
+    }
+    for key in ["multitrack", "arrangement"] {
+        if let Some(Value::Array(tracks)) = written.get_mut(key).and_then(|m| m.get_mut("tracks")) {
+            for track in tracks {
+                rename(track, "lanes", "take_lanes");
+            }
+        }
+    }
+    if let Some(Value::Array(views)) = written.get_mut("views") {
+        for view in views {
+            rename(view, "lanes", "take_lanes");
+            if let Some(Value::Object(tracks)) = view.get_mut("tracks") {
+                for track in tracks.values_mut() {
+                    rename(track, "lanes_shown", "take_lanes_shown");
+                }
+            }
+        }
+    }
 }
 
 /// From 2 to 3: the multitrack's beats in seconds. See [`migrate`].
@@ -310,7 +342,7 @@ pub enum Location {
     ///
     /// In the file rather than beside it, unlike samples: a sequence is data
     /// the size of a score, and a session that pointed at a `.mid` for it would
-    /// lose the ids, the lanes and every key a `.mid` cannot say.
+    /// lose the ids, its automation and every key a `.mid` cannot say.
     Events {
         /// The sequence.
         sequence: Box<crate::events::EventSequence>,

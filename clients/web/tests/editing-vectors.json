@@ -210,7 +210,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -368,7 +368,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -521,7 +521,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -1010,7 +1010,7 @@
             "name": "drums",
             "level": 0.5,
             "muted": true,
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 2,
                 "regions": [
@@ -1100,10 +1100,10 @@
       "payloads": [
         {
           "intent": "placeregion",
-          "lane": 2,
           "layer": 0,
           "position": 8.0,
           "region": 3,
+          "take_lane": 2,
           "track": 1
         }
       ]
@@ -1132,7 +1132,7 @@
             "name": "drums",
             "level": 0.5,
             "muted": true,
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 2,
                 "regions": [
@@ -1253,7 +1253,10 @@
                 }
               ],
               "id": 1,
-              "lanes": [
+              "level": 0.25,
+              "muted": true,
+              "name": "drums",
+              "take_lanes": [
                 {
                   "id": 2,
                   "regions": [
@@ -1299,10 +1302,7 @@
                     }
                   ]
                 }
-              ],
-              "level": 0.25,
-              "muted": true,
-              "name": "drums"
+              ]
             }
           ]
         }
@@ -1345,7 +1345,7 @@
             "name": "drums",
             "level": 0.5,
             "muted": true,
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 2,
                 "regions": [
@@ -1494,7 +1494,7 @@
             "name": "drums",
             "level": 0.5,
             "muted": true,
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 2,
                 "regions": [
@@ -1607,7 +1607,7 @@
             "name": "drums",
             "level": 0.5,
             "muted": true,
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 2,
                 "regions": [
@@ -2053,7 +2053,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -2154,7 +2154,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -2255,7 +2255,7 @@
           "name": "drums",
           "level": 0.5,
           "muted": true,
-          "lanes": [
+          "take_lanes": [
             {
               "id": 2,
               "regions": [
@@ -2365,7 +2365,7 @@
         {
           "id": 10,
           "name": "one",
-          "lanes": [
+          "take_lanes": [
             {
               "id": 11,
               "regions": [
@@ -2408,7 +2408,7 @@
         {
           "id": 20,
           "name": "two",
-          "lanes": [
+          "take_lanes": [
             {
               "id": 21,
               "regions": [

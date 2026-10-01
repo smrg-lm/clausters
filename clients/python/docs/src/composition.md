@@ -57,7 +57,7 @@ opens, which is why the curve row below names three unrelated types:
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
-| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
 
 **An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
@@ -119,7 +119,7 @@ run it replaced. This client writes a stroke's samples synchronously; a page's
 buffer calls are asynchronous, so the web client queues them in order instead,
 and that is the only difference between the two.
 
-## The arrangement: tracks, lanes, regions
+## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
@@ -133,23 +133,23 @@ The vocabulary is the field's own:
   long, its fades, which of the overlapping ones is on top) plus what fills it.
   Six regions over one source are six identities and one source, referenced
   rather than copied. That is the whole of non-destructive editing.
-- A **lane** is one of a track's several contents, an ordered list of regions.
-- A **track** holds several lanes and **plays one**, which is what comping is:
-  record six passes into six lanes, then take from each.
+- A **take lane** is one of a track's several contents, an ordered list of regions.
+- A **track** holds several take lanes and **plays one**, which is what comping is:
+  record six passes into six take lanes, then take from each.
 - An **automation** is a curve over one parameter, in the multitrack's time.
 - The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
 ```python
-from clausters.multitrack import Content, Lane, Multitrack, Region, Tempo, Track
+from clausters.multitrack import Content, TakeLane, Multitrack, Region, Tempo, Track
 
 multitrack = Multitrack()
 multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))       # beats per second: 96 a minute
 bar = multitrack.tempo_map().secs_at(4.0)            # where the second bar begins
 
-drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
-drums.active_lane.place(Region(id=3, position=bar, length=2.5,
+drums = Track(id=1, name="drums", take_lanes=[TakeLane(id=2)])
+drums.active_take_lane.place(Region(id=3, position=bar, length=2.5,
                                content=Content.onto(take)))
 multitrack.tracks.append(drums)
 
@@ -157,7 +157,7 @@ written = multitrack.write()          # the crate's JSON
 multitrack = Multitrack.read(written)
 ```
 
-A **region** is the model's word and a **clip** is the picture's: a clip, a lane
+A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
 everything placed is placed in **seconds** — a region, its fades, a curve's
 points, a marker, the loop — while what fills a region is measured in its own
@@ -178,7 +178,7 @@ from clausters.document import MULTITRACK, domain_edit
 
 edited = domain_edit(
     MULTITRACK, multitrack.write(),
-    {"intent": "placeregion", "region": 3, "track": 1, "lane": 2,
+    {"intent": "placeregion", "region": 3, "track": 1, "take_lane": 2,
      "position": 16.0, "layer": 0},
 )
 edited["applied"]                       # True
@@ -188,8 +188,8 @@ edited["current"]                       # the edit that puts it back
 
 Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
-say the same thing) and `setactivelane`, which is comping's one verb. What a
-**region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
+say the same thing) and `setactivetakelane`, which is comping's one verb. What a
+**region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
 span), `settempomap` and `setmetermap`.
@@ -197,9 +197,9 @@ span), `settempomap` and `setmetermap`.
 Three things about them are worth knowing before you write against them.
 
 **Moving a region to another track is one edit.** Where a region is means track,
-lane *and* second, and an intent is absolute — so `placeregion` states all three
+take lane *and* second, and an intent is absolute — so `placeregion` states all three
 together. One entry in a history, one undo, and no moment in between where the
-region is on no lane at all.
+region is on no take lane at all.
 
 **A crossfade is two fades over an overlap**, not a third object: `faderegion`
 on each of the two regions, which is what the model already holds. There is no
@@ -213,7 +213,7 @@ and this document converts between the two *never*. So `splitregion` takes
 `left_content` and `right_content` and `joinregions` takes `content`, from you,
 who knows how the content is read. Omit them and both halves go on reading what
 the region read.
-Both also invert as `setlane`, the lane's previous contents: nothing smaller
+Both also invert as `settakelane`, the take lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 
 Everything else the vocabulary does it does the way the tree's does — absolute,
@@ -299,7 +299,7 @@ from clausters.multitrack import Session, Span, View
 
 window = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
 window.track_view(10).height = 96.0
-window.track_view(10).lanes_shown = True      # comping open
+window.track_view(10).take_lanes_shown = True      # comping open
 window.selected = [20, 32]
 
 session = Session(arrangement=multitrack, views=[window])
@@ -462,11 +462,11 @@ backwards, and the window adopts the result exactly as it adopts a snap.
 
 ### The selection: what was swept, and what is under it
 
-A sweep on a lane is not an edit — nothing in the multitrack changes — but it
+A sweep on a track is not an edit — nothing in the multitrack changes — but it
 is the **value** an operation is handed, so the editor keeps it typed:
 
 ```python
-# after sweeping a marquee on a lane
+# after sweeping a marquee on a track
 editor.selection                 # {"start": 1.0, "len": 2.0}   (beats)
 editor.resolve_selection()       # [{"node": 3, "source": {...}, "range": [...], ...}]
 ```
@@ -483,7 +483,7 @@ editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0
 ```
 
 `nodes` says what the selection is *of*: the element when the sweep was inside
-one, and nothing at all when it was across a lane, which is a selection of the
+one, and nothing at all when it was across a track, which is a selection of the
 shared time axis. `resolve_selection` turns that into the samples underneath —
 one entry per leaf, with the placement's base, the element's trim and the clamp
 at both ends already applied — and returns nothing where an aggregate or a
@@ -589,7 +589,7 @@ both hold one sequence, and nothing is copied.
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.open_edits()` is what is still undecided, and `session.dangling()` is
-what the multitrack names and the table does not hold — **every** lane walked, not
+what the multitrack names and the table does not hold — **every** take lane walked, not
 only the ones that play, because an alternate take names its source whether or
 not anyone has chosen it yet.
 
@@ -632,19 +632,19 @@ anywhere silences every branch that is not on a soloed path, and a level
 multiplies into the `amp` of the events under it.
 
 ```python
-bass_lane.mute = True
-lead_lane.level = 0.5
+bass_track.mute = True
+lead_track.level = 0.5
 ```
 
 They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the multitrack rather than
+was left, and the editor's track header is drawing the multitrack rather than
 remembering something of its own — pressing mute there goes through the log and
-undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
+undoes like any other edit. What is *drawn* is read unmixed: a muted track keeps
 its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
 
-A lane's **height** is the other kind of thing and is in no document. It says
-nothing about what the multitrack is; resizing a lane (Ctrl+wheel) changes the view
+A track's **height** is the other kind of thing and is in no document. It says
+nothing about what the multitrack is; resizing a track (Ctrl+wheel) changes the view
 and no file.
 
 ### What a multitrack is as nodes: the channel strip, three times

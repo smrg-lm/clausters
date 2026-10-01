@@ -1,6 +1,6 @@
 """`PlayheadSync`: play, pause, stop and locate, with the views' playhead in step.
 
-Every time view the host draws -- a lane, a piano-roll, an engraved page -- shows
+Every time view the host draws -- a multitrack, a piano-roll, an engraved page -- shows
 the same line, and every script that plays into one needs the same four buttons.
 This is that logic, once, independent of which widget it drives.
 
@@ -13,7 +13,7 @@ the cursor where the music was left, which is what makes pause look like pause.
 
 **Two axes meet here.** The anchor lives on the engine's sample clock (samples,
 always); the static cursor lives on the *view's* own axis -- timeline samples for
-a lane, milliseconds for an engraved page. `PlayheadSync` converts to the first
+a multitrack, milliseconds for an engraved page. `PlayheadSync` converts to the first
 itself and takes `to_units` for the second, which is the whole of what a view
 has to say about its units.
 
@@ -60,7 +60,7 @@ class PlayheadSync:
         host: the `clausters.gui.host.GuiHost` the widgets live on. May be
             ``None`` and set later (a view that is drawn before it is opened).
         ids: the widget ids showing the line -- one id, a sequence of them, or a
-            callable returning either, for a view that redraws (its lanes are
+            callable returning either, for a view that redraws (its tracks are
             new widgets, and the transport must find the current ones).
         source: ``source(at, **kw)`` starts a pass at beat ``at`` and returns
             what plays -- a `clausters.seq.Timeline` played from there (``None``

@@ -621,8 +621,8 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 /// mixer's rule silences, plays nothing.
 ///
 /// **The curves go with them**: a note's own, read at the box's playrate, and
-/// the sequence's lanes, placed as the box places the sequence. Each box is a
-/// scope of its own, so a lane reaches the notes of its box and no other --
+/// the sequence's automation, placed as the box places the sequence. Each box is a
+/// scope of its own, so a curve reaches the notes of its box and no other --
 /// two boxes over one sequence are two passes over its channels.
 pub fn placed_notes(
     multitrack: &Multitrack,
@@ -780,12 +780,12 @@ pub fn tempo_map(multitrack: &Multitrack) -> TempoMap {
     nodes::tempo_map(multitrack, DEFAULT_TEMPO)
 }
 
-/// What the `lanes` prop takes and reports: flat `name label height mute solo
+/// What the `tracks` prop takes and reports: flat `name label height mute solo
 /// gain curves` septuples -- the same width the `clips` prop happens to be, and
 /// a different seven fields.
 pub const TRACK_FIELDS: usize = 7;
 
-/// What the `clips` prop takes and reports: flat `name lane at duration start
+/// What the `clips` prop takes and reports: flat `name track at duration start
 /// label source` septuples.
 pub const SEPTUPLE: usize = 7;
 
@@ -865,7 +865,7 @@ fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
         .collect()
 }
 
-/// The flat `lanes` report as the crate's strips.
+/// The flat `tracks` report as the crate's strips.
 ///
 /// The label and the height are **dropped rather than reported**: a row's label
 /// is the track's name where it has one and a made-up one where it has not, and
@@ -891,7 +891,7 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
     match intent {
         MultitrackIntent::PlaceRegion { .. } => "move a clip",
         MultitrackIntent::TrimRegion { .. } => "trim a clip",
-        MultitrackIntent::SetLane { .. } => "edit the clips",
+        MultitrackIntent::SetTakeLane { .. } => "edit the clips",
         MultitrackIntent::SetTracks { .. } => "mix a track",
         MultitrackIntent::SplitRegion { .. } => "split a clip",
         MultitrackIntent::JoinRegions { .. } => "join the clips",
@@ -905,7 +905,7 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
 /// A tag is a domain's vocabulary, so *which* tags are the multitrack's is a fact
 /// about the multitrack and not about whoever is routing a report to it. It was
 /// written twice -- here, and in the GUI host's own dispatch, which knew about
-/// `clips` and `lanes` and had never heard of the other two -- and the second
+/// `clips` and `tracks` and had never heard of the other two -- and the second
 /// list was two tags short: a curve dragged in a host with no client attached
 /// reached nobody, and so did a `join`. A caller asks; nobody restates.
 pub fn answers(tag: &str) -> bool {
@@ -978,7 +978,7 @@ pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look
         "points" => Reading::of(picture::read_points(multitrack, &curved(values, look))),
         // **The one verb that is stated rather than differenced**, and the one
         // that can be refused on the *material*: a join and a "delete one,
-        // lengthen the other" leave a lane holding the same thing, and a box in
+        // lengthen the other" leave a take lane holding the same thing, and a box in
         // a `clips` report names one source and one start -- so fragments
         // joined into one box have no report that describes them. A gap it
         // cannot state as silence and an overlap it cannot state as a mix are
@@ -1139,7 +1139,7 @@ mod tests {
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.name = Some("drums".into());
         track.level = 0.5;
-        track.lanes[0].regions.push(region);
+        track.take_lanes[0].regions.push(region);
         track.automation.push(curve(NodeId(4), 1.0));
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
@@ -1182,7 +1182,7 @@ mod tests {
             note(5.0, 72.0),
         ]);
         let mut multitrack = multitrack();
-        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
@@ -1264,7 +1264,7 @@ mod tests {
         let sequence =
             clausters_document::EventSequence::new(vec![note(0.0), note(2.0), note(4.5)]);
         let mut multitrack = multitrack();
-        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
@@ -1304,7 +1304,7 @@ mod tests {
     fn a_source_written_at_another_rate_states_its_own() {
         let source = SourceId(7);
         let mut multitrack = multitrack();
-        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
@@ -1357,7 +1357,7 @@ mod tests {
     fn a_source_at_the_sessions_own_rate_is_not_named() {
         let source = SourceId(7);
         let mut multitrack = multitrack();
-        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
@@ -1459,7 +1459,7 @@ mod tests {
         assert_eq!(clips(&multitrack, &look(&table))[6], json!(-1));
 
         let mut multitrack = multitrack;
-        multitrack.tracks[0].lanes[0].regions[0].content = Content::Window {
+        multitrack.tracks[0].take_lanes[0].regions[0].content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
                     source: SourceId(77),
@@ -1603,7 +1603,7 @@ mod tests {
         let taken = intake(&multitrack, "clips", &stray, &look);
         assert_eq!(
             taken.payloads[0]["intent"],
-            json!("setlane"),
+            json!("settakelane"),
             "the multitrack lost the box it had and gained none"
         );
     }
@@ -1632,7 +1632,7 @@ mod tests {
         );
     }
 
-    /// A multitrack with one take cut in two on one lane: the head reads the take's
+    /// A multitrack with one take cut in two on one take lane: the head reads the take's
     /// first second, the tail its second, laid out in that order.
     fn halves() -> Multitrack {
         let mut multitrack = Multitrack::default();
@@ -1650,7 +1650,7 @@ mod tests {
                 start,
                 duration: 1.0,
             });
-            track.lanes[0].regions.push(region);
+            track.take_lanes[0].regions.push(region);
         }
         multitrack.tracks.push(track);
         multitrack
@@ -1737,7 +1737,7 @@ mod tests {
     /// the user reported, and the shape every join test below is over.
     fn swapped() -> Multitrack {
         let mut multitrack = halves();
-        let regions = &mut multitrack.tracks[0].lanes[0].regions;
+        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
         regions[0].position = Second(1.0);
         regions[1].position = Second(0.0);
         multitrack
@@ -1832,7 +1832,7 @@ mod tests {
         // The box in front, its left edge pulled in by half a second: it plays
         // from 1.5 s to the end of the take, while its window still says one
         // second from 1.5 s -- up to 2.5 s of a take that is two.
-        let front = multitrack.tracks[0].lanes[0]
+        let front = multitrack.tracks[0].take_lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(11))
@@ -1896,7 +1896,7 @@ mod tests {
         let mut multitrack = swapped();
         // The box in front plays from 1.5 s for three quarters of a second,
         // up to 2.25 s of a take that is two.
-        let front = multitrack.tracks[0].lanes[0]
+        let front = multitrack.tracks[0].take_lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(11))
@@ -1912,7 +1912,7 @@ mod tests {
             _ => None,
         }
         .expect("a window onto a take");
-        multitrack.tracks[0].lanes[0]
+        multitrack.tracks[0].take_lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(10))
@@ -2026,7 +2026,7 @@ mod tests {
             Content::Unknown(Value::Null),
         );
         over_take.content = window(7, 0.0);
-        track.lanes[0].regions = vec![over_join, over_take];
+        track.take_lanes[0].regions = vec![over_join, over_take];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -2080,7 +2080,7 @@ mod tests {
     fn asking_a_bare_track_to_show_its_automation_makes_one() {
         let mut multitrack = Multitrack::default();
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0].regions.push(Region::new(
+        track.take_lanes[0].regions.push(Region::new(
             NodeId(3),
             Second(0.0),
             Second(4.0),
@@ -2225,14 +2225,14 @@ mod tests {
         let held = [json!("10"), json!("11")];
 
         let mut multitrack = halves();
-        multitrack.tracks[0].lanes[0].regions[1].position = Second(2.0);
+        multitrack.tracks[0].take_lanes[0].regions[1].position = Second(2.0);
         assert_eq!(
             intake(&multitrack, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("there is a gap between these boxes, and a join cannot state silence yet")
         );
 
         let mut multitrack = halves();
-        multitrack.tracks[0].lanes[0].regions[1].position = Second(0.5);
+        multitrack.tracks[0].take_lanes[0].regions[1].position = Second(0.5);
         assert_eq!(
             intake(&multitrack, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("these boxes overlap, and a join cannot state a mix yet")

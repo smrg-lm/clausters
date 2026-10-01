@@ -1,7 +1,7 @@
 // `PlayheadSync`: play, pause, stop and locate, with the views' playhead in
 // step (mirrors `clausters/gui/playhead_sync.py`).
 //
-// Every time view the host draws -- a lane, a piano-roll, an engraved page --
+// Every time view the host draws -- a multitrack, a piano-roll, an engraved page --
 // shows the same line, and every script that plays into one needs the same four
 // buttons. This is that logic, once, independent of which widget it drives.
 //
@@ -15,7 +15,7 @@
 //
 // **Two axes meet here.** The anchor lives on the engine's sample clock
 // (samples, always); the static cursor lives on the *view's* own axis -- timeline
-// samples for a lane, milliseconds for an engraved page. `PlayheadSync` converts
+// samples for a multitrack, milliseconds for an engraved page. `PlayheadSync` converts
 // to the first itself and takes `toUnits` for the second, which is the whole of
 // what a view has to say about its units.
 //

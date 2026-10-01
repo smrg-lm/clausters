@@ -1214,7 +1214,7 @@ mod tests {
     fn track(id: u64, lane: u64, regions: Vec<Region>) -> Track {
         let mut track = Track::new(NodeId(id), NodeId(lane));
         track.channels = 1;
-        track.lanes[0].regions = regions;
+        track.take_lanes[0].regions = regions;
         track
     }
 
@@ -1368,7 +1368,7 @@ mod tests {
     /// def, so the one change a move cannot carry.
     fn rewidened(multitrack: &Multitrack) -> Multitrack {
         let mut multitrack = multitrack.clone();
-        let held = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let held = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         let automation = std::mem::take(&mut held.automation);
         *held = region(3, 78);
         held.automation = automation;
@@ -1388,8 +1388,8 @@ mod tests {
         instance.reconcile(&planned(&multitrack), 0.5);
 
         let mut moved = multitrack.clone();
-        let region = moved.tracks[0].lanes[0].regions.remove(0);
-        moved.tracks[1].lanes[0].regions.push(region);
+        let region = moved.tracks[0].take_lanes[0].regions.remove(0);
+        moved.tracks[1].take_lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
 
         assert!(
@@ -1417,14 +1417,14 @@ mod tests {
     #[test]
     fn a_clip_moved_to_an_earlier_track_is_moved_too() {
         let mut multitrack = multitrack();
-        let region = multitrack.tracks[0].lanes[0].regions.remove(0);
-        multitrack.tracks[1].lanes[0].regions.push(region);
+        let region = multitrack.tracks[0].take_lanes[0].regions.remove(0);
+        multitrack.tracks[1].take_lanes[0].regions.push(region);
         let mut instance = Instance::new();
         instance.reconcile(&planned(&multitrack), 0.5);
 
         let mut moved = multitrack.clone();
-        let region = moved.tracks[1].lanes[0].regions.remove(0);
-        moved.tracks[0].lanes[0].regions.push(region);
+        let region = moved.tracks[1].take_lanes[0].regions.remove(0);
+        moved.tracks[0].take_lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
 
         assert!(
@@ -1445,15 +1445,15 @@ mod tests {
     #[test]
     fn a_moved_clip_keeps_its_readers_and_its_curve() {
         let mut multitrack = multitrack();
-        multitrack.tracks[0].lanes[0].regions[0]
+        multitrack.tracks[0].take_lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
         instance.reconcile(&planned(&multitrack), 0.5);
 
         let mut moved = multitrack.clone();
-        let region = moved.tracks[0].lanes[0].regions.remove(0);
-        moved.tracks[1].lanes[0].regions.push(region);
+        let region = moved.tracks[0].take_lanes[0].regions.remove(0);
+        moved.tracks[1].take_lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
 
         assert!(
@@ -1527,7 +1527,7 @@ mod tests {
     #[test]
     fn a_curve_whose_owner_was_rebuilt_is_mapped_again() {
         let mut multitrack = multitrack();
-        multitrack.tracks[0].lanes[0].regions[0]
+        multitrack.tracks[0].take_lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
@@ -1752,14 +1752,14 @@ mod tests {
     #[test]
     fn a_curve_whose_owner_is_gone_is_not_unmapped() {
         let mut multitrack = multitrack();
-        multitrack.tracks[0].lanes[0].regions[0]
+        multitrack.tracks[0].take_lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
         instance.reconcile(&planned(&multitrack), 0.5);
 
         let mut gone = multitrack.clone();
-        gone.tracks[0].lanes[0].regions.clear();
+        gone.tracks[0].take_lanes[0].regions.clear();
         let ops = instance.reconcile(&planned(&gone), 0.5);
         assert!(
             ops.iter()

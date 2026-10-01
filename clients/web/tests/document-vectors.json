@@ -2037,7 +2037,7 @@
         "intent": "placeregion",
         "region": 100,
         "track": 20,
-        "lane": 21,
+        "take_lane": 21,
         "position": 16.0,
         "layer": 1
       },
@@ -2138,7 +2138,7 @@
           {
             "id": 10,
             "name": "vocals",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 11,
                 "regions": [
@@ -2182,7 +2182,7 @@
           {
             "id": 20,
             "name": "guitar",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 21
               }
@@ -2195,7 +2195,7 @@
         "intent": "placeregion",
         "region": 100,
         "track": 20,
-        "lane": 21,
+        "take_lane": 21,
         "position": 16.0,
         "layer": 1
       },
@@ -2204,7 +2204,8 @@
           "tracks": [
             {
               "id": 10,
-              "lanes": [
+              "name": "vocals",
+              "take_lanes": [
                 {
                   "id": 11
                 },
@@ -2226,13 +2227,13 @@
                     }
                   ]
                 }
-              ],
-              "name": "vocals"
+              ]
             },
             {
               "channels": 1,
               "id": 20,
-              "lanes": [
+              "name": "guitar",
+              "take_lanes": [
                 {
                   "id": 21,
                   "regions": [
@@ -2252,8 +2253,7 @@
                     }
                   ]
                 }
-              ],
-              "name": "guitar"
+              ]
             }
           ],
           "version": 2
@@ -2261,10 +2261,10 @@
         "applied": true,
         "current": {
           "intent": "placeregion",
-          "lane": 11,
           "layer": 0,
           "position": 0.0,
           "region": 100,
+          "take_lane": 11,
           "track": 10
         }
       }
@@ -2276,7 +2276,7 @@
           {
             "id": 10,
             "name": "vocals",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 11,
                 "regions": [
@@ -2320,7 +2320,7 @@
           {
             "id": 20,
             "name": "guitar",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 21
               }
@@ -2341,7 +2341,8 @@
           "tracks": [
             {
               "id": 10,
-              "lanes": [
+              "name": "vocals",
+              "take_lanes": [
                 {
                   "id": 11,
                   "regions": [
@@ -2391,26 +2392,24 @@
                     }
                   ]
                 }
-              ],
-              "name": "vocals"
+              ]
             },
             {
               "channels": 1,
               "id": 20,
-              "lanes": [
+              "name": "guitar",
+              "take_lanes": [
                 {
                   "id": 21
                 }
-              ],
-              "name": "guitar"
+              ]
             }
           ],
           "version": 2
         },
         "applied": true,
         "current": {
-          "intent": "setlane",
-          "lane": 11,
+          "intent": "settakelane",
           "regions": [
             {
               "content": {
@@ -2425,7 +2424,8 @@
               "length": 4.0,
               "position": 0.0
             }
-          ]
+          ],
+          "take_lane": 11
         }
       }
     },
@@ -2436,7 +2436,7 @@
           {
             "id": 10,
             "name": "vocals",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 11,
                 "regions": [
@@ -2480,7 +2480,7 @@
           {
             "id": 20,
             "name": "guitar",
-            "lanes": [
+            "take_lanes": [
               {
                 "id": 21
               }
@@ -2493,7 +2493,7 @@
         "intent": "placeregion",
         "region": 999,
         "track": 20,
-        "lane": 21,
+        "take_lane": 21,
         "position": 0.0
       },
       "edited": {
@@ -2501,7 +2501,8 @@
           "tracks": [
             {
               "id": 10,
-              "lanes": [
+              "name": "vocals",
+              "take_lanes": [
                 {
                   "id": 11,
                   "regions": [
@@ -2538,18 +2539,17 @@
                     }
                   ]
                 }
-              ],
-              "name": "vocals"
+              ]
             },
             {
               "channels": 1,
               "id": 20,
-              "lanes": [
+              "name": "guitar",
+              "take_lanes": [
                 {
                   "id": 21
                 }
-              ],
-              "name": "guitar"
+              ]
             }
           ]
         },

@@ -17,11 +17,11 @@
 //! multitrack places things in physical time, and the tempo map it holds is a
 //! structure a ruler and a snap read, which places nothing.
 //!
-//! # A row is a track, showing the lane it plays
+//! # A row is a track, showing the take lane it plays
 //!
-//! A track holds several lanes because that is what comping is made of, and
+//! A track holds several take lanes because that is what comping is made of, and
 //! which one plays is the track's own choice ([`Track::active`]). So a row is a
-//! track showing its active lane; the others are the takes behind it, and
+//! track showing its active take lane; the others are the takes behind it, and
 //! showing them is an expansion a view keeps state for.
 //!
 //! # A name is an id
@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::multitrack::edit::{MintedSource, MultitrackIntent};
-use crate::multitrack::{Automation, Content, Lane, Multitrack, Region, Track};
+use crate::multitrack::{Automation, Content, Multitrack, Region, TakeLane, Track};
 use crate::session::{Location, Part, Source};
 use crate::{
     Lifetime, NodeId, Opaque, Point, Range, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
@@ -47,9 +47,9 @@ use crate::{
 pub struct Row {
     /// The track it draws -- its identity, and its name on the wire.
     pub track: NodeId,
-    /// The lane of that track whose regions it shows: what a box joins when it
+    /// The take lane of that track whose regions it shows: what a box joins when it
     /// lands here.
-    pub lane: NodeId,
+    pub take_lane: NodeId,
     /// What the header draws.
     pub label: String,
     /// Silenced.
@@ -118,10 +118,10 @@ pub fn rows(multitrack: &Multitrack) -> Vec<Row> {
         .tracks
         .iter()
         .filter_map(|track| {
-            let lane = active_lane(track)?;
+            let lane = active_take_lane(track)?;
             Some(Row {
                 track: track.id,
-                lane: lane.id,
+                take_lane: lane.id,
                 label: track
                     .name
                     .clone()
@@ -143,7 +143,7 @@ pub fn rows(multitrack: &Multitrack) -> Vec<Row> {
 pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
     let mut out = Vec::new();
     for track in &multitrack.tracks {
-        let Some(lane) = active_lane(track) else {
+        let Some(lane) = active_take_lane(track) else {
             continue;
         };
         for region in &lane.regions {
@@ -215,13 +215,13 @@ pub fn curves(multitrack: &Multitrack) -> Vec<Curve> {
 
 /// The **region automations**: one layer inside each box that has one.
 ///
-/// Only the boxes that are drawn -- the active lane's -- because a layer with no
+/// Only the boxes that are drawn -- the active take lane's -- because a layer with no
 /// box under it has nowhere to be.
 pub fn layers(multitrack: &Multitrack) -> Vec<Curve> {
     multitrack
         .tracks
         .iter()
-        .filter_map(active_lane)
+        .filter_map(active_take_lane)
         .flat_map(|lane| &lane.regions)
         .flat_map(|region| region.automation.iter().map(|a| curve(a, region.id)))
         .collect()
@@ -356,14 +356,14 @@ fn unity() -> f64 {
 /// - a name that is a track's id is **that track**, with the strip's mute, solo
 ///   and level written onto it;
 /// - a name that is no track's id is a **new track**, minted here with one
-///   empty lane, since a track that could hold nothing is not one;
-/// - a track the report does not name is **gone**, and its lanes and regions
+///   empty take lane, since a track that could hold nothing is not one;
+/// - a track the report does not name is **gone**, and its take lanes and regions
 ///   with it -- which is what makes deleting a track one edit rather than a
 ///   removal per box on it;
 /// - the order is the report's, so the rows are the tracks and moving one moves
 ///   the other.
 ///
-/// The minting walks up from [`fresh_id`], two at a time: a track and its lane.
+/// The minting walks up from [`fresh_id`], two at a time: a track and its take lane.
 /// Unlike [`read`] this asks the multitrack for that itself -- a row report carries
 /// no ids a caller had to reserve, so there is nothing for one to say.
 ///
@@ -380,7 +380,7 @@ pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackI
     let span = multitrack
         .tracks
         .iter()
-        .flat_map(|track| track.lanes.iter())
+        .flat_map(|track| track.take_lanes.iter())
         .flat_map(|lane| lane.regions.iter())
         .map(|region| region.end().0)
         .fold(0.0f64, f64::max);
@@ -508,8 +508,8 @@ pub struct Placed {
 ///   crossing is not a second mechanism;
 /// - a row that gained a box the multitrack has no region for, or lost one the
 ///   report no longer names, is stated **whole**
-///   ([`MultitrackIntent::SetLane`]), which is the multitrack's own verb for a
-///   lane's contents and what a split, a join and a paste all invert to.
+///   ([`MultitrackIntent::SetTakeLane`]), which is the multitrack's own verb for a
+///   take lane's contents and what a split, a join and a paste all invert to.
 ///
 /// `next_id` is where minted region ids start; a caller with nothing better to
 /// say passes [`fresh_id`]. Ids are the multitrack's and a hand that made a box has
@@ -543,7 +543,7 @@ pub fn read(
             .map(NodeId)
             .and_then(|id| find_region(multitrack, id).map(|f| (id, f)));
         let Some((region_id, (track, region))) = found else {
-            fresh.push((row.lane, box_.clone()));
+            fresh.push((row.take_lane, box_.clone()));
             continue;
         };
         seen.push(region_id);
@@ -573,7 +573,7 @@ pub fn read(
             out.push(MultitrackIntent::PlaceRegion {
                 region: region_id,
                 track: box_.row,
-                lane: row.lane,
+                take_lane: row.take_lane,
                 position: box_.position,
                 layer: region.layer,
             });
@@ -585,7 +585,7 @@ pub fn read(
     out
 }
 
-/// An id past everything the multitrack already names -- its tracks, its lanes, its
+/// An id past everything the multitrack already names -- its tracks, its take lanes, its
 /// regions **and its automations**, which share one id space.
 ///
 /// The curves are in the count because they are in the space: a multitrack looks an
@@ -599,7 +599,7 @@ pub fn fresh_id(multitrack: &Multitrack) -> u64 {
         .flat_map(|track| {
             std::iter::once(track.id.0)
                 .chain(track.automation.iter().map(|a| a.id.0))
-                .chain(track.lanes.iter().flat_map(|lane| {
+                .chain(track.take_lanes.iter().flat_map(|lane| {
                     std::iter::once(lane.id.0).chain(lane.regions.iter().flat_map(|r| {
                         std::iter::once(r.id.0).chain(r.automation.iter().map(|a| a.id.0))
                     }))
@@ -641,7 +641,7 @@ pub fn fresh_source(multitrack: &Multitrack, taken: &[SourceId]) -> SourceId {
     let used = multitrack
         .tracks
         .iter()
-        .flat_map(|track| track.lanes.iter())
+        .flat_map(|track| track.take_lanes.iter())
         .flat_map(|lane| lane.regions.iter())
         .filter_map(|region| window_of(region).0)
         .chain(taken.iter().copied())
@@ -656,7 +656,7 @@ pub fn fresh_source(multitrack: &Multitrack, taken: &[SourceId]) -> SourceId {
 /// The one verb of the multitrack that cannot be read out of the picture it
 /// leaves. A move, a trim, a split and a delete are all differences -- the
 /// report is the multitrack and [`read`] says what changed -- but a join and a
-/// "delete one, lengthen the other" leave a lane holding exactly the same
+/// "delete one, lengthen the other" leave a take lane holding exactly the same
 /// thing, and a box in the report names **one** source and one start. So a join
 /// is stated, and this is the statement.
 ///
@@ -708,7 +708,7 @@ pub fn read_join(
         return Err("a join needs two boxes or more in hand");
     }
     if held.iter().any(|(_, lane, _)| *lane != held[0].1) {
-        return Err("a join is a lane's, and these boxes are on two");
+        return Err("a join is one track's, and these boxes are on two");
     }
     held.sort_by(|a, b| {
         a.2.position
@@ -903,10 +903,10 @@ fn segments_of(
     Ok(out)
 }
 
-/// The lane a region is on, and the region.
+/// The take lane a region is on, and the region.
 fn lane_of_region(multitrack: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
     multitrack.tracks.iter().find_map(|track| {
-        track.lanes.iter().find_map(|lane| {
+        track.take_lanes.iter().find_map(|lane| {
             lane.regions
                 .iter()
                 .find(|r| r.id == region)
@@ -915,7 +915,7 @@ fn lane_of_region(multitrack: &Multitrack, region: NodeId) -> Option<(NodeId, &R
     })
 }
 
-/// **What each lane now holds**, for the two changes a placement cannot state:
+/// **What each take lane now holds**, for the two changes a placement cannot state:
 /// a region the report no longer names, and a box the multitrack has no region for.
 fn lane_lists(
     multitrack: &Multitrack,
@@ -932,14 +932,14 @@ fn lane_lists(
             .tracks
             .iter()
             .find(|t| t.id == row.track)
-            .and_then(active_lane)
+            .and_then(active_take_lane)
         else {
             continue;
         };
         // **A box over samples nobody resolved is not invented**: the document
         // would name a source that cannot be opened, and a multitrack that will not
         // reopen is worse than a box that did not stick. Dropped here rather
-        // than while building, so a lane that gained only such boxes is not
+        // than while building, so a take lane that gained only such boxes is not
         // rewritten to say nothing.
         let added: Vec<&Placed> = fresh
             .iter()
@@ -951,7 +951,7 @@ fn lane_lists(
             continue;
         }
         // **A kept region is kept as the report left it**, not as the multitrack
-        // still holds it. A lane stated whole is stated *last*, so a clone of
+        // still holds it. A take lane stated whole is stated *last*, so a clone of
         // what the multitrack says would undo the trim and the move the same report
         // asked for a moment earlier -- which is what made a split leave its
         // first half at full length, playing over the second.
@@ -1005,17 +1005,19 @@ fn lane_lists(
             ));
             next += 1;
         }
-        out.push(MultitrackIntent::SetLane {
-            lane: lane.id,
+        out.push(MultitrackIntent::SetTakeLane {
+            take_lane: lane.id,
             regions,
         });
     }
     out
 }
 
-/// The lane a track plays, which is the one a row draws.
-fn active_lane(track: &Track) -> Option<&Lane> {
-    track.active_lane().or_else(|| track.lanes.first())
+/// The take lane a track plays, which is the one a row draws.
+fn active_take_lane(track: &Track) -> Option<&TakeLane> {
+    track
+        .active_take_lane()
+        .or_else(|| track.take_lanes.first())
 }
 
 /// The fader a track is at: its own field, falling back to the key an older
@@ -1072,7 +1074,7 @@ fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool, f64) {
 fn find_region(multitrack: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
     multitrack.tracks.iter().find_map(|track| {
         track
-            .lanes
+            .take_lanes
             .iter()
             .find_map(|lane| lane.regions.iter().find(|r| r.id == region))
             .map(|found| (track.id, found))
@@ -1095,7 +1097,7 @@ mod tests {
         );
         region.automation.push(curve_at(NodeId(5), 0.25));
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0].regions.push(region);
+        track.take_lanes[0].regions.push(region);
         track.automation.push(curve_at(NodeId(4), 0.5));
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
@@ -1173,16 +1175,17 @@ mod tests {
     #[test]
     fn a_report_that_moved_the_window_says_what_the_box_now_reads() {
         let mut multitrack = multitrack();
-        multitrack.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
-            source: crate::SegmentSource::Samples(crate::SourceRef {
-                source: crate::SourceId(1),
-                lifetime: crate::Lifetime::Session,
-                generation: 0,
-                range: None,
-            }),
-            start: 0.0,
-            duration: 8.0,
-        });
+        multitrack.tracks[0].take_lanes[0].regions[0].content =
+            Content::window(crate::SegmentRef {
+                source: crate::SegmentSource::Samples(crate::SourceRef {
+                    source: crate::SourceId(1),
+                    lifetime: crate::Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 0.0,
+                duration: 8.0,
+            });
         let held = boxes(&multitrack)[0].clone();
         let placed = |start: f64| Placed {
             name: held.region.0.to_string(),
@@ -1234,7 +1237,7 @@ mod tests {
         let window_of_new = |out: &[MultitrackIntent]| {
             out.iter()
                 .find_map(|intent| match intent {
-                    MultitrackIntent::SetLane { regions, .. } => regions
+                    MultitrackIntent::SetTakeLane { regions, .. } => regions
                         .iter()
                         .find(|r| r.position == Second(4.0))
                         .and_then(|r| r.content.as_window().cloned()),
@@ -1255,10 +1258,10 @@ mod tests {
         assert_eq!(window_of_new(&unknown).duration, 2.0);
     }
 
-    /// **A lane stated whole is stated as the report left it**, not as the
+    /// **A take lane stated whole is stated as the report left it**, not as the
     /// multitrack still holds it.
     ///
-    /// A lane's whole list is the *last* intent a report produces, so a clone
+    /// A take lane's whole list is the *last* intent a report produces, so a clone
     /// of what the multitrack says undoes the trim and the move the same report
     /// asked for a moment earlier. That is what made a split leave its first
     /// half at full length, playing over the second -- the picture was right and
@@ -1268,16 +1271,17 @@ mod tests {
     #[test]
     fn a_split_leaves_the_first_half_short() {
         let mut multitrack = multitrack();
-        multitrack.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
-            source: crate::SegmentSource::Samples(crate::SourceRef {
-                source: crate::SourceId(1),
-                lifetime: crate::Lifetime::Session,
-                generation: 0,
-                range: None,
-            }),
-            start: 0.0,
-            duration: 8.0,
-        });
+        multitrack.tracks[0].take_lanes[0].regions[0].content =
+            Content::window(crate::SegmentRef {
+                source: crate::SegmentSource::Samples(crate::SourceRef {
+                    source: crate::SourceId(1),
+                    lifetime: crate::Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 0.0,
+                duration: 8.0,
+            });
         let held = boxes(&multitrack)[0].clone();
         let same = |name: &str, at: f64, len: f64, start: f64| Placed {
             name: name.into(),
@@ -1304,7 +1308,7 @@ mod tests {
                 &Default::default(),
             );
         }
-        let lane = &multitrack.tracks[0].lanes[0];
+        let lane = &multitrack.tracks[0].take_lanes[0];
         assert_eq!(
             lane.regions.len(),
             2,
@@ -1339,7 +1343,7 @@ mod tests {
     #[test]
     fn a_fresh_id_is_past_the_curves_too() {
         let multitrack = multitrack();
-        // Track 1, lane 2, region 3, the track curve 4, the box envelope 5.
+        // Track 1, take lane 2, region 3, the track curve 4, the box envelope 5.
         assert_eq!(fresh_id(&multitrack), 6);
     }
 
@@ -1405,7 +1409,7 @@ mod tests {
         assert!(tracks[0].muted);
         assert_eq!(level_of(&tracks[0]), 0.5);
 
-        // A name that is no track's id is a track a hand added -- with a lane,
+        // A name that is no track's id is a track a hand added -- with a take lane,
         // since a track that could hold nothing is not one -- and the ids come
         // from the multitrack's own counter.
         let out = read_rows(
@@ -1427,7 +1431,7 @@ mod tests {
             NodeId(6),
             "past everything the multitrack names"
         );
-        assert_eq!(tracks[1].lanes.len(), 1, "and it can hold a box");
+        assert_eq!(tracks[1].take_lanes.len(), 1, "and it can hold a box");
 
         // A track the report leaves out is gone, and it takes its boxes.
         let out = read_rows(&multitrack, &[]);

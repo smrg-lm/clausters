@@ -1067,9 +1067,9 @@ mod tests {
     /// Two tracks: the first holding boxes 12 and 13, the second box 22.
     fn editor() -> MultitrackEditor {
         let mut first = Track::new(NodeId(10), NodeId(11));
-        first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
+        first.take_lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let mut second = Track::new(NodeId(20), NodeId(21));
-        second.lanes[0].regions = vec![region(22, 0.0)];
+        second.take_lanes[0].regions = vec![region(22, 0.0)];
         let multitrack = Multitrack {
             tracks: vec![first, second],
             ..Multitrack::default()
@@ -1109,7 +1109,9 @@ mod tests {
     }
 
     fn position(editor: &MultitrackEditor) -> f64 {
-        editor.multitrack().tracks[0].lanes[0].regions[0].position.0
+        editor.multitrack().tracks[0].take_lanes[0].regions[0]
+            .position
+            .0
     }
 
     /// **The editor joins cuts of its own joins flat** *(found 2026-09-13 by
@@ -1141,7 +1143,7 @@ mod tests {
         // The take's halves swapped, and behind them a box that does not read
         // on from the second.
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].regions = vec![
+        track.take_lanes[0].regions = vec![
             over_take(12, 0.0, 1.0),
             over_take(13, 1.0, 0.0),
             over_take(14, 2.0, 1.5),

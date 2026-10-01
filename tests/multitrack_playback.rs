@@ -72,7 +72,7 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
         tracks: vec![Track::new(NodeId(10), NodeId(11))],
         ..Multitrack::default()
     };
-    multitrack.tracks[0].lanes[0].place(Region::new(
+    multitrack.tracks[0].take_lanes[0].place(Region::new(
         NodeId(20),
         Second(0.0),
         Second(long),

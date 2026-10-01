@@ -2601,7 +2601,7 @@ export function bpf(
  * a vertical drag. `midiIn` arms live MIDI painting in the native host.
  *
  * Curves, drawn and edited as a `multitrack`'s automation is: `curves` are the
- * **lanes**, curves over the whole roll, each a row under the grid, as `[name,
+ * sequence's **automation**, curves over the whole roll, each a row under the grid, as `[name,
  * label, min, max, height]`; `layers` are each note's own curves, `[name,
  * noteId, label, min, max, pitch]`, drawn inside the note named by `noteId`
  * (see `noteIds`) -- or, with `pitch` true (a bend, in semitones), in the grid

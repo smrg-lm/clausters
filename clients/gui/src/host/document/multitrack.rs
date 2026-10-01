@@ -1,19 +1,19 @@
 //! Drawing **the multitrack** as a multitrack, and reading a hand's answer back.
 //!
 //! The twin of [`super::tree`] over the other description. A session written
-//! today carries [`Multitrack`] -- tracks, lanes, regions, and the timeline they
+//! today carries [`Multitrack`] -- tracks, take lanes, regions, and the timeline they
 //! sit on -- and leaves the general tree empty, so a host that read only the
 //! tree opened a real session as an empty window. This is the leg the crate's
 //! plan calls the destination and the tree the thing being walked off.
 //!
-//! # One lane per track, and it shows the track's active lane
+//! # One take lane per track, and it shows the track's active take lane
 //!
-//! A track holds several lanes because that is what comping is made of, and
+//! A track holds several take lanes because that is what comping is made of, and
 //! which one plays is the track's own choice ([`clausters_document::multitrack::Track::active`]). So a row on
-//! screen is a **track**, showing the lane it plays; the others are the takes
+//! screen is a **track**, showing the take lane it plays; the others are the takes
 //! behind it, and showing them is an expansion the view has no state for yet.
 //! A region dragged onto another row therefore names that row's track *and*
-//! its active lane, which is exactly what [`MultitrackIntent::PlaceRegion`]
+//! its active take lane, which is exactly what [`MultitrackIntent::PlaceRegion`]
 //! asks for.
 //!
 //! # A name on the wire is an id
@@ -111,7 +111,7 @@ pub fn shown(multitrack: &Multitrack, look: &Look<'_>) -> Picture {
             .iter()
             .map(|row| PictureRow {
                 node: row.track,
-                holder: row.lane,
+                holder: row.take_lane,
                 // A track has no offset: the multitrack's timeline is one, and a
                 // region states where it is on it.
                 base: 0.0,
@@ -261,11 +261,11 @@ mod tests {
         region
     }
 
-    /// Two tracks, one lane each: the first holds two regions, the second one.
+    /// Two tracks, one take lane each: the first holds two regions, the second one.
     fn multitrack() -> Multitrack {
         let track = |id: u64, lane: u64, regions: Vec<Region>| {
             let mut track = Track::new(NodeId(id), NodeId(lane));
-            track.lanes[0].regions = regions;
+            track.take_lanes[0].regions = regions;
             track.name = Some(format!("t{id}"));
             track
         };
@@ -305,7 +305,7 @@ mod tests {
         args
     }
 
-    /// **A row is a track, showing the lane it plays**, and every name on the
+    /// **A row is a track, showing the take lane it plays**, and every name on the
     /// wire is an id -- which is what lets an edit-back be read with no map.
     #[test]
     fn a_multitrack_draws_a_row_per_track_naming_ids() {
@@ -317,7 +317,7 @@ mod tests {
         assert_eq!(
             shown.tracks.iter().map(|l| l.holder).collect::<Vec<_>>(),
             vec![NodeId(11), NodeId(21)],
-            "a row's clips are its active lane's, which is what a region joins"
+            "a row's clips are its active take lane's, which is what a region joins"
         );
         let tracks = shown.props["tracks"].as_array().expect("flat");
         assert_eq!(tracks[0], "10", "named by the track's id");
@@ -388,7 +388,7 @@ mod tests {
         assert!(
             matches!(
                 moved.first().map(|(i, _)| i),
-                Some(MultitrackIntent::PlaceRegion { region, track, lane, position, .. })
+                Some(MultitrackIntent::PlaceRegion { region, track, take_lane: lane, position, .. })
                     if *region == NodeId(12) && *track == NodeId(10) && *lane == NodeId(11)
                         && *position == Second(3.0)
             ),
@@ -409,7 +409,7 @@ mod tests {
         assert!(
             matches!(
                 crossed.first().map(|(i, _)| i),
-                Some(MultitrackIntent::PlaceRegion { track, lane, .. })
+                Some(MultitrackIntent::PlaceRegion { track, take_lane: lane, .. })
                     if *track == NodeId(20) && *lane == NodeId(21)
             ),
             "{crossed:?}"
@@ -437,7 +437,7 @@ mod tests {
         assert_eq!(trimmed.len(), 1, "and not a move beside it: {trimmed:?}");
     }
 
-    /// **A box the payload leaves out was deleted**, and that is the lane's own
+    /// **A box the payload leaves out was deleted**, and that is the take lane's own
     /// whole-list verb -- the multitrack has no "remove one region", for the same
     /// reason it has no "add one".
     #[test]
@@ -448,14 +448,23 @@ mod tests {
             &clips(&[("12", "10", 0.0, 200.0), ("22", "20", 0.0, 200.0)]),
             &look(),
         );
-        let [(MultitrackIntent::SetLane { lane, regions }, _)] = edits.as_slice() else {
-            panic!("one lane rewritten: {edits:?}");
+        let [
+            (
+                MultitrackIntent::SetTakeLane {
+                    take_lane: lane,
+                    regions,
+                },
+                _,
+            ),
+        ] = edits.as_slice()
+        else {
+            panic!("one take lane rewritten: {edits:?}");
         };
         assert_eq!(*lane, NodeId(11));
         assert_eq!(
             regions.iter().map(|r| r.id).collect::<Vec<_>>(),
             vec![NodeId(12)],
-            "what the lane now holds, and not what left it"
+            "what the take lane now holds, and not what left it"
         );
     }
 
@@ -510,11 +519,14 @@ mod tests {
         let edits = read_clips(&multitrack, &args, &look);
 
         let lane = edits.iter().find_map(|(i, _)| match i {
-            MultitrackIntent::SetLane { lane, regions } => Some((*lane, regions)),
+            MultitrackIntent::SetTakeLane {
+                take_lane: lane,
+                regions,
+            } => Some((*lane, regions)),
             _ => None,
         });
         let Some((lane, regions)) = lane else {
-            panic!("the lane, whole: {edits:?}")
+            panic!("the take lane, whole: {edits:?}")
         };
         assert_eq!(lane, NodeId(11));
         assert_eq!(regions.len(), 3, "the two that stayed and the new one");
@@ -566,7 +578,7 @@ mod tests {
         assert!(
             !edits
                 .iter()
-                .any(|(i, _)| matches!(i, MultitrackIntent::SetLane { .. })),
+                .any(|(i, _)| matches!(i, MultitrackIntent::SetTakeLane { .. })),
             "nothing added, and nothing removed either: {edits:?}"
         );
     }
@@ -642,14 +654,14 @@ mod tests {
         }
         assert!(
             multitrack.tracks[1]
-                .lanes
+                .take_lanes
                 .iter()
                 .any(|l| l.regions.iter().any(|r| r.id == NodeId(12))),
             "the region is on the second track now"
         );
         assert!(
             multitrack.tracks[0]
-                .lanes
+                .take_lanes
                 .iter()
                 .all(|l| l.regions.iter().all(|r| r.id != NodeId(12))),
             "and not on the first one as well"

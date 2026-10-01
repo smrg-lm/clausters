@@ -395,7 +395,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
     // *only* there: a region is a window onto a source, so a reader that walked
     // the general tree alone read nothing in and drew every box empty.
     for track in &session.multitrack.tracks {
-        for lane in &track.lanes {
+        for lane in &track.take_lanes {
             for region in &lane.regions {
                 let clausters_document::multitrack::Content::Window { window, .. } =
                     &region.content
@@ -549,7 +549,7 @@ mod tests {
                 })
             })
             .collect();
-        json!({"tracks": [{"id": 10, "name": "t", "lanes": [{"id": 11, "regions": regions}]}]})
+        json!({"tracks": [{"id": 10, "name": "t", "take_lanes": [{"id": 11, "regions": regions}]}]})
     }
 
     fn session(sources: &[u64], table: Value) -> Session {

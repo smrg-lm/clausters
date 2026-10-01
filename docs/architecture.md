@@ -214,7 +214,7 @@ Each transport keeps a queue of its own beside the device one, whose entries liv
 
 **Event lanes are a third queue per transport, keyed by position** (`src/osc/server/lanes.rs`, `TransportState::lanes`). A lane holds notes and messages as data on the network thread, which each turn builds what falls within `lanes::LOOKAHEAD_SECS` ahead of the position — in playback order, through a loop's wrap, never past an end mark — with the ordinary translator and ships it as `Cmd::LaneEntry`. The engine keeps the entries sorted by position and the block-cut loop takes the first one at or after where a rolling transport stands as one more due point (`Due::Lane`), projected through the position anchor as a wrap is; it yields to an edge or a bundle on the same sample. Firing runs the start and moves a note's release onto the transport's clock queue a note's length later, tagged with its lane (`ScheduledBundleT::lane`), so a locate or a pass going back to its mark can take the lanes' releases off and run them at once (`take_releases`, into the pre-allocated `Engine::released`), and a client's `/sched_clear` leaves them standing. The network side clears and refeeds a lane on a locate, a loop set or cleared, a pass that ended, and new data (`ClearLane`); every entry that leaves the engine comes back as `Garbage::LaneSpent`, and one that never ran has its nodes forgotten and its auto ids returned (`forget_unrun`, which does the same for a cleared timed bundle).
 
-**A note that curves shape plays in a graph.** A sequence's curves act on a channel (its lanes) or on one note (its expression), and the client makes the two scopes two GraphDefs, one inside the other (`clausters_core::event_graph`, planned by `clausters_editing::note_curves`): an instance per channel, whose shared members read the channel's curves onto private control buses, and a slot of it per note, a nested graph holding the note's def beside the readers of its own curves and, when either scope bends it, a node that makes its pitch. The lane's note names that slot (`{"graph": id, "slot": name}`) rather than a def, and firing it is a `/graph_addSlot`. The voice is marked `ends`, so when its envelope frees it the network thread frees the slot around it (`CmdTranslator::member_ended`, on `/node_end`) and its readers go with it. The readers are `ev.curve` rather than the multitrack's: a note's graph is in the group that follows the transport, where a stop freezes nothing, so the reader itself holds its value while the transport is stopped (`TransportFade` gating it) — else the locate after a stop would move every curve a releasing note reads. Nothing new runs on the audio thread: a graph is groups, synths and maps, as always.
+**A note that curves shape plays in a graph.** A sequence's curves act on a channel (its automation) or on one note (the note's own), and the client makes the two scopes two GraphDefs, one inside the other (`clausters_core::event_graph`, planned by `clausters_editing::note_curves`): an instance per channel, whose shared members read the channel's curves onto private control buses, and a slot of it per note, a nested graph holding the note's def beside the readers of its own curves and, when either scope bends it, a node that makes its pitch. The lane's note names that slot (`{"graph": id, "slot": name}`) rather than a def, and firing it is a `/graph_addSlot`. The voice is marked `ends`, so when its envelope frees it the network thread frees the slot around it (`CmdTranslator::member_ended`, on `/node_end`) and its readers go with it. The readers are `ev.curve` rather than the multitrack's: a note's graph is in the group that follows the transport, where a stop freezes nothing, so the reader itself holds its value while the transport is stopped (`TransportFade` gating it) — else the locate after a stop would move every curve a releasing note reads. Nothing new runs on the audio thread: a graph is groups, synths and maps, as always.
 
 Routing happens in `drain_commands`, engine-side, because the engine is the only one that sees the tree and membership is dynamic. It is a walk up `parent` to the nearest governed group (`NodeTree::governing`), allocation-free and bounded. A bundle is atomic, so one governed message takes the whole bundle with it; a **move** counts by *either* end, since splicing a node into a frozen subtree is the same structural edit as creating one there. The stamp itself arrives on the device axis (the network thread built it against the device clock) and is converted at drain, where the frozen total is known.
 
@@ -543,9 +543,9 @@ anywhere silences every branch not on a soloed path; a level multiplies into the
 `amp` of the events below it) and carried in the node's **configuration**, which
 is the same opaque door a leaf's code and a track's restrictions use — so a
 a multitrack reopens mixed the way it was left, and an editor's `Configure` starts from
-`leaf_config` and cannot silently unmute a lane. Drawing reads the tree
-**unmixed** (`flatten(..., mixed=False)`): a muted lane keeps its clips, its
-notes and its length, or the picture would report silence as absence. A lane's
+`leaf_config` and cannot silently unmute a track. Drawing reads the tree
+**unmixed** (`flatten(..., mixed=False)`): a muted track keeps its clips, its
+notes and its length, or the picture would report silence as absence. A track's
 `height`, which the host emits on Ctrl+wheel, is deliberately in no document: it
 says nothing about what the multitrack is, and the editor answers it as the screen
 state it is.
@@ -570,7 +570,7 @@ track a thing is on, its order within the track, its placement and its identity 
 is authored, durable and undoable, and projecting it out of a general tree left
 it nowhere to live but the widget tree, which is drawn, and drawing frees. It is
 being rebuilt as a **session** in `clausters-document` — source, region,
-lane, track, automation — with the three classic applications (audio editor,
+take lane, track, automation — with the three classic applications (audio editor,
 multitrack editor, score editor) over that one document. **The model landed on
 2026-09-06** (`clausters_document::multitrack`); what has not is the host
 binding it, which is where the picture gets its single owner. See
@@ -667,7 +667,7 @@ reasoning:
   two of those are two copies that diverge.
 - **The arrangement is beside the tree, not projected out of it.** *(New
   2026-09-06.)* `arrangement::Arrangement` holds what a multitrack actually is —
-  tracks, each with several `Lane`s and playing one, each lane an ordered list
+  tracks, each with several `TakeLane`s and playing one, each take lane an ordered list
   of `Region`s — plus the timeline they sit on: the tempo map, the meter map,
   the markers, the loop and punch spans, which are the **multitrack's** and which no
   two tracks can therefore disagree about. A `Region` is **one object**, its
@@ -675,7 +675,7 @@ reasoning:
   `Content` for what fills it — a window onto a source with its playrate and the
   arguments of its own evaluation, or a **composite** carrying the general tree
   unchanged. REAPER splits that into an item and a take; we do not, because a
-  track holding several lanes is already the comping mechanism, and REAPER 7
+  track holding several take lanes is already the comping mechanism, and REAPER 7
   itself grew fixed item lanes beside its takes. The timebases are types
   (`timebase::Second`, `Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat`)
   with no conversion between them. **The multitrack is placed in `Second`s** —
@@ -715,7 +715,7 @@ reasoning:
   decisions](decisions.md)).
 - **A node has a name, and a set carries its writer's restrictions.** The name
   is a referenceable label and not a second identity (the server's own rule for
-  a group's name), so a reopened multitrack can still label its lanes. And there is
+  a group's name), so a reopened multitrack can still label its tracks. And there is
   one set kind: a multitrack's track is a set *with the restrictions of a view*,
   and those restrictions ride in the set's opaque `config` — carried, never
   read — rather than becoming a variant of the tree.

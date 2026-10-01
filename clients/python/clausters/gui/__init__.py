@@ -29,7 +29,7 @@ structure -- a buffer, a curve, a timeline, a `Multitrack` -- and the edit-backs
 land on that structure, never on the widget tree.
 `clausters.gui.playhead_sync.PlayheadSync` is the play/pause/stop/locate machinery
 every time view shares: it keeps the views' playhead line in step with what
-plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is -- a lane, a piano-roll, an engraved
+plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is -- a multitrack, a piano-roll, an engraved
 page. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
