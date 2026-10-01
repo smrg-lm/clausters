@@ -161,6 +161,23 @@ impl Axes {
     }
 }
 
+/// **A curve's value as a hover reads it**: to the precision its range asks
+/// for -- whole numbers over a range of a hundred or more (a CC, a frequency),
+/// finer as the range narrows, three places under one.
+pub fn readout_value(value: f64, min: f64, max: f64) -> String {
+    let span = (max - min).abs();
+    let decimals = if span >= 100.0 {
+        0
+    } else if span >= 10.0 {
+        1
+    } else if span >= 1.0 {
+        2
+    } else {
+        3
+    };
+    format!("{value:.decimals$}")
+}
+
 /// Draws the curve into `ax`: evaluated **once per pixel column** through the
 /// shared shape math (never finer than the screen), an exact vertical connector
 /// at every discontinuity (the per-column polyline alone would render a jump as
@@ -232,6 +249,17 @@ mod tests {
     use super::*;
     use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
+
+    /// **A value reads to its curve's range**: whole over a hundred, finer as
+    /// the range narrows.
+    #[test]
+    fn a_value_reads_to_its_range() {
+        assert_eq!(readout_value(63.6, 0.0, 127.0), "64");
+        assert_eq!(readout_value(1.2345, 0.0, 5.0), "1.23");
+        assert_eq!(readout_value(0.4567, 0.0, 1.0), "0.46");
+        assert_eq!(readout_value(0.4567, 0.0, 0.5), "0.457");
+        assert_eq!(readout_value(-12.26, -24.0, 0.0), "-12.3");
+    }
 
     fn pts() -> Vec<BpfPoint> {
         parse_points(

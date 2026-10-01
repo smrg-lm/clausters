@@ -453,6 +453,12 @@ impl Element for Multitrack {
         Natural::default()
     }
 
+    /// A hover over a curve reads its label and value, so a mouse move is a
+    /// frame.
+    fn hover_readout(&self) -> bool {
+        !self.curves.is_empty() || !self.layers.is_empty()
+    }
+
     /// **The takes its clips are windows onto**, by server buffer number, and
     /// the buses its meters read.
     ///

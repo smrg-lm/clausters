@@ -267,6 +267,60 @@ impl Notes {
         }
     }
 
+    /// **What the hover reads over a curve**, or `None` when the pointer is on
+    /// none: the curve's whole label -- the row's cell is too narrow to hold it
+    /// -- and its value, a break-point's own when the pointer is on one. A
+    /// lane answers anywhere over its row, a layer on its line or its points,
+    /// the active layer before the rest.
+    pub(super) fn curve_readout(
+        &self,
+        at: (f64, f64),
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        time: Option<TimeSpace>,
+    ) -> Option<String> {
+        // A row's label cell is too narrow for its label: over it, the whole
+        // one is read.
+        for (row, (label, _)) in self.rows.iter().zip(self.row_rects(rect, indent, m)) {
+            if label.contains(at.0, at.1) {
+                return Some(row.label.clone());
+            }
+        }
+        let drawn = self.curves_on_screen(rect, indent, m, time);
+        let active = drawn
+            .iter()
+            .filter(|(name, ..)| self.layer.as_deref() == Some(*name));
+        for (name, place, space) in active.chain(drawn.iter().rev()) {
+            let row = self.rows.iter().find(|r| r.name == *name);
+            let layer = self.layers.iter().find(|l| l.name == *name);
+            let (label, min, max, pitch) = match (row, layer) {
+                (Some(r), _) => (&r.label, r.min, r.max, false),
+                (None, Some(l)) => (&l.label, l.min, l.max, l.pitch),
+                (None, None) => continue,
+            };
+            let Some(body) = self.bodies.get(*name) else {
+                continue;
+            };
+            let Some((value, on_point)) = body.hover_value(at, *place, *space, m, row.is_some())
+            else {
+                continue;
+            };
+            // A bend reads in semitones, signed; anything else to its range.
+            let value = if pitch {
+                format!("{value:+.2} st")
+            } else {
+                crate::host::graphics::bpf::readout_value(value as f64, min, max)
+            };
+            return Some(if on_point {
+                format!("{label}  point {value}")
+            } else {
+                format!("{label}  {value}")
+            });
+        }
+        None
+    }
+
     fn on_curve<'a>(input: &Input<'a>, rect: Rect, space: TimeSpace) -> Input<'a> {
         Input {
             rect,

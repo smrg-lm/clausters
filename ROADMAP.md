@@ -122,10 +122,6 @@ already carry it.
   score is named `Score`, and the clients call it `OscScore`" (root
   `PLAN.md`, Found by use), the same rename on the server.
 
-- ⬜ **A roll's curves do not say what they are or where they stand**
-  *(`clients/gui/PLAN.md`, Found by use)*. A hover readout of the control and
-  its value over a curve, a point, a lane's row and a note's box.
-
 
 ## 2. Fixes that need a decision first
 

@@ -7699,7 +7699,7 @@ module of its own.
   `wire.rs`'s: `status.rs`'s `arg_str` is its `string_arg` now, and
   `gui/serverleg.rs`'s `float_arg` went with the replies.
 
-- ⬜ **A roll's curves do not say what they are or where they stand**
+- ✅ **A roll's curves do not say what they are or where they stand**
   *(the user, 2026-09-30, trying the notes editor's curves: hovering over an
   envelope, its points, the lane below and the notes' boxes could show a
   status saying which control it is and what value it has)*. A lane's row
@@ -7713,4 +7713,11 @@ module of its own.
   (`min`/`max`) and the element already knows them. The row labels need it
   too: a lane's label is drawn in the keyboard's column, which is narrow, so
   `editors/edit_midi_file`'s "volume" lane shows only its first letters (the
-  user, 2026-09-30) -- the hover is where the whole name is read.
+  user, 2026-09-30) -- the hover is where the whole name is read. **Done
+  2026-10-01**, in the readout the roll already drew in its grid's corner: over
+  a lane its whole label and the curve's value at that time, over its label
+  cell the label, over a layer's line the control's (a bend in signed
+  semitones), a break-point's own value on a point, over a note its pitch,
+  velocity and channel. The multitrack draws the same readout over its rows
+  and its clip envelopes. Both read a value through the curve element's own
+  `hover_value`, and format it by one rule (`graphics::bpf::readout_value`).

@@ -294,8 +294,6 @@ impl Curve {
         }
     }
 
-    /// The edit-back payload: the `"points"` tag plus the flat `t v shape curve`
-    /// list -- the envelope's own units, which is what its owner applies.
     /// The break-points as they now stand -- what a container holding this as
     /// a layer reports them *with its own identity* in front of, since there
     /// the payload is the whole multitrack's curves and not this one's.
@@ -303,6 +301,33 @@ impl Curve {
         &self.points
     }
 
+    /// **What a hover over this curve reads**, drawn into `rect` against
+    /// `time`: a break-point's own value when the pointer is on one (and
+    /// `true`), else the curve's value at the pointer's time -- anywhere over
+    /// the rectangle when `anywhere`, as a lane's row is the curve's own, and
+    /// only on the line otherwise, as a layer's field is its note's. `None`
+    /// when the pointer is on none of it.
+    pub(crate) fn hover_value(
+        &self,
+        at: (f64, f64),
+        rect: Rect,
+        time: TimeSpace,
+        m: &Metrics,
+        anywhere: bool,
+    ) -> Option<(f32, bool)> {
+        let ax = self.axes(rect, 0.0, m, Some(time));
+        if !ax.body.contains(at.0, at.1) {
+            return None;
+        }
+        if let Some(i) = ax.hit_point(&self.points, at.0, at.1, m) {
+            return self.points.get(i).map(|p| (p.value, true));
+        }
+        (anywhere || ax.on_line(&self.points, at.0, at.1, m))
+            .then(|| (points::value_at(&self.points, ax.t(at.0)), false))
+    }
+
+    /// The edit-back payload: the `"points"` tag plus the flat `t v shape curve`
+    /// list -- the envelope's own units, which is what its owner applies.
     fn points_event(&self) -> Events {
         let mut args = vec![OscType::String("points".into())];
         args.extend(points::points_args(&self.points));

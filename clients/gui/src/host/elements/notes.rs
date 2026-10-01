@@ -1237,11 +1237,16 @@ impl Notes {
                 mesh.rect(Rect::new(to_x(pos), grid.y, m.trace_w, grid.h), color);
             }
         }
-        // The readout: the note name under the cursor and the time, in the
-        // grid's bottom-right corner.
-        let Some((cx, cy)) = ctx.world.cursor.filter(|(x, y)| grid.contains(*x, *y)) else {
+        // The readout, in the grid's bottom-right corner: what is under the
+        // pointer -- a curve's label and value, a note's pitch, velocity and
+        // channel, or the pitch the row is -- and the time.
+        let Some((cx, cy)) = ctx.world.cursor else {
             return;
         };
+        let curve = self.curve_readout((cx, cy), ctx.rect, ctx.indent, m, ctx.time);
+        if curve.is_none() && !grid.contains(cx, cy) {
+            return;
+        }
         let row = self.axis(m).pitch(cy as f32, grid);
         let s = nav.start + nav.len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
         let time = match self.editor.ruler {
@@ -1257,10 +1262,33 @@ impl Notes {
             ),
             _ => ruler::readout_time(s, rate, nav.len / rate / grid.w.max(1.0) as f64),
         };
-        let value = if self.hz() {
-            format!("{:.1} Hz", self.value_of(row))
-        } else {
-            clausters_core::scale::note_name(row.round() as i32)
+        let pitch_name = |pitch: f32| {
+            if self.hz() {
+                format!("{:.1} Hz", self.value_of(pitch))
+            } else {
+                clausters_core::scale::note_name(pitch.round() as i32)
+            }
+        };
+        let note = pianoroll::note_hit(
+            grid,
+            nav,
+            0.0,
+            &self.notes,
+            self.axis(m),
+            cx as f32,
+            cy as f32,
+        )
+        .and_then(|hit| self.notes.get(hit.index));
+        let value = match (curve, note) {
+            (Some(curve), _) => curve,
+            // A note's channel is counted from 1, the way MIDI shows one.
+            (None, Some(n)) => format!(
+                "{}  vel {}  ch {}",
+                pitch_name(n.pitch),
+                n.velocity,
+                n.channel + 1
+            ),
+            (None, None) => pitch_name(row),
         };
         let text = format!("{value}  {time}");
         // Right-aligned **inside the grid**: a roll drawn as a clip's body is
@@ -2180,6 +2208,52 @@ mod tests {
         assert!((bend.y - axis_y.y(62.0, grid)).abs() < 1e-3);
         assert!((bend.y + bend.h - axis_y.y(58.0, grid)).abs() < 1e-3);
         assert!(inside.h < bend.h, "the pressure is inside the box");
+    }
+
+    /// **The hover reads what is under the pointer**: over a lane its whole
+    /// label and the curve's value there, a break-point's own on a point, the
+    /// label alone over its narrow cell; over a note's layer line the
+    /// control's; and nothing of a curve over empty grid.
+    #[test]
+    fn the_hover_reads_a_curve_under_the_pointer() {
+        let m = Metrics::default();
+        let r = roll(
+            r#"{"notes":[0.0,50.0,60.0,100.0,0.0],"note_ids":[7],
+                "curves":["vol","CC 7 ch 1 volume",0.0,127.0,40.0],
+                "layers":["b","7","bend",-12.0,12.0,true],
+                "points":["vol",0.0,0.0,1,0.0,"vol",100.0,127.0,1,0.0,
+                          "b",0.0,1.0,1,0.0,"b",50.0,1.0,1,0.0]}"#,
+        );
+        let time = axis(100.0);
+        let read = |at: (f64, f64)| r.curve_readout(at, rect(), pianoroll::KEYBOARD_W, &m, time);
+        let (label, body) = r.row_rects(rect(), pianoroll::KEYBOARD_W, &m)[0];
+        let mid = (body.y + body.h * 0.5) as f64;
+        // Half way along the ramp the lane reads half of it, wherever the
+        // pointer is in the row's height.
+        let half = (body.x + body.w * 0.5) as f64;
+        assert_eq!(read((half, mid)).as_deref(), Some("CC 7 ch 1 volume  64"));
+        assert_eq!(
+            read((half, body.y as f64 + 2.0)).as_deref(),
+            Some("CC 7 ch 1 volume  64")
+        );
+        // The cell under the keyboard is narrow: the whole label is read there.
+        let cell = ((label.x + 2.0) as f64, mid);
+        assert_eq!(read(cell).as_deref(), Some("CC 7 ch 1 volume"));
+
+        // The bend's line holds a semitone up across the note.
+        let placed = r.curves_on_screen(rect(), pianoroll::KEYBOARD_W, &m, time);
+        let (_, bend, _) = placed.iter().find(|(n, ..)| *n == "b").unwrap();
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        let up = r.axis(&m).y(61.0, grid) as f64;
+        let along = (bend.x + bend.w * 0.5) as f64;
+        assert_eq!(read((along, up)).as_deref(), Some("bend  +1.00 st"));
+        assert_eq!(
+            read(((bend.x + 1.0) as f64, up)).as_deref(),
+            Some("bend  point +1.00 st"),
+            "on its first point"
+        );
+        // Off the line, inside the note: the note's, not the curve's.
+        assert_eq!(read((along, r.axis(&m).y(50.0, grid) as f64)), None);
     }
 
     /// **A roll says which MIDI its notes are written for**, set and cleared

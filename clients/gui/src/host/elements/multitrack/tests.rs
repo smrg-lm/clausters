@@ -473,6 +473,40 @@ fn an_automation_is_a_row_and_an_envelope_is_a_layer() {
     assert!(layer.1.w < row.1.w, "the box is narrower than the timeline");
 }
 
+/// **The hover reads a curve's label and value**: a row anywhere over its
+/// body, at the time under the pointer; an envelope on its line, not beside
+/// it -- the box is the box's there.
+#[test]
+fn the_hover_reads_a_curve_under_the_pointer() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+    let mt = curved();
+    assert!(mt.hover_readout());
+    let time = mt_time(500.0);
+    let drawn = mt.curves_on_screen(rect, 100.0, &m, time);
+    let (_, row, _) = drawn.iter().find(|(n, ..)| *n == "gain").unwrap();
+    // `gain` falls from 1 to 0 across the timeline: a quarter in, 0.75.
+    let quarter = (row.x + row.w * 0.25) as f64;
+    let mid = (row.y + row.h * 0.5) as f64;
+    assert_eq!(
+        mt.curve_readout((quarter, mid), rect, 100.0, &m, time)
+            .as_deref(),
+        Some("Gain  0.75")
+    );
+    // `env` rises from the box's floor to its ceiling; at the corner, which
+    // is far from the line, the hover reads no curve.
+    let (_, layer, _) = drawn.iter().find(|(n, ..)| *n == "env").unwrap();
+    let corner = ((layer.x + 2.0) as f64, (layer.y + 3.0) as f64);
+    assert_eq!(mt.curve_readout(corner, rect, 100.0, &m, time), None);
+    let first = ((layer.x + 1.0) as f64, (layer.y + layer.h - 1.0) as f64);
+    assert_eq!(
+        mt.curve_readout(first, rect, 100.0, &m, time).as_deref(),
+        Some("env  point 0.00"),
+        "an envelope with no label reads by its name"
+    );
+    assert!(!multitrack().hover_readout(), "no curves, no readout");
+}
+
 /// The shared axis a curved multitrack is read against.
 fn mt_time(len: f64) -> Option<TimeSpace> {
     Some(TimeSpace::of(

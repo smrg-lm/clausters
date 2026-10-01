@@ -355,5 +355,66 @@ impl Multitrack {
                 theme.ruler_text,
             );
         }
+        self.draw_readout(d, ctx);
+    }
+
+    /// **What the hover reads over a curve**: its label and its value, in the
+    /// bottom-right corner of the lanes -- a break-point's own value when the
+    /// pointer is on one. A row answers anywhere over its body, a clip
+    /// envelope on its line or its points, as a press does.
+    fn draw_readout(&self, d: &mut Draw, ctx: &Ctx) {
+        let Some(at) = ctx.world.cursor else {
+            return;
+        };
+        let Some(text) = self.curve_readout(at, ctx.rect, ctx.indent, ctx.metrics, ctx.time) else {
+            return;
+        };
+        let over = track::lane_body(ctx.rect, false, ctx.indent, ctx.metrics);
+        let (_, m, theme) = d.parts();
+        let room = over.w - 2.0 * m.pad;
+        let w = font::width(&text, m.caption_scale).min(room);
+        let (x, y) = (
+            over.x + over.w - w - m.pad,
+            over.y + over.h - font::height(m.caption_scale) - 2.0,
+        );
+        let (scale, color) = (m.caption_scale, theme.ruler_text);
+        crate::host::graphics::plate_text(d, &text, x, y, room, scale, color);
+    }
+
+    /// The text [`Self::draw_readout`] draws, or `None` off every curve.
+    pub(super) fn curve_readout(
+        &self,
+        at: (f64, f64),
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        time: Option<TimeSpace>,
+    ) -> Option<String> {
+        let drawn = self.curves_on_screen(rect, indent, m, time);
+        for (name, place, space) in drawn.iter().rev() {
+            let (curve, row) = match self.curves.iter().find(|c| c.name == *name) {
+                Some(c) => (c, true),
+                None => (self.layers.iter().find(|c| c.name == *name)?, false),
+            };
+            let Some((value, on_point)) = self
+                .bodies
+                .get(*name)?
+                .hover_value(at, *place, *space, m, row)
+            else {
+                continue;
+            };
+            let value = crate::host::graphics::bpf::readout_value(
+                value as f64,
+                curve.min as f64,
+                curve.max as f64,
+            );
+            let label = curve.shown();
+            return Some(if on_point {
+                format!("{label}  point {value}")
+            } else {
+                format!("{label}  {value}")
+            });
+        }
+        None
     }
 }
