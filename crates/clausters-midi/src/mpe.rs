@@ -166,6 +166,9 @@ struct Channel {
     /// The bend, -1..1.
     bend: f32,
     pressure: u32,
+    /// Centred until the channel's timbre controller moves it: the rest MPE
+    /// gives the third dimension, and the one [`expression_messages`] sends
+    /// for a note that states none.
     timbre: u32,
     rpn: Option<(u8, u8)>,
     data_msb: u8,
@@ -176,7 +179,7 @@ impl Default for Channel {
         Self {
             bend: 0.0,
             pressure: 0,
-            timbre: 0,
+            timbre: widen_7_to_32(64),
             rpn: None,
             data_msb: 0,
         }
@@ -992,6 +995,22 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn a_note_on_a_channel_no_timbre_reached_starts_centred() {
+        let mut d = Decoder::new();
+        d.set_zone(Side::Lower, Some(15));
+        d.feed(&[0x92, 60, 100]);
+        let on = drain(&mut d);
+        let MpeEvent::NoteOn {
+            pressure, timbre, ..
+        } = on[0]
+        else {
+            panic!("{on:?}");
+        };
+        assert_eq!(pressure, 0, "no pressure until the key is pressed");
+        assert_eq!(timbre, widen_7_to_32(64), "the third dimension at rest");
     }
 
     #[test]
