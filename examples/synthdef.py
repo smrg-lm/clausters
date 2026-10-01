@@ -43,7 +43,6 @@ from clausters.defs import (
     env_gen,
     lag,
     out,
-    sine,
 )
 from clausters.defs.ugens import pan2, rlpf, saw
 from clausters.seq import Pbind, Pseq
@@ -58,8 +57,7 @@ def py_default(name="py_default") -> SynthDef:
     `freq`/`amp`/`gate`/`pan`/`press`/`slide` are named controls (the
     `/synth_new`/`/node_set` parameters a `Pbind` drives).
 
-    The tone is two saws detuned by +/-0.4 % and a sine on the fundamental,
-    through a resonant lowpass whose cutoff sits half an octave above the
+    The tone is two saws detuned by +/-0.4 %, through a resonant lowpass whose cutoff sits half an octave above the
     note and opens with `slide` (the timbre), `press` (the pressure, which
     also lifts the level) and a **bloom** -- a 0.6 s decay on the cutoff,
     deeper the louder the note. `press` and `slide` are smoothed over 50 ms.
@@ -81,7 +79,7 @@ def py_default(name="py_default") -> SynthDef:
     )
     bloom = env_gen(Env.perc(attack=0.005, release=0.6))
     # `+`, `*` compose Add/Mul UGens; `**` and `.min` the generic BinaryOpUGen.
-    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.3 + sine(freq) * 0.4
+    tone = (saw(freq * 0.996) + saw(freq * 1.004)) * 0.3
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6

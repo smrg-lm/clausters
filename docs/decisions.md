@@ -9164,6 +9164,12 @@ whose cutoff follows the key and opens with the timbre, the pressure and a
 velocity-scaled bloom, placed at equal power by `pan`. The envelope and the
 gate release are the earlier decision's, unchanged.
 
+*Revised the same day:* the sine went. It added nothing the saws do not
+already put on the fundamental, and every oscillator here starts each note
+at the same phase — `Saw` and `Sine` take none — so the sine summed in
+phase with the saws at every onset, and across the voices of a chord, and
+pushed the voice out of range.
+
 - **The controls are named `press` and `slide`**, not `pressure` and `timbre`:
   short words beside `freq`, `amp`, `gate` and `pan`, and of a piece with the
   `lift` selector the server already had for note-off velocity. A zone's
