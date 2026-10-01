@@ -487,6 +487,36 @@ impl OscServer {
     /// Drops what the audio thread discarded, keeps the def mirror in sync
     /// and forwards node lifecycle events to `/server_notify` clients.
     pub(in crate::osc::server) fn collect_garbage(&mut self) {
+        self.collect_freed();
+        self.free_emptied_slots();
+    }
+
+    /// Frees each graph voice whose members all ended on their own
+    /// ([`CmdTranslator::take_emptied_slots`]).
+    fn free_emptied_slots(&mut self) {
+        for slot in self.translator.take_emptied_slots() {
+            // A member marked `ends` may have freed it already.
+            if self.translator.mirror.get(slot).is_none() {
+                continue;
+            }
+            let mut cmds = Vec::new();
+            let free = OscMessage {
+                addr: "/node_free".into(),
+                args: vec![OscType::Int(slot)],
+            };
+            match self.translator.translate(&free, &mut cmds) {
+                Ok(()) => {
+                    if let Err(why) = self.send_all(cmds) {
+                        warn!("the emptied slot {slot} was not freed: {why}");
+                    }
+                }
+                Err(why) => warn!("the emptied slot {slot} was not freed: {why}"),
+            }
+        }
+    }
+
+    /// The audio thread's garbage, and the node events beside it.
+    fn collect_freed(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
                 Garbage::FreedSynth { id, .. } => {

@@ -208,6 +208,9 @@ pub struct CmdTranslator {
     /// The members marked `ends`, by node id, and the group each one's
     /// graph is: what [`CmdTranslator::member_ended`] frees.
     pub graph_ends: HashMap<i32, i32>,
+    /// Slots whose last member just ended on its own: nothing is left in
+    /// them to run, so the server frees them ([`CmdTranslator::take_emptied_slots`]).
+    emptied_slots: Vec<i32>,
     graph_audio_buses: Registry,
     graph_control_buses: Registry,
     /// Boot-time pool capacities. `max_group_children` sizes every non-root
@@ -280,6 +283,7 @@ impl CmdTranslator {
             graph_instances: HashMap::new(),
             graph_voices: HashMap::new(),
             graph_ends: HashMap::new(),
+            emptied_slots: Vec::new(),
             graph_audio_buses: Registry::new((audio_buses - audio_reserved) as i64, audio_reserved),
             graph_control_buses: Registry::new(
                 (control_buses - control_reserved) as i64,
@@ -350,9 +354,32 @@ impl CmdTranslator {
     /// for a GraphDef's slot or instance, what `/node_free` would have dropped:
     /// its translator state and its private buses.
     pub fn forget_node(&mut self, id: i32) {
+        let parent = self.mirror.parent(id);
         self.node_defs.remove(&id);
         self.mirror.remove(id);
         self.free_graph_node(id);
+        // A slot whose members have all ended has nothing left to run -- a
+        // voice released through its gate, whose envelope freed the member.
+        // A slot freed whole is out of the mirror before its members come
+        // back, so this never names one already going.
+        if let Some(slot) = parent
+            && self
+                .graph_voices
+                .get(&slot)
+                .is_some_and(|voice| voice.children.is_empty())
+            && self.mirror.children(slot).is_some_and(|c| c.is_empty())
+            && !self.emptied_slots.contains(&slot)
+        {
+            self.emptied_slots.push(slot);
+        }
+    }
+
+    /// **The slots left with nothing to run**, since the last call: each one
+    /// a graph voice whose members all ended on their own. The server frees
+    /// them, as a member marked `ends` frees its graph, so a def need not mark
+    /// a voice's generator for the voice to go when its note does.
+    pub fn take_emptied_slots(&mut self) -> Vec<i32> {
+        std::mem::take(&mut self.emptied_slots)
     }
 
     /// **Forgets a node that never ran**: [`Self::forget_node`], and a

@@ -4059,11 +4059,16 @@ should confirm before the fix.
   count from the moment it is built. A note now runs after its channel's
   curves, and inside its graph after its own.
 
-- ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
+- ✅ **A MIDI graph voice released by its gate may leave its slot behind**
   *(found 2026-09-30, reading `/midi_bind` onto a GraphDef while adding
   `ends`; not reproduced)*. A gate-aware binding releases a graph voice by
   setting its `gate` port to 0; the member whose envelope then frees itself
   goes, and nothing frees the slot group around it. If that holds, every note
   played leaves an empty group. A GraphDef member marked `ends` now frees its
   graph and the slot around it; a voice graph's generator member is where the
-  mark belongs, or the binding could free the slot itself.
+  mark belongs, or the binding could free the slot itself. **Reproduced and
+  fixed 2026-10-01**: three gated notes left three empty slot groups under the
+  instance. The server now frees a graph voice whose members have all ended on
+  their own (`CmdTranslator::take_emptied_slots`), so a def need not mark its
+  generator `ends` for the voice to go with its note; a slot that holds a
+  nested graph is left to its `ends`, as before.

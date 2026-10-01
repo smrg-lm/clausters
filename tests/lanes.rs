@@ -1050,3 +1050,112 @@ fn midi_ump_plays_packets_now() {
         out[out.len() - 1]
     );
 }
+
+/// **A MIDI note on a GraphDef voice goes with its voice.** A gate-aware
+/// binding releases a graph voice through its `gate` port; the member's
+/// envelope then frees it, and the voice -- the slot group around it, which
+/// has nothing left to run -- goes too, whether or not the def marked the
+/// member `ends`.
+#[test]
+fn a_midi_graph_voice_released_by_its_gate_leaves_no_slot() {
+    let mut server = server();
+    let gated = r#"{
+        "name": "gated",
+        "controls": [{"name": "level", "default": 0.5}, {"name": "gate", "default": 1.0}],
+        "ugens": [
+            {"kind": "EnvGen", "inputs": [
+                {"control": 1}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                {"const": 2.0}, {"const": 1.0}, {"const": 2.0}, {"const": 1.0},
+                {"const": -1.0},
+                {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.01}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"control": 0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    send(
+        &mut server,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(gated.as_bytes().to_vec()),
+        ],
+    );
+    let voice = r#"{
+        "name": "gvoice",
+        "members": [{"def": "gated", "voice": true}],
+        "surface": {
+            "amp": [{"member": 0, "control": "level"}],
+            "gate": [{"member": 0, "control": "gate"}]
+        }
+    }"#;
+    send(
+        &mut server,
+        "/def_send",
+        vec![
+            OscType::String("graph".into()),
+            OscType::Blob(voice.as_bytes().to_vec()),
+        ],
+    );
+    send(
+        &mut server,
+        "/midi_bind",
+        vec![
+            OscType::Int(0),
+            OscType::String("gvoice".into()),
+            OscType::Int(GROUP),
+            OscType::Int(1),
+            OscType::Int(1),
+        ],
+    );
+    // The voices go into the governed group, which plays while the transport
+    // rolls.
+    play(&mut server);
+    pull(&mut server, 2);
+    let nodes_before = subtree(&mut server, GROUP);
+    // Three notes, each held and released through the gate.
+    for key in [60u32, 64, 67] {
+        send(
+            &mut server,
+            "/midi_ump",
+            vec![OscType::Int((0x2090_0064 | (key << 8)) as i32)],
+        );
+        let held = pull(&mut server, 8);
+        assert!(held.iter().any(|x| *x != 0.0), "note {key} sounds");
+        send(
+            &mut server,
+            "/midi_ump",
+            vec![OscType::Int((0x2080_0000 | (key << 8)) as i32)],
+        );
+        // The 10 ms release, and the turns that carry its end back.
+        pull(&mut server, 32);
+        pull(&mut server, 4);
+    }
+    pull(&mut server, 4);
+    assert_eq!(
+        subtree(&mut server, GROUP),
+        nodes_before,
+        "every voice went with its note"
+    );
+}
+
+/// How many nodes are under `group`, from `/group_queryTree`.
+fn subtree(server: &mut ClaustersHeadless, group: i32) -> usize {
+    let mut buf = vec![0u8; 64 * 1024];
+    while server.poll_into(&mut buf).is_some() {}
+    send(server, "/group_queryTree", vec![OscType::Int(group)]);
+    pull(server, 1);
+    while let Some(len) = server.poll_into(&mut buf) {
+        if let Ok(OscPacket::Message(m)) = clausters::osc::decode_packet(&buf[..len])
+            && m.addr == "/group_queryTree.reply"
+        {
+            // flag, group, children, name, then an id per node.
+            return m.args[4..]
+                .iter()
+                .filter(|a| matches!(a, OscType::Int(_)))
+                .count();
+        }
+    }
+    panic!("no /group_queryTree.reply");
+}
