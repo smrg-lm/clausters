@@ -139,6 +139,16 @@ is here because of that:
   wrong" but **"why are these two programs not the same program"** — and the
   answer is almost always a call the port improvised. Diagnose that before
   diagnosing the symptom.
+- **A page has a filesystem.** The engine's file commands run in a Worker
+  over the origin private file system (OPFS), so a path in a tab names that
+  storage: `/buffer_allocRead`, `/buffer_write`, `Buffer.read` and
+  `render({ path })` all read and write it, and under node the same path is
+  the disk (`clients/web/src/base/files.ts`; `docs/decisions.md`, "A path in a
+  page is its own storage"). So "a page has no filesystem" or "the engine in
+  a page has no data directory" is **never a constraint** to design around: a
+  data directory in a page is a directory of OPFS. Where something a native
+  server keeps on disk is not wired to OPFS in the page yet, that is a gap of
+  the port, written down as one -- not a property of the platform.
 - **The clients do not draw.** A client names what to look at (`plot`,
   `scope`, a widget in a GuiDef) and the host draws it. Anyone who would
   rather draw their own canvas is writing their own program, and that is
