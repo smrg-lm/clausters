@@ -48,7 +48,7 @@ writes changes.
 
 from .application import BASE_ID, Application
 from .audio import AudioDomain, AudioEditor
-from .context import ATTR, FIRST_VERSION, Editing
+from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
 from .edit import edit

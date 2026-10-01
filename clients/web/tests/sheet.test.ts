@@ -54,7 +54,7 @@ import {
 } from "../src/gui/notation/index.ts";
 import type { Sheet } from "../src/gui/notation/index.ts";
 import { edit } from "../src/gui/editing/edit.ts";
-import { Editing } from "../src/gui/editing/context.ts";
+import { Editing } from "../src/history.ts";
 import { Event, synthRender } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";

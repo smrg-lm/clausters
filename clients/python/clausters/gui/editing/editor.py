@@ -35,7 +35,7 @@ sounds; it has no multitrack to move over.
 
 from ... import _native
 from .application import BASE_ID, Application, _resolve_host
-from .context import Editing
+from ...history import Editing
 from .echo import Echo
 from .trace import log
 

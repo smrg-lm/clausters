@@ -25,7 +25,7 @@
  */
 
 import type { Application } from "./application.ts";
-import type { Editing } from "./context.ts";
+import type { Editing } from "../../history.ts";
 import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";

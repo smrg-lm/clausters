@@ -214,6 +214,28 @@ def test_a_double_click_on_a_box_of_notes_opens_its_roll():
     assert audio.rolls == {}
 
 
+def test_a_scripts_change_to_a_sequence_a_box_reads_is_the_multitracks_turn():
+    """The multitrack claims the sequences its boxes read, so a script's
+    change to one is recorded in the multitrack's order, the boxes draw it,
+    and the multitrack's Ctrl+Z takes it back."""
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5))])
+    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
+    host = _wired(ed)
+    ed._editing.attach(ed)          # what an open does: the window is a view
+    told = []
+    ed.on_change = lambda: told.append(True)
+    pushed = host.pushes
+    notes.events[0]["midinote"] = 67
+    assert ed._editing.undo_label == "set midinote" and told == [True]
+    assert host.pushes > pushed, "the window is corrected"
+    assert props(ed)["notes"][3] == 67.0, "the box draws the note where it now is"
+    assert ed.undo()
+    assert notes.events[0]["midinote"] == 60
+
+
 def test_a_tempo_moves_no_box():
     """The multitrack is in seconds: a box is drawn at its seconds times the
     rate, and a tempo the multitrack holds is a ruler's to read."""

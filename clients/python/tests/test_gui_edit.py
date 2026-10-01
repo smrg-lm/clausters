@@ -391,6 +391,56 @@ def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
     assert curve.to_points()[1] == pytest.approx(200.0)
 
 
+# ---- a script's change is a turn ----
+
+
+def test_a_scripts_change_with_the_roll_open_redraws_it_and_is_undone_there():
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)), (1.0, Event(midinote=64, dur=1.0))],
+                        tempo_map=TempoMap(TEMPO))
+    roll = edit(seq, sample_rate=SR, open=False)
+    host, _wid = opened(roll)
+    told = []
+    roll.on_change = lambda: told.append(True)
+    first, second = seq.events
+    drawn = len(host.acks)
+    second["midinote"] = 67
+    _seq, corrections, _reason = host.acks[-1]
+    assert len(host.acks) == drawn + 1 and corrections[0][1]["notes"][7] == 67.0, \
+        "the roll is redrawn with the note where the script put it"
+    assert told == [True] and roll.undo_label == "set midinote"
+
+    with seq.history("humanize"):
+        for event in seq.events:
+            event.at += 0.25
+    assert len(host.acks) == drawn + 2, "one block, one redraw"
+    assert roll.undo_label == "humanize"
+    assert roll.undo() is True, "the window's Ctrl+Z takes the whole block back"
+    assert [event.at for event in seq.events] == [0.0, 1.0]
+    assert roll.undo() is True and second["midinote"] == 64
+    assert seq.history.redo() is True and second["midinote"] == 67
+    assert first is seq.events[0], "one event, one object, across the walk"
+
+
+def test_a_roll_opened_in_a_context_it_was_handed_claims_the_sequence():
+    context = Editing()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    roll = edit(seq, sample_rate=SR, context=context, open=False)
+    opened(roll)
+    seq.events[0].at = 2.0
+    assert context.undo_label == "move an event", "the script's change is that context's"
+    assert Editing.of(seq) is context
+
+
+def test_a_sequence_nobody_asked_a_history_of_records_nothing():
+    from clausters.history import ATTR
+
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))])
+    seq.events[0].at = 2.0
+    seq.events.add(3.0, {"midinote": 62})
+    assert getattr(seq, ATTR, None) is None
+    assert seq.history.can_undo is False, "asking makes one, empty"
+
+
 # ---- the picture a view draws is the crate's ----
 
 

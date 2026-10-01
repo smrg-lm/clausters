@@ -59,6 +59,11 @@ id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
 leaves every other note its own.
 
+**A script's change is the windows' too.** ``humanize()`` nudges every note
+through its object inside ``with notes.history("humanize")``: both rolls
+redraw, the lane plays the new times, and one Ctrl+Z in either window takes
+the whole of it back.
+
 Run it as a script, or step through the cells::
 
     pip install -e clients/python
@@ -151,22 +156,37 @@ def play():
 # goes -- and they sound as they did. `automation.from_events` gathers the
 # notes' curves back into one of the sequence, which holds where no two notes
 # that sound together differ: here none overlap. Both are edits of the
-# sequence; `adopt` brings the rolls in step with it.
+# sequence with the rolls open on it, so both rolls redraw, and Ctrl+Z in
+# either takes the edit back.
 
 # %%
 def own_the_level():
     """Give the level curve to the notes it reaches."""
     notes.automation.to_events(level)
-    editor.adopt()
-    hertz.adopt()
 
 
 def gather_the_level():
     """Gather the notes' level curves back into the sequence's."""
     global level
     level = notes.automation.from_events({"control": "amp"})
-    editor.adopt()
-    hertz.adopt()
+
+
+# %% [markdown]
+# ## A script's change, heard and undone in the window
+#
+# The script edits the sequence the windows are open on, through its objects:
+# each change redraws both rolls, is heard from the lane, and joins their
+# history. `with notes.history("humanize")` makes everything inside it one
+# entry, called "humanize", which a single Ctrl+Z in either window takes back
+# -- `notes.history.undo()` is the same step from here.
+
+# %%
+def humanize():
+    """Nudge every note a little off the grid, as one entry of the history."""
+    with notes.history("humanize"):
+        for i, event in enumerate(notes.events):
+            if event.get("type", "note") == "note":
+                event.at += 0.04 if i % 2 else -0.02
 
 
 # %% [markdown]
@@ -204,4 +224,5 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up -- play() to hear it, read_back() to see what survived the edit")
+    print("up -- play() to hear it, humanize() to nudge the notes, "
+          "read_back() to see what survived the edit")

@@ -106,6 +106,37 @@ def test_the_curves_read_as_automation_with_their_holder():
     assert bend.target == {"bend": True} and len(seq.events[1].automation) == 0
 
 
+def test_a_history_asked_for_records_the_scripts_changes_and_brings_objects_back():
+    seq = _sequence()
+    first, second, third = seq.events
+    history = seq.history
+    first.at = 0.5
+    added = seq.events.add(3.0, {"midinote": 70})
+    assert history.undo_label == "add an event" and history.can_undo
+    assert history.undo() and added.sequence is None and len(seq) == 3
+    assert history.redo() and added.sequence is seq and seq.events[-1] is added, \
+        "a redone add brings back the same event, and the same object"
+    second.remove()
+    assert history.undo() and second.sequence is seq and second["midinote"] == 62
+    curve = seq.automation.add({"cc": 1}, [(0.0, 0.0)])
+    assert history.undo() and not curve.held
+    assert history.redo() and curve.held and curve is seq.automation[0]
+
+
+def test_a_block_is_one_entry_and_nests():
+    seq = _sequence()
+    with seq.history("humanize"):
+        for event in seq.events:
+            event["velocity"] = 90
+            with seq.history("inner"):
+                event.at += 0.25
+    assert seq.history.undo_label == "humanize"
+    assert [event.at for event in seq.events] == [0.25, 1.25, 2.25]
+    assert seq.history.undo() is True
+    assert [event.at for event in seq.events] == [0.0, 1.0, 2.0]
+    assert seq.events[0].get("velocity") is None and not seq.history.can_undo
+
+
 def test_a_refused_edit_says_why():
     seq = _sequence()
     seq.set_midi("1.0")

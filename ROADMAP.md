@@ -237,19 +237,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`C57` - a sequence's structures are objects**
-  *(`clients/python/PLAN.md`, "A sequence's structures are objects")*, both
-  clients in each step. `C57.0`, the renames, shipped; what is left is
-  reading through objects, writing through them, and `seq.history`, which
-  makes a script's change a turn the roll and the multitrack see.
-  **Related:** the three below build on it.
-
 - ⬜ **`C58` - `play(seq)` answers a transport**, **`C59` - a sequence back in
   a `Timeline`** and **`C60` - the multitrack is held as a handle**
   *(`clients/python/PLAN.md`, "A script plays and holds what the editors
   do")*. `C58` and `C59` each open on a decision their entry names; `C60`
-  revises `O10`'s rule in `crates/clausters-document/PLAN.md` and comes after
-  `C57`, which settles the shape on the smaller structure.
+  revises `O10`'s rule in `crates/clausters-document/PLAN.md` and takes the
+  shape `C57` settled on the sequence (objects, an identity map,
+  `seq.history`) to the multitrack.
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**

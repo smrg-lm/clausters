@@ -1552,7 +1552,7 @@ EventSequence
  │         └─ .automation   collection: add -> Automation
  ├─ .automation    collection: add -> Automation   (curves over the whole sequence)
  │    └─ Automation     .target  .points  to_points/set_points  .remove()
- ├─ .history       History: (label) as a context, undo, redo, undo_label
+ ├─ .history       UndoHistory: (label) as a context, undo, redo, undo_label
  ├─ .tempo_map     TempoMap
  └─ .midi          MidiSpec
 ```
@@ -1679,6 +1679,12 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   among `Second` and `Beat` positions: a `Point` is shared with every other
   curve, so typing the axis per holder is a generic `Automation` (or a point
   per unit), a change of its own rather than a rename's.
+- ✅ **`UndoHistory`, not `History`** *(the user, 2026-10-01)*: what
+  `seq.history` answers. `History` is already the crate's pile in both
+  clients (`clausters.document.History`, the structures registered and the
+  walk), and the two would be exported side by side in the web client's
+  index; the prefix says what it is to a script, the undo order its editors
+  share.
 - ✅ **No structure is constructed with an id** *(the user, 2026-10-01: a
   defect to correct)*. `clausters.multitrack.Automation` requires `id: int` in
   its constructor, and so do `Region` and `Track`: the same defect on the
@@ -1695,7 +1701,7 @@ kept beside the objects, and every call site is rewritten in the same pass
 (`npx pyright` in `clients/python`, `./build.sh && ./test.sh` in
 `clients/web`).
 
-- ⬜ **C57 — A sequence's structures are objects.**
+- ✅ **C57 — A sequence's structures are objects.**
   - ✅ **C57.0 — The lanes renamed.** Every rename of the inventory above, in
     the crates, the host, both clients, the wire's JSON where a field moves
     (with the session format's migration), the books and the examples — its
@@ -1726,11 +1732,20 @@ kept beside the objects, and every call site is rewritten in the same pass
     `to_events(curve)` and `from_events(target)`. The web `SeqEvent` writes a
     key with `set(key, value)`. Reattaching on an undo is the identity map's,
     and is exercised with the history in `C57.3`.)*
-  - ⬜ **C57.3 — `seq.history`.** The editing context outside `clausters.gui`,
+  - ✅ **C57.3 — `seq.history`.** The editing context outside `clausters.gui`,
     a script's change as a turn, `with seq.history(label)` as one entry. The
     acceptance is the roll: with it open, a script's change redraws it, is
     heard from the lane, and one Ctrl+Z in the window takes back a whole
     `with` block.
+    *(Done 2026-10-01. `Editing` moved to `clausters/history.py`
+    (`clients/web/src/history.ts`) beside `UndoHistory`; the web block is
+    `seq.history.entry(label, () => ...)`, as `session.use` is the web's
+    `with session`. A sequence an editor opens in a context it was handed,
+    or a multitrack binds, is claimed by that context, so a script's change
+    to a box's notes is the multitrack's turn too. A redone add carries the
+    id it was given, so it brings back the same object; an edit that mints
+    ids of its own is redone as the state it left, and a block is recorded
+    as the states before and after it.)*
 
 ### A script plays and holds what the editors do (client arc, phased)
 
@@ -1798,8 +1813,9 @@ the books, and the existing examples extended.
   sequence — `mt.track(id)` and `mt.region(id)` look up by number, and a
   script's change to a track, a region or their automation is no turn the
   editor sees. (A notes region's sequence is already the source table's
-  handle, so with `C57.3` a script's edit of it reaches the roll; the
-  multitrack around it is what is not.)
+  handle, and since `C57.3` the multitrack claims it: a script's edit of
+  it is the multitrack's turn, redrawn in the box and undone by its Ctrl+Z.
+  The multitrack around it is what is not.)
   - The `C57` model on the multitrack: one tree in Rust; tracks, take lanes,
     regions, sources and automation as live objects with an identity map
     (`mt.tracks.add(...)` answers a `Track`, `region.position = ...`); ids

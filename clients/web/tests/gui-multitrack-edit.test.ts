@@ -19,7 +19,7 @@ import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clau
 import {
     MultitrackEditor, MultitrackView, NotesEditor, Playback, edit,
 } from "../src/gui/editing/index.ts";
-import { Editing } from "../src/gui/editing/context.ts";
+import { Editing } from "../src/history.ts";
 import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, TakeLane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 import { Event } from "../src/seq/event.ts";
@@ -329,6 +329,26 @@ test("a region over a sequence draws its notes", () => {
     assert.deepEqual(drawn.map((n) => n[0]), ["12", "12", "13", "13", "22", "22"]);
     assert.deepEqual(drawn[0].slice(1, 4), [0.0, 0.5 * SR, 60.0]);
     assert.deepEqual(drawn[1].slice(1, 4), [SR, 0.5 * SR, 64.0]);
+});
+
+test("a page's change to a sequence a box reads is the multitrack's turn", () => {
+    // The multitrack claims the sequences its boxes read, so a page's change to
+    // one is recorded in the multitrack's order, the boxes draw it, and the
+    // multitrack's Ctrl+Z takes it back.
+    const notes = new EventSequence([[0.0, new Event({ midinote: 60, sustain: 0.5 })]]);
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
+    const host = wired(ed);
+    const context = Editing.of(notes);
+    context.attach(ed); // what an open does: the window is a view
+    const told: boolean[] = [];
+    ed.onChange = () => told.push(true);
+    const pushed = host.pushes;
+    notes.events.item(0).set("midinote", 67);
+    assert.ok(context.undoLabel === "set midinote" && told.length === 1);
+    assert.ok(host.pushes > pushed, "the window is corrected");
+    assert.equal((props(ed).notes as unknown[])[3], 67, "the box draws the note where it now is");
+    assert.ok(ed.undo());
+    assert.equal(notes.events.item(0).get("midinote"), 60);
 });
 
 test("a tempo moves no box", () => {

@@ -560,7 +560,12 @@ crate, and it does not draw), `Echo` (the acknowledgement protocol: the stamp,
 the version, the floor, the corrections and the reason — generic enough to be
 tested with no structure at all) and `Editing`, the editing context, which the
 editor **asks the data for and never builds**. The TypeScript side is the same
-files at `clients/web/src/gui/editing/`.
+files at `clients/web/src/gui/editing/`. `Editing` itself is not among those
+files: it needs no window, so it is `clausters/history.py`
+(`clients/web/src/history.ts`), beside the `UndoHistory` a script reaches it
+through — `seq.history` — and a script's change to a sequence that has a
+context is a turn of it, recorded and told to every view, exactly as a gesture
+is.
 
 **A multitrack is not among them, and that is recent.** It was, as a `FormEditor`
 projected out of the client's own `clausters.form` tree, and it was removed on

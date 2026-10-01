@@ -166,7 +166,7 @@ class QueueHost(FakeHost):
 def test_the_generic_editor_imports_nothing_from_the_arrangement():
     # The whole point of the split, and the one thing a test can check outright:
     # the four collaborators and the editor reach no arrangement module.
-    import clausters.gui.editing.context as context
+    import clausters.history as context
     import clausters.gui.editing.domain as domain
     import clausters.gui.editing.echo as echo
     import clausters.gui.editing.editor as editor

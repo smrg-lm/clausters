@@ -41,7 +41,7 @@ import type { Server } from "../../defs/server/index.ts";
 import { type Part, stitchSent } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
-import { keyOf } from "./context.ts";
+import { keyOf } from "../../history.ts";
 import { NotesEditor } from "./events.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";

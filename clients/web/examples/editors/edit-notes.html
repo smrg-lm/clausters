@@ -80,7 +80,12 @@ what is drawn.
 <b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
-leaves every other note its own.</div>
+leaves every other note its own.
+
+<b>A page's change is the windows' too.</b> <i>humanize</i> nudges every note
+through its object inside <code>notes.history.entry("humanize", ...)</code>:
+both rolls redraw, the lane plays the new times, and one Ctrl+Z in either
+window takes the whole of it back.</div>
 
       <button id="run">open the roll</button>
       <div id="stage"></div>
@@ -88,6 +93,7 @@ leaves every other note its own.</div>
       <button id="play" disabled>play the notes</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
+      <button id="humanize" disabled>humanize</button>
       <button id="read" disabled>what the roll never drew</button>
       <pre id="log"></pre>
     </main>
@@ -196,18 +202,31 @@ leaves every other note its own.</div>
         // sound as they did. `automation.fromEvents` gathers the notes' curves
         // back into one of the sequence, which holds where no two notes that
         // sound together differ: here none overlap. Both are edits of the
-        // sequence; `adopt` brings the rolls in step with it.
+        // sequence with the rolls open on it, so both rolls redraw, and Ctrl+Z
+        // in either takes the edit back.
         $("own").disabled = false;
         $("own").onclick = () => {
           notes.automation.toEvents(level);
-          editor.adopt();
-          hertz.adopt();
         };
         $("gather").disabled = false;
         $("gather").onclick = () => {
           level = notes.automation.fromEvents({ control: "amp" });
-          editor.adopt();
-          hertz.adopt();
+        };
+
+        // A page's change, heard and undone in the window. The page edits the
+        // sequence the windows are open on, through its objects: each change
+        // redraws both rolls, is heard from the lane, and joins their history.
+        // `notes.history.entry("humanize", ...)` -- Python's `with` block --
+        // makes everything inside it one entry, called "humanize", which a
+        // single Ctrl+Z in either window takes back; `notes.history.undo()` is
+        // the same step from here.
+        $("humanize").disabled = false;
+        $("humanize").onclick = () => {
+          notes.history.entry("humanize", () => {
+            [...notes.events].forEach((event, i) => {
+              if ((event.get("type") ?? "note") === "note") event.at += i % 2 ? 0.04 : -0.02;
+            });
+          });
         };
 
         // The script's ending: there `wait()` blocks so the process stays alive

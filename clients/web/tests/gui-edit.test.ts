@@ -377,6 +377,58 @@ test("a window over a curve and a roll undoes across both in order", async () =>
     assert.equal(curve.toPoints()[1], 200.0);
 });
 
+// ---- a page's change is a turn ----
+
+test("a page's change with the roll open redraws it and is undone there", async () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [1.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const roll = await edit(seq, { sampleRate: SR, open: false });
+    const { host } = await opened(roll);
+    const told: boolean[] = [];
+    roll.onChange = () => told.push(true);
+    const [first, second] = seq.events;
+    const drawn = host.acks.length;
+    second.set("midinote", 67);
+    const [, corrections] = host.acks.at(-1)!;
+    assert.equal(host.acks.length, drawn + 1);
+    assert.equal((corrections[0]![1].notes as number[])[7], 67,
+        "the roll is redrawn with the note where the page put it");
+    assert.ok(told.length === 1 && roll.undoLabel === "set midinote");
+
+    seq.history.entry("humanize", () => {
+        for (const event of seq.events) event.at += 0.25;
+    });
+    assert.equal(host.acks.length, drawn + 2, "one block, one redraw");
+    assert.equal(roll.undoLabel, "humanize");
+    assert.equal(roll.undo(), true, "the window's Ctrl+Z takes the whole block back");
+    assert.deepEqual([...seq.events].map((event) => event.at), [0, 1]);
+    assert.ok(roll.undo() && second.get("midinote") === 64);
+    assert.ok(seq.history.redo() && second.get("midinote") === 67);
+    assert.equal(first, seq.events.item(0), "one event, one object, across the walk");
+});
+
+test("a roll opened in a context it was handed claims the sequence", async () => {
+    const context = new Editing();
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const roll = await edit(seq, { sampleRate: SR, context, open: false });
+    await opened(roll);
+    seq.events.item(0).at = 2.0;
+    assert.equal(context.undoLabel, "move an event", "the page's change is that context's");
+    assert.equal(Editing.of(seq), context);
+});
+
+test("a sequence nobody asked a history of records nothing", async () => {
+    const { contexts } = await import("../src/history.ts");
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]]);
+    seq.events.item(0).at = 2.0;
+    seq.events.add(3.0, { midinote: 62 });
+    assert.equal(contexts.get(seq), undefined);
+    assert.equal(seq.history.canUndo, false, "asking makes one, empty");
+});
+
 test("the routing table is the crate's and not this module's", async () => {
     // It was eight strings here and eight in the Python client's editor, and
     // nothing kept the two agreeing. Now both read the one list the document

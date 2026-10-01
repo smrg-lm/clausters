@@ -413,6 +413,16 @@ export class NotesEditor extends Editor<EventSequence> {
         this.#update();
     }
 
+    /**
+     * The sequence changed by another route -- another window, a page's
+     * change, a step a page took: the window is corrected, and the lane takes
+     * the sequence again, so the change is heard.
+     */
+    override adopt(): void {
+        super.adopt();
+        this.#update();
+    }
+
     // ---- the crate's turns ----
 
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {

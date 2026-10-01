@@ -298,6 +298,13 @@ class NotesEditor(Editor):
         super().reflect_step()
         self._update()
 
+    def adopt(self) -> None:
+        """The sequence changed by another route -- another window, a script's
+        change, a step a script took: the window is corrected, and the lane
+        takes the sequence again, so the change is heard."""
+        super().adopt()
+        self._update()
+
     def _update(self) -> None:
         """The sequence changed: when it is what the lane holds, the lane takes
         it again, and the server plays it on from where the position is."""

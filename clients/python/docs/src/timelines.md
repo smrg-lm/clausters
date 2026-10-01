@@ -161,6 +161,21 @@ last.remove()                             # last is detached from now on
 
 **And what it writes, it writes through them.** Setting `at` moves the event, setting a key writes it with its family's coherence — a moved `midinote` moves the `freq` and the `degree` it holds — and `remove()` takes it out; `seq.events.add` answers the `SeqEvent` it made. A collection of curves takes `add(target, points, name=)` and answers the curve, and a curve is changed by assigning its fields (`points`, `name`, `target`, `enabled`) or with `set_points`, and removed with `remove()`. A free `Automation` a script built is added as it is, and from then on it is the view. `seq.automation.to_events(curve)` gives a curve of the sequence to the notes it reaches, and `seq.automation.from_events(target)` gathers the notes' curves back into one of the sequence's and answers it. No call takes or answers an id: each object holds its event's identity, which is what keeps an edit from naming the wrong note — removing one leaves every other note its own, and an identity is never handed out twice. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
 
+**A change is a turn of the sequence's history, when it has one.** `seq.history` is that history — the undo order every editor open on the sequence shares — and asking for it is what gives a sequence one; a notes editor opened on it gives it one too. From then on each change made through the objects is an entry, and the windows over the sequence see it as they see a gesture: they redraw, the lane they play takes the change, and one Ctrl+Z in a window takes back what the script did. A sequence nobody asked a history of changes freely and records nothing, so a script that writes ten thousand notes keeps no ten thousand inverses.
+
+```python
+with seq.history("humanize"):             # one entry, called "humanize"
+    for event in seq.events.range(0.0, 4.0):
+        event.at += 0.01
+        if event["midinote"] >= 67:
+            event["velocity"] = 90
+
+seq.history.undo_label                    # "humanize"
+seq.history.undo()                        # the whole block back, as Ctrl+Z would
+```
+
+`seq.history(label)` makes everything inside the `with` one entry, labelled with the text an undo names, and one turn, so the windows redraw once at the end; blocks nest. `undo()`, `redo()`, `can_undo` and `undo_label` walk the same order a window's Ctrl+Z walks. An event or a curve a step takes away is detached, and the step that brings it back brings back the same object.
+
 **A timeline becomes a sequence by rendering it.** `timeline.render_events()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until=` bounds a timeline that does not end on its own. An event pattern renders the same way, `Pbind(...).render_events()`.
 
 ```python

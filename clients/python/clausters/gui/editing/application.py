@@ -46,7 +46,7 @@ a script writes changes.
 import weakref
 
 from ..ids import CAPACITY, GuiIdAllocator
-from .context import FIRST_VERSION, Editing
+from ...history import FIRST_VERSION, Editing
 from .trace import log
 
 #: The base a host-less draw counts widget ids from. Above the hand-picked range

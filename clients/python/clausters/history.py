@@ -1,4 +1,5 @@
-"""The editing context of one structure -- **whose history it is**.
+"""The editing context of one structure -- **whose history it is** -- and the
+`UndoHistory` a script reads it through.
 
 An undo stack belongs to the data, not to the view. Two windows over one
 structure share a history, and an undo in either updates both; a stack minted
@@ -21,6 +22,15 @@ What stays a view's is what a view can see -- its selection, its zoom, which
 layer the hand is on. Those never enter a history either, which is the same line
 drawn twice.
 
+**It needs no window, so it is not the GUI's.** A script's change to a
+structure that has a history -- a sequence an editor is open on, or one a
+script asked for (``seq.history``) -- is recorded in it as a turn, the same
+one a gesture is: the windows over it are brought in step, the playback
+reading it is synced, and an undo in either a window or the script walks one
+order. A structure nobody asked a history of changes freely and records
+nothing, so a script that writes ten thousand notes keeps no ten thousand
+inverses.
+
 The context is reached through `Editing.of`, which caches it **on the
 structure**: what is being edited is loose Python objects, so the object itself
 is the only thing two editors are guaranteed to have in common. It lives as long
@@ -31,7 +41,7 @@ a history is session state, never serialized, and it goes when the data goes.
 import weakref
 from contextlib import contextmanager
 
-from ... import _native
+from . import _native
 
 #: Where a structure's context is cached on it.
 ATTR = "_clausters_editing"
@@ -80,6 +90,10 @@ class Editing:
         #: windows want *one* redraw, not two.
         self._depth = 0
         self._changed = False
+        #: ``id(structure) -> [depth, before, changed]`` -- the ``with
+        #: history(label)`` blocks open over a structure: one entry, recorded
+        #: when the outermost closes.
+        self._blocks: dict = {}
 
     @classmethod
     def of(cls, structure) -> "Editing":
@@ -130,13 +144,82 @@ class Editing:
         member, identity = int(answer["member"]), int(answer["structure"])
         self._handlers[member] = (sequence, handler)
         self._structures.setdefault(id(sequence), (sequence, member, identity))
+        self.claim(sequence)
         return member, identity
 
     def bind_sequence(self, member: int, source: int, sequence) -> dict:
         """**Bind a multitrack member's ``source`` to ``sequence``** -- a
         `clausters.seq.EventSequence` -- so a region over it draws the
-        sequence's notes; answers the member's corrected picture."""
+        sequence's notes; answers the member's corrected picture. The sequence
+        is claimed: a script's change to it is a turn of this context."""
+        self.claim(sequence)
         return self.core.bind_sequence(sequence._seq, int(member), int(source))
+
+    def claim(self, structure) -> None:
+        """**Make this the structure's context**, so `Editing.of` and the
+        structure's own `UndoHistory` answer it. An editor opened in a context
+        the caller handed it claims what it edits: the windows are here, so a
+        script's change has to be a turn here to reach them."""
+        setattr(structure, ATTR, self)
+
+    def _sequence_identity(self, sequence) -> int:
+        """The sequence's identity in the order -- a notes editor's when one
+        is open on it, else an external member joined now, keyed as a notes
+        editor's is so the two are one structure."""
+        found = self._structures.get(id(sequence))
+        if found is not None:
+            return found[2]
+        _, identity = self.open("external", f"sequence:{id(sequence)}",
+                                {"domain": _native.EVENTS}, sequence, _SequenceSteps())
+        return identity
+
+    def script_edit(self, sequence, intent: dict, label: str) -> dict:
+        """**One change a script makes to a sequence in this context**, as a
+        turn: applied, recorded -- as its own entry, or into the ``with
+        history(label)`` block open over the sequence -- and every view over
+        it told. Answers what the sequence's door answers."""
+        block = self._blocks.get(id(sequence))
+        with self.turn(None):
+            if block is not None:
+                answer = sequence._apply(intent, inverse=False)
+                if answer.get("applied"):
+                    block[2] = True
+                    self.changed()
+                return answer
+            answer = sequence._apply(intent, inverse=True)
+            if answer.get("applied"):
+                self.record([{"structure": self._sequence_identity(sequence),
+                              "forward": {"edit": _forward(sequence, intent, answer)},
+                              "backward": answer["current"]}], label=label)
+                self.changed()
+            return answer
+
+    @contextmanager
+    def block(self, sequence, label: str):
+        """Everything a script changes in the sequence inside it is **one**
+        entry, called ``label``, and one turn. Blocks nest: an inner one is
+        part of the outer."""
+        key = id(sequence)
+        block = self._blocks.get(key)
+        if block is not None:
+            block[0] += 1
+            try:
+                yield
+            finally:
+                block[0] -= 1
+            return
+        self._blocks[key] = block = [1, _restore(sequence), False]
+        # Recorded inside the turn, so the views are told the version the
+        # entry moved to rather than the one before it.
+        with self.turn(None):
+            try:
+                yield
+            finally:
+                del self._blocks[key]
+                if block[2]:
+                    self.record([{"structure": self._sequence_identity(sequence),
+                                  "forward": {"edit": _restore(sequence)},
+                                  "backward": block[1]}], label=label)
 
     def identity(self, structure, domain: str, applier=None) -> int:
         """This structure's identity in the order, joining it as an **external
@@ -388,3 +471,96 @@ class Editing:
             self.close()
         except Exception:  # interpreter teardown: the library may be gone
             pass
+
+
+class _SequenceSteps:
+    """What puts a step back onto a sequence a script joined: the payload,
+    through the sequence's own door."""
+
+    def project(self, sequence, payload: dict) -> bool:
+        return bool(sequence._apply(payload, inverse=False).get("applied"))
+
+
+def _restore(sequence) -> dict:
+    """The edit that puts the sequence back as it is now."""
+    return {"intent": "restore", "sequence": sequence.data()}
+
+
+def _forward(sequence, intent: dict, answer: dict) -> dict:
+    """The edit a redo applies: ``intent`` with the identity it was given,
+    so a redone add brings back the same event -- and the same object. An
+    edit that mints identities of its own is redone as the state it left."""
+    minted = answer.get("id")
+    kind = intent.get("intent")
+    if minted is None:
+        return intent
+    if kind == "add":
+        return {**intent, "event": {**intent["event"], "id": int(minted)}}
+    if kind in ("automation", "eventautomation"):
+        return {**intent, "automation": {**intent["automation"], "id": int(minted)}}
+    return _restore(sequence)
+
+
+class UndoHistory:
+    """**A structure's history, as a script reads it**: the undo order its
+    editors share, which a script's own changes join.
+
+    ``seq.history`` is the door; asking for it is what gives a sequence a
+    history, so a script that never asks and opens no editor records nothing.
+    From then on each change made through the sequence's objects is an entry,
+    and a turn: every window over it redraws, the playback reading it is
+    synced, and one Ctrl+Z in a window takes back what the script did.
+
+    Calling it makes a block: ``with seq.history("humanize"):`` makes every
+    change inside it **one** entry, labelled ``"humanize"`` -- the text an undo
+    names -- and one turn, so the windows redraw once, at the end.
+    """
+
+    def __init__(self, structure):
+        self._structure = structure
+        self._context = Editing.of(structure)
+
+    def __call__(self, label: str = "edit"):
+        return self._context.block(self._structure, str(label))
+
+    def undo(self) -> bool:
+        """Step back over the last entry -- a script's or a window's -- and
+        answer whether anything moved."""
+        return self._step("undo")
+
+    def redo(self) -> bool:
+        """Step forward again after `undo`; whether anything moved."""
+        return self._step("redo")
+
+    def _step(self, direction: str) -> bool:
+        context = self._context
+        with context.turn(None):
+            stepped = context.step(direction)
+            if not stepped.get("stepped"):
+                return False
+            context.carry(stepped)
+            context.changed()
+        return True
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether there is an entry to step back over."""
+        return self._context.can_undo
+
+    @property
+    def can_redo(self) -> bool:
+        """Whether there is an undone entry to step forward into."""
+        return self._context.can_redo
+
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo would take back, as a menu names it."""
+        return self._context.undo_label
+
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo would bring back."""
+        return self._context.redo_label
+
+    def __repr__(self) -> str:
+        return f"<UndoHistory, undo {self.undo_label!r}>"

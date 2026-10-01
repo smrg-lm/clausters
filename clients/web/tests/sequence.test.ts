@@ -122,6 +122,41 @@ test("the curves read as automation, with their holder", () => {
     assert.equal(seq.events.item(1).automation.length, 0);
 });
 
+test("a history asked for records the page's changes and brings objects back", () => {
+    const seq = sequence();
+    const [first, second] = seq.events;
+    const history = seq.history;
+    // Read through a call, so an assert on one read narrows nothing the next
+    // one reads: the holder is what changes between them.
+    const holder = (event: { sequence: EventSequence | null }) => event.sequence;
+    first.at = 0.5;
+    const added = seq.events.add(3.0, { midinote: 70 });
+    assert.ok(history.undoLabel === "add an event" && history.canUndo);
+    assert.ok(history.undo() && holder(added) === null && seq.length === 3);
+    assert.ok(history.redo() && holder(added) === seq && seq.events.item(-1) === added,
+        "a redone add brings back the same event, and the same object");
+    second.remove();
+    assert.ok(history.undo() && holder(second) === seq && second.get("midinote") === 62);
+    const curve = seq.automation.add({ cc: 1 }, { points: [[0.0, 0.0]] });
+    assert.ok(history.undo() && !curve.held);
+    assert.ok(history.redo() && curve.held && curve === seq.automation.item(0));
+});
+
+test("a block is one entry, and nests", () => {
+    const seq = sequence();
+    seq.history.entry("humanize", () => {
+        for (const event of seq.events) {
+            event.set("velocity", 90);
+            seq.history.entry("inner", () => { event.at += 0.25; });
+        }
+    });
+    assert.equal(seq.history.undoLabel, "humanize");
+    assert.deepEqual([...seq.events].map((event) => event.at), [0.25, 1.25, 2.25]);
+    assert.equal(seq.history.undo(), true);
+    assert.deepEqual([...seq.events].map((event) => event.at), [0, 1, 2]);
+    assert.ok(seq.events.item(0).get("velocity") === undefined && !seq.history.canUndo);
+});
+
 test("a refused edit says why", () => {
     const seq = sequence();
     seq.setMidi("1.0");

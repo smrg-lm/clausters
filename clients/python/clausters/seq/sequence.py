@@ -178,9 +178,28 @@ class EventSequence:
 
     def _edit(self, intent: dict, label: str) -> dict:
         """**One change a script makes through an object**: applied, and
-        answered as `_apply` answers. ``label`` is what an undo would call
-        it."""
-        return self._apply(intent, inverse=False)
+        answered as `_apply` answers. ``label`` is what an undo would call it.
+
+        A sequence with a history -- one an editor is open on, or one a script
+        asked for `history` -- takes the change as a turn of it: recorded, and
+        every view over the sequence told. One with none just changes."""
+        from ..history import ATTR
+
+        context = getattr(self, ATTR, None)
+        if context is None:
+            return self._apply(intent, inverse=False)
+        return context.script_edit(self, intent, label)
+
+    @property
+    def history(self):
+        """**The sequence's history** (`clausters.history.UndoHistory`): the undo
+        order its editors share, made on first ask. From then on every change
+        made through the sequence's objects is an entry of it, and a turn the
+        windows over the sequence see; ``with seq.history("humanize"):`` makes
+        everything inside it one entry."""
+        from ..history import UndoHistory
+
+        return UndoHistory(self)
 
     def _write_curve(self, event: "int | None", written: dict, label: str) -> int:
         """Write a curve whole -- the sequence's when ``event`` is ``None``, else

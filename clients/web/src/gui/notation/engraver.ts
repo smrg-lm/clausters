@@ -18,7 +18,7 @@ import {
     svgToDisplayList as coreSvgToDisplayList,
 } from "../../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
-import { Editing } from "../editing/context.ts";
+import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
 import type { MeiOptions } from "./mei.ts";

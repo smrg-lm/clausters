@@ -22,6 +22,7 @@ import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
 import { Automation } from "../multitrack.ts";
+import { UndoHistory, contexts } from "../history.ts";
 import type { PointLike } from "../multitrack.ts";
 
 /** One event of a sequence as the document writes it. */
@@ -249,11 +250,28 @@ export class EventSequence {
      * **One change a page makes through an object**: applied, and answered as
      * the door answers. `label` is what an undo would call it.
      *
+     * A sequence with a history -- one an editor is open on, or one a page
+     * asked for {@link EventSequence.history} -- takes the change as a turn of
+     * it: recorded, and every view over the sequence told. One with none just
+     * changes.
+     *
      * @internal
      */
     edit(intent: Record<string, unknown>, label: string): { applied: boolean; id?: number } {
-        void label;
-        return this.applyIntent(intent, false);
+        const context = contexts.get(this);
+        if (context === undefined) return this.applyIntent(intent, false);
+        return context.scriptEdit(this, intent, label);
+    }
+
+    /**
+     * **The sequence's history**: the undo order its editors share, made on
+     * first ask. From then on every change made through the sequence's objects
+     * is an entry of it, and a turn the windows over the sequence see;
+     * `seq.history.entry("humanize", () => ...)` makes everything inside it one
+     * entry.
+     */
+    get history(): UndoHistory {
+        return new UndoHistory(this);
     }
 
     /**
