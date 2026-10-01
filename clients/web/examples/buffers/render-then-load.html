@@ -64,7 +64,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
     -->
     <script type="module">
       import {
-        Buffer, Session, Synth, channels, readSoundfile,
+        Buffer, Routine, Session, Synth, channels, readSoundfile,
       } from "../../dist/index.js";
       import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
       import { Pbind, Pseq, Pwhite } from "../../dist/seq/index.js";
@@ -105,6 +105,18 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         const offline = await Session.nrt();
         offline.clock.setTempo(2.0);
         offline.play(phrase());
+
+        // A render ends at the score's **last event**, and the last one the
+        // phrase writes is the gate closing on its final note -- so without a
+        // later event the take stops there and the instrument's 0.3 s release
+        // is cut off, a click at the end of the file. `/node_free 0` after the
+        // tail is that closing event.
+        const PHRASE_BEATS = 6 * 2 * 0.25;   // six notes, twice, a quarter beat each
+        const TAIL = 1.0;                    // the release (0.3 s at 2 beats/s), and room
+        new Routine(function* close() {
+          yield PHRASE_BEATS + TAIL;
+          offline.server.sendBundle([["/node_free", ["i", 0]]]);
+        }).play(offline.clock);
         stats = await offline.render({ sampleRate: SR, channels: 2, path: wav });
         log(`rendered ${stats.events} score events -> ${stats.frames} frames `
           + `(${stats.duration.toFixed(2)} s) at ${stats.sampleRate.toFixed(0)} Hz`);

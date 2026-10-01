@@ -41,6 +41,7 @@ import sys
 import tempfile
 
 from clausters import Session
+from clausters.base import Routine
 from clausters.defs import SynthDef, control, out
 from clausters.defs.ugens import play_buf
 from clausters.render import channels, read_soundfile
@@ -91,6 +92,21 @@ wav = os.path.join(tmp, "phrase.wav")
 offline = Session.nrt()
 offline.clock.set_tempo(2.0)
 offline.play(phrase())
+
+# A render ends at the score's **last event**, and the last one the phrase
+# writes is the gate closing on its final note -- so without a later event the
+# take stops there and the instrument's 0.3 s release is cut off, a click at
+# the end of the file. `/node_free 0` after the tail is that closing event.
+PHRASE_BEATS = 6 * 2 * 0.25     # six notes, twice, a quarter beat each
+TAIL = 1.0                      # beats: the release (0.3 s at 2 beats/s) and room
+
+
+def close():
+    yield PHRASE_BEATS + TAIL
+    offline.server.send_bundle(("/node_free", 0))
+
+
+Routine(close).play(offline.clock)
 stats = offline.render(sample_rate=SR, channels=2, path=wav)
 print(f"rendered {stats.events} score events -> {stats.frames} frames "
       f"({stats.duration:.2f} s) at {stats.sample_rate:.0f} Hz")
