@@ -26,7 +26,7 @@
 //! A slot's members are fixed by its def, so a channel declares one slot per
 //! **shape** of note it holds ([`Shape`]: the def, the controls it is started
 //! with, its own curves, the channel's), and the graphs are named by what they
-//! hold ([`note_name`], [`channel_name`]) -- the same content is the same def.
+//! hold (`note_name`, `channel_name`) -- the same content is the same def.
 
 use serde_json::{Map, Value, json};
 

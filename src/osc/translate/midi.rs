@@ -850,7 +850,7 @@ impl CmdTranslator {
     /// reaches: the control the binding maps it to, set on each. Nothing when
     /// the binding maps none.
     /// **A lane's per-note message** on the voice `node`, the note `note` of
-    /// `channel`, into `cmds` ([`Self::per_note`]).
+    /// `channel`, into `cmds` (`Self::per_note`).
     pub fn lane_per_note(
         &mut self,
         node: i32,
@@ -874,7 +874,7 @@ impl CmdTranslator {
     /// message plays as [`Self::translate_midi`] plays it, at the resolution
     /// it came in; a MIDI 1.0 message in a packet as the live input's bytes
     /// do; and a per-note message reaches the voice sounding on its channel
-    /// and key ([`Self::per_note`]). Nothing a running stream sends errors.
+    /// and key (`Self::per_note`). Nothing a running stream sends errors.
     pub fn translate_ump(&mut self, words: &[u32], cmds: &mut Vec<Cmd>) -> Result<(), String> {
         use crate::midi::ump::{UmpMessage, parse_ump};
         let mut result = Ok(());

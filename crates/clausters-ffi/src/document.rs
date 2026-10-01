@@ -660,7 +660,7 @@ pub unsafe extern "C" fn clausters_multitrack_plan(
 /// [`clausters_document_sequence_free`].
 ///
 /// Shared, because a notes editor opened on it
-/// ([`crate::apps::clausters_apps_editing_open_notes`]) edits this very
+/// (`clausters_apps_editing_open_notes`) edits this very
 /// sequence: the handle and the editor are two holders of one structure.
 pub struct FfiEventSequence(pub(crate) clausters_apps::notes::Shared);
 
