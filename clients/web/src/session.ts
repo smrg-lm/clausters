@@ -34,7 +34,7 @@
 import { TempoClock } from "./base/clock.ts";
 import { LogicalTimebase, MonotonicTimebase } from "./base/timebase.ts";
 import type { Timebase } from "./base/timebase.ts";
-import { pageConnection, ScoreConnection, WsConnection } from "./base/connection.ts";
+import { pageConnection, OscNrtInterface, WsConnection } from "./base/connection.ts";
 import type { Connection } from "./base/connection.ts";
 import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
@@ -159,7 +159,7 @@ export class Session extends Environment {
             }
             timebase = clock.timebase;
         }
-        if (server.connection instanceof ScoreConnection) {
+        if (server.connection instanceof OscNrtInterface) {
             if (timebase === undefined) {
                 timebase = new LogicalTimebase();
             } else if (!(timebase instanceof LogicalTimebase)) {
@@ -300,7 +300,7 @@ export class Session extends Environment {
         // none to reach, so the handle is the bare one the reference client
         // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
         // the compiled sizing, which is the whole truth about an offline run.
-        const server = new Server({ connection: new ScoreConnection() });
+        const server = new Server({ connection: new OscNrtInterface() });
         return new Session(server, clock, undefined, timebase);
     }
 

@@ -3,7 +3,7 @@
 //! door) and of the embed C ABI in `src/embed.rs`.
 //!
 //! The shell owns no logic: everything it exposes is a one-call wrapper over
-//! the crate's own entry points (`Score::from_bytes`, `render_to_vec`), so
+//! the crate's own entry points (`OscScore::from_bytes`, `render_to_vec`), so
 //! native cargo tests exercise the identical code path the browser runs. The
 //! wasm-bindgen attributes exist only on the wasm target; natively this is a
 //! plain rlib.
@@ -16,7 +16,7 @@
 //! mode, so native<->wasm bit-identity holds where the render stays out of the
 //! denormal range -- the parity harness asserts on denormal-free scores.
 
-use clausters::server::render::{RenderConfig, Score, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -49,7 +49,7 @@ fn render_score(
     channels: u32,
     seed: Option<u64>,
 ) -> Result<(Vec<f32>, u64, String, u64), String> {
-    let score = Score::from_bytes(score)?;
+    let score = OscScore::from_bytes(score)?;
     let cfg = RenderConfig {
         sample_rate,
         channels: channels as usize,
@@ -140,7 +140,7 @@ pub fn last_render_log() -> String {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = faustJobs)]
 pub fn faust_jobs(score: &[u8]) -> Result<String, JsError> {
-    let score = Score::from_bytes(score).map_err(|e| JsError::new(&e))?;
+    let score = OscScore::from_bytes(score).map_err(|e| JsError::new(&e))?;
     let jobs = score.faust_jobs().map_err(|e| JsError::new(&e))?;
     let mut out = String::from("[");
     for (i, (name, kind, def)) in jobs.iter().enumerate() {

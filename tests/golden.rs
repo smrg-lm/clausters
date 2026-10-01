@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use clausters::server::nrt::{NrtAction, NrtJob, run_job};
-use clausters::server::render::{RenderConfig, Score, render, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render, render_to_vec};
 
 /// Cross-platform tolerance: same-platform renders are bit-identical, but
 /// `sin` may differ by a few ULP across libm implementations.
@@ -146,7 +146,7 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
 fn render_is_sample_accurate_mid_block() {
     // A DC=1 source scheduled at sample 100 (block 1, offset 36) and freed
     // at sample 200: the rendered edges must land on those exact samples.
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![msg(
@@ -236,7 +236,7 @@ fn score_file_round_trips_through_disk() {
     let path = temp_path("score.osc");
     std::fs::write(&path, &bytes).unwrap();
 
-    let score = Score::load(&path).unwrap();
+    let score = OscScore::load(&path).unwrap();
     assert_eq!(score.events().len(), 3);
     let cfg = RenderConfig {
         sample_rate: 48000.0,
@@ -254,7 +254,7 @@ fn score_file_round_trips_through_disk() {
 #[cfg(feature = "faust")]
 #[test]
 fn faust_def_renders_in_nrt() {
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![msg(
@@ -306,7 +306,7 @@ fn faust_def_renders_in_nrt() {
 #[cfg(feature = "faust")]
 #[test]
 fn soundfile_reads_a_score_buffer_in_nrt() {
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![
@@ -367,7 +367,7 @@ fn soundfile_reads_a_score_buffer_in_nrt() {
 #[cfg(feature = "faust")]
 #[test]
 fn faust_tail_flushes_to_zero_instead_of_denormals() {
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![
@@ -418,7 +418,7 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
 
 #[test]
 fn zero_length_score_is_an_error() {
-    let score = Score::new([(0.0, vec![msg("/node_free", vec![OscType::Int(1)])])]).unwrap();
+    let score = OscScore::new([(0.0, vec![msg("/node_free", vec![OscType::Int(1)])])]).unwrap();
     let err = render_to_vec(&score, &RenderConfig::default()).unwrap_err();
     assert!(err.contains("empty render"), "got: {err}");
 }
@@ -440,7 +440,7 @@ fn a_score_writes_samples_and_plays_them_back() {
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
         ]
     });
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![
@@ -501,7 +501,7 @@ fn a_score_writes_samples_and_plays_them_back() {
 #[test]
 fn a_score_writes_one_channel_of_a_buffer() {
     let blob = |v: &[f32]| OscType::Blob(v.iter().flat_map(|s| s.to_le_bytes()).collect());
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![
@@ -540,7 +540,7 @@ fn a_score_writes_one_channel_of_a_buffer() {
 
 #[test]
 fn unsupported_command_in_score_is_an_error() {
-    let score = Score::new([
+    let score = OscScore::new([
         (0.0, vec![msg("/server_status", vec![])]),
         (1.0, vec![msg("/node_free", vec![OscType::Int(1)])]),
     ])
@@ -551,7 +551,7 @@ fn unsupported_command_in_score_is_an_error() {
 
 #[test]
 fn render_reports_failing_buffer_jobs() {
-    let score = Score::new([
+    let score = OscScore::new([
         (
             0.0,
             vec![msg(

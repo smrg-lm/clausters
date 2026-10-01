@@ -9,7 +9,7 @@ use std::sync::Arc;
 use clausters::dsp::buffer::Buffer;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::nrt::{NrtJob, run_job};
-use clausters::server::render::{RenderConfig, Score};
+use clausters::server::render::{OscScore, RenderConfig};
 
 pub const SAMPLE_RATE: f64 = 48000.0;
 /// The source file for the `playbuf` scene is at 44100 Hz on purpose: the
@@ -55,8 +55,8 @@ const SINE_DEF: &str = include_str!("sine.json");
 /// Two voices of a gated sine def overlapping, with mid-block entries, an
 /// `/node_set` retune and staggered frees: exercises the node tree, named
 /// controls and the sample-accurate scheduler end to end. 0.3 s mono.
-pub fn arpeggio() -> Score {
-    Score::new([
+pub fn arpeggio() -> OscScore {
+    OscScore::new([
         (
             t(0),
             vec![
@@ -163,9 +163,9 @@ pub fn write_playbuf_source(path: &Path) {
 /// (buffers are immutable: the swap must land on its exact sample and the
 /// tail must be silent). 0.25 s mono. `source` is the file written by
 /// [`write_playbuf_source`].
-pub fn playbuf(source: &Path) -> Score {
+pub fn playbuf(source: &Path) -> OscScore {
     let path = source.to_str().expect("utf-8 path");
-    Score::new([
+    OscScore::new([
         (
             t(0),
             vec![

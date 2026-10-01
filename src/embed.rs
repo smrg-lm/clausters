@@ -35,7 +35,7 @@ use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
 use crate::server::ipc::{ABI_VERSION, IpcPeer, Role, Segment};
-use crate::server::render::{RenderConfig, Score, render_to_vec};
+use crate::server::render::{OscScore, RenderConfig, render_to_vec};
 
 /// The C ABI version (== the IPC segment layout version).
 #[unsafe(no_mangle)]
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn clausters_render(
     } else {
         Some(unsafe { *seed })
     };
-    let result = Score::from_bytes(bytes).and_then(|score| {
+    let result = OscScore::from_bytes(bytes).and_then(|score| {
         let cfg = RenderConfig {
             sample_rate,
             channels: channels as usize,

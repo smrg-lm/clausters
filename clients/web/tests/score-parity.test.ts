@@ -27,7 +27,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Routine } from "../src/base/stream.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { Session } from "../src/session.ts";
-import { ScoreConnection } from "../src/base/connection.ts";
+import { OscNrtInterface } from "../src/base/connection.ts";
 import { Synth } from "../src/defs/node.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { Env, control, out, sine } from "../src/defs/ugens/index.ts";
@@ -95,7 +95,7 @@ test("a session writes the same score the Python client writes", async () => {
             pieces[vector.name]!(session);
             session.clock.render();
         });
-        const score = (session.server.connection as ScoreConnection).score.bytes();
+        const score = (session.server.connection as OscNrtInterface).score.bytes();
         assert.equal(toHex(score), vector.hex, `take ${vector.name}`);
     }
 });

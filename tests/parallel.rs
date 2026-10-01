@@ -336,14 +336,14 @@ fn g_parallel_rejects_missing_or_non_groups() {
 /// (`--workers` in `clausters --nrt` only changes the wall-clock time).
 #[test]
 fn nrt_render_with_workers_is_bit_identical() {
-    use clausters::server::render::{RenderConfig, Score, render_to_vec};
+    use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 
     let graph = torture_graph();
     let events = vec![
         (0.0, graph),
         (0.25, vec![msg("/node_free", vec![OscType::Int(100)])]),
     ];
-    let score = Score::new(events).unwrap();
+    let score = OscScore::new(events).unwrap();
     let base = RenderConfig {
         sample_rate: SR as f64,
         channels: 2,
@@ -369,7 +369,7 @@ fn nrt_render_with_workers_is_bit_identical() {
 #[test]
 fn a_render_honours_the_configured_group_capacity() {
     use clausters::dsp::Limits;
-    use clausters::server::render::{RenderConfig, Score, render_to_vec};
+    use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 
     const CHILDREN: usize = 600; // more than the default 512
 
@@ -385,7 +385,7 @@ fn a_render_honours_the_configured_group_capacity() {
             ],
         ));
     }
-    let score = Score::new(vec![
+    let score = OscScore::new(vec![
         (
             0.0,
             vec![

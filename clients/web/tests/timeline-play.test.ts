@@ -13,7 +13,7 @@ import test, { afterEach } from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { main } from "../src/base/main.ts";
 import { Routine } from "../src/base/stream.ts";
-import type { ScoreConnection } from "../src/base/connection.ts";
+import type { OscNrtInterface } from "../src/base/connection.ts";
 import { Session } from "../src/session.ts";
 import { Event } from "../src/seq/event.ts";
 import { Entry, OscItem, Timeline } from "../src/seq/timeline.ts";
@@ -27,7 +27,7 @@ afterEach(() => {
 /** Records the score seconds of every bundle, by address. */
 function recorder(session: Session): (addr: string) => number[] {
     const seen: [number, string][] = [];
-    const score = (session.server.connection as ScoreConnection).score;
+    const score = (session.server.connection as OscNrtInterface).score;
     const add = score.add.bind(score);
     score.add = (at: number, packet: Uint8Array) => {
         seen.push([Math.round(at * 1e9) / 1e9, new TextDecoder("latin1").decode(packet)]);

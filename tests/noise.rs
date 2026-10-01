@@ -31,7 +31,7 @@ use clausters::dsp::noise::{
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx, UGen};
 use clausters::node::SynthNode;
 use clausters::rosc::{OscMessage, OscType};
-use clausters::server::render::{RenderConfig, Score, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
 use signal::*;
@@ -706,7 +706,7 @@ fn a_render_is_a_fresh_take_unless_it_is_given_a_seed() {
         ),
         (0.05, vec![msg("/node_free", vec![OscType::Int(100)])]),
     ];
-    let score = Score::new(events).unwrap();
+    let score = OscScore::new(events).unwrap();
     let cfg = RenderConfig {
         sample_rate: SR as f64,
         channels: 1,

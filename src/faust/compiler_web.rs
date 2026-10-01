@@ -179,7 +179,7 @@ impl CompilerThread {
 /// there is no turn in which a result could arrive.
 ///
 /// So the page does the same work in the other order -- read the score's Faust
-/// defs *before* the render starts ([`crate::server::render::Score::faust_jobs`]),
+/// defs *before* the render starts ([`crate::server::render::OscScore::faust_jobs`]),
 /// compile and link them in the Worker, deposit them here, and then render --
 /// and the renderer's `/def_send faust` becomes a lookup. The store is global
 /// because the render entry point is a free function with no host object to

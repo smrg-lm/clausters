@@ -14,7 +14,7 @@ use clausters::dsp::wavetable::GenCommand;
 use clausters::dsp::{ReplyKind, describe_fault};
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
-use clausters::server::render::{RenderConfig, Score, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 use clausters::synthdef::SynthDefSpec;
 use clausters::synthdef::instance::UGenSynth;
 use rosc::{OscMessage, OscType};
@@ -510,7 +510,7 @@ fn render_conv_from(load: OscMessage, kernel_frames: i32, partitions: usize) -> 
         channels: 1,
         ..RenderConfig::default()
     };
-    render_to_vec(&Score::new(events)?, &cfg).map(|_| ())
+    render_to_vec(&OscScore::new(events)?, &cfg).map(|_| ())
 }
 
 /// Offline, a refused kernel fails the render with the reason -- a file of

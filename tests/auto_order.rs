@@ -776,7 +776,7 @@ fn n_set_on_a_bus_control_resorts() {
 /// The renderer shares the translator, so scores get auto-sorting too.
 #[test]
 fn nrt_scores_support_g_sort_mode() {
-    use clausters::server::render::{RenderConfig, Score, render_to_vec};
+    use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 
     let msg = |addr: &str, args: Vec<OscType>| OscMessage {
         addr: addr.into(),
@@ -828,7 +828,7 @@ fn nrt_scores_support_g_sort_mode() {
         ),
         (0.1, vec![msg("/node_free", vec![OscType::Int(1001)])]),
     ];
-    let score = Score::new(events).unwrap();
+    let score = OscScore::new(events).unwrap();
     let cfg = RenderConfig {
         sample_rate: SR as f64,
         channels: 1,

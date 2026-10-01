@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { ScoreConnection } from "../src/base/connection.ts";
+import { OscNrtInterface } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Event } from "../src/seq/event.ts";
@@ -39,7 +39,7 @@ class TransportServer extends Server {
     };
 
     constructor({ group = 7 as number | null } = {}) {
-        super({ connection: new ScoreConnection() });
+        super({ connection: new OscNrtInterface() });
         this.latency = LATENCY;
         this.state.group = group;
     }
@@ -79,7 +79,7 @@ class TransportServer extends Server {
 
     /** The plan's samples, with the base and latency taken off. */
     onsets(): number[] {
-        const score = (this.connection as ScoreConnection).score;
+        const score = (this.connection as OscNrtInterface).score;
         const base = BASE + LATENCY * SR;
         const out: number[] = [];
         for (const packet of packets(score)) {
@@ -159,7 +159,7 @@ test("a locate clears the transport queue and re-plans", async () => {
     tl.play({ at: 0, destination: server });
     await tl.refresh();
     server.calls = [];
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
 
     tl.locate(2.0);
     await tl.refresh();
@@ -177,7 +177,7 @@ test("a resume re-plans nothing", async () => {
     tl.pause();
     await tl.refresh();
     server.calls = [];
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
 
     tl.play(); // no `at`: the frozen queue carries on
     await tl.refresh();
@@ -268,7 +268,7 @@ test("a conductor's locate re-plans from where it says", async () => {
     tl.transport = server;
     tl.play({ at: 0, destination: server });
     await tl.refresh();
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
     server.calls = [];
 
     // A conductor's locate: the engine moved, so the server says so too.
@@ -344,7 +344,7 @@ test("an edit while rolling re-plans from where the transport is", async () => {
     await tl.refresh();
     rolledTo(server, 1.2); // beat 2.4
     server.calls = [];
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
 
     tl.add(2.3, OscItem("/b")); // just behind the position
     await tl.refresh();
@@ -375,7 +375,7 @@ test("an edit while paused rewrites the frozen queue", async () => {
     rolledTo(server, 0.55);
     tl.pause();
     await tl.refresh();
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
 
     tl.add(2.5, OscItem("/b"));
     await tl.refresh();
@@ -399,14 +399,14 @@ test("a re-cue keeps the release of what is sounding", async () => {
     await tl.refresh();
     assert.deepEqual(server.onsets(), [0, 2]); // the onset, the release
     rolledTo(server, 1.0); // sounding
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
 
     tl.add(3.0, OscItem("/b"));
     await tl.refresh();
     assert.deepEqual(server.onsets(), [1.5, 2]);
 
     // A locate keeps it too: the transport's clock does not jump.
-    (server.connection as ScoreConnection).score.clear();
+    (server.connection as OscNrtInterface).score.clear();
     tl.locate(6.0);
     await tl.refresh();
     assert.deepEqual(server.onsets(), [2]);

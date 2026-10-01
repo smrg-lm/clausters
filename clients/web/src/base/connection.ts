@@ -13,7 +13,7 @@
 //   `server()` singleton. No process, no socket.
 //
 // Beside the two carriers there is a third thing shaped like one and going
-// nowhere: `ScoreConnection`, which **writes time instead of waiting for it**.
+// nowhere: `OscNrtInterface`, which **writes time instead of waiting for it**.
 // It accumulates what a `Server` would have sent as a timestamped score for an
 // offline render, which is why it declares a `timeMode` -- a live carrier
 // stamps a bundle with the wall clock, a score with seconds from the render's
@@ -301,12 +301,12 @@ export async function pageConnection(
 /**
  * Accumulated NRT bundles, ordered by time, serialized to the binary score
  * (`[i32 len][packet]...`) the offline renderer consumes -- the Python client's
- * `OscScore`.
+ * `OscScore`, and the server's.
  *
  * An **OSC score**: timed messages for a render, not a symbolic score (the
- * notation `Score` of the engraver), which shares the word and nothing else.
+ * notation `Score` of the engraver); the prefix is what keeps the two apart.
  */
-export class Score {
+export class OscScore {
     private readonly bundles: { at: number; packet: Uint8Array }[] = [];
 
     /** How many bundles are in the score. */
@@ -355,16 +355,16 @@ export class Score {
 
 /**
  * The offline carrier: instead of sending, it accumulates a timestamped
- * `Score` an offline render consumes (`Session.nrt()` builds one; `render()`
+ * `OscScore` an offline render consumes (`Session.nrt()` builds one; `render()`
  * drains it).
  *
  * There is no server at the other end and nothing ever replies, which is the
  * whole point -- an offline session is written by the same code that plays a live
  * one, and the difference is which carrier the `Server` was opened over.
  */
-export class ScoreConnection implements Connection {
+export class OscNrtInterface implements Connection {
     readonly timeMode = "score";
-    readonly score = new Score();
+    readonly score = new OscScore();
 
     addBundle(secs: number, messages: readonly BundleMessage[]): void {
         this.score.add(secs, encodeScoreBundle(secs, messages));
@@ -379,7 +379,7 @@ export class ScoreConnection implements Connection {
      * The byte door, for anything that reaches past the structured one: the
      * packet is wrapped in a score bundle at time 0. Nothing in the client
      * takes this path -- `Server` branches on `timeMode` first -- and it exists
-     * so a `ScoreConnection` is a `Connection` in full rather than one with a
+     * so a `OscNrtInterface` is a `Connection` in full rather than one with a
      * hole in it.
      */
     send(packet: Uint8Array): void {

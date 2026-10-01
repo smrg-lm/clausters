@@ -50,7 +50,7 @@ const log = area("server");
 
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
-import { pageConnection, ScoreConnection, WsConnection } from "../../base/connection.ts";
+import { pageConnection, OscNrtInterface, WsConnection } from "../../base/connection.ts";
 import { engine as ownEngine, pageEngineIfUp } from "../../engine/server.ts";
 import type { ClaustersServer } from "../../engine/server.ts";
 import { loadCore } from "../../base/core.ts";
@@ -156,7 +156,7 @@ export interface ServerOptions {
     /**
      * A carrier built by hand, which wins over `transport` -- the reference
      * client's `interface=`. This is how an offline handle is made
-     * (`new Server({ connection: new ScoreConnection() })`, the page's
+     * (`new Server({ connection: new OscNrtInterface() })`, the page's
      * `Server(interface=OscNrtInterface())`) and how a handle is pointed at one
      * particular engine among several.
      */
@@ -1164,9 +1164,9 @@ export class Server {
      */
     async render(options: RenderOptions = {}): Promise<RenderStats> {
         const connection = this.connection;
-        if (!(connection instanceof ScoreConnection)) {
+        if (!(connection instanceof OscNrtInterface)) {
             throw new TypeError(
-                "render() needs a Server opened over a ScoreConnection "
+                "render() needs a Server opened over a OscNrtInterface "
                     + "(Session.nrt() builds one)",
             );
         }
@@ -1408,7 +1408,7 @@ export class Server {
         // also used to be wrong: building a second one closed the first, and
         // every clock already holding that timebase was left reading a closed
         // reader.
-        if (this.connection instanceof ScoreConnection) {
+        if (this.connection instanceof OscNrtInterface) {
             throw new Error(
                 "an offline server has no sample clock: its clocks are on a LogicalTimebase",
             );

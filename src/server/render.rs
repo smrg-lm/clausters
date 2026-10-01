@@ -1,7 +1,7 @@
 //! Offline (NRT) rendering: the same engine, driven by a score instead of
 //! cpal.
 //!
-//! A [`Score`] is a time-ordered list of OSC bundles. On disk it uses the
+//! An [`OscScore`] is a time-ordered list of OSC bundles. On disk it uses the
 //! scsynth binary score format -- `[i32 big-endian byte count][OSC packet]`
 //! repeated -- where each bundle's NTP timetag is read as **seconds from the
 //! start of the render** (the immediate tag is time 0). Rendering is single
@@ -41,12 +41,13 @@ pub struct ScoreEvent {
 /// A render script: events sorted by time (stable for equal times).
 ///
 /// An **OSC score** -- timed bundles -- and not a symbolic score, the notation
-/// `clausters_core::notation` engraves, which shares the word and nothing else.
-pub struct Score {
+/// `clausters_core::notation` engraves as its `Score`; the prefix is what keeps
+/// the two apart, and the Python client names this one `OscScore` too.
+pub struct OscScore {
     events: Vec<ScoreEvent>,
 }
 
-impl Score {
+impl OscScore {
     /// Builds a score from (seconds, messages) pairs; sorts them stably.
     pub fn new(events: impl IntoIterator<Item = (f64, Vec<OscMessage>)>) -> Result<Self, String> {
         let events: Vec<ScoreEvent> = events
@@ -249,7 +250,7 @@ pub struct RenderStats {
 /// [`crate::dsp::denormals`]) -- the same mode the real-time callback runs
 /// in, so the offline render stays sample-identical to a live take.
 pub fn render(
-    score: &Score,
+    score: &OscScore,
     cfg: &RenderConfig,
     sink: impl FnMut(&[f32]) -> Result<(), String>,
 ) -> Result<RenderStats, String> {
@@ -259,7 +260,7 @@ pub fn render(
 
 /// [`render`] without the log kept.
 fn render_logged(
-    score: &Score,
+    score: &OscScore,
     cfg: &RenderConfig,
     mut sink: impl FnMut(&[f32]) -> Result<(), String>,
 ) -> Result<RenderStats, String> {
@@ -382,7 +383,10 @@ fn render_logged(
 }
 
 /// Renders a score into an interleaved in-memory signal (tests, asserts).
-pub fn render_to_vec(score: &Score, cfg: &RenderConfig) -> Result<(Vec<f32>, RenderStats), String> {
+pub fn render_to_vec(
+    score: &OscScore,
+    cfg: &RenderConfig,
+) -> Result<(Vec<f32>, RenderStats), String> {
     let mut out = Vec::new();
     let stats = render(score, cfg, |chunk| {
         out.extend_from_slice(chunk);
@@ -394,7 +398,7 @@ pub fn render_to_vec(score: &Score, cfg: &RenderConfig) -> Result<(Vec<f32>, Ren
 /// Renders a score straight to a WAV file. `sample_format` is `int16`,
 /// `int24` or `float`, like `/buffer_write`.
 pub fn render_to_wav(
-    score: &Score,
+    score: &OscScore,
     cfg: &RenderConfig,
     path: impl AsRef<Path>,
     sample_format: &str,
@@ -562,7 +566,7 @@ impl Renderer {
     /// arrive, because time does not advance until the def is loaded.
     ///
     /// So a page does the same work in the other order: the host reads the
-    /// score's Faust defs with [`Score::faust_jobs`] *before* the render
+    /// score's Faust defs with [`OscScore::faust_jobs`] *before* the render
     /// starts, compiles and links each one, and this becomes the lookup. A def
     /// that is not there was not offered to the host, which is a host bug and
     /// says so rather than failing as a Faust error.

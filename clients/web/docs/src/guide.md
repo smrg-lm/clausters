@@ -46,7 +46,7 @@ An engine is an `AudioContext` and browsers cap those (Chrome at six), so a page
 `Connection` is the seam underneath, one duplex-OSC interface with two implementations — `pageConnection()` over this tab's engine, `WsConnection.open(url)` over a socket. A handle built with an explicit `connection` uses that one and skips `transport` entirely, which is the reference client's `interface=` and how an offline handle is made:
 
 ```js
-const score = new Server({ connection: new ScoreConnection() });
+const score = new Server({ connection: new OscNrtInterface() });
 ```
 
 `pageConnection()` wraps the page's engine — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.

@@ -65,7 +65,7 @@ import { Group, Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import type { TempoClock } from "./base/clock.ts";
-import type { ScoreConnection } from "./base/connection.ts";
+import type { OscNrtInterface } from "./base/connection.ts";
 import { LogicalTimebase } from "./base/timebase.ts";
 import { EventPattern, Pattern } from "./seq/pattern.ts";
 import type { Event } from "./seq/event.ts";
@@ -190,7 +190,7 @@ export function channel(stats: RenderStats, index: number): Float32Array {
 }
 
 /**
- * Renders a binary score -- the bytes a `ScoreConnection` accumulated -- and
+ * Renders a binary score -- the bytes a `OscNrtInterface` accumulated -- and
  * measures what came out.
  *
  * This is the one place samples are produced: every other path in this module
@@ -490,7 +490,7 @@ async function bounce(
         }
     });
     if (tail < 0) throw new RangeError(`tail is a duration, and ${tail} is negative`);
-    const connection = session.server.connection as ScoreConnection;
+    const connection = session.server.connection as OscNrtInterface;
     const end = connection.score.end;
     if (end !== null && tail > 0) connection.addBundle(end + tail, []);
     return session.server.render(cfg);

@@ -15,7 +15,7 @@ import { loadCore } from "../src/base/core.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { LogicalTimebase, ManualTimebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
-import type { ScoreConnection } from "../src/base/connection.ts";
+import type { OscNrtInterface } from "../src/base/connection.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { main } from "../src/base/main.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
@@ -28,7 +28,7 @@ const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 /** `[seconds, address]` of each bundle the session's score receives, in order. */
 function recordEmits(session: Session): [number, string][] {
     const out: [number, string][] = [];
-    const score = (session.server.connection as ScoreConnection).score;
+    const score = (session.server.connection as OscNrtInterface).score;
     const add = score.add.bind(score);
     score.add = (at: number, packet: Uint8Array) => {
         const text = new TextDecoder("latin1").decode(packet);

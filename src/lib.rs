@@ -11,7 +11,7 @@
 //! # Entry points
 //!
 //! - [`server::render::render_to_wav`] / [`server::render::render_to_vec`] --
-//!   render a [`server::render::Score`] offline; the simplest way in.
+//!   render a [`server::render::OscScore`] offline; the simplest way in.
 //! - [`server::engine::engine_pair`] -- the [`server::engine::Engine`] (audio
 //!   side: [`process_block`](server::engine::Engine::process_block)) and the
 //!   [`server::engine::EngineHandle`] (control side:

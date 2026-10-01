@@ -1,4 +1,4 @@
-use clausters::server::render::{RenderConfig, Score, render_to_wav};
+use clausters::server::render::{OscScore, RenderConfig, render_to_wav};
 
 const USAGE: &str = "\
 usage:
@@ -262,7 +262,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
         return Err(format!("expected a score file and an output file\n{USAGE}"));
     };
 
-    let score = Score::load(score_path)?;
+    let score = OscScore::load(score_path)?;
     let stats = render_to_wav(&score, &cfg, out_path, &format)?;
     if stats_json {
         // One machine-readable line, for a client driving `--nrt` as a

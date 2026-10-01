@@ -11,7 +11,7 @@
 
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::nrtsession::{NrtSession, SessionConfig};
-use clausters::server::render::{RenderConfig, Score, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 use serde_json::json;
 
 const SR: f64 = 48_000.0;
@@ -90,7 +90,7 @@ fn session_cfg() -> SessionConfig {
 /// commands sent to a session which is then asked to run the span.
 fn batch(def_msg: OscMessage, frames: u64) -> Vec<f32> {
     let dur = frames as f64 / SR;
-    let score = Score::new([
+    let score = OscScore::new([
         (0.0, vec![def_msg, s_new("t", 1000)]),
         // A score ends at its last bundle, whose commands make no sound.
         (dur, vec![msg("/node_free", vec![OscType::Int(1000)])]),

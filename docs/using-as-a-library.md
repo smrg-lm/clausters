@@ -22,12 +22,12 @@ The engine (`server::engine`) knows nothing about the audio backend: it processe
 
 ## Offline rendering (the simplest entry point)
 
-`server::render` turns a score into samples. A `Score` is the binary score format (or built in memory from `(time, messages)` pairs); `RenderConfig` picks the rate, channels and worker count.
+`server::render` turns a score into samples. An `OscScore` is the binary score format (or built in memory from `(time, messages)` pairs); `RenderConfig` picks the rate, channels and worker count.
 
 ```rust,ignore
-use clausters::server::render::{render_to_wav, render_to_vec, RenderConfig, Score};
+use clausters::server::render::{render_to_wav, render_to_vec, RenderConfig, OscScore};
 
-let score = Score::load("score.osc")?;          // or Score::from_bytes / Score::new
+let score = OscScore::load("score.osc")?;       // or OscScore::from_bytes / OscScore::new
 let cfg = RenderConfig { sample_rate: 48_000.0, channels: 2, workers: 0 };
 
 // Straight to a WAV file ("int16" | "int24" | "float"):

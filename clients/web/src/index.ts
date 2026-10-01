@@ -184,7 +184,7 @@ export { IdSpaces, loadCore } from "./base/core.ts";
 // reason the options bags below are exported: a public signature names it.
 export type { IdShare } from "./base/ids.ts";
 export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
-export { Score, ScoreConnection, WsConnection, pageConnection } from "./base/connection.ts";
+export { OscNrtInterface, OscScore, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server } from "./defs/server/index.ts";

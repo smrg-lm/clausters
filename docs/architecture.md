@@ -69,7 +69,7 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 | `src/server/ipc.rs` | the versioned shared segment — data plane (clock, control buses, the per-audio-bus directory and levels, the sample rings) + OSC byte rings (`--shm` and embed transports) |
 | `src/embed.rs` | the embed C ABI (feature `embed`, exported by the cdylib) |
 | `src/logging.rs` | `tracing` setup: `init` (binary-only subscriber, stderr), runtime-reloadable filter behind `/server_verbosity` and `/server_dumpOsc` |
-| `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
+| `src/server/render.rs` | Offline mode: `OscScore` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
 | `src/node/mod.rs` | `NodeTree` (fixed slab), `SynthNode` trait, groups, add actions, moves |
 | `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, the cache-line-aligned `Block`, block/bus-count constants |
 | `src/dsp/<ugen>.rs` | One file per UGen family (`sinosc`, `binop`, `io`, `noise`, `buf`) |
@@ -447,7 +447,7 @@ of the Python client's book; the reasoning behind it is in
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an envelope in two bases -- `Env` (segment times) and `Bpf` (absolute) -- played by `EnvGen`, and, on a multitrack, sampled into a table a lane synth reads onto a control bus; a sequence's lanes and a note's own curves the same way, in the graphs a note plays in | `defs/ugens/env.py`, `crates/clausters-core/src/mixer.rs` (`curve_def`), `crates/clausters-document/src/multitrack/nodes.rs`, `crates/clausters-core/src/event_graph.rs`, `src/dsp/io.rs` (`OutCtl`) |
 | Change of state (generator → generated) | evaluating a def or bouncing an event pattern | `render.py`, `session.py`, `src/server/render.rs` |
-| Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Timeline.play`), `src/server/render.rs` |
+| Rendering (in time) | timetagged bundles (RT) or an `OscScore` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Timeline.play`), `src/server/render.rs` |
 | The editor driver (data ↔ view) | — the one part that is new, and the only one that knows both | `clients/python/clausters/gui/editing/`, `clients/web/src/gui/editing/` |
 | Graphic unit (a clip: length = duration) | the placed rectangle, and its bodies as the child elements they are | `clients/gui/src/host/graphics/track.rs` |
 | Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editing/formeditor.py` |

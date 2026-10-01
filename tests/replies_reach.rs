@@ -13,7 +13,7 @@ use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};
 use clausters::server::engine::{BLOCK_SIZE, engine_pair_full};
 use clausters::server::ipc::{IpcPeer, Role, Segment};
-use clausters::server::render::{RenderConfig, Score, render_to_vec};
+use clausters::server::render::{OscScore, RenderConfig, render_to_vec};
 use clausters::synthdef::SynthDefSpec;
 use serde_json::json;
 
@@ -216,7 +216,7 @@ fn an_offline_poll_posts_its_line() {
         ..RenderConfig::default()
     };
     tracing::subscriber::with_default(subscriber, || {
-        render_to_vec(&Score::new(events).unwrap(), &cfg).unwrap();
+        render_to_vec(&OscScore::new(events).unwrap(), &cfg).unwrap();
     });
     let text = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
     assert!(text.contains("level: 0.25"), "{text}");
@@ -262,7 +262,7 @@ fn a_render_hands_back_what_it_logged() {
         channels: 1,
         ..RenderConfig::default()
     };
-    let (_, stats) = render_to_vec(&Score::new(events).unwrap(), &cfg).unwrap();
+    let (_, stats) = render_to_vec(&OscScore::new(events).unwrap(), &cfg).unwrap();
     let has = |level: tracing::Level, text: &str| {
         stats
             .log

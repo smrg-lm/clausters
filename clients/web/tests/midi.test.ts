@@ -30,7 +30,7 @@ import {
 import type { MidiInputPort, MidiMessage, MidiOutputPort } from "../src/base/midi.ts";
 import { MidiFunc, setDefaultMidiReceiver } from "../src/responders.ts";
 import { MidiItem, OscItem } from "../src/seq/timeline.ts";
-import { ScoreConnection } from "../src/base/connection.ts";
+import { OscNrtInterface } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
 import type { EventDestination } from "../src/seq/event.ts";
@@ -372,6 +372,6 @@ test("a MidiItem renders through a MidiServer and refuses an OSC one", async () 
         server.score!.sorted().map(([beat, bytes]) => [beat, [...bytes]]),
         [[0, [0xb0, 74, 40]]],
     );
-    const osc = new Server({ connection: new ScoreConnection() });
+    const osc = new Server({ connection: new OscNrtInterface() });
     assert.throws(() => MidiItem([0x90, 60, 1]).play(osc), /plays on a MIDI destination/);
 });

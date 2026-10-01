@@ -23,7 +23,7 @@ import { Event as SeqEvent } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import { Server } from "../src/defs/server/index.ts";
-import { ScoreConnection } from "../src/base/connection.ts";
+import { OscNrtInterface } from "../src/base/connection.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
@@ -510,7 +510,7 @@ class PlayingServer extends Server {
     state = { playing: false };
 
     constructor() {
-        super({ connection: new ScoreConnection() });
+        super({ connection: new OscNrtInterface() });
         this.latency = 0.1;
     }
     override transportAt(): Server {

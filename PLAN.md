@@ -4016,7 +4016,7 @@ should confirm before the fix.
   sends `ERROR`/`WARN` to `console.error`/`console.warn` and `INFO` to
   `console.debug`, shown only when asked, as Python's `info` is.
 
-- ⬜ **The render's score is named `Score`, and the clients call it
+- ✅ **The render's score is named `Score`, and the clients call it
   `OscScore`** *(found 2026-09-27, listing every class named after a score)*.
   `src/server/render.rs` reads the binary an offline render runs into `Score`,
   a list of `ScoreEvent`s (the messages of one bundle at a time in seconds).
@@ -4026,7 +4026,8 @@ should confirm before the fix.
   **`OscScore`**; `ScoreEvent` stays, since inside the render nothing else
   it could be confused with lives. **Related:** the web client's copy of the
   same divergence (`clients/web/PLAN.md`, Found by use, "The offline score and
-  its carrier are named apart from Python's").
+  its carrier are named apart from Python's"). **Fixed 2026-10-01** with the
+  web client's, in the same commit.
 
 - ✅ **A lane's data is written twice and typed nowhere** *(found 2026-09-29,
   with the user, reading what `/lane_set` carries)*. The JSON is right -- a
