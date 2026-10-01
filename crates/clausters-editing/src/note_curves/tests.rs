@@ -231,7 +231,7 @@ fn a_slot_note_carries_its_readers_ports() {
     applier.apply(ops, &mut ids).unwrap();
     let slots = curves.slots(&plan, &applier);
     let first = slots[0].as_ref().unwrap();
-    assert_eq!(Some(first.graph), applier.node("t/channel/#0"));
+    assert_eq!(Some(first.graph), applier.node("t/channel/#0/0"));
     assert_eq!(first.slot, plan.notes[0].as_ref().unwrap().slot);
     let names: Vec<&str> = first.ports.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, ["pressure/buf", "pressure/step"]);
@@ -267,5 +267,62 @@ fn a_notes_old_table_is_given_back_on_the_next_pass() {
     assert!(
         matches!(&pass[..], [Op::FreeBuffer { .. }]),
         "given back on a pass"
+    );
+}
+
+/// **A curve added while the notes sound does not cut them**: the channel's
+/// graph changes, so its new instance is made beside the old one, which keeps
+/// the notes it is sounding and the tables they read -- a lane's moved table
+/// waits with them -- and both are given back on the next pass.
+#[test]
+fn a_channel_made_again_keeps_its_old_instance_until_the_next_pass() {
+    let mut curves = NoteCurves::new("t");
+    curves.ops(&plan(&placement(), RATE), "parent", true);
+    let mut grown = placement();
+    grown.lanes[0].points[1].value = 1000.0;
+    grown.lanes.push(curve(
+        json!({"timbre": true, "channel": 0}),
+        vec![point(0.0, 0.0), point(1.0, 1.0)],
+    ));
+    let edit = curves.ops(&plan(&grown, RATE), "parent", false);
+    assert!(
+        !edit.iter().any(|op| matches!(op, Op::Free { .. })),
+        "the old instance is not freed"
+    );
+    assert!(
+        edit.iter()
+            .any(|op| matches!(op, Op::Graph { handle, .. } if handle == "t/channel/#0/1"))
+    );
+    let next = curves.ops(&plan(&grown, RATE), "parent", false);
+    assert!(
+        next.is_empty(),
+        "the cutoff's old table waits with the instance that reads it"
+    );
+    let pass = curves.ops(&plan(&grown, RATE), "parent", true);
+    assert!(matches!(
+        &pass[..],
+        [Op::Free { handle, .. }, Op::FreeBuffer { .. }] if handle == "t/channel/#0/0"
+    ));
+}
+
+/// **A channel no curve reaches any more outlives its curves too**: its notes
+/// play as plain synths from then on, and the ones it was sounding finish in
+/// it until the next pass.
+#[test]
+fn a_channel_whose_curves_go_finishes_its_notes() {
+    let mut curves = NoteCurves::new("t");
+    curves.ops(&plan(&placement(), RATE), "parent", true);
+    let mut bare = placement();
+    bare.lanes.clear();
+    bare.events[0].curves.clear();
+    let edit = curves.ops(&plan(&bare, RATE), "parent", false);
+    assert!(edit.is_empty(), "nothing freed under the notes");
+    let pass = curves.ops(&plan(&bare, RATE), "parent", true);
+    assert!(matches!(&pass[0], Op::Free { handle, .. } if handle == "t/channel/#0/0"));
+    assert_eq!(
+        pass.iter()
+            .filter(|op| matches!(op, Op::FreeBuffer { .. }))
+            .count(),
+        3
     );
 }

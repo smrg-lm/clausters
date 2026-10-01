@@ -126,10 +126,6 @@ already carry it.
   score is named `Score`, and the clients call it `OscScore`" (root
   `PLAN.md`, Found by use), the same rename on the server.
 
-- ⬜ **A curve added while a sequence plays cuts its channel**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A channel whose curves
-  change is a new graph, made again under the notes sounding in it.
-
 - ⬜ **A MIDI graph voice released by its gate may leave its slot behind**
   *(root `PLAN.md`, Found by use)*. Reproduce first; `ends` is the tool.
 

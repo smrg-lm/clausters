@@ -16,6 +16,12 @@
 //! one; a note's, once the pass that may sound it is over -- a slot made before
 //! an edit reads the table it was made with until its note ends, and a buffer
 //! number handed out again at once would give it another curve.
+//!
+//! A channel's instance outlives an edit the same way. A slot's members are
+//! fixed by its def, so a channel that gains or loses a curve, or a shape, is
+//! a new graph; the new instance is made beside the old one, which keeps the
+//! notes it is sounding -- their releases are the lane's, sent to their own
+//! nodes -- and the tables they read, until the next pass gives them back.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -251,8 +257,12 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
 pub struct NoteCurves {
     prefix: String,
     sent: BTreeSet<String>,
-    /// Each channel's key and the graph its instance is.
-    channels: BTreeMap<String, String>,
+    /// Each channel's key, the graph its instance is, and the instance's
+    /// generation.
+    channels: BTreeMap<String, (String, u32)>,
+    /// Instances a channel's graph moved away from, kept for the notes they
+    /// are sounding until a new pass starts.
+    outlived: Vec<Handle>,
     /// Each table's key, its samples and first frame, and its generation.
     tables: BTreeMap<String, (Vec<f32>, f64, u32)>,
     /// A channel's buffers to give back on the next plan: its reader moved to
@@ -272,8 +282,23 @@ impl NoteCurves {
         }
     }
 
-    fn instance(&self, key: &str) -> Handle {
-        format!("{}/channel/{key}", self.prefix)
+    fn instance(&self, key: &str, generation: u32) -> Handle {
+        format!("{}/channel/{key}/{generation}", self.prefix)
+    }
+
+    /// A channel's instance now.
+    fn current_instance(&self, key: &str) -> Option<Handle> {
+        self.channels
+            .get(key)
+            .map(|(_, generation)| self.instance(key, *generation))
+    }
+
+    /// A channel's instance moved away from: kept, with every table it may
+    /// read, until a new pass.
+    fn outlive(&mut self, key: &str) {
+        if let Some(handle) = self.current_instance(key) {
+            self.outlived.push(handle);
+        }
     }
 
     fn buffer(&self, key: &str, generation: u32) -> Handle {
@@ -310,9 +335,11 @@ impl NoteCurves {
         (true, handle)
     }
 
-    /// A buffer no table is in any more, kept as long as something may read it.
+    /// A buffer no table is in any more, kept as long as something may read it
+    /// -- a note's until a new pass, and a channel's too while an instance it
+    /// was moved away from may still be reading it.
     fn retire(&mut self, key: &str, handle: Handle) {
-        if key.starts_with("note/") {
+        if key.starts_with("note/") || !self.outlived.is_empty() {
             self.lingering.push(handle);
         } else {
             self.retired.push(handle);
@@ -323,14 +350,22 @@ impl NoteCurves {
     /// at the tail of `parent`: the defs not sent yet, an instance per channel
     /// (made again when its graph changed), each table's buffer and the ports
     /// of a channel's readers, and what is no longer planned given back --
-    /// a note's tables only when `pass` says a new pass starts, since until
-    /// then a note sounding from before an edit may be reading one.
+    /// a note's tables, and a channel's instance its graph moved away from,
+    /// only when `pass` says a new pass starts, since until then a note
+    /// sounding from before an edit may be in one, or reading one.
     pub fn ops(&mut self, plan: &CurvePlan, parent: &str, pass: bool) -> Vec<Op> {
-        let mut ops: Vec<Op> = self
-            .retired
-            .drain(..)
-            .map(|handle| Op::FreeBuffer { handle })
-            .collect();
+        let mut ops: Vec<Op> = Vec::new();
+        if pass {
+            ops.extend(self.outlived.drain(..).map(|handle| Op::Free {
+                handle,
+                forget: Vec::new(),
+            }));
+        }
+        ops.extend(
+            self.retired
+                .drain(..)
+                .map(|handle| Op::FreeBuffer { handle }),
+        );
         if pass {
             ops.extend(
                 self.lingering
@@ -373,24 +408,25 @@ impl NoteCurves {
         let mut fresh = BTreeSet::new();
         for channel in &plan.channels {
             let name = channel.graph["name"].as_str().unwrap_or_default();
-            if self.channels.get(&channel.key).map(String::as_str) == Some(name) {
-                continue;
-            }
-            // A channel whose graph changed is made again: what it sounds
-            // now is cut, which is an edit to what its notes are.
-            if self.channels.contains_key(&channel.key) {
-                ops.push(Op::Free {
-                    handle: self.instance(&channel.key),
-                    forget: Vec::new(),
-                });
-            }
+            let generation = match self.channels.get(&channel.key) {
+                Some((graph, _)) if graph == name => continue,
+                // A channel whose graph changed is made again beside the old
+                // instance, which keeps sounding what it holds.
+                Some((_, generation)) => {
+                    let next = generation + 1;
+                    self.outlive(&channel.key);
+                    next
+                }
+                None => 0,
+            };
             ops.push(Op::Graph {
-                handle: self.instance(&channel.key),
+                handle: self.instance(&channel.key, generation),
                 parent: parent.to_string(),
                 graph: name.to_string(),
                 ports: Ports::new(),
             });
-            self.channels.insert(channel.key.clone(), name.to_string());
+            self.channels
+                .insert(channel.key.clone(), (name.to_string(), generation));
             fresh.insert(channel.key.clone());
         }
         let planned: BTreeSet<&str> = plan.channels.iter().map(|c| c.key.as_str()).collect();
@@ -400,11 +436,10 @@ impl NoteCurves {
             .filter(|k| !planned.contains(k.as_str()))
             .cloned()
             .collect();
+        // A channel no curve reaches any more: its notes play as plain synths
+        // from now on, and the ones it is sounding finish in it.
         for key in gone {
-            ops.push(Op::Free {
-                handle: self.instance(&key),
-                forget: Vec::new(),
-            });
+            self.outlive(&key);
             self.channels.remove(&key);
         }
         let mut alive = BTreeSet::new();
@@ -427,7 +462,7 @@ impl NoteCurves {
             }
             if !ports.is_empty() {
                 ops.push(Op::Set {
-                    handle: self.instance(&channel.key),
+                    handle: self.instance(&channel.key, self.channels[&channel.key].1),
                     ports,
                 });
             }
@@ -462,7 +497,7 @@ impl NoteCurves {
             .map(|note| {
                 let note = note.as_ref()?;
                 let channel = plan.channels.get(note.channel)?;
-                let graph = applier.node(&self.instance(&channel.key))?;
+                let graph = applier.node(&self.current_instance(&channel.key)?)?;
                 let mut ports = Vec::new();
                 for (control, t) in &note.curves {
                     let buffer = applier.buffer(&self.current(&t.key)?)?;
@@ -479,13 +514,19 @@ impl NoteCurves {
     }
 
     /// **Everything given back**, for a playback that goes away: each
-    /// channel's instance freed (and its notes with it), then every buffer.
+    /// channel's instance freed (and its notes with it), the ones outlived
+    /// too, then every buffer.
     pub fn teardown(&mut self) -> Vec<Op> {
-        let mut ops: Vec<Op> = self
+        let current: Vec<Handle> = self
             .channels
             .keys()
-            .map(|key| Op::Free {
-                handle: self.instance(key),
+            .filter_map(|key| self.current_instance(key))
+            .collect();
+        let mut ops: Vec<Op> = current
+            .into_iter()
+            .chain(self.outlived.drain(..))
+            .map(|handle| Op::Free {
+                handle,
                 forget: Vec::new(),
             })
             .collect();

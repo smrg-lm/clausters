@@ -1528,11 +1528,16 @@ wrong.
   channel graph names it (`/def_free`), and deciding whether generated defs
   are persisted at all.
 
-- ⬜ **A curve added while a sequence plays cuts its channel** *(found
+- ✅ **A curve added while a sequence plays cuts its channel** *(found
   2026-09-30, writing `X3.11c`)*. A slot's members are fixed by its def, so a
   channel whose set of shapes or of curves changes is a new graph, and its
   instance is made again: the notes sounding in the old one stop at once,
   releases included. An edit of a curve's points does not do this -- a table
   is replaced under its reader -- only one that changes which curves there
   are. Keeping the old instance until its notes end, and adding the new one
-  beside it, would make the change as seamless as a point dragged.
+  beside it, would make the change as seamless as a point dragged. **Fixed
+  2026-09-30** that way: `NoteCurves` makes the new instance under the
+  channel's next generation and keeps the old one -- its notes' releases are
+  the lane's, sent to their own nodes -- with every table it may read, until
+  the next pass gives both back; a channel whose last curve goes finishes its
+  notes the same way.
