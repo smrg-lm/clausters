@@ -459,7 +459,7 @@ impl NotesPlayback {
             return Ok(Vec::new());
         };
         let placement = placed(sequence);
-        let plan = note_curves::plan(&placement, rate);
+        let plan = note_curves::plan(&placement, rate).scoped(lane);
         let ops = self.curves.ops(&plan, EDITOR, pass);
         let mut steps = self.applier.apply(ops, ids)?;
         let slots = self.curves.slots(&plan, &self.applier);

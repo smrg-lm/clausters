@@ -310,6 +310,11 @@ pub enum Op {
         /// The buffer.
         handle: Handle,
     },
+    /// Give defs back (`/def_free`): generated ones nothing plays any more.
+    FreeDef {
+        /// Their names.
+        names: Vec<String>,
+    },
 }
 
 /// The multitrack's own instance.

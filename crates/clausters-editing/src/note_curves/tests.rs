@@ -303,10 +303,71 @@ fn a_channel_made_again_keeps_its_old_instance_until_the_next_pass() {
         "the cutoff's old table waits with the instance that reads it"
     );
     let pass = curves.ops(&plan(&grown, RATE), "parent", true);
-    assert!(matches!(
-        &pass[..],
-        [Op::Free { handle, .. }, Op::FreeBuffer { .. }] if handle == "t/channel/#0/0"
-    ));
+    let [
+        Op::Free { handle, .. },
+        Op::FreeBuffer { .. },
+        Op::FreeDef { names },
+    ] = &pass[..]
+    else {
+        panic!("{pass:?}");
+    };
+    assert_eq!(handle, "t/channel/#0/0");
+    // **And the graph only the old instance played goes with it**: the
+    // channel's old graph, never the one the plan names now.
+    let now = plan(&grown, RATE).channels[0].graph["name"].clone();
+    assert!(!names.is_empty() && names.iter().all(|n| json!(n) != now));
+    assert!(
+        names.iter().all(|n| n.starts_with("tmp_ev.")),
+        "a generated graph, which the server never persists"
+    );
+}
+
+/// **A plan is named for the lane it plays from**, so two playbacks on one
+/// server never share a graph one of them may give back.
+#[test]
+fn a_scoped_plan_names_its_graphs_for_its_lane() {
+    let scoped = plan(&placement(), RATE).scoped(1042);
+    let channel = &scoped.channels[0];
+    let graph = channel.graph["name"].as_str().unwrap();
+    assert!(graph.starts_with("tmp_ev.1042.channel."), "{graph}");
+    let note = channel.notes[0]["name"].as_str().unwrap();
+    assert!(note.starts_with("tmp_ev.1042.note."), "{note}");
+    assert!(
+        channel.graph["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["def"] == note),
+        "the channel's slot plays the renamed note"
+    );
+}
+
+/// **A playback that goes away gives its graphs back**, and not the four
+/// readers every playback shares.
+#[test]
+fn a_teardown_gives_back_the_graphs_it_sent() {
+    let mut curves = NoteCurves::new("t");
+    curves.ops(&plan(&placement(), RATE), "parent", true);
+    let down = curves.teardown();
+    let names: Vec<&String> = down
+        .iter()
+        .filter_map(|op| match op {
+            Op::FreeDef { names } => Some(names),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let planned = plan(&placement(), RATE);
+    let mut sent: Vec<String> = planned.channels[0]
+        .notes
+        .iter()
+        .chain([&planned.channels[0].graph])
+        .map(|g| g["name"].as_str().unwrap().to_string())
+        .collect();
+    sent.sort();
+    let mut freed: Vec<String> = names.into_iter().cloned().collect();
+    freed.sort();
+    assert_eq!(freed, sent, "the channel's graph and its notes'");
 }
 
 /// **A channel no curve reaches any more outlives its curves too**: its notes

@@ -2772,9 +2772,9 @@ where it came from).
   the next question, and the more complex defs start there; it is open here.
 
   **Related:** "The graphs a note plays in are never freed"
-  (`crates/clausters-apps/PLAN.md`, Found by use), whose open decision --
-  whether generated defs are persisted at all -- now has to say whether a
-  persisted def carries its resources too.
+  (`crates/clausters-apps/PLAN.md`, Found by use), decided 2026-10-01:
+  generated defs are not persisted (`tmp_`) and are freed by whoever sends
+  them, so what is designed here concerns the defs a person authors.
 
 ## Found by use: the running list of fixes
 

@@ -33,7 +33,14 @@ use serde_json::{Map, Value, json};
 use crate::mixer::{AT, BUF, CURVE_STEP, OUT_BUS};
 
 /// What every name here begins with.
-pub const PREFIX: &str = "ev";
+///
+/// **It begins with `tmp_`**, the server's mark of a def it never persists:
+/// these are generated from a sequence whenever it plays, and the note and
+/// channel graphs are as many as the shapes a session ever had, so a data
+/// directory that kept them would grow with every curve added. Whoever sends
+/// the graphs gives them back once nothing plays them (`NoteCurves` in the
+/// editing crate), under a name scoped to it ([`scoped`]).
+pub const PREFIX: &str = "tmp_ev";
 
 /// The control a bend drives: not a control of the voice, but its pitch.
 pub const BEND: &str = "bend";
@@ -407,6 +414,22 @@ fn note_name(graph: &Value) -> String {
 /// A channel graph's name: what it holds, hashed.
 fn channel_name(graph: &Value) -> String {
     format!("{PREFIX}.channel.{:016x}", fnv(&graph.to_string()))
+}
+
+/// **A note or channel graph's name, scoped to whoever sends it**: the
+/// content-hashed name with `scope` after the prefix, so two senders on one
+/// server never share a graph one of them may give back while the other still
+/// plays it. `scope` is something the server already holds unique for the
+/// sender -- the node id of the lane its notes play from. A name that is not
+/// one of these is handed back as it is.
+pub fn scoped(name: &str, scope: i32) -> String {
+    match name
+        .strip_prefix(PREFIX)
+        .and_then(|rest| rest.strip_prefix('.'))
+    {
+        Some(rest) => format!("{PREFIX}.{scope}.{rest}"),
+        None => name.to_string(),
+    }
 }
 
 /// FNV-1a over the text: a name that is the same for the same content in every

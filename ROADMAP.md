@@ -110,21 +110,16 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-None is open now.
+- ⬜ **The engine in a page caches no ephemeral Faust def**
+  *(`clients/web/PLAN.md`, Found by use)*. The in-tab engine recompiles a
+  `tmp_` Faust def every time where a native server reuses its cached
+  bitcode; the page's own storage can hold that cache.
 
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
-
-- ⬜ **The graphs a note plays in are never freed**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Every new shape is a new
-  def, sent and never given back. **The decision:** whether generated defs are
-  persisted at all, before when one is freed. **Related:** "A GraphDef
-  carries the buffers it plays" (root `PLAN.md`, Future directions), a design
-  in which a persisted def keeps its buffers' files in its own folder -- so
-  the two are decided together.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox

@@ -287,6 +287,33 @@ mod harness {
     }
 }
 
+/// **A generated GraphDef stays out of the data directory**: a graph named
+/// `tmp_...` -- what the notes' curves and the multitrack's mixer send -- is
+/// installed and never written, while a graph named by its author is.
+#[test]
+fn a_tmp_graphdef_is_installed_and_never_persisted() {
+    use clausters::rosc::OscType;
+    use harness::TestServer;
+    let dir = TempDir::new("tmpgraph");
+    let server = TestServer::spawn(dir.path());
+    for name in ["tmp_ev.1042.note.0123456789abcdef", "authored"] {
+        let spec = format!(r#"{{"name":"{name}","members":[]}}"#);
+        server.send(
+            "/def_send",
+            vec![OscType::String("graph".into()), OscType::String(spec)],
+        );
+        server.recv_until("/done");
+    }
+    server.quit();
+    let files: Vec<String> = DefStore::open(dir.path())
+        .unwrap()
+        .load_graphdef_specs()
+        .into_iter()
+        .filter_map(|(path, _)| Some(path.file_stem()?.to_str()?.to_string()))
+        .collect();
+    assert_eq!(files, ["authored"]);
+}
+
 /// **A def that no longer loads is nameable, and there is one way to drop it.**
 /// Changing a UGen's arity makes every persisted def written against the old
 /// one unloadable, and the reload warned about it at every boot without saying

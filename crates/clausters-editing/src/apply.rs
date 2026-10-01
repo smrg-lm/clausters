@@ -428,6 +428,14 @@ impl Applier {
                     let _ = ids.release(Space::Buffers, i64::from(bufnum), 1);
                 }
             }
+            Op::FreeDef { names } => {
+                if !names.is_empty() {
+                    steps.push(send(
+                        "/def_free",
+                        names.into_iter().map(OscType::String).collect(),
+                    ));
+                }
+            }
         }
         Ok(())
     }

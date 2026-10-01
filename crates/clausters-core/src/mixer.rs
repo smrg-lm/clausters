@@ -47,7 +47,12 @@ use serde_json::{Value, json};
 /// The prefix every def here is named with. Deliberately not `track` or `clip`
 /// on their own: a def name is global, and those two words are the most
 /// ambiguous ones available.
-pub const PREFIX: &str = "mt";
+///
+/// **It begins with `tmp_`**, the server's mark of a def it never persists:
+/// these are generated from a multitrack's widths whenever one plays, so a
+/// copy in a data directory would hold nothing the generator cannot make
+/// again, and would go stale the day the mixer changes.
+pub const PREFIX: &str = "tmp_mt";
 
 // ---- the port vocabulary ----
 //

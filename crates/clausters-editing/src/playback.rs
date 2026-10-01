@@ -195,7 +195,7 @@ impl MultitrackPlayback {
             ));
             self.lane = Some(group);
         }
-        let plan = note_curves::plan(placed, self.rate);
+        let plan = note_curves::plan(placed, self.rate).scoped(group);
         let ops = self.curves.ops(
             &plan,
             crate::instance::TRANSPORT,

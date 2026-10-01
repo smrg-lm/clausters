@@ -4638,6 +4638,15 @@ sound.
   `doc.ARRANGEMENT`, which no import names. On the old pages it reports the
   three this entry found.
 
+- ⬜ **The engine in a page caches no ephemeral Faust def** *(found
+  2026-10-01, making generated defs `tmp_`)*. A native server writes an
+  ephemeral def's record and bitcode to a temp directory, so a replayed
+  expression skips the recompile; the in-tab engine has no temp directory
+  wired and compiles it every time (`src/osc/server/async_pipes.rs`). The
+  page has storage for it -- the origin private file system its file commands
+  already use -- so this is the port's gap: a directory of that storage as
+  the ephemeral cache.
+
 - ✅ **The offline score and its carrier are named apart from Python's**
   *(found 2026-09-27, listing every class named after a score)*. The page's
   `Score` (`src/base/connection.ts`) is Python's `OscScore` — the same

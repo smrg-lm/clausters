@@ -1518,7 +1518,7 @@ wrong.
   keeps the amplitude its author wrote.
 
 
-- ⬜ **The graphs a note plays in are never freed** *(found 2026-09-30,
+- ✅ **The graphs a note plays in are never freed** *(found 2026-09-30,
   writing `X3.11c`)*. A channel's graph and each note graph are named by what
   they hold (`clausters_core::event_graph`), so every new shape -- a curve
   added, a note started with another control -- is a new def sent to the
@@ -1528,7 +1528,16 @@ wrong.
   channel graph names it (`/def_free`), and deciding whether generated defs
   are persisted at all. **Related:** "A GraphDef carries the buffers it
   plays" (root `PLAN.md`, Future directions): if a def keeps its buffers,
-  persisting one persists them too.
+  persisting one persists them too. **Decided and fixed 2026-10-01** with the
+  user: generated defs are **not persisted**, and whoever generates one frees
+  it. Every generated name begins with `tmp_`, the server's existing mark of a
+  def it never writes (`tmp_ev.` for the curves' readers and graphs,
+  `tmp_mt.` for the mixer); a note or channel graph is named for the lane it
+  plays from (`CurvePlan::scoped`, the lane's node id), so two playbacks on
+  one server never share one; and `NoteCurves` frees, with `/def_free`, every
+  graph no instance still alive plays, on each pass and at teardown. The four
+  readers and the mixer's defs are a bounded set every playback shares, and
+  are only kept out of the store.
 
 - ✅ **A curve added while a sequence plays cuts its channel** *(found
   2026-09-30, writing `X3.11c`)*. A slot's members are fixed by its def, so a

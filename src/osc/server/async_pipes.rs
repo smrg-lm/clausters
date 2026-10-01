@@ -86,9 +86,11 @@ impl OscServer {
         // temp directory instead, so replaying the same expression still skips
         // the recompile without leaving a record behind.
         let cache = if defstore::is_ephemeral(&name) {
-            // A page has no filesystem to cache into, and asking it for a temp
-            // directory is a panic rather than an empty answer -- so the
-            // in-tab engine simply compiles an ephemeral def every time.
+            // The in-tab engine has no temp directory wired -- asking for
+            // one there is a panic rather than an empty answer -- so it
+            // compiles an ephemeral def every time. The page's own storage
+            // could hold this cache; that is a gap of the port, not of the
+            // platform (`clients/web/PLAN.md`, Found by use).
             #[cfg(target_arch = "wasm32")]
             {
                 None::<Box<CacheJob>>

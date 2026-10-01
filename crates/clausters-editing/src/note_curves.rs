@@ -30,7 +30,7 @@ use clausters_core::event_graph::{self, BEND, Shape};
 use clausters_core::mixer::{AT, BUF, CURVE_STEP};
 use clausters_document::Point;
 use clausters_document::multitrack::nodes::{tabulate, value_at};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::apply::Applier;
 use crate::instance::{Handle, Op, Port, Ports};
@@ -94,6 +94,33 @@ pub struct NotePlan {
 pub struct CurvePlan {
     pub channels: Vec<ChannelPlan>,
     pub notes: Vec<Option<NotePlan>>,
+}
+
+impl CurvePlan {
+    /// **The plan with its graphs named for one sender**: every note and
+    /// channel graph renamed under `scope` ([`event_graph::scoped`]) and every
+    /// channel graph's slots pointed at the renamed notes. `scope` is the
+    /// node id of the lane the notes play from, which the server holds unique,
+    /// so a graph this sender gives back is one no other sender plays.
+    pub fn scoped(mut self, scope: i32) -> Self {
+        for channel in &mut self.channels {
+            for note in &mut channel.notes {
+                let name = event_graph::scoped(note["name"].as_str().unwrap_or_default(), scope);
+                note["name"] = json!(name);
+            }
+            if let Some(members) = channel.graph["members"].as_array_mut() {
+                for member in members {
+                    if let Some(def) = member["def"].as_str() {
+                        member["def"] = json!(event_graph::scoped(def, scope));
+                    }
+                }
+            }
+            let name =
+                event_graph::scoped(channel.graph["name"].as_str().unwrap_or_default(), scope);
+            channel.graph["name"] = json!(name);
+        }
+        self
+    }
 }
 
 /// The curves `curves` drive, one per control (the first that names it), with
@@ -258,6 +285,12 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
 pub struct NoteCurves {
     prefix: String,
     sent: BTreeSet<String>,
+    /// The note and channel graphs sent, which are given back once nothing
+    /// plays them: as many as the shapes a session ever had, where the
+    /// readers in `sent` beside them are four.
+    graphs: BTreeSet<String>,
+    /// The graphs each instance alive plays: its channel's and its notes'.
+    uses: BTreeMap<Handle, Vec<String>>,
     /// Each channel's key, the graph its instance is, and the instance's
     /// generation.
     channels: BTreeMap<String, (String, u32)>,
@@ -357,10 +390,13 @@ impl NoteCurves {
     pub fn ops(&mut self, plan: &CurvePlan, parent: &str, pass: bool) -> Vec<Op> {
         let mut ops: Vec<Op> = Vec::new();
         if pass {
-            ops.extend(self.outlived.drain(..).map(|handle| Op::Free {
-                handle,
-                forget: Vec::new(),
-            }));
+            for handle in std::mem::take(&mut self.outlived) {
+                self.uses.remove(&handle);
+                ops.push(Op::Free {
+                    handle,
+                    forget: Vec::new(),
+                });
+            }
         }
         ops.extend(
             self.retired
@@ -394,7 +430,8 @@ impl NoteCurves {
         for channel in &plan.channels {
             for spec in channel.notes.iter().chain([&channel.graph]) {
                 let name = spec["name"].as_str().unwrap_or_default().to_string();
-                if self.sent.insert(name) {
+                if self.sent.insert(name.clone()) {
+                    self.graphs.insert(name);
                     defs.push(Op::Def {
                         family: "graph".into(),
                         spec: spec.clone(),
@@ -420,8 +457,18 @@ impl NoteCurves {
                 }
                 None => 0,
             };
+            let handle = self.instance(&channel.key, generation);
+            let played = std::iter::once(name.to_string())
+                .chain(
+                    channel
+                        .notes
+                        .iter()
+                        .filter_map(|n| n["name"].as_str().map(str::to_string)),
+                )
+                .collect();
+            self.uses.insert(handle.clone(), played);
             ops.push(Op::Graph {
-                handle: self.instance(&channel.key, generation),
+                handle,
                 parent: parent.to_string(),
                 graph: name.to_string(),
                 ports: Ports::new(),
@@ -486,7 +533,33 @@ impl NoteCurves {
             }
             self.tables.remove(&key);
         }
+        // **A graph nothing plays is given back**, once a pass has freed the
+        // instances that outlived their channel's last change: what the plan
+        // names and what an instance still sounding plays stay.
+        if pass {
+            let played: BTreeSet<&String> = self.uses.values().flatten().collect();
+            let unplayed: Vec<String> = self
+                .graphs
+                .iter()
+                .filter(|name| !played.contains(name))
+                .cloned()
+                .collect();
+            self.give_back(unplayed, &mut ops);
+        }
         ops
+    }
+
+    /// Frees the graphs `names` and forgets having sent them, so a plan that
+    /// names one again sends it again.
+    fn give_back(&mut self, names: Vec<String>, ops: &mut Vec<Op>) {
+        if names.is_empty() {
+            return;
+        }
+        for name in &names {
+            self.graphs.remove(name);
+            self.sent.remove(name);
+        }
+        ops.push(Op::FreeDef { names });
     }
 
     /// **The slot each note plays in**, once [`Self::ops`] is applied: its
@@ -516,7 +589,7 @@ impl NoteCurves {
 
     /// **Everything given back**, for a playback that goes away: each
     /// channel's instance freed (and its notes with it), the ones outlived
-    /// too, then every buffer.
+    /// too, the graphs they played, then every buffer.
     pub fn teardown(&mut self) -> Vec<Op> {
         let current: Vec<Handle> = self
             .channels
@@ -532,6 +605,9 @@ impl NoteCurves {
             })
             .collect();
         self.channels.clear();
+        self.uses.clear();
+        let graphs: Vec<String> = self.graphs.iter().cloned().collect();
+        self.give_back(graphs, &mut ops);
         ops.extend(
             self.retired
                 .drain(..)
