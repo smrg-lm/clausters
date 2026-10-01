@@ -197,7 +197,7 @@ const trees: Record<string, () => GuiNode> = {
                 id: 1,
                 notes: [[0.0, 4800.0, 60], [4800.0, 4800.0, 67, 90, 1]],
                 osc: [[0.0, "start"], 9600.0],
-                min: 48, max: 84, snap: 1200.0, velocity: true, oscLane: true,
+                min: 48, max: 84, snap: 1200.0, velocity: true, oscMarkers: true,
                 ruler: "beats", tempo: 2.0, playheadAt: -1.0,
                 playhead: 2400.0, playheadLoopStart: 0.0,
                 playheadLoopLen: 9600.0,

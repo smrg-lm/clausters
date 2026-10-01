@@ -1200,11 +1200,11 @@
  },
  {
   "builder": "notes",
-  "option": "osc_lane",
+  "option": "osc_markers",
   "value": true,
   "tree": {
    "type": "notes",
-   "osc_lane": 1
+   "osc_markers": 1
   }
  },
  {
@@ -2055,11 +2055,11 @@
  },
  {
   "builder": "pianoroll",
-  "option": "osc_lane",
+  "option": "osc_markers",
   "value": true,
   "tree": {
    "type": "notes",
-   "osc_lane": 1
+   "osc_markers": 1
   }
  },
  {

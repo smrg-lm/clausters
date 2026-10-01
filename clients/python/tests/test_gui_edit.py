@@ -416,7 +416,7 @@ def test_a_catalogue_view_is_described_by_the_crate_and_not_by_this_client():
 
 
 def test_a_sequence_with_a_marker_still_draws_its_notes():
-    # The marker lane is `time label` pairs, and a label is text: typed as
+    # The OSC markers are `time label` pairs, and a label is text: typed as
     # numbers alone, one marker refused the whole roll and the window opened
     # with nothing on it.
     from clausters.seq.timeline import OscItem

@@ -153,7 +153,7 @@ impl Notes {
         let full = pianoroll::regions(
             rect,
             self.editor.ruler != Ruler::Off,
-            self.osc_lane,
+            self.osc_markers,
             indent,
             m,
         );
@@ -248,7 +248,7 @@ impl Notes {
                 .zip(self.row_rects(ctx.rect, ctx.indent, ctx.metrics))
         {
             let (mesh, m, theme) = d.parts();
-            mesh.rect(body, theme.osc_lane);
+            mesh.rect(body, theme.osc_markers);
             mesh.rect(Rect::new(body.x, body.y, body.w, 1.0), theme.frame);
             font::text(
                 mesh,

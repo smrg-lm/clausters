@@ -1,4 +1,4 @@
-//! **The marker lane's reading of an event**: which events a roll draws as
+//! **The OSC markers' reading of an event**: which events a roll draws as
 //! markers rather than notes, and the label it draws each with.
 //!
 //! What a gesture over a roll means is [`crate::notes`]'s, by id. This is the
@@ -10,11 +10,11 @@ use serde_json::Value;
 
 use crate::intake::text;
 
-/// What the marker lane sends and takes per marker: the time and the label.
+/// What the OSC markers send and take per marker: the time and the label.
 pub const PAIR: usize = 2;
 
-/// The label the roll's marker lane draws an item with, or `None` when the item
-/// is not one of that lane's.
+/// The label the roll's OSC markers draw an item with, or `None` when the item
+/// is not one of them.
 ///
 /// An OSC marker (an event of type `"osc"`) labels with its address, because
 /// **a marker is the message it sends** and the address is the whole of what a

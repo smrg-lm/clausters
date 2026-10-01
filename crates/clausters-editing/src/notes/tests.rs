@@ -93,7 +93,7 @@ fn removing_a_note_leaves_its_neighbours_theirs() {
     );
     assert!(next.get(1).is_none());
     assert_eq!(next.get(2).unwrap().data.0["amp"], json!(0.4));
-    assert!(next.get(3).is_some(), "the marker lane is carried through");
+    assert!(next.get(3).is_some(), "the OSC markers are carried through");
 }
 
 #[test]

@@ -422,7 +422,7 @@ pub(super) fn roll_body(notes: &[f64]) -> Notes {
     props.insert("min".into(), Value::from(min));
     props.insert("max".into(), Value::from(max));
     // A body has no chrome: no markers, no ruler.
-    props.insert("osc_lane".into(), Value::from(false));
+    props.insert("osc_markers".into(), Value::from(false));
     props.insert("ruler".into(), Value::from("off"));
     // Read-only here, which is the line the whole widget is drawn on: the
     // multitrack places, and never edits what a box holds.

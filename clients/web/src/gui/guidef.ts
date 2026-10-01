@@ -2583,7 +2583,7 @@ export function bpf(
 
 /**
  * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and an OSC lane -- the timeline sibling of the compact roll a
+ * lane and its OSC markers -- the timeline sibling of the compact roll a
  * `multitrack` draws inside a box, drawing the same notes with editing,
  * rulers and navigation.
  *
@@ -2629,7 +2629,7 @@ export function pianoroll(
         curves?: readonly (readonly [string, string, number, number, number])[];
         layers?: readonly (readonly [string, number, string, number, number, boolean])[];
         points?: CurvePointSpec;
-        oscLane?: boolean;
+        oscMarkers?: boolean;
         midiIn?: boolean;
         /**
          * The MIDI specification the notes are written for -- `"MIDI 1.0"`,
@@ -2641,7 +2641,7 @@ export function pianoroll(
     } = {},
 ): GuiNode {
     const {
-        notes, osc, min, max, snap, noteIds, curves, layers, points, oscLane, midiIn,
+        notes, osc, min, max, snap, noteIds, curves, layers, points, oscMarkers, midiIn,
         midi, label: text, ...timeline
     } = options;
     return node("notes", {
@@ -2662,7 +2662,7 @@ export function pianoroll(
                 ]),
             ],
             ["points", points === undefined ? undefined : flatCurvePoints(points)],
-            ["osc_lane", flag(oscLane)],
+            ["osc_markers", flag(oscMarkers)],
             ["midi_in", flag(midiIn)],
             ["midi", midi],
             ["label", text],

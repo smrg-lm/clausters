@@ -110,7 +110,7 @@ from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
 | Builder | What it draws | Its own props |
 |---|---|---|
 | `signal` | every view of a signal | `view`, the source, the capabilities — below |
-| `notes` | MIDI notes over a pitch axis, with velocity and OSC lanes | `notes`, `osc`, `snap`, `velocity`, `osc_lane`, `midi_in` |
+| `notes` | MIDI notes over a pitch axis, with velocity and OSC markers | `notes`, `osc`, `snap`, `velocity`, `osc_markers`, `midi_in` |
 | `curve` | break-points, played by the server's own shape math | `points`, `duration`, `exp` |
 | `keys` | a playable keyboard | `min`/`max` (the visible compass), `active_min`/`active_max`, `voice` |
 | `nodes` | the audio server's node graph, live | `group`, `controls` |

@@ -63,7 +63,7 @@ pub(crate) struct TimeAxis {
 impl TimeAxis {
     /// Whether the cursor is over the axis at all: within the body's **x**
     /// span, whatever its height. The strips stacked under a body -- a lane's
-    /// time ruler, a roll's velocity and OSC lanes -- are on the same axis and
+    /// time ruler, a roll's velocity lane and OSC markers -- are on the same axis and
     /// read the same position; a lane's header, beside it, is on no position at
     /// all, which is why a locate or a sweep declines there.
     pub fn spans(&self, cx: f64) -> bool {

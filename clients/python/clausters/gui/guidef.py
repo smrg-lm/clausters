@@ -2353,7 +2353,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
               snap: float | None = None, note_ids=None, curves=None, layers=None, points=None,
-              osc_lane: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
+              osc_markers: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
               link: int | None = None, autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
@@ -2365,7 +2365,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid and an OSC lane -- the timeline
+    note grid and its OSC markers -- the timeline
     sibling of the compact roll a `multitrack` draws inside a box, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
@@ -2424,8 +2424,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
     drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
     add a note or remove the one under the cursor; Shift+drag a note up or down to
-    set its velocity (the selection's, when the note is selected); Ctrl+click the OSC lane to add/remove an event, drag
-    one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
+    set its velocity (the selection's, when the note is selected); the OSC markers below the grid
+    are read-only: a press meant to edit one is refused, and says why. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
     velocity channel ...``) or ``"osc"`` event (``time label ...``) -- the edit-back
     pattern -- so a driver updates the arrangement and re-renders.
@@ -2442,8 +2442,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
     region); ``y_start``/``y_len`` are the
     vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
-    zoom/pan. ``osc_lane=True`` opens
-    the OSC lane even with no events (to author them). ``midi_in=True`` arms
+    zoom/pan. ``osc_markers=True`` opens
+    the OSC markers' strip even with no events. ``midi_in=True`` arms
     **live MIDI painting** in the native host: it opens a virtual MIDI input
     port ("clausters-gui") and paints incoming notes into this roll -- at the
     running playhead, or step-entering on the ``snap`` grid when the transport
@@ -2474,8 +2474,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
                                      1 if pitch else 0)]
     if points is not None:
         extra["points"] = _flat_curve_points(points)
-    if osc_lane is not None:
-        extra["osc_lane"] = 1 if osc_lane else 0
+    if osc_markers is not None:
+        extra["osc_markers"] = 1 if osc_markers else 0
     if midi_in is not None:
         extra["midi_in"] = 1 if midi_in else 0
     return node("notes", id=id, **extra, **props)

@@ -1,5 +1,5 @@
 //! The piano-roll **drawing**: a note grid, a piano keyboard gutter, a
-//! velocity lane and an OSC lane, all pure over a [`Draw`] (the
+//! velocity lane and the OSC markers, all pure over a [`Draw`] (the
 //! flat-geometry [`crate::host::paint`] painter) so they are unit-testable without a
 //! window -- the static-view posture of `track`/`bpf`.
 //!
@@ -34,7 +34,7 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Part};
-use crate::host::structures::notes::{Note, OscMark};
+use crate::host::structures::notes::{Note, OscMarker};
 use crate::viewport::View;
 
 // --- Layout ---------------------------------------------------------------
@@ -44,7 +44,7 @@ use crate::viewport::View;
 /// (`crate::host::timeline::group_indent`), which is this when the roll is alone on
 /// its axis and wider when it shares one with a lane.
 pub const KEYBOARD_W: f32 = 44.0;
-/// The OSC lane height, device pixels.
+/// The OSC markers' strip height, device pixels.
 pub const OSC_H: f32 = 16.0;
 /// The smallest note bar height (a note never collapses below this even when a
 /// semitone row is sub-pixel).
@@ -608,13 +608,13 @@ pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, axis: Pitches) {
     mesh.border(gutter, m.divider_w, theme.frame);
 }
 
-/// Draw the OSC lane: a flag at each marker's time, with its label.
-pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
+/// Draw the OSC markers: a flag at each marker's time, with its label.
+pub fn draw_osc_markers(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMarker]) {
     let (mesh, m, theme) = d.parts();
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
-    mesh.rect(lane, theme.osc_lane);
+    mesh.rect(lane, theme.osc_markers);
     let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
     for mark in marks {
         let x = to_x(offset + mark.time, nav, lane) as f32;

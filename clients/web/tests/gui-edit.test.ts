@@ -416,7 +416,7 @@ test("a catalogue view is described by the crate and not by this client", async 
 });
 
 test("a sequence with a marker still draws its notes", async () => {
-    // The marker lane is `time label` pairs, and a label is text: typed as
+    // The OSC markers are `time label` pairs, and a label is text: typed as
     // numbers alone, one marker refused the whole roll and the window opened
     // with nothing on it.
     await loadCore();

@@ -449,7 +449,7 @@
               "max": 84
             }
           },
-          "osc_lane": 1,
+          "osc_markers": 1,
           "velocity": true
         },
         {

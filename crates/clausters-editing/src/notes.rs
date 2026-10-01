@@ -27,7 +27,7 @@
 //! - `note_ids`: the id of each, in the same order.
 //! - A `notes` report comes back as sextuples, `id start dur y velocity channel`,
 //!   every note as the hand left it.
-//! - `osc`: the marker lane, `time label` pairs, and its report the same --
+//! - `osc`: the OSC markers, `time label` pairs, and its report the same --
 //!   matched by label, since a marker is the message it sends.
 //! - `curves`: the sequence's automation (CC, bend, pressure, a control, each on
 //!   one channel or on every one), flat
@@ -204,7 +204,7 @@ pub struct Projection {
     pub notes: Vec<f64>,
     /// The id of each note, in the same order.
     pub note_ids: Vec<u64>,
-    /// The marker lane: `time label` pairs.
+    /// The OSC markers: `time label` pairs.
     pub osc: Vec<Value>,
     /// The sequence's automation: `name label min max height` quintuples.
     pub curves: Vec<Value>,

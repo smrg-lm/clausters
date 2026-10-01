@@ -153,7 +153,7 @@ def cases():
         g.window(
             g.pianoroll(id=1, notes=[(0.0, 4800.0, 60), (4800.0, 4800.0, 67, 90, 1)],
                         osc=[(0.0, "start"), 9600.0], min=48, max=84,
-                        snap=1200.0, velocity=True, osc_lane=True,
+                        snap=1200.0, velocity=True, osc_markers=True,
                         ruler="beats", tempo=2.0, playhead_at=-1.0,
                         playhead=2400.0, playhead_loop_start=0.0,
                         playhead_loop_len=9600.0),

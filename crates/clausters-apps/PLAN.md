@@ -1376,8 +1376,8 @@ Every entry carries a checkbox.
   still build a `pianoroll` widget by hand, over no `EventSequence`: in
   `editors/pianoroll` and `editors/pianoroll_midi`, and in a column of
   `panels/gestures`. The two editor examples predate the notes editor (`X3`)
-  and teach what it no longer is — their docstring edits an "OSC lane" that
-  is read-only markers now, which `C57.0` names `OscMarker` — and `edit_notes` and
+  and teach what it no longer is — their docstring had the OSC markers
+  edited by hand, which they no longer are (`C57.0` names them `OscMarker`) — and `edit_notes` and
   `edit_midi_file` show the same through the application. Open: whether a
   roll drawn with no sequence has any use (a multitrack's had none: an edit
   has nowhere to live), and so whether the builder and those two examples go,
