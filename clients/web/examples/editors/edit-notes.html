@@ -105,11 +105,16 @@ leaves every other note its own.</div>
       /examples/editors/edit-notes.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui } from "../../dist/index.js";
+      import { Session, gui, loadCore } from "../../dist/index.js";
       import { Event, OscItem, Timeline } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The numeric core is wasm here and is fetched before anything calls
+      // into it -- an event's level keys are the core's -- which a script does
+      // not need, since the same code is already in the process.
+      await loadCore();
 
       // A timeline, filled the ordinary way: beats and events. The `instrument`
       // and `amp` on the last one are what the roll cannot draw and editing
