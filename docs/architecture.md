@@ -214,7 +214,7 @@ Each transport keeps a queue of its own beside the device one, whose entries liv
 
 **Event lanes are a third queue per transport, keyed by position** (`src/osc/server/lanes.rs`, `TransportState::lanes`). A lane holds notes and messages as data on the network thread, which each turn builds what falls within `lanes::LOOKAHEAD_SECS` ahead of the position — in playback order, through a loop's wrap, never past an end mark — with the ordinary translator and ships it as `Cmd::LaneEntry`. The engine keeps the entries sorted by position and the block-cut loop takes the first one at or after where a rolling transport stands as one more due point (`Due::Lane`), projected through the position anchor as a wrap is; it yields to an edge or a bundle on the same sample. Firing runs the start and moves a note's release onto the transport's clock queue a note's length later, tagged with its lane (`ScheduledBundleT::lane`), so a locate or a pass going back to its mark can take the lanes' releases off and run them at once (`take_releases`, into the pre-allocated `Engine::released`), and a client's `/sched_clear` leaves them standing. The network side clears and refeeds a lane on a locate, a loop set or cleared, a pass that ended, and new data (`ClearLane`); every entry that leaves the engine comes back as `Garbage::LaneSpent`, and one that never ran has its nodes forgotten and its auto ids returned (`forget_unrun`, which does the same for a cleared timed bundle).
 
-**A note that curves shape plays in a graph.** A sequence's curves act on a channel (its lanes) or on one note (its expression), and the client makes the two scopes two GraphDefs, one inside the other (`clausters_core::event_graph`, planned by `clausters_editing::note_curves`): an instance per channel, whose shared members read the channel's curves onto private control buses, and a slot of it per note, a nested graph holding the note's def beside the readers of its own curves and, when either scope bends it, a node that makes its pitch. The lane's note names that slot (`{"graph": id, "slot": name}`) rather than a def, and firing it is a `/graph_addSlot`. The voice is marked `ends`, so when its envelope frees it the network thread frees the slot around it (`CmdTranslator::member_ended`, on `/node_end`) and its readers go with it. The readers are `ev.curve` rather than the multitrack's: a note's graph is in the group that follows the transport, where a stop freezes nothing, so the reader itself holds its value while the transport is stopped (`TransportFade` gating it) — else the locate after a stop would move every curve a releasing note reads. Nothing new runs on the audio thread: a graph is groups, synths and maps, as always.
+**A note that curves shape plays in a graph.** A sequence's curves act on a channel (its automation) or on one note (the note's own), and the client makes the two scopes two GraphDefs, one inside the other (`clausters_core::event_graph`, planned by `clausters_editing::note_curves`): an instance per channel, whose shared members read the channel's curves onto private control buses, and a slot of it per note, a nested graph holding the note's def beside the readers of its own curves and, when either scope bends it, a node that makes its pitch. The lane's note names that slot (`{"graph": id, "slot": name}`) rather than a def, and firing it is a `/graph_addSlot`. The voice is marked `ends`, so when its envelope frees it the network thread frees the slot around it (`CmdTranslator::member_ended`, on `/node_end`) and its readers go with it. The readers are `ev.curve` rather than the multitrack's: a note's graph is in the group that follows the transport, where a stop freezes nothing, so the reader itself holds its value while the transport is stopped (`TransportFade` gating it) — else the locate after a stop would move every curve a releasing note reads. Nothing new runs on the audio thread: a graph is groups, synths and maps, as always.
 
 Routing happens in `drain_commands`, engine-side, because the engine is the only one that sees the tree and membership is dynamic. It is a walk up `parent` to the nearest governed group (`NodeTree::governing`), allocation-free and bounded. A bundle is atomic, so one governed message takes the whole bundle with it; a **move** counts by *either* end, since splicing a node into a frozen subtree is the same structural edit as creating one there. The stamp itself arrives on the device axis (the network thread built it against the device clock) and is converted at drain, where the frozen total is known.
 
@@ -543,9 +543,9 @@ anywhere silences every branch not on a soloed path; a level multiplies into the
 `amp` of the events below it) and carried in the node's **configuration**, which
 is the same opaque door a leaf's code and a track's restrictions use — so a
 a multitrack reopens mixed the way it was left, and an editor's `Configure` starts from
-`leaf_config` and cannot silently unmute a lane. Drawing reads the tree
-**unmixed** (`flatten(..., mixed=False)`): a muted lane keeps its clips, its
-notes and its length, or the picture would report silence as absence. A lane's
+`leaf_config` and cannot silently unmute a track. Drawing reads the tree
+**unmixed** (`flatten(..., mixed=False)`): a muted track keeps its clips, its
+notes and its length, or the picture would report silence as absence. A track's
 `height`, which the host emits on Ctrl+wheel, is deliberately in no document: it
 says nothing about what the multitrack is, and the editor answers it as the screen
 state it is.
@@ -560,7 +560,12 @@ crate, and it does not draw), `Echo` (the acknowledgement protocol: the stamp,
 the version, the floor, the corrections and the reason — generic enough to be
 tested with no structure at all) and `Editing`, the editing context, which the
 editor **asks the data for and never builds**. The TypeScript side is the same
-files at `clients/web/src/gui/editing/`.
+files at `clients/web/src/gui/editing/`. `Editing` itself is not among those
+files: it needs no window, so it is `clausters/history.py`
+(`clients/web/src/history.ts`), beside the `UndoHistory` a script reaches it
+through — `seq.history` — and a script's change to a sequence that has a
+context is a turn of it, recorded and told to every view, exactly as a gesture
+is.
 
 **A multitrack is not among them, and that is recent.** It was, as a `FormEditor`
 projected out of the client's own `clausters.form` tree, and it was removed on
@@ -570,7 +575,7 @@ track a thing is on, its order within the track, its placement and its identity 
 is authored, durable and undoable, and projecting it out of a general tree left
 it nowhere to live but the widget tree, which is drawn, and drawing frees. It is
 being rebuilt as a **session** in `clausters-document` — source, region,
-lane, track, automation — with the three classic applications (audio editor,
+take lane, track, automation — with the three classic applications (audio editor,
 multitrack editor, score editor) over that one document. **The model landed on
 2026-09-06** (`clausters_document::multitrack`); what has not is the host
 binding it, which is where the picture gets its single owner. See
@@ -667,7 +672,7 @@ reasoning:
   two of those are two copies that diverge.
 - **The arrangement is beside the tree, not projected out of it.** *(New
   2026-09-06.)* `arrangement::Arrangement` holds what a multitrack actually is —
-  tracks, each with several `Lane`s and playing one, each lane an ordered list
+  tracks, each with several `TakeLane`s and playing one, each take lane an ordered list
   of `Region`s — plus the timeline they sit on: the tempo map, the meter map,
   the markers, the loop and punch spans, which are the **multitrack's** and which no
   two tracks can therefore disagree about. A `Region` is **one object**, its
@@ -675,7 +680,7 @@ reasoning:
   `Content` for what fills it — a window onto a source with its playrate and the
   arguments of its own evaluation, or a **composite** carrying the general tree
   unchanged. REAPER splits that into an item and a take; we do not, because a
-  track holding several lanes is already the comping mechanism, and REAPER 7
+  track holding several take lanes is already the comping mechanism, and REAPER 7
   itself grew fixed item lanes beside its takes. The timebases are types
   (`timebase::Second`, `Beat`, `TimelineFrame`, `ContentFrame`, `ContentBeat`)
   with no conversion between them. **The multitrack is placed in `Second`s** —
@@ -715,7 +720,7 @@ reasoning:
   decisions](decisions.md)).
 - **A node has a name, and a set carries its writer's restrictions.** The name
   is a referenceable label and not a second identity (the server's own rule for
-  a group's name), so a reopened multitrack can still label its lanes. And there is
+  a group's name), so a reopened multitrack can still label its tracks. And there is
   one set kind: a multitrack's track is a set *with the restrictions of a view*,
   and those restrictions ride in the set's opaque `config` — carried, never
   read — rather than becoming a variant of the tree.
@@ -1294,7 +1299,7 @@ updates this table in the same change** (step 8 of the recipe below).
 | `signal` (`navigable: 0`) | idem, drawn by `host/graphics/signal/plot.rs` (pure; the spectral presentation analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
 | `curve` | an **element**: `host/elements/curve.rs` over the model and drawing in `host/graphics/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays). One element in two placements — standing on its own it draws a framed field over its own domain, with a time strip under it and a value strip left of it when its axis pair asks for them, and it joins the navigation group `link` names like any other view; *declaring* the curve body role it fills a `clip` instead, drawn bare against the container's axis and ruling nothing (`graphics::bpf::Axes` is the one mapping either way). Which of the two it is, is a **field set by the door that built it** (`body`) and never a reading of whether an axis was handed in: a view on a group is given one too, and reading the axis for it drew the view as a body | the script's `points`; edits emit `"points"` from whichever placement drew it |
 | `field` (the free-standing ruler, and the only thing a `field` is) | `host/frame/draw.rs` (the strip; the tick math is the shared `host/ruler.rs`); group navigation in `host/timeline.rs` | nothing of its own — it reads its `link` group's window |
-| `multitrack` | `host/elements/multitrack.rs` (the widget: the props, the stack, the drawing) over the pure model in `host/graphics/multitrack.rs` (`Lane`, `Clip`, the stack geometry, the wire forms), reusing `host/graphics/track.rs` for a lane's header and a clip's box | the GuiDef and `/gui_set`; it holds the multitrack, so its edit-backs are the multitrack and not a gesture |
+| `multitrack` | `host/elements/multitrack/` (the widget: the props, the stack, the drawing) over the pure model in `host/structures/clips.rs` (`TrackRow`, `Clip`, their wire forms) and `host/graphics/multitrack.rs` (the stack geometry), reusing `host/graphics/track.rs` for a track's header and a clip's box | the GuiDef and `/gui_set`; it holds the multitrack, so its edit-backs are the multitrack and not a gesture |
 | `notes` | an **element**: `host/elements/notes.rs` (its selection, its drags, its live-MIDI held keys and step cursor; the marquee is not among them — a press on empty grid declines and the container sweeps, and this answers which notes fell inside and in what band of semitones) over the note core in `host/graphics/pianoroll.rs`, shared with `clip`. One element in two placements, like `curve`: standing on its own it draws its keyboard, its strips and the chrome of the axis it was placed on; *declaring* the notes body role it fills a `clip`, bare against the container's axis. It reads that axis — the group's window, selection and playhead — from `Ctx::time`, and **asks** for the two things it cannot do: moving the group's time selection (`Events::and_select`) and sounding nothing (its live notes arrive through `Element::midi`, from a port the native front opens because the element declared `Needs::midi`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `keys` | an **element**: `host/elements/keys.rs` (its two snapshotted drags and its range) over the pure drawing and layout in `host/graphics/piano.rs`; the host's voices in `host/voices.rs` (the two messages, which are the *host's* and not the keyboard's — an element only declares a voice); `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
 | `score` | `host/elements/score.rs` (the leaf: the passes, the press/drag/release and the press-time origin) over `host/graphics/score/` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon`. Split by what each part knows, since the element's growth is semantic rather than graphic: `list` decodes the client's page off the wire, `glyphs` turns an outline string into a path, `tess` paints, `cursor` holds the hit and staff indexes and the mappings a gesture measures against | a display list engraved **client-side** (`clausters/gui/notation/`, a shell over `clausters-notation`/`core` through the C ABI: `engraver`, `mei`, `view`); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |

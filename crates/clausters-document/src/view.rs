@@ -39,7 +39,7 @@
 //! A view entry for an object the multitrack no longer holds is **dropped**
 //! ([`View::prune`]), and that is the same rule the client's screen-state tables
 //! were fixed to obey: state goes when the thing goes. Keeping it is worse than
-//! losing it -- a zoom that survives onto a lane which is not the same lane is a
+//! losing it -- a zoom that survives onto a take lane which is not the same take lane is a
 //! defect that looks like a feature.
 //!
 //! # Where a file may carry one, and where nothing may
@@ -99,10 +99,10 @@ pub struct View {
     /// The time range the hand swept, when it swept one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<Span>,
-    /// What the hand is holding: regions, lanes or tracks, by id.
+    /// What the hand is holding: regions, take lanes or tracks, by id.
     ///
     /// One list rather than one per kind, because the multitrack has one id space --
-    /// a region's identity is its own and not its source's, and so is a lane's
+    /// a region's identity is its own and not its source's, and so is a take lane's
     /// and a track's. What a selected id *is* is answered by looking it up.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub selected: Vec<NodeId>,
@@ -116,9 +116,9 @@ pub struct View {
     /// How each track is drawn, by the track's id.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tracks: BTreeMap<NodeId, TrackView>,
-    /// How each lane is drawn, by the lane's id.
+    /// How each take lane is drawn, by the take lane's id.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub lanes: BTreeMap<NodeId, LaneView>,
+    pub take_lanes: BTreeMap<NodeId, TakeLaneView>,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
     pub extra: Extra,
@@ -134,11 +134,11 @@ pub struct TrackView {
     /// Whether the row is collapsed to its header.
     #[serde(default, skip_serializing_if = "is_no")]
     pub collapsed: bool,
-    /// Whether the track's other lanes are shown under the one that plays --
+    /// Whether the track's other take lanes are shown under the one that plays --
     /// comping open, in a word. Closed by default: a track with six takes on it
     /// is one row until somebody asks to see them.
     #[serde(default, skip_serializing_if = "is_no")]
-    pub lanes_shown: bool,
+    pub take_lanes_shown: bool,
     /// The colour the track is drawn in, as the client writes a colour, carried
     /// and never read. A colour is presentation by every definition this
     /// project uses, and it is saved with the session for the same reason a
@@ -150,10 +150,10 @@ pub struct TrackView {
     pub extra: Extra,
 }
 
-/// How one lane is drawn.
+/// How one take lane is drawn.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct LaneView {
-    /// How tall its row is when the track's lanes are shown. See
+pub struct TakeLaneView {
+    /// How tall its row is when the track's take lanes are shown. See
     /// [`TrackView::height`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<f64>,
@@ -208,14 +208,14 @@ impl View {
         self.tracks.entry(id).or_default()
     }
 
-    /// How this lane is drawn, or the default.
-    pub fn lane(&self, id: NodeId) -> LaneView {
-        self.lanes.get(&id).cloned().unwrap_or_default()
+    /// How this take lane is drawn, or the default.
+    pub fn take_lane(&self, id: NodeId) -> TakeLaneView {
+        self.take_lanes.get(&id).cloned().unwrap_or_default()
     }
 
-    /// How this lane is drawn, to be edited. See [`View::track_mut`].
-    pub fn lane_mut(&mut self, id: NodeId) -> &mut LaneView {
-        self.lanes.entry(id).or_default()
+    /// How this take lane is drawn, to be edited. See [`View::track_mut`].
+    pub fn take_lane_mut(&mut self, id: NodeId) -> &mut TakeLaneView {
+        self.take_lanes.entry(id).or_default()
     }
 
     /// Drops everything this view says about objects the multitrack no longer holds,
@@ -225,13 +225,13 @@ impl View {
     /// screen-state tables were fixed to obey after one of them handed a freed
     /// object's expansion to whatever was allocated next. Here the failure would
     /// be quieter and worse: an id is reused by a client that mints them, and a
-    /// zoom kept for a lane that is not the same lane is a defect that looks
+    /// zoom kept for a take lane that is not the same take lane is a defect that looks
     /// like a feature.
     pub fn prune(&mut self, multitrack: &Multitrack) -> bool {
         let mut held: Vec<NodeId> = Vec::new();
         for track in &multitrack.tracks {
             held.push(track.id);
-            for lane in &track.lanes {
+            for lane in &track.take_lanes {
                 held.push(lane.id);
                 held.extend(lane.regions.iter().map(|r| r.id));
             }
@@ -239,20 +239,20 @@ impl View {
         }
         let before = (
             self.tracks.len(),
-            self.lanes.len(),
+            self.take_lanes.len(),
             self.selected.len(),
             self.focused,
             self.detail,
         );
         self.tracks.retain(|id, _| held.contains(id));
-        self.lanes.retain(|id, _| held.contains(id));
+        self.take_lanes.retain(|id, _| held.contains(id));
         self.selected.retain(|id| held.contains(id));
         self.focused = self.focused.filter(|id| held.contains(id));
         self.detail = self.detail.filter(|id| held.contains(id));
         before
             != (
                 self.tracks.len(),
-                self.lanes.len(),
+                self.take_lanes.len(),
                 self.selected.len(),
                 self.focused,
                 self.detail,

@@ -8,10 +8,9 @@
 //
 // A server has several transports (its `--transports`), each independent -- its
 // own grid, rolling state, position, loop, end mark and governed group. The
-// methods here address transport 0 on a `Server`; `transportAt` answers the
-// same server addressed through another one, so anything written against a
-// server's transport -- a `Timeline`, a playback -- plays on whichever it is
-// handed.
+// methods here address transport 0 on a `Server`; `transportAt` answers any
+// of them as a `Transport`, an object of its own played as a routine is, which
+// a `Timeline` and a playback take.
 //
 // A mixin, composed into `Server` beside `ServerQueries` and `ServerStreams`,
 // so no attribute path moves.
@@ -99,6 +98,27 @@ function isTransport(transport: number) {
 /** Where a view keeps the server it addresses. */
 const VIEWED = Symbol("viewed server");
 
+/** Each server's transports, one object per id. */
+const TRANSPORTS = new WeakMap<Server, Map<number, Transport>>();
+
+/**
+ * A `Server` addressed through one of its transports: its transport methods
+ * name that transport, a `schedClear("transport")` clears that transport's
+ * queue alone, and everything else is the server's own. What a
+ * {@link Transport} sends its commands through, and what a timeline on it
+ * plays against.
+ */
+function addressed(server: Server, id: number): Server {
+    if (id === 0) return server;
+    return new Proxy(server, {
+        get(target, prop, receiver) {
+            if (prop === "transportId") return id;
+            if (prop === VIEWED) return target;
+            return Reflect.get(target, prop, receiver);
+        },
+    });
+}
+
 /** The shared transport grid. Composed into `Server`; never used alone. */
 export class ServerTransport {
     /**
@@ -110,27 +130,28 @@ export class ServerTransport {
     }
 
     /**
-     * This server, addressed through transport `transport`.
-     *
-     * Every transport method on what it answers -- `transportPlay`,
-     * `transportState`, `transportGroup`, `schedAtTransport`, a
-     * `schedClear("transport")` -- names that transport, and everything else
-     * is this server's own, so it goes wherever a server is taken as a
-     * transport: `timeline.transport = server.transportAt(1)`. Transport 0 is
-     * the server itself. An id past the server's `--transports` fails when a
-     * command is sent, not here.
+     * **Transport `transport` of this server, as an object**: a
+     * {@link Transport}, the same one every time it is asked for. Its verbs --
+     * `play`, `pause`, `locate`, ... -- are that transport's, and it goes
+     * wherever a transport is taken: `timeline.transport =
+     * server.transportAt(1)`. The methods on the server itself address
+     * transport 0. An id past the server's `--transports` fails when a command
+     * is sent, not here.
      */
-    transportAt(this: Server, transport: number): Server {
+    transportAt(this: Server, transport: number): Transport {
         const server = ((this as unknown as Record<symbol, Server>)[VIEWED] ?? this) as Server;
+        let held = TRANSPORTS.get(server);
+        if (held === undefined) {
+            held = new Map();
+            TRANSPORTS.set(server, held);
+        }
         const id = Math.trunc(transport);
-        if (id === 0) return server;
-        return new Proxy(server, {
-            get(target, prop, receiver) {
-                if (prop === "transportId") return id;
-                if (prop === VIEWED) return target;
-                return Reflect.get(target, prop, receiver);
-            },
-        });
+        let found = held.get(id);
+        if (found === undefined) {
+            found = new Transport(server, id);
+            held.set(id, found);
+        }
+        return found;
     }
 
     /** `/transport_query` for this handle's transport, answered by the reply about it. */
@@ -490,5 +511,279 @@ export class ServerTransport {
             timeout,
         );
         return this;
+    }
+}
+
+/**
+ * What is loaded on a transport and plays through it: the playback of a
+ * sequence, whose verbs speak its beats.
+ *
+ * @internal
+ */
+export interface TransportDriver {
+    playing(): Promise<boolean>;
+    play(at?: number): Promise<void>;
+    pause(): Promise<void>;
+    stop(): Promise<void>;
+    locate(at: number): Promise<void>;
+    span: [number, number] | null;
+    looping: boolean;
+    setSpan(span: readonly [number, number] | null): Promise<void>;
+    setLooping(on: boolean): Promise<void>;
+    end: null | "contents" | number;
+    setEnd(end: null | "contents" | number): Promise<void>;
+}
+
+/**
+ * **One of a server's transports, as an object**: what `Server.transportAt`
+ * answers, and what `play(sequence)` answers for the transport the sequence's
+ * lane was loaded on.
+ *
+ * It is played the way a routine or a timeline is: `play`, `pause`, `stop`,
+ * `locate`, `loop` and `unloop`, `playing`, and `wait`, which a page awaits or
+ * not. Its positions are those of **what is loaded on it**: the beats of the
+ * sequence a `play(sequence)` put there, and with nothing loaded, the
+ * transport's own seconds.
+ *
+ * The transport's other commands are here by their own names too: `group`
+ * and `follow` bind the groups it governs and leads, `fade` sets how a stop
+ * and a play ramp, `locateSample` seeks on its sample axis, and `state` is what
+ * the engine says of it. A server's own transport methods (`transportPlay`,
+ * ...) address transport 0; this object is how any other is addressed.
+ */
+export class Transport {
+    readonly #server: Server;
+    readonly #id: number;
+    /** What its commands are sent through. @internal */
+    readonly view: Server;
+    /** What is loaded on it and plays through it, when something is. @internal */
+    driver: TransportDriver | null = null;
+    #rate: number | null = null;
+    /** The span and the loop switch with nothing loaded, in seconds. */
+    #span: [number, number] | null = null;
+    #looping = false;
+
+    /** @internal */
+    constructor(server: Server, id: number) {
+        this.#server = server;
+        this.#id = id;
+        this.view = addressed(server, id);
+    }
+
+    /** The server whose transport this is. */
+    get server(): Server {
+        return this.#server;
+    }
+
+    /** Which of the server's transports it is. */
+    get id(): number {
+        return this.#id;
+    }
+
+    async #samples(secs: number): Promise<number> {
+        this.#rate ??= (await this.#server.queryInfo()).nominalSampleRate;
+        return Math.round(secs * this.#rate);
+    }
+
+    // ---- played as a routine is ----
+
+    /** The transport as the engine has it (`/transport_query`). */
+    state(): Promise<TransportState> {
+        return this.view.transportState();
+    }
+
+    /**
+     * Whether the transport is rolling, as the engine answers -- a pass that
+     * ended on its own stopped with nobody here saying so. A method here, the
+     * reference client's property: asking the engine is a round trip.
+     */
+    async playing(): Promise<boolean> {
+        if (this.driver !== null) return this.driver.playing();
+        return (await this.state()).playing;
+    }
+
+    /**
+     * Rolls -- from `at` when given, else from where it was paused, or located,
+     * or from the start.
+     */
+    async play(at?: number): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.play(at);
+            return this;
+        }
+        if (at !== undefined) await this.locate(at);
+        await this.view.transportPlay();
+        return this;
+    }
+
+    /** Stops where it stands: a `play` carries on from there. */
+    async pause(): Promise<this> {
+        if (this.driver !== null) await this.driver.pause();
+        else await this.view.transportStop();
+        return this;
+    }
+
+    /**
+     * Stops and goes back to where the pass started. What is sounding is
+     * released, and rings out.
+     */
+    async stop(): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.stop();
+            return this;
+        }
+        await this.view.transportStop();
+        await this.view.transportLocateSample(0);
+        return this;
+    }
+
+    /** Puts the position at `at`: a rolling transport goes on from there, a stopped one starts there next. */
+    async locate(at: number): Promise<this> {
+        if (this.driver !== null) await this.driver.locate(at);
+        else await this.view.transportLocateSample(await this.#samples(at));
+        return this;
+    }
+
+    /**
+     * **The time range** `[start, end]` a pass plays and a loop repeats, or
+     * `null`. With a sequence loaded it is the range a sweep leaves on its
+     * roll -- set it here and the roll draws it, sweep it there and it reads
+     * here -- and `play` plays it, from its start to its end, as the space bar
+     * does. Kept while stopped. Set with {@link Transport.setSpan}.
+     */
+    get span(): [number, number] | null {
+        return this.driver !== null ? this.driver.span : this.#span;
+    }
+
+    /** Sets the time range: see {@link Transport.span}. */
+    async setSpan(span: readonly [number, number] | null): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.setSpan(span);
+            return this;
+        }
+        this.#span = span === null ? null : [span[0], span[1]];
+        if (this.#looping) await this.#loopRaw();
+        return this;
+    }
+
+    /** Whether the loop switch is on. */
+    get looping(): boolean {
+        return this.driver !== null ? this.driver.looping : this.#looping;
+    }
+
+    /**
+     * **Loops**: with `start` and `end`, sets the span to them first; then turns
+     * the loop on over the span -- or, with none, over every note of the
+     * sequence loaded. A rolling transport follows at once, a stopped one on its
+     * next `play`. The `L` key over a roll is the same switch.
+     */
+    async loop(start?: number, end?: number): Promise<this> {
+        if (start !== undefined && end !== undefined) await this.setSpan([start, end]);
+        if (this.driver !== null) {
+            await this.driver.setLooping(true);
+            return this;
+        }
+        this.#looping = true;
+        await this.#loopRaw();
+        return this;
+    }
+
+    /** Turns the loop off; the span stays. */
+    async unloop(): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.setLooping(false);
+            return this;
+        }
+        this.#looping = false;
+        await this.view.transportLoop(null);
+        return this;
+    }
+
+    async #loopRaw(): Promise<void> {
+        if (this.#span === null) return;
+        await this.view.transportLoop([await this.#samples(this.#span[0]), await this.#samples(this.#span[1])]);
+    }
+
+    /**
+     * **Where a pass ends**: `null`, the transport rolling on until it is
+     * stopped; a position, an end marker; or, with a sequence loaded,
+     * `"contents"`, where its last note ends -- what `play(sequence)` sets. A
+     * pass that reaches its end stops there, and `wait` resolves. A method
+     * here, the reference client's property: asking the engine is a round
+     * trip.
+     */
+    async end(): Promise<null | "contents" | number> {
+        if (this.driver !== null) return this.driver.end;
+        const end = (await this.state()).end;
+        if (end === null) return null;
+        this.#rate ??= (await this.#server.queryInfo()).nominalSampleRate;
+        return end[0] / this.#rate;
+    }
+
+    /** Sets where a pass ends: see {@link Transport.end}. */
+    async setEnd(end: null | "contents" | number): Promise<this> {
+        if (this.driver !== null) await this.driver.setEnd(end);
+        else if (end === "contents") throw new Error("a transport with nothing loaded has no contents");
+        else await this.view.transportEnd(end === null ? null : await this.#samples(end));
+        return this;
+    }
+
+    /**
+     * Resolves when the transport stops -- a pass that ends where its contents
+     * do stops on its own -- or after `timeout` seconds; answers whether it
+     * stopped. A page that plays and goes on awaits it; a live one does not.
+     */
+    async wait(timeout?: number): Promise<boolean> {
+        const deadline = timeout === undefined ? Infinity : performance.now() + timeout * 1000;
+        while (await this.playing()) {
+            if (performance.now() >= deadline) return false;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return true;
+    }
+
+    // ---- the transport's other commands ----
+
+    /** Binds the group this transport governs: see `Server.transportGroup`. */
+    async group(group: NodeLike | null): Promise<this> {
+        await this.view.transportGroup(group);
+        return this;
+    }
+
+    /** Has `group` follow this transport: see `Server.transportFollow`. */
+    async follow(group: NodeLike | null): Promise<this> {
+        await this.view.transportFollow(group);
+        return this;
+    }
+
+    /** How long a stop and a play ramp, in samples: see `Server.transportFade`. */
+    async fade(samples: number): Promise<this> {
+        await this.view.transportFade(samples);
+        return this;
+    }
+
+    /** Seeks on the transport's own sample axis: see `Server.transportLocateSample`. */
+    async locateSample(sample: number): Promise<this> {
+        await this.view.transportLocateSample(sample);
+        return this;
+    }
+
+    /**
+     * Makes event lane `lane` on this transport: see `Server.laneNew`. Its data
+     * and its end are the server's (`laneSet`, `laneFree`).
+     */
+    async laneNew(lane: number, target: NodeLike): Promise<this> {
+        await this.view.laneNew(lane, target);
+        return this;
+    }
+
+    /** Drops what is queued on this transport's clock (`/sched_clear "transport"`). */
+    schedClear(): this {
+        this.view.schedClear("transport");
+        return this;
+    }
+
+    toString(): string {
+        return `Transport(${this.#id})`;
     }
 }

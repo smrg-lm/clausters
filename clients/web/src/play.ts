@@ -18,6 +18,10 @@
 //   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
 // - a `Timeline` -> played on its own clock (`Timeline.play`), on the ambient
 //   server;
+// - an `EventSequence` -> loaded as an event lane on the server's notes
+//   transport and played there, its pass ending where its contents do; a
+//   promise of that `Transport`, whose verbs speak the sequence's beats. With
+//   no server anywhere, the default session boots one;
 //   (`await auto.prepare(server)` first -- see below);
 // - a `Buffer` -> sounded through the stock playbuf instrument (a buffer
 //   sounds through an instrument; here the verb provides the default one --
@@ -55,6 +59,7 @@ import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import { EventPattern, Pattern } from "./seq/pattern.ts";
 import { Timeline } from "./seq/timeline.ts";
+import { EventSequence } from "./seq/sequence.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 
 /** Anything `play` knows how to start. */
@@ -70,6 +75,7 @@ export type Playable =
     | GraphDef
     | Expr
     | Timeline
+    | EventSequence
     | Buffer
     | { play(destination: unknown): unknown };
 
@@ -101,8 +107,9 @@ export interface PlayOptions {
  * Returns something that knows how to end what just started: the completed
  * event for an event or object (`free()` / `release()`), the
  * `EventStreamPlayer` for a pattern (`stop()`), the routine for a routine, the
- * node handle for a def or a buffer (`free()`) and the timeline itself
- * (`stop()`).
+ * node handle for a def or a buffer (`free()`), the timeline itself
+ * (`stop()`), and for a sequence a promise of the `Transport` it plays on
+ * (`stop()`, `wait()`).
  */
 export function play(playable: Playable, options: PlayOptions = {}): unknown {
     const { server, clock, quant, controls } = options;
@@ -139,6 +146,9 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         // it, and it is this call's alone.
         return playDef(asDef(playable), main.resolveServer(server), controls);
     }
+    if (playable instanceof EventSequence) {
+        return playable.play({ server });
+    }
     if (playable instanceof Timeline) {
         return playable.play({
             at: 0,
@@ -163,7 +173,8 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     throw new TypeError(
         `don't know how to play ${String(playable)}; expected an Event or event ` +
             "object, an EventPattern (Pbind), a Routine/Stream or generator, a " +
-            "def (SynthDef/FaustDef/GraphDef) or a bare expression, a Timeline, a " +
+            "def (SynthDef/FaustDef/GraphDef) or a bare expression, a Timeline, an " +
+            "EventSequence, a " +
             "Buffer, or anything with play(destination)",
     );
 }

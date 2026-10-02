@@ -152,7 +152,7 @@ pub struct Owner {
     /// the node. Nothing infers it -- the tree that built the widgets records
     /// it, so a picture and the samples under it cannot drift apart.
     nodes: HashMap<i32, NodeId>,
-    /// And which node each **lane header** configures. See
+    /// And which node each **track header** configures. See
     /// [`Owner::bind_header`] for why it is not the same map.
     headers: HashMap<i32, NodeId>,
     /// The tree, as a member of [`Owner::editing`]: the crate does not apply the
@@ -166,7 +166,7 @@ pub struct Owner {
     /// The widget drawing the whole multitrack, when the tree has one.
     ///
     /// Not a map, because there is nothing to map: the multitrack names its
-    /// lanes and its clips by the nodes' own numbers, so a payload is read
+    /// tracks and its clips by the nodes' own numbers, so a payload is read
     /// without asking anything which widget it came from. What the id is for is
     /// the other direction -- writing an applied edit back onto the picture.
     multitrack_widget: Option<i32>,
@@ -175,7 +175,7 @@ pub struct Owner {
     /// multitrack's key, so it is the same structure in the order as the multitrack.
     editor_member: Option<MemberId>,
     /// **The session's sequences of events**, one handle each, shared with
-    /// the multitrack editor (its boxes draw them and its playback's lane
+    /// the multitrack editor (its boxes draw them and its playback's event lane
     /// plays them) and with any roll a double click opens: an edit in either
     /// is in the one sequence, and a save writes it back.
     pub sequences: HashMap<clausters_document::SourceId, clausters_apps::notes::Shared>,
@@ -403,10 +403,10 @@ impl Owner {
         self.nodes.insert(widget_id, node);
     }
 
-    /// Says which node a **lane header's** gestures address.
+    /// Says which node a **track header's** gestures address.
     ///
     /// A second map rather than a second entry in the first, because one node
-    /// can be drawn twice: a lane holding a single element binds that element
+    /// can be drawn twice: a track holding a single element binds that element
     /// for its header *and* for the clip inside it. Both directions have to
     /// stay answerable -- a gesture asks which node a widget is (either map
     /// does), and an applied edit asks which widget a node is, where "the clip"
@@ -429,7 +429,7 @@ impl Owner {
             .copied()
     }
 
-    /// The lane header drawing this node, if one does.
+    /// The track header drawing this node, if one does.
     pub fn header_of(&self, node: NodeId) -> Option<i32> {
         self.headers
             .iter()
@@ -450,7 +450,7 @@ impl Owner {
         self.multitrack_widget
     }
 
-    /// **What is on screen**, in the widget's own vocabulary -- the lanes and
+    /// **What is on screen**, in the widget's own vocabulary -- the tracks and
     /// clips a `/gui_set` would carry, and the ids behind them.
     ///
     /// Re-derived rather than remembered: the owner is the state, and a second
@@ -481,7 +481,7 @@ impl Owner {
     /// Reads a widget's `/gui_event` payload as **the edits it stands for**.
     ///
     /// The plural door, and the one the multitrack comes through. A payload
-    /// that states the multitrack -- `"clips"`, `"lanes"` -- is one message describing
+    /// that states the multitrack -- `"clips"`, `"tracks"` -- is one message describing
     /// every box or every strip, so what it means is however many intents it
     /// takes to make the document say that; a payload that states one thing is
     /// one intent, and goes through [`Self::read_event`] unchanged.
@@ -494,8 +494,8 @@ impl Owner {
             Some(OscType::String(tag)) if tag == "clips" && !self.draws_multitrack() => {
                 self.read_clips(&args[1..])
             }
-            Some(OscType::String(tag)) if tag == "lanes" && !self.draws_multitrack() => {
-                self.read_lanes(&args[1..])
+            Some(OscType::String(tag)) if tag == "tracks" && !self.draws_multitrack() => {
+                self.read_tracks(&args[1..])
             }
             _ => self.read_event(widget_id, args).into_iter().collect(),
         }
@@ -674,13 +674,13 @@ impl Owner {
     /// **The multitrack's clips, as they now stand** -- the one payload every
     /// placement gesture leaves.
     ///
-    /// A move, a trim, a block drag and a lane change all arrive here, and
+    /// A move, a trim, a block drag and a track change all arrive here, and
     /// nothing in the payload says which of them it was: what is compared is
     /// the list against the document, and what comes out is the difference.
     /// That is the whole reason the widget reports the multitrack -- the reader has
     /// no case to get wrong.
     ///
-    /// Two shapes come out of it. A clip that stayed on its lane is a
+    /// Two shapes come out of it. A clip that stayed on its track is a
     /// [`Intent::Place`], which is what a placement is. A clip that **crossed**
     /// is not a placement at all -- it left one aggregate and joined another --
     /// so it is a pair of [`Intent::SetMembers`], one per aggregate, stating
@@ -694,20 +694,23 @@ impl Owner {
         let mut joining: HashMap<NodeId, Vec<clausters_document::Member>> = HashMap::new();
         let mut placed = Vec::new();
         for clip in args.as_chunks::<7>().0 {
-            let (Some(OscType::String(name)), Some(OscType::String(lane))) =
+            let (Some(OscType::String(name)), Some(OscType::String(track))) =
                 (clip.first(), clip.get(1))
             else {
                 continue;
             };
-            let (Some(node), Some(lane)) = (tree::node_named(name), tree::node_named(lane)) else {
+            let (Some(node), Some(track)) = (tree::node_named(name), tree::node_named(track))
+            else {
                 continue;
             };
-            // A clip naming a lane the document has none of is **kept where it
+            // A clip naming a track the document has none of is **kept where it
             // is** rather than dropped: the widget hands back what it could not
             // place so it can be re-homed, and a reader that acted on it would
             // be moving a box into a container that does not exist.
-            let Some(dest) = now.lane(lane) else { continue };
-            let Some(was) = now.lane_of(node) else {
+            let Some(dest) = now.track(track) else {
+                continue;
+            };
+            let Some(was) = now.track_of(node) else {
                 continue;
             };
             let offset = float_at(clip, 2).unwrap_or(0.0) as f64 / units;
@@ -761,7 +764,7 @@ impl Owner {
                     node: holder,
                     members,
                 },
-                "move a clip to another lane",
+                "move a clip to another track",
             ));
         }
         out.extend(
@@ -772,7 +775,7 @@ impl Owner {
         out
     }
 
-    /// **The multitrack's lanes, as they now stand** -- the mixer's payload.
+    /// **The multitrack's tracks, as they now stand** -- the mixer's payload.
     ///
     /// Separate from the clips for the reason they are two structures: a fader
     /// moved must not resend every clip. What is written is the *element's*
@@ -781,13 +784,13 @@ impl Owner {
     /// out of the document identically whoever made the edit.
     ///
     /// A configuration is replaced **whole**, so each starts from what the node
-    /// already carries and writes the three keys over it; a lane whose strip
+    /// already carries and writes the three keys over it; a track whose strip
     /// says what the document already says is not an edit, which is what keeps
-    /// a drag on one fader from logging every other lane.
-    fn read_lanes(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
+    /// a drag on one fader from logging every other track.
+    fn read_tracks(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         let mut out = Vec::new();
-        for lane in args.as_chunks::<7>().0 {
-            let Some(OscType::String(name)) = lane.first() else {
+        for track in args.as_chunks::<7>().0 {
+            let Some(OscType::String(name)) = track.first() else {
                 continue;
             };
             let Some(node) = tree::node_named(name) else {
@@ -802,16 +805,16 @@ impl Owner {
                 .and_then(|c| c.0.as_object().cloned())
                 .unwrap_or_default();
             let (mute, solo, level) = (
-                truthy_at(lane, 3),
-                truthy_at(lane, 4),
-                float_at(lane, 5).unwrap_or(1.0) as f64,
+                truthy_at(track, 3),
+                truthy_at(track, 4),
+                float_at(track, 5).unwrap_or(1.0) as f64,
             );
-            // **Compared against what the lane was drawn with**, not against
-            // the keys the configuration happens to hold: a lane that says
+            // **Compared against what the track was drawn with**, not against
+            // the keys the configuration happens to hold: a track that says
             // nothing is drawn audible at unity, so a strip reporting exactly
             // that is not an edit. Comparing the raw tables instead would make
-            // the first fader drag log a `Configure` for every other lane --
-            // and one undo per lane to take it back.
+            // the first fader drag log a `Configure` for every other track --
+            // and one undo per track to take it back.
             let held_flag = |key: &str| {
                 held_config
                     .get(key)
@@ -834,7 +837,7 @@ impl Owner {
                     node,
                     config: Opaque(Value::Object(config)),
                 },
-                "mix a lane",
+                "mix a track",
             ));
         }
         out
@@ -924,7 +927,7 @@ impl Owner {
                 Some((Intent::Place { node, offset, dur }, "move a clip"))
             }
 
-            // A lane header's toggle or fader. **The document's**, not the
+            // A track header's toggle or fader. **The document's**, not the
             // window's: what is muted is a fact about the multitrack, so it goes
             // through the log like a clip's move and survives a save. It is the
             // same `Configure` a client emits, which is why the undo comes out
@@ -955,9 +958,9 @@ impl Owner {
                         config: Opaque(Value::Object(config)),
                     },
                     match tag {
-                        "mute" => "mute the lane",
-                        "solo" => "solo the lane",
-                        _ => "level the lane",
+                        "mute" => "mute the track",
+                        "solo" => "solo the track",
+                        _ => "level the track",
                     },
                 ))
             }
@@ -1301,7 +1304,7 @@ mod tests {
         assert!(!owner.can_redo(), "and there is nothing further forward");
     }
 
-    /// A lane header's toggle is the document's, so it travels the road a
+    /// A track header's toggle is the document's, so it travels the road a
     /// clip's move does: one `Configure`, through the log, undoable out of the
     /// document -- the same intent a client emits, which is what makes the two
     /// undo alike.
@@ -1323,7 +1326,7 @@ mod tests {
 
         let args = [OscType::String("mute".into()), OscType::Int(1)];
         let (intent, label) = owner.read_event(70, &args).expect("a header is an edit");
-        assert_eq!(label, "mute the lane");
+        assert_eq!(label, "mute the track");
         // **Whole, so it starts from what is there**: a mute that dropped the
         // level would be a fader nobody moved.
         match &intent {
@@ -1665,10 +1668,10 @@ mod window_verb_tests {
     /// The `"clips"` payload for one box: the multitrack as a hand left it.
     fn clips(entries: &[(&str, &str, f32, f32)]) -> Vec<OscType> {
         let mut args = vec![OscType::String("clips".into())];
-        for (name, lane, at, dur) in entries {
+        for (name, track, at, dur) in entries {
             args.extend([
                 OscType::String((*name).into()),
-                OscType::String((*lane).into()),
+                OscType::String((*track).into()),
                 OscType::Float(*at),
                 OscType::Float(*dur),
                 OscType::Float(0.0),
@@ -1679,9 +1682,9 @@ mod window_verb_tests {
         args
     }
 
-    /// The `"lanes"` payload: name, label, height, mute, solo, gain.
-    fn lanes(entries: &[(&str, bool, bool, f32)]) -> Vec<OscType> {
-        let mut args = vec![OscType::String("lanes".into())];
+    /// The `"tracks"` payload: name, label, height, mute, solo, gain.
+    fn tracks(entries: &[(&str, bool, bool, f32)]) -> Vec<OscType> {
+        let mut args = vec![OscType::String("tracks".into())];
         for (name, mute, solo, gain) in entries {
             args.extend([
                 OscType::String((*name).into()),
@@ -1751,7 +1754,7 @@ mod window_verb_tests {
 
         let source = SourceId(5);
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].place(Region::new(
+        track.take_lanes[0].place(Region::new(
             NodeId(20),
             Second(0.0),
             Second(4.0),
@@ -2026,7 +2029,7 @@ mod window_verb_tests {
                 .tracks
                 .iter()
                 .flat_map(|t| {
-                    t.lanes.iter().flat_map(move |lane| {
+                    t.take_lanes.iter().flat_map(move |lane| {
                         lane.regions.iter().map(move |r| {
                             serde_json::json!([t.id.0, r.id.0, r.position.0, r.length.0])
                         })
@@ -2073,7 +2076,7 @@ mod window_verb_tests {
                 start,
                 duration: 1.0,
             });
-            track.lanes[0].regions.push(region);
+            track.take_lanes[0].regions.push(region);
         }
         let def_id = 1;
         let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
@@ -2120,7 +2123,7 @@ mod window_verb_tests {
             ],
         ));
         let owner = host.owner.as_ref().unwrap();
-        let joined = &owner.multitrack.tracks[0].lanes[0].regions;
+        let joined = &owner.multitrack.tracks[0].take_lanes[0].regions;
         assert_eq!(joined.len(), 1, "one box");
         let minted = match &joined[0].content {
             Content::Window { window, .. } => window.source.samples().map(|s| s.source),
@@ -2215,7 +2218,7 @@ mod window_verb_tests {
         );
     }
 
-    /// A box on a lane, a window onto source 1.
+    /// A box on a track, a window onto source 1.
     fn region(id: u64, position: f64, length: f64) -> clausters_document::multitrack::Region {
         use clausters_document::multitrack::{Content, Region};
         use clausters_document::{
@@ -2298,7 +2301,7 @@ mod window_verb_tests {
     }
 
     fn drawn_lanes(host: &Host, def_id: i32, widget: i32) -> Vec<Vec<Value>> {
-        drawn_prop(host, def_id, widget, "lanes", 7)
+        drawn_prop(host, def_id, widget, "tracks", 7)
     }
 
     /// Undo and redo reach the **owner** where there is one, which is what
@@ -2327,7 +2330,7 @@ mod window_verb_tests {
     /// and not for the two tags this happened to route by name.
     ///
     /// The defect this pins (found 2026-09-12, auditing the owner): the
-    /// dispatch read `tag == "clips" || tag == "lanes"` while the crate that
+    /// dispatch read `tag == "clips" || tag == "tracks"` while the crate that
     /// *reads* a report answers for four -- `points` and `join` as well. So a
     /// standalone host drew curves it could not edit and had a `j` that reached
     /// nobody: the payload fell through to the tree's reader, which has no arm
@@ -2497,7 +2500,7 @@ mod window_verb_tests {
     fn a_join_made_by_a_hand_installs_the_source_it_minted() {
         use clausters_document::multitrack::{Multitrack, Track};
 
-        // Two boxes that touch on the lane and do **not** read on from each
+        // Two boxes that touch on the track and do **not** read on from each
         // other: the second is the earlier half of the take, put back second.
         // That is the case with no window over it, so the join has to mint.
         let mut track = Track::new(NodeId(10), NodeId(11));
@@ -2511,7 +2514,7 @@ mod window_verb_tests {
         {
             window.start = 0.0;
         }
-        track.lanes[0].regions = vec![first, second];
+        track.take_lanes[0].regions = vec![first, second];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -2571,7 +2574,7 @@ mod window_verb_tests {
         let buffers = |host: &Host| host.ids().in_use(clausters_core::ids::Space::Buffers);
         let before = buffers(&host);
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
-        assert!(host.answer_own(def_id, view, seq, &lanes(&[("10", true, false, 1.0)])));
+        assert!(host.answer_own(def_id, view, seq, &tracks(&[("10", true, false, 1.0)])));
         assert!(held(&host).is_none(), "nothing can name it any more");
         assert_eq!(
             buffers(&host),
@@ -2629,10 +2632,10 @@ mod window_verb_tests {
     /// props somebody listed.
     ///
     /// The defect this pins (found 2026-09-12 by the user, on a standalone host
-    /// opened on a session: "no crea los lanes para las curvas al presionar A").
+    /// opened on a session: "no crea los tracks para las curvas al presionar A").
     /// The header's `A` exists to **make** a track's gain curve, and the multitrack
     /// made it: the edit applied, the document kept it, and what went back onto
-    /// the widget was `lanes` and `clips` -- so nothing that draws a curve ever
+    /// the widget was `tracks` and `clips` -- so nothing that draws a curve ever
     /// arrived and the toggle read as a dead key. The projection had said
     /// `curves`, `layers`, `points`, `hidden` and `loops` all along.
     ///
@@ -2645,7 +2648,7 @@ mod window_verb_tests {
 
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
-        track.lanes[0].regions = vec![region(12, 0.0, 4.0)];
+        track.take_lanes[0].regions = vec![region(12, 0.0, 4.0)];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -2659,7 +2662,7 @@ mod window_verb_tests {
         // The `A` toggle's payload: the strips as they now stand, this one
         // saying its automation is shown.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
-        assert!(host.answer_own(def_id, view, seq, &lanes(&[("10", false, false, 1.0)])));
+        assert!(host.answer_own(def_id, view, seq, &tracks(&[("10", false, false, 1.0)])));
         assert!(
             host.owner
                 .as_ref()
@@ -2689,14 +2692,14 @@ mod window_verb_tests {
 
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
-        track.lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
+        track.take_lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
         let (mut host, def_id, view) = with_multitrack(multitrack);
 
-        // Two boxes with a gap between them: they are on one lane and they do
+        // Two boxes with a gap between them: they are on one track and they do
         // not touch, which the document refuses and the picture cannot say.
         let args = vec![
             OscType::String("join".into()),
@@ -2758,7 +2761,7 @@ mod window_verb_tests {
     }
 
     /// The strip, end to end in a host that owns what it draws: press mute, and
-    /// the document is muted; undo, and the **lane** comes back up with it.
+    /// the document is muted; undo, and the **track** comes back up with it.
     #[test]
     fn a_muted_lane_undoes_the_strip_and_not_only_the_document() {
         let doc = Document::new(aggregate(
@@ -2780,7 +2783,7 @@ mod window_verb_tests {
         assert_eq!(muted(&host), Some(0), "drawn from the document");
 
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
-        assert!(host.answer_own(def_id, view, seq, &lanes(&[("2", true, false, 1.0)])));
+        assert!(host.answer_own(def_id, view, seq, &tracks(&[("2", true, false, 1.0)])));
         assert_eq!(
             host.owner
                 .as_ref()
@@ -2800,10 +2803,10 @@ mod window_verb_tests {
         );
     }
 
-    /// **A lane a hand did not touch is not an edit.** The mixer reports every
+    /// **A track a hand did not touch is not an edit.** The mixer reports every
     /// strip after any of them moves, so a reader that took the payload at face
-    /// value would log a `Configure` per lane on every fader drag -- and the
-    /// undo of one fader would be one step per lane.
+    /// value would log a `Configure` per track on every fader drag -- and the
+    /// undo of one fader would be one step per track.
     #[test]
     fn only_the_strip_that_moved_becomes_an_edit() {
         let doc = Document::new(aggregate(
@@ -2827,7 +2830,7 @@ mod window_verb_tests {
             owner.bind_multitrack(50);
             owner
         };
-        let payload = lanes(&[("2", false, false, 1.0), ("4", false, false, 0.5)]);
+        let payload = tracks(&[("2", false, false, 1.0), ("4", false, false, 0.5)]);
         let edits = owner.read_events(50, &payload);
         assert_eq!(edits.len(), 1, "one fader moved: {edits:?}");
         assert!(matches!(edits[0].0, Intent::Configure { node, .. } if node == NodeId(4)));
@@ -2863,7 +2866,7 @@ mod window_verb_tests {
     }
 
     /// **The milestone's own acceptance, and the bug it was named for.** A
-    /// block move and a lane change reach the document, which they could not
+    /// block move and a track change reach the document, which they could not
     /// before: the host's own owner read `"clip"` and neither of the two tags a
     /// gesture switched to, so a selection dragged in `--session` moved on
     /// screen and nowhere else.
@@ -2897,11 +2900,11 @@ mod window_verb_tests {
         let where_is = |host: &Host, node: u64| {
             host.owner
                 .as_ref()
-                .and_then(|o| o.shown().lane_of(NodeId(node)).map(|l| l.holder))
+                .and_then(|o| o.shown().track_of(NodeId(node)).map(|l| l.holder))
         };
         assert_eq!(where_is(&host, 3), Some(NodeId(2)));
 
-        // **Both boxes of the first lane, dragged two beats along** -- the
+        // **Both boxes of the first track, dragged two beats along** -- the
         // payload a marquee's block drag leaves, addressed to the one widget
         // and naming every clip there is.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
@@ -2928,7 +2931,7 @@ mod window_verb_tests {
             "and the one nobody touched did not"
         );
 
-        // **And a lane crossed**: clip 4 leaves the first track and joins the
+        // **And a track crossed**: clip 4 leaves the first track and joins the
         // second. That is not a placement at all -- it changes which aggregate
         // holds it -- which is why a reader of `"clip"` could never have done it.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
@@ -2942,7 +2945,7 @@ mod window_verb_tests {
                 ("6", "5", 0.0, 100.0),
             ])
         ));
-        assert_eq!(where_is(&host, 4), Some(NodeId(5)), "it changed lanes");
+        assert_eq!(where_is(&host, 4), Some(NodeId(5)), "it changed tracks");
         assert_eq!(placed(&host, 4), Some(4.0), "at the beat the hand left it");
         assert_eq!(
             drawn_clips(&host, def_id, view)
@@ -2956,7 +2959,7 @@ mod window_verb_tests {
         // One gesture, one step back.
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
         assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
-        assert_eq!(where_is(&host, 4), Some(NodeId(2)), "back on its own lane");
+        assert_eq!(where_is(&host, 4), Some(NodeId(2)), "back on its own track");
 
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
         assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
@@ -3006,7 +3009,7 @@ mod window_verb_tests {
         };
         let mut multitrack = Multitrack::default();
         let mut first = Track::new(NodeId(10), NodeId(11));
-        first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
+        first.take_lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let second = Track::new(NodeId(20), NodeId(21));
         multitrack.tracks = vec![first, second];
 
@@ -3051,7 +3054,7 @@ mod window_verb_tests {
         let on = |host: &Host, region: u64| {
             host.owner.as_ref().and_then(|o| {
                 o.multitrack.tracks.iter().find_map(|t| {
-                    t.lanes
+                    t.take_lanes
                         .iter()
                         .any(|l| l.regions.iter().any(|r| r.id == NodeId(region)))
                         .then_some(t.id)

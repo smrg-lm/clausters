@@ -301,7 +301,7 @@ mod tests {
             Content::Unknown(Value::Null),
         );
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0].regions.push(region);
+        track.take_lanes[0].regions.push(region);
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
         multitrack.tempo.push(Tempo::at(Beat(0.0), 2.0));
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn the_multitrack_is_drawn_from_the_projection_and_the_window() {
         let props = compose(Transport::Absent, Some(2.0), |w| props(w, w.widget));
-        assert!(props.contains_key("lanes") && props.contains_key("clips"));
+        assert!(props.contains_key("tracks") && props.contains_key("clips"));
         assert_eq!(props["meters"], json!(["1", 20, 22, 2]));
         assert_eq!(
             props["cursor"],

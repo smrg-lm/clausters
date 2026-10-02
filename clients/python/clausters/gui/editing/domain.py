@@ -115,7 +115,7 @@ class Domain:
         gestures are one edit, and a domain that never needs more never mentions
         this. What needs it is a report that states the *whole structure* -- a
         multitrack's boxes after a block drag, where one message says a move, a
-        trim and a lane's new contents at once -- and those are one entry in the
+        trim and a take lane's new contents at once -- and those are one entry in the
         history, because they are one thing a hand did.
         """
         if self.ingested:
@@ -162,7 +162,7 @@ class Domain:
 
         **It travels with the gesture and not with the payload**, because for
         one vocabulary it is not a function of the payload at all: both of a
-        roll's lanes state the same whole-list intent, so only the gesture knows
+        roll's strips state the same whole-list intent, so only the gesture knows
         whether a hand edited the notes or the markers. `read` is what states
         it; this reads it back off the last one.
         """

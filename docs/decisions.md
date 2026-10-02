@@ -9033,6 +9033,14 @@ keep one surface for it: a `Server`'s transport methods address transport 0,
 and `server.transport_at(n)` is the server addressed through transport `n`,
 which goes anywhere a server is taken as a transport.
 
+*Revised 2026-10-01:* `server.transport_at(n)` answers a `Transport`, an
+object of its own and the same one per id, played as a routine is (`play`,
+`pause`, `stop`, `locate`, `loop`, `wait`) and carrying the transport's other
+commands by their own names. The view through the server stays as what it
+sends through, private. A server seen through a transport was a shape a
+GUI playback needed and a script could not use: `play(sequence)` answers the
+transport its lane is on, and what it answers has to be played.
+
 The segment's transport counters became a table of 64 rows after the header
 (ABI 12), a fixed size so it could stay in the fixed prefix; sized at run time
 it would have trailed the rings and moved every offset after it.

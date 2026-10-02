@@ -66,7 +66,7 @@ from .options import (
 from .midi import MidiBinding, ServerMidi
 from .queries import ServerQueries
 from .streams import ServerStreams
-from .transport import ServerTransport
+from .transport import ServerTransport, Transport
 
 # The package's public surface: `Server` plus what its configuration is made
 # of. The names re-exported here are the ones the module answered to before it
@@ -83,6 +83,7 @@ __all__ = [
     "ServerQueries",
     "ServerStreams",
     "ServerTransport",
+    "Transport",
     "DEFAULT_AUDIO_BUSES",
     "DEFAULT_CONTROL_BUSES",
     "DEFAULT_SAMPLE_RATE",

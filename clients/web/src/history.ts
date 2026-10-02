@@ -1,5 +1,6 @@
 /**
- * The editing context of one structure -- **whose history it is**.
+ * The editing context of one structure -- **whose history it is** -- and the
+ * {@link UndoHistory} a page reads it through.
  *
  * An undo stack belongs to the data, not to the view. Two windows over one
  * structure share a history, and an undo in either updates both; a stack
@@ -22,6 +23,14 @@
  * layer the hand is on. Those never enter a history either, which is the same
  * line drawn twice.
  *
+ * **It needs no window, so it is not the GUI's.** A page's change to a
+ * structure that has a history -- a sequence an editor is open on, or one a
+ * page asked for (`seq.history`) -- is recorded in it as a turn, the same one a
+ * gesture is: the windows over it are brought in step, the playback reading it
+ * is synced, and an undo in either a window or the page walks one order. A
+ * structure nobody asked a history of changes freely and records nothing, so a
+ * page that writes ten thousand notes keeps no ten thousand inverses.
+ *
  * The context is reached through {@link Editing.of}, which keeps it in a
  * `WeakMap` keyed by the structure: what is edited is loose objects, so the
  * object itself is the only thing two editors are guaranteed to have in common.
@@ -32,8 +41,8 @@
  * @module
  */
 
-import { EditingCore } from "../../core/clausters_core_web.js";
-import type { EventSequence } from "../../seq/sequence.ts";
+import { EditingCore } from "./core/clausters_core_web.js";
+import type { EventSequence } from "./seq/sequence.ts";
 
 /**
  * The version an unedited context is at. One rather than zero, because zero is
@@ -236,14 +245,31 @@ export class Editing {
      */
     protected depth = 0;
     protected changedInTurn = false;
+    /**
+     * The {@link UndoHistory.entry} blocks open over a structure: one entry,
+     * recorded when the outermost closes.
+     */
+    readonly #blocks = new Map<object, { depth: number; before: unknown; changed: boolean }>();
+    /**
+     * How deep an editor's or a step's own write is. A change it makes through
+     * a structure's objects -- a points editor over a held curve writes the
+     * curve into its sequence -- is part of the entry that editor or step
+     * records, not one of its own.
+     */
+    #applying = 0;
 
     /**
      * The context of this structure, made on first ask.
      *
      * Every editor over one element gets the same one -- the whole point, and
-     * the reason this is a static rather than a constructor.
+     * the reason this is a static rather than a constructor. A structure
+     * another one holds -- a curve a sequence holds -- names that one as its
+     * `historyOwner`, and shares its context: a window over the curve and a
+     * roll over the sequence are one order.
      */
     static of<T extends Editing>(this: new () => T, structure: object): T {
+        const owner = (structure as { historyOwner?: object | null }).historyOwner;
+        if (owner !== undefined && owner !== null) return (this as unknown as typeof Editing).of(owner) as T;
         let context = contexts.get(structure);
         if (context === undefined) {
             context = new this();
@@ -306,6 +332,7 @@ export class Editing {
         const opened = { member: Number(answer.member), identity: Number(answer.structure) };
         this.handlers.set(opened.member, { structure: sequence, handler });
         if (!this.structures.has(sequence)) this.structures.set(sequence, opened);
+        this.claim(sequence);
         return opened;
     }
 
@@ -316,9 +343,122 @@ export class Editing {
      */
     bindSequence(member: number, source: number, sequence: EventSequence): Record<string, unknown> {
         if (this.#core === null) throw new Error("clausters: this context is closed");
+        this.claim(sequence);
         return JSON.parse(
             this.#core.bindSequence(sequence.seq, JSON.stringify({ member, source })),
         ) as Record<string, unknown>;
+    }
+
+    /**
+     * **Makes this the structure's context**, so {@link Editing.of} and the
+     * structure's own {@link UndoHistory} answer it. An editor opened in a context
+     * the caller handed it claims what it edits: the windows are here, so a
+     * page's change has to be a turn here to reach them.
+     */
+    claim(structure: object): void {
+        contexts.set(structure, this);
+    }
+
+    /**
+     * The sequence's identity in the order -- a notes editor's when one is open
+     * on it, else an external member joined now, keyed as a notes editor's is so
+     * the two are one structure.
+     */
+    #sequenceIdentity(sequence: EventSequence): number {
+        const found = this.structures.get(sequence);
+        if (found !== undefined) return found.identity;
+        return this.open("external", keyOf("sequence", sequence), { domain: "events" }, sequence, {
+            project: (structure, payload) =>
+                (structure as EventSequence).applyIntent(payload as Record<string, unknown>, false).applied,
+        }).identity;
+    }
+
+    /**
+     * **One change a page makes to a sequence in this context**, as a turn:
+     * applied, recorded -- as its own entry, or into the {@link UndoHistory.entry}
+     * block open over the sequence -- and every view over it told. Answers
+     * what the sequence's door answers.
+     */
+    /**
+     * Runs an editor's or a step's own write: a change made through objects
+     * inside it is applied and told to the views, and recorded by nobody but
+     * the entry the editor or the step already stands for.
+     */
+    applying<T>(run: () => T): T {
+        this.#applying += 1;
+        try {
+            return run();
+        } finally {
+            this.#applying -= 1;
+        }
+    }
+
+    scriptEdit(
+        sequence: EventSequence,
+        intent: Record<string, unknown>,
+        label: string,
+    ): { applied: boolean; current?: unknown; id?: number } {
+        const block = this.#blocks.get(sequence);
+        return this.turn(null, () => {
+            if (this.#applying > 0) {
+                const answer = sequence.applyIntent(intent, false);
+                if (answer.applied) this.changed();
+                return answer;
+            }
+            if (block !== undefined) {
+                const answer = sequence.applyIntent(intent, false);
+                if (answer.applied) {
+                    block.changed = true;
+                    this.changed();
+                }
+                return answer;
+            }
+            const answer = sequence.applyIntent(intent, true);
+            if (answer.applied) {
+                this.record([{
+                    structure: this.#sequenceIdentity(sequence),
+                    forward: { edit: forwardOf(sequence, intent, answer.id) },
+                    backward: answer.current,
+                }], { label });
+                this.changed();
+            }
+            return answer;
+        });
+    }
+
+    /**
+     * Runs `run`, and everything a page changes in the sequence inside it is
+     * **one** entry, called `label`, and one turn. Blocks nest: an inner one
+     * is part of the outer.
+     */
+    block<T>(sequence: EventSequence, label: string, run: () => T): T {
+        const open = this.#blocks.get(sequence);
+        if (open !== undefined) {
+            open.depth += 1;
+            try {
+                return run();
+            } finally {
+                open.depth -= 1;
+            }
+        }
+        const block = { depth: 1, before: restoreOf(sequence), changed: false };
+        this.#blocks.set(sequence, block);
+        // Recorded inside the turn, so the views are told the version the
+        // entry moved to rather than the one before it.
+        return this.turn(null, () => {
+            try {
+                return run();
+            } finally {
+                this.#blocks.delete(sequence);
+                if (block.changed) {
+                    this.record([{
+                        structure: this.#sequenceIdentity(sequence),
+                        forward: { edit: restoreOf(sequence) },
+                        backward: block.before,
+                    }], { label });
+                }
+            }
+        });
     }
 
     /**
@@ -444,6 +584,11 @@ export class Editing {
      * step let go of freed.
      */
     carry(stepped: Stepped): void {
+        this.applying(() => this.#carry(stepped));
+        this.release(stepped.freed, stepped.stored);
+    }
+
+    #carry(stepped: Stepped): void {
         for (const effect of stepped.effects ?? []) {
             const held = this.handlers.get(Number(effect.member));
             if (held === undefined || held.handler === null) continue;
@@ -461,7 +606,6 @@ export class Editing {
                 }
             }
         }
-        this.release(stepped.freed, stepped.stored);
     }
 
     /**
@@ -563,7 +707,7 @@ export class Editing {
      * on drawing a multitrack that had changed under it. Nested turns collapse into
      * one, because a gesture that reaches here twice is still one gesture.
      */
-    turn<T>(source: Adopting, run: () => T): T {
+    turn<T>(source: Adopting | null, run: () => T): T {
         this.depth += 1;
         try {
             return run();
@@ -601,5 +745,105 @@ export class Editing {
     free(): void {
         this.#core?.free();
         this.#core = null;
+    }
+}
+
+/** The edit that puts the sequence back as it is now. */
+function restoreOf(sequence: EventSequence): Record<string, unknown> {
+    return { intent: "restore", sequence: sequence.data() };
+}
+
+/**
+ * The edit a redo applies: `intent` with the identity it was given, so a redone
+ * add brings back the same event -- and the same object. An edit that mints
+ * identities of its own is redone as the state it left.
+ */
+function forwardOf(
+    sequence: EventSequence,
+    intent: Record<string, unknown>,
+    minted: number | undefined,
+): Record<string, unknown> {
+    if (minted === undefined) return intent;
+    if (intent.intent === "add") {
+        return { ...intent, event: { ...(intent.event as Record<string, unknown>), id: Number(minted) } };
+    }
+    if (intent.intent === "automation" || intent.intent === "eventautomation") {
+        return {
+            ...intent,
+            automation: { ...(intent.automation as Record<string, unknown>), id: Number(minted) },
+        };
+    }
+    return restoreOf(sequence);
+}
+
+/**
+ * **A structure's history, as a page reads it**: the undo order its editors
+ * share, which a page's own changes join.
+ *
+ * `seq.history` is the door; asking for it is what gives a sequence a history,
+ * so a page that never asks and opens no editor records nothing. From then on
+ * each change made through the sequence's objects is an entry, and a turn:
+ * every window over it redraws, the playback reading it is synced, and one
+ * Ctrl+Z in a window takes back what the page did.
+ */
+export class UndoHistory {
+    readonly #structure: EventSequence;
+    readonly #context: Editing;
+
+    /** @internal */
+    constructor(structure: EventSequence) {
+        this.#structure = structure;
+        this.#context = Editing.of(structure);
+    }
+
+    /**
+     * Runs `run`, and makes every change inside it **one** entry, labelled
+     * `label` -- the text an undo names -- and one turn, so the windows redraw
+     * once, at the end. Answers what `run` answers. Python's
+     * `with seq.history(label):`.
+     */
+    entry<T>(label: string, run: () => T): T {
+        return this.#context.block(this.#structure, String(label), run);
+    }
+
+    /** Steps back over the last entry -- a page's or a window's -- and answers whether anything moved. */
+    undo(): boolean {
+        return this.#step("undo");
+    }
+
+    /** Steps forward again after {@link UndoHistory.undo}; whether anything moved. */
+    redo(): boolean {
+        return this.#step("redo");
+    }
+
+    #step(direction: "undo" | "redo"): boolean {
+        const context = this.#context;
+        return context.turn(null, () => {
+            const stepped = context.step(direction);
+            if (!stepped.stepped) return false;
+            context.carry(stepped);
+            context.changed();
+            return true;
+        });
+    }
+
+    /** Whether there is an entry to step back over. */
+    get canUndo(): boolean {
+        return this.#context.canUndo;
+    }
+
+    /** Whether there is an undone entry to step forward into. */
+    get canRedo(): boolean {
+        return this.#context.canRedo;
+    }
+
+    /** What an undo would take back, as a menu names it. */
+    get undoLabel(): string | undefined {
+        return this.#context.undoLabel;
+    }
+
+    /** What a redo would bring back. */
+    get redoLabel(): string | undefined {
+        return this.#context.redoLabel;
     }
 }

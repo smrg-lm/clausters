@@ -93,7 +93,7 @@ fn removing_a_note_leaves_its_neighbours_theirs() {
     );
     assert!(next.get(1).is_none());
     assert_eq!(next.get(2).unwrap().data.0["amp"], json!(0.4));
-    assert!(next.get(3).is_some(), "the marker lane is carried through");
+    assert!(next.get(3).is_some(), "the OSC markers are carried through");
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn a_marker_moves_by_its_label_and_a_new_one_is_refused() {
     assert!(refused.refusal.is_some());
 }
 
-/// A sequence with a CC lane and a bend on its first note.
+/// A sequence with a CC curve and a bend on its first note.
 fn curved() -> EventSequence {
     use clausters_document::{NodeId, Point};
     let point = |at: f64, value: f64| Point {
@@ -223,10 +223,10 @@ fn curved() -> EventSequence {
     let mut s = sequence();
     let mut cc = Automation::new(NodeId(0), Opaque(json!({"cc": 74})));
     cc.points = vec![point(0.0, 0.0), point(2.0, 127.0)];
-    s.edit(EventsIntent::Lane { automation: cc }).unwrap();
+    s.edit(EventsIntent::Automation { automation: cc }).unwrap();
     let mut bend = Automation::new(NodeId(0), Opaque(json!({"bend": true})));
     bend.points = vec![point(0.0, 0.0), point(0.5, 1.0)];
-    s.edit(EventsIntent::Expression {
+    s.edit(EventsIntent::EventAutomation {
         id: 1,
         automation: bend,
     })
@@ -234,18 +234,18 @@ fn curved() -> EventSequence {
     s
 }
 
-/// **A lane is a row and a note's curve a layer over it**, each point in view
+/// **A sequence curve is a row and a note's curve a layer over it**, each point in view
 /// units -- a note's measured from the note's start.
 #[test]
-fn a_roll_draws_the_lanes_and_each_notes_curves() {
+fn a_roll_draws_the_sequence_curves_and_each_notes_curves() {
     let s = curved();
     let p = project(&s, &YDomain::midi(), &Axis::constant(100.0));
-    let lane = s.lanes[0].id.0.to_string();
-    let bend = s.events[0].expression[0].id.0.to_string();
+    let cc = s.automation[0].id.0.to_string();
+    let bend = s.events[0].automation[0].id.0.to_string();
     assert_eq!(
         p.curves,
         vec![
-            json!(lane),
+            json!(cc),
             json!("CC 74"),
             json!(0.0),
             json!(127.0),
@@ -263,7 +263,7 @@ fn a_roll_draws_the_lanes_and_each_notes_curves() {
             json!(true)
         ]
     );
-    // The lane's second point at beat 2 is sample 200; the bend's at half a
+    // The CC's second point at beat 2 is sample 200; the bend's at half a
     // beat from its note is 50.
     let at_of = |name: &str| -> Vec<f64> {
         p.points
@@ -272,7 +272,7 @@ fn a_roll_draws_the_lanes_and_each_notes_curves() {
             .map(|c| c[1].as_f64().unwrap())
             .collect()
     };
-    assert_eq!(at_of(&lane), vec![0.0, 200.0]);
+    assert_eq!(at_of(&cc), vec![0.0, 200.0]);
     assert_eq!(at_of(&bend), vec![0.0, 50.0]);
 }
 
@@ -299,15 +299,15 @@ fn a_roll_shows_the_midi_spec() {
     );
 }
 
-/// **A lane names its channel**, counted from 1 as MIDI shows one.
+/// **A sequence curve names its channel**, counted from 1 as MIDI shows one.
 #[test]
-fn a_lane_on_a_channel_says_which() {
+fn a_sequence_curve_on_a_channel_says_which() {
     let mut s = sequence();
-    let lane = Automation::new(
+    let cc = Automation::new(
         clausters_document::NodeId(0),
         Opaque(json!({"cc": 74, "channel": 1})),
     );
-    s.edit(EventsIntent::Lane { automation: lane }).unwrap();
+    s.edit(EventsIntent::Automation { automation: cc }).unwrap();
     let p = project(&s, &YDomain::midi(), &Axis::constant(100.0));
     assert_eq!(p.curves[1], json!("CC 74 ch 2"));
 }
@@ -318,7 +318,7 @@ fn a_points_report_is_the_edit_of_the_curve_it_changed() {
     let s = curved();
     let axis = Axis::constant(100.0);
     let p = project(&s, &YDomain::midi(), &axis);
-    let bend = s.events[0].expression[0].id;
+    let bend = s.events[0].automation[0].id;
     // The report as drawn, with the bend's last point moved to 3 semitones at
     // three quarters of a beat.
     let mut values = p.points.clone();
@@ -330,7 +330,7 @@ fn a_points_report_is_the_edit_of_the_curve_it_changed() {
     values[last * 5 + 2] = json!(3.0);
     let intake = intake(&s, "points", &values, &axis, &YDomain::midi());
     let intent: EventsIntent = serde_json::from_value(intake.payloads[0].clone()).unwrap();
-    let EventsIntent::Expression { id, automation } = intent else {
+    let EventsIntent::EventAutomation { id, automation } = intent else {
         panic!("a note's curve");
     };
     assert_eq!((id, automation.id), (1, bend));

@@ -21,7 +21,7 @@ import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { ManualTimebase } from "../src/base/timebase.ts";
 import { TempoMap } from "../src/base/time.ts";
 import { PlayheadSync } from "../src/gui/playhead-sync.ts";
-import { Event as SeqEvent } from "../src/seq/event.ts";
+import { Event } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import type { Server } from "../src/defs/server/index.ts";
@@ -73,7 +73,7 @@ const recorder = { playEvent: () => null, sendMsg: () => {}, sendBundle: () => {
 /** Three notes, one per beat: the pass ends at beat 2. */
 const arp = () =>
     new Timeline(
-        [0, 1, 2].map((i) => [i, new SeqEvent({ midinote: 60 + i, dur: 1.0 })] as const),
+        [0, 1, 2].map((i) => [i, new Event({ midinote: 60 + i, dur: 1.0 })] as const),
     );
 
 /**

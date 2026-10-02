@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
 from clausters.multitrack import (Multitrack, Automation, Content, Fade,  # noqa: E402
-                                   Lane, Marker, Meter, Region, Session, Span,
+                                   TakeLane, Marker, Meter, Region, Session, Span,
                                    Source, Tempo, Track, View)
 
 
@@ -55,21 +55,21 @@ def build() -> Multitrack:
     multitrack.punch = Span(start=8.0, end=16.0)
 
     # Comped from three takes, playing the second.
-    vocals = Track(id=10, name="vocals", active=1, lanes=[
-        Lane(id=11, name="take 1"), Lane(id=12, name="take 2"),
-        Lane(id=13, name="comp"),
+    vocals = Track(id=10, name="vocals", active=1, take_lanes=[
+        TakeLane(id=11, name="take 1"), TakeLane(id=12, name="take 2"),
+        TakeLane(id=13, name="comp"),
     ])
-    for index, lane in enumerate(vocals.lanes):
+    for index, lane in enumerate(vocals.take_lanes):
         lane.place(Region(id=20 + index, position=0.0, length=16.0,
                           name=f"vox {index}",
                           content=Content.onto(window(100 + index))))
 
     # Two regions overlapping, crossfaded, the layer saying which is on top.
-    guitars = Track(id=30, name="guitars", soloed=True, lanes=[Lane(id=31)])
-    guitars.lanes[0].place(Region(
+    guitars = Track(id=30, name="guitars", soloed=True, take_lanes=[TakeLane(id=31)])
+    guitars.take_lanes[0].place(Region(
         id=32, position=0.0, length=20.0, content=Content.onto(window(200)),
         fade_out=Fade(length=4.0)))
-    guitars.lanes[0].place(Region(
+    guitars.take_lanes[0].place(Region(
         id=33, position=16.0, length=16.0, layer=1, muted=True,
         content=Content.onto(window(201, start=2.0), playrate=1.5,
                              args={"seed": 7}),
@@ -81,14 +81,14 @@ def build() -> Multitrack:
     # ...and a curve on the **region**, which is the other place one belongs: a
     # track's runs the length of the track and is drawn beside it, this one runs
     # the length of the region and is drawn inside it.
-    guitars.lanes[0].regions[0].automation.append(Automation(
+    guitars.take_lanes[0].regions[0].automation.append(Automation(
         id=35, name="gain", target={"ctl": "gain"},
         points=[{"at": 0.0, "value": 1.0, "data": {}},
                 {"at": 20.0, "value": 0.0, "data": {}}]))
 
     # The general tree, placed: what a composite region is for.
-    sections = Track(id=40, name="sections", lanes=[Lane(id=41)])
-    sections.lanes[0].place(Region(
+    sections = Track(id=40, name="sections", take_lanes=[TakeLane(id=41)])
+    sections.take_lanes[0].place(Region(
         id=42, position=32.0, length=16.0,
         content=Content.composite({
             "id": 43,
@@ -98,7 +98,7 @@ def build() -> Multitrack:
         })))
 
     # A field a newer writer added, on the region and on the multitrack.
-    sections.lanes[0].regions[0].extra["warp"] = {"mode": "beats"}
+    sections.take_lanes[0].regions[0].extra["warp"] = {"mode": "beats"}
     multitrack.extra["groove"] = {"name": "mpc60"}
 
     multitrack.tracks.extend([vocals, guitars, sections])
@@ -117,9 +117,9 @@ def views() -> list:
     arranger.selected = [20, 32]
     arranger.focused = 20
     arranger.track_view(10).height = 96.0
-    arranger.track_view(10).lanes_shown = True
+    arranger.track_view(10).take_lanes_shown = True
     arranger.track_view(30).color = "#4488cc"
-    arranger.lane_view(12).height = 32.0
+    arranger.take_lane_view(12).height = 32.0
     #: A field a newer window wrote and this build has no name for: carried, so
     #: an older reader opening the session and saving it does not lose it.
     arranger.extra["fold"] = "tracks"

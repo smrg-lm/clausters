@@ -69,7 +69,7 @@ one <i>there</i> is refused and says why: the lane has no way to type an
 address.
 
 <b>Curves are drawn and edited like a multitrack's automation, and heard.</b>
-The row under the grid, <i>level</i>, is a lane of the sequence -- a curve over
+The row under the grid, <i>level</i>, is the sequence's automation -- a curve over
 the first channel driving every note's <code>amp</code>, a crescendo -- and
 the first note carries a curve of its own, a <b>bend</b>, drawn in the plane
 as the pitch it glides to and running on into its release. <b>Drag a
@@ -132,16 +132,23 @@ leaves every other note its own.</div>
       let session = null;
       let notes = null; // what the roll edits, in place
 
-      /** Every event as it now stands, with its id and what the roll never drew. */
+      /**
+       * Every event as it now stands, with what the roll never drew. Five
+       * numbers per note -- start, length, pitch, velocity, channel -- and the
+       * event it is: the instrument, the amp and anything else the author
+       * wrote are none of them, and they are still there after an edit, since
+       * each SeqEvent reads what the sequence holds now.
+       */
       function readBack() {
-        for (const [id, beat, item] of notes.entries()) {
+        for (const event of notes.events) {
+          const item = event.event; // its keys, as a free Event
           if (item.get("type") === "osc") {
-            log(`  #${id} ${beat.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
+            log(`  ${event.at.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
             continue;
           }
           const extra = Object.fromEntries(
             Object.entries(item.props).filter(([k]) => ["instrument", "amp", "velocity"].includes(k)));
-          log(`  #${id} ${beat.toFixed(2)}  midinote ${item.midinote().toFixed(1)}`
+          log(`  ${event.at.toFixed(2)}  midinote ${item.midinote().toFixed(1)}`
             + `  freq ${item.freq().toFixed(1)}   ${JSON.stringify(extra)}`);
         }
       }
@@ -157,14 +164,14 @@ leaves every other note its own.</div>
         // One verb, spelled out. `edit(timeline)` renders the timeline into
         // the events it plays and opens them as a NotesEditor: one roll, each
         // note with its id. Here the render is its own line, so the sequence
-        // gets its curves before it opens: a level lane on the first channel,
+        // gets its curves before it opens: a level curve on the first channel,
         // and a bend on its first note that glides up two semitones while the
         // note is held and falls back one in its release -- a note's curve
         // runs past its box, which is its on and its off.
         notes = await timeline.renderEvents(); // what the roll edits, in place
-        let level = notes.addLane({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
-        const first = notes.entries()[0][0];
-        notes.addExpression(first, { bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
+        let level = notes.automation.add({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
+        const first = notes.events.item(0); // the first note, as an object
+        first.automation.add({ bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
         const editor = await gui.edit(notes, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "notes",
@@ -187,23 +194,23 @@ leaves every other note its own.</div>
         // space bar in the window is the same verb.
         $("play").onclick = () => editor.play();
 
-        // A lane given to its notes: the level lane is the channel's, and each
-        // note hears it from its on to its off. `laneToExpression` gives it to
-        // the notes it reaches -- each takes the stretch its span covers as a
-        // curve of its own, drawn inside it, and the row goes -- and they sound
-        // as they did. `expressionToLane` gathers the notes' curves back into a
-        // lane, which holds where no two notes that sound together differ: here
-        // none overlap. Both are edits of the sequence; `adopt` brings the rolls
-        // in step with it.
+        // A curve given to its notes: the level curve is the channel's, and each
+        // note hears it from its on to its off. `automation.toEvents` gives it
+        // to the notes it reaches -- each takes the stretch its span covers as
+        // a curve of its own, drawn inside it, and the row goes -- and they
+        // sound as they did. `automation.fromEvents` gathers the notes' curves
+        // back into one of the sequence, which holds where no two notes that
+        // sound together differ: here none overlap. Both are edits of the
+        // sequence; `adopt` brings the rolls in step with it.
         $("own").disabled = false;
         $("own").onclick = () => {
-          notes.laneToExpression(level);
+          notes.automation.toEvents(level);
           editor.adopt();
           hertz.adopt();
         };
         $("gather").disabled = false;
         $("gather").onclick = () => {
-          level = notes.expressionToLane({ control: "amp" });
+          level = notes.automation.fromEvents({ control: "amp" });
           editor.adopt();
           hertz.adopt();
         };

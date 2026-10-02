@@ -24,7 +24,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.multitrack import (Multitrack, Content, Lane,  # noqa: E402
+from clausters.multitrack import (Multitrack, Content, TakeLane,  # noqa: E402
                                    Region, Track)
 
 
@@ -34,27 +34,27 @@ def multitrack() -> dict:
     Written through `clausters.multitrack` rather than by hand, unlike the
     document below, and on purpose: what crosses here is a whole multitrack as
     JSON state, so the vector is worth more if the state is the one this client
-    actually writes. Two tracks, two lanes on the first, one region on each --
+    actually writes. Two tracks, two take lanes on the first, one region on each --
     the smallest multitrack a move between tracks has somewhere to move to.
     """
-    vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
-    vocals.lanes[0].place(Region(id=100, position=0.0, length=4.0,
+    vocals = Track(id=10, name="vocals", take_lanes=[TakeLane(id=11), TakeLane(id=12)])
+    vocals.take_lanes[0].place(Region(id=100, position=0.0, length=4.0,
                                  content=Content.composite(
                                      {"id": 1, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
-    vocals.lanes[1].place(Region(id=101, position=8.0, length=4.0,
+    vocals.take_lanes[1].place(Region(id=101, position=8.0, length=4.0,
                                  content=Content.composite(
                                      {"id": 2, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
     # Mono, so the new width field is exercised rather than defaulted away.
-    guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)], channels=1)
+    guitar = Track(id=20, name="guitar", take_lanes=[TakeLane(id=21)], channels=1)
     return Multitrack(tracks=[vocals, guitar]).write()
 
 
 #: A region moved to the other track: one intent, because where a region is
-#: means track, lane and beat, and an absolute edit states all three.
+#: means track, take lane and beat, and an absolute edit states all three.
 MOVE_BETWEEN_TRACKS = {"intent": "placeregion", "region": 100, "track": 20,
-                       "lane": 21, "position": 16.0, "layer": 1}
+                       "take_lane": 21, "position": 16.0, "layer": 1}
 
 
 def starting_document() -> dict:
@@ -160,7 +160,7 @@ DOMAIN_EDITS = [
     (_native.MULTITRACK, multitrack(), {"intent": "splitregion", "region": 100,
                                     "at": 2.0, "left": 110, "right": 111}),
     (_native.MULTITRACK, multitrack(), {"intent": "placeregion", "region": 999,
-                                    "track": 20, "lane": 21, "position": 0.0}),
+                                    "track": 20, "take_lane": 21, "position": 0.0}),
     (_native.POINTS,
      [{"at": 0.0, "value": 1.0}, {"at": 1.0, "value": 0.0}],
      {"intent": "setpoints", "points": [{"at": 0.0, "value": 0.5}]}),

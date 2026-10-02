@@ -466,6 +466,9 @@ export const FIRST_VERSION = 1;
  * measured it in beats, and states a tempo in beats per second; an older file is
  * migrated on reading (`Session.read`). **4** added a source that is a sequence
  * of events held in the file itself, a tagged variant for the reason 2 gives.
+ * **5** names a sequence's curves as the multitrack names a track's --
+ * `automation` where it said `lanes` and `expression` -- which an older reader
+ * would drop without a word.
  *
  * A literal rather than a call into the core, deliberately: a `Session` is plain
  * data and `multitrack.ts` opens the core for nothing else, so reading the
@@ -474,7 +477,7 @@ export const FIRST_VERSION = 1;
  * the crate (`sessionFormat`) and compares -- which is the check that did not
  * exist when this said 1 and the crate had moved to 2.
  */
-export const SESSION_FORMAT = 4;
+export const SESSION_FORMAT = 5;
 
 /**
  * What makes two of a **domain's** edits *the same thing done the same way* --

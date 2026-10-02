@@ -55,7 +55,7 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 ///
 /// It moves when a reader that does not know the new shape would read the file
 /// *wrongly* -- never for an added field, which an older reader ignores and a
-/// newer one defaults. So far there have been three.
+/// newer one defaults. So far there have been four.
 ///
 /// **2** added [`Location::Segments`]: a source whose samples are spans of
 /// other sources. [`Location`] is tagged and has no untagged arm, so a reader
@@ -74,7 +74,15 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 /// **4** added [`Location::Events`]: a source that is a sequence of events,
 /// held in the file itself -- a multitrack's notes. A format-3 file reads
 /// unchanged; the counter moves for the reason **2** gives.
-pub const FORMAT: u32 = 4;
+///
+/// **5** renames what was called a lane: a track's lanes -- the takes it
+/// comps between -- are its `take_lanes` (and a view's `take_lanes`, a track
+/// view's `take_lanes_shown`), and a sequence's curves are named as the
+/// multitrack names a track's: its `lanes` are its `automation`, and so are an
+/// event's `expression`. An older reader would find none of them under the
+/// new names and drop them silently, which is the counter's case. [`migrate`]
+/// renames the multitrack's keys; a sequence reads its old names itself.
+pub const FORMAT: u32 = 5;
 
 /// The tempo a format-2 multitrack that stated none was read at, in beats per
 /// second: one, the default every reader of that format drew and played it
@@ -100,9 +108,48 @@ pub const FORMAT_2_TEMPO: f64 = 1.0;
 pub fn migrate(mut written: Value) -> Value {
     let format = written.get("format").and_then(Value::as_u64).unwrap_or(1);
     // What is not an object is not a session, and reading it says so.
-    if format >= 3 || !written.is_object() {
+    if format >= u64::from(FORMAT) || !written.is_object() {
         return written;
     }
+    if format < 3 {
+        to_format_3(&mut written);
+    }
+    to_format_5(&mut written);
+    written["format"] = json!(FORMAT);
+    written
+}
+
+/// From 4 to 5: a track's lanes are its take lanes, in the multitrack and in
+/// every view of it. See [`FORMAT`].
+fn to_format_5(written: &mut Value) {
+    fn rename(object: &mut Value, from: &str, to: &str) {
+        if let Some(map) = object.as_object_mut()
+            && let Some(value) = map.remove(from)
+        {
+            map.insert(to.to_string(), value);
+        }
+    }
+    for key in ["multitrack", "arrangement"] {
+        if let Some(Value::Array(tracks)) = written.get_mut(key).and_then(|m| m.get_mut("tracks")) {
+            for track in tracks {
+                rename(track, "lanes", "take_lanes");
+            }
+        }
+    }
+    if let Some(Value::Array(views)) = written.get_mut("views") {
+        for view in views {
+            rename(view, "lanes", "take_lanes");
+            if let Some(Value::Object(tracks)) = view.get_mut("tracks") {
+                for track in tracks.values_mut() {
+                    rename(track, "lanes_shown", "take_lanes_shown");
+                }
+            }
+        }
+    }
+}
+
+/// From 2 to 3: the multitrack's beats in seconds. See [`migrate`].
+fn to_format_3(written: &mut Value) {
     let key = if written.get("multitrack").is_some() {
         "multitrack"
     } else {
@@ -122,8 +169,6 @@ pub fn migrate(mut written: Value) -> Value {
             }
         }
     }
-    written["format"] = json!(FORMAT);
-    written
 }
 
 /// The tempo map a format-2 multitrack states: entries in beats per minute.
@@ -297,7 +342,7 @@ pub enum Location {
     ///
     /// In the file rather than beside it, unlike samples: a sequence is data
     /// the size of a score, and a session that pointed at a `.mid` for it would
-    /// lose the ids, the lanes and every key a `.mid` cannot say.
+    /// lose the ids, its automation and every key a `.mid` cannot say.
     Events {
         /// The sequence.
         sequence: Box<crate::events::EventSequence>,

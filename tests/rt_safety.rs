@@ -2001,7 +2001,7 @@ fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
 /// allocates. Both lane queues are pre-allocated like the clock queues.
 #[test]
 fn event_lanes_do_not_allocate_on_the_audio_thread() {
-    use clausters::server::engine::LaneTag;
+    use clausters::server::engine::EventLaneTag;
 
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
@@ -2034,10 +2034,10 @@ fn event_lanes_do_not_allocate_on_the_audio_thread() {
         synth.set_control(1, 0.01);
         let id = 1000 + i as i32;
         handle
-            .send(Cmd::LaneEntry {
+            .send(Cmd::EventLaneEntry {
                 transport: 0,
                 position: u64::from(i) * 71 + 5, // never on a block boundary
-                tag: LaneTag {
+                tag: EventLaneTag {
                     lane: 1,
                     generation: 0,
                     event: i,

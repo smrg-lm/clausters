@@ -146,27 +146,20 @@ def cases():
         ),
     ))
 
-    # The timeline editors: a piano-roll with notes and OSC flags, a piano
-    # playing host-managed voices, and a multitrack of boxes.
+    # The timeline editors: a piano-roll with notes and OSC flags, and a piano
+    # playing host-managed voices.
     out.append((
         "timeline_editors",
         g.window(
             g.pianoroll(id=1, notes=[(0.0, 4800.0, 60), (4800.0, 4800.0, 67, 90, 1)],
                         osc=[(0.0, "start"), 9600.0], min=48, max=84,
-                        snap=1200.0, velocity=True, osc_lane=True,
+                        snap=1200.0, velocity=True, osc_markers=True,
                         ruler="beats", tempo=2.0, playhead_at=-1.0,
                         playhead=2400.0, playhead_loop_start=0.0,
                         playhead_loop_len=9600.0),
             g.piano(id=2, min=36, max=96, active_min=48, active_max=84,
                     velocity=100, channel=0, voice="piano_voice",
                     voice_args=[("amp", 0.3)], overview=True, pan=True),
-            g.multitrack(
-                id=3, label="drums", lanes=[("d", "drums")],
-                clips=[("t", "d", 0.0, 48000.0, 0.0, "take", 7)],
-                snap=1200.0, ruler="time", sample_rate=48000.0,
-                playhead_at=0.0, playhead=12000.0, playhead_loop_start=0.0,
-                playhead_loop_len=96000.0, link=7,
-            ),
             title="arrangement", layout="col",
         ),
     ))
@@ -276,10 +269,8 @@ REQUIRED: dict = {}
 
 #: What one builder means by an option every other builder spells otherwise.
 #:
-#: A `multitrack`'s `notes` are a **box's**, so each names the box it is in
-#: where a roll's name nothing. Sweeping the generic shape here would compare
-#: two clients stringifying a float, which is a difference about `str(0.0)` and
-#: not about the builder.
+#: Sweeping the generic shape here would compare two clients stringifying a
+#: float, which is a difference about `str(0.0)` and not about the builder.
 PER_BUILDER = {
     # A roll's curves: a lane and a note's bend, the points by curve name,
     # under both of the roll builder's names.
@@ -289,12 +280,6 @@ PER_BUILDER = {
     ("notes", "curves"): [["lane", "CC 1", 0.0, 127.0, 40.0]],
     ("notes", "layers"): [["bend", 7, "bend", -2.0, 2.0, True]],
     ("notes", "points"): [["lane", 0.0, 1.0], ["bend", 1.0, 0.0, 5, 4.0]],
-    ("multitrack", "notes"): [["a", 0.0, 1.0, 60], ["a", 1.0, 0.5, 64, 90, 1]],
-    ("multitrack", "curves"): [["gain", "one", "Gain", 0.0, 1.0, 40.0],
-                               ["pan", "one"]],
-    ("multitrack", "layers"): [["env", "a", "", -1.0, 1.0], ["fx", "a"]],
-    ("multitrack", "points"): [["gain", 0.0, 1.0], ["gain", 1.0, 0.0, 5, 4.0],
-                               ["env", 0.5, 0.25]],
     ("meter", "zones"): [[-1.0, "#d04040"], [-0.5, "meter_low", "lin"],
                          [0.0, "meter_mid", -3.0]],
 }

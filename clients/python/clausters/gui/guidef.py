@@ -2053,102 +2053,6 @@ def _held(value, flatten):
     return flatten(value)
 
 
-def _flat_lanes(lanes) -> list:
-    """Normalizes ``lanes`` to the flat ``name label height mute solo gain``
-    sextuples the host reads.
-
-    A lane is a mapping, or a sequence starting with its name; everything after
-    the name has a default, so ``("drums",)`` is a lane at the host's own
-    thickness with no mixer state set."""
-    out: list = []
-    for lane in lanes:
-        if isinstance(lane, dict):
-            got = (lane.get("name"), lane.get("label"), lane.get("height"),
-                   lane.get("mute"), lane.get("solo"), lane.get("gain"))
-        elif isinstance(lane, (tuple, list)):
-            got = tuple(lane) + (None,) * (6 - len(lane))
-        else:
-            got = (lane, None, None, None, None, None)
-        name, label, height, mute, solo, gain = got[:6]
-        out += [str(name), "" if label is None else str(label),
-                96.0 if height is None else float(height),
-                int(bool(mute)), int(bool(solo)),
-                1.0 if gain is None else float(gain)]
-    return out
-
-
-def _flat_box_notes(notes) -> list:
-    """Normalizes ``notes`` to the flat ``box start dur pitch velocity
-    channel`` sextuples the host reads -- a note per entry, each naming the box
-    it is in.
-
-    One list for the whole widget rather than one per box, which is the shape
-    every payload here has: a flat list whose first fields are the identity, the
-    way a clip names its lane. A note naming a box that is not there is dropped
-    by the host.
-    """
-    out: list = []
-    for note in notes:
-        if isinstance(note, dict):
-            got = (note.get("box"), note.get("start"), note.get("dur"),
-                   note.get("pitch"), note.get("velocity"), note.get("channel"))
-        else:
-            got = tuple(note) + (None,) * (6 - len(note))
-        box, start, dur, pitch, velocity, channel = got[:6]
-        out += [str(box),
-                0.0 if start is None else float(start),
-                0.0 if dur is None else float(dur),
-                0.0 if pitch is None else float(pitch),
-                100.0 if velocity is None else float(velocity),
-                0.0 if channel is None else float(channel)]
-    return out
-
-
-def _flat_curves(curves) -> list:
-    """Normalizes ``curves`` to the flat ``name lane label min max height``
-    sextuples the host reads -- a **track automation**, a row of its own under
-    the lane it names, as long as the timeline."""
-    out: list = []
-    for curve in curves:
-        if isinstance(curve, dict):
-            got = (curve.get("name"), curve.get("lane"), curve.get("label"),
-                   curve.get("min"), curve.get("max"), curve.get("height"))
-        elif isinstance(curve, (tuple, list)):
-            got = tuple(curve) + (None,) * (6 - len(curve))
-        else:
-            got = (curve, None, None, None, None, None)
-        name, lane, label, lo, hi, height = got[:6]
-        out += [str(name), "" if lane is None else str(lane),
-                "" if label is None else str(label),
-                0.0 if lo is None else float(lo),
-                1.0 if hi is None else float(hi),
-                40.0 if height is None else float(height)]
-    return out
-
-
-def _flat_layers(layers) -> list:
-    """Normalizes ``layers`` to the flat ``name box label min max`` quintuples
-    the host reads -- a **clip envelope**, drawn inside the box it names.
-
-    It carries no height, and the shape is the statement: a layer is as tall as
-    the box it is drawn on, where a row is as tall as it asks."""
-    out: list = []
-    for curve in layers:
-        if isinstance(curve, dict):
-            got = (curve.get("name"), curve.get("box"), curve.get("label"),
-                   curve.get("min"), curve.get("max"))
-        elif isinstance(curve, (tuple, list)):
-            got = tuple(curve) + (None,) * (5 - len(curve))
-        else:
-            got = (curve, None, None, None, None)
-        name, box, label, lo, hi = got[:5]
-        out += [str(name), "" if box is None else str(box),
-                "" if label is None else str(label),
-                0.0 if lo is None else float(lo),
-                1.0 if hi is None else float(hi)]
-    return out
-
-
 def _flat_curve_points(points) -> list:
     """Normalizes ``points`` to the flat ``curve time value shape amount``
     quintuples the host reads -- a break-point per entry, each naming the curve
@@ -2170,32 +2074,6 @@ def _flat_curve_points(points) -> list:
                 0.0 if value is None else float(value),
                 1.0 if shape is None else float(shape),
                 0.0 if amount is None else float(amount)]
-    return out
-
-
-def _flat_clips(clips) -> list:
-    """Normalizes ``clips`` to the flat ``name lane offset dur start label
-    source`` septuples the host reads. Same shapes as `_flat_lanes`."""
-    out: list = []
-    for clip in clips:
-        if isinstance(clip, dict):
-            got = (clip.get("name"), clip.get("lane"), clip.get("offset"),
-                   clip.get("dur"), clip.get("start"), clip.get("label"),
-                   clip.get("source"))
-        elif isinstance(clip, (tuple, list)):
-            got = tuple(clip) + (None,) * (7 - len(clip))
-        else:
-            got = (clip, None, None, None, None, None, None)
-        name, lane, offset, dur, start, label, source = got[:7]
-        out += [str(name), "" if lane is None else str(lane),
-                0.0 if offset is None else float(offset),
-                0.0 if dur is None else float(dur),
-                0.0 if start is None else float(start),
-                "" if label is None else str(label),
-                # **Buffer 0 is a buffer** -- the first one an allocator hands
-                # out -- so "no source" is spelled negative, as every other
-                # absence on this wire is.
-                -1 if source is None else int(source)]
     return out
 
 
@@ -2399,113 +2277,6 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
         extra.update(_score_props(display_list))
     return node("score", id=id, **extra, **props)
 
-def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
-               points=(), layer: str | None = None,
-               hidden: str | None = None, view: str | None = None,
-               gap: float | None = None,
-               snap: float | None = None, label: str | None = None,
-               autofit: bool | None = None, ruler: str | None = None,
-               sample_rate: float | None = None, tempo: float | None = None,
-               tempo_map=None, beat_at: float | None = None,
-               quant: float | None = None,
-               sel_start: float | None = None, sel_len: float | None = None,
-               sel_min: float | None = None, sel_max: float | None = None,
-               y_start: float | None = None, y_len: float | None = None,
-               playhead_at: float | None = None, playhead: float | None = None,
-              cursor: float | None = None,
-               playhead_loop_start: float | None = None,
-               playhead_loop_len: float | None = None,
-               link: int | None = None, theme: dict | None = None,
-               markers=None, axes: dict | None = None,
-               id: int | None = None, **props) -> View:
-    """A **multitrack**: one widget holding a stack of lanes and the clips on
-    them, drawn on one shared time axis.
-
-    It is the `pianoroll` of a multitrack. A roll is one widget holding its notes;
-    this is one widget holding its lanes and its clips -- so you **describe** the
-    multitrack rather than composing a tree of `track` and `clip` widgets, and there
-    is exactly one thing that owns it. A lane cannot sit in a void: it is a row
-    of this widget, never a box you place somewhere.
-
-    ``lanes`` is a sequence of ``(name, label, height, mute, solo, gain)`` and
-    ``clips`` a sequence of ``(name, lane, offset, dur, start, label, source)``,
-    with ``offset``/``dur``/``start`` in timeline samples, ``lane`` naming one of
-    the lanes and ``source`` the **server buffer** the clip is a window onto
-    (a negative number, the default, draws an empty box -- ``0`` is a real
-    buffer). The samples are the server's: the host maps them
-    out of the shared segment or fetches them over its leg, so two clips over one
-    take cost one download. **The name is the identity** -- the client's own word, not a widget
-    id -- so a clip is addressed, drawn and reported by the same name the script
-    already calls it. A clip naming a lane that is not there is kept and drawn
-    nowhere, so renaming a lane loses nothing.
-
-    ``snap`` is the drag grid in timeline samples; ``gap`` the space between
-    lanes. The time chrome (``ruler``, ``sample_rate``, ``tempo``, ``link``,
-    ``playhead*``, ``markers``) is the same every timeline view carries, and
-    ``link`` joins this widget's axis to a `timeruler` or another view.
-
-    **A clip's base view is what its contents are.** A clip whose ``source``
-    names a buffer draws those samples; one named in ``notes`` draws them as a
-    roll, fitted to its own pitch range and with no keyboard and no lanes. Both
-    are drawn by the very elements that stand on their own elsewhere, handed the
-    clip's own axis and drawing no chrome of their own -- a clip is a window onto
-    a picture, never a second implementation of one. ``notes`` is a sequence of
-    ``(box, start, dur, pitch, velocity, channel)``, each note naming the clip
-    it is in, and ``view`` chooses how a clip of samples is drawn (``"trace"``,
-    the default, or ``"spectrogram"``) for every clip at once.
-
-    **The curves are the light views, and they are editable.** A break-point
-    automation is one element in two places, and the place is the whole
-    difference. ``curves`` is a sequence of
-    ``(name, lane, label, min, max, height)``: a **track automation**, which
-    takes a row of its own under the lane it names and runs the whole timeline,
-    because a track's gain does not begin and end with a clip. ``layers`` is a
-    sequence of ``(name, box, label, min, max)``: a **clip envelope**, drawn
-    inside the clip it names, over whatever that clip draws and lasting exactly
-    as long as it does -- a clip's own dynamic envelope, its pan, its per-clip
-    effect parameters. A layer takes no height, because it is as tall as the
-    clip it is on. ``points`` is a sequence of
-    ``(curve, time, value, shape, amount)`` for **every** curve there is, each
-    naming the curve it is on the way a note names its box.
-
-    A press lands on a curve's own points and the line between them, never on
-    the rectangle it shares, so an envelope drawn across a clip leaves that clip
-    draggable. ``layer`` names the curve a hand is on (``"placement"`` is the
-    clips themselves) and ``hidden`` the curves that are not drawn,
-    space-separated; what is hidden is not edited either.
-
-    It **places**; a clip is entered to edit. The contents of a clip draw
-    read-only here -- this widget owns *where* things are, not what is inside
-    them::
-
-        multitrack(lanes=[("drums", "", 96, 0, 0, 0.8),
-                          ("bass", "", 96, 0, 0, 0.8)],
-                   clips=[("hit", "drums", 0, 48000, 0, ""),
-                          ("walk", "bass", 48000, 96000, 0, "")],
-                   name="multitrack", weight=1.0)
-    """
-    extra = _drop_none(lanes=_held(lanes or None, _flat_lanes),
-                       clips=_held(clips or None, _flat_clips),
-                       notes=_held(notes or None, _flat_box_notes),
-                       curves=_held(curves or None, _flat_curves),
-                       layers=_held(layers or None, _flat_layers),
-                       points=_held(points or None, _flat_curve_points),
-                       layer=layer, hidden=hidden,
-                       view=view, gap=gap,
-                       snap=snap, label=label, theme=theme)
-    extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler,
-                       sample_rate=sample_rate, tempo=tempo,
-                       tempo_map=_tempo_map(tempo_map), beat_at=beat_at,
-                       quant=quant, sel_start=sel_start, sel_len=sel_len,
-                       sel_min=sel_min, sel_max=sel_max,
-                       y_start=y_start, y_len=y_len,
-                       playhead_at=playhead_at, playhead=playhead, cursor=cursor,
-                       playhead_loop_start=playhead_loop_start,
-                       playhead_loop_len=playhead_loop_len, link=link,
-                       autofit=autofit))
-    return node("multitrack", id=id, **extra, **props)
-
-
 def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | None = None,
               ruler: str | None = None, dir: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
@@ -2582,7 +2353,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
               snap: float | None = None, note_ids=None, curves=None, layers=None, points=None,
-              osc_lane: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
+              osc_markers: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
               link: int | None = None, autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
@@ -2594,7 +2365,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid and an OSC lane -- the timeline
+    note grid and its OSC markers -- the timeline
     sibling of the compact roll a `multitrack` draws inside a box, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
@@ -2627,7 +2398,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
 
     Curves, drawn and edited as a `multitrack`'s automation is:
 
-    - ``curves`` -- the **lanes**, curves over the whole roll, each a row under
+    - ``curves`` -- the sequence's **automation**, curves over the whole roll, each a row under
       the grid: ``(name, label, min, max, height)``.
     - ``layers`` -- each note's own curves: ``(name, note_id, label, min, max,
       pitch)``, drawn inside the note named by ``note_id`` (see ``note_ids``) --
@@ -2653,8 +2424,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
     drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
     add a note or remove the one under the cursor; Shift+drag a note up or down to
-    set its velocity (the selection's, when the note is selected); Ctrl+click the OSC lane to add/remove an event, drag
-    one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
+    set its velocity (the selection's, when the note is selected); the OSC markers below the grid
+    are read-only: a press meant to edit one is refused, and says why. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
     velocity channel ...``) or ``"osc"`` event (``time label ...``) -- the edit-back
     pattern -- so a driver updates the arrangement and re-renders.
@@ -2671,8 +2442,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
     region); ``y_start``/``y_len`` are the
     vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
-    zoom/pan. ``osc_lane=True`` opens
-    the OSC lane even with no events (to author them). ``midi_in=True`` arms
+    zoom/pan. ``osc_markers=True`` opens
+    the OSC markers' strip even with no events. ``midi_in=True`` arms
     **live MIDI painting** in the native host: it opens a virtual MIDI input
     port ("clausters-gui") and paints incoming notes into this roll -- at the
     running playhead, or step-entering on the ``snap`` grid when the transport
@@ -2703,8 +2474,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
                                      1 if pitch else 0)]
     if points is not None:
         extra["points"] = _flat_curve_points(points)
-    if osc_lane is not None:
-        extra["osc_lane"] = 1 if osc_lane else 0
+    if osc_markers is not None:
+        extra["osc_markers"] = 1 if osc_markers else 0
     if midi_in is not None:
         extra["midi_in"] = 1 if midi_in else 0
     return node("notes", id=id, **extra, **props)

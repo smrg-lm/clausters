@@ -449,7 +449,7 @@
               "max": 84
             }
           },
-          "osc_lane": 1,
+          "osc_markers": 1,
           "velocity": true
         },
         {
@@ -468,40 +468,6 @@
           ],
           "pan": 1,
           "overview": 1
-        },
-        {
-          "type": "multitrack",
-          "id": 3,
-          "lanes": [
-            "d",
-            "drums",
-            96.0,
-            0,
-            0,
-            1.0
-          ],
-          "clips": [
-            "t",
-            "d",
-            0.0,
-            48000.0,
-            0.0,
-            "take",
-            7
-          ],
-          "snap": 1200.0,
-          "label": "drums",
-          "axes": {
-            "x": {
-              "unit": "time",
-              "sample_rate": 48000.0,
-              "link": 7,
-              "playhead": 12000.0,
-              "playhead_at": 0.0,
-              "playhead_loop_start": 0.0,
-              "playhead_loop_len": 96000.0
-            }
-          }
         }
       ]
     }

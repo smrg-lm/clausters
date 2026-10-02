@@ -1,8 +1,8 @@
-//! The `multitrack` widget: one element that owns a stack of lanes and the
+//! The `multitrack` widget: one element that owns a stack of tracks and the
 //! clips on them.
 //!
 //! It is the `pianoroll`'s shape applied to a multitrack. A roll is one widget
-//! holding its notes; this is one widget holding its lanes and clips, drawing
+//! holding its notes; this is one widget holding its tracks and clips, drawing
 //! its own headers, its own stack and its own boxes on the shared time axis.
 //! What that replaces is a *tree* of `Track` widgets under whatever generic
 //! container a script picked -- a shape with nobody in it that owned the multitrack,
@@ -10,7 +10,7 @@
 //! did to whichever widget it touched. `clients/gui/PLAN.md`, "The multitrack
 //! editor reuses the widget set that grew past it", carries the whole argument.
 //!
-//! **The lanes and the clips are props**, flat like a roll's `notes`: a client
+//! **The tracks and the clips are props**, flat like a roll's `notes`: a client
 //! describes the multitrack and never composes a tree of it, never registers a
 //! handler per box, and never learns a widget id. Identity is the client's own
 //! name, so what comes back names what the script already knows.
@@ -35,7 +35,7 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
-use crate::host::structures::clips::{self as model, Clip, Lane};
+use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
     SlotKey, Slotted, Swept, Take, TextureBody, TimeSpace,
@@ -62,15 +62,15 @@ mod verbs;
 // needs of another's answer is named rather than re-derived.
 use hand::{Block, Fading, Grab, Sizing};
 pub(crate) use props::build;
-use props::{LaneMeter, curve_bodies, json_arg, parse_clips, take_body};
+use props::{TrackMeter, curve_bodies, json_arg, parse_clips, take_body};
 
 #[cfg(test)]
 mod tests;
 
-/// The gap between lanes, in logical pixels, when the props name none.
+/// The gap between tracks, in logical pixels, when the props name none.
 const GAP: f32 = 4.0;
 
-/// A lane's thickness when nothing says otherwise.
+/// A track's thickness when nothing says otherwise.
 const LANE_H: f32 = 96.0;
 
 /// **One span of a join**: a run of one take, as the `segments` prop names it.
@@ -105,10 +105,10 @@ const MIN_LANE_H: f32 = 40.0;
 const MAX_LANE_H: f32 = 8.0 * LANE_H;
 
 /// An automation row's thickness when nothing says otherwise -- shorter than a
-/// lane, because what it draws is one line and not a stack of boxes.
+/// track, because what it draws is one line and not a stack of boxes.
 const CURVE_H: f32 = 40.0;
 
-/// **How short an automation row may be pulled.** Lower than a lane's floor,
+/// **How short an automation row may be pulled.** Lower than a track's floor,
 /// which has to hold a header's two rows: a curve row draws one line and a
 /// label, and what it must not become is a row nobody can put a point on.
 const MIN_CURVE_H: f32 = 16.0;
@@ -122,14 +122,14 @@ const WHEEL_ROWS: f32 = 48.0;
 /// one nobody can grab.
 const MIN_CLIP_W: f32 = 3.0;
 
-/// The stack of lanes and the clips on them.
+/// The stack of tracks and the clips on them.
 #[derive(Debug, Clone)]
 pub struct Multitrack {
-    /// The lanes, top to bottom.
-    pub(crate) lanes: Vec<Lane>,
-    /// The clips, each naming the lane it is on.
+    /// The tracks, top to bottom.
+    pub(crate) tracks: Vec<TrackRow>,
+    /// The clips, each naming the track it is on.
     pub(crate) clips: Vec<Clip>,
-    /// **The track automations**: each a row of its own under the lane it
+    /// **The track automations**: each a row of its own under the track it
     /// names, as long as the timeline is. A track's gain does not begin and
     /// end with a box, so it is not drawn inside one.
     pub(crate) curves: Vec<model::Curve>,
@@ -154,11 +154,11 @@ pub struct Multitrack {
     /// an affordance. Here a layer has a name, so it is named: the `points:1`
     /// ordinal is what a container whose layers are anonymous falls back to.
     layer: Option<String>,
-    /// **How tall each track is drawn**, by lane name -- the vertical zoom a
+    /// **How tall each track is drawn**, by track name -- the vertical zoom a
     /// hand set by pulling a header's bottom edge.
     ///
     /// Screen state, like the scroll and the box selection: nothing on the wire
-    /// sets or reports it, so it is kept here and laid over whatever a `lanes`
+    /// sets or reports it, so it is kept here and laid over whatever a `tracks`
     /// payload says. A client that redraws its multitrack says `height` on every row
     /// because the wire has always carried one, and a reader who zoomed a track
     /// in must not lose it to the next fader move.
@@ -167,12 +167,12 @@ pub struct Multitrack {
     /// screen state [`Multitrack::zoom`] is, for the other kind of row.
     ///
     /// A table of its own rather than one keyed by "whatever the row is called"
-    /// because the two names come out of one id space: a lane is named by its
+    /// because the two names come out of one id space: a track is named by its
     /// track's id and a curve by its automation's, and nothing stops a multitrack
     /// from having both. One table would make zooming a row silently resize an
     /// unrelated one, which is the kind of defect nobody finds by reading.
     curve_zoom: HashMap<String, f32>,
-    /// **Where each metered track's level is read from**, by lane name.
+    /// **Where each metered track's level is read from**, by track name.
     ///
     /// A meter is a *bus*, not a value: the host reads it every frame, straight
     /// out of the shared segment, so a level that moves every block costs no
@@ -182,7 +182,7 @@ pub struct Multitrack {
     ///
     /// Empty is the ordinary state: a multitrack nobody is playing has no meters,
     /// and a header with nothing to read draws no strip.
-    meters: HashMap<String, LaneMeter>,
+    meters: HashMap<String, TrackMeter>,
     /// **Which boxes wrap**, by name -- the `loops` prop, a name set exactly as
     /// `hidden` is.
     ///
@@ -216,8 +216,9 @@ pub struct Multitrack {
     /// when the press landed -- what says on release whether anything changed.
     holding: Option<(String, Value)>,
     /// Which clips the hand is holding, by index. **The hand's, not the
-    /// multitrack's**: nothing on the wire sets or reports it, exactly as nothing
-    /// reports which notes a roll has selected.
+    /// multitrack's**: no report announces it, and a script reads it with a
+    /// `/gui_query` and writes it with `/gui_set selected` -- by the clips'
+    /// names, which are the regions' ids -- as it does a roll's notes.
     pub(crate) selected: Vec<usize>,
     /// Which **track** the hand is on, by row index -- the second coordinate a
     /// paste needs (the position cursor says *when*, this says *where*), and
@@ -231,7 +232,7 @@ pub struct Multitrack {
     /// How far the stack is scrolled, in logical pixels. Screen state, so it
     /// survives a redefine rather than being restated by every def.
     pub(crate) scroll: f32,
-    /// The space between lanes.
+    /// The space between tracks.
     pub(crate) gap: f32,
     /// The grid a placement lands on, in timeline samples; `0` is no grid.
     pub(crate) snap: f64,
@@ -305,7 +306,7 @@ pub struct Multitrack {
 impl Default for Multitrack {
     fn default() -> Self {
         Self {
-            lanes: Vec::new(),
+            tracks: Vec::new(),
             clips: Vec::new(),
             curves: Vec::new(),
             layers: Vec::new(),
@@ -344,10 +345,10 @@ impl Multitrack {}
 /// **The clips are boxes on rows**, which is the one thing the box arithmetic
 /// asks of whoever holds some.
 ///
-/// The row is the **lane's index**, so `in_rect`, `move_block` and `quantize`
-/// -- already written and already tested against a roll's notes and a lane's
+/// The row is the **track's index**, so `in_rect`, `move_block` and `quantize`
+/// -- already written and already tested against a roll's notes and a track's
 /// clips -- work here unchanged. Writing the row back is what makes a block
-/// dragged across the stack change the lanes its clips name: one field each,
+/// dragged across the stack change the tracks its clips name: one field each,
 /// with nothing removed and nothing inserted.
 impl Placements for Multitrack {
     fn len(&self) -> usize {
@@ -363,13 +364,13 @@ impl Placements for Multitrack {
     }
 
     fn row(&self, i: usize) -> f32 {
-        self.lane_of(&self.clips[i]).unwrap_or(0) as f32
+        self.track_of(&self.clips[i]).unwrap_or(0) as f32
     }
 
     fn set_row(&mut self, i: usize, r: f32) {
         let at = r.round().max(0.0) as usize;
-        if let Some(lane) = self.lanes.get(at) {
-            self.clips[i].lane = lane.name.clone();
+        if let Some(track) = self.tracks.get(at) {
+            self.clips[i].track = track.name.clone();
         }
     }
 }
@@ -446,7 +447,7 @@ impl Element for Multitrack {
     }
 
     /// **Elastic on both axes.** It is a surface whose extent is the caller's,
-    /// and its own content must never size it: a lane added by a `/gui_set`
+    /// and its own content must never size it: a track added by a `/gui_set`
     /// would then relayout the window, which is both a visible jump and a cost
     /// per message.
     fn natural(&self, _m: &Metrics, _scale: f32) -> Natural {
@@ -531,11 +532,24 @@ impl Element for Multitrack {
     /// own `/gui_set` would take.
     fn info(&self) -> Vec<(String, Value)> {
         vec![
-            ("lanes".into(), model::lanes_json(&self.lanes)),
+            ("tracks".into(), model::tracks_json(&self.tracks)),
             ("clips".into(), model::clips_json(&self.clips)),
             ("curves".into(), model::curves_json(&self.curves)),
             ("layers".into(), model::layers_json(&self.layers)),
             ("points".into(), self.points_json()),
+            (
+                "selected".into(),
+                Value::from(
+                    Value::from(
+                        self.selected
+                            .iter()
+                            .filter_map(|&i| self.clips.get(i))
+                            .map(|c| c.name.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .to_string(),
+                ),
+            ),
         ]
     }
 
@@ -585,12 +599,12 @@ impl OnAxis for Multitrack {
         true
     }
 
-    /// **What a lane's header asks for, left of the axis.**
+    /// **What a track's header asks for, left of the axis.**
     ///
     /// It is the group's answer and not this widget's: the layout stamps the
     /// widest wish any member of the navigation group made, so a ruler stacked
-    /// with these lanes starts its ticks over the same sample. Without it there
-    /// is no band, and a lane draws no name and no controls at all.
+    /// with these tracks starts its ticks over the same sample. Without it there
+    /// is no band, and a track draws no name and no controls at all.
     fn gutter(&self, m: &Metrics) -> f32 {
         // The strip is part of the band, so the widest metered track is part of
         // what the group's indent has to hold -- otherwise the meters would be

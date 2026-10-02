@@ -51,15 +51,19 @@ fn the_two_sides_agree_about_what_the_multitrack_is() {
 fn a_comped_track_keeps_every_take_and_plays_the_one_it_names() {
     let multitrack = vector();
     let vocals = multitrack.track(NodeId(10)).expect("the vocal track");
-    assert_eq!(vocals.lanes.len(), 3, "the takes nobody chose are kept");
+    assert_eq!(
+        vocals.take_lanes.len(),
+        3,
+        "the takes nobody chose are kept"
+    );
     assert_eq!(vocals.active, 1);
     assert_eq!(
-        vocals.active_lane().unwrap().name.as_deref(),
+        vocals.active_take_lane().unwrap().name.as_deref(),
         Some("take 2")
     );
     // Three windows, three sources, three identities.
     let sources: Vec<u64> = vocals
-        .lanes
+        .take_lanes
         .iter()
         .flat_map(|lane| lane.regions.iter())
         .map(|r| {
@@ -79,7 +83,7 @@ fn a_comped_track_keeps_every_take_and_plays_the_one_it_names() {
 #[test]
 fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
     let multitrack = vector();
-    let lane = &multitrack.track(NodeId(30)).unwrap().lanes[0];
+    let lane = &multitrack.track(NodeId(30)).unwrap().take_lanes[0];
     assert!(lane.regions[0].overlaps(&lane.regions[1]));
     assert_eq!(
         lane.regions[0].fade_out.as_ref().unwrap().length,
@@ -99,7 +103,7 @@ fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
 #[test]
 fn a_composite_region_arrives_as_the_general_tree() {
     let multitrack = vector();
-    let region = &multitrack.track(NodeId(40)).unwrap().lanes[0].regions[0];
+    let region = &multitrack.track(NodeId(40)).unwrap().take_lanes[0].regions[0];
     let node = region.content.as_node().expect("the tree, placed");
     assert_eq!(node.id, NodeId(43));
     assert!(matches!(node.body, Body::Aggregate { .. }));
@@ -117,11 +121,11 @@ fn an_automation_curve_keeps_the_shapes_neither_side_reads() {
 #[test]
 fn a_region_carries_curves_of_its_own_and_they_are_not_its_tracks() {
     // The two places a curve belongs: a track's runs the length of the track
-    // and is drawn in a lane beside it, a region's runs the length of the
+    // and is drawn in a row beside it, a region's runs the length of the
     // region and is drawn inside it. One type, so one reader -- which is what
     // this asserts, since the Python client wrote both through one class.
     let multitrack = vector();
-    let region = &multitrack.track(NodeId(30)).unwrap().lanes[0].regions[0];
+    let region = &multitrack.track(NodeId(30)).unwrap().take_lanes[0].regions[0];
     let own = &region.automation[0];
     assert_eq!(own.id, NodeId(35));
     assert_eq!(own.target.0["ctl"], "gain");
@@ -141,7 +145,7 @@ fn a_region_carries_curves_of_its_own_and_they_are_not_its_tracks() {
 fn a_field_the_client_added_and_this_build_has_no_name_for_survives() {
     let multitrack = vector();
     assert_eq!(multitrack.extra["groove"]["name"], "mpc60");
-    let region = &multitrack.track(NodeId(40)).unwrap().lanes[0].regions[0];
+    let region = &multitrack.track(NodeId(40)).unwrap().take_lanes[0].regions[0];
     assert_eq!(region.extra["warp"]["mode"], "beats");
 }
 
@@ -234,9 +238,9 @@ fn the_session_carries_two_views_of_one_multitrack_and_they_disagree_on_purpose(
     assert_eq!(arranger.selected, vec![NodeId(20), NodeId(32)]);
     assert_eq!(arranger.focused, Some(NodeId(20)));
     assert_eq!(arranger.track(NodeId(10)).height, Some(96.0));
-    assert!(arranger.track(NodeId(10)).lanes_shown, "comping open");
+    assert!(arranger.track(NodeId(10)).take_lanes_shown, "comping open");
     assert_eq!(arranger.track(NodeId(30)).color.as_deref(), Some("#4488cc"));
-    assert_eq!(arranger.lane(NodeId(12)).height, Some(32.0));
+    assert_eq!(arranger.take_lane(NodeId(12)).height, Some(32.0));
     assert_eq!(
         arranger.extra["fold"], "tracks",
         "a newer window's own state"

@@ -137,6 +137,38 @@ fn the_space_bar_plays_the_time_range_a_sweep_left() {
     );
 }
 
+/// **The time range is one state, the hand's and the client's**: a sweep
+/// reports it, the client sets it through `span`, the roll draws it, and the
+/// space bar plays it either way.
+#[test]
+fn a_span_set_by_the_client_is_drawn_and_played_as_a_sweep_is() {
+    let mut e = editor(shared());
+    let swept = e.event(&gesture("selection", vec![json!(50.0), json!(100.0)]), 1);
+    assert_eq!(swept.span, Some(json!([0.5, 1.5])), "a sweep reports it");
+    call_json(&mut e, r#"{"verb": "span", "span": [1.0, 2.0]}"#);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(
+        (props["sel_start"].clone(), props["sel_len"].clone()),
+        (json!(100.0), json!(100.0))
+    );
+    let space = e.event(
+        &Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(39), json!(3), json!(0), json!("play"), json!(0)],
+        },
+        1,
+    );
+    assert_eq!(
+        space.play,
+        Some(json!({"looping": false, "range": [1.0, 2.0]}))
+    );
+    call_json(&mut e, r#"{"verb": "span", "span": null}"#);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(props["sel_len"], json!(0.0), "no span, no band");
+}
+
 /// **`L` over the window changes the pass in progress**: the loop switch's
 /// new state and the time range a sweep left, apart from a play.
 #[test]
@@ -255,16 +287,16 @@ fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
 }
 
 /// **A curve drawn on the roll is one edit of the sequence**: the window draws
-/// the lane, a `points` gesture lands on it, and the entry puts it back.
+/// the curve, a `points` gesture lands on it, and the entry puts it back.
 #[test]
 fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
     use clausters_document::NodeId;
     use clausters_document::multitrack::Automation;
     let sequence = shared();
-    let lane = sequence
+    let curve = sequence
         .lock()
         .unwrap()
-        .edit(EventsIntent::Lane {
+        .edit(EventsIntent::Automation {
             automation: Automation::new(NodeId(0), Opaque(json!({"cc": 1}))),
         })
         .unwrap()
@@ -272,8 +304,8 @@ fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
         .unwrap();
     let mut e = editor(sequence.clone());
     let tree = e.window(40);
-    assert_eq!(tree["children"][0]["curves"][0], json!(lane.to_string()));
-    let name = json!(lane.to_string());
+    assert_eq!(tree["children"][0]["curves"][0], json!(curve.to_string()));
+    let name = json!(curve.to_string());
     let drawn = vec![
         name.clone(),
         json!(0.0),
@@ -290,8 +322,8 @@ fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
     assert!(out.changed);
     let record = out.record.expect("an entry");
     assert_eq!(record.label, "draw a curve");
-    let points = sequence.lock().unwrap().lanes[0].points.clone();
+    let points = sequence.lock().unwrap().automation[0].points.clone();
     assert_eq!((points[1].at, points[1].value), (1.0, 90.0));
     assert!(e.apply(&record.legs[0].backward));
-    assert!(sequence.lock().unwrap().lanes[0].points.is_empty());
+    assert!(sequence.lock().unwrap().automation[0].points.is_empty());
 }

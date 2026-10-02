@@ -1,5 +1,5 @@
 /**
- * The multitrack: tracks, lanes, regions, and the timeline they sit on
+ * The multitrack: tracks, take lanes, regions, and the timeline they sit on
  * (mirrors `clausters/multitrack.py`).
  *
  * This is the client's side of `clausters_document::multitrack` -- the model a
@@ -17,10 +17,10 @@
  *   a {@link Content} saying what fills it. Six regions over one source are six
  *   identities and one source, referenced rather than copied. That is the whole
  *   of non-destructive editing.
- * - A {@link Lane} is one of a track's several contents, an ordered list of
+ * - A {@link TakeLane} is one of a track's several contents, an ordered list of
  *   regions. Ardour's structure and our name.
- * - A {@link Track} holds several lanes and **plays one**, which is what
- *   comping is: record six passes into six lanes, then take from each.
+ * - A {@link Track} holds several take lanes and **plays one**, which is what
+ *   comping is: record six passes into six take lanes, then take from each.
  * - An {@link Automation} is a curve over one parameter, in the arrangement's
  *   time.
  * - An {@link Multitrack} is the tracks plus what the **multitrack** has one of:
@@ -30,7 +30,7 @@
  *
  * ## A region is not a clip
  *
- * `Region` is the model's word; **clip** is the picture's. A clip, a lane row,
+ * `Region` is the model's word; **clip** is the picture's. A clip, a track row,
  * a waveform are what the host draws; a region is what an edit names. Keeping
  * them apart is deliberate -- the multitrack's defects came from the thing drawn
  * and the thing addressed being one object.
@@ -238,7 +238,7 @@ export class Content {
 }
 
 /**
- * One placed thing on a lane: a span of the timeline, and what fills it.
+ * One placed thing on a take lane: a span of the timeline, and what fills it.
  *
  * `position` and `length` are the region's own, in seconds. They are **not** the
  * content's: a region may show part of what it holds, and trimming moves these
@@ -251,7 +251,7 @@ export class Region {
     content: Content;
     name?: string;
     /**
-     * Which of the overlapping regions on this lane draws and plays on top.
+     * Which of the overlapping regions on this take lane draws and plays on top.
      * Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
      * stack needs an order that survives a save.
      */
@@ -265,7 +265,7 @@ export class Region {
      *
      * The same {@link Automation} a track carries, in the other place it
      * belongs: a track's curve runs the length of the track and is drawn in a
-     * lane beside it, a region's runs the length of the region and is drawn
+     * row beside it, a region's runs the length of the region and is drawn
      * **inside** it. A clip that has curves is a small track acting on itself
      * alone.
      */
@@ -350,11 +350,11 @@ export class Region {
  * One of a track's several contents: an ordered list of regions.
  *
  * Ardour's structure and our name -- its *playlist* is this, and that word is
- * spent on something else everywhere. {@link Lane.place} keeps the list in
+ * spent on something else everywhere. {@link TakeLane.place} keeps the list in
  * position order, so a re-saved session is stable and a diff of two saves is
  * the edits rather than the iteration order.
  */
-export class Lane {
+export class TakeLane {
     id: number;
     name?: string;
     regions: Region[];
@@ -368,7 +368,7 @@ export class Lane {
     }
 
     /**
-     * Places a region and keeps the lane in position order. Returns it, so a
+     * Places a region and keeps the take lane in position order. Returns it, so a
      * caller can go on holding what it just placed.
      */
     place(region: Region): Region {
@@ -398,8 +398,8 @@ export class Lane {
         return { ...out, ...this.extra };
     }
 
-    static read(written: Extra): Lane {
-        return new Lane({
+    static read(written: Extra): TakeLane {
+        return new TakeLane({
             id: num(written.id),
             name: written.name as string | undefined,
             regions: ((written.regions as Extra[]) ?? []).map(Region.read),
@@ -448,47 +448,266 @@ export function flatPoints(
     return out;
 }
 
+/** A point of a curve as a script may spell it: the document's, or `[at, value]`. */
+export type PointLike = Extra | readonly [number, number];
+
+/** Points as the document writes them: a pair becomes `{at, value}`. */
+function documentPoints(points: Iterable<PointLike>): Extra[] {
+    return [...points].map((point) =>
+        Array.isArray(point)
+            ? { at: Number(point[0]), value: Number(point[1]) }
+            : { ...(point as Extra) },
+    );
+}
+
 /**
- * A curve over one parameter, in the arrangement's own time.
+ * What holds a curve that is not a free value: a sequence, which reads its
+ * curves for a view and writes them back.
+ *
+ * @internal
+ */
+export interface CurveHolder {
+    /** The curves as written -- the sequence's for `null`, else that event's; `null` when it holds no such event. */
+    curvesOf(event: number | null): Extra[] | null;
+    /** Writes a curve whole, and answers its id. */
+    writeCurve(event: number | null, written: Extra, label: string): number;
+    /** One change, through the holder's vocabulary. */
+    edit(intent: Extra, label: string): unknown;
+}
+
+/** The fields a curve writes under their own names. */
+const CURVE_FIELDS = ["id", "target", "name", "points", "visible", "enabled", "extra"];
+
+/**
+ * A curve over one parameter, in its holder's time.
  *
  * `target` says **what this automates** in the client's terms and is never read
  * here -- a control name, a bus, a plugin's parameter index -- the same door a
- * leaf's configuration is, and for the same reason.
+ * leaf's configuration is, and for the same reason. The points are `{at, value,
+ * data}`, the shape the document's points vocabulary carries; `[at, value]`
+ * pairs are read as such points. What `at` counts is the holder's: seconds on
+ * a {@link Track}, seconds from the region's start on a {@link Region}, beats
+ * on an `EventSequence`, beats from the note's start on one of its events.
+ *
+ * **One class, free or held.** Built by a script, a curve is a **value** that
+ * nothing holds. Added to a sequence or to one of its events
+ * (`seq.automation.add`, `event.automation.add`) it is a **live view** of the
+ * curve the sequence holds: reading a field asks the sequence, so it reads
+ * what an editor left there, writing one writes the curve back into the
+ * sequence, and the same curve read twice is the same object. A curve the sequence no longer holds -- removed, or undone away --
+ * is **detached**: {@link Automation.held} is `false` and reading it throws,
+ * until an undo brings it back.
+ *
+ * A curve on a multitrack is a value either way, written whole with the
+ * multitrack; its `id` is the multitrack's to keep.
  */
 export class Automation {
-    id: number;
-    target?: unknown;
-    name?: string;
-    points: Extra[];
+    #holder: [CurveHolder, number | null] | null = null;
+    #id: number;
+    #value: {
+        target?: unknown;
+        name?: string;
+        points: Extra[];
+        visible: boolean;
+        enabled: boolean;
+        extra: Extra;
+    } | null;
+
+    constructor(fields: {
+        target?: unknown;
+        points?: Iterable<PointLike>;
+        name?: string;
+        visible?: boolean;
+        enabled?: boolean;
+        extra?: Extra;
+        id?: number;
+    } = {}) {
+        this.#id = Math.trunc(fields.id ?? 0);
+        this.#value = {
+            target: fields.target,
+            name: fields.name,
+            points: documentPoints(fields.points ?? []),
+            visible: fields.visible ?? false,
+            enabled: fields.enabled ?? true,
+            extra: { ...(fields.extra ?? {}) },
+        };
+    }
+
     /**
-     * Whether the lane is shown. The **view's**, and kept here because which
-     * curves a person had open is part of reopening the multitrack as they left it.
+     * The view of curve `id` of `holder` -- over the whole sequence when
+     * `event` is `null`, else over that event.
+     *
+     * @internal
      */
-    visible: boolean;
+    static heldBy(holder: CurveHolder, event: number | null, id: number): Automation {
+        const curve = new Automation({ id });
+        curve.bind(holder, event, id);
+        return curve;
+    }
+
+    /** Becomes the view of curve `id` the holder now holds. @internal */
+    bind(holder: CurveHolder, event: number | null, id: number): void {
+        this.#holder = [holder, event];
+        this.#id = Math.trunc(id);
+        this.#value = null;
+    }
+
+    /** @internal */
+    get holder(): [CurveHolder, number | null] | null {
+        return this.#holder;
+    }
+
+    /**
+     * The sequence that holds the curve, whose history it shares
+     * (`Editing.of`), or `null` for a free value.
+     *
+     * @internal
+     */
+    get historyOwner(): object | null {
+        return this.#holder === null ? null : this.#holder[0];
+    }
+
+    // ---- the fields ----
+
+    #written(): Extra {
+        if (this.#holder === null) {
+            const value = this.#value!;
+            return { id: this.#id, ...value, points: [...value.points] };
+        }
+        const [holder, event] = this.#holder;
+        const found = (holder.curvesOf(event) ?? []).find((c) => Number(c.id) === this.#id);
+        if (found === undefined) throw new Error("the sequence no longer holds this curve");
+        return found;
+    }
+
+    /**
+     * Writes one field: into the value, or -- for a held curve -- the whole
+     * curve back into the sequence, which keeps its id.
+     */
+    #write(name: string, value: unknown): void {
+        if (this.#holder === null) {
+            (this.#value as Record<string, unknown>)[name] = value;
+            return;
+        }
+        let written: Extra = { ...this.#written() };
+        if (name === "extra") {
+            written = Object.fromEntries(Object.entries(written).filter(([k]) => CURVE_FIELDS.includes(k)));
+            Object.assign(written, value as Extra);
+        } else {
+            written[name] = value;
+        }
+        const [holder, event] = this.#holder;
+        holder.writeCurve(event, written, "edit a curve");
+    }
+
+    /**
+     * Removes the curve from the sequence that holds it. This object is left
+     * detached, and an undo that brings the curve back brings it back too. A
+     * free curve is held by nothing, so there is nothing to remove it from:
+     * that throws.
+     */
+    remove(): void {
+        if (this.#holder === null) throw new Error("a free curve is held by nothing");
+        this.#written();
+        const [holder, event] = this.#holder;
+        holder.edit(
+            event === null
+                ? { intent: "removeautomation", curve: this.#id }
+                : { intent: "removeeventautomation", id: event, curve: this.#id },
+            "remove a curve",
+        );
+    }
+
+    /**
+     * Whether a sequence holds the curve: `false` for a free value, and for a
+     * view whose curve was removed.
+     */
+    get held(): boolean {
+        if (this.#holder === null) return false;
+        try {
+            this.#written();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** The curve's identity in its holder; `0` for a value nothing holds yet. */
+    get id(): number {
+        return this.#id;
+    }
+
+    set id(value: number) {
+        if (this.#holder !== null) throw new Error("a held curve keeps the id its sequence gave it");
+        this.#id = Math.trunc(value);
+    }
+
+    /** What the curve drives, in its holder's vocabulary. */
+    get target(): unknown {
+        return this.#written().target ?? undefined;
+    }
+
+    set target(value: unknown) {
+        this.#write("target", value);
+    }
+
+    /** What a reader calls the curve. */
+    get name(): string | undefined {
+        return (this.#written().name as string | null | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        this.#write("name", value);
+    }
+
+    /**
+     * The points, `{at, value, data}`, in order. A copy: change a curve by
+     * assigning its points, or with {@link Automation.setPoints}.
+     */
+    get points(): Extra[] {
+        return [...((this.#written().points as Extra[] | undefined) ?? [])];
+    }
+
+    set points(value: Iterable<PointLike>) {
+        this.#write("points", documentPoints(value));
+    }
+
+    /**
+     * Whether the curve is shown. The **view's**, and kept here because which
+     * curves a person had open is part of reopening the work as they left it.
+     */
+    get visible(): boolean {
+        return Boolean(this.#written().visible);
+    }
+
+    set visible(value: boolean) {
+        this.#write("visible", Boolean(value));
+    }
+
     /**
      * Whether the curve is being applied. A curve can be kept and switched off
      * without being deleted, which is what an arm or a bypass is.
      */
-    enabled: boolean;
-    extra: Extra;
-
-    constructor(fields: {
-        id: number;
-        target?: unknown;
-        name?: string;
-        points?: Extra[];
-        visible?: boolean;
-        enabled?: boolean;
-        extra?: Extra;
-    }) {
-        this.id = fields.id;
-        this.target = fields.target;
-        this.name = fields.name;
-        this.points = fields.points ?? [];
-        this.visible = fields.visible ?? false;
-        this.enabled = fields.enabled ?? true;
-        this.extra = fields.extra ?? {};
+    get enabled(): boolean {
+        return this.#written().enabled !== false;
     }
+
+    set enabled(value: boolean) {
+        this.#write("enabled", Boolean(value));
+    }
+
+    /** Fields a newer writer wrote, carried as they are. */
+    get extra(): Extra {
+        const written = this.#written();
+        if (this.#holder === null) return { ...(written.extra as Extra) };
+        return rest(written, ...CURVE_FIELDS);
+    }
+
+    set extra(value: Extra) {
+        this.#write("extra", { ...value });
+    }
+
+    // ---- the curve protocol ----
 
     /**
      * The curve as the flat `[t, v, shape, curve, ...]` break points the `bpf`
@@ -515,13 +734,17 @@ export class Automation {
         return this;
     }
 
+    // ---- as data ----
+
     write(): Extra {
-        const out: Extra = { id: this.id };
-        if (this.name !== undefined) out.name = this.name;
-        if (this.target !== undefined) out.target = this.target;
-        if (this.points.length) out.points = [...this.points];
-        if (this.visible) out.visible = true;
-        if (!this.enabled) out.enabled = false;
+        const written = this.#written();
+        const out: Extra = { id: this.#id };
+        if (written.name !== undefined && written.name !== null) out.name = written.name;
+        if (written.target !== undefined && written.target !== null) out.target = written.target;
+        const points = (written.points as Extra[] | undefined) ?? [];
+        if (points.length) out.points = [...points];
+        if (written.visible) out.visible = true;
+        if (written.enabled === false) out.enabled = false;
         return { ...out, ...this.extra };
     }
 
@@ -539,19 +762,19 @@ export class Automation {
 }
 
 /**
- * A row of the arrangement: several lanes, one of them playing, the curves over
+ * A row of the arrangement: several take lanes, one of them playing, the curves over
  * it, and whatever the client says it is.
  *
  * **What a track *is* -- an instrument, a bus, a folder -- is not here.** That is
  * `config`, carried and never interpreted, for the reason a leaf is opaque: a
  * def is code in the language of whoever wrote it. What the document owns is
- * the structure: which lanes, which one plays, what is placed on them.
+ * the structure: which take lanes, which one plays, what is placed on them.
  */
 export class Track {
     id: number;
     name?: string;
-    lanes: Lane[];
-    /** Which lane plays, as an index into {@link Track.lanes}. */
+    takeLanes: TakeLane[];
+    /** Which lane plays, as an index into {@link Track.takeLanes}. */
     active: number;
     automation: Automation[];
     muted: boolean;
@@ -580,7 +803,7 @@ export class Track {
     constructor(fields: {
         id: number;
         name?: string;
-        lanes?: Lane[];
+        takeLanes?: TakeLane[];
         active?: number;
         automation?: Automation[];
         muted?: boolean;
@@ -592,7 +815,7 @@ export class Track {
     }) {
         this.id = fields.id;
         this.name = fields.name;
-        this.lanes = fields.lanes ?? [];
+        this.takeLanes = fields.takeLanes ?? [];
         this.active = fields.active ?? 0;
         this.automation = fields.automation ?? [];
         this.muted = fields.muted ?? false;
@@ -604,26 +827,26 @@ export class Track {
     }
 
     /**
-     * The lane that plays, or `undefined` when {@link Track.active} names one
+     * The take lane that plays, or `undefined` when {@link Track.active} names one
      * that is not there.
      */
-    get activeLane(): Lane | undefined {
-        return this.lanes[this.active];
+    get activeTakeLane(): TakeLane | undefined {
+        return this.takeLanes[this.active];
     }
 
     /**
-     * Where the track's last region ends, across **every** lane -- what it spans
+     * Where the track's last region ends, across **every** take lane -- what it spans
      * rather than what it plays, since an alternate take is still part of the
      * multitrack.
      */
     get end(): number {
-        return this.lanes.reduce((most, lane) => Math.max(most, lane.end), 0);
+        return this.takeLanes.reduce((most, lane) => Math.max(most, lane.end), 0);
     }
 
     write(): Extra {
         const out: Extra = { id: this.id };
         if (this.name !== undefined) out.name = this.name;
-        if (this.lanes.length) out.lanes = this.lanes.map((lane) => lane.write());
+        if (this.takeLanes.length) out.take_lanes = this.takeLanes.map((lane) => lane.write());
         if (this.active) out.active = this.active;
         if (this.automation.length) out.automation = this.automation.map((a) => a.write());
         if (this.muted) out.muted = true;
@@ -638,7 +861,7 @@ export class Track {
         return new Track({
             id: num(written.id),
             name: written.name as string | undefined,
-            lanes: ((written.lanes as Extra[]) ?? []).map(Lane.read),
+            takeLanes: ((written.take_lanes as Extra[]) ?? []).map(TakeLane.read),
             active: num(written.active),
             automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
             muted: Boolean(written.muted),
@@ -646,7 +869,7 @@ export class Track {
             level: written.level === undefined ? 1 : num(written.level),
             channels: written.channels === undefined ? 2 : num(written.channels),
             config: written.config,
-            extra: rest(written, "id", "name", "lanes", "active", "automation",
+            extra: rest(written, "id", "name", "take_lanes", "active", "automation",
                         "muted", "soloed", "level", "channels", "config"),
         });
     }
@@ -816,7 +1039,7 @@ export class Multitrack {
     }
 
     /**
-     * Where the last region ends, across every track and every lane -- how long
+     * Where the last region ends, across every track and every take lane -- how long
      * the multitrack is.
      */
     get end(): number {
@@ -824,13 +1047,13 @@ export class Multitrack {
     }
 
     /**
-     * Every region, in track then lane then position order -- **every** lane,
+     * Every region, in track then take lane then position order -- **every** take lane,
      * not only the ones that play, because an alternate take still names the
      * source it plays.
      */
     *regions(): Generator<Region> {
         for (const track of this.tracks) {
-            for (const lane of track.lanes) yield* lane.regions;
+            for (const lane of track.takeLanes) yield* lane.regions;
         }
     }
 
@@ -1145,11 +1368,11 @@ export class TrackView {
     /** Whether the row is collapsed to its header. */
     collapsed = false;
     /**
-     * Whether the track's other lanes are shown under the one that plays --
+     * Whether the track's other take lanes are shown under the one that plays --
      * comping open, in a word. Closed by default: a track with six takes on it
      * is one row until somebody asks to see them.
      */
-    lanesShown = false;
+    takeLanesShown = false;
     /** The colour the track is drawn in, carried and never read. */
     color?: string;
     extra: Extra = {};
@@ -1158,7 +1381,7 @@ export class TrackView {
         const out: Extra = {};
         if (this.height !== undefined) out.height = this.height;
         if (this.collapsed) out.collapsed = true;
-        if (this.lanesShown) out.lanes_shown = true;
+        if (this.takeLanesShown) out.take_lanes_shown = true;
         if (this.color !== undefined) out.color = this.color;
         return { ...out, ...this.extra };
     }
@@ -1167,15 +1390,15 @@ export class TrackView {
         const view = new TrackView();
         if (written.height !== undefined) view.height = num(written.height);
         view.collapsed = written.collapsed === true;
-        view.lanesShown = written.lanes_shown === true;
+        view.takeLanesShown = written.take_lanes_shown === true;
         if (written.color !== undefined) view.color = String(written.color);
-        view.extra = rest(written, "height", "collapsed", "lanes_shown", "color");
+        view.extra = rest(written, "height", "collapsed", "take_lanes_shown", "color");
         return view;
     }
 }
 
 /** How one lane is drawn. */
-export class LaneView {
+export class TakeLaneView {
     /** How tall its row is when the track's lanes are shown. */
     height?: number;
     extra: Extra = {};
@@ -1186,8 +1409,8 @@ export class LaneView {
         return { ...out, ...this.extra };
     }
 
-    static read(written: Extra): LaneView {
-        const view = new LaneView();
+    static read(written: Extra): TakeLaneView {
+        const view = new TakeLaneView();
         if (written.height !== undefined) view.height = num(written.height);
         view.extra = rest(written, "height");
         return view;
@@ -1234,7 +1457,7 @@ export class View {
     /** The time range the hand swept, in seconds, when it swept one. */
     selection?: Span;
     /**
-     * What the hand is holding: regions, lanes or tracks, by id. One list
+     * What the hand is holding: regions, take lanes or tracks, by id. One list
      * rather than one per kind, because the multitrack has one id space.
      */
     selected: number[] = [];
@@ -1245,7 +1468,7 @@ export class View {
     /** How each track is drawn, by the track's id. */
     tracks = new Map<number, TrackView>();
     /** How each lane is drawn, by the lane's id. */
-    lanes = new Map<number, LaneView>();
+    takeLanes = new Map<number, TakeLaneView>();
     extra: Extra = {};
 
     /** How this track is drawn, or the default when nobody touched it. */
@@ -1267,16 +1490,16 @@ export class View {
     }
 
     /** How this lane is drawn, or the default. */
-    lane(id: number): LaneView {
-        return this.lanes.get(id) ?? new LaneView();
+    takeLane(id: number): TakeLaneView {
+        return this.takeLanes.get(id) ?? new TakeLaneView();
     }
 
     /** How this lane is drawn, to be edited. See {@link View.trackView}. */
-    laneView(id: number): LaneView {
-        let view = this.lanes.get(id);
+    takeLaneView(id: number): TakeLaneView {
+        let view = this.takeLanes.get(id);
         if (!view) {
-            view = new LaneView();
-            this.lanes.set(id, view);
+            view = new TakeLaneView();
+            this.takeLanes.set(id, view);
         }
         return view;
     }
@@ -1293,19 +1516,19 @@ export class View {
         const held = new Set<number>();
         for (const track of multitrack.tracks) {
             held.add(track.id);
-            for (const lane of track.lanes) {
+            for (const lane of track.takeLanes) {
                 held.add(lane.id);
                 for (const region of lane.regions) held.add(region.id);
             }
             for (const curve of track.automation) held.add(curve.id);
         }
-        const before = [this.tracks.size, this.lanes.size, this.selected.length,
+        const before = [this.tracks.size, this.takeLanes.size, this.selected.length,
                         this.focused, this.detail].join(",");
         for (const id of [...this.tracks.keys()]) {
             if (!held.has(id)) this.tracks.delete(id);
         }
-        for (const id of [...this.lanes.keys()]) {
-            if (!held.has(id)) this.lanes.delete(id);
+        for (const id of [...this.takeLanes.keys()]) {
+            if (!held.has(id)) this.takeLanes.delete(id);
         }
         this.selected = this.selected.filter((id) => held.has(id));
         if (this.focused !== undefined && !held.has(this.focused)) {
@@ -1314,7 +1537,7 @@ export class View {
         if (this.detail !== undefined && !held.has(this.detail)) {
             this.detail = undefined;
         }
-        return before !== [this.tracks.size, this.lanes.size,
+        return before !== [this.tracks.size, this.takeLanes.size,
                            this.selected.length, this.focused,
                            this.detail].join(",");
     }
@@ -1338,12 +1561,12 @@ export class View {
             }
             out.tracks = table;
         }
-        if (this.lanes.size) {
+        if (this.takeLanes.size) {
             const table: Extra = {};
-            for (const id of [...this.lanes.keys()].sort((a, b) => a - b)) {
-                table[String(id)] = this.lanes.get(id)!.write();
+            for (const id of [...this.takeLanes.keys()].sort((a, b) => a - b)) {
+                table[String(id)] = this.takeLanes.get(id)!.write();
             }
-            out.lanes = table;
+            out.take_lanes = table;
         }
         return { ...out, ...this.extra };
     }
@@ -1363,12 +1586,12 @@ export class View {
         for (const [id, entry] of Object.entries((written.tracks as Extra) ?? {})) {
             view.tracks.set(Number(id), TrackView.read(entry as Extra));
         }
-        for (const [id, entry] of Object.entries((written.lanes as Extra) ?? {})) {
-            view.lanes.set(Number(id), LaneView.read(entry as Extra));
+        for (const [id, entry] of Object.entries((written.take_lanes as Extra) ?? {})) {
+            view.takeLanes.set(Number(id), TakeLaneView.read(entry as Extra));
         }
         view.extra = rest(written, "name", "visible", "scroll", "quant",
                           "autofit", "selection", "selected", "focused",
-                          "detail", "tracks", "lanes");
+                          "detail", "tracks", "take_lanes");
         return view;
     }
 }
@@ -1493,7 +1716,7 @@ export class Session {
      * Sources the multitrack names but the table does not hold -- what an opening
      * reader reports rather than discovering one element at a time.
      *
-     * **Every** lane is walked and not only the ones that play: an alternate
+     * **Every** take lane is walked and not only the ones that play: an alternate
      * take names its source whether or not anyone has chosen it yet.
      */
     dangling(): number[] {

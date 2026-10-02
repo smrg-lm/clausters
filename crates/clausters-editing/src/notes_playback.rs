@@ -35,15 +35,17 @@
 //! in seconds: [`placed`] places a sequence through its own tempo map, and a
 //! multitrack places each sequence its boxes read at the box's place on the
 //! timeline (`crate::multitrack::placed_notes`). [`data`] writes placed events
-//! as the lane's data (`clausters_core::lane::LaneData`), each event rendered
+//! as the lane's data (`clausters_core::event_lane::EventLaneData`), each event rendered
 //! by the core -- a note by `clausters_core::event::render::synth`, so its def,
 //! its controls and how it is released are the core's reading of its keys; a
 //! MIDI event by `render::midi`, as the message the server plays through the
 //! channel's binding; an OSC event as the message it names.
 
 use clausters_core::event::render::{self, Arg, Type};
+use clausters_core::event_lane::{
+    EventLaneData, EventLaneMessage, EventLaneMidi, EventLaneNote, EventLaneVoice, Release,
+};
 use clausters_core::ids::{IdError, IdSpaces};
-use clausters_core::lane::{LaneData, LaneMessage, LaneMidi, LaneNote, LaneVoice, Release};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::{EventSequence, Point};
@@ -66,7 +68,7 @@ const CURVES: &str = "notes/curves";
 /// **One event placed on a transport's axis**: where it starts and, for a
 /// note, where it is released, in seconds of that axis, and its keys.
 ///
-/// What a lane's data is written from, so it is written once for every axis an
+/// What an event lane's data is written from, so it is written once for every axis an
 /// event is heard on: the notes editor places a sequence through its own tempo
 /// map ([`placed`]), and a multitrack places each sequence its boxes read at
 /// the box's place on the timeline.
@@ -81,7 +83,7 @@ pub struct Placed {
     /// Its identity, stable across edits: what its curves' tables are kept by.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
-    /// Which sequence it is of, as a lane's curves name it: a curve over a
+    /// Which sequence it is of, as the sequence's curves name it: a curve over a
     /// channel reaches the notes of its own sequence alone.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scope: String,
@@ -91,13 +93,13 @@ pub struct Placed {
 }
 
 /// **A curve placed on a transport's axis**: what it drives and its points in
-/// seconds -- a note's from the note's start, a lane's on the axis itself.
+/// seconds -- a note's from the note's start, a sequence's on the axis itself.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlacedCurve {
-    /// A lane's identity, stable across edits.
+    /// Its identity, stable across edits.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
-    /// A lane's sequence, as its notes name it ([`Placed::scope`]).
+    /// Its sequence, as the sequence's notes name it ([`Placed::scope`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scope: String,
     /// What it drives, as the sequence's curve names it.
@@ -112,8 +114,8 @@ pub struct PlacedCurve {
 pub struct Placement {
     /// The events, in the order of their start.
     pub events: Vec<Placed>,
-    /// The lanes: each a curve over a channel of its sequence.
-    pub lanes: Vec<PlacedCurve>,
+    /// The sequences' own curves: each over a channel of its sequence.
+    pub curves: Vec<PlacedCurve>,
 }
 
 /// What a placement is read from: the object it writes, or a bare list of
@@ -125,8 +127,10 @@ enum Written {
     Whole {
         #[serde(default)]
         events: Vec<Placed>,
-        #[serde(default)]
-        lanes: Vec<PlacedCurve>,
+        /// Read under `lanes` too, its name before the sequence's curves
+        /// were its automation.
+        #[serde(default, alias = "lanes")]
+        curves: Vec<PlacedCurve>,
     },
 }
 
@@ -135,9 +139,9 @@ impl From<Written> for Placement {
         match written {
             Written::List(events) => Self {
                 events,
-                lanes: Vec::new(),
+                curves: Vec::new(),
             },
-            Written::Whole { events, lanes } => Self { events, lanes },
+            Written::Whole { events, curves } => Self { events, curves },
         }
     }
 }
@@ -155,7 +159,7 @@ pub fn placed(sequence: &EventSequence) -> Placement {
             let sustain = render::sustain_of(&keys).max(0.0);
             let start = map.secs_at(event.at.0);
             let curves = event
-                .expression
+                .automation
                 .iter()
                 .filter(|curve| curve.enabled && !curve.points.is_empty())
                 .map(|curve| PlacedCurve {
@@ -182,8 +186,8 @@ pub fn placed(sequence: &EventSequence) -> Placement {
             }
         })
         .collect();
-    let lanes = sequence
-        .lanes
+    let curves = sequence
+        .automation
         .iter()
         .filter(|curve| curve.enabled && !curve.points.is_empty())
         .map(|curve| PlacedCurve {
@@ -200,7 +204,7 @@ pub fn placed(sequence: &EventSequence) -> Placement {
                 .collect(),
         })
         .collect();
-    Placement { events, lanes }
+    Placement { events, curves }
 }
 
 /// **A note as its voice is started**: the def the core renders its keys to,
@@ -253,7 +257,7 @@ pub struct SlotNote {
 }
 
 /// **Placed events as an event lane's data** (`/lane_set`), at `rate` samples
-/// a second (the shape is [`LaneData`]'s). A note is what the core renders its
+/// a second (the shape is [`EventLaneData`]'s). A note is what the core renders its
 /// keys to -- the def, `freq`, `amp` and every other numeric key, released by
 /// `gate 0` when its def is gated and by a free otherwise -- as a synth, or as
 /// the slot `slots` names for it at its index, when curves shape it. A MIDI
@@ -262,7 +266,7 @@ pub struct SlotNote {
 /// runs as written. A rest sounds nothing.
 pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
-    let mut data = LaneData::default();
+    let mut data = EventLaneData::default();
     for (i, event) in placed.iter().enumerate() {
         match Type::of(&event.keys) {
             Type::Note => {
@@ -277,14 +281,14 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
                 let voice = match slots.get(i).and_then(Option::as_ref) {
                     Some(slot) => {
                         controls.extend(slot.ports.iter().cloned());
-                        LaneVoice::Slot {
+                        EventLaneVoice::Slot {
                             graph: slot.graph,
                             slot: slot.slot.clone(),
                         }
                     }
-                    None => LaneVoice::Def(def),
+                    None => EventLaneVoice::Def(def),
                 };
-                data.notes.push(LaneNote {
+                data.notes.push(EventLaneNote {
                     start: sample(event.start),
                     end: sample(event.end.max(event.start)),
                     voice,
@@ -295,7 +299,7 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
             Type::Midi => {
                 // A `midi` event is one message, at its own start.
                 for message in render::midi(&event.keys, 0).unwrap_or_default() {
-                    data.midi.push(LaneMidi {
+                    data.midi.push(EventLaneMidi {
                         position: sample(event.start),
                         bytes: message.bytes,
                     });
@@ -319,7 +323,7 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
                         _ => None,
                     })
                     .collect();
-                data.messages.push(LaneMessage {
+                data.messages.push(EventLaneMessage {
                     position: sample(event.start),
                     addr: addr.to_string(),
                     args,

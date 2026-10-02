@@ -2583,7 +2583,7 @@ export function bpf(
 
 /**
  * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and an OSC lane -- the timeline sibling of the compact roll a
+ * lane and its OSC markers -- the timeline sibling of the compact roll a
  * `multitrack` draws inside a box, drawing the same notes with editing,
  * rulers and navigation.
  *
@@ -2601,7 +2601,7 @@ export function bpf(
  * a vertical drag. `midiIn` arms live MIDI painting in the native host.
  *
  * Curves, drawn and edited as a `multitrack`'s automation is: `curves` are the
- * **lanes**, curves over the whole roll, each a row under the grid, as `[name,
+ * sequence's **automation**, curves over the whole roll, each a row under the grid, as `[name,
  * label, min, max, height]`; `layers` are each note's own curves, `[name,
  * noteId, label, min, max, pitch]`, drawn inside the note named by `noteId`
  * (see `noteIds`) -- or, with `pitch` true (a bend, in semitones), in the grid
@@ -2629,7 +2629,7 @@ export function pianoroll(
         curves?: readonly (readonly [string, string, number, number, number])[];
         layers?: readonly (readonly [string, number, string, number, number, boolean])[];
         points?: CurvePointSpec;
-        oscLane?: boolean;
+        oscMarkers?: boolean;
         midiIn?: boolean;
         /**
          * The MIDI specification the notes are written for -- `"MIDI 1.0"`,
@@ -2641,7 +2641,7 @@ export function pianoroll(
     } = {},
 ): GuiNode {
     const {
-        notes, osc, min, max, snap, noteIds, curves, layers, points, oscLane, midiIn,
+        notes, osc, min, max, snap, noteIds, curves, layers, points, oscMarkers, midiIn,
         midi, label: text, ...timeline
     } = options;
     return node("notes", {
@@ -2662,7 +2662,7 @@ export function pianoroll(
                 ]),
             ],
             ["points", points === undefined ? undefined : flatCurvePoints(points)],
-            ["osc_lane", flag(oscLane)],
+            ["osc_markers", flag(oscMarkers)],
             ["midi_in", flag(midiIn)],
             ["midi", midi],
             ["label", text],
@@ -2775,109 +2775,7 @@ export function timeruler(
     });
 }
 
-/** One lane of a {@link multitrack}: its name, then everything with a default. */
-export type LaneSpec = readonly (readonly [
-    name: string,
-    label?: string,
-    height?: number,
-    mute?: boolean,
-    solo?: boolean,
-    gain?: number,
-])[];
-
-/** One clip of a {@link multitrack}: its name, then everything with a default. */
-export type ClipSpec = readonly (readonly [
-    name: string,
-    lane?: string,
-    offset?: number,
-    dur?: number,
-    start?: number,
-    label?: string,
-    source?: number,
-])[];
-
-/** The flat `name label height mute solo gain` sextuples the host reads. */
-export function flatLanes(lanes: LaneSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [name, label, height, mute, solo, gain] of lanes) {
-        out.push(String(name), label === undefined ? "" : String(label),
-            height === undefined ? 96 : Number(height),
-            mute ? 1 : 0, solo ? 1 : 0,
-            gain === undefined ? 1 : Number(gain));
-    }
-    return out;
-}
-
-/** The flat `name lane offset dur start label source` septuples the host reads. */
-export function flatClips(clips: ClipSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [name, lane, offset, dur, start, label, source] of clips) {
-        out.push(String(name), lane === undefined ? "" : String(lane),
-            Number(offset ?? 0), Number(dur ?? 0), Number(start ?? 0),
-            label === undefined ? "" : String(label),
-            // **Buffer 0 is a buffer** -- the first one an allocator hands out --
-            // so "no source" is spelled negative, as every other absence here.
-            Math.trunc(source ?? -1));
-    }
-    return out;
-}
-
-/** One note of a {@link multitrack}'s box: the box it is in, then the note. */
-export type BoxNoteSpec = readonly (readonly [
-    box: string,
-    start: number,
-    dur: number,
-    pitch: number,
-    velocity?: number,
-    channel?: number,
-])[];
-
-/**
- * The flat `box start dur pitch velocity channel` sextuples the host reads -- a
- * note per entry, each naming the box it is in.
- *
- * One list for the whole widget rather than one per box, which is the shape
- * every payload here has: a flat list whose first fields are the identity, the
- * way a clip names its lane.
- */
-export function flatBoxNotes(notes: BoxNoteSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [box, start, dur, pitch, velocity, channel] of notes) {
-        out.push(String(box), Number(start ?? 0), Number(dur ?? 0), Number(pitch ?? 0),
-            Number(velocity ?? 100), Number(channel ?? 0));
-    }
-    return out;
-}
-
-/**
- * One **track automation** of a {@link multitrack}: a row of its own under the
- * lane it names, as long as the timeline.
- */
-export type CurveSpec = readonly (readonly [
-    name: string,
-    lane?: string,
-    label?: string,
-    min?: number,
-    max?: number,
-    height?: number,
-])[];
-
-/**
- * One **clip envelope** of a {@link multitrack}: a layer drawn inside the box
- * it names, over whatever that box draws.
- *
- * It carries no height, and the shape is the statement: a layer is as tall as
- * the box it is on, where a row is as tall as it asks.
- */
-export type LayerSpec = readonly (readonly [
-    name: string,
-    box?: string,
-    label?: string,
-    min?: number,
-    max?: number,
-])[];
-
-/** One break-point of a {@link multitrack}'s curve, naming the curve it is on. */
+/** One break-point of a curve, naming the curve it is on. */
 export type CurvePointSpec = readonly (readonly [
     curve: string,
     time: number,
@@ -2885,28 +2783,6 @@ export type CurvePointSpec = readonly (readonly [
     shape?: number,
     amount?: number,
 ])[];
-
-/** The flat `name lane label min max height` sextuples the host reads. */
-export function flatCurves(curves: CurveSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [name, lane, label, min, max, height] of curves) {
-        out.push(String(name), lane === undefined ? "" : String(lane),
-            label === undefined ? "" : String(label),
-            Number(min ?? 0), Number(max ?? 1), Number(height ?? 40));
-    }
-    return out;
-}
-
-/** The flat `name box label min max` quintuples the host reads. */
-export function flatLayers(layers: LayerSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [name, box, label, min, max] of layers) {
-        out.push(String(name), box === undefined ? "" : String(box),
-            label === undefined ? "" : String(label),
-            Number(min ?? 0), Number(max ?? 1));
-    }
-    return out;
-}
 
 /**
  * The flat `curve time value shape amount` quintuples the host reads -- a
@@ -2922,108 +2798,6 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
             Number(shape ?? 1), Number(amount ?? 0));
     }
     return out;
-}
-
-/**
- * A **multitrack**: one widget holding a stack of lanes and the clips on them,
- * drawn on one shared time axis.
- *
- * It is the {@link pianoroll} of a multitrack. A roll is one widget holding its
- * notes; this is one widget holding its lanes and its clips -- so you
- * **describe** the multitrack rather than composing a tree of `track` and `clip`
- * widgets, and there is exactly one thing that owns it. A lane
- * cannot sit in a void: it is a row of this widget, never a box you place.
- *
- * `lanes` is `[name, label, height, mute, solo, gain]` and `clips`
- * `[name, lane, offset, dur, start, label, source]`, with `offset`/`dur`/`start`
- * in timeline samples, `lane` naming one of the lanes and `source` the **server
- * buffer** the clip is a window onto (a negative number, the default, draws an
- * empty box -- `0` is a real buffer). The samples are
- * the server's: the host maps them out of the shared segment or fetches them
- * over its leg, so two clips over one take cost one download. **The name is the
- * identity** -- the client's own word, not a widget id -- so a clip is addressed,
- * drawn and reported by the same name the script already calls it. A clip
- * naming a lane that is not there is kept and drawn nowhere, so renaming a lane
- * loses nothing.
- *
- * **A clip's base view is what its contents are.** A clip whose `source` names
- * a buffer draws those samples; one named in `notes` draws them as a roll,
- * fitted to its own pitch range and with no keyboard and no lanes. Both are
- * drawn by the very elements that stand on their own elsewhere, handed the
- * clip's own axis and drawing no chrome of their own -- a clip is a window onto a
- * picture, never a second implementation of one. `view` chooses how a clip of
- * samples is drawn (`"trace"`, the default, or `"spectrogram"`) for every clip
- * at once.
- *
- * **The curves are the light views, and they are editable.** A break-point
- * automation is one element in two places, and the place is the whole
- * difference. `curves` is `[name, lane, label, min, max, height]`: a **track
- * automation**, which takes a row of its own under the lane it names and runs
- * the whole timeline, because a track's gain does not begin and end with a
- * clip. `layers` is `[name, box, label, min, max]`: a **clip envelope**, drawn
- * inside the clip it names, over whatever that clip draws and lasting exactly
- * as long as it does -- a clip's own dynamic envelope, its pan, its per-clip
- * effect parameters. A layer takes no height, because it is as tall as the clip
- * it is on. `points` is `[curve, time, value, shape, amount]` for **every**
- * curve there is, each naming the curve it is on the way a note names its box.
- *
- * A press lands on a curve's own points and the line between them, never on the
- * rectangle it shares, so an envelope drawn across a clip leaves that clip
- * draggable. `layer` names the curve a hand is on (`"placement"` is the clips
- * themselves) and `hidden` the curves that are not drawn, space-separated; what
- * is hidden is not edited either.
- *
- * It **places**; a clip is entered to edit. The contents of a clip draw
- * read-only here -- this widget owns *where* things are, not what is inside them.
- */
-export function multitrack(
-    options: TimelineOptions & {
-        lanes?: LaneSpec;
-        clips?: ClipSpec;
-        /** The notes of the boxes that hold them, each naming its box. */
-        notes?: BoxNoteSpec;
-        /** The track automations: a row of its own under the lane it names. */
-        curves?: CurveSpec;
-        /** The clip envelopes: a layer inside the box it names. */
-        layers?: LayerSpec;
-        /** Every curve's break-points, each naming the curve it is on. */
-        points?: CurvePointSpec;
-        /** The curve a hand is on; `"placement"` is the clips themselves. */
-        layer?: string;
-        /** The curves that are not drawn, space-separated. */
-        hidden?: string;
-        /** How a box of samples is drawn: `"trace"` or `"spectrogram"`. */
-        view?: string;
-        /** The space between lanes, in logical pixels. */
-        gap?: number;
-        /** The drag grid in timeline samples; `0` is no grid. */
-        snap?: number;
-        label?: string;
-        theme?: Record<string, string>;
-    } = {},
-): GuiNode {
-    const {
-        lanes, clips, notes, curves, layers, points, layer, hidden,
-        view, gap, snap, label: text, theme, ...timeline
-    } = options;
-    return node("multitrack", {
-        ...timelineProps(timeline),
-        ...drop([
-            ["lanes", lanes === undefined ? undefined : flatLanes(lanes)],
-            ["clips", clips === undefined ? undefined : flatClips(clips)],
-            ["notes", notes === undefined ? undefined : flatBoxNotes(notes)],
-            ["curves", curves === undefined ? undefined : flatCurves(curves)],
-            ["layers", layers === undefined ? undefined : flatLayers(layers)],
-            ["points", points === undefined ? undefined : flatCurvePoints(points)],
-            ["layer", layer],
-            ["hidden", hidden],
-            ["view", view],
-            ["gap", gap],
-            ["snap", snap],
-            ["label", text],
-            ["theme", theme],
-        ]),
-    });
 }
 
 /**

@@ -1,12 +1,12 @@
-//! **What a multitrack is made of**: a lane, a box on it, and a curve over
+//! **What a multitrack is made of**: a track, a box on it, and a curve over
 //! either -- and the payloads each list is reported as.
 //!
 //! A box here is a [`boxes::Placement`](super::boxes::Placement) plus the two
 //! things a placement cannot say: **where its contents come from** (a server
-//! buffer, and the window onto it the box shows) and **which lane it is on**.
-//! A lane is a name, a label, a height and the mixing a hand set on it; a curve
+//! buffer, and the window onto it the box shows) and **which track it is on**.
+//! A track is a name, a label, a height and the mixing a hand set on it; a curve
 //! is a break-point list's identity and the range it is read in, hanging either
-//! on a lane (a track automation, a row of its own) or on a box (an envelope,
+//! on a track (a track automation, a row of its own) or on a box (an envelope,
 //! a layer inside it). The break-points themselves are
 //! [`points`](super::points), because a break-point is a break-point wherever
 //! the curve hangs.
@@ -16,7 +16,7 @@
 //! already calls them and what a correction finds a box again by. A `label` is
 //! a second name and never that one.
 //!
-//! Nothing here draws: where a box lands on a lane and how tall a row is are
+//! Nothing here draws: where a box lands on a track and how tall a row is are
 //! `graphics::multitrack`'s, and the two meet at the numbers.
 
 use serde_json::Value;
@@ -26,22 +26,22 @@ use crate::host::structures::boxes::Placement;
 /// What a clip's `source` says when it is a window onto nothing.
 pub const NO_SOURCE: i32 = -1;
 
-/// One row of the multitrack: a track's lane, named and sized.
+/// One row of the multitrack: a track, named and sized.
 ///
 /// The name is the **identity** and it is the client's own word, not a widget
-/// id. That is what lets an edit-back name a lane the script already knows,
+/// id. That is what lets an edit-back name a track the script already knows,
 /// rather than an address the script has to keep a table for.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Lane {
+pub struct TrackRow {
     /// Its identity, and the client's own name for it.
     pub name: String,
     /// What is drawn in the header. Empty draws the name.
     pub label: String,
-    /// How thick the lane is, in logical pixels.
+    /// How thick the track is, in logical pixels.
     pub height: f32,
     /// Silenced. Carried, never interpreted.
     pub mute: bool,
-    /// Soloed. Carried, never interpreted -- what a solo does to *other* lanes
+    /// Soloed. Carried, never interpreted -- what a solo does to *other* tracks
     /// is the mixer's rule and the client's.
     pub solo: bool,
     /// The fader, over `[0, 1]`.
@@ -51,12 +51,12 @@ pub struct Lane {
     /// Carried, never interpreted: which rows there are is the `curves` prop's
     /// and what a hidden one means is the `hidden` set's. This is the one
     /// statement a *track* makes about them -- the header's toggle -- and it is a
-    /// field of the lane because that is the row the toggle is drawn on.
+    /// field of the track because that is the row the toggle is drawn on.
     pub curves: bool,
 }
 
-impl Lane {
-    /// A lane of this name, at the default thickness the caller gives.
+impl TrackRow {
+    /// A track of this name, at the default thickness the caller gives.
     pub fn new(name: impl Into<String>, height: f32) -> Self {
         Self {
             name: name.into(),
@@ -82,7 +82,7 @@ impl Lane {
     }
 }
 
-/// One placed box: which lane it is on, and where it sits there.
+/// One placed box: which track it is on, and where it sits there.
 ///
 /// The placement is [`Placement`] -- the same `offset`/`dur`/`start` triple every
 /// box in this crate is measured by, so a clip and a note are placed by one
@@ -91,8 +91,8 @@ impl Lane {
 pub struct Clip {
     /// Its identity, and the client's own name for it.
     pub name: String,
-    /// The lane it is on, by that lane's name.
-    pub lane: String,
+    /// The track it is on, by that track's name.
+    pub track: String,
     /// Where it sits and how long it lasts, in timeline sample units.
     pub place: Placement,
     /// What is drawn on it. Empty draws the name.
@@ -115,11 +115,11 @@ pub struct Clip {
 }
 
 impl Clip {
-    /// A clip on `lane`, placed.
-    pub fn new(name: impl Into<String>, lane: impl Into<String>, place: Placement) -> Self {
+    /// A clip on `track`, placed.
+    pub fn new(name: impl Into<String>, track: impl Into<String>, place: Placement) -> Self {
         Self {
             name: name.into(),
-            lane: lane.into(),
+            track: track.into(),
             place,
             label: String::new(),
             source: NO_SOURCE,
@@ -150,16 +150,16 @@ pub fn extent(clips: &[Clip]) -> f64 {
     clips.iter().map(Clip::end).fold(0.0, f64::max)
 }
 
-/// The clips on `lane`, in the order they are held -- which is the order they
+/// The clips on `track`, in the order they are held -- which is the order they
 /// draw in, so two that overlap stack predictably.
-pub fn clips_on<'a>(clips: &'a [Clip], lane: &'a str) -> impl Iterator<Item = &'a Clip> + 'a {
-    clips.iter().filter(move |c| c.lane == lane)
+pub fn clips_on<'a>(clips: &'a [Clip], track: &'a str) -> impl Iterator<Item = &'a Clip> + 'a {
+    clips.iter().filter(move |c| c.track == track)
 }
 
 /// A break-point automation, and **the same element in two places**.
 ///
-/// A curve that names a **lane** is a track automation: a row of its own under
-/// that lane, as tall as it asks and as long as the timeline -- a track's gain
+/// A curve that names a **track** is a track automation: a row of its own under
+/// that track, as tall as it asks and as long as the timeline -- a track's gain
 /// does not begin and end with a box. A curve that names a **box** is a clip
 /// envelope: a layer drawn inside that box's rectangle, over whatever the box
 /// draws, and lasting exactly as long as the box does.
@@ -173,7 +173,7 @@ pub struct Curve {
     /// Its identity, the client's own name -- what a point names to say which
     /// curve it is on, and what a report names it back with.
     pub name: String,
-    /// The lane this is a row under, or the box this is a layer on.
+    /// The track this is a row under, or the box this is a layer on.
     pub owner: String,
     /// What is written on it; the name is drawn when this is empty.
     pub label: String,
@@ -196,7 +196,7 @@ impl Curve {
     }
 }
 
-/// The `curves` wire form: the flat `name lane label min max height` sextuple
+/// The `curves` wire form: the flat `name track label min max height` sextuple
 /// array. The inverse of the prop's parse, as every non-scalar here is.
 pub fn curves_json(curves: &[Curve]) -> Value {
     let mut out = Vec::with_capacity(curves.len() * 6);
@@ -225,14 +225,14 @@ pub fn layers_json(layers: &[Curve]) -> Value {
     Value::Array(out)
 }
 
-/// The `lanes` wire form: the flat `name label height mute solo gain` sextuple
+/// The `tracks` wire form: the flat `name label height mute solo gain` sextuple
 /// array.
 ///
 /// The inverse of the prop's parse, so what a `/gui_query` reports is what a
 /// `/gui_set` would take -- the contract every non-scalar on this wire keeps.
-pub fn lanes_json(lanes: &[Lane]) -> Value {
-    let mut out = Vec::with_capacity(lanes.len() * 7);
-    for l in lanes {
+pub fn tracks_json(tracks: &[TrackRow]) -> Value {
+    let mut out = Vec::with_capacity(tracks.len() * 7);
+    for l in tracks {
         out.push(Value::from(l.name.clone()));
         out.push(Value::from(l.label.clone()));
         out.push(Value::from(l.height));
@@ -244,13 +244,13 @@ pub fn lanes_json(lanes: &[Lane]) -> Value {
     Value::Array(out)
 }
 
-/// The `clips` wire form: the flat `name lane offset dur start label source`
+/// The `clips` wire form: the flat `name track offset dur start label source`
 /// septuple array.
 pub fn clips_json(clips: &[Clip]) -> Value {
     let mut out = Vec::with_capacity(clips.len() * 7);
     for c in clips {
         out.push(Value::from(c.name.clone()));
-        out.push(Value::from(c.lane.clone()));
+        out.push(Value::from(c.track.clone()));
         out.push(Value::from(c.place.offset));
         out.push(Value::from(c.place.dur));
         out.push(Value::from(c.place.start));
@@ -264,8 +264,8 @@ pub fn clips_json(clips: &[Clip]) -> Value {
 mod tests {
     use super::*;
 
-    fn lanes() -> Vec<Lane> {
-        vec![Lane::new("noise", 100.0), Lane::new("tone", 60.0)]
+    fn tracks() -> Vec<TrackRow> {
+        vec![TrackRow::new("noise", 100.0), TrackRow::new("tone", 60.0)]
     }
 
     fn clips() -> Vec<Clip> {
@@ -280,13 +280,13 @@ mod tests {
         ]
     }
 
-    /// **A clip names its lane, it is not nested inside one.** That is what
-    /// makes a lane change one field of one clip rather than a removal and an
+    /// **A clip names its track, it is not nested inside one.** That is what
+    /// makes a track change one field of one clip rather than a removal and an
     /// insertion -- the edit that had no way to report itself before.
     #[test]
     fn a_clip_changes_lane_by_naming_another_one() {
         let mut clips = clips();
-        clips[1].lane = "noise".into();
+        clips[1].track = "noise".into();
         assert_eq!(clips_on(&clips, "noise").count(), 2);
         assert_eq!(clips_on(&clips, "tone").count(), 0);
         // And nothing else moved: the placement is the clip's own.
@@ -302,18 +302,18 @@ mod tests {
         assert_eq!(extent(&[]), 0.0);
     }
 
-    /// The two lists report independently: a fader moved resends the lanes and
+    /// The two lists report independently: a fader moved resends the tracks and
     /// not every clip, which is the whole reason they are two.
     #[test]
     fn each_list_reports_as_a_set_take_would_read_it() {
-        let mut lanes = lanes();
-        lanes[0].gain = 0.5;
-        lanes[0].mute = true;
+        let mut tracks = tracks();
+        tracks[0].gain = 0.5;
+        tracks[0].mute = true;
 
-        let Value::Array(written) = lanes_json(&lanes) else {
+        let Value::Array(written) = tracks_json(&tracks) else {
             panic!("an array");
         };
-        assert_eq!(written.len(), 14, "seven per lane");
+        assert_eq!(written.len(), 14, "seven per track");
         assert_eq!(written[0], Value::from("noise"));
         assert_eq!(written[3], Value::from(1), "muted");
         assert_eq!(written[5], Value::from(0.5));
@@ -323,18 +323,18 @@ mod tests {
         };
         assert_eq!(written.len(), 14, "seven per clip");
         assert_eq!(written[0], Value::from("a"));
-        assert_eq!(written[1], Value::from("noise"), "the lane it is on");
+        assert_eq!(written[1], Value::from("noise"), "the track it is on");
         assert_eq!(written[3], Value::from(48_000.0));
     }
 
-    /// A lane's header shows its label, and falls back to the name it is
+    /// A track's header shows its label, and falls back to the name it is
     /// addressed by rather than drawing nothing.
     #[test]
     fn a_label_is_a_second_name_and_never_the_identity() {
-        let mut lane = Lane::new("noise", 100.0);
-        assert_eq!(lane.shown(), "noise");
-        lane.label = "Drums".into();
-        assert_eq!(lane.shown(), "Drums");
-        assert_eq!(lane.name, "noise", "what an edit-back still names it by");
+        let mut track = TrackRow::new("noise", 100.0);
+        assert_eq!(track.shown(), "noise");
+        track.label = "Drums".into();
+        assert_eq!(track.shown(), "Drums");
+        assert_eq!(track.name, "noise", "what an edit-back still names it by");
     }
 }

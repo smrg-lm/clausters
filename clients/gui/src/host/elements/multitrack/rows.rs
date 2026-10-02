@@ -1,7 +1,7 @@
 //! **The stack**: which row is where, how tall it is, and the header beside it.
 //!
 //! The vertical model, apart from what is drawn on it and from what a hand does
-//! to it. A row is a lane or one of its automation rows, and everything here
+//! to it. A row is a track or one of its automation rows, and everything here
 //! answers one of three questions -- where a row is on screen, which row a `y`
 //! is in, and how tall each is once a reader has zoomed one. The time axis'
 //! half is here too, since a box's rectangle needs both: where a sample lands,
@@ -19,42 +19,43 @@ impl Multitrack {
         }
     }
 
-    /// The lane a clip sits on, by index -- `None` for a clip naming a lane that
+    /// The track a clip sits on, by index -- `None` for a clip naming a track that
     /// is not here.
     ///
     /// **A clip is kept rather than dropped**, because what cannot be placed can
-    /// still be reported: a script that renamed a lane gets its clips back to
+    /// still be reported: a script that renamed a track gets its clips back to
     /// re-home rather than silently losing them.
-    pub(super) fn lane_of(&self, clip: &Clip) -> Option<usize> {
-        self.lanes.iter().position(|l| l.name == clip.lane)
+    pub(super) fn track_of(&self, clip: &Clip) -> Option<usize> {
+        self.tracks.iter().position(|l| l.name == clip.track)
     }
 
-    /// The lane a pointer is **on**, or `None` off the stack -- the *press*'
+    /// The track a pointer is **on**, or `None` off the stack -- the *press*'
     /// question, over the same bands the drawing used.
-    pub(super) fn lane_at(&self, rect: Rect, y: f64) -> Option<usize> {
-        self.stack().lane_at(rect, self.scroll, y)
+    pub(super) fn track_at(&self, rect: Rect, y: f64) -> Option<usize> {
+        self.stack().track_at(rect, self.scroll, y)
     }
 
-    /// **The vertical axis**: the lanes and the automation rows under them, in
+    /// **The vertical axis**: the tracks and the automation rows under them, in
     /// the order they are drawn. Built per ask rather than kept, because it is
     /// derived from two lists a `/gui_set` replaces whole.
     pub(super) fn stack(&self) -> stack::Stack {
-        stack::Stack::shown(&self.lanes, &self.curves, self.gap, |c| {
+        stack::Stack::shown(&self.tracks, &self.curves, self.gap, |c| {
             !self.is_hidden(&c.name)
         })
     }
 
-    /// Where each **lane** lands, by lane index.
-    pub(super) fn lane_rects(&self, rect: Rect) -> Vec<Rect> {
-        self.stack().lane_rects(rect, self.scroll, self.lanes.len())
+    /// Where each **track** lands, by track index.
+    pub(super) fn track_rects(&self, rect: Rect) -> Vec<Rect> {
+        self.stack()
+            .track_rects(rect, self.scroll, self.tracks.len())
     }
 
-    /// The lane a hand **is heading for**, always -- the *drag*'s question, and
-    /// the sweep's. It answers for the gaps between lanes and clamps past
+    /// The track a hand **is heading for**, always -- the *drag*'s question, and
+    /// the sweep's. It answers for the gaps between tracks and clamps past
     /// either end, which is the whole of why a dragged clip neither jumps nor
     /// oscillates.
-    pub(super) fn lane_toward(&self, rect: Rect, y: f64) -> usize {
-        self.stack().lane_toward(rect, self.scroll, y)
+    pub(super) fn track_toward(&self, rect: Rect, y: f64) -> usize {
+        self.stack().track_toward(rect, self.scroll, y)
     }
 
     /// The time a pointer x names on the shared axis.
@@ -68,14 +69,14 @@ impl Multitrack {
             (None, Some(grab)) => grab.axis,
             (time, _) => self.view(time),
         };
-        let body = track::lane_body(input.rect, false, input.indent, input.metrics);
+        let body = track::track_body(input.rect, false, input.indent, input.metrics);
         if body.w <= 0.0 {
             return nav.start;
         }
         nav.start + (x - f64::from(body.x)) / f64::from(body.w) * nav.len
     }
 
-    /// What bounds a clip's drag here: the lane's grid, and a floor no shorter
+    /// What bounds a clip's drag here: the track's grid, and a floor no shorter
     /// than a box a hand can still find.
     pub(super) fn bounds(&self) -> Bounds {
         Bounds {
@@ -84,16 +85,16 @@ impl Multitrack {
         }
     }
 
-    /// The lane header band `y` falls in, and the part of it `(x, y)` hit.
+    /// The track header band `y` falls in, and the part of it `(x, y)` hit.
     pub(super) fn header_at(
         &self,
         input: &Input,
         at: (f64, f64),
     ) -> Option<(usize, track::HeaderPart)> {
-        let i = self.lane_at(input.rect, at.1)?;
-        let rect = self.lane_rects(input.rect)[i];
+        let i = self.track_at(input.rect, at.1)?;
+        let rect = self.track_rects(input.rect)[i];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
-        let header = self.header(&self.lanes[i], input.indent);
+        let header = self.header(&self.tracks[i], input.indent);
         let part = track::header_hit(band, &header, input.metrics, at.0, at.1)?;
         Some((i, part))
     }
@@ -101,14 +102,14 @@ impl Multitrack {
     /// **Lays the hand's own row heights back over what a payload says.**
     ///
     /// How tall a track is drawn is this window's and the wire carries none of
-    /// it -- but a `lanes` payload states a height on every row, because the
+    /// it -- but a `tracks` payload states a height on every row, because the
     /// prop has always had one -- so a fader moved or a track added would
     /// otherwise take a reader's vertical zoom away with it. The same rule the
     /// scroll and the box selection follow, applied where the payload lands.
     pub(super) fn zoom_rows(&mut self) {
-        for lane in &mut self.lanes {
-            if let Some(h) = self.zoom.get(&lane.name) {
-                lane.height = *h;
+        for track in &mut self.tracks {
+            if let Some(h) = self.zoom.get(&track.name) {
+                track.height = *h;
             }
         }
         for curve in &mut self.curves {
@@ -119,7 +120,7 @@ impl Multitrack {
         // A row that is gone takes its height with it, the way every other
         // table here is pruned by what the multitrack now holds.
         self.zoom
-            .retain(|name, _| self.lanes.iter().any(|l| &l.name == name));
+            .retain(|name, _| self.tracks.iter().any(|l| &l.name == name));
         self.curve_zoom
             .retain(|name, _| self.curves.iter().any(|c| &c.name == name));
     }
@@ -136,7 +137,7 @@ impl Multitrack {
         want.clamp(0.0, over)
     }
 
-    /// **What kind of row a y is on** -- a lane, an automation row, or nothing
+    /// **What kind of row a y is on** -- a track, an automation row, or nothing
     /// at all past either end of the stack.
     pub(super) fn row_kind(&self, input: &Input, y: f64) -> Option<stack::Row> {
         let stack = self.stack();
@@ -166,8 +167,8 @@ impl Multitrack {
     /// legal.
     ///
     /// `moving` are the edges the hand is carrying, `held` what it is carrying
-    /// them on (a box does not snap to itself), and `row` the lane whose boxes
-    /// are the neighbours: an edge on another lane is another lane's business.
+    /// them on (a box does not snap to itself), and `row` the track whose boxes
+    /// are the neighbours: an edge on another track is another track's business.
     pub(super) fn pull_to_edge(
         &self,
         input: &Input,
@@ -211,14 +212,14 @@ impl Multitrack {
         self.hidden.iter().any(|h| h == name)
     }
 
-    /// The lane header a lane's own props ask for. Presence-driven, like every
-    /// header here: a lane that carries no mixer state offers no controls.
-    pub(super) fn header(&self, lane: &Lane, indent: f32) -> track::Header {
+    /// The track header a track's own props ask for. Presence-driven, like every
+    /// header here: a track that carries no mixer state offers no controls.
+    pub(super) fn header(&self, track: &TrackRow, indent: f32) -> track::Header {
         track::Header {
             w: (indent > 0.0).then_some(indent),
-            mute: Some(lane.mute),
-            solo: Some(lane.solo),
-            level: Some(lane.gain),
+            mute: Some(track.mute),
+            solo: Some(track.solo),
+            level: Some(track.gain),
             // **Offered on every track, including the ones with nothing to
             // show** *(asked for by the user 2026-09-12)*. The first press on a
             // bare track is what **adds** its gain automation, the way a double
@@ -232,13 +233,13 @@ impl Multitrack {
             // with automation editable while that is worked out. See
             // `clients/gui/PLAN.md`, "The whole interaction vocabulary is
             // provisional".
-            curves: Some(lane.curves),
+            curves: Some(track.curves),
             // **Silent, and the right length**: the strip's width follows the
             // channel count and nothing else, so a hit test lays the header out
             // exactly where the drawing did without reading a bus.
             meters: self
                 .meters
-                .get(&lane.name)
+                .get(&track.name)
                 .map_or_else(Vec::new, |m| vec![(0.0, 0.0); m.channels]),
         }
     }
@@ -246,9 +247,9 @@ impl Multitrack {
     /// The same header with the **levels read**, which only a draw can do: the
     /// values are in the shared segment and are one atomic load each, so a
     /// meter costs a frame's read rather than a message.
-    pub(super) fn live_header(&self, lane: &Lane, ctx: &Ctx) -> track::Header {
-        let mut header = self.header(lane, ctx.indent);
-        let Some(meter) = self.meters.get(&lane.name) else {
+    pub(super) fn live_header(&self, track: &TrackRow, ctx: &Ctx) -> track::Header {
+        let mut header = self.header(track, ctx.indent);
+        let Some(meter) = self.meters.get(&track.name) else {
             return header;
         };
         for (channel, slot) in header.meters.iter_mut().enumerate() {

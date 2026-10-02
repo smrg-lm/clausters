@@ -22,10 +22,9 @@ where it lands, and what is sounding keeps its release. The space bar over the
 window plays and pauses.
 """
 
-import weakref
 
 from ... import _native
-from ..._steps import run_steps
+from ...seq.playback import NotesPlayback
 from ...seq.sequence import EventSequence
 from ...seq.timeline import Timeline
 from .domain import Domain
@@ -50,6 +49,7 @@ class NotesView(View):
         # another picture of it, and a window beside one in MIDI notes must not
         # draw on its widget.
         wid = self.widget(editor, "notes", editor.structure, editor.y_axis)
+        editor._roll = wid
         editor._sync_core()
         tree = editor._call("window", widget=wid)
         # **A script's own widgets are its objects**, so they are appended here
@@ -59,55 +59,6 @@ class NotesView(View):
 
     def props(self, editor, widget_id: int) -> dict:
         return editor._call("props", widget=int(widget_id))
-
-
-class _NotesPlayback:
-    """**What sounds the notes editors of one server** -- the crate's playback
-    and the steps it answers, carried out on that server. One per server, since
-    the editors on it share one transport: the one played last is the one that
-    sounds."""
-
-    _of = weakref.WeakKeyDictionary()
-
-    @classmethod
-    def of(cls, server) -> "_NotesPlayback":
-        found = cls._of.get(server)
-        if found is None:
-            found = cls._of[server] = cls(server)
-        return found
-
-    def __init__(self, server):
-        self.server = server
-        self._native = _native.NotesPlayback()
-        self._runner = _native.StepRunner()
-        # Node ids come back on their `/node_end`, which only a registered
-        # client hears.
-        server._ensure_recycler()
-        self._rate = None
-        #: The sequence the lane holds, if any: the one played last.
-        self.planned = None
-        #: The transport it plays on -- the crate's word for it.
-        self.transport_id = int(self._native.call(
-            "state", _native.SequenceHandle(), server.ids)["transport"])
-
-    @property
-    def rate(self) -> float:
-        if self._rate is None:
-            self._rate = float(self.server.query_info().nominal_sample_rate)
-        return self._rate
-
-    def state(self) -> dict:
-        """The transport as the engine has it."""
-        return self.server.transport_at(self.transport_id).transport_state()
-
-    def call(self, verb: str, sequence, **args) -> dict:
-        """One verb over ``sequence``, its steps carried out."""
-        answer = self._native.call(verb, sequence._seq, self.server.ids,
-                                   rate=self.rate, **args)
-        steps = answer.get("steps")
-        if steps:
-            run_steps(self.server, self._runner, steps)
-        return answer
 
 
 class NotesEditor(Editor):
@@ -142,6 +93,8 @@ class NotesEditor(Editor):
         self._elsewhere = None
         #: Where a pass ends (`end`).
         self._end = None
+        #: The roll's widget id, once drawn.
+        self._roll = None
         self._member, self._structure_id = self._editing.open_notes(
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
@@ -195,12 +148,26 @@ class NotesEditor(Editor):
     # ---- playing it ----
 
     @property
-    def _playback(self) -> _NotesPlayback:
+    def _playback(self) -> NotesPlayback:
         if self._server is None:
             from ...base.main import main
 
             self._server = main.resolve_server()
-        return _NotesPlayback.of(self._server)
+        return NotesPlayback.of(self._server)
+
+    @property
+    def transport(self):
+        """**The transport the sequence plays on**, as the object a script
+        plays: the `clausters.defs.Transport` `clausters.play` of a sequence
+        answers, its verbs (``play``, ``pause``, ``stop``, ``locate``,
+        ``loop``, ``wait``) and ``span`` about this editor's sequence and in
+        its beats -- the span is the band an Alt+drag sweeps on the roll, the
+        loop switch is `L`, and each side reads what the other set. Every
+        sequence on a server shares it: asking for it makes this one the
+        sequence it plays, from the position cursor."""
+        playback = self._playback
+        playback.hold(self.structure, at=float(self.cursor or 0.0), end=self._end)
+        return playback.transport
 
     @property
     def end(self):
@@ -231,16 +198,16 @@ class NotesEditor(Editor):
         ``destination`` is for a MIDI port (a `clausters.base.MidiServer`): the
         server has no MIDI output, so the sequence is played on this client's
         clock to that destination instead, as the MIDI messages a file of it
-        holds (`clausters.seq.EventSequence.midi_messages`) -- its lanes and
-        its notes' expression included -- and an edit is heard from the next
+        holds (`clausters.seq.EventSequence.midi_messages`) -- its automation
+        and its notes' included -- and an edit is heard from the next
         play."""
         start = float(beat if beat is not None else (self.cursor or 0.0))
         if destination is not None:
             from ...seq.event import MidiItem
             from ...seq.timeline import Timeline
 
-            # The render a file of it holds: its notes, its lanes and its
-            # notes' expression, as its MIDI spec says them.
+            # The render a file of it holds: its notes, its automation and
+            # its notes', as its MIDI spec says them.
             played = Timeline([(beat, MidiItem(message))
                                for beat, message in self.structure.midi_messages()])
             if self.structure.tempo_map is not None:
@@ -248,12 +215,8 @@ class NotesEditor(Editor):
             played.play(at=start, destination=destination)
             self._elsewhere = played
             return self
-        playback = self._playback
-        playback.call("end", self.structure, end=self._end)
-        playback.call("play", self.structure, **{"from": start},
-                      range=list(range) if range is not None else None,
-                      loop=bool(looping))
-        playback.planned = self.structure
+        self._playback.load(self.structure, start, range=range, looping=looping,
+                            end=self._end)
         return self
 
     def pause(self) -> "NotesEditor":
@@ -298,15 +261,66 @@ class NotesEditor(Editor):
         super().reflect_step()
         self._update()
 
+    # ---- the roll's two selections ----
+
+    def show_span(self, span) -> None:
+        """Draw ``span`` -- ``(start, end)`` in beats, or ``None`` -- as the
+        roll's time range, the band a sweep leaves, and play it on the space
+        bar. What `clausters.defs.Transport.span` sets on every roll over the
+        sequence it plays."""
+        self._call("span", span=None if span is None else [float(span[0]), float(span[1])])
+        super().adopt()
+
+    def show_looping(self, on: bool) -> None:
+        """The window's loop switch, as `L` leaves it: what
+        `clausters.defs.Transport.loop` turns on every roll over the
+        sequence it plays."""
+        if self._host is not None and self._window is not None and self._roll is not None:
+            self._host.set(self._roll, looping=1 if on else 0)
+
+    @property
+    def selected(self) -> list:
+        """**The events marked on the roll** -- by a click, Shift+click or a
+        marquee -- as the `clausters.seq.SeqEvent` objects they are, in beat
+        order. The picture's, not the sequence's: it enters no history and
+        each window has its own. Empty with no window open. (The time range a
+        sweep leaves is the transport's `clausters.defs.Transport.span`.)"""
+        import json
+
+        if self._host is None or self._window is None:
+            return []
+        marked = self._host.query(self._roll).props.get("selected") or "[]"
+        events = self.structure.events
+        held = {e._id: e for e in events}
+        return [held[i] for i in json.loads(marked) if i in held]
+
+    def select(self, events) -> None:
+        """Mark ``events`` -- `clausters.seq.SeqEvent` objects of this sequence
+        -- on the roll, in place of what was marked."""
+        import json
+
+        if self._host is None or self._window is None:
+            return
+        ids = [e._id for e in events if getattr(e, "_sequence", None) is self.structure]
+        self._host.set(self._roll, selected=json.dumps(ids))
+
+    def unselect(self) -> None:
+        """Mark nothing on the roll."""
+        self.select([])
+
+    def adopt(self) -> None:
+        """The sequence changed by another route -- another window, a script's
+        change, a step a script took: the window is corrected, and the lane
+        takes the sequence again, so the change is heard."""
+        super().adopt()
+        self._update()
+
     def _update(self) -> None:
         """The sequence changed: when it is what the lane holds, the lane takes
         it again, and the server plays it on from where the position is."""
         if self._server is None:
             return
-        playback = self._playback
-        if playback.planned is not self.structure:
-            return
-        playback.call("update", self.structure)
+        self._playback.update(self.structure, self._editing.version)
 
     # ---- the crate's turns ----
 
@@ -355,12 +369,22 @@ class NotesEditor(Editor):
             else:
                 pass_ = outcome["play"]
                 self.play(range=pass_.get("range"), looping=bool(pass_.get("looping")))
+        if "span" in outcome and self._server is not None \
+                and self._playback.planned is self.structure:
+            # A sweep moved the time range: it is the playback's span, so a
+            # script reads it, and the other rolls over the sequence draw it.
+            self._playback.set_span(outcome["span"])
         if outcome.get("loop") is not None and self._server is not None:
-            # `L`: the pass in progress loops, or stops looping, from where it
-            # stands; a stopped playback reads the switch on its next play.
+            # `L`: the loop switch -- followed at once by a pass in progress,
+            # read by a stopped playback on its next play.
             pass_ = outcome["loop"]
-            self._playback.call("loop", self.structure, range=pass_.get("range"),
-                                loop=bool(pass_.get("looping")))
+            playback = self._playback
+            if playback.planned is self.structure:
+                playback.set_span(pass_.get("range"), show=False)
+                playback.set_looping(bool(pass_.get("looping")))
+            else:
+                playback.call("loop", self.structure, range=pass_.get("range"),
+                              loop=bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
         return changed
 

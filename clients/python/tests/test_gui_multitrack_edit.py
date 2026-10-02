@@ -14,7 +14,7 @@ import pytest
 from clausters import _native
 
 from clausters.gui.editing import MultitrackEditor, Sources, edit
-from clausters.multitrack import Content, Lane, Multitrack, Region, Tempo, Track
+from clausters.multitrack import Content, TakeLane, Multitrack, Region, Tempo, Track
 
 SR = 48_000.0
 
@@ -28,13 +28,13 @@ def window(source: int, start: float = 0.0, duration: float = 2.0) -> Content:
 def multitrack() -> Multitrack:
     """Two tracks: the first holding two regions, the second one."""
     first = Track(id=10, name="one",
-                  lanes=[Lane(id=11, regions=[
+                  take_lanes=[TakeLane(id=11, regions=[
                       Region(id=12, position=0.0, length=2.0,
                              content=window(1)),
                       Region(id=13, position=4.0, length=2.0,
                              content=window(1))])])
     second = Track(id=20, name="two",
-                   lanes=[Lane(id=21, regions=[
+                   take_lanes=[TakeLane(id=21, regions=[
                        Region(id=22, position=0.0, length=2.0,
                               content=window(1))])])
     return Multitrack(tracks=[first, second])
@@ -72,9 +72,9 @@ def report(ed: MultitrackEditor, boxes) -> bool:
 
 def test_a_row_per_track_and_a_box_per_region():
     ed = editor(multitrack())
-    lanes = props(ed)["lanes"]
-    assert [lanes[0], lanes[7]] == ["10", "20"], "named by their track ids"
-    assert lanes[1] == "one"
+    rows = props(ed)["tracks"]
+    assert [rows[0], rows[7]] == ["10", "20"], "named by their track ids"
+    assert rows[1] == "one"
     boxes = clips(ed)
     assert [b[0] for b in boxes] == ["12", "13", "22"]
     assert [b[1] for b in boxes] == ["10", "10", "20"]
@@ -87,9 +87,9 @@ def test_a_row_per_track_and_a_box_per_region():
 
 def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     """The props are already the wire's, so the node is made from them rather
-    than through the `multitrack` builder -- whose `lanes`/`clips` are the
-    *tuples* a script types, and which flattened an already-flat list a second
-    time: seven rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`,
+    than through the `multitrack` builder there used to be -- whose
+    `lanes`/`clips` were the *tuples* a script types, and which flattened an
+    already-flat list a second time: seven rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`,
     `False`.
 
     Found 2026-09-09 reading the two clients against each other, which is the
@@ -98,8 +98,8 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     """
     ed = editor(multitrack())
     drawn = next(c for c in ed.draw()["children"] if c["type"] == "multitrack")
-    assert len(drawn["lanes"]) == 2 * 7, "two tracks, seven numbers each"
-    assert drawn["lanes"][:3] == ["10", "one", 96.0]
+    assert len(drawn["tracks"]) == 2 * 7, "two tracks, seven numbers each"
+    assert drawn["tracks"][:3] == ["10", "one", 96.0]
     assert len(drawn["clips"]) == 3 * 7, "three regions, seven numbers each"
     assert drawn["clips"][:2] == ["12", "10"]
 
@@ -110,7 +110,7 @@ def test_the_multitrack_is_ruled_from_above_by_a_strip_of_its_own():
 
     The two have to be in **one navigation group**: an unlinked widget is a
     group of one keyed by itself, so a ruler that joined nothing would pan and
-    zoom away from the lanes it is ruling.
+    zoom away from the tracks it is ruling.
     """
     children = editor(multitrack()).draw()["children"]
     ruler, multitrack_node = children[0], children[1]
@@ -214,6 +214,28 @@ def test_a_double_click_on_a_box_of_notes_opens_its_roll():
     assert audio.rolls == {}
 
 
+def test_a_scripts_change_to_a_sequence_a_box_reads_is_the_multitracks_turn():
+    """The multitrack claims the sequences its boxes read, so a script's
+    change to one is recorded in the multitrack's order, the boxes draw it,
+    and the multitrack's Ctrl+Z takes it back."""
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5))])
+    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
+    host = _wired(ed)
+    ed._editing.attach(ed)          # what an open does: the window is a view
+    told = []
+    ed.on_change = lambda: told.append(True)
+    pushed = host.pushes
+    notes.events[0]["midinote"] = 67
+    assert ed._editing.undo_label == "set midinote" and told == [True]
+    assert host.pushes > pushed, "the window is corrected"
+    assert props(ed)["notes"][3] == 67.0, "the box draws the note where it now is"
+    assert ed.undo()
+    assert notes.events[0]["midinote"] == 60
+
+
 def test_a_tempo_moves_no_box():
     """The multitrack is in seconds: a box is drawn at its seconds times the
     rate, and a tempo the multitrack holds is a ruler's to read."""
@@ -234,11 +256,11 @@ def test_a_move_reaches_the_multitrack_and_undoes():
     assert report(ed, [("12", "10", 2.0 * SR, 2.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    assert held.track(10).lanes[0].regions[0].position == pytest.approx(2.0)
+    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(2.0)
     assert ed.undo()
-    assert held.track(10).lanes[0].regions[0].position == pytest.approx(0.0)
+    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(0.0)
     assert ed.redo()
-    assert held.track(10).lanes[0].regions[0].position == pytest.approx(2.0)
+    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(2.0)
 
 
 def test_a_block_move_is_one_entry():
@@ -251,7 +273,7 @@ def test_a_block_move_is_one_entry():
                        ("22", "20", 0.0, 2.0 * SR)])
     # Read through the multitrack each time: an edit replaces what the multitrack holds,
     # so a reference taken before one is a reference to what it held then.
-    at = lambda: [r.position for r in held.track(10).lanes[0].regions]
+    at = lambda: [r.position for r in held.track(10).take_lanes[0].regions]
     assert at() == pytest.approx([2.0, 6.0])
     assert ed.undo()
     assert at() == pytest.approx([0.0, 4.0]), "both back, in one step"
@@ -263,9 +285,9 @@ def test_a_clip_that_crossed_changes_track_and_undoes():
     assert report(ed, [("12", "20", 0.0, 2.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    assert any(r.id == 12 for r in held.track(20).lanes[0].regions)
+    assert any(r.id == 12 for r in held.track(20).take_lanes[0].regions)
     assert ed.undo()
-    assert any(r.id == 12 for r in held.track(10).lanes[0].regions)
+    assert any(r.id == 12 for r in held.track(10).take_lanes[0].regions)
 
 
 def test_a_box_the_multitrack_does_not_know_becomes_a_region():
@@ -277,12 +299,12 @@ def test_a_box_the_multitrack_does_not_know_becomes_a_region():
                        ("12 2", "10", 1.0 * SR, 1.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    lane = held.track(10).lanes[0]
+    lane = held.track(10).take_lanes[0]
     assert len(lane.regions) == 3, "the two that stayed and the new one"
     assert {r.id for r in lane.regions} > {12, 13}, "it took an unused id"
     del lane
     assert ed.undo()
-    assert len(held.track(10).lanes[0].regions) == 2
+    assert len(held.track(10).take_lanes[0].regions) == 2
 
 
 def test_a_report_of_what_holds_is_not_an_edit():
@@ -299,7 +321,7 @@ def test_the_strip_is_the_multitracks_and_undoes():
     ed = editor(held)
     ed.draw()
     wid = next(iter(ed.view.widgets))
-    assert ed._route([wid, "lanes",
+    assert ed._route([wid, "tracks",
                       "10", "", 96.0, 0, 0, 1.0, 0,
                       "20", "", 96.0, 1, 0, 0.5, 0])
     assert held.track(20).muted
@@ -323,7 +345,7 @@ def test_two_windows_over_one_multitrack_walk_one_stack():
                         ("13", "10", 4.0 * SR, 2.0 * SR),
                         ("22", "20", 0.0, 2.0 * SR)])
     assert two.undo(), "the history is the data's, not the window's"
-    assert held.track(10).lanes[0].regions[0].position == pytest.approx(0.0)
+    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(0.0)
 
 
 # ---- the curves: the light views, in the two places one lives ----
@@ -340,7 +362,7 @@ def curved() -> Multitrack:
                            {"at": 4.0, "value": 0.0,
                             "data": {"shape": 5, "curve": 4.0}}],
                    visible=True))
-    written.tracks[0].lanes[0].regions[0].automation.append(
+    written.tracks[0].take_lanes[0].regions[0].automation.append(
         Automation(id=31, name="env", target={"ctl": "amp"},
                    points=[{"at": 0.0, "value": 0.0}], visible=True))
     return written
@@ -384,7 +406,7 @@ def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
     gain = next(a for a in written.tracks[0].automation if a.id == 30)
     assert gain.points[0]["value"] == pytest.approx(0.25)
     assert gain.points[1]["data"] == {"shape": 5, "curve": 4.0}
-    env = written.tracks[0].lanes[0].regions[0].automation[0]
+    env = written.tracks[0].take_lanes[0].regions[0].automation[0]
     assert env.points[0]["value"] == 0.0, "the curve nobody touched"
 
     assert ed.undo()
@@ -441,7 +463,7 @@ def test_a_layer_s_points_are_its_box_s_own_time():
 
     written = multitrack()
     # The box at beat 4 on the second track, with an envelope of its own.
-    late = written.tracks[1].lanes[0].regions[0]
+    late = written.tracks[1].take_lanes[0].regions[0]
     late.position = 4.0
     late.automation.append(
         Automation(id=40, name="fade", visible=True,
@@ -469,7 +491,7 @@ def test_a_layer_s_points_are_its_box_s_own_time():
             edited[i + 2] = 0.25
     assert ed._route([wid, "points", *edited])
     # The multitrack is re-read on an edit, so the region is looked up again.
-    fade = written.tracks[1].lanes[0].regions[0].automation[0]
+    fade = written.tracks[1].take_lanes[0].regions[0].automation[0]
     assert fade.points[0]["at"] == pytest.approx(0.0)
     assert fade.points[0]["value"] == pytest.approx(0.25)
     assert fade.points[1]["at"] == pytest.approx(2.0)
@@ -498,7 +520,7 @@ def test_a_box_is_planned_in_frames_from_where_its_window_opens():
     that one with `BufSampleRate`, since the buffer is what knows the rate its
     samples were written at. A trimmed box reads on rather than restarting."""
     ed = editor(multitrack())
-    region = ed.structure.tracks[0].lanes[0].regions[1]
+    region = ed.structure.tracks[0].take_lanes[0].regions[1]
     region.content = window(1, start=0.5, duration=2.0)
     reader = _plan(ed)["tracks"][0]["clips"][1]["readers"][0]
     assert reader["buffer"] == 7, "the buffer the source was read into"
@@ -514,7 +536,7 @@ def test_a_muted_box_and_an_unloaded_source_are_not_read():
     source nobody loaded is not planned at all -- the second is a multitrack that
     arrived without its takes, which is not the same as a silent one."""
     ed = editor(multitrack())
-    region = ed.structure.tracks[0].lanes[0].regions[0]
+    region = ed.structure.tracks[0].take_lanes[0].regions[0]
     region.muted = True
     assert _plan(ed)["tracks"][0]["clips"][0]["mute"] == 1.0
 
@@ -582,14 +604,19 @@ class _AdoptingHost:
         for _wid, props in corrections:
             if "clips" in props:
                 self.names = list(props["clips"][::7])
-            if "lanes" in props:
-                self.rows = list(props["lanes"][::7])
+            if "tracks" in props:
+                self.rows = list(props["tracks"][::7])
 
     def ack(self, seq, doc_version=0, reason=None):
         pass
 
     def set(self, wid, **props):
-        pass
+        self.__dict__.setdefault("props", {}).setdefault(wid, {}).update(props)
+
+    def query(self, wid, timeout=1.0):
+        from clausters.gui.host import WidgetInfo
+
+        return WidgetInfo("multitrack", dict(self.__dict__.get("props", {}).get(wid, {})))
 
 
 def _wired(ed) -> _AdoptingHost:
@@ -620,7 +647,7 @@ def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
     wid = next(iter(ed.view.widgets))
 
     def ids():
-        return [r.id for t in held.tracks for lane in t.lanes for r in lane.regions]
+        return [r.id for t in held.tracks for lane in t.take_lanes for r in lane.regions]
 
     def boxes():
         flat = props(ed)["clips"]
@@ -656,8 +683,8 @@ def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
 
     # And a track made in the host: the same rule, and the `meters` prop rides
     # with it -- a track that reached the server has buses to read.
-    rows = list(props(ed)["lanes"]) + ["track 1", "three", 96.0, 0, 0, 1.0, 0]
-    ed.apply("/gui_event", [wid, 3, ed._version, "lanes", *rows])
+    rows = list(props(ed)["tracks"]) + ["track 1", "three", 96.0, 0, 0, 1.0, 0]
+    ed.apply("/gui_event", [wid, 3, ed._version, "tracks", *rows])
     assert host.rows == [str(t.id) for t in held.tracks]
     assert len(held.tracks) == 3
 
@@ -675,8 +702,8 @@ def test_a_track_made_in_the_host_is_a_track_in_the_plan():
     ed = editor(multitrack())
     ed.draw()
     wid = next(iter(ed.view.widgets))
-    rows = list(props(ed)["lanes"]) + ["0", "three", 96.0, 0, 0, 1.0, 0]
-    assert ed._route([wid, "lanes", *rows])
+    rows = list(props(ed)["tracks"]) + ["0", "three", 96.0, 0, 0, 1.0, 0]
+    assert ed._route([wid, "tracks", *rows])
     planned = _plan(ed)["tracks"]
     assert [t["track"] for t in planned] == [10, 20, 23]
     assert planned[2]["clips"] == [], "and it is planned empty rather than left out"
@@ -802,3 +829,71 @@ def test_a_join_the_history_let_go_of_is_freed_and_leaves_the_table():
     editing.release([{"member": 3, "sources": [5]}])
     assert join.freed
     assert domain.bridge.sources.buffers == {1: 7}
+
+
+class _RecordingPlayback:
+    """A playback that records what the transport asks of it."""
+
+    def __init__(self):
+        from clausters.defs import Transport
+
+        self.calls = []
+        self.playing = False
+        self.end = None
+        self.meters = {}
+        held = {}
+        self.server = type("S", (), {
+            "transport_at": lambda _s, n: held.setdefault(n, Transport(self.server, n)),
+        })()
+        self._instance = type("I", (), {"transport": lambda _s: 0})()
+
+    def play(self, range=None, looping=False):
+        self.calls.append(("play", range, looping))
+
+    def set_loop(self, range=None, looping=False):
+        self.calls.append(("loop", range, looping))
+
+    def pause(self):
+        self.calls.append(("pause",))
+
+    def cue(self, at):
+        self.calls.append(("cue", at))
+
+    def locate(self, at):
+        self.calls.append(("locate", at))
+
+
+def test_the_multitrack_transport_keeps_its_span_and_loop_and_draws_them():
+    """The multitrack's transport: its span is the band a sweep
+    leaves and the loop switch is L's, kept stopped, read by the next play."""
+    ed = editor(multitrack())
+    host = _wired(ed)
+    ed.playback = _RecordingPlayback()
+    transport = ed.transport
+    assert transport is ed.transport, "one transport, one object"
+    transport.loop(1.0, 3.0)
+    assert transport.span == (1.0, 3.0) and transport.looping
+    assert ed.playback.calls[-1] == ("loop", (1.0, 3.0), True)
+    shown = props(ed)
+    assert (shown["sel_start"], shown["sel_len"]) == (SR, 2 * SR), "the band a sweep leaves"
+    assert host.props[ed.multitrack_widget]["looping"] == 1, "the window's L switch"
+    transport.play()
+    assert ed.playback.calls[-1] == ("play", (1.0, 3.0), True)
+    transport.unloop()
+    assert not transport.looping and transport.span == (1.0, 3.0)
+    wid = next(iter(ed.view.widgets))
+    ed._route([wid, "selection", 0.0, 2 * SR])
+    assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
+
+
+def test_what_the_multitrack_holds_is_its_regions():
+    held = multitrack()
+    ed = editor(held)
+    _wired(ed)
+    regions = [r for t in held.tracks for lane in t.take_lanes for r in lane.regions]
+    assert ed.selected == []
+    ed.select(regions[1:])
+    assert ed.selected == regions[1:]
+    ed.unselect()
+    assert ed.selected == []
+

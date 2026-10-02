@@ -150,6 +150,24 @@ export class Main extends Environment {
      * given, else the ambient session's, else the default session's. Throws
      * when none has been opened.
      */
+    /**
+     * {@link Main.resolveServer}, and when there is no server anywhere, **the
+     * default session gets one**: the page's own engine, booted and adopted as
+     * the default session's. What a verb that needs a server and has no session
+     * to ask uses, so a page needs no session of its own to play.
+     */
+    async serverOrBoot(server?: Server | null): Promise<Server> {
+        try {
+            return this.resolveServer(server);
+        } catch {
+            // nothing resolved: boot below
+        }
+        const { Server: Booted } = await import("../defs/server/index.ts");
+        const started = new Booted();
+        await started.boot();
+        return this.server ?? started;
+    }
+
     resolveServer(server?: Server | null): Server {
         if (server) return server;
         const session = this.ambientSession();

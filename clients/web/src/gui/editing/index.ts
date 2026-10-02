@@ -50,10 +50,10 @@ export { Application, BASE_ID } from "./application.ts";
 export { AudioDomain, AudioEditor, isTake } from "./audio.ts";
 export type { AudioEditorOptions } from "./audio.ts";
 export type { Drawing } from "./application.ts";
-export { Editing, FIRST_VERSION, contexts } from "./context.ts";
+export { Editing, FIRST_VERSION, contexts } from "../../history.ts";
 export type {
     Adopting, Applier, Effect, Freed, RecordingLeg, StepHandler, Stepped, Stored, Turned,
-} from "./context.ts";
+} from "../../history.ts";
 export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";

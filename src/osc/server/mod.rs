@@ -294,7 +294,7 @@ pub struct OscServer {
     transports: Vec<Transport>,
     /// **The event lanes** (`/lane_new`), by id: what each holds and what of
     /// it is on the engine's lane queue. See [`lanes`].
-    lanes: std::collections::HashMap<i32, lanes::Lane>,
+    lanes: std::collections::HashMap<i32, lanes::EventLane>,
     /// `/server_errorMode` mode: post command failures to the server console. The `/fail`
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).

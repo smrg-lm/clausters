@@ -614,8 +614,8 @@ export class GuiHost {
      *
      * Why it exists at all: a widget that appeared or went can only arrive by a
      * definition, and doing that to the **window** rebuilds every widget in it --
-     * so a clip dropped on one lane took the zoom, the scroll and the selection
-     * of every other lane with it. `/gui_def` names any widget, so the answer is
+     * so a clip dropped on one track took the zoom, the scroll and the selection
+     * of every other track with it. `/gui_def` names any widget, so the answer is
      * to name the smallest one that changed.
      */
     redefine(
@@ -1291,6 +1291,11 @@ export class GuiHost {
         }
         this.pending.clear();
         this.handlers.clear();
+        // Detached, this client reaches none of its windows any more: they
+        // read as closed, so a read-out ticking on one stops and a `wait`
+        // on them returns, as both do when the reference client's host stops.
+        this.opened.clear();
+        this.notifyWaiters();
     }
 }
 

@@ -24,7 +24,7 @@ export type {
     PortSpec,
 } from "./patch.ts";
 export {
-    formatLoad, formatMidiBinding, formatServerInfo, formatServerStatus, loadName, Server,
+    formatLoad, formatMidiBinding, formatServerInfo, formatServerStatus, loadName, Server, Transport,
 } from "./server/index.ts";
 export type {
     Load,

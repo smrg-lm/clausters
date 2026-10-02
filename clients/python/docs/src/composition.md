@@ -57,11 +57,11 @@ opens, which is why the curve row below names three unrelated types:
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
-| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
 
 **An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
-**It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `None` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `y_axis="hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output.
+**It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `None` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `y_axis="hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. **A script edits the same sequence while the roll is open**, through its objects (see [Event sequences](timelines.md#event-sequences-events-as-data)): the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — `with seq.history("humanize"):` makes a whole loop one entry. **What the hand marked is the script's to read**: `roll.selected` is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, `roll.select(events)` marks them from the script and `roll.unselect()` clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)). `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output.
 
 
 **A `Buffer` opens in the audio editor**, `clausters.gui.editing.AudioEditor`.
@@ -72,7 +72,16 @@ new take the size of the stroke, spliced over the frames it was drawn on. An und
 is the list before, stitched again, so it costs the list and not the samples.
 The takes a history can still reach are kept, and freed when it cannot;
 `history_bytes=` caps what only the history holds, and `resident_bytes=` how much of that stays in memory -- past it the oldest takes are written to a `scratch=` directory and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save(path)` writes it as another file and `editor.save(buffer=b)` into another buffer (`buffer=True` for a new one), which a later save then writes over. `editor.buffer` is the edited
-take, to play or read, and `editor.parts` what it is made of.
+take, to play or read, and `editor.parts` what it is made of. **It plays what it
+edits** on the audio editors' transport, and `editor.transport` is that
+`Transport` in the take's seconds: the space bar over the window plays the
+marked range, or from the position cursor, and `L` loops it -- the same
+`transport.play()`, `span` and `loop(start, end)` from a script, each side
+reading what the other set. What the hand marked is samples, and
+`editor.selected` answers them as a `Segment` over `editor.buffer` (its `start`
+a frame, its `duration` seconds); `editor.select(segment)` marks one and
+`editor.unselect()` marks nothing. In an audio editor the samples marked and the
+transport's `span` are one range, so setting either sets both.
 
 ```python
 from clausters.gui import edit
@@ -119,7 +128,7 @@ run it replaced. This client writes a stroke's samples synchronously; a page's
 buffer calls are asynchronous, so the web client queues them in order instead,
 and that is the only difference between the two.
 
-## The arrangement: tracks, lanes, regions
+## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
@@ -133,23 +142,23 @@ The vocabulary is the field's own:
   long, its fades, which of the overlapping ones is on top) plus what fills it.
   Six regions over one source are six identities and one source, referenced
   rather than copied. That is the whole of non-destructive editing.
-- A **lane** is one of a track's several contents, an ordered list of regions.
-- A **track** holds several lanes and **plays one**, which is what comping is:
-  record six passes into six lanes, then take from each.
+- A **take lane** is one of a track's several contents, an ordered list of regions.
+- A **track** holds several take lanes and **plays one**, which is what comping is:
+  record six passes into six take lanes, then take from each.
 - An **automation** is a curve over one parameter, in the multitrack's time.
 - The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
 ```python
-from clausters.multitrack import Content, Lane, Multitrack, Region, Tempo, Track
+from clausters.multitrack import Content, TakeLane, Multitrack, Region, Tempo, Track
 
 multitrack = Multitrack()
 multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))       # beats per second: 96 a minute
 bar = multitrack.tempo_map().secs_at(4.0)            # where the second bar begins
 
-drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
-drums.active_lane.place(Region(id=3, position=bar, length=2.5,
+drums = Track(id=1, name="drums", take_lanes=[TakeLane(id=2)])
+drums.active_take_lane.place(Region(id=3, position=bar, length=2.5,
                                content=Content.onto(take)))
 multitrack.tracks.append(drums)
 
@@ -157,7 +166,7 @@ written = multitrack.write()          # the crate's JSON
 multitrack = Multitrack.read(written)
 ```
 
-A **region** is the model's word and a **clip** is the picture's: a clip, a lane
+A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
 everything placed is placed in **seconds** — a region, its fades, a curve's
 points, a marker, the loop — while what fills a region is measured in its own
@@ -178,7 +187,7 @@ from clausters.document import MULTITRACK, domain_edit
 
 edited = domain_edit(
     MULTITRACK, multitrack.write(),
-    {"intent": "placeregion", "region": 3, "track": 1, "lane": 2,
+    {"intent": "placeregion", "region": 3, "track": 1, "take_lane": 2,
      "position": 16.0, "layer": 0},
 )
 edited["applied"]                       # True
@@ -188,8 +197,8 @@ edited["current"]                       # the edit that puts it back
 
 Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
-say the same thing) and `setactivelane`, which is comping's one verb. What a
-**region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
+say the same thing) and `setactivetakelane`, which is comping's one verb. What a
+**region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
 span), `settempomap` and `setmetermap`.
@@ -197,9 +206,9 @@ span), `settempomap` and `setmetermap`.
 Three things about them are worth knowing before you write against them.
 
 **Moving a region to another track is one edit.** Where a region is means track,
-lane *and* second, and an intent is absolute — so `placeregion` states all three
+take lane *and* second, and an intent is absolute — so `placeregion` states all three
 together. One entry in a history, one undo, and no moment in between where the
-region is on no lane at all.
+region is on no take lane at all.
 
 **A crossfade is two fades over an overlap**, not a third object: `faderegion`
 on each of the two regions, which is what the model already holds. There is no
@@ -213,7 +222,7 @@ and this document converts between the two *never*. So `splitregion` takes
 `left_content` and `right_content` and `joinregions` takes `content`, from you,
 who knows how the content is read. Omit them and both halves go on reading what
 the region read.
-Both also invert as `setlane`, the lane's previous contents: nothing smaller
+Both also invert as `settakelane`, the take lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 
 Everything else the vocabulary does it does the way the tree's does — absolute,
@@ -251,9 +260,12 @@ that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 script. **The space bar is play/stop**: a stop goes back to the position
 cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
 drag does in the audio editor: the space bar plays it from its start to its end,
-and the loop switch (**L**) loops it, or the whole multitrack with no range --
-the playback's `play(range=..., looping=...)` from a script, as the notes editor's `play` takes it too. **Where a pass ends** is
-the playback's `end`: `None` by default, the transport rolling on past the
+and the loop switch (**L**) loops it, or the whole multitrack with no range.
+From a script both are the transport's: `editor.transport` is the
+`Transport` the multitrack plays on, in seconds, so `editor.transport.loop(1, 3)`
+draws the band and turns `L` on, and a range swept by hand reads back as
+`editor.transport.span` (see [The transport](transport.md)). **Where a pass ends** is
+the transport's `end`: `None` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
 end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened
 with no server still edits; it is simply not heard.
@@ -299,7 +311,7 @@ from clausters.multitrack import Session, Span, View
 
 window = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
 window.track_view(10).height = 96.0
-window.track_view(10).lanes_shown = True      # comping open
+window.track_view(10).take_lanes_shown = True      # comping open
 window.selected = [20, 32]
 
 session = Session(arrangement=multitrack, views=[window])
@@ -460,39 +472,28 @@ hand put it, and what comes back is where it landed — so a redo replays the
 edit**, so undoing needs no second path: it is the same intent machinery running
 backwards, and the window adopts the result exactly as it adopts a snap.
 
-### The selection: what was swept, and what is under it
+### What the hand marked, and what it swept
 
-A sweep on a lane is not an edit — nothing in the multitrack changes — but it
-is the **value** an operation is handed, so the editor keeps it typed:
-
-```python
-# after sweeping a marquee on a lane
-editor.selection                 # {"start": 1.0, "len": 2.0}   (beats)
-editor.resolve_selection()       # [{"node": 3, "source": {...}, "range": [...], ...}]
-```
-
-Two things are worth knowing about what is in there. The span is in **beats**,
-the unit the arrangement is written in, converted from the timeline samples the
-window reported — the crate holds whatever unit it is given and converts
-nothing, because the tempo is yours. And a sweep with **height** over a view
-that measures a value carries that band too, in the element's own domain:
+Two things on a multitrack window are marked by hand and are not edits —
+nothing in the multitrack changes — and each is read in the type it is of.
+**What is held** is regions: a click, Alt+click or a marquee over the boxes,
+and `editor.selected` answers them as the `Region` objects of this multitrack.
+**What is swept** is a time range, an Alt+drag across the tracks, and it is the
+transport's: `editor.transport.span`, in seconds, the one the space bar plays
+and `L` loops.
 
 ```python
-editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0.25},
-                    #  "nodes": [4]}
+editor.selected                    # [Region(...), Region(...)]
+editor.select(track.take_lanes[0].regions)
+editor.unselect()                  # hold nothing
+editor.transport.loop(1.0, 3.0)    # the band drawn, the loop on
+editor.transport.span              # (1.0, 3.0)
 ```
 
-`nodes` says what the selection is *of*: the element when the sweep was inside
-one, and nothing at all when it was across a lane, which is a selection of the
-shared time axis. `resolve_selection` turns that into the samples underneath —
-one entry per leaf, with the placement's base, the element's trim and the clamp
-at both ends already applied — and returns nothing where an aggregate or a
-generator is in the way rather than under it.
-
-The value band travels with the selection and does not narrow that answer: what
-lies under a range of amplitudes is the same samples as what lies under the
-whole span. Reading *only* those samples is an operation over the range, not a
-resolution of it.
+Both are the picture's state: they enter no history, and a script setting one
+is drawn the way a hand setting it is. The notes editor reads the same two
+words — its `selected` is events, its span the transport's — and the audio
+editor's selection is samples.
 
 The other scrap of screen state a driver can ask for is **which layer of a clip
 the hand is on** — its placement, its notes, its curve:
@@ -501,7 +502,7 @@ the hand is on** — its placement, its notes, its curve:
 editor.edit_layer(element, member)   # "roll", say, or None
 ```
 
-Both are asked for the way every other route here is: by the **placement**. A
+It is asked for the way every other route here is: by the **placement**. A
 widget id is the picture's name for a widget and is minted afresh every time the
 window is redrawn, so nothing that has to outlive a redraw is keyed by one — the
 same rule the history follows, one level down: identity belongs to the data,
@@ -589,7 +590,7 @@ both hold one sequence, and nothing is copied.
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.open_edits()` is what is still undecided, and `session.dangling()` is
-what the multitrack names and the table does not hold — **every** lane walked, not
+what the multitrack names and the table does not hold — **every** take lane walked, not
 only the ones that play, because an alternate take names its source whether or
 not anyone has chosen it yet.
 
@@ -626,25 +627,26 @@ language attached shows.
 
 ### Mixing is the multitrack's
 
-Every element carries `mute`, `solo` and `level`, and all three are inherited
-down the tree: muting an aggregate silences its members, one soloed element
-anywhere silences every branch that is not on a soloed path, and a level
-multiplies into the `amp` of the events under it.
+A **track** carries its own mix: `muted`, `soloed` and `level`, the fader as
+a linear gain. A muted track is silent, and so is every track that is not
+soloed while any track is: the rule is the multitrack's, applied where it is
+played, and the document only marks the track.
 
 ```python
-bass_lane.mute = True
-lead_lane.level = 0.5
+bass, lead = multitrack.tracks
+bass.muted = True
+lead.level = 0.5
 ```
 
-They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the multitrack rather than
-remembering something of its own — pressing mute there goes through the log and
-undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
+They are fields of the track and are written with it, so a multitrack reopens
+mixed the way it was left, and the editor's track header is drawing the
+multitrack rather than remembering something of its own — pressing mute there goes through the log and
+undoes like any other edit. What is *drawn* is read unmixed: a muted track keeps
 its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
 
-A lane's **height** is the other kind of thing and is in no document. It says
-nothing about what the multitrack is; resizing a lane (Ctrl+wheel) changes the view
+A track's **height** is the other kind of thing and is in no document. It says
+nothing about what the multitrack is; resizing a track (Ctrl+wheel) changes the view
 and no file.
 
 ### What a multitrack is as nodes: the channel strip, three times

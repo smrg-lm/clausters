@@ -234,17 +234,49 @@ and an audio editor say, each play, pause and locate their own nodes without
 moving the other's.
 
 Every transport method on a `Server` addresses **transport 0**, the one there
-always was. `server.transport_at(n)` is the same server addressed through
-transport `n`: its transport methods name that transport, and everything else
-is the server's own, so it goes wherever a server is taken as a transport.
+always was. `server.transport_at(n)` is transport `n` as an object of its own,
+a `Transport` — the same one every time it is asked for — played the way a
+routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and
+`unloop`, `end` (where a pass stops), `playing`, and a `wait()` a script calls
+or not. Its other commands
+are there by their own names — `group`, `follow`, `fade`, `locate_sample`,
+`lane_new`, `state` — and it goes wherever a transport is taken.
 
 ```python
-left = server                          # transport 0
-right = server.transport_at(1)         # the same server, through transport 1
-right.transport_group(other_group)     # a group has one transport
-right.transport_play()                 # rolls transport 1 alone
+left = server                          # transport 0, through the server's own methods
+right = server.transport_at(1)         # transport 1, as an object
+right.group(other_group)               # a group has one transport
+right.play()                           # rolls transport 1 alone
 timeline.transport = right             # a timeline on transport 1
 ```
+
+Its positions are those of what is loaded on it: with nothing loaded, the
+transport's own seconds; once `play(sequence)` has put a sequence's lane there,
+that sequence's beats — `play` answers the `Transport` it loaded, so
+`transport.locate(4)` is beat 4 of the sequence and `transport.wait()` returns
+when its last note ends.
+
+**The loop is the roll's.** A transport keeps a time range, its `span`, and a
+loop switch, and both are state rather than commands: kept while it is
+stopped, read by the next `play`. With a sequence loaded they are the ones its
+rolls show — the band an Alt+drag sweeps, and `L` — so a span set here is drawn
+there and a range swept there reads here, and `play` plays the span from its
+start to its end, as the space bar does.
+
+```python
+transport.loop(0, 2)          # span (0, 2) and the loop on: Alt+drag and L at once
+transport.unloop()            # the loop off; the span stays
+transport.span = None         # no span: play plays from the cursor
+```
+
+The applications' transports are the same object. A multitrack editor's
+`editor.transport` is the one it plays on, in the multitrack's seconds: its
+`span` is the band an Alt+drag sweeps over the tracks, its loop switch is that
+window's `L`, and `play`, `pause`, `stop` and `locate` are the transport row's.
+An audio editor's is the take's, in its seconds, its `span` the range a drag
+marks. A notes editor's is the notes transport `play(sequence)` answers — the
+same object — about that editor's sequence and in its beats: asking a roll for
+it makes its sequence the one the verbs are about, without playing it.
 
 A node reads the transport that governs it — the nearest governed group above
 it — so a reader following `transport_pos` needs no id of its own: it follows

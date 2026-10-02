@@ -119,7 +119,7 @@ pub struct MultitrackPlayback {
     /// Where a pass ends ([`Self::set_end`]).
     end: End,
     /// Where the contents end, in seconds of the multitrack: the last region's
-    /// end on any track and any lane, as of the last [`Self::sync`].
+    /// end on any track and any take lane, as of the last [`Self::sync`].
     content_end: f64,
     /// The position cursor, in seconds -- where a pass that stops at the end
     /// goes back to. Moved by [`Self::cue`] and [`Self::stop`].
@@ -263,7 +263,7 @@ impl MultitrackPlayback {
     }
 
     /// **Where a pass ends** ([`End`]): open by default, or where the last
-    /// region ends on any track and any lane, or at an end marker in seconds
+    /// region ends on any track and any take lane, or at an end marker in seconds
     /// -- going back to the position cursor.
     pub fn set_end(&mut self, end: End) -> Vec<Step> {
         self.end = end;
@@ -619,7 +619,7 @@ mod tests {
             start: 0.0,
             duration: end,
         };
-        multitrack.tracks[0].lanes[0].place(Region::new(
+        multitrack.tracks[0].take_lanes[0].place(Region::new(
             NodeId(20),
             Second(0.0),
             Second(end),
@@ -879,7 +879,7 @@ mod tests {
         };
         let placement = Placement {
             events: vec![note],
-            lanes: Vec::new(),
+            curves: Vec::new(),
         };
         let steps = playback.notes(&placement, &mut ids).unwrap();
         assert_eq!(addrs(&steps), ["/lane_new", "/lane_set"]);

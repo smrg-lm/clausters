@@ -337,13 +337,13 @@ on trust, so that is where drift accumulates:
   editor**, the **multitrack editor** and the **score editor**. The document is
   `crates/clausters-document` and its vocabulary is the field's settled one —
   **source**, **region** (a window onto a source, with its own identity),
-  **lane** (a track's contents, and a track holds several), **track**,
-  **automation**, **session**. The GUI host binds that document, which is what
+  **take lane** (a track's contents, and a track holds several — comping),
+  **track**, **automation**, **session**. The GUI host binds that document, which is what
   makes an application programmable from the host and identical from every
   client. The design is in `crates/clausters-document/PLAN.md` ("The turn: the
   arrangement stops being a projection", milestones `O21`-`O24`).
   In prose the layer is *"the multitrack"* / "el multipista" — the type is
-  `clausters_document::multitrack::Multitrack` and it holds tracks, lanes,
+  `clausters_document::multitrack::Multitrack` and it holds tracks, take lanes,
   regions and the timeline they sit on, which are the multitrack editor's
   elements and nobody else's *(renamed 2026-09-08; it was `Arrangement`, which
   was `FormEditor`'s word for a layer that no longer exists, and "arrangement"
@@ -370,7 +370,7 @@ on trust, so that is where drift accumulates:
 
 - **A view is configured by what it holds, never by which class built it.** What
   is fundamental is the **data structures** — samples, notes, events, curves,
-  segments — and the verbs they admit. A clip, a lane, a roll, a waveform are
+  segments — and the verbs they admit. A clip, a track, a roll, a waveform are
   **views**, and what a hand may do to a clip (move, trim, split, join) is asked of the
   structure inside it — does it have an addressable time axis — and never of a
   type list. An `isinstance` against an arrangement class deciding whether an

@@ -1,4 +1,4 @@
-"""The arrangement: tracks, lanes, regions, and the timeline they sit on.
+"""The arrangement: tracks, take lanes, regions, and the timeline they sit on.
 
 This is the client's side of `clausters_document::arrangement` -- the model a
 multitrack editor edits, and the one the three classic applications (audio
@@ -15,10 +15,10 @@ The vocabulary is the field's own and not this project's invention:
   `Content` saying what fills it. Six regions over one source are six
   identities and one source, referenced rather than copied. That is the whole
   of non-destructive editing.
-- A `Lane` is one of a track's several contents, an ordered list of regions.
+- A `TakeLane` is one of a track's several contents, an ordered list of regions.
   Ardour's structure and our name.
-- A `Track` holds several lanes and **plays one**, which is what comping is:
-  record six passes into six lanes, then take from each.
+- A `Track` holds several take lanes and **plays one**, which is what comping is:
+  record six passes into six take lanes, then take from each.
 - An `Automation` is a curve over one parameter, in the arrangement's time.
 - An `Multitrack` is the tracks plus what the **multitrack** has one of: the tempo
   map, the meter map, the markers, the loop and punch spans. They are here and
@@ -27,7 +27,7 @@ The vocabulary is the field's own and not this project's invention:
 A region is not a clip
 ----------------------
 
-`Region` is the model's word; **clip** is the picture's. A clip, a lane row, a
+`Region` is the model's word; **clip** is the picture's. A clip, a track row, a
 waveform are what the host draws; a region is what an edit names. Keeping them
 apart is deliberate -- the multitrack's defects came from the thing drawn and the
 thing addressed being one object.
@@ -57,8 +57,8 @@ Usage::
     multitrack = Multitrack()
     multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))     # 96 beats a minute
     bar = multitrack.tempo_map().secs_at(4.0)          # where the second bar begins
-    drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
-    drums.active_lane.place(Region(id=3, position=bar, length=2.5,
+    drums = Track(id=1, name="drums", take_lanes=[TakeLane(id=2)])
+    drums.active_take_lane.place(Region(id=3, position=bar, length=2.5,
                                    content=Content.window(take)))
     multitrack.tracks.append(drums)
 """
@@ -74,8 +74,8 @@ __all__ = [
     "Automation",
     "Content",
     "Fade",
-    "Lane",
-    "LaneView",
+    "TakeLane",
+    "TakeLaneView",
     "Marker",
     "Meter",
     "Region",
@@ -207,7 +207,7 @@ class Content:
 
 @dataclass
 class Region:
-    """One placed thing on a lane: a span of the timeline, and what fills it.
+    """One placed thing on a take lane: a span of the timeline, and what fills it.
 
     `position` and `length` are the region's own, in seconds. They are **not** the
     content's: a region may show part of what it holds, and trimming moves these
@@ -219,7 +219,7 @@ class Region:
     length: float
     content: Content
     name: "str | None" = None
-    #: Which of the overlapping regions on this lane draws and plays on top.
+    #: Which of the overlapping regions on this take lane draws and plays on top.
     #: Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
     #: stack needs an order that survives a save.
     layer: int = 0
@@ -229,7 +229,7 @@ class Region:
     #: The curves that act on **this placement alone** -- its own gain, its pan,
     #: the parameters of whatever fills it. The same `Automation` a track
     #: carries, in the other place it belongs: a track's curve runs the length
-    #: of the track and is drawn in a lane beside it, a region's runs the length
+    #: of the track and is drawn in a row beside it, a region's runs the length
     #: of the region and is drawn **inside** it. A clip that has curves is a
     #: small track acting on itself alone.
     automation: list = field(default_factory=list)
@@ -289,7 +289,7 @@ class Region:
 
 
 @dataclass
-class Lane:
+class TakeLane:
     """One of a track's several contents: an ordered list of regions.
 
     Ardour's structure and our name -- its *playlist* is this, and that word is
@@ -304,7 +304,7 @@ class Lane:
     extra: dict = field(default_factory=dict)
 
     def place(self, region: Region) -> Region:
-        """Places a region and keeps the lane in position order. Returns it, so
+        """Places a region and keeps the take lane in position order. Returns it, so
         a caller can go on holding what it just placed."""
         at = 0
         for at, held in enumerate(self.regions):
@@ -333,7 +333,7 @@ class Lane:
         return out
 
     @classmethod
-    def read(cls, written: dict) -> "Lane":
+    def read(cls, written: dict) -> "TakeLane":
         return cls(
             id=int(written["id"]),
             name=written.get("name"),
@@ -373,28 +373,215 @@ def flat_points(points) -> list:
     return out
 
 
-@dataclass
+def _points(points) -> list:
+    """Points as the document writes them: a ``{"at", "value", ...}`` dict is
+    taken as it is, and an ``(at, value)`` pair becomes one."""
+    out = []
+    for point in points:
+        if isinstance(point, dict):
+            out.append(dict(point))
+        else:
+            at, value = point
+            out.append({"at": float(at), "value": float(value)})
+    return out
+
+
 class Automation:
-    """A curve over one parameter, in the arrangement's own time.
+    """A curve over one parameter, in its holder's time.
 
     `target` says **what this automates** in the client's terms and is never
     read here -- a control name, a bus, a plugin's parameter index -- the same
     door a leaf's configuration is, and for the same reason. The points are
-    `{"at": seconds, "value": v, "data": ...}`, the shape `clausters.document`'s
-    points vocabulary already carries.
+    `{"at": t, "value": v, "data": ...}`, the shape `clausters.document`'s
+    points vocabulary already carries; ``(at, value)`` pairs are read as
+    such points. What ``at`` counts is the holder's: seconds on a `Track`,
+    seconds from the region's start on a `Region`, beats on a
+    `clausters.seq.EventSequence`, beats from the note's start on one of its
+    events.
+
+    **One class, free or held.** Built by a script, a curve is a **value**
+    that nothing holds. Added to a sequence or to one of its events
+    (``seq.automation.add``, ``event.automation.add``) it is a **live view**
+    of the curve the sequence holds: reading a field asks the sequence, so it
+    reads what an editor left there, writing one writes the curve back into
+    the sequence, and the same curve read twice is the same object. A curve the sequence no longer holds -- removed, or undone away --
+    is **detached**: `held` is ``False`` and reading it raises `ValueError`,
+    until an undo brings it back.
+
+    A curve on a multitrack is a value either way, written whole with the
+    multitrack; its ``id`` is the multitrack's to keep.
     """
 
-    id: int
-    target: "dict | None" = None
-    name: "str | None" = None
-    points: list = field(default_factory=list)
-    #: Whether the lane is shown. The **view's**, and kept here because which
-    #: curves a person had open is part of reopening the multitrack as they left it.
-    visible: bool = False
-    #: Whether the curve is being applied. A curve can be kept and switched off
-    #: without being deleted, which is what an arm or a bypass is.
-    enabled: bool = True
-    extra: dict = field(default_factory=dict)
+    _FIELDS = ("id", "target", "name", "points", "visible", "enabled", "extra")
+
+    def __init__(self, target=None, points=(), name: "str | None" = None, *,
+                 visible: bool = False, enabled: bool = True,
+                 extra: "dict | None" = None, id: int = 0):
+        #: ``(sequence, event id or None)`` while a sequence holds it.
+        self._holder = None
+        self._id = int(id)
+        self._value = {"target": target, "name": name, "points": _points(points),
+                       "visible": bool(visible), "enabled": bool(enabled),
+                       "extra": dict(extra or {})}
+
+    @classmethod
+    def _held_by(cls, sequence, event, id: int) -> "Automation":
+        """The view of curve ``id`` of ``sequence`` -- over the whole sequence
+        when ``event`` is ``None``, else over that event."""
+        curve = cls.__new__(cls)
+        curve._bind(sequence, event, id)
+        return curve
+
+    def _bind(self, sequence, event, id: int) -> None:
+        """Become the view of curve ``id`` the sequence now holds."""
+        self._holder = (sequence, event)
+        self._id = int(id)
+        self._value = None
+
+    # ---- the fields ----
+
+    def _written(self) -> dict:
+        """The curve as its holder writes it: the value, or what the sequence
+        holds now."""
+        if self._holder is None:
+            out = {"id": self._id, **self._value}
+            out["points"] = list(out["points"])
+            return out
+        sequence, event = self._holder
+        for written in sequence._curves(event) or ():
+            if int(written.get("id", 0)) == self._id:
+                return written
+        raise ValueError("the sequence no longer holds this curve")
+
+    @property
+    def _history_owner(self):
+        """The sequence that holds the curve, whose history it shares
+        (`clausters.history.Editing.of`), or ``None`` for a free value."""
+        return None if self._holder is None else self._holder[0]
+
+    @property
+    def held(self) -> bool:
+        """Whether a sequence holds the curve: ``False`` for a free value, and
+        for a view whose curve was removed."""
+        if self._holder is None:
+            return False
+        try:
+            self._written()
+        except ValueError:
+            return False
+        return True
+
+    @property
+    def id(self) -> int:
+        """The curve's identity in its holder; ``0`` for a value nothing holds
+        yet."""
+        return self._id
+
+    @id.setter
+    def id(self, value: int) -> None:
+        if self._holder is not None:
+            raise AttributeError("a held curve keeps the id its sequence gave it")
+        self._id = int(value)
+
+    def _field(self, name: str):
+        written = self._written()
+        defaults = {"target": None, "name": None, "points": [], "visible": False,
+                    "enabled": True}
+        if name == "extra":
+            if self._holder is None:
+                return written["extra"]
+            return {k: v for k, v in written.items() if k not in self._FIELDS}
+        return written.get(name, defaults[name])
+
+    def _write(self, name: str, value) -> None:
+        """Write one field: into the value, or -- for a held curve -- the
+        whole curve back into the sequence, which keeps its id."""
+        if self._holder is None:
+            self._value[name] = value
+            return
+        written = dict(self._written())
+        if name == "extra":
+            written = {k: v for k, v in written.items() if k in self._FIELDS}
+            written.update(value)
+        else:
+            written[name] = value
+        sequence, event = self._holder
+        sequence._write_curve(event, written, "edit a curve")
+
+    def remove(self) -> None:
+        """Remove the curve from the sequence that holds it. This object is
+        left detached, and an undo that brings the curve back brings it back
+        too. A free curve is held by nothing, so there is nothing to remove it
+        from: `ValueError`."""
+        if self._holder is None:
+            raise ValueError("a free curve is held by nothing")
+        self._written()
+        sequence, event = self._holder
+        if event is None:
+            intent = {"intent": "removeautomation", "curve": self._id}
+        else:
+            intent = {"intent": "removeeventautomation", "id": int(event), "curve": self._id}
+        sequence._edit(intent, "remove a curve")
+
+    @property
+    def target(self):
+        """What the curve drives, in its holder's vocabulary."""
+        return self._field("target")
+
+    @target.setter
+    def target(self, value) -> None:
+        self._write("target", value)
+
+    @property
+    def name(self) -> "str | None":
+        """What a reader calls the curve."""
+        return self._field("name")
+
+    @name.setter
+    def name(self, value: "str | None") -> None:
+        self._write("name", value)
+
+    @property
+    def points(self) -> list:
+        """The points, ``{"at", "value", "data"}``, in order. A copy: change a
+        curve by assigning its points, or with `set_points`."""
+        return list(self._field("points"))
+
+    @points.setter
+    def points(self, value) -> None:
+        self._write("points", _points(value))
+
+    @property
+    def visible(self) -> bool:
+        """Whether the curve is shown. The **view's**, and kept here because
+        which curves a person had open is part of reopening the work as they
+        left it."""
+        return bool(self._field("visible"))
+
+    @visible.setter
+    def visible(self, value: bool) -> None:
+        self._write("visible", bool(value))
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the curve is being applied. A curve can be kept and switched
+        off without being deleted, which is what an arm or a bypass is."""
+        return bool(self._field("enabled"))
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._write("enabled", bool(value))
+
+    @property
+    def extra(self) -> dict:
+        """Fields a newer writer wrote, carried as they are."""
+        return dict(self._field("extra"))
+
+    @extra.setter
+    def extra(self, value: dict) -> None:
+        self._write("extra", dict(value))
+
+    # ---- the curve protocol ----
 
     def to_points(self) -> list:
         """The curve as the flat ``[t, v, shape, curve, ...]`` break points the
@@ -417,19 +604,22 @@ class Automation:
         self.points = crate_points(points, curve)
         return self
 
+    # ---- as data ----
+
     def write(self) -> dict:
-        out: dict = {"id": self.id}
-        if self.name is not None:
-            out["name"] = self.name
-        if self.target is not None:
-            out["target"] = self.target
-        if self.points:
-            out["points"] = list(self.points)
-        if self.visible:
+        written = self._written()
+        out: dict = {"id": self._id}
+        if written.get("name") is not None:
+            out["name"] = written["name"]
+        if written.get("target") is not None:
+            out["target"] = written["target"]
+        if written.get("points"):
+            out["points"] = list(written["points"])
+        if written.get("visible"):
             out["visible"] = True
-        if not self.enabled:
+        if written.get("enabled") is False:
             out["enabled"] = False
-        out.update(self.extra)
+        out.update(self._field("extra"))
         return out
 
     @classmethod
@@ -445,22 +635,40 @@ class Automation:
             extra=_rest(written, *known),
         )
 
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Automation):
+            return NotImplemented
+        if self._holder is not None or other._holder is not None:
+            return self is other
+        return self.write() == other.write()
+
+    __hash__ = object.__hash__
+
+    def __repr__(self) -> str:
+        if self._holder is not None and not self.held:
+            return "<Automation, detached>"
+        written = self._written()
+        name = f" {written['name']!r}" if written.get("name") else ""
+        count = len(written.get("points") or ())
+        return (f"<Automation{name} {written.get('target')!r}, "
+                f"{count} point{'' if count == 1 else 's'}>")
+
 
 @dataclass
 class Track:
-    """A row of the arrangement: several lanes, one of them playing, the curves
+    """A row of the arrangement: several take lanes, one of them playing, the curves
     over it, and whatever the client says it is.
 
     **What a track *is* -- an instrument, a bus, a folder -- is not here.** That
     is `config`, carried and never interpreted, for the reason a leaf is opaque:
     a def is code in the language of whoever wrote it. What the document owns is
-    the structure: which lanes, which one plays, what is placed on them.
+    the structure: which take lanes, which one plays, what is placed on them.
     """
 
     id: int
     name: "str | None" = None
-    lanes: list = field(default_factory=list)
-    #: Which lane plays, as an index into `lanes`.
+    take_lanes: list = field(default_factory=list)
+    #: Which take lane plays, as an index into `take_lanes`.
     active: int = 0
     automation: list = field(default_factory=list)
     muted: bool = False
@@ -480,24 +688,24 @@ class Track:
     extra: dict = field(default_factory=dict)
 
     @property
-    def active_lane(self) -> "Lane | None":
-        """The lane that plays, or ``None`` when `active` names one that is not
+    def active_take_lane(self) -> "TakeLane | None":
+        """The take lane that plays, or ``None`` when `active` names one that is not
         there."""
-        return self.lanes[self.active] if 0 <= self.active < len(self.lanes) else None
+        return self.take_lanes[self.active] if 0 <= self.active < len(self.take_lanes) else None
 
     @property
     def end(self) -> float:
-        """Where the track's last region ends, across **every** lane -- what it
+        """Where the track's last region ends, across **every** take lane -- what it
         spans rather than what it plays, since an alternate take is still part
         of the multitrack."""
-        return max((lane.end for lane in self.lanes), default=0.0)
+        return max((lane.end for lane in self.take_lanes), default=0.0)
 
     def write(self) -> dict:
         out: dict = {"id": self.id}
         if self.name is not None:
             out["name"] = self.name
-        if self.lanes:
-            out["lanes"] = [lane.write() for lane in self.lanes]
+        if self.take_lanes:
+            out["take_lanes"] = [lane.write() for lane in self.take_lanes]
         if self.active:
             out["active"] = self.active
         if self.automation:
@@ -517,12 +725,12 @@ class Track:
 
     @classmethod
     def read(cls, written: dict) -> "Track":
-        known = ("id", "name", "lanes", "active", "automation", "muted",
+        known = ("id", "name", "take_lanes", "active", "automation", "muted",
                  "soloed", "level", "channels", "config")
         return cls(
             id=int(written["id"]),
             name=written.get("name"),
-            lanes=[Lane.read(lane) for lane in written.get("lanes", [])],
+            take_lanes=[TakeLane.read(lane) for lane in written.get("take_lanes", [])],
             active=int(written.get("active", 0)),
             automation=[Automation.read(a) for a in written.get("automation", [])],
             muted=bool(written.get("muted", False)),
@@ -667,16 +875,16 @@ class Multitrack:
 
     @property
     def end(self) -> float:
-        """Where the last region ends, across every track and every lane -- how
+        """Where the last region ends, across every track and every take lane -- how
         long the multitrack is."""
         return max((t.end for t in self.tracks), default=0.0)
 
     def regions(self):
-        """Every region, in track then lane then position order -- **every**
-        lane, not only the ones that play, because an alternate take still names
+        """Every region, in track then take lane then position order -- **every**
+        take lane, not only the ones that play, because an alternate take still names
         the source it plays."""
         for track in self.tracks:
-            for lane in track.lanes:
+            for lane in track.take_lanes:
                 yield from lane.regions
 
     def tempo_map(self):
@@ -961,10 +1169,10 @@ class TrackView:
     height: "float | None" = None
     #: Whether the row is collapsed to its header.
     collapsed: bool = False
-    #: Whether the track's other lanes are shown under the one that plays --
+    #: Whether the track's other take lanes are shown under the one that plays --
     #: comping open, in a word. Closed by default: a track with six takes on it
     #: is one row until somebody asks to see them.
-    lanes_shown: bool = False
+    take_lanes_shown: bool = False
     #: The colour the track is drawn in, carried and never read.
     color: "str | None" = None
     extra: dict = field(default_factory=dict)
@@ -975,8 +1183,8 @@ class TrackView:
             out["height"] = float(self.height)
         if self.collapsed:
             out["collapsed"] = True
-        if self.lanes_shown:
-            out["lanes_shown"] = True
+        if self.take_lanes_shown:
+            out["take_lanes_shown"] = True
         if self.color is not None:
             out["color"] = self.color
         out.update(self.extra)
@@ -984,21 +1192,21 @@ class TrackView:
 
     @classmethod
     def read(cls, written: dict) -> "TrackView":
-        known = ("height", "collapsed", "lanes_shown", "color")
+        known = ("height", "collapsed", "take_lanes_shown", "color")
         return cls(
             height=written.get("height"),
             collapsed=bool(written.get("collapsed", False)),
-            lanes_shown=bool(written.get("lanes_shown", False)),
+            take_lanes_shown=bool(written.get("take_lanes_shown", False)),
             color=written.get("color"),
             extra=_rest(written, *known),
         )
 
 
 @dataclass
-class LaneView:
-    """How one lane is drawn."""
+class TakeLaneView:
+    """How one take lane is drawn."""
 
-    #: How tall its row is when the track's lanes are shown.
+    #: How tall its row is when the track's take lanes are shown.
     height: "float | None" = None
     extra: dict = field(default_factory=dict)
 
@@ -1010,7 +1218,7 @@ class LaneView:
         return out
 
     @classmethod
-    def read(cls, written: dict) -> "LaneView":
+    def read(cls, written: dict) -> "TakeLaneView":
         return cls(height=written.get("height"), extra=_rest(written, "height"))
 
 
@@ -1048,7 +1256,7 @@ class View:
     autofit: bool = True
     #: The time range the hand swept, in seconds, when it swept one.
     selection: "Span | None" = None
-    #: What the hand is holding: regions, lanes or tracks, by id. One list
+    #: What the hand is holding: regions, take lanes or tracks, by id. One list
     #: rather than one per kind, because the multitrack has one id space.
     selected: list = field(default_factory=list)
     #: What a keystroke is aimed at, which is not the same as what is selected.
@@ -1057,8 +1265,8 @@ class View:
     detail: "int | None" = None
     #: How each track is drawn, by the track's id.
     tracks: dict = field(default_factory=dict)
-    #: How each lane is drawn, by the lane's id.
-    lanes: dict = field(default_factory=dict)
+    #: How each take lane is drawn, by the take lane's id.
+    take_lanes: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
     def track(self, id: int) -> TrackView:
@@ -1070,13 +1278,13 @@ class View:
         is what makes "nobody has touched it" cost nothing to store."""
         return self.tracks.setdefault(int(id), TrackView())
 
-    def lane(self, id: int) -> LaneView:
-        """How this lane is drawn, or the default."""
-        return self.lanes.get(int(id), LaneView())
+    def take_lane(self, id: int) -> TakeLaneView:
+        """How this take lane is drawn, or the default."""
+        return self.take_lanes.get(int(id), TakeLaneView())
 
-    def lane_view(self, id: int) -> LaneView:
-        """How this lane is drawn, to be edited. See `track_view`."""
-        return self.lanes.setdefault(int(id), LaneView())
+    def take_lane_view(self, id: int) -> TakeLaneView:
+        """How this take lane is drawn, to be edited. See `track_view`."""
+        return self.take_lanes.setdefault(int(id), TakeLaneView())
 
     def prune(self, multitrack: "Multitrack") -> bool:
         """Drops everything this view says about objects the multitrack no longer
@@ -1089,20 +1297,20 @@ class View:
         held = set()
         for track in multitrack.tracks:
             held.add(track.id)
-            for lane in track.lanes:
+            for lane in track.take_lanes:
                 held.add(lane.id)
                 held.update(r.id for r in lane.regions)
             held.update(a.id for a in track.automation)
-        before = (len(self.tracks), len(self.lanes), len(self.selected),
+        before = (len(self.tracks), len(self.take_lanes), len(self.selected),
                   self.focused, self.detail)
         self.tracks = {id: v for id, v in self.tracks.items() if id in held}
-        self.lanes = {id: v for id, v in self.lanes.items() if id in held}
+        self.take_lanes = {id: v for id, v in self.take_lanes.items() if id in held}
         self.selected = [id for id in self.selected if id in held]
         if self.focused not in held:
             self.focused = None
         if self.detail not in held:
             self.detail = None
-        return before != (len(self.tracks), len(self.lanes),
+        return before != (len(self.tracks), len(self.take_lanes),
                           len(self.selected), self.focused, self.detail)
 
     def write(self) -> dict:
@@ -1129,9 +1337,9 @@ class View:
         if self.tracks:
             out["tracks"] = {str(id): v.write()
                              for id, v in sorted(self.tracks.items())}
-        if self.lanes:
-            out["lanes"] = {str(id): v.write()
-                            for id, v in sorted(self.lanes.items())}
+        if self.take_lanes:
+            out["take_lanes"] = {str(id): v.write()
+                            for id, v in sorted(self.take_lanes.items())}
         out.update(self.extra)
         return out
 
@@ -1139,7 +1347,7 @@ class View:
     def read(cls, written: dict) -> "View":
         """A view from the crate's JSON."""
         known = ("name", "visible", "scroll", "quant", "autofit", "selection",
-                 "selected", "focused", "detail", "tracks", "lanes")
+                 "selected", "focused", "detail", "tracks", "take_lanes")
         visible = written.get("visible")
         selection = written.get("selection")
         return cls(
@@ -1154,8 +1362,8 @@ class View:
             detail=written.get("detail"),
             tracks={int(id): TrackView.read(v)
                     for id, v in (written.get("tracks") or {}).items()},
-            lanes={int(id): LaneView.read(v)
-                   for id, v in (written.get("lanes") or {}).items()},
+            take_lanes={int(id): TakeLaneView.read(v)
+                   for id, v in (written.get("take_lanes") or {}).items()},
             extra=_rest(written, *known),
         )
 
@@ -1254,7 +1462,7 @@ class Session:
         """Sources the multitrack names but the table does not hold -- what an opening
         reader reports rather than discovering one element at a time.
 
-        **Every** lane is walked and not only the ones that play: an alternate
+        **Every** take lane is walked and not only the ones that play: an alternate
         take names its source whether or not anyone has chosen it yet.
         """
         missing = []

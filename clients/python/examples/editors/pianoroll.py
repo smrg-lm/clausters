@@ -6,7 +6,7 @@ The dedicated piano-roll view, the editor-grade sibling of the compact roll a
 multitrack draws inside a box (they share the host's note primitives, so a note
 is drawn and edited the same way in both). It contemplates the two message families a
 sequence carries: **MIDI notes** in the grid (pitch x time, with velocity and
-channel) and **OSC items** as markers in a lane below it.
+channel) and **OSC items** as markers below it.
 
 Editing gestures, all live and native (the browser keeps display + ``/gui_set``
 parity):
@@ -16,7 +16,8 @@ parity):
 - **Ctrl+click** empty grid adds a note there (then drag to set its length);
   **Ctrl+click a note** removes it;
 - **drag in the velocity lane** to set a note's velocity;
-- **Ctrl+click the OSC lane** adds/removes an event; **drag one** to move it;
+- the **OSC markers** below the grid are read-only: a press meant to edit one
+  is refused, and says why;
 - **wheel over the grid** zooms the shared time axis, **Shift+drag** pans it;
 - **drag empty grid** also marquee-selects the notes inside the time x pitch
   rectangle; **Alt+click** toggles a note in/out of the selection;

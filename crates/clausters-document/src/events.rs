@@ -28,11 +28,11 @@
 //!   and the **tempo map** that turns them into seconds travels with it as data
 //!   -- what a `.mid` carries, and what keeps a rendered timeline's time from
 //!   being lost.
-//! - **Curve lanes**: a CC, bend or pressure curve over the whole sequence,
+//! - **Its automation**: a CC, bend or pressure curve over the whole sequence,
 //!   each a [`multitrack::Automation`](crate::multitrack::Automation) whose
 //!   points are on the sequence's beats -- a channel's function, as MIDI's are,
 //!   on the one channel its target names (`channel`) or on every one.
-//! - **A note's own expression**: curves hung on one event, their points in
+//! - **A note's own automation**: curves hung on one event, their points in
 //!   beats from the note's start, as a region's automation is measured from the
 //!   region's -- which is where MPE's per-note bend and pressure live. Unlike
 //!   a region's, a note's curve may run past its end: a note's end is its
@@ -70,8 +70,9 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub data: Opaque,
     /// Curves over this event alone, their points in beats from its start.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub expression: Vec<Automation>,
+    /// Read under `expression` too, its name before it was the multitrack's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "expression")]
+    pub automation: Vec<Automation>,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -85,7 +86,7 @@ impl Event {
             id: 0,
             at: Beat(at),
             data: Opaque(data),
-            expression: Vec::new(),
+            automation: Vec::new(),
         }
     }
 
@@ -101,7 +102,7 @@ impl Event {
 
     /// Whether two events say the same thing in the same place, identity aside.
     fn same(&self, other: &Self) -> bool {
-        self.at == other.at && self.data == other.data && self.expression == other.expression
+        self.at == other.at && self.data == other.data && self.automation == other.automation
     }
 }
 
@@ -118,7 +119,7 @@ pub struct EventSequence {
     pub tempo_map: Option<TempoMap>,
     /// Curves over the whole sequence -- CC, bend, pressure -- on its beats.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub lanes: Vec<Automation>,
+    pub automation: Vec<Automation>,
     /// **Which MIDI specification it is written for**, or none: a sequence
     /// for the server, where every curve is legal. See [`MidiSpec`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -144,8 +145,9 @@ enum Written {
         events: Vec<Event>,
         #[serde(default)]
         tempo_map: Option<TempoMap>,
-        #[serde(default)]
-        lanes: Vec<Automation>,
+        /// Read under `lanes` too, its name before it was the multitrack's.
+        #[serde(default, alias = "lanes")]
+        automation: Vec<Automation>,
         #[serde(default)]
         midi: Option<MidiSpec>,
         #[serde(default)]
@@ -165,14 +167,14 @@ impl From<Written> for EventSequence {
             Written::Whole {
                 events,
                 tempo_map,
-                lanes,
+                automation,
                 midi,
                 next_id,
                 extra,
             } => Self {
                 events,
                 tempo_map,
-                lanes,
+                automation,
                 midi,
                 next_id,
                 extra,
@@ -189,7 +191,7 @@ impl From<Written> for EventSequence {
 pub enum EventsIntent {
     /// What the sequence's events are now, whole. An event with an id keeps
     /// it; one without takes the id of an unchanged event it matches, else a
-    /// new one. The tempo map and the lanes are left as they are.
+    /// new one. The tempo map and the automation are left as they are.
     SetEvents {
         /// The events, in any order.
         events: Vec<Event>,
@@ -236,31 +238,31 @@ pub enum EventsIntent {
         tempo_map: Option<TempoMap>,
     },
     /// A curve over the whole sequence (a CC, a bend, a pressure, a control),
-    /// whole: it replaces the lane of its id, or is one lane more -- its id
-    /// minted when it has none, and the answer says which.
-    Lane {
+    /// whole: it replaces the sequence's curve of its id, or is one curve
+    /// more -- its id minted when it has none, and the answer says which.
+    Automation {
         /// The curve, its points on the sequence's beats.
         automation: Automation,
     },
-    /// One lane fewer.
-    RemoveLane {
+    /// One of the sequence's curves fewer.
+    RemoveAutomation {
         /// Which.
-        lane: NodeId,
+        curve: NodeId,
     },
     /// A curve over one event, whole: it replaces that event's curve of its
     /// id, or is one more -- its id minted when it has none.
-    Expression {
+    EventAutomation {
         /// Which event.
         id: u64,
         /// The curve, its points in beats from the event's start.
         automation: Automation,
     },
     /// One of an event's curves fewer.
-    RemoveExpression {
+    RemoveEventAutomation {
         /// Which event.
         id: u64,
         /// Which of its curves.
-        lane: NodeId,
+        curve: NodeId,
     },
     /// The MIDI specification the sequence is written for, or none. Refused
     /// when a curve it holds has no spelling in that spec.
@@ -269,17 +271,18 @@ pub enum EventsIntent {
         #[serde(default)]
         midi: Option<MidiSpec>,
     },
-    /// A lane given to the notes it reaches: each note takes the stretch of
-    /// the lane its span covers as a curve of its own, and the lane goes. See
-    /// `scopes`.
-    LaneToExpression {
-        /// Which lane.
-        lane: NodeId,
+    /// A curve of the sequence given to the notes it reaches: each note takes
+    /// the stretch of the curve its span covers as a curve of its own, and
+    /// the sequence's goes. See `scopes`.
+    AutomationToEvents {
+        /// Which curve.
+        curve: NodeId,
     },
-    /// The notes' curves over `target` gathered into a lane -- of the notes on
-    /// `channel`, or of every note -- the answer saying which. Refused where
-    /// two notes that sound at once have different curves.
-    ExpressionToLane {
+    /// The notes' curves over `target` gathered into one curve of the
+    /// sequence -- of the notes on `channel`, or of every note -- the answer
+    /// saying which. Refused where two notes that sound at once have
+    /// different curves.
+    EventsToAutomation {
         /// What the curves drive, as a note's curve names it.
         target: Opaque,
         /// The notes' channel, or none for every note.
@@ -312,11 +315,11 @@ impl EventSequence {
             .events
             .iter()
             .map(|e| e.id)
-            .chain(self.lanes.iter().map(|a| a.id.0))
+            .chain(self.automation.iter().map(|a| a.id.0))
             .chain(
                 self.events
                     .iter()
-                    .flat_map(|e| e.expression.iter().map(|a| a.id.0)),
+                    .flat_map(|e| e.automation.iter().map(|a| a.id.0)),
             )
             .max()
             .unwrap_or(0);
@@ -329,9 +332,9 @@ impl EventSequence {
         }
         // A curve read with no id (a file's stream) takes one the same way.
         let curves = self
-            .lanes
+            .automation
             .iter_mut()
-            .chain(self.events.iter_mut().flat_map(|e| e.expression.iter_mut()));
+            .chain(self.events.iter_mut().flat_map(|e| e.automation.iter_mut()));
         for curve in curves {
             if curve.id.0 == 0 {
                 self.next_id += 1;
@@ -369,8 +372,8 @@ impl EventSequence {
 
     /// The sequence as the MIDI a file holds, at `ppq` ticks per beat: every
     /// event's messages at their ticks (`render::midi`, on channel 0 unless an
-    /// event says otherwise), its lanes as its channels' messages and its
-    /// notes' expression as theirs -- as its [`MidiSpec`] says them (see
+    /// event says otherwise), its automation as its channels' messages and
+    /// its notes' as theirs -- as its [`MidiSpec`] says them (see
     /// `midi`), MIDI 1.0 when it names none -- and the tempo as Set Tempo
     /// marks. An OSC event has no MIDI spelling and is left out, as is a curve
     /// the spec cannot say. A tempo ramp is written as the step at its
@@ -396,10 +399,11 @@ impl EventSequence {
 
     /// The sequence a MIDI file holds, at `ppq` ticks per beat: its notes
     /// paired into events (`render::from_midi_messages`), its streams as
-    /// curves -- a channel's as lanes, poly pressure and an MPE zone's member
-    /// channels as the notes' expression (see `midi`) -- its other messages as
-    /// events, the spec it is written for (MPE when it declares a zone, else
-    /// MIDI 1.0), and its tempo marks as the tempo map -- or the format's own
+    /// curves -- a channel's as the sequence's automation, poly pressure and
+    /// an MPE zone's member channels as the notes' (see `midi`) -- its other
+    /// messages as events, the spec it is written for (MPE when it declares a
+    /// zone, else MIDI 1.0), and its tempo marks as the tempo map -- or the
+    /// format's own
     /// 120 quarter notes a minute when it states none.
     ///
     /// # Errors
@@ -426,10 +430,10 @@ impl EventSequence {
         .collect();
         let tempo_map =
             TempoMap::from_breakpoints(&points).map_err(|e| format!("the file's tempo: {e:?}"))?;
-        let (events, lanes, spec) = midi::read(&messages);
+        let (events, automation, spec) = midi::read(&messages);
         let mut sequence = Self {
             events,
-            lanes,
+            automation,
             midi: Some(spec),
             tempo_map: Some(tempo_map),
             ..Self::default()
@@ -439,8 +443,8 @@ impl EventSequence {
     }
 
     /// **The sequence as the packets a MIDI 2.0 clip of it holds**, at `ppq`
-    /// ticks per beat: its notes at 16-bit velocity, its lanes as 32-bit
-    /// channel messages and its notes' expression as per-note messages (see
+    /// ticks per beat: its notes at 16-bit velocity, its automation as 32-bit
+    /// channel messages and its notes' as per-note messages (see
     /// `midi`), and its tempo as Set Tempo messages -- each packet its UMP
     /// words, at its tick.
     pub fn to_ump(&self, ppq: u16) -> Vec<(u32, Vec<u32>)> {
@@ -471,8 +475,8 @@ impl EventSequence {
     }
 
     /// **The sequence a MIDI 2.0 clip holds**, at `ppq` ticks per beat: its
-    /// notes, its channels' messages as lanes and its per-note messages as
-    /// the notes' expression (see `midi`), its Set Tempo messages as the tempo
+    /// notes, its channels' messages as its automation and its per-note
+    /// messages as the notes' (see `midi`), its Set Tempo messages as the tempo
     /// map -- 120 quarter notes a minute when it has none -- and MIDI 2.0 as
     /// its spec.
     ///
@@ -504,10 +508,10 @@ impl EventSequence {
             .iter()
             .map(|(t, words)| (beat(*t), words.clone()))
             .collect();
-        let (events, lanes) = midi::read_ump(&in_beats);
+        let (events, automation) = midi::read_ump(&in_beats);
         let mut sequence = Self {
             events,
-            lanes,
+            automation,
             midi: Some(MidiSpec::Midi2),
             tempo_map: Some(tempo_map),
             ..Self::default()
@@ -606,11 +610,11 @@ impl EventSequence {
                 }
                 self.midi = midi;
             }
-            EventsIntent::Lane { mut automation } => {
+            EventsIntent::Automation { mut automation } => {
                 if let Some(spec) = self.midi
-                    && !spec.says_lane(&automation.target.0)
+                    && !spec.says_channel(&automation.target.0)
                 {
-                    return Err(spec.refusal("a lane", &automation.target.0));
+                    return Err(spec.refusal("a curve of the sequence", &automation.target.0));
                 }
                 if automation.id.0 == 0 {
                     automation.id = NodeId(self.mint());
@@ -618,20 +622,20 @@ impl EventSequence {
                     self.next_id = self.next_id.max(automation.id.0);
                 }
                 added = Some(automation.id.0);
-                match self.lanes.iter_mut().find(|a| a.id == automation.id) {
+                match self.automation.iter_mut().find(|a| a.id == automation.id) {
                     Some(held) => *held = automation,
-                    None => self.lanes.push(automation),
+                    None => self.automation.push(automation),
                 }
             }
-            EventsIntent::RemoveLane { lane } => {
+            EventsIntent::RemoveAutomation { curve } => {
                 let i = self
-                    .lanes
+                    .automation
                     .iter()
-                    .position(|a| a.id == lane)
-                    .ok_or_else(|| format!("the sequence holds no lane {}", lane.0))?;
-                self.lanes.remove(i);
+                    .position(|a| a.id == curve)
+                    .ok_or_else(|| format!("the sequence holds no curve {}", curve.0))?;
+                self.automation.remove(i);
             }
-            EventsIntent::Expression { id, mut automation } => {
+            EventsIntent::EventAutomation { id, mut automation } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
                 if let Some(spec) = self.midi
                     && !spec.says_note(&automation.target.0)
@@ -644,29 +648,29 @@ impl EventSequence {
                     self.next_id = self.next_id.max(automation.id.0);
                 }
                 added = Some(automation.id.0);
-                let curves = &mut self.events[i].expression;
+                let curves = &mut self.events[i].automation;
                 match curves.iter_mut().find(|a| a.id == automation.id) {
                     Some(held) => *held = automation,
                     None => curves.push(automation),
                 }
             }
-            EventsIntent::RemoveExpression { id, lane } => {
+            EventsIntent::RemoveEventAutomation { id, curve } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
-                let curves = &mut self.events[i].expression;
+                let curves = &mut self.events[i].automation;
                 let j = curves
                     .iter()
-                    .position(|a| a.id == lane)
-                    .ok_or_else(|| format!("event {id} holds no curve {}", lane.0))?;
+                    .position(|a| a.id == curve)
+                    .ok_or_else(|| format!("event {id} holds no curve {}", curve.0))?;
                 curves.remove(j);
             }
-            EventsIntent::LaneToExpression { lane } => {
+            EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
-                after.lane_to_expression(lane)?;
+                after.automation_to_events(curve)?;
                 *self = after;
             }
-            EventsIntent::ExpressionToLane { target, channel } => {
+            EventsIntent::EventsToAutomation { target, channel } => {
                 let mut after = self.clone();
-                added = Some(after.expression_to_lane(&target.0, channel)?);
+                added = Some(after.events_to_automation(&target.0, channel)?);
                 *self = after;
             }
             EventsIntent::Restore { sequence } => {
@@ -765,7 +769,7 @@ impl CurveKind {
 
 impl MidiSpec {
     /// Whether a curve over a channel with this target can be said.
-    pub fn says_lane(&self, target: &Value) -> bool {
+    pub fn says_channel(&self, target: &Value) -> bool {
         CurveKind::of(target) != CurveKind::Control
     }
 
@@ -804,12 +808,16 @@ impl MidiSpec {
 impl EventSequence {
     /// The first curve the sequence holds that `spec` cannot say, as why.
     fn unsayable(&self, spec: MidiSpec) -> Option<String> {
-        if let Some(lane) = self.lanes.iter().find(|l| !spec.says_lane(&l.target.0)) {
-            return Some(spec.refusal("a lane", &lane.target.0));
+        if let Some(curve) = self
+            .automation
+            .iter()
+            .find(|l| !spec.says_channel(&l.target.0))
+        {
+            return Some(spec.refusal("a curve of the sequence", &curve.target.0));
         }
         self.events.iter().find_map(|event| {
             event
-                .expression
+                .automation
                 .iter()
                 .find(|c| !spec.says_note(&c.target.0))
                 .map(|c| {
@@ -833,7 +841,7 @@ pub struct Change {
     /// Whether the sequence changed.
     pub applied: bool,
     /// The id an [`EventsIntent::Add`] gave its event, or a
-    /// [`EventsIntent::Lane`] or [`EventsIntent::Expression`] its curve.
+    /// [`EventsIntent::Automation`] or [`EventsIntent::EventAutomation`] its curve.
     pub added: Option<u64>,
 }
 
@@ -881,18 +889,20 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         EventsIntent::Set { id, key, .. } => format!("{EVENTS}:set:{id}:{key}"),
         EventsIntent::Keys { id, .. } => format!("{EVENTS}:keys:{id}"),
         EventsIntent::Tempo { .. } => format!("{EVENTS}:tempo"),
-        EventsIntent::Lane { automation } => format!("{EVENTS}:lane:{}", automation.id.0),
-        EventsIntent::Expression { id, automation } => {
-            format!("{EVENTS}:expression:{id}:{}", automation.id.0)
+        EventsIntent::Automation { automation } => {
+            format!("{EVENTS}:automation:{}", automation.id.0)
+        }
+        EventsIntent::EventAutomation { id, automation } => {
+            format!("{EVENTS}:event:{id}:automation:{}", automation.id.0)
         }
         EventsIntent::SetEvents { .. } | EventsIntent::Restore { .. } => EVENTS.to_string(),
         EventsIntent::Add { .. }
         | EventsIntent::Remove { .. }
-        | EventsIntent::RemoveLane { .. }
-        | EventsIntent::RemoveExpression { .. }
+        | EventsIntent::RemoveAutomation { .. }
+        | EventsIntent::RemoveEventAutomation { .. }
         | EventsIntent::Midi { .. }
-        | EventsIntent::LaneToExpression { .. }
-        | EventsIntent::ExpressionToLane { .. } => return None,
+        | EventsIntent::AutomationToEvents { .. }
+        | EventsIntent::EventsToAutomation { .. } => return None,
     })
 }
 
@@ -913,9 +923,16 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   sequence becomes the one the clip holds ([`EventSequence::from_ump`]),
 ///   answering `{"len": n}`.
 /// - `"event"` with `id`: the event, or `null`.
+/// - `"ids"`: `{"ids": [id]}`, the events' ids in beat order -- of those at
+///   exactly `at`, when it is given, or of those in the half-open window
+///   `[from, to)`, either end left open when it is not.
+/// - `"automation"`: `{"automation": [curve]}`, the sequence's curves -- or,
+///   with `id`, that event's, and `null` when it holds no such event.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
-///   edit -- plus `"id"` for an add, or `{"error"}` when refused.
+///   edit -- plus `"id"` for an add, or `{"error"}` when refused. With
+///   `"inverse": false` it leaves `current` out: a caller that records
+///   nothing does not pay for a copy of the whole sequence per edit.
 ///
 /// A request that does not read answers `{"error": ...}`.
 ///
@@ -1005,15 +1022,49 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
             let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
             serde_json::to_value(sequence.get(id)).unwrap_or(Value::Null)
         }
+        Some("ids") => {
+            let bound = |key: &str| request.get(key).and_then(Value::as_f64);
+            let ids: Vec<u64> = match bound("at") {
+                Some(at) => sequence
+                    .events
+                    .iter()
+                    .filter(|e| e.at.0 == at)
+                    .map(|e| e.id)
+                    .collect(),
+                None => {
+                    let (from, to) = (bound("from"), bound("to"));
+                    sequence
+                        .events
+                        .iter()
+                        .filter(|e| from.is_none_or(|f| e.at.0 >= f))
+                        .filter(|e| to.is_none_or(|t| e.at.0 < t))
+                        .map(|e| e.id)
+                        .collect()
+                }
+            };
+            json!({ "ids": ids })
+        }
+        Some("automation") => match request.get("id").and_then(Value::as_u64) {
+            Some(id) => sequence
+                .get(id)
+                .map_or(Value::Null, |e| json!({ "automation": e.automation })),
+            None => json!({ "automation": sequence.automation }),
+        },
         Some("apply") => {
             let intent = request.get("intent").cloned().unwrap_or(Value::Null);
+            let inverse = request
+                .get("inverse")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
             match serde_json::from_value::<EventsIntent>(intent) {
                 Ok(intent) => {
-                    let current = payload(&sequence.state());
+                    let current = inverse.then(|| payload(&sequence.state()));
                     match sequence.edit(intent) {
                         Ok(change) => {
-                            let mut answer =
-                                json!({"applied": change.applied, "current": current.0});
+                            let mut answer = json!({ "applied": change.applied });
+                            if let Some(current) = current {
+                                answer["current"] = current.0;
+                            }
                             if let Some(id) = change.added {
                                 answer["id"] = json!(id);
                             }

@@ -10,10 +10,10 @@ and hands it over.
 
 What to do in the window:
 
-- **Move a box**, drag its edge to trim it, drag it onto another lane, sweep a
+- **Move a box**, drag its edge to trim it, drag it onto another track, sweep a
   block and move it as one. **Click** a box to select it, **e** to split it at
   the position cursor, **j** to join a touching run, **q** to quantize. A
-  **run** is two boxes or more on one lane that touch *and read on from each
+  **run** is two boxes or more on one track that touch *and read on from each
   other*, so two halves put back in the other order do not join -- and the
   **status bar** along the bottom says which of those it was, for every verb
   that finds nothing to do.
@@ -90,7 +90,7 @@ from clausters import Buffer, Session, Synth
 from clausters.defs import Part, SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
-from clausters.multitrack import (Automation, Content, Lane, Multitrack, Region,
+from clausters.multitrack import (Automation, Content, TakeLane, Multitrack, Region,
                                   Source, Track)
 from clausters.multitrack import Session as SavedSession
 from clausters.seq import EventSequence
@@ -101,7 +101,7 @@ TAKE_DUR = 2.0
 
 # %% [markdown]
 # ## The takes, rendered offline
-# Four signals, so that one lane is told from the next by ear.
+# Four signals, so that one track is told from the next by ear.
 
 # %%
 def gentake(name: str, expr, secs: float = TAKE_DUR) -> list:
@@ -165,7 +165,7 @@ KEYS = EventSequence([(beat, Event(midinote=note, sustain=0.4, amp=0.2))
 
 # %% [markdown]
 # ## The multitrack
-# Three tracks, one lane each, five boxes. A **source id** is what the document
+# Three tracks, one take lane each, five boxes. A **source id** is what the document
 # names -- never a path and never a buffer number -- because a multitrack must open in
 # a program that has no Python in it. Which buffer each source was read into is
 # the one thing about a multitrack that is not in the multitrack, and it travels beside it
@@ -208,19 +208,19 @@ first.automation.append(white_fade)
 
 multitrack = Multitrack(tracks=[
     Track(id=10, name="noise", automation=[noise_gain],
-          lanes=[Lane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
+          take_lanes=[TakeLane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
     Track(id=12, name="tone",
-          lanes=[Lane(id=13, regions=[box(22, 2.0, 2, "glide"),
+          take_lanes=[TakeLane(id=13, regions=[box(22, 2.0, 2, "glide"),
                                       box(24, 8.0, 5, "comp"),
                                       box(25, 10.0, 6, "loud")])]),
     #: **The fader is the track's own field**, like its width: what a multitrack
     #: sounds like is the multitrack's, so it is saved with it and reopens as it was.
     Track(id=14, name="bass", level=0.7,
-          lanes=[Lane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
+          take_lanes=[TakeLane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
     #: **A box of notes** is a box like any other: a window onto source 7, which
     #: is the sequence above rather than a take.
     Track(id=16, name="keys",
-          lanes=[Lane(id=17, regions=[box(26, 12.0, 7, "keys")])]),
+          take_lanes=[TakeLane(id=17, regions=[box(26, 12.0, 7, "keys")])]),
 ])
 
 # %% [markdown]

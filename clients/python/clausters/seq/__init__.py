@@ -25,7 +25,7 @@ from .event import Event, rest
 from .eventstream import EventStreamPlayer
 from .timeline import (MidiItem, OscItem, Timeline, item_data,
                        item_from_data)
-from .sequence import EventSequence
+from .sequence import EventSequence, SeqAutomation, SeqEvent, SeqEvents
 from .pattern import (
     INF,
     EventPattern,
@@ -49,6 +49,9 @@ __all__ = [
     "EventStreamPlayer",
     "Timeline",
     "EventSequence",
+    "SeqEvent",
+    "SeqEvents",
+    "SeqAutomation",
     "OscItem",
     "MidiItem",
     "item_data",

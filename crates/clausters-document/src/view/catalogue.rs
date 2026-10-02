@@ -187,7 +187,7 @@ pub fn bpf(curve: &Curve) -> Map<String, Value> {
 pub struct Roll {
     /// The flat `start dur pitch velocity channel` quintuples.
     pub notes: Vec<f64>,
-    /// The flat marker lane: `time label` pairs, a number and then a string,
+    /// The flat OSC markers: `time label` pairs, a number and then a string,
     /// as the wire carries it. Mixed on purpose, so it is kept as the values it
     /// arrived as: typed as numbers, a single label refused the whole roll and
     /// the widget was drawn with no props at all.
@@ -306,7 +306,7 @@ pub fn pitch_window(notes: &[f64]) -> (f64, f64) {
 /// The reason, for a kind this crate does not draw or for facts that will not
 /// read as that kind's (serde's message, which names the field). Never an empty
 /// picture: a widget stamped from nothing is drawn with nothing on it, and a
-/// roll whose marker lane did not read opened blank that way, with no word in
+/// roll whose OSC markers did not read opened blank that way, with no word in
 /// any log.
 pub fn props(kind: &str, facts: &Value) -> Result<Map<String, Value>, String> {
     let unread = |e: serde_json::Error| format!("a {kind} cannot be drawn from these facts: {e}");

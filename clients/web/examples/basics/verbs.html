@@ -23,7 +23,8 @@
 for one) a GUI host into the handle a session is written against. Adopt one as
 the page's default and the <b>ambient verbs</b> work with nothing wired:
 <code>play</code> sounds whatever you hand it -- an event, a plain object of
-event keys, a generator, a pattern, a def, a timeline, a buffer -- and a bare
+event keys, a generator, a pattern, a def, a timeline, a sequence, a buffer --
+and a bare
 <code>new Synth(...)</code> reaches the session's server without naming it.
 
 The carrier is the one line that knows about one. This page opens the session
@@ -128,6 +129,12 @@ change. The tour ends on all three.
         tl.add(0.5, new Event({ degree: 7, dur: 0.5 }));
         play(tl);
         await wait(PAUSE + 1000);
+
+        log("the same timeline as a sequence, played on the server's transport");
+        const notes = await tl.renderEvents();     // its events, as data
+        const transport = await play(notes);       // a lane on the server's transport, and that Transport
+        notes.events.item(1).set("degree", 4);     // an edit while it plays is heard where it lands
+        await transport.wait();                    // back when the last note ends
 
         // A pattern bounces offline to samples -- and with `path`, to a WAV
         // in the page's own storage -- with no engine involved.

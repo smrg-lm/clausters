@@ -3,7 +3,7 @@
 //! vocabulary whose refusals are guesses.
 
 use super::*;
-use crate::multitrack::{Automation, Lane};
+use crate::multitrack::{Automation, TakeLane};
 use crate::{Beat, Lifetime, SegmentSource, SourceId, SourceRef};
 
 fn window(source: u64) -> crate::SegmentRef {
@@ -28,14 +28,14 @@ fn region(id: u64, at: f64, len: f64) -> Region {
     )
 }
 
-/// Two tracks: the first comped from two lanes with a region on each, the
+/// Two tracks: the first comped from two take lanes with a region on each, the
 /// second empty with one automation curve.
 fn multitrack() -> Multitrack {
     let mut first = Track::new(NodeId(10), NodeId(11)).named("vocals");
-    first.lanes[0].place(region(100, 0.0, 4.0));
-    let mut second = Lane::new(NodeId(12)).named("take 2");
+    first.take_lanes[0].place(region(100, 0.0, 4.0));
+    let mut second = TakeLane::new(NodeId(12)).named("take 2");
     second.place(region(101, 8.0, 4.0));
-    first.lanes.push(second);
+    first.take_lanes.push(second);
     let mut other = Track::new(NodeId(20), NodeId(21)).named("guitar");
     other.automation.push(Automation::new(
         NodeId(22),
@@ -50,7 +50,7 @@ fn edit(multitrack: &mut Multitrack, intent: MultitrackIntent) -> Outcome<Multit
     apply(multitrack, &intent, &Against::unstated(), &Rules::none())
 }
 
-// ---- the tracks, and which lane plays ----
+// ---- the tracks, and which take lane plays ----
 
 #[test]
 fn adding_removing_and_reordering_tracks_are_one_verb() {
@@ -70,9 +70,9 @@ fn comping_names_the_lane_and_not_its_index() {
     let mut multitrack = multitrack();
     let outcome = edit(
         &mut multitrack,
-        MultitrackIntent::SetActiveLane {
+        MultitrackIntent::SetActiveTakeLane {
             track: NodeId(10),
-            lane: NodeId(12),
+            take_lane: NodeId(12),
         },
     );
     assert!(outcome.applied);
@@ -80,27 +80,27 @@ fn comping_names_the_lane_and_not_its_index() {
         multitrack
             .track(NodeId(10))
             .unwrap()
-            .active_lane()
+            .active_take_lane()
             .unwrap()
             .id,
         NodeId(12)
     );
 
-    // A lane of another track is not this track's choice to make.
+    // A take lane of another track is not this track's choice to make.
     let refused = edit(
         &mut multitrack,
-        MultitrackIntent::SetActiveLane {
+        MultitrackIntent::SetActiveTakeLane {
             track: NodeId(10),
-            lane: NodeId(21),
+            take_lane: NodeId(21),
         },
     );
     assert!(!refused.applied);
     assert_eq!(
         refused.reason.as_deref(),
-        Some("that lane is not on that track")
+        Some("that take lane is not on that track")
     );
     assert!(
-        matches!(refused.effective, MultitrackIntent::SetActiveLane { lane, .. } if lane == NodeId(21)),
+        matches!(refused.effective, MultitrackIntent::SetActiveTakeLane { take_lane: lane, .. } if lane == NodeId(21)),
         "a refusal hands back what was asked when nothing else describes it"
     );
 }
@@ -110,14 +110,14 @@ fn a_lanes_contents_are_stated_whole_and_come_back_in_position_order() {
     let mut multitrack = multitrack();
     let outcome = edit(
         &mut multitrack,
-        MultitrackIntent::SetLane {
-            lane: NodeId(11),
+        MultitrackIntent::SetTakeLane {
+            take_lane: NodeId(11),
             regions: vec![region(103, 16.0, 4.0), region(102, 4.0, 4.0)],
         },
     );
     assert!(outcome.applied);
     assert_eq!(outcome.reason.as_deref(), Some("put in position order"));
-    let lane = multitrack.lane(NodeId(11)).unwrap().1;
+    let lane = multitrack.take_lane(NodeId(11)).unwrap().1;
     assert_eq!(
         lane.regions.iter().map(|r| r.id).collect::<Vec<_>>(),
         vec![NodeId(102), NodeId(103)],
@@ -131,14 +131,14 @@ fn a_lanes_contents_are_stated_whole_and_come_back_in_position_order() {
 fn a_region_moved_to_another_track_is_one_edit() {
     // The acceptance, and the reason the address is part of the value: this is
     // one intent, so it is one entry in a log and one undo -- and there is no
-    // moment where the region is on neither lane.
+    // moment where the region is on neither take lane.
     let mut multitrack = multitrack();
     let outcome = edit(
         &mut multitrack,
         MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(20),
-            lane: NodeId(21),
+            take_lane: NodeId(21),
             position: Second(16.0),
             layer: 2,
         },
@@ -148,7 +148,14 @@ fn a_region_moved_to_another_track_is_one_edit() {
     assert_eq!((track.id, lane.id), (NodeId(20), NodeId(21)));
     assert_eq!(moved.position, Second(16.0));
     assert_eq!(moved.layer, 2);
-    assert!(multitrack.lane(NodeId(11)).unwrap().1.regions.is_empty());
+    assert!(
+        multitrack
+            .take_lane(NodeId(11))
+            .unwrap()
+            .1
+            .regions
+            .is_empty()
+    );
 }
 
 #[test]
@@ -159,7 +166,7 @@ fn a_placement_snaps_and_says_what_it_snapped_to() {
         &MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
-            lane: NodeId(11),
+            take_lane: NodeId(11),
             position: Second(4.3),
             layer: 0,
         },
@@ -252,7 +259,7 @@ fn a_split_names_the_two_identities_and_applying_it_twice_changes_nothing() {
         right_content: Some(Content::window(window(2))),
     };
     assert!(edit(&mut multitrack, split.clone()).applied);
-    let lane = multitrack.lane(NodeId(11)).unwrap().1;
+    let lane = multitrack.take_lane(NodeId(11)).unwrap().1;
     assert_eq!(
         lane.regions
             .iter()
@@ -304,7 +311,7 @@ fn a_cut_outside_the_region_is_refused_and_says_so() {
 fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
     let mut multitrack = multitrack();
     multitrack
-        .lane_mut(NodeId(11))
+        .take_lane_mut(NodeId(11))
         .unwrap()
         .place(region(102, 4.0, 2.0));
     let outcome = edit(
@@ -333,7 +340,7 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
     assert!(!across.applied);
     assert_eq!(
         across.reason.as_deref(),
-        Some("those regions are not on one lane")
+        Some("those regions are not on one take lane")
     );
 }
 
@@ -362,7 +369,7 @@ fn a_join_of_one_region_is_not_a_join() {
 fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
     let mut multitrack = multitrack();
     multitrack
-        .lane_mut(NodeId(11))
+        .take_lane_mut(NodeId(11))
         .unwrap()
         .place(region(102, 3.0, 4.0));
     assert!(
@@ -409,14 +416,14 @@ fn a_crossfade_is_two_fades_over_an_overlap_and_not_a_third_object() {
 
 #[test]
 fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
-    // A track's curve runs the length of the track and is drawn in a lane
+    // A track's curve runs the length of the track and is drawn in a row
     // beside it; a region's runs the length of the region and is drawn inside
     // it. Both exist, neither stands in for the other, and **the verb is one**
     // -- which is the whole reason a region carries the same `Automation` a
     // track does rather than a second type.
     let mut multitrack = multitrack();
     let curve = Automation::new(NodeId(30), Opaque(serde_json::json!({ "ctl": "gain" })));
-    multitrack.tracks[0].lanes[0].regions[0]
+    multitrack.tracks[0].take_lanes[0].regions[0]
         .automation
         .push(curve);
 
@@ -444,13 +451,13 @@ fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
         .applied
     );
     assert_eq!(
-        multitrack.tracks[0].lanes[0].regions[0].automation[0].points,
+        multitrack.tracks[0].take_lanes[0].regions[0].automation[0].points,
         points
     );
     // And it inverts: the curve as it was, read before the edit landed.
     edit(&mut multitrack, before);
     assert!(
-        multitrack.tracks[0].lanes[0].regions[0].automation[0]
+        multitrack.tracks[0].take_lanes[0].regions[0].automation[0]
             .points
             .is_empty()
     );
@@ -459,7 +466,7 @@ fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
 #[test]
 fn a_curve_a_region_carries_is_not_the_tracks_and_is_addressed_apart() {
     let mut multitrack = multitrack();
-    multitrack.tracks[0].lanes[0].regions[0]
+    multitrack.tracks[0].take_lanes[0].regions[0]
         .automation
         .push(Automation::new(
             NodeId(30),
@@ -672,7 +679,7 @@ fn an_edit_against_a_superseded_multitrack_comes_back_stale() {
         &MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
-            lane: NodeId(11),
+            take_lane: NodeId(11),
             position: Second(8.0),
             layer: 0,
         },
@@ -700,7 +707,7 @@ fn a_refused_edit_leaves_the_version_where_it_was() {
         MultitrackIntent::PlaceRegion {
             region: NodeId(999),
             track: NodeId(10),
-            lane: NodeId(11),
+            take_lane: NodeId(11),
             position: Second(0.0),
             layer: 0,
         },
@@ -716,7 +723,7 @@ fn a_run_of_drags_of_one_region_is_one_thing_the_person_did() {
         coalesce_key(&MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(10),
-            lane: NodeId(11),
+            take_lane: NodeId(11),
             position: Second(position),
             layer: 0,
         })
@@ -759,18 +766,18 @@ fn vocabulary() -> Vec<MultitrackIntent> {
         MultitrackIntent::SetTracks {
             tracks: vec![multitrack().tracks[1].clone()],
         },
-        MultitrackIntent::SetActiveLane {
+        MultitrackIntent::SetActiveTakeLane {
             track: NodeId(10),
-            lane: NodeId(12),
+            take_lane: NodeId(12),
         },
-        MultitrackIntent::SetLane {
-            lane: NodeId(11),
+        MultitrackIntent::SetTakeLane {
+            take_lane: NodeId(11),
             regions: vec![region(102, 4.0, 4.0)],
         },
         MultitrackIntent::PlaceRegion {
             region: NodeId(100),
             track: NodeId(20),
-            lane: NodeId(21),
+            take_lane: NodeId(21),
             position: Second(16.0),
             layer: 1,
         },
@@ -850,7 +857,7 @@ mod through_a_history {
     #[test]
     fn a_region_moved_between_tracks_undoes_in_one_step() {
         // One intent, so one entry -- and the undo puts the
-        // region back on the lane it came from, not merely at the beat it came
+        // region back on the take lane it came from, not merely at the beat it came
         // from.
         let mut multitrack = multitrack();
         let mut history = History::new();
@@ -862,7 +869,7 @@ mod through_a_history {
             &payload(&MultitrackIntent::PlaceRegion {
                 region: NodeId(100),
                 track: NodeId(20),
-                lane: NodeId(21),
+                take_lane: NodeId(21),
                 position: Second(16.0),
                 layer: 1,
             }),
@@ -884,7 +891,7 @@ mod through_a_history {
     #[test]
     fn a_split_undoes_as_the_lane_that_was_there() {
         let mut multitrack = multitrack();
-        let before = multitrack.lane(NodeId(11)).unwrap().1.clone();
+        let before = multitrack.take_lane(NodeId(11)).unwrap().1.clone();
         let mut history = History::new();
         let structure = history.register(MULTITRACK);
         history.apply(
@@ -900,10 +907,10 @@ mod through_a_history {
             }),
             "split",
         );
-        assert_eq!(multitrack.lane(NodeId(11)).unwrap().1.regions.len(), 2);
+        assert_eq!(multitrack.take_lane(NodeId(11)).unwrap().1.regions.len(), 2);
         undo(&mut history, &mut multitrack);
         assert_eq!(
-            multitrack.lane(NodeId(11)).unwrap().1.regions,
+            multitrack.take_lane(NodeId(11)).unwrap().1.regions,
             before.regions,
             "the region that was made out of two is the one that comes back"
         );
@@ -1000,7 +1007,7 @@ fn the_multitrack_is_edited_across_the_seam_as_state_and_an_inverse() {
     let load = payload(&MultitrackIntent::PlaceRegion {
         region: NodeId(100),
         track: NodeId(20),
-        lane: NodeId(21),
+        take_lane: NodeId(21),
         position: Second(16.0),
         layer: 0,
     });

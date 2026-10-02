@@ -13,7 +13,7 @@ arrangement no longer goes through.
 """
 
 import clausters
-from clausters.multitrack import Multitrack, Content, Lane, Region, Track
+from clausters.multitrack import Multitrack, Content, TakeLane, Region, Track
 from clausters.document import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE,
                                 Document, History, Log, apply_intent,
                                 domain_coalesce_key, domain_edit,
@@ -84,14 +84,14 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
 # ---- the multitrack: a whole multitrack state across the seam ----
 
 def a_multitrack() -> dict:
-    """Two tracks, two lanes on the first, a region on each -- the smallest
+    """Two tracks, two take lanes on the first, a region on each -- the smallest
     multitrack a move between tracks has somewhere to move to."""
-    vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
-    vocals.lanes[0].place(Region(id=100, position=0.0, length=4.0,
+    vocals = Track(id=10, name="vocals", take_lanes=[TakeLane(id=11), TakeLane(id=12)])
+    vocals.take_lanes[0].place(Region(id=100, position=0.0, length=4.0,
                                  content=Content.composite(
                                      {"id": 1, "kind": "aggregate",
                                       "grouping": "concrete", "members": []})))
-    guitar = Track(id=20, name="guitar", lanes=[Lane(id=21)])
+    guitar = Track(id=20, name="guitar", take_lanes=[TakeLane(id=21)])
     return Multitrack(tracks=[vocals, guitar]).write()
 
 
@@ -101,27 +101,27 @@ def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
     # One intent moves the region, because where a region is means track, lane
     # and beat and an absolute edit states all three; the inverse the crate
     # hands back with it is what puts it on the lane it came from.
-    move = {"intent": "placeregion", "region": 100, "track": 20, "lane": 21,
+    move = {"intent": "placeregion", "region": 100, "track": 20, "take_lane": 21,
             "position": 16.0, "layer": 1}
     edited = domain_edit(MULTITRACK, a_multitrack(), move)
     assert edited is not None and edited["applied"]
 
     moved = Multitrack.read(edited["state"])
-    assert moved.track(20).lanes[0].regions[0].id == 100
-    assert moved.track(10).lanes[0].regions == []
+    assert moved.track(20).take_lanes[0].regions[0].id == 100
+    assert moved.track(10).take_lanes[0].regions == []
     assert moved.version == 2, "and the multitrack carries its own counter"
 
     back = domain_edit(MULTITRACK, edited["state"], edited["current"])
     assert back is not None
     restored = Multitrack.read(back["state"])
-    assert restored.track(10).lanes[0].regions[0].position == 0.0
-    assert restored.track(20).lanes[0].regions == []
+    assert restored.track(10).take_lanes[0].regions[0].position == 0.0
+    assert restored.track(20).take_lanes[0].regions == []
 
 
 def test_a_refusal_says_why_rather_than_failing():
     edited = domain_edit(MULTITRACK, a_multitrack(),
                          {"intent": "placeregion", "region": 999, "track": 20,
-                          "lane": 21, "position": 0.0})
+                          "take_lane": 21, "position": 0.0})
     assert edited is not None
     assert not edited["applied"]
     assert edited["reason"] == "no such region"

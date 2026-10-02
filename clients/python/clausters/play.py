@@ -21,6 +21,11 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   stereo. Returns the node handle -- it plays until you free it;
 - a `clausters.seq.timeline.Timeline` -> played on its own clock
   (`Timeline.play`), on the ambient server;
+- a `clausters.seq.EventSequence` -> loaded as an event lane on the server's
+  notes transport and played there, its pass ending where its contents do;
+  answers that `clausters.defs.Transport`, whose verbs (``play``, ``pause``,
+  ``stop``, ``locate``, ``loop``, ``wait``) speak the sequence's beats. With
+  no server anywhere, the default session boots one;
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
   (a buffer sounds through an instrument; here the verb provides the default
   one -- ``rate``/``amp`` controls, freed when the take ends);
@@ -67,7 +72,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             `clausters.defs.Signal`, `clausters.defs.Box`) or a def
             (`clausters.defs.SynthDef` /
             `clausters.defs.FaustDef` / `clausters.defs.GraphDef`); a
-            `clausters.seq.timeline.Timeline`; a `clausters.defs.Buffer`
+            `clausters.seq.timeline.Timeline`; a
+            `clausters.seq.EventSequence`; a `clausters.defs.Buffer`
             (sounded through the stock playbuf instrument); or anything with
             a ``play(destination)`` (the timeline-item protocol).
         server: the destination server; ``None`` resolves the ambient one (the
@@ -76,8 +82,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         clock: the clock to schedule on (patterns and routines); ``None``
             resolves the running routine's clock, else the default session's
             (started on first use). Ignored by a bare event played immediately,
-            by a def or expression, and by a timeline, which plays on a clock
-            of its own.
+            by a def or expression, by a timeline, which plays on a clock
+            of its own, and by a sequence, which plays on a transport.
         quant: start quantization for a pattern/routine/timeline (see
             `clausters.base.clock.TempoClock.play`; a timeline starts on the
             ambient clock's grid).
@@ -92,12 +98,14 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         `clausters.seq.eventstream.EventStreamPlayer` for a pattern
         (``.stop()``), the routine for a routine, the node handle -- a
         `clausters.defs.Synth` or instance `clausters.defs.Group` -- for a
-        def, expression or buffer (``.free()``), and the timeline itself
-        (``.stop()``).
+        def, expression or buffer (``.free()``), the timeline itself
+        (``.stop()``), and for a sequence the `clausters.defs.Transport` it
+        plays on (``.stop()``, ``.wait()``).
     """
     from .seq.event import Event
     from .seq.pattern import EventPattern, Pattern
     from .seq.timeline import Timeline
+    from .seq.sequence import EventSequence
     from .base.stream import Stream, Routine
     from .defs import Buffer, Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
@@ -126,6 +134,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return _play_def(as_def(playable), main.resolve_server(server), controls)
     if isinstance(playable, Timeline):
         return playable.play(at=0.0, quant=quant, destination=main.resolve_server(server))
+    if isinstance(playable, EventSequence):
+        return playable.play(server=server)
     if isinstance(playable, Buffer):
         return _play_buffer(playable, main.resolve_server(server), controls)
     from .form.element import Element
@@ -145,7 +155,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         f"don't know how to play {type(playable).__name__}; expected an Event "
         "or event dict, an EventPattern (Pbind), a Routine/Stream or "
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
-        "a Timeline, "
+        "a Timeline, an EventSequence, "
         "a Buffer, or anything with play(destination). An "
         "arrangement Element is rendered, not played -- see "
         "clausters.form.render."

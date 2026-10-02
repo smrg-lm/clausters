@@ -33,6 +33,7 @@ The three carry one semantic each, and the split is deliberate:
 | a `Routine`/`Stream`, or a bare generator | schedules it on a clock | the routine |
 | a def, or a bare expression (`Ugen` / `ChannelList` / `Signal`) | sends it and instances it | the node handle |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline |
+| an `EventSequence` | loads it as an event lane on the server's notes transport, its pass ending where its contents do; boots the page's engine for the default session when there is none | a promise of the `Transport` it plays on — `stop()`, `wait()` (and `pause`/`locate`/`loop`), in the sequence's beats |
 | a `Buffer` | sounds it through the stock playbuf instrument | the synth |
 
 **Plottables** — `await plot(x)` (each call opens its own window):

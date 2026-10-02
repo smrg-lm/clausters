@@ -26,10 +26,10 @@
 //!   always drawn them, `y` in the domain's key.
 //! - `note_ids`: the id of each, in the same order.
 //! - A `notes` report comes back as sextuples, `id start dur y velocity channel`,
-//!   the whole lane as the hand left it.
-//! - `osc`: the marker lane, `time label` pairs, and its report the same --
+//!   every note as the hand left it.
+//! - `osc`: the OSC markers, `time label` pairs, and its report the same --
 //!   matched by label, since a marker is the message it sends.
-//! - `curves`: the sequence's lanes (CC, bend, pressure, a control, each on
+//! - `curves`: the sequence's automation (CC, bend, pressure, a control, each on
 //!   one channel or on every one), flat
 //!   `name label min max height` quintuples, a row each under the plane;
 //!   `layers`: each note's own curves, flat `name note label min max pitch`
@@ -204,9 +204,9 @@ pub struct Projection {
     pub notes: Vec<f64>,
     /// The id of each note, in the same order.
     pub note_ids: Vec<u64>,
-    /// The marker lane: `time label` pairs.
+    /// The OSC markers: `time label` pairs.
     pub osc: Vec<Value>,
-    /// The lanes: `name label min max height` quintuples.
+    /// The sequence's automation: `name label min max height` quintuples.
     pub curves: Vec<Value>,
     /// The notes' curves: `name note label min max pitch` sextuples.
     pub layers: Vec<Value>,
@@ -217,7 +217,7 @@ pub struct Projection {
     pub midi: String,
 }
 
-/// How tall a lane's row under the plane is drawn.
+/// How tall a sequence curve's row under the plane is drawn.
 pub const CURVE_H: f64 = 40.0;
 
 /// **What a curve is drawn over**: its label, its value range, and whether
@@ -225,7 +225,7 @@ pub const CURVE_H: f64 = 40.0;
 /// what it moves -- `{"cc": n}` (0 to 127), `{"bend": ...}` (semitones, 2
 /// either way unless the target says), `{"pressure": ...}` or `{"timbre":
 /// ...}` (0 to 1), `{"control": name}` -- and an explicit `min`/`max` on it,
-/// or a name on the curve, wins. A lane's `channel` (the notes' own count,
+/// or a name on the curve, wins. A sequence curve's `channel` (the notes' own count,
 /// from 0) is the channel it acts on, and none is every channel.
 fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
     let target = curve.target.0.as_object();
@@ -246,7 +246,7 @@ fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
             .unwrap_or("curve");
         (name.to_string(), 0.0, 1.0, false)
     };
-    // A lane's channel is part of what it is on, as in MIDI, and shown the
+    // A curve's channel is part of what it is on, as in MIDI, and shown the
     // way MIDI shows a channel: counted from 1.
     let label = match read("channel") {
         Some(channel) => format!("{label} ch {}", channel + 1.0),
@@ -309,7 +309,7 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
         ]);
         out.note_ids.push(event.id);
         let from = axis.units(event.at.0);
-        for curve in &event.expression {
+        for curve in &event.automation {
             let name = curve.id.0.to_string();
             let (label, min, max, pitch) = curve_look(curve);
             out.layers.extend([
@@ -326,7 +326,7 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
             }
         }
     }
-    for curve in &sequence.lanes {
+    for curve in &sequence.automation {
         let name = curve.id.0.to_string();
         let (label, min, max, _) = curve_look(curve);
         out.curves.extend([
@@ -353,8 +353,8 @@ fn same(a: f64, b: f64) -> bool {
 /// **What a gesture on a roll means**, in the sequence's vocabulary: one
 /// `setevents` naming every event by id, under the gesture's label.
 ///
-/// `tag` is the lane the hand touched (`notes` or `osc`), `values` its report,
-/// `axis` where the roll drew the beats. The lane the hand did not touch is
+/// `tag` is the strip the hand touched (`notes` or `osc`), `values` its report,
+/// `axis` where the roll drew the beats. The strip the hand did not touch is
 /// carried through untouched.
 pub fn intake(
     sequence: &EventSequence,
@@ -463,7 +463,7 @@ fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDoma
 /// **A `points` gesture**: each curve the report names, with its points as
 /// the hand left them -- back to beats (a note's from its start) -- and the
 /// shape of each segment kept in the point's data. The one curve that changed
-/// is its own edit (`lane` or `expression`, which coalesces per curve); if a
+/// is its own edit (`automation` or `eventautomation`, which coalesces per curve); if a
 /// gesture changed more than one, the sequence is restated whole.
 fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
     let mut reported: Map<String, Value> = Map::new();
@@ -498,25 +498,25 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
     };
     let mut after = sequence.clone();
     let mut intents = Vec::new();
-    for lane in &mut after.lanes {
-        let points = points_of(&lane.id.0.to_string(), &|units| axis.beat(units));
-        if !same_points(&lane.points, &points) {
-            lane.points = points;
-            intents.push(EventsIntent::Lane {
-                automation: lane.clone(),
+    for curve in &mut after.automation {
+        let points = points_of(&curve.id.0.to_string(), &|units| axis.beat(units));
+        if !same_points(&curve.points, &points) {
+            curve.points = points;
+            intents.push(EventsIntent::Automation {
+                automation: curve.clone(),
             });
         }
     }
     for event in &mut after.events {
         let from = axis.units(event.at.0);
         let start = event.at.0;
-        for curve in &mut event.expression {
+        for curve in &mut event.automation {
             let points = points_of(&curve.id.0.to_string(), &|units| {
                 axis.beat(from + units) - start
             });
             if !same_points(&curve.points, &points) {
                 curve.points = points;
-                intents.push(EventsIntent::Expression {
+                intents.push(EventsIntent::EventAutomation {
                     id: event.id,
                     automation: curve.clone(),
                 });

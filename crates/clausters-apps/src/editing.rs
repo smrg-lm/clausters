@@ -1197,7 +1197,7 @@ mod tests {
     /// A multitrack of one track holding box 12, drawn by widget 40 in window 39.
     fn a_multitrack() -> Member {
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].regions = vec![region(12, 0.0)];
+        track.take_lanes[0].regions = vec![region(12, 0.0)];
         let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -1238,7 +1238,7 @@ mod tests {
         // The take's halves swapped: no window onto the take reads them in
         // this order, so the join mints a source.
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].regions = vec![half(12, 0.0, 1.0), half(13, 1.0, 0.0)];
+        track.take_lanes[0].regions = vec![half(12, 0.0, 1.0), half(13, 1.0, 0.0)];
         let mut editor = MultitrackEditor::new(
             Multitrack {
                 tracks: vec![track],
@@ -1352,7 +1352,9 @@ mod tests {
     fn position(editing: &mut Editing, member: MemberId) -> f64 {
         match editing.member_mut(member) {
             Some(Member::Multitrack(editor)) => {
-                editor.multitrack().tracks[0].lanes[0].regions[0].position.0
+                editor.multitrack().tracks[0].take_lanes[0].regions[0]
+                    .position
+                    .0
             }
             _ => f64::NAN,
         }

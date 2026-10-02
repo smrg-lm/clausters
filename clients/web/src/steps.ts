@@ -29,6 +29,9 @@ export type Step =
     | { await: { command: string; index: number | null } }
     | { sync: number };
 
+/** The walk each runner is on, so the next one starts after it. */
+const walking = new WeakMap<StepRunner, Promise<void>>();
+
 /**
  * Carry `steps` out on `server` through `runner`.
  *
@@ -39,12 +42,32 @@ export type Step =
  * to, `"sound"` or `"samples"`; a client's is one server either way. Rejects
  * when the server refuses a step or answers one with something it does not
  * wait on.
+ *
+ * **One walk at a time per runner.** The runner holds one sequence, so a
+ * second walk begun while the first waits on a reply would find the first's
+ * step awaited and nothing of its own to send. A script never meets this --
+ * each call there returns when its steps are done -- but a page does not
+ * block, and a verb nobody awaited (a `cue`, a `stop`) is still walking when
+ * the next one comes: so the walks on a runner go in the order they were
+ * asked for, and a failed one does not hold up the next.
  */
-export async function runSteps(
+export function runSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    { to = "sound", timeout }: { to?: "sound" | "samples"; timeout?: number } = {},
+    options: { to?: "sound" | "samples"; timeout?: number } = {},
+): Promise<void> {
+    const before = walking.get(runner) ?? Promise.resolve();
+    const walk = before.then(() => walkSteps(server, runner, steps, options));
+    walking.set(runner, walk.catch(() => undefined));
+    return walk;
+}
+
+async function walkSteps(
+    server: Server,
+    runner: StepRunner,
+    steps: unknown[],
+    { to = "sound", timeout }: { to?: "sound" | "samples"; timeout?: number },
 ): Promise<void> {
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;

@@ -218,7 +218,7 @@ pub fn value_at(points: &[crate::Point], at: f64) -> f64 {
 ///
 /// What a caller hands is the curve *through its own axis*: a track's
 /// automation is on the timeline, a clip's is the box's own time, a
-/// sequence's lane and a note's curve are beats through a tempo map. Each
+/// sequence's curve and a note's curve are beats through a tempo map. Each
 /// says how a frame becomes a place on its curve, and the table is sampled
 /// here, once, for all of them.
 pub fn tabulate(first: f64, last: f64, step: f64, value: impl Fn(f64) -> f64) -> Vec<f32> {
@@ -326,7 +326,7 @@ pub fn plan(
     for track in &multitrack.tracks {
         let channels = track.channels.max(1);
         let mut clips = Vec::new();
-        let Some(lane) = track.active_lane() else {
+        let Some(lane) = track.active_take_lane() else {
             tracks.push(PlannedTrack {
                 track: track.id,
                 channels,
@@ -432,7 +432,7 @@ pub fn plan(
 mod tests {
     use super::*;
     use crate::multitrack::Tempo;
-    use crate::multitrack::{Lane, Region};
+    use crate::multitrack::{Region, TakeLane};
     use crate::timebase::{Beat, Second};
     use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
 
@@ -478,9 +478,9 @@ mod tests {
 
     fn multitrack() -> Multitrack {
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0] = Lane {
+        track.take_lanes[0] = TakeLane {
             regions: vec![region(3, 1, 0.0, 2.0), region(4, 2, 2.0, 2.0)],
-            ..Lane::new(NodeId(2))
+            ..TakeLane::new(NodeId(2))
         };
         Multitrack {
             tracks: vec![track],
@@ -522,7 +522,7 @@ mod tests {
                 playrate,
                 looping,
                 ..
-            } = &mut multitrack.tracks[0].lanes[0].regions[0].content
+            } = &mut multitrack.tracks[0].take_lanes[0].regions[0].content
             else {
                 panic!("a window");
             };
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn a_window_reaches_the_reader_in_seconds_with_its_playrate() {
         let mut multitrack = multitrack();
-        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         let Content::Window {
             window, playrate, ..
         } = &mut region.content
@@ -676,7 +676,7 @@ mod json_tests {
     /// becomes opaque content, drawn as a box and played by nothing.
     #[test]
     fn a_multitrack_written_by_a_client_plans() {
-        let written = r#"{"tracks":[{"id":1,"lanes":[{"id":2,"regions":[
+        let written = r#"{"tracks":[{"id":1,"take_lanes":[{"id":2,"regions":[
             {"id":3,"position":0.0,"length":2.0,"content":{"fill":"window",
              "window":{"source":{"source":1,"lifetime":"session"},
                        "start":0.0,"duration":2.0}}}]}]}]}"#;
@@ -684,8 +684,8 @@ mod json_tests {
         assert_eq!(multitrack.tracks.len(), 1);
         assert_eq!(
             multitrack.tracks[0]
-                .active_lane()
-                .expect("a lane")
+                .active_take_lane()
+                .expect("a take lane")
                 .regions
                 .len(),
             1
@@ -708,7 +708,7 @@ mod json_tests {
 #[cfg(test)]
 mod curve_tests {
     use super::*;
-    use crate::multitrack::{Automation, Lane, Track};
+    use crate::multitrack::{Automation, TakeLane, Track};
     use crate::timebase::Second;
 
     fn curve(id: u64, target: serde_json::Value, points: &[(f64, f64)]) -> Automation {
@@ -728,7 +728,7 @@ mod curve_tests {
 
     fn track_with(automation: Vec<Automation>) -> Multitrack {
         let mut track = Track::new(NodeId(1), NodeId(2));
-        track.lanes[0] = Lane::new(NodeId(2));
+        track.take_lanes[0] = TakeLane::new(NodeId(2));
         track.automation = automation;
         Multitrack {
             tracks: vec![track],
@@ -846,7 +846,7 @@ mod curve_tests {
             serde_json::json!({"port": "gain"}),
             &[(0.0, 0.0), (1.0, 1.0)],
         )];
-        multitrack.tracks[0].lanes[0].regions = vec![region];
+        multitrack.tracks[0].take_lanes[0].regions = vec![region];
         let table = HashMap::from([(
             crate::SourceId(1),
             SourceInfo {

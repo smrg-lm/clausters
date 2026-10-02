@@ -221,10 +221,10 @@ pub enum Cmd {
     /// `position`, and `release`, when it holds anything, goes onto that
     /// transport's clock queue `length` samples later -- a note's end. Built
     /// on the network thread like any bundle; kept sorted by position.
-    LaneEntry {
+    EventLaneEntry {
         transport: usize,
         position: u64,
-        tag: LaneTag,
+        tag: EventLaneTag,
         start: Vec<Cmd>,
         release: Vec<Cmd>,
         length: u64,
@@ -304,8 +304,8 @@ pub enum Garbage {
     /// clock queue), or handed back unrun -- cleared, or the lane queue full
     /// -- with every command still in it, so the network side forgets the
     /// nodes it would have made.
-    LaneSpent {
-        tag: LaneTag,
+    EventLaneSpent {
+        tag: EventLaneTag,
         start: Vec<Cmd>,
         release: Vec<Cmd>,
         fired: bool,
@@ -349,16 +349,16 @@ struct ScheduledBundleT {
 /// in it. The network thread keeps what it has queued by this, and learns an
 /// entry was spent by it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LaneTag {
+pub struct EventLaneTag {
     pub lane: i32,
     pub generation: u32,
     pub event: u32,
 }
 
-/// An event-lane entry on a transport's lane queue ([`Cmd::LaneEntry`]).
-struct LaneEntryT {
+/// An event-lane entry on a transport's lane queue ([`Cmd::EventLaneEntry`]).
+struct EventLaneEntryT {
     position: u64,
-    tag: LaneTag,
+    tag: EventLaneTag,
     start: Vec<Cmd>,
     release: Vec<Cmd>,
     length: u64,
@@ -403,7 +403,7 @@ struct TransportState {
     /// Keyed by position and not by clock, so a locate or a wrap needs nothing
     /// re-stamped: an entry fires when the position reaches it, and one the
     /// position jumped over waits for it to come back.
-    lanes: Vec<LaneEntryT>,
+    lanes: Vec<EventLaneEntryT>,
     /// Where inside the current block its frozen run began, if it is stopped
     /// -- scratch for [`Engine::process_block`], `None` outside it.
     frozen_from: Option<usize>,
@@ -493,7 +493,7 @@ enum Due {
     /// A bundle of the device queue.
     Device,
     /// An entry of transport `k`'s lane queue: its position reached.
-    Lane(usize),
+    EventLane(usize),
 }
 
 /// What a transport's next edge is, when it is due.
@@ -672,7 +672,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
         | Cmd::ClearSched { .. }
-        | Cmd::LaneEntry { .. }
+        | Cmd::EventLaneEntry { .. }
         | Cmd::ClearLane { .. } => [None, None],
         // A nested bundle classifies itself when it is applied, against the
         // tree and the frozen total of that moment; deciding for it here would
@@ -1268,7 +1268,7 @@ impl Engine {
             match due {
                 Due::Edge(k, edge) => self.cross_edge(k, edge, offset),
                 Due::Transport(k) => self.apply_due_bundle(Some(k), offset),
-                Due::Lane(k) => self.apply_due_lane(k),
+                Due::EventLane(k) => self.apply_due_lane(k),
                 Due::Device => self.apply_due_bundle(None, offset),
             }
         }
@@ -1399,7 +1399,7 @@ impl Engine {
         if let Some((k, due)) = lane_due
             && first.is_none_or(|f| due < f)
         {
-            return Some((due, Due::Lane(k)));
+            return Some((due, Due::EventLane(k)));
         }
         if take_edge {
             return edge_due.map(|((k, edge), due)| (due, Due::Edge(k, edge)));
@@ -1529,7 +1529,7 @@ impl Engine {
             self.apply(cmd);
         }
         self.run_released();
-        self.push_garbage(Garbage::LaneSpent {
+        self.push_garbage(Garbage::EventLaneSpent {
             tag: entry.tag,
             start: entry.start,
             release: Vec::new(),
@@ -1956,7 +1956,7 @@ impl Engine {
                         }
                     }
                 }
-                Cmd::LaneEntry {
+                Cmd::EventLaneEntry {
                     transport,
                     position,
                     tag,
@@ -1965,7 +1965,7 @@ impl Engine {
                     length,
                 } => {
                     let Some(t) = self.transports.get_mut(transport) else {
-                        sink.push(Garbage::LaneSpent {
+                        sink.push(Garbage::EventLaneSpent {
                             tag,
                             start,
                             release,
@@ -1974,7 +1974,7 @@ impl Engine {
                         return;
                     };
                     if t.lanes.len() == t.lanes.capacity() {
-                        sink.push(Garbage::LaneSpent {
+                        sink.push(Garbage::EventLaneSpent {
                             tag,
                             start,
                             release,
@@ -1984,7 +1984,7 @@ impl Engine {
                         let pos = t.lanes.partition_point(|e| e.position <= position);
                         t.lanes.insert(
                             pos,
-                            LaneEntryT {
+                            EventLaneEntryT {
                                 position,
                                 tag,
                                 start,
@@ -2004,7 +2004,7 @@ impl Engine {
                         while j < t.lanes.len() {
                             if t.lanes[j].tag.lane == lane {
                                 let entry = t.lanes.remove(j);
-                                sink.push(Garbage::LaneSpent {
+                                sink.push(Garbage::EventLaneSpent {
                                     tag: entry.tag,
                                     start: entry.start,
                                     release: entry.release,

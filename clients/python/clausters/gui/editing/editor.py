@@ -28,14 +28,14 @@ So the boundaries are:
   none of it.
 
 A multitrack application is this class plus what only a tree has: a
-held document, several views of one multitrack, the lanes and clips, and a
+held document, several views of one multitrack, the tracks and boxes, and a
 transport. **Transport and render are not here** -- a bare structure at most
 sounds; it has no multitrack to move over.
 """
 
 from ... import _native
 from .application import BASE_ID, Application, _resolve_host
-from .context import Editing
+from ...history import Editing
 from .echo import Echo
 from .trace import log
 
@@ -113,9 +113,8 @@ class Editor:
         #: data** -- this window's, another window's over the same structure, or
         #: a step of the history. ``None`` to be told nothing.
         #:
-        #: The script's door onto an edit, and the same verb
-        #: `clausters.gui.Multitrack.on_change` carries. One call per gesture
-        #: however many edits it took, because that is what a hand did.
+        #: The script's door onto an edit. One call per gesture however many
+        #: edits it took, because that is what a hand did.
         self.on_change = None
         #: Called with the beat the **position cursor** was placed at, whenever
         #: a click moves it -- on the time ruler, or on the slack a click lands
@@ -143,11 +142,6 @@ class Editor:
         #: second window opened.
         self.domain = domain
         self.view = view
-        #: The last selection swept in this editor's windows, as the crate's
-        #: ``Selection``. It is a plain value and not part of what is edited,
-        #: which is the crate's own line: a selection is screen state, never
-        #: persisted and never logged.
-        self.selection: dict = {}
         #: **Where the reader is**, in the structure's own units (beats for a
         #: timeline, seconds for a multitrack, a take or a curve) -- the position
         #: cursor a click placed, and
@@ -613,8 +607,8 @@ class Editor:
 
         Nothing here reaches a history: the crate is explicit that a selection,
         a zoom and which layer the hand is on are never part of what is edited.
-        The selection is still kept **typed**, because it is the value an
-        operation is handed.
+        What the hand marked is each editor's to keep, in its structure's own
+        type, so a sweep is nothing here.
         """
         if tag == "locate" and values:
             # A click on the time ruler: the reader put the position cursor
@@ -631,35 +625,7 @@ class Editor:
                 self.composed_in.locate(self.cursor)
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
-            return False
-        if tag == "selection":
-            self.selection = {
-                "start": self._position(float(values[0])) if values else 0.0,
-                "len": (self._position(float(values[1]))
-                        if len(values) > 1 else 0.0)}
-            if len(values) >= 4:
-                # The sweep restricted the value axis too. Carried **as it
-                # came**: it is in the structure's own domain, and no unit of
-                # this editor's applies to it.
-                self.selection["value"] = {"min": float(values[2]),
-                                           "max": float(values[3])}
-            self.selected()
         return False
-
-    def selected(self) -> None:
-        """This editor's selection moved.
-
-        Nothing on its own -- a structure's selection is that structure's. A view
-        **composed** inside a bigger editor hands it up instead, because the
-        range an operation is given must be the same value whichever of the
-        multitrack's windows it was swept in.
-        """
-        if self.composed_in is not None:
-            self.composed_in.adopt_selection(self)
-
-    def adopt_selection(self, editor: "Editor") -> None:
-        """A view composed inside this one swept a marquee. Nothing by default;
-        a view over an arrangement names what it is a selection *of*."""
 
     def locate(self, at: float) -> None:
         """The position cursor was placed at ``at``, in the structure's own
@@ -683,7 +649,9 @@ class Editor:
         if self.domain is None:
             return False
         before = self.domain.current(self.structure, payload)
-        if not self.domain.project(self.structure, payload):
+        with self._editing.applying():
+            projected = self.domain.project(self.structure, payload)
+        if not projected:
             return False
         log.debug("record [%s] %s", label, payload.get("intent"))
         if before is not None:
@@ -714,7 +682,9 @@ class Editor:
         moved = False
         for payload in payloads:
             before = self.domain.current(self.structure, payload)
-            if not self.domain.project(self.structure, payload):
+            with self._editing.applying():
+                projected = self.domain.project(self.structure, payload)
+            if not projected:
                 continue
             moved = True
             if before is not None:

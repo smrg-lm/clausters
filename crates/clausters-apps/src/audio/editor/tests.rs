@@ -465,6 +465,34 @@ fn the_space_bar_asks_the_playback_for_the_pass_the_view_says() {
     );
 }
 
+/// **The caller sets what a hand would**: a span in seconds is the frames a
+/// sweep leaves, drawn as its band and played by the space bar; a cursor is
+/// where a stop goes back to; and the play is the one the space bar asks for.
+#[test]
+fn a_span_and_a_cursor_set_by_the_caller_are_what_the_space_bar_plays() {
+    let mut editor = opened(1);
+    let band = call(
+        &mut editor,
+        json!({"verb": "span", "span": [10.0 / 44100.0, 30.0 / 44100.0]}),
+    );
+    assert_eq!(band, json!({"sel_start": 10, "sel_len": 20}));
+    let cue = call(&mut editor, json!({"verb": "locate", "at": 40.0 / 44100.0}));
+    assert_eq!(cue["cue"], 40);
+    let play = call(&mut editor, json!({"verb": "play", "looping": true}));
+    assert_eq!(
+        play,
+        json!({"start": 10, "pass": {"kind": "loop", "from": 10, "to": 30}, "back": 40})
+    );
+    let none = call(&mut editor, json!({"verb": "span", "span": null}));
+    assert_eq!(
+        none,
+        json!({"sel_start": 0, "sel_len": 0}),
+        "no span, no band"
+    );
+    let whole = call(&mut editor, json!({"verb": "play", "looping": false}));
+    assert_eq!(whole["start"], 40, "from the cursor");
+}
+
 /// **`L` over the window changes the pass in progress**: how it ends now,
 /// read off the view as a play's is, and no play.
 #[test]

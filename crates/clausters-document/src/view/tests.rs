@@ -1,12 +1,12 @@
 use super::*;
 use crate::NodeId;
-use crate::multitrack::{Content, Lane, Region, Track};
+use crate::multitrack::{Content, Region, TakeLane, Track};
 use crate::timebase::Second;
 
 fn multitrack() -> Multitrack {
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
-    vocals.lanes.push(Lane::new(NodeId(12)));
-    vocals.lanes[0].place(Region::new(
+    vocals.take_lanes.push(TakeLane::new(NodeId(12)));
+    vocals.take_lanes[0].place(Region::new(
         NodeId(100),
         Second(0.0),
         Second(4.0),
@@ -89,7 +89,7 @@ fn a_track_nobody_touched_reads_as_the_default_and_costs_nothing_to_store() {
     let mut view = View::new();
     assert_eq!(view.track(NodeId(10)), TrackView::default());
     assert!(view.tracks.is_empty(), "asking is not touching");
-    view.track_mut(NodeId(10)).lanes_shown = true;
+    view.track_mut(NodeId(10)).take_lanes_shown = true;
     assert_eq!(view.tracks.len(), 1);
 }
 
@@ -101,8 +101,8 @@ fn state_goes_when_the_thing_goes() {
     let mut view = View::new();
     view.track_mut(NodeId(10)).height = Some(96.0);
     view.track_mut(NodeId(999)).height = Some(48.0);
-    view.lane_mut(NodeId(12)).height = Some(24.0);
-    view.lane_mut(NodeId(888)).height = Some(24.0);
+    view.take_lane_mut(NodeId(12)).height = Some(24.0);
+    view.take_lane_mut(NodeId(888)).height = Some(24.0);
     view.selected = vec![NodeId(100), NodeId(777)];
     view.focused = Some(NodeId(777));
     view.detail = Some(NodeId(100));
@@ -113,7 +113,7 @@ fn state_goes_when_the_thing_goes() {
         vec![NodeId(10)]
     );
     assert_eq!(
-        view.lanes.keys().copied().collect::<Vec<_>>(),
+        view.take_lanes.keys().copied().collect::<Vec<_>>(),
         vec![NodeId(12)]
     );
     assert_eq!(
@@ -161,7 +161,7 @@ fn the_routing_table_names_screen_state_and_nothing_a_domain_reads() {
     for tag in super::NOT_AN_EDIT {
         assert!(super::is_screen_state(tag), "{tag}");
     }
-    for tag in ["clips", "lanes", "notes", "points", "samples", "level"] {
+    for tag in ["clips", "tracks", "notes", "points", "samples", "level"] {
         assert!(!super::is_screen_state(tag), "{tag} is an edit");
     }
 }

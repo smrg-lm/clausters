@@ -486,9 +486,18 @@ impl MultitrackEditor {
             self.widget.unwrap_or(widget),
             self.ruler.unwrap_or(i32::MIN),
         );
-        let props = self.composed(multitrack, ruler, |w| super::props(w, widget));
+        let mut props = self.composed(multitrack, ruler, |w| super::props(w, widget));
         if self.ruler != Some(widget) {
             self.remember_names();
+        }
+        if widget == multitrack && !props.is_empty() {
+            // The time range is drawn where the hand sweeps one, so a span set
+            // from the client shows as the band a sweep leaves.
+            let (start, len) = self
+                .range
+                .map_or((0.0, 0.0), |(a, b)| (a * self.rate, (b - a) * self.rate));
+            props.insert("sel_start".into(), json!(start));
+            props.insert("sel_len".into(), json!(len));
         }
         props
     }
@@ -964,6 +973,8 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: an [`Applied`].
 /// - `resync`, `settle`, `announce` -- `version`: an [`Answer`].
+/// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range
+///   the space bar plays and the multitrack draws, as a sweep leaves it. `{}`.
 /// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
@@ -1025,6 +1036,13 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             serde_json::to_string(&editor.apply(&get("payload"))).unwrap_or_else(|_| "{}".into())
         }
         "resync" => answer(editor.resync_all(version)),
+        "span" => {
+            editor.range = get("span")
+                .as_array()
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)))
+                .filter(|(a, b)| b > a);
+            "{}".into()
+        }
         "settle" => answer(editor.settle(version)),
         "announce" => answer(editor.announce(version)),
         "acknowledge" => answer(editor.acknowledge(
@@ -1067,9 +1085,9 @@ mod tests {
     /// Two tracks: the first holding boxes 12 and 13, the second box 22.
     fn editor() -> MultitrackEditor {
         let mut first = Track::new(NodeId(10), NodeId(11));
-        first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
+        first.take_lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let mut second = Track::new(NodeId(20), NodeId(21));
-        second.lanes[0].regions = vec![region(22, 0.0)];
+        second.take_lanes[0].regions = vec![region(22, 0.0)];
         let multitrack = Multitrack {
             tracks: vec![first, second],
             ..Multitrack::default()
@@ -1109,7 +1127,9 @@ mod tests {
     }
 
     fn position(editor: &MultitrackEditor) -> f64 {
-        editor.multitrack().tracks[0].lanes[0].regions[0].position.0
+        editor.multitrack().tracks[0].take_lanes[0].regions[0]
+            .position
+            .0
     }
 
     /// **The editor joins cuts of its own joins flat** *(found 2026-09-13 by
@@ -1141,7 +1161,7 @@ mod tests {
         // The take's halves swapped, and behind them a box that does not read
         // on from the second.
         let mut track = Track::new(NodeId(10), NodeId(11));
-        track.lanes[0].regions = vec![
+        track.take_lanes[0].regions = vec![
             over_take(12, 0.0, 1.0),
             over_take(13, 1.0, 0.0),
             over_take(14, 2.0, 1.5),
@@ -1448,6 +1468,31 @@ mod tests {
                 looping: true
             })
         );
+    }
+
+    /// **The span is one state, the hand's and the client's**: the client
+    /// sets it through `span`, the multitrack draws it as the band a sweep
+    /// leaves, and the space bar plays it.
+    #[test]
+    fn a_span_set_by_the_client_is_drawn_and_played_as_a_sweep_is() {
+        let mut ed = editor();
+        call_json(&mut ed, r#"{"verb": "span", "span": [1.0, 3.0]}"#);
+        let props = ed.props(40);
+        assert_eq!(
+            (props["sel_start"].clone(), props["sel_len"].clone()),
+            (json!(SR), json!(2.0 * SR))
+        );
+        let out = ed.event(&event(39, 3, 1, PLAY_KEY, vec![json!(0)]), 1);
+        assert_eq!(
+            out.transport,
+            Some(TransportVerb::PlayStop {
+                mark: 0.0,
+                range: Some((1.0, 3.0)),
+                looping: false
+            })
+        );
+        call_json(&mut ed, r#"{"verb": "span", "span": null}"#);
+        assert_eq!(ed.props(40)["sel_len"], json!(0.0), "no span, no band");
     }
 
     /// **A sweep's time range is what the space bar plays**, with the loop

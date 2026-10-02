@@ -8,7 +8,7 @@ types against, and the few rules that are the client's own to keep.
 
 import pytest
 from clausters.multitrack import (Multitrack, Automation, Content, Fade,
-                                   Lane, Marker, Meter, Region, Span, Tempo,
+                                   TakeLane, Marker, Meter, Region, Span, Tempo,
                                    Track)
 
 
@@ -38,7 +38,7 @@ def test_regions_that_touch_do_not_overlap_and_regions_that_share_time_do():
 def test_one_source_under_six_regions_is_referenced_and_not_copied():
     # Six placements, six identities, one source. That is the whole of
     # non-destructive editing, and it is what a region's own id is for.
-    lane = Lane(id=10)
+    lane = TakeLane(id=10)
     for i in range(6):
         lane.place(region(100 + i, i * 4.0, 4.0, source=1))
     assert len(lane.regions) == 6
@@ -48,7 +48,7 @@ def test_one_source_under_six_regions_is_referenced_and_not_copied():
 
 
 def test_placing_keeps_a_lane_in_position_order():
-    lane = Lane(id=10)
+    lane = TakeLane(id=10)
     for id, at in ((3, 8.0), (1, 0.0), (2, 4.0)):
         lane.place(region(id, at, 2.0))
     assert [r.position for r in lane.regions] == [0.0, 4.0, 8.0]
@@ -56,17 +56,17 @@ def test_placing_keeps_a_lane_in_position_order():
 
 
 def test_a_track_spans_every_lane_and_plays_one():
-    track = Track(id=1, lanes=[Lane(id=10), Lane(id=11, name="take 2")], active=0)
-    track.active_lane.place(region(100, 0.0, 4.0))
-    track.lanes[1].place(region(200, 0.0, 16.0))
-    assert track.active_lane.id == 10
-    assert track.active_lane.end == 4.0
+    track = Track(id=1, take_lanes=[TakeLane(id=10), TakeLane(id=11, name="take 2")], active=0)
+    track.active_take_lane.place(region(100, 0.0, 4.0))
+    track.take_lanes[1].place(region(200, 0.0, 16.0))
+    assert track.active_take_lane.id == 10
+    assert track.active_take_lane.end == 4.0
     # An alternate take is still part of the multitrack.
     assert track.end == 16.0
 
 
 def test_an_active_lane_that_is_not_there_answers_nothing():
-    assert Track(id=1, lanes=[Lane(id=10)], active=7).active_lane is None
+    assert Track(id=1, take_lanes=[TakeLane(id=10)], active=7).active_take_lane is None
 
 
 def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
@@ -145,10 +145,10 @@ def test_a_whole_multitrack_round_trips():
     multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
     multitrack.set_meter(Meter(at=0.0, beats=7, unit=8))
     multitrack.loop_span = Span(0.0, 12.0)
-    track = Track(id=1, name="guitars", soloed=True, lanes=[Lane(id=2)])
-    first = track.lanes[0].place(region(3, 0.0, 20.0))
+    track = Track(id=1, name="guitars", soloed=True, take_lanes=[TakeLane(id=2)])
+    first = track.take_lanes[0].place(region(3, 0.0, 20.0))
     first.fade_out = Fade(length=4.0)
-    second = track.lanes[0].place(Region(
+    second = track.take_lanes[0].place(Region(
         id=4, position=16.0, length=16.0, layer=1, muted=True,
         content=Content.onto(window(2), playrate=1.5, args={"seed": 7}),
         fade_in=Fade(length=4.0, shape={"curve": "exp"})))
@@ -160,7 +160,7 @@ def test_a_whole_multitrack_round_trips():
     back = Multitrack.read(multitrack.write())
     assert back == multitrack
     assert back.end == 32.0
-    assert back.tracks[0].lanes[0].regions[1].content.playrate == 1.5
+    assert back.tracks[0].take_lanes[0].regions[1].content.playrate == 1.5
     assert second.overlaps(first)
 
 
@@ -190,7 +190,7 @@ def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
     # Everything here carries what it has no name for. Dropping it would lose a
     # multitrack the next version of this client wrote.
     written = {
-        "tracks": [{"id": 1, "lanes": [{"id": 2, "regions": [{
+        "tracks": [{"id": 1, "take_lanes": [{"id": 2, "regions": [{
             "id": 3, "position": 0.0, "length": 4.0,
             "content": {"fill": "window", "window": window(1)},
             "warp": {"mode": "beats"}}]}]}],
@@ -208,9 +208,9 @@ def test_a_fill_this_build_does_not_know_is_carried_whole():
 
 def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
     multitrack = Multitrack()
-    track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)], active=0)
-    track.lanes[0].place(region(4, 0.0, 4.0, source=700))
-    track.lanes[1].place(region(5, 0.0, 4.0, source=701))
+    track = Track(id=1, take_lanes=[TakeLane(id=2), TakeLane(id=3)], active=0)
+    track.take_lanes[0].place(region(4, 0.0, 4.0, source=700))
+    track.take_lanes[1].place(region(5, 0.0, 4.0, source=701))
     multitrack.tracks.append(track)
     named = [r.content.window["source"]["source"] for r in multitrack.regions()]
     assert named == [700, 701]
@@ -224,8 +224,8 @@ from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 def test_a_session_round_trips_with_its_table():
     multitrack = Multitrack()
-    multitrack.tracks.append(Track(id=1, lanes=[Lane(id=2)]))
-    multitrack.tracks[0].lanes[0].place(region(3, 0.0, 4.0, source=700))
+    multitrack.tracks.append(Track(id=1, take_lanes=[TakeLane(id=2)]))
+    multitrack.tracks[0].take_lanes[0].place(region(3, 0.0, 4.0, source=700))
     session = Session(multitrack=multitrack,
                       sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
                       provenance={"script": "make.py"})
@@ -237,9 +237,9 @@ def test_a_session_round_trips_with_its_table():
 def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a multitrack, possibly
     # empty, so nothing downstream has to ask whether there is one.
-    session = Session.read({"format": 3})
+    session = Session.read({"format": SESSION_FORMAT})
     assert session.multitrack.tracks == []
-    assert session.write() == {"format": 3}
+    assert session.write() == {"format": SESSION_FORMAT}
 
 
 def test_a_save_knows_what_it_cannot_promise():
@@ -262,9 +262,9 @@ def test_a_save_knows_what_it_cannot_promise():
 
 def test_a_source_only_a_region_names_is_reported_missing():
     multitrack = Multitrack()
-    track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)])
-    track.lanes[0].place(region(4, 0.0, 4.0, source=700))
-    track.lanes[1].place(region(5, 0.0, 4.0, source=701))
+    track = Track(id=1, take_lanes=[TakeLane(id=2), TakeLane(id=3)])
+    track.take_lanes[0].place(region(4, 0.0, 4.0, source=700))
+    track.take_lanes[1].place(region(5, 0.0, 4.0, source=701))
     multitrack.tracks.append(track)
     session = Session(multitrack=multitrack, sources={700: Source.file("one.wav")})
     # Every lane, not only the one that plays.
@@ -279,7 +279,7 @@ def test_a_sequence_of_events_is_a_source_held_in_the_file():
 
     notes = EventSequence([(1.0, Event(midinote=60, sustain=0.5))])
     session = Session(sources={900: Source.events(notes)})
-    notes.add(2.0, Event(midinote=64, sustain=0.5))
+    notes.events.add(2.0, Event(midinote=64, sustain=0.5))
     written = session.write()
     location = written["sources"]["900"]["location"]
     assert location["at"] == "events" and len(location["sequence"]["events"]) == 2
@@ -303,7 +303,7 @@ def test_a_frozen_source_keeps_what_the_table_said():
 
 
 def test_a_session_field_a_newer_writer_added_survives():
-    written = {"format": 3, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
+    written = {"format": SESSION_FORMAT, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
     assert Session.read(written).write() == written
 
 
@@ -321,21 +321,21 @@ def test_a_format_2_session_opens_in_seconds():
     session = Session.read(old)
     assert session.format == SESSION_FORMAT
     assert session.multitrack.tempo[0].tempo == 2.0
-    region = session.multitrack.tracks[0].lanes[0].regions[0]
+    region = session.multitrack.tracks[0].take_lanes[0].regions[0]
     assert (region.position, region.length) == (1.0, 2.0)
     assert session.multitrack.markers[0].at == 4.0
 
 
 # ---- the presentation: what a window shows of a multitrack ----
 
-from clausters.multitrack import LaneView, TrackView, View  # noqa: E402
+from clausters.multitrack import TakeLaneView, TrackView, View  # noqa: E402
 
 
 def a_multitrack() -> Multitrack:
     multitrack = Multitrack()
-    vocals = Track(id=10, lanes=[Lane(id=11), Lane(id=12)])
-    vocals.lanes[0].place(region(20, 0.0, 4.0, source=700))
-    multitrack.tracks.extend([vocals, Track(id=30, lanes=[Lane(id=31)])])
+    vocals = Track(id=10, take_lanes=[TakeLane(id=11), TakeLane(id=12)])
+    vocals.take_lanes[0].place(region(20, 0.0, 4.0, source=700))
+    multitrack.tracks.extend([vocals, Track(id=30, take_lanes=[TakeLane(id=31)])])
     return multitrack
 
 
@@ -375,9 +375,9 @@ def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose()
 def test_a_track_nobody_touched_reads_as_the_default_and_costs_nothing():
     view = View()
     assert view.track(10) == TrackView()
-    assert view.lane(11) == LaneView()
+    assert view.take_lane(11) == TakeLaneView()
     assert view.tracks == {}, "asking is not touching"
-    view.track_view(10).lanes_shown = True
+    view.track_view(10).take_lanes_shown = True
     assert len(view.tracks) == 1
 
 
@@ -388,14 +388,14 @@ def test_state_goes_when_the_thing_goes():
     view = View()
     view.track_view(10).height = 96.0
     view.track_view(999).height = 48.0
-    view.lane_view(11).height = 24.0
+    view.take_lane_view(11).height = 24.0
     view.selected = [20, 777]
     view.focused = 777
     view.detail = 20
 
     assert view.prune(a_multitrack()) is True
     assert list(view.tracks) == [10]
-    assert list(view.lanes) == [11]
+    assert list(view.take_lanes) == [11]
     assert view.selected == [20]
     assert view.focused is None
     assert view.detail == 20

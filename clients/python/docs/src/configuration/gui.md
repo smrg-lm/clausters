@@ -134,7 +134,7 @@ the same color to within the 8 bits of the notation:
 | `selected_fill` | `#cce6fa` | A selected note's fill. |
 | `selected_edge` | `#ffffff` | A selected note's edge. |
 | `velocity` | `#b28ce6` | A velocity bar. |
-| `osc_lane` | `#1a1721` | The OSC lane's background. |
+| `osc_markers` | `#1a1721` | The OSC markers' background. |
 | `flag` | `#f2bf73` | A marker flag (an OSC marker, an overview's pressed key). |
 | `trigger` | `#d9cc6666` | The oscilloscope's trigger-level line. |
 | `warn` | `#d96b6b` | The negative/warning readout (the phase scope's anti-correlation). |

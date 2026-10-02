@@ -83,7 +83,7 @@ def multitracks():
         "automation": [layer],
     }
     track = {"id": 1, "name": "drums", "level": 0.5, "muted": True,
-             "lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
+             "take_lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
     multitrack = {"version": 1, "tracks": [track]}
     ramped = json.loads(json.dumps(multitrack))
     ramped["tempo"] = [{"at": 0.0, "tempo": 1.0},
@@ -110,8 +110,8 @@ def gestures(multitrack, sources):
                                      {int(k): v for k, v in sources.items()})
     clips = list(props["clips"])
     clips[2] = float(clips[2]) + 4.0 * 48_000.0
-    lanes = list(props["lanes"])
-    lanes[5] = 0.25
+    tracks = list(props["tracks"])
+    tracks[5] = 0.25
     points = list(props["points"])
     points[len(points) - 3] = 0.75
     # A sequence with no tempo map is one beat a second, so `rate` is the
@@ -140,8 +140,8 @@ def gestures(multitrack, sources):
           "rate": 480.0, "editable": True}),
         ("a box dragged four seconds along", "multitrack", "clips",
          {"values": clips, **multitrack_request}),
-        ("a fader moved", "multitrack", "lanes",
-         {"values": lanes, **multitrack_request}),
+        ("a fader moved", "multitrack", "tracks",
+         {"values": tracks, **multitrack_request}),
         ("a layer's break-point, on its box's own axis", "multitrack", "points",
          {"values": points, **multitrack_request}),
         ("and every curve reported back is no edit", "multitrack", "points",
@@ -236,8 +236,8 @@ def editor_exchange():
 
     written = {"version": 1, "tracks": [
         {"id": 10, "name": "one",
-         "lanes": [{"id": 11, "regions": [box(12, 0.0), box(13, 4.0)]}]},
-        {"id": 20, "name": "two", "lanes": [{"id": 21, "regions": [box(22, 0.0)]}]},
+         "take_lanes": [{"id": 11, "regions": [box(12, 0.0), box(13, 4.0)]}]},
+        {"id": 20, "name": "two", "take_lanes": [{"id": 21, "regions": [box(22, 0.0)]}]},
     ]}
     sources = {"1": 7}
     controls = {"rewind": 50, "play": 51, "stop": 52, "clock": 53}
@@ -321,7 +321,7 @@ def editor_exchange():
         return out
 
     script = [
-        ("a box moved on its lane", "multitrack", "clips", lambda: moved("12", 2.0), "now"),
+        ("a box moved on its track", "multitrack", "clips", lambda: moved("12", 2.0), "now"),
         ("a box split under a name the host minted", "multitrack", "clips",
          lambda: split("13"), "now"),
         ("the cursor placed on the ruler", "ruler", "locate", lambda: [4.0 * SR], "now"),
@@ -354,7 +354,7 @@ def editor_exchange():
                 for kind, s, version, reason, corrections in host.messages],
             "playback": list(playback.calls),
             "regions": [[t.id, r.id, r.position, r.length]
-                        for t in multitrack.tracks for lane in t.lanes
+                        for t in multitrack.tracks for lane in t.take_lanes
                         for r in lane.regions],
         })
     return {

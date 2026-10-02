@@ -1,6 +1,6 @@
 //! **What a script says the multitrack is**: the props in, and the reports out.
 //!
-//! One direction is the wire's lists becoming this widget's own -- the lanes,
+//! One direction is the wire's lists becoming this widget's own -- the tracks,
 //! the boxes, the curves, the layers, the break-points and the names that tell
 //! a minted word from the multitrack's own id -- and the other is every payload a
 //! gesture leaves. They are one module because they are one contract read from
@@ -56,7 +56,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
     let curves = parse_curves(props);
     let layers = parse_layers(props);
     Multitrack {
-        lanes: parse_lanes(props),
+        tracks: parse_tracks(props),
         clips: parse_clips(props),
         track: None,
         bodies: curve_bodies(&curves, &layers, &parse_points(props)),
@@ -96,12 +96,12 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
     }
 }
 
-/// The `lanes` prop: the flat `name label height mute solo gain` sextuple array.
+/// The `tracks` prop: the flat `name label height mute solo gain` sextuple array.
 ///
 /// A trailing partial group is dropped rather than half-read, which is the rule
 /// every flat payload here follows.
-pub(super) fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
-    let Some(Value::Array(items)) = props.get("lanes") else {
+pub(super) fn parse_tracks(props: &Map<String, Value>) -> Vec<TrackRow> {
+    let Some(Value::Array(items)) = props.get("tracks") else {
         return Vec::new();
     };
     items
@@ -109,7 +109,7 @@ pub(super) fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
         .0
         .iter()
         .filter_map(|c| {
-            Some(Lane {
+            Some(TrackRow {
                 name: c[0].as_str()?.to_string(),
                 label: c[1].as_str().unwrap_or_default().to_string(),
                 height: c[2].as_f64().unwrap_or(f64::from(LANE_H)) as f32,
@@ -130,7 +130,7 @@ pub(super) fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
 /// different ballistics, which is why the server writes both rather than
 /// letting two clients invent two falls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LaneMeter {
+pub(crate) struct TrackMeter {
     /// The first control bus of the level run.
     pub(super) level: i32,
     /// The first control bus of the held-peak run; negative for no mark.
@@ -139,13 +139,13 @@ pub(crate) struct LaneMeter {
     pub(super) channels: usize,
 }
 
-/// The `meters` prop: the flat `lane level mark channels` quadruple array.
+/// The `meters` prop: the flat `track level mark channels` quadruple array.
 ///
-/// Its own prop rather than two more fields on `lanes`, because a meter is not
-/// a thing this widget reports back: the `lanes` payload is an **edit** a hand
+/// Its own prop rather than two more fields on `tracks`, because a meter is not
+/// a thing this widget reports back: the `tracks` payload is an **edit** a hand
 /// made, and a bus number in it would be a bus number the host was expected to
 /// return unchanged.
-pub(super) fn parse_meters(props: &Map<String, Value>) -> HashMap<String, LaneMeter> {
+pub(super) fn parse_meters(props: &Map<String, Value>) -> HashMap<String, TrackMeter> {
     let Some(Value::Array(items)) = props.get("meters") else {
         return HashMap::new();
     };
@@ -160,7 +160,7 @@ pub(super) fn parse_meters(props: &Map<String, Value>) -> HashMap<String, LaneMe
             }
             Some((
                 c[0].as_str()?.to_string(),
-                LaneMeter {
+                TrackMeter {
                     level: c[1].as_i64().unwrap_or(-1) as i32,
                     mark: c[2].as_i64().unwrap_or(-1) as i32,
                     channels,
@@ -170,7 +170,7 @@ pub(super) fn parse_meters(props: &Map<String, Value>) -> HashMap<String, LaneMe
         .collect()
 }
 
-/// The `clips` prop: the flat `name lane offset dur start label source`
+/// The `clips` prop: the flat `name track offset dur start label source`
 /// septuple array.
 pub(super) fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
     let Some(Value::Array(items)) = props.get("clips") else {
@@ -183,7 +183,7 @@ pub(super) fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
         .filter_map(|c| {
             Some(Clip {
                 name: c[0].as_str()?.to_string(),
-                lane: c[1].as_str().unwrap_or_default().to_string(),
+                track: c[1].as_str().unwrap_or_default().to_string(),
                 place: Placement {
                     offset: c[2].as_f64().unwrap_or(0.0).max(0.0),
                     dur: c[3].as_f64().unwrap_or(0.0).max(0.0),
@@ -196,8 +196,8 @@ pub(super) fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
         .collect()
 }
 
-/// The `curves` prop: the flat `name lane label min max height` sextuple array
-/// -- a **track automation**, a row of its own under the lane it names.
+/// The `curves` prop: the flat `name track label min max height` sextuple array
+/// -- a **track automation**, a row of its own under the track it names.
 pub(super) fn parse_curves(props: &Map<String, Value>) -> Vec<model::Curve> {
     let Some(Value::Array(items)) = props.get("curves") else {
         return Vec::new();
@@ -408,7 +408,7 @@ pub(super) fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64
 }
 
 /// The **body element** a box of notes is drawn through: the roll this build
-/// already has, over the notes of that one box and with every lane it draws on
+/// already has, over the notes of that one box and with every track it draws on
 /// its own turned off.
 ///
 /// The pitch window is the crate's rule
@@ -421,8 +421,8 @@ pub(super) fn roll_body(notes: &[f64]) -> Notes {
     props.insert("notes".into(), Value::from(notes.to_vec()));
     props.insert("min".into(), Value::from(min));
     props.insert("max".into(), Value::from(max));
-    // A body has no chrome: no marker lane, no ruler.
-    props.insert("osc_lane".into(), Value::from(false));
+    // A body has no chrome: no markers, no ruler.
+    props.insert("osc_markers".into(), Value::from(false));
     props.insert("ruler".into(), Value::from("off"));
     // Read-only here, which is the line the whole widget is drawn on: the
     // multitrack places, and never edits what a box holds.
@@ -434,9 +434,26 @@ impl Multitrack {
         match key {
             // A non-scalar rides a `/gui_set` as its JSON string, the carrier
             // every structure on this wire uses.
-            "lanes" => {
-                self.lanes = parse_lanes(&parse::as_array_props("lanes", v));
+            "tracks" => {
+                self.tracks = parse_tracks(&parse::as_array_props("tracks", v));
                 self.zoom_rows();
+                true
+            }
+            "selected" => {
+                // The clips to hold, by name -- the regions' ids, as strings
+                // or numbers.
+                let named: Vec<String> = parse::as_array_props("selected", v)
+                    .get("selected")
+                    .and_then(Value::as_array)
+                    .map(|list| {
+                        list.iter()
+                            .map(|n| n.as_str().map_or_else(|| n.to_string(), str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.selected = (0..self.clips.len())
+                    .filter(|&i| named.contains(&self.clips[i].name))
+                    .collect();
                 true
             }
             "clips" => {
@@ -454,17 +471,17 @@ impl Multitrack {
                 // from a lookup by name, and `j` found one box where the hand
                 // held two -- and a join that joins nothing says nothing, so
                 // the key looked dead. It is the same box in the same place on
-                // the same lane, because the multitrack placed it exactly where this
+                // the same track, because the multitrack placed it exactly where this
                 // said, and that is what the second pass matches on.
                 let held: Vec<(String, String, f64)> = self
                     .selected
                     .iter()
                     .filter_map(|i| self.clips.get(*i))
-                    .map(|c| (c.name.clone(), c.lane.clone(), c.place.offset))
+                    .map(|c| (c.name.clone(), c.track.clone(), c.place.offset))
                     .collect();
                 self.clips = parse_clips(&parse::as_array_props("clips", v));
                 let mut taken: Vec<usize> = Vec::new();
-                for (name, lane, offset) in &held {
+                for (name, track, offset) in &held {
                     let found = self
                         .clips
                         .iter()
@@ -473,11 +490,11 @@ impl Multitrack {
                         .or_else(|| {
                             self.clips.iter().enumerate().find_map(|(i, c)| {
                                 (!taken.contains(&i)
-                                    && &c.lane == lane
+                                    && &c.track == track
                                     // **A frame, not an epsilon.** An offset
                                     // goes out in frames, crosses to beats and
                                     // comes back, so it drifts; two boxes on one
-                                    // lane cannot be a frame apart and both be
+                                    // track cannot be a frame apart and both be
                                     // the hand's.
                                     && (c.place.offset - offset).abs() < 1.0)
                                     .then_some(i)
@@ -490,12 +507,12 @@ impl Multitrack {
                 self.selected = taken;
                 true
             }
-            // **The track automations**: rows of their own under the lanes
+            // **The track automations**: rows of their own under the tracks
             // they name, replaced whole like every other list here.
             "curves" => {
                 self.curves = parse_curves(&parse::as_array_props("curves", v));
                 // A curve payload states a height on every row for the reason a
-                // lane payload does, so a reader who zoomed one must not lose it
+                // track payload does, so a reader who zoomed one must not lose it
                 // to the next point somebody drags.
                 self.zoom_rows();
                 self.bodies = self.rebuilt(&self.curves, &self.layers);

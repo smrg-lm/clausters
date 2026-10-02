@@ -18,12 +18,12 @@ import {
     svgToDisplayList as coreSvgToDisplayList,
 } from "../../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
-import { Editing } from "../editing/context.ts";
+import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
 import type { MeiOptions } from "./mei.ts";
 import type { Op, Sheet } from "./sheet.ts";
-import type { Event as SeqEvent } from "../../seq/event.ts";
+import type { Event } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
 
 /**
@@ -81,7 +81,7 @@ export interface EngraveOptions {
  * structure's. A score registers in `Editing.of(score)` under the `"score"`
  * vocabulary and records each edit as the MEI it produced, with the previous one
  * as its inverse -- an absolute payload, so a step is idempotent and carries no
- * direction. That is what makes a window holding a lane and a page walk **one**
+ * direction. That is what makes a window holding a roll and a page walk **one**
  * order: before this, an engraved page had a real history of its own and Ctrl+Z
  * meant one of two different things depending on what the pointer was over.
  *
@@ -129,7 +129,7 @@ export class Score {
      * {@link fromNotes} encoder handed straight to {@link Score.open}.
      */
     static fromNotes(
-        notes: Iterable<SeqEvent>,
+        notes: Iterable<Event>,
         options: MeiOptions & EngraveOptions = {},
     ): Promise<Score> {
         return Score.open(fromNotes(notes, options), options);
@@ -300,7 +300,7 @@ export class Score {
      * `false` when there is nothing to undo.
      *
      * The step is the **context's**, not this score's: a page edited beside a
-     * lane steps in the order the two were edited in, and a leg naming another
+     * roll steps in the order the two were edited in, and a leg naming another
      * structure is projected by whoever holds it.
      */
     undo(): boolean {

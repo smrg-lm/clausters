@@ -24,14 +24,15 @@ back and edited.
 
 A MIDI file says a bend, a pressure or a controller as a stream of messages; a
 sequence says it as a curve. Which curve depends on what the message is
-addressed to: a channel's stream is a <b>lane</b> of that channel, and in an
-MPE zone each member channel is one note's, so its stream is that note's own
-<b>expression</b>. So a sequence written for MPE writes each note's curves on a
+addressed to: a channel's stream is a curve of the sequence's
+<b>automation</b> on that channel, and in an MPE zone each member channel is
+one note's, so its stream is that note's own automation -- MPE's per-note
+expression. So a sequence written for MPE writes each note's curves on a
 member channel of its own, and a file read back gives them to the notes again.
 
 Here a three-note chord is written for MPE (<code>setMidi("mpe")</code>): the
 lowest note bends up a semitone, the top one bends down a quarter tone, the
-middle one swells in pressure, and a volume lane runs over the whole zone. The
+middle one swells in pressure, and a volume curve runs over the whole zone. The
 sequence goes to a Standard MIDI File (<code>toSmf</code>), written into the
 page's own filesystem (the origin private file system, <code>opfs</code>) as
 <code>out/mpe_chord.mid</code>, and comes back from it (<code>fromSmf</code>);
@@ -39,7 +40,7 @@ written for MIDI 2.0 instead, it goes to a MIDI 2.0 Clip File
 (<code>toClip</code>) with no zone, each note's curves its own per-note
 messages. The roll opens on what the MPE file
 held: <b>MPE</b> under its keyboard, the bends drawn in the plane as the pitch
-each note takes, the volume lane as a row under the grid. Play sounds it on
+each note takes, the volume curve as a row under the grid. Play sounds it on
 the engine, the bends heard.</div>
       <button id="run">run</button>
       <button id="play" disabled>play</button>
@@ -69,18 +70,18 @@ the engine, the bends heard.</div>
 
       // A chord written for MPE: three notes on one beat, each with a curve
       // of its own -- the thing MIDI 1.0 cannot say, since one channel's bend
-      // moves every note on it -- and a lane over the zone.
+      // moves every note on it -- and a curve over the zone.
       const chord = new EventSequence([
         [0.0, new Event({ midinote: 60, dur: 4.0 })],
         [0.0, new Event({ midinote: 64, dur: 4.0 })],
         [0.0, new Event({ midinote: 67, dur: 4.0 })],
       ]);
       chord.setMidi("mpe");
-      const [low, middle, top] = chord.entries().map(([id]) => id);
-      chord.addExpression(low, { bend: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
-      chord.addExpression(middle, { pressure: true }, { points: [[0.0, 0.2], [3.0, 1.0]] });
-      chord.addExpression(top, { bend: true }, { points: [[1.0, 0.0], [3.0, -0.5]] });
-      chord.addLane({ cc: 7 }, { points: [[0.0, 90.0], [4.0, 120.0]], name: "volume" });
+      const [low, middle, top] = chord.events;
+      low.automation.add({ bend: true }, { points: [[0.0, 0.0], [2.0, 1.0]] });
+      middle.automation.add({ pressure: true }, { points: [[0.0, 0.2], [3.0, 1.0]] });
+      top.automation.add({ bend: true }, { points: [[1.0, 0.0], [3.0, -0.5]] });
+      chord.automation.add({ cc: 7 }, { points: [[0.0, 90.0], [4.0, 120.0]], name: "volume" });
 
       // To a file and back. The file is MIDI 1.0 bytes: the zone's
       // configuration first, then each note on a member channel with its bend
@@ -91,9 +92,9 @@ the engine, the bends heard.</div>
         await opfs.writeFile("out/mpe_chord.mid", chord.toSmf());
         const notes = EventSequence.fromSmf(await opfs.readFile("out/mpe_chord.mid"));
         log(`mpe_chord.mid: ${notes.midi}, ${notes.length} notes`);
-        for (const held of notes.data().events) {
-          const curves = (held.expression ?? []).map((c) => Object.keys(c.target)[0]);
-          log(`  #${held.id} ${held.at.toFixed(2)}  midinote ${held.data.midinote.toFixed(1)}  ${JSON.stringify(curves)}`);
+        for (const event of notes.events) {
+          const curves = [...event.automation].map((curve) => Object.keys(curve.target)[0]);
+          log(`  ${event.at.toFixed(2)}  midinote ${event.get("midinote").toFixed(1)}  ${JSON.stringify(curves)}`);
         }
 
         // The same chord as a MIDI 2.0 clip: MIDI 2.0 says a note's bend,

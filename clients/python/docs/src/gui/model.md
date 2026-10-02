@@ -57,8 +57,8 @@ from clausters.gui import layout, node, plane, view
 | `field` | `node("field", ...)` | 2, independent | nothing: it is the free-standing ruler of a navigation group |
 
 A `field` is only a ruler: an `axes` pair and nothing placed on it, which the
-`timeruler` shortcut writes with its props named. It was once a lane and a clip
-too, told apart by what was on it, and both are `multitrack` props now — a lane
+`timeruler` shortcut writes with its props named. It was once a track and a clip
+too, told apart by what was on it, and both are `multitrack` props now — a track
 cannot sit in a void, so it is a row of the one widget that owns it, and a clip
 is a row of that widget's `clips`. So `field` has no builder of its own, and
 `node` writes one:
@@ -110,7 +110,7 @@ from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
 | Builder | What it draws | Its own props |
 |---|---|---|
 | `signal` | every view of a signal | `view`, the source, the capabilities — below |
-| `notes` | MIDI notes over a pitch axis, with velocity and OSC lanes | `notes`, `osc`, `snap`, `velocity`, `osc_lane`, `midi_in` |
+| `notes` | MIDI notes over a pitch axis, with velocity and OSC markers | `notes`, `osc`, `snap`, `velocity`, `osc_markers`, `midi_in` |
 | `curve` | break-points, played by the server's own shape math | `points`, `duration`, `exp` |
 | `keys` | a playable keyboard | `min`/`max` (the visible compass), `active_min`/`active_max`, `voice` |
 | `nodes` | the audio server's node graph, live | `group`, `controls` |

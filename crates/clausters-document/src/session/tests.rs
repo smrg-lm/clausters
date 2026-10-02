@@ -373,7 +373,7 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
     let mut multitrack = Multitrack::new();
     multitrack.set_tempo(Tempo::at(Beat(0.0), 1.6));
     let mut track = Track::new(NodeId(80), NodeId(81)).named("drums");
-    track.active_lane_mut().unwrap().place(Region::new(
+    track.active_take_lane_mut().unwrap().place(Region::new(
         NodeId(82),
         Second(0.0),
         Second(4.0),
@@ -404,7 +404,7 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
     // The table is walked against **both** halves. A reader that checked only
     // the tree would open a session missing exactly what the arrangement plays,
     // and an alternate take counts: it names its source whether or not it is
-    // the lane that plays.
+    // the take lane that plays.
     let window = |source: u64| SegmentRef {
         source: SegmentSource::Samples(SourceRef {
             source: SourceId(source),
@@ -417,14 +417,16 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
     };
     let mut multitrack = Multitrack::new();
     let mut track = Track::new(NodeId(90), NodeId(91));
-    track.active_lane_mut().unwrap().place(Region::new(
+    track.active_take_lane_mut().unwrap().place(Region::new(
         NodeId(92),
         Second(0.0),
         Second(4.0),
         Content::window(window(700)),
     ));
-    track.lanes.push(crate::multitrack::Lane::new(NodeId(93)));
-    track.lanes[1].place(Region::new(
+    track
+        .take_lanes
+        .push(crate::multitrack::TakeLane::new(NodeId(93)));
+    track.take_lanes[1].place(Region::new(
         NodeId(94),
         Second(0.0),
         Second(4.0),
@@ -454,7 +456,7 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
 }
 
 /// **The milestone's acceptance, in one test.** A session with several tracks,
-/// alternate lanes, overlapping layered regions, crossfades and automation
+/// alternate take lanes, overlapping layered regions, crossfades and automation
 /// round-trips losslessly.
 ///
 /// Written as one multitrack rather than as six assertions because the thing being
@@ -464,7 +466,7 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
 #[test]
 fn a_whole_session_round_trips_losslessly() {
     use crate::multitrack::{
-        Automation, Content, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
+        Automation, Content, Fade, Marker, Meter, Multitrack, Region, Span, TakeLane, Tempo, Track,
     };
     use crate::timebase::{Beat, Second};
     use crate::{Lifetime, Point, SegmentRef, SegmentSource, SourceRef};
@@ -492,12 +494,16 @@ fn a_whole_session_round_trips_losslessly() {
 
     // A track comped from three takes, playing the second.
     let mut vocals = Track::new(NodeId(10), NodeId(11)).named("vocals");
-    vocals.lanes[0].name = Some("take 1".into());
-    vocals.lanes.push(Lane::new(NodeId(12)).named("take 2"));
-    vocals.lanes.push(Lane::new(NodeId(13)).named("comp"));
+    vocals.take_lanes[0].name = Some("take 1".into());
+    vocals
+        .take_lanes
+        .push(TakeLane::new(NodeId(12)).named("take 2"));
+    vocals
+        .take_lanes
+        .push(TakeLane::new(NodeId(13)).named("comp"));
     vocals.active = 1;
     for (lane, source) in [(0, 100), (1, 101), (2, 102)] {
-        vocals.lanes[lane].place(
+        vocals.take_lanes[lane].place(
             Region::new(
                 NodeId(20 + lane as u64),
                 Second(0.0),
@@ -527,8 +533,8 @@ fn a_whole_session_round_trips_losslessly() {
     second.fade_in = Some(Fade::of(Second(4.0)));
     second.layer = 1;
     second.muted = true;
-    guitars.lanes[0].place(first);
-    guitars.lanes[0].place(second);
+    guitars.take_lanes[0].place(first);
+    guitars.take_lanes[0].place(second);
     let mut level = Automation::new(
         NodeId(34),
         crate::Opaque(serde_json::json!({"ctl": "level"})),
@@ -552,7 +558,7 @@ fn a_whole_session_round_trips_losslessly() {
     // A track placing the general tree, which is what a composite region is
     // for: everything the five primitives can build, given a position.
     let mut sections = Track::new(NodeId(40), NodeId(41)).named("sections");
-    sections.lanes[0].place(Region::new(
+    sections.take_lanes[0].place(Region::new(
         NodeId(42),
         Second(32.0),
         Second(16.0),
@@ -590,15 +596,15 @@ fn a_whole_session_round_trips_losslessly() {
     assert_eq!(a.tracks.len(), 3);
     assert_eq!(a.end(), Second(48.0));
     assert_eq!(
-        a.tracks[0].active_lane().unwrap().name.as_deref(),
+        a.tracks[0].active_take_lane().unwrap().name.as_deref(),
         Some("take 2")
     );
     assert_eq!(
-        a.tracks[0].lanes.len(),
+        a.tracks[0].take_lanes.len(),
         3,
         "the takes nobody chose are kept"
     );
-    let guitars = &a.tracks[1].lanes[0];
+    let guitars = &a.tracks[1].take_lanes[0];
     assert!(guitars.regions[0].overlaps(&guitars.regions[1]));
     assert_eq!(guitars.regions[1].layer, 1, "which one is on top");
     assert_eq!(
@@ -606,7 +612,12 @@ fn a_whole_session_round_trips_losslessly() {
         Second(4.0)
     );
     assert_eq!(a.tracks[1].automation[0].points[1].data.0["shape"], "exp");
-    assert!(a.tracks[2].lanes[0].regions[0].content.as_node().is_some());
+    assert!(
+        a.tracks[2].take_lanes[0].regions[0]
+            .content
+            .as_node()
+            .is_some()
+    );
     assert_eq!(a.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
     assert_eq!(a.meter_at(Beat(40.0)).unwrap().beats, 7);
 }
@@ -648,7 +659,7 @@ fn a_format_2_session_is_migrated_through_its_own_tempo_map() {
     assert_eq!(m["markers"][0]["at"], 6.0, "beat 8: two seconds, then four");
     assert_eq!(m["loop_span"]["end"], 6.0);
     assert_eq!(m["tracks"][0]["automation"][0]["points"][0]["at"], 4.0);
-    let region = &m["tracks"][0]["lanes"][0]["regions"][0];
+    let region = &m["tracks"][0]["take_lanes"][0]["regions"][0];
     assert_eq!(region["position"], 1.0);
     assert_eq!(
         region["length"], 3.0,

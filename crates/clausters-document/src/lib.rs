@@ -22,7 +22,7 @@
 //!   multitrack as a *projection* of the general tree -- and a projection has
 //!   nowhere to keep the state a multitrack has, so that state ended up in the
 //!   widget tree, which is drawn, and drawing frees. So [`multitrack`] holds
-//!   the model the field actually has -- source, region, lane, track, automation
+//!   the model the field actually has -- source, region, take lane, track, automation
 //!   -- and the general tree is what a
 //!   [`Content::Composite`](multitrack::Content::Composite) region *places*.
 //!   Nothing the tree could say is lost; it gains a position.
@@ -81,7 +81,7 @@ pub use log::{
 };
 pub use multitrack::edit::{MULTITRACK, MultitrackEdit, MultitrackIntent, SpanKind};
 pub use multitrack::{
-    Automation, Extra, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
+    Automation, Extra, Fade, Marker, Meter, Multitrack, Region, Span, TakeLane, Tempo, Track,
 };
 pub use points::{Point, Points, PointsIntent};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
@@ -89,7 +89,7 @@ pub use samples::{Samples, SamplesIntent};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
 pub use timebase::{Beat, ContentBeat, ContentFrame, Second, TimelineFrame};
-pub use view::{LaneView, TrackView, View};
+pub use view::{TakeLaneView, TrackView, View};
 
 use std::collections::HashMap;
 
@@ -418,7 +418,7 @@ impl Member {
 ///   not a sixth kind.
 ///   Audio or control, and the only body that names samples directly.
 /// - [`Body::Aggregate`] -- the **recursive container**. Its job is to group elements,
-///   of mixed kinds, and it is what a multitrack lane is a restricted
+///   of mixed kinds, and it is what a multitrack track is a restricted
 ///   projection *of*.
 /// - [`Body::Generator`] -- a **program that produces** any of the others,
 ///   generators included: a def, a pattern, a routine. Its code is opaque; what
@@ -569,7 +569,7 @@ pub struct Node {
     /// because nothing addresses by name.
     ///
     /// It is here rather than in a client because a name is what a **view**
-    /// labels a lane with, and losing it on a round trip is what makes a
+    /// labels a track with, and losing it on a round trip is what makes a
     /// reopened multitrack anonymous in every writer at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -696,7 +696,7 @@ impl Body {
     ///
     /// Public because a **reader** needs it as much as [`Intent::Configure`]
     /// does: a driver drawing a document has to show what a leaf says about
-    /// itself (a lane's mixing, a curve's points), and re-deriving which bodies
+    /// itself (a track's mixing, a curve's points), and re-deriving which bodies
     /// carry a config is how one of them gets forgotten.
     pub fn config(&self) -> Option<&Opaque> {
         match self {
@@ -755,7 +755,7 @@ impl Body {
     ///
     /// `secs_to_beats` is what puts a member's end on the same axis as its
     /// offset: an offset is in beats and a length is in the unit of the data it
-    /// measures, so a lane of takes cannot be read against a lane of notes
+    /// measures, so a track of takes cannot be read against a track of notes
     /// without it. A body whose members are all measured in beats never calls
     /// it. [`at_tempo`] is the converter for a multitrack at one constant tempo.
     pub fn relation(&self, secs_to_beats: SecsToBeats) -> Option<Relation> {

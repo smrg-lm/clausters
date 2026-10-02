@@ -1,13 +1,13 @@
-//! What a `multitrack` owns: its lanes, its clips, and where they land.
+//! What a `multitrack` owns: its tracks, its clips, and where they land.
 //!
 //! This is the model half of the multitrack widget ([`crate::host::elements`]),
 //! and the thing that tells it from [`super::track`]: `track` draws a *widget
 //! tree* -- a `Track` container holding `Clip` children, one widget per box --
 //! while this holds the multitrack as **data** the way [`super::pianoroll`]
-//! holds a roll's notes. A lane is a row of this structure, not a widget, so it
+//! holds a roll's notes. A track is a row of this structure, not a widget, so it
 //! cannot sit in a void and there is exactly one thing that owns it.
 //!
-//! That is the whole reason the type exists. With the lanes spread over N
+//! That is the whole reason the type exists. With the tracks spread over N
 //! widgets there was nobody to report *the multitrack*, so a gesture reported
 //! what the hand did to whichever widget it touched -- under one of three tags,
 //! chosen by the gesture rather than by the clip, which two independent readers
@@ -16,14 +16,14 @@
 //! instead, exactly as a roll answers with its notes.
 //!
 //! Pure over geometry and numbers: no `Host`, no props map, no wire. What a
-//! *mixer* makes of a lane's mute, solo and gain is not decided here either --
+//! *mixer* makes of a track's mute, solo and gain is not decided here either --
 //! that is the client's rule, as it is the document's (`clausters-document`
 //! says a solo is the mixer's rule and not the model's). This carries the
 //! numbers and places the boxes.
 
 use crate::host::bands::Bands;
 use crate::host::layout::Rect;
-use crate::host::structures::clips::{Clip, Curve, Lane};
+use crate::host::structures::clips::{Clip, Curve, TrackRow};
 use crate::viewport::View;
 
 /// Where a clip's box lands on `body` under `nav`, or `None` when it falls
@@ -39,22 +39,22 @@ pub fn clip_x(clip: &Clip, body: Rect, nav: &View, min_w: f32) -> Option<(f32, f
 /// What one row of the stack is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
-    /// A lane, by index into the lanes.
-    Lane(usize),
-    /// A track automation drawn under that lane, by index into the curves.
+    /// A track, by index into the tracks.
+    TrackRow(usize),
+    /// A track automation drawn under that track, by index into the curves.
     Curve(usize),
 }
 
-/// **The stack as rows**: every lane, each followed by the automation rows that
+/// **The stack as rows**: every track, each followed by the automation rows that
 /// name it.
 ///
-/// The vertical axis of a multitrack was the lanes and is now the rows, because
-/// a track automation is a row of its own -- a lane of curve under the lane of
+/// The vertical axis of a multitrack was the tracks and is now the rows, because
+/// a track automation is a row of its own -- a track of curve under the track of
 /// boxes, spanning the whole timeline the way the track does. Everything that
 /// reads the vertical axis reads it here, so the drawing and the hit test
 /// cannot disagree about where a row begins.
 ///
-/// A curve naming a lane that is not here is **kept and drawn nowhere**, the
+/// A curve naming a track that is not here is **kept and drawn nowhere**, the
 /// rule a clip already keeps: what cannot be placed can still be reported.
 #[derive(Debug, Clone)]
 pub struct Stack {
@@ -64,12 +64,12 @@ pub struct Stack {
 }
 
 impl Stack {
-    /// The rows the lanes and the curves make, in the order they are drawn.
+    /// The rows the tracks and the curves make, in the order they are drawn.
     ///
     /// **Every curve in the list takes a row**; a caller that hides some says
     /// so with [`Stack::shown`].
-    pub fn new(lanes: &[Lane], curves: &[Curve], gap: f32) -> Stack {
-        Self::shown(lanes, curves, gap, |_| true)
+    pub fn new(tracks: &[TrackRow], curves: &[Curve], gap: f32) -> Stack {
+        Self::shown(tracks, curves, gap, |_| true)
     }
 
     /// The rows, with the curves `shown` answers `false` for **left out
@@ -84,16 +84,16 @@ impl Stack {
     /// **into the whole list**, so a caller looks a row up the way it always
     /// did.
     pub fn shown(
-        lanes: &[Lane],
+        tracks: &[TrackRow],
         curves: &[Curve],
         gap: f32,
         shown: impl Fn(&Curve) -> bool,
     ) -> Stack {
-        let mut entries = Vec::with_capacity(lanes.len() + curves.len());
-        for (i, lane) in lanes.iter().enumerate() {
-            entries.push((Row::Lane(i), lane.height));
+        let mut entries = Vec::with_capacity(tracks.len() + curves.len());
+        for (i, track) in tracks.iter().enumerate() {
+            entries.push((Row::TrackRow(i), track.height));
             for (n, curve) in curves.iter().enumerate() {
-                if curve.owner == lane.name && shown(curve) {
+                if curve.owner == track.name && shown(curve) {
                     entries.push((Row::Curve(n), curve.height));
                 }
             }
@@ -162,47 +162,47 @@ impl Stack {
         self.bands().index_at(y as f32 - rect.y + scroll)
     }
 
-    /// The **lane** a pointer is on, or `None` off the stack and `None` on an
-    /// automation row: nothing of a lane is drawn there, so a press that lands
-    /// on one is not a press on the lane above it.
-    pub fn lane_at(&self, rect: Rect, scroll: f32, y: f64) -> Option<usize> {
+    /// The **track** a pointer is on, or `None` off the stack and `None` on an
+    /// automation row: nothing of a track is drawn there, so a press that lands
+    /// on one is not a press on the track above it.
+    pub fn track_at(&self, rect: Rect, scroll: f32, y: f64) -> Option<usize> {
         match self.row(self.row_at(rect, scroll, y)?)? {
-            Row::Lane(i) => Some(i),
+            Row::TrackRow(i) => Some(i),
             Row::Curve(_) => None,
         }
     }
 
-    /// The lane a hand **is heading for**, always: the nearest row's lane,
+    /// The track a hand **is heading for**, always: the nearest row's track,
     /// clamped to the stack at both ends.
     ///
     /// A drag has to answer for every pixel the pointer crosses -- the gaps, the
     /// automation rows, the space past either end. An automation row answers
-    /// with the lane it belongs to, which is the only lane a clip dropped there
+    /// with the track it belongs to, which is the only track a clip dropped there
     /// could sensibly mean.
-    pub fn lane_toward(&self, rect: Rect, scroll: f32, y: f64) -> usize {
+    pub fn track_toward(&self, rect: Rect, scroll: f32, y: f64) -> usize {
         if self.entries.is_empty() {
             return 0;
         }
         let at = self.bands().index_of(y as f32 - rect.y + scroll);
         let i = (at.floor() as usize).min(self.entries.len() - 1);
-        // Walk back to the lane that owns the row: the entries are built lane
+        // Walk back to the track that owns the row: the entries are built track
         // first, so there is always one at or above any curve row.
         self.entries[..=i]
             .iter()
             .rev()
             .find_map(|(r, _)| match r {
-                Row::Lane(n) => Some(*n),
+                Row::TrackRow(n) => Some(*n),
                 Row::Curve(_) => None,
             })
             .unwrap_or(0)
     }
 
-    /// Where each **lane** lands, by lane index -- what places the clips.
-    pub fn lane_rects(&self, rect: Rect, scroll: f32, lanes: usize) -> Vec<Rect> {
+    /// Where each **track** lands, by track index -- what places the clips.
+    pub fn track_rects(&self, rect: Rect, scroll: f32, tracks: usize) -> Vec<Rect> {
         let rects = self.rects(rect, scroll);
-        let mut out = vec![Rect::new(rect.x, rect.y, rect.w, 0.0); lanes];
+        let mut out = vec![Rect::new(rect.x, rect.y, rect.w, 0.0); tracks];
         for (i, (row, _)) in self.entries.iter().enumerate() {
-            if let Row::Lane(n) = row
+            if let Row::TrackRow(n) = row
                 && let Some(slot) = out.get_mut(*n)
             {
                 *slot = rects[i];
@@ -216,17 +216,17 @@ impl Stack {
 mod tests {
     use super::*;
 
-    fn lanes() -> Vec<Lane> {
-        vec![Lane::new("noise", 100.0), Lane::new("tone", 60.0)]
+    fn tracks() -> Vec<TrackRow> {
+        vec![TrackRow::new("noise", 100.0), TrackRow::new("tone", 60.0)]
     }
 
-    /// The stack is the lanes at their own thicknesses, and a scroll moves all
+    /// The stack is the tracks at their own thicknesses, and a scroll moves all
     /// of them by one number.
     #[test]
     fn the_stack_lays_the_lanes_at_their_own_heights() {
-        let lanes = lanes();
+        let tracks = tracks();
         let rect = Rect::new(10.0, 20.0, 400.0, 300.0);
-        let stack = Stack::new(&lanes, &[], 4.0);
+        let stack = Stack::new(&tracks, &[], 4.0);
         let at = stack.rects(rect, 0.0);
         assert_eq!(at.len(), 2);
         assert_eq!((at[0].y, at[0].h), (20.0, 100.0));
@@ -234,7 +234,10 @@ mod tests {
         assert_eq!(at[0].x, 10.0);
 
         let scrolled = stack.rects(rect, 30.0);
-        assert_eq!(scrolled[0].y, -10.0, "a lane off the top is still reported");
+        assert_eq!(
+            scrolled[0].y, -10.0,
+            "a track off the top is still reported"
+        );
         assert_eq!(scrolled[1].y, 94.0);
 
         // The content height is what says whether it scrolls at all.
@@ -253,48 +256,48 @@ mod tests {
         }
     }
 
-    /// **A track automation is a row of its own, under the lane it names** --
-    /// not a layer on it and not a lane of clips. So the vertical axis is the
-    /// rows, and the lane below an automation is where the automation left it.
+    /// **A track automation is a row of its own, under the track it names** --
+    /// not a layer on it and not a track of clips. So the vertical axis is the
+    /// rows, and the track below an automation is where the automation left it.
     #[test]
     fn an_automation_row_sits_under_its_lane_and_pushes_the_next_one_down() {
-        let lanes = lanes();
+        let tracks = tracks();
         let curves = vec![curve("gain", "noise", 40.0)];
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
-        let stack = Stack::new(&lanes, &curves, 4.0);
+        let stack = Stack::new(&tracks, &curves, 4.0);
         assert_eq!(stack.len(), 3);
         assert_eq!(stack.row(1), Some(Row::Curve(0)));
 
         let at = stack.rects(rect, 0.0);
         assert_eq!((at[1].y, at[1].h), (104.0, 40.0));
-        assert_eq!(at[2].y, 148.0, "the second lane is below the row");
+        assert_eq!(at[2].y, 148.0, "the second track is below the row");
 
-        // The lanes are still addressed by lane index.
-        let lane_rects = stack.lane_rects(rect, 0.0, lanes.len());
-        assert_eq!(lane_rects[1].y, 148.0);
+        // The tracks are still addressed by track index.
+        let track_rects = stack.track_rects(rect, 0.0, tracks.len());
+        assert_eq!(track_rects[1].y, 148.0);
     }
 
-    /// **A press on an automation row is not a press on a lane** -- nothing of
-    /// a lane is drawn there -- but a *drag* still has to answer, and it answers
-    /// with the lane the row belongs to.
+    /// **A press on an automation row is not a press on a track** -- nothing of
+    /// a track is drawn there -- but a *drag* still has to answer, and it answers
+    /// with the track the row belongs to.
     #[test]
     fn a_curve_row_answers_a_drag_and_not_a_press() {
-        let lanes = lanes();
+        let tracks = tracks();
         let curves = vec![curve("gain", "noise", 40.0)];
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
-        let stack = Stack::new(&lanes, &curves, 4.0);
-        assert_eq!(stack.lane_at(rect, 0.0, 50.0), Some(0));
-        assert_eq!(stack.lane_at(rect, 0.0, 120.0), None, "an automation row");
-        assert_eq!(stack.lane_toward(rect, 0.0, 120.0), 0);
-        assert_eq!(stack.lane_toward(rect, 0.0, 160.0), 1);
-        assert_eq!(stack.lane_toward(rect, 0.0, 9_000.0), 1, "clamped");
+        let stack = Stack::new(&tracks, &curves, 4.0);
+        assert_eq!(stack.track_at(rect, 0.0, 50.0), Some(0));
+        assert_eq!(stack.track_at(rect, 0.0, 120.0), None, "an automation row");
+        assert_eq!(stack.track_toward(rect, 0.0, 120.0), 0);
+        assert_eq!(stack.track_toward(rect, 0.0, 160.0), 1);
+        assert_eq!(stack.track_toward(rect, 0.0, 9_000.0), 1, "clamped");
     }
 
-    /// A curve naming a lane that is not here is kept and drawn nowhere, the
+    /// A curve naming a track that is not here is kept and drawn nowhere, the
     /// rule a clip already keeps.
     #[test]
     fn a_curve_naming_no_lane_takes_no_row() {
-        let stack = Stack::new(&lanes(), &[curve("gain", "vanished", 40.0)], 4.0);
+        let stack = Stack::new(&tracks(), &[curve("gain", "vanished", 40.0)], 4.0);
         assert_eq!(stack.len(), 2);
     }
 }

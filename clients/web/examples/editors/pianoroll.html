@@ -27,7 +27,7 @@ The dedicated piano-roll view, the editor-grade sibling of the compact roll a
 multitrack draws inside a box -- they share the host's note primitives, so a
 note is drawn and edited the same way in both. It contemplates the two message
 families a sequence carries: <b>MIDI notes</b> in the grid (pitch * time, with velocity and
-channel) and <b>OSC items</b> as markers in a lane below it.
+channel) and <b>OSC items</b> as markers below it.
 
 Editing gestures, all live: drag a note to move it (snapped to the grid), wheel
 over the grid to zoom the shared time axis, Shift+drag to pan, drag empty grid
@@ -48,7 +48,7 @@ until you press play.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/pianoroll.py, call for
-      call: the scale, the roll with its OSC lane, the play toggle, the
+      call: the scale, the roll with its OSC markers, the play toggle, the
       edit-back handler that keeps the note list current, and the routine that
       replays it every LOOP beats.
 

@@ -56,9 +56,9 @@ why the curve row below names three unrelated types:
 | a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
-| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
 
-**An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `null` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `yAxis: "hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history.
+**An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `null` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `yAxis: "hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. **A page edits the same sequence while the roll is open**, through its objects: the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — `seq.history.entry("humanize", () => { ... })` makes a whole loop one entry. **What the hand marked is the page's to read**: `await roll.selected()` is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, `roll.select(events)` marks them from the page and `roll.unselect()` clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)).
 
 **A `Buffer` opens in the audio editor**, `editing.AudioEditor`.
 It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and
@@ -68,7 +68,7 @@ new take the size of the stroke, spliced over the frames it was drawn on. An und
 is the list before, stitched again, so it costs the list and not the samples.
 The takes a history can still reach are kept, and freed when it cannot;
 `historyBytes` caps what only the history holds, and `residentBytes` how much of that stays in memory -- past it the oldest takes are written to the page's own storage (`scratch`) and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `await editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save({ path })` writes it as another file and `editor.save({ buffer })` into another buffer (`buffer: true` for a new one), which a later save then writes over. `editor.buffer` is the edited
-take, to play or read, and `editor.parts` what it is made of.
+take, to play or read, and `editor.parts` what it is made of. **It plays what it edits** on the audio editors' transport, and `editor.transport` is that `Transport` in the take's seconds: the space bar over the window plays the marked range, or from the position cursor, and `L` loops it -- the same `await transport.play()`, `span` and `loop(start, end)` from a page, each side reading what the other set. What the hand marked is samples, and `editor.selected` answers them as a `Segment` over `editor.buffer` (its `start` a frame, its `duration` seconds); `await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an audio editor the samples marked and the transport's `span` are one range, so setting either sets both.
 
 ```ts
 const editor = await gui.edit(curve, { sampleRate: 48_000, stage: element });
@@ -115,7 +115,7 @@ run it replaced. The page's buffer calls are asynchronous, so a stroke's write i
 **queued in order** rather than awaited; the Python client writes synchronously,
 and that is the only difference between the two.
 
-## The arrangement: tracks, lanes, regions
+## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
@@ -129,23 +129,23 @@ The vocabulary is the field's own:
   long, its fades, which of the overlapping ones is on top) plus what fills it.
   Six regions over one source are six identities and one source, referenced
   rather than copied. That is the whole of non-destructive editing.
-- A **lane** is one of a track's several contents, an ordered list of regions.
-- A **track** holds several lanes and **plays one**, which is what comping is:
-  record six passes into six lanes, then take from each.
+- A **take lane** is one of a track's several contents, an ordered list of regions.
+- A **track** holds several take lanes and **plays one**, which is what comping is:
+  record six passes into six take lanes, then take from each.
 - An **automation** is a curve over one parameter, in the multitrack's time.
 - The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
 ```javascript
-import { Content, Lane, Multitrack, Region, Tempo, Track } from "clausters";
+import { Content, TakeLane, Multitrack, Region, Tempo, Track } from "clausters";
 
 const multitrack = new Multitrack();
 multitrack.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
 const bar = multitrack.tempoMap().secsAt(4);             // where the second bar begins
 
-const drums = new Track({ id: 1, name: "drums", lanes: [new Lane({ id: 2 })] });
-drums.activeLane.place(new Region({
+const drums = new Track({ id: 1, name: "drums", takeLanes: [new TakeLane({ id: 2 })] });
+drums.activeTakeLane.place(new Region({
     id: 3, position: bar, length: 2.5, content: Content.onto(take),
 }));
 multitrack.tracks.push(drums);
@@ -154,7 +154,7 @@ const written = multitrack.write();   // the crate's JSON
 Multitrack.read(written);
 ```
 
-A **region** is the model's word and a **clip** is the picture's: a clip, a lane
+A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
 everything placed is placed in **seconds** — a region, its fades, a curve's
 points, a marker, the loop — while what fills a region is measured in its own
@@ -174,7 +174,7 @@ multitrack as it now stands and the edit that puts it back.
 import { document as doc } from "clausters";
 
 const edited = doc.domainEdit(doc.MULTITRACK, multitrack.write(), {
-    intent: "placeregion", region: 3, track: 1, lane: 2,
+    intent: "placeregion", region: 3, track: 1, take_lane: 2,
     position: 16, layer: 0,
 });
 edited.applied;                     // true
@@ -184,8 +184,8 @@ edited.current;                     // the edit that puts it back
 
 Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
-say the same thing) and `setactivelane`, which is comping's one verb. What a
-**region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
+say the same thing) and `setactivetakelane`, which is comping's one verb. What a
+**region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
 span), `settempomap` and `setmetermap`.
@@ -193,9 +193,9 @@ span), `settempomap` and `setmetermap`.
 Three things about them are worth knowing before you write against them.
 
 **Moving a region to another track is one edit.** Where a region is means track,
-lane *and* second, and an intent is absolute — so `placeregion` states all three
+take lane *and* second, and an intent is absolute — so `placeregion` states all three
 together. One entry in a history, one undo, and no moment in between where the
-region is on no lane at all.
+region is on no take lane at all.
 
 **A crossfade is two fades over an overlap**, not a third object: `faderegion`
 on each of the two regions, which is what the model already holds. There is no
@@ -209,7 +209,7 @@ and this document converts between the two *never*. So `splitregion` takes
 `left_content` and `right_content` and `joinregions` takes `content`, from you,
 who knows how the content is read. Omit them and both halves go on reading what
 the region read.
-Both also invert as `setlane`, the lane's previous contents: nothing smaller
+Both also invert as `settakelane`, the take lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 
 Everything else the vocabulary does it does the way the tree's does — absolute,
@@ -248,9 +248,15 @@ that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 page. **The space bar is play/stop**: a stop goes back to the position
 cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
 drag does in the audio editor: the space bar plays it from its start to its end,
-and the loop switch (**L**) loops it, or the whole multitrack with no range --
-the playback's `play({ range, looping })` from a script, as the notes editor's `play` takes it too. **Where a pass ends** is
-the playback's `end`: `null` by default, the transport rolling on past the
+and the loop switch (**L**) loops it, or the whole multitrack with no range.
+From a page both are the transport's: `editor.transport` is the `Transport` the
+multitrack plays on, in seconds, so `await editor.transport.loop(1, 3)` draws the
+band and turns `L` on, and a range swept by hand reads back as
+`editor.transport.span` (see [The transport](transport.md)). What the hand holds
+-- a click, Alt+click or a marquee over the boxes -- is `await editor.selected()`,
+the `Region` objects of this multitrack; `editor.select(regions)` holds them from
+the page and `editor.unselect()` holds nothing. **Where a pass ends** is
+the transport's `end`: `null` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
 end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened with
 no server still edits; it is simply not heard.
@@ -299,7 +305,7 @@ window.name = "arranger";
 window.visible = new Span(0, 48);
 window.quant = 4;
 window.trackView(10).height = 96;
-window.trackView(10).lanesShown = true;      // comping open
+window.trackView(10).takeLanesShown = true;      // comping open
 window.selected = [20, 32];
 
 const session = new Session();
@@ -387,7 +393,7 @@ how, which is the same rule the opaque generator follows one level down.
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.openEdits()` is what is still undecided, and `session.dangling()` is
-what the multitrack names and the table does not hold — **every** lane walked, not
+what the multitrack names and the table does not hold — **every** take lane walked, not
 only the ones that play, because an alternate take names its source whether or
 not anyone has chosen it yet.
 
@@ -445,25 +451,26 @@ language's and not a different call.
 
 ## Mixing is the multitrack's
 
-Every element carries `mute`, `solo` and `level`, and all three are inherited
-down the tree: muting an aggregate silences its members, one soloed element
-anywhere silences every branch that is not on a soloed path, and a level
-multiplies into the `amp` of the events under it.
+A **track** carries its own mix: `muted`, `soloed` and `level`, the fader as
+a linear gain. A muted track is silent, and so is every track that is not
+soloed while any track is: the rule is the multitrack's, applied where it is
+played, and the document only marks the track.
 
 ```ts
-bassLane.mute = true;
-leadLane.level = 0.5;
+const [bass, lead] = multitrack.tracks;
+bass.muted = true;
+lead.level = 0.5;
 ```
 
-They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the multitrack rather than
-remembering something of its own — pressing mute there goes through the log and
-undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
+They are fields of the track and are written with it, so a multitrack reopens
+mixed the way it was left, and the editor's track header is drawing the
+multitrack rather than remembering something of its own — pressing mute there goes through the log and
+undoes like any other edit. What is *drawn* is read unmixed: a muted track keeps
 its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
 
-A lane's **height** is the other kind of thing and is in no document. It says
-nothing about what the multitrack is; resizing a lane (Ctrl+wheel) changes the view
+A track's **height** is the other kind of thing and is in no document. It says
+nothing about what the multitrack is; resizing a track (Ctrl+wheel) changes the view
 and no file.
 
 ## What a multitrack is as nodes: the channel strip, three times

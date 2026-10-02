@@ -56,7 +56,7 @@ pub fn notes_json(notes: &[Note]) -> Value {
 
 /// The `osc` wire form of a marker list: the flat `time label` pair array, as
 /// JSON -- the inverse of the `osc` prop's parse.
-pub fn osc_json(marks: &[OscMark]) -> Value {
+pub fn osc_json(marks: &[OscMarker]) -> Value {
     let mut out = Vec::with_capacity(marks.len() * 2);
     for m in marks {
         out.push(Value::from(m.time));
@@ -80,11 +80,11 @@ impl Note {
     }
 }
 
-/// One marker on the OSC lane: its `time` (timeline samples,
+/// One OSC marker: its `time` (timeline samples,
 /// relative to the region offset) and an optional short `label` (an address or
 /// tag) drawn beside the flag.
 #[derive(Clone, Debug, PartialEq)]
-pub struct OscMark {
+pub struct OscMarker {
     pub time: f64,
     pub label: Option<String>,
 }

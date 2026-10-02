@@ -113,7 +113,7 @@ export { ServerMidi, formatMidiBinding } from "./midi.ts";
 export type { MidiBinding, MidiBindOptions } from "./midi.ts";
 export { ServerQueries } from "./queries.ts";
 export { ServerStreams } from "./streams.ts";
-export { ServerTransport } from "./transport.ts";
+export { ServerTransport, Transport } from "./transport.ts";
 export type { TransportGrid, TransportState } from "./transport.ts";
 
 /**

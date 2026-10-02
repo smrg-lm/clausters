@@ -33,20 +33,20 @@ class ServerTransport:
     #: made for on what `transport_at` answers.
     transport_id: int = 0
 
-    def transport_at(self, transport: int) -> "TransportView":
-        """This server, addressed through transport ``transport``.
-
-        Every transport method on what it answers -- `transport_play`,
-        `transport_state`, `transport_group`, `sched_at_transport`, a
-        ``sched_clear("transport")`` -- names that transport, and everything
-        else is this server's own, so it goes wherever a server is taken as a
-        transport: ``timeline.transport = server.transport_at(1)``. Transport 0
-        is the server itself. An id past the server's ``--transports`` fails
-        when a command is sent, not here."""
+    def transport_at(self, transport: int) -> "Transport":
+        """**Transport ``transport`` of this server, as an object**: a
+        `Transport`, the same one every time it is asked for. Its verbs --
+        `Transport.play`, `Transport.pause`, `Transport.locate`, ... -- are
+        that transport's, and it goes wherever a transport is taken:
+        ``timeline.transport = server.transport_at(1)``. The methods on the
+        server itself address transport 0. An id past the server's
+        ``--transports`` fails when a command is sent, not here."""
         server = getattr(self, "_server", self)
-        if int(transport) == 0:
-            return server
-        return TransportView(server, int(transport))
+        held = server.__dict__.setdefault("_transports", {})
+        found = held.get(int(transport))
+        if found is None:
+            found = held[int(transport)] = Transport(server, int(transport))
+        return found
 
     def _transport_query(self, timeout):
         """``/transport_query`` for this handle's transport, answered by the
@@ -362,14 +362,12 @@ class ServerTransport:
         return self
 
 
-class TransportView(ServerTransport):
-    """A `Server` addressed through one of its transports -- what
-    `ServerTransport.transport_at` answers for any transport but 0.
-
-    Its transport methods name its `transport_id`, and a
-    ``sched_clear("transport")`` clears that transport's queue alone;
-    everything else is the server's own, so it stands wherever a server is
-    taken as a transport."""
+class _Addressed(ServerTransport):
+    """A `Server` addressed through one of its transports: its transport
+    methods name ``transport_id``, a ``sched_clear("transport")`` clears that
+    transport's queue alone, and everything else is the server's own. What a
+    `Transport` sends its commands through, and what a timeline on it plays
+    against."""
 
     def __init__(self, server, transport: int):
         self._server = server
@@ -393,3 +391,239 @@ class TransportView(ServerTransport):
 
     def __repr__(self):
         return f"<transport {self.transport_id} of {self._server!r}>"
+
+
+class Transport:
+    """**One of a server's transports, as an object**: what
+    `ServerTransport.transport_at` answers, and what ``play(sequence)``
+    answers for the transport the sequence's lane was loaded on.
+
+    It is played the way a routine or a timeline is: `play`, `pause`, `stop`,
+    `locate`, `loop` and `unloop`, `playing`, and `wait`, which a script calls
+    or not -- a live session drives the transport with the same verbs and never
+    waits. Its positions are those of **what is loaded on it**: the beats of
+    the sequence a ``play(sequence)`` put there, and with nothing loaded, the
+    transport's own seconds.
+
+    The transport's other commands are here by their own names too: `group`
+    and `follow` bind the groups it governs and leads, `fade` sets how a stop
+    and a play ramp, `locate_sample` seeks on its sample axis, and `state` is
+    what the engine says of it. A server's own transport methods
+    (``transport_play``, ...) address transport 0; this object is how any
+    other is addressed.
+    """
+
+    def __init__(self, server, transport: int):
+        self._server = server
+        self._id = int(transport)
+        #: What its commands are sent through.
+        self._view = _Addressed(server, self._id)
+        #: What is loaded on it and plays through it, when something is: the
+        #: playback of a sequence, which speaks its beats.
+        self._driver = None
+        self._rate = None
+        #: The span and the loop switch with nothing loaded, in seconds.
+        self._span = None
+        self._looping = False
+
+    @property
+    def server(self):
+        """The server whose transport this is."""
+        return self._server
+
+    @property
+    def id(self) -> int:
+        """Which of the server's transports it is."""
+        return self._id
+
+    def _seconds(self, secs: float) -> int:
+        if self._rate is None:
+            self._rate = float(self._server.query_info().nominal_sample_rate)
+        return int(round(float(secs) * self._rate))
+
+    # ---- played as a routine is ----
+
+    def state(self) -> dict:
+        """The transport as the engine has it (``/transport_query``): see
+        `ServerTransport.transport_state`."""
+        return self._view.transport_state()
+
+    @property
+    def playing(self) -> bool:
+        """Whether the transport is rolling, as the engine answers -- a pass
+        that ended on its own stopped with nobody here saying so."""
+        if self._driver is not None:
+            return self._driver.playing()
+        return bool(self.state()["playing"])
+
+    def play(self, at: "float | None" = None) -> "Transport":
+        """Roll -- from ``at`` when given, else from where it was paused, or
+        located, or from the start. Returns ``self``."""
+        if self._driver is not None:
+            self._driver.play(at)
+            return self
+        if at is not None:
+            self.locate(at)
+        self._view.transport_play()
+        return self
+
+    def pause(self) -> "Transport":
+        """Stop where it stands: a `play` carries on from there."""
+        if self._driver is not None:
+            self._driver.pause()
+            return self
+        self._view.transport_stop()
+        return self
+
+    def stop(self) -> "Transport":
+        """Stop and go back to where the pass started. What is sounding is
+        released, and rings out."""
+        if self._driver is not None:
+            self._driver.stop()
+            return self
+        self._view.transport_stop()
+        self._view.transport_locate_sample(0)
+        return self
+
+    def locate(self, at: float) -> "Transport":
+        """Put the position at ``at``: a rolling transport goes on from there,
+        a stopped one starts there next."""
+        if self._driver is not None:
+            self._driver.locate(float(at))
+            return self
+        self._view.transport_locate_sample(self._seconds(at))
+        return self
+
+    @property
+    def span(self):
+        """**The time range** ``(start, end)`` a pass plays and a loop
+        repeats, or ``None``. With a sequence loaded it is the range a sweep
+        leaves on its roll -- set it here and the roll draws it, sweep it there
+        and it reads here -- and `play` plays it, from its start to its end,
+        as the space bar does. Kept while stopped."""
+        if self._driver is not None:
+            return self._driver.span
+        return self._span
+
+    @span.setter
+    def span(self, span) -> None:
+        if self._driver is not None:
+            self._driver.set_span(span)
+            return
+        self._span = None if span is None else (float(span[0]), float(span[1]))
+        if self._looping:
+            self._loop_raw()
+
+    @property
+    def looping(self) -> bool:
+        """Whether the loop switch is on."""
+        if self._driver is not None:
+            return self._driver.looping
+        return self._looping
+
+    def loop(self, start: "float | None" = None, end: "float | None" = None) -> "Transport":
+        """**Loop**: with ``start`` and ``end``, set the `span` to them first;
+        then turn the loop on over the span -- or, with none, over every note
+        of the sequence loaded. A rolling transport follows at once, a stopped
+        one on its next `play`. The `L` key over a roll is the same switch."""
+        if start is not None and end is not None:
+            self.span = (start, end)
+        if self._driver is not None:
+            self._driver.set_looping(True)
+            return self
+        self._looping = True
+        self._loop_raw()
+        return self
+
+    def unloop(self) -> "Transport":
+        """Turn the loop off; the `span` stays."""
+        if self._driver is not None:
+            self._driver.set_looping(False)
+            return self
+        self._looping = False
+        self._view.transport_loop(None)
+        return self
+
+    def _loop_raw(self) -> None:
+        if self._span is None:
+            return
+        self._view.transport_loop((self._seconds(self._span[0]), self._seconds(self._span[1])))
+
+    @property
+    def end(self):
+        """**Where a pass ends**: ``None``, the transport rolling on until it
+        is stopped; a position, an end marker; or, with a sequence loaded,
+        ``"contents"``, where its last note ends -- what ``play(sequence)``
+        sets. A pass that reaches its end stops there, and `wait` returns."""
+        if self._driver is not None:
+            return self._driver.end
+        end = self.state().get("end")
+        if end is None:
+            return None
+        self._seconds(0.0)
+        return end[0] / self._rate
+
+    @end.setter
+    def end(self, end) -> None:
+        if self._driver is not None:
+            self._driver.set_end(end)
+            return
+        if end == "contents":
+            raise ValueError("a transport with nothing loaded has no contents")
+        self._view.transport_end(None if end is None else self._seconds(end))
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Block until the transport stops -- a pass that ends where its
+        contents do stops on its own -- or ``timeout`` seconds pass. Answers
+        whether it stopped. A script that plays and exits calls it; a live
+        session does not."""
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        while self.playing:
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        return True
+
+    # ---- the transport's other commands ----
+
+    def group(self, group) -> "Transport":
+        """Bind the group this transport governs: see
+        `ServerTransport.transport_group`."""
+        self._view.transport_group(group)
+        return self
+
+    def follow(self, group) -> "Transport":
+        """Have ``group`` follow this transport: see
+        `ServerTransport.transport_follow`."""
+        self._view.transport_follow(group)
+        return self
+
+    def fade(self, samples: int) -> "Transport":
+        """How long a stop and a play ramp, in samples: see
+        `ServerTransport.transport_fade`."""
+        self._view.transport_fade(samples)
+        return self
+
+    def locate_sample(self, sample: int) -> "Transport":
+        """Seek on the transport's own sample axis: see
+        `ServerTransport.transport_locate_sample`."""
+        self._view.transport_locate_sample(sample)
+        return self
+
+    def lane_new(self, lane: int, target) -> "Transport":
+        """Make event lane ``lane`` on this transport: see
+        `ServerTransport.lane_new`. Its data and its end are the server's
+        (`ServerTransport.lane_set`, `ServerTransport.lane_free`)."""
+        self._view.lane_new(lane, target)
+        return self
+
+    def sched_clear(self) -> "Transport":
+        """Drop what is queued on this transport's clock (``/sched_clear
+        "transport"``)."""
+        self._view.sched_clear("transport")
+        return self
+
+    def __repr__(self):
+        return f"<Transport {self._id} of {self._server!r}>"

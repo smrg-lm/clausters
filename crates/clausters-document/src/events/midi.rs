@@ -7,12 +7,14 @@
 //! [`MidiSpec`] settles:
 //!
 //! - **a channel's stream** -- a CC, the bend, channel pressure -- is that
-//!   channel's function, a **lane** whose target names the channel;
-//! - **poly pressure** is one note's, the **expression** of the note sounding
-//!   on its key;
+//!   channel's function, a curve of the **sequence's automation** whose
+//!   target names the channel;
+//! - **poly pressure** is one note's, a curve of the **automation of the
+//!   note** sounding on its key;
 //! - **in an MPE zone**, a member channel is one note's, so its bend,
-//!   pressure and CC 74 are the expression of the note on it, and the master
-//!   channel's streams are lanes over the whole zone.
+//!   pressure and CC 74 are the automation of the note on it -- MPE's
+//!   per-note expression -- and the master channel's streams are the
+//!   sequence's, over the whole zone.
 //!
 //! Every point is a step, since a message holds until the next. Writing goes
 //! the other way: steps as they are and ramps sampled, emitting where the MIDI
@@ -107,8 +109,8 @@ fn configuration(messages: &[(f64, Vec<u8>)]) -> (Option<MidiSpec>, HashMap<u8, 
 }
 
 /// **A file's messages as a sequence's events and curves**, in beats: notes
-/// paired as `render::from_midi_messages` pairs them, every stream a lane or a
-/// note's expression, and the spec the file is written for.
+/// paired as `render::from_midi_messages` pairs them, every stream a curve of
+/// the sequence or of a note, and the spec the file is written for.
 pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>, MidiSpec) {
     let (zone, ranges) = configuration(messages);
     let spec = zone.unwrap_or(MidiSpec::Midi1);
@@ -172,15 +174,15 @@ pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>,
                 .map(|(i, _)| i)
         })
     };
-    // Curves by what they are over: a lane by (channel or none, target), a
-    // note's by (event index, target).
-    let mut lanes: Vec<(Value, Vec<Point>)> = Vec::new();
+    // Curves by what they are over: the sequence's by (channel or none,
+    // target), a note's by (event index, target).
+    let mut channel_curves: Vec<(Value, Vec<Point>)> = Vec::new();
     let mut notes: Vec<(usize, Value, Vec<Point>)> = Vec::new();
     let mut kept = Vec::with_capacity(events.len());
-    let mut add_lane =
-        |target: Value, point: Point| match lanes.iter_mut().find(|(t, _)| *t == target) {
+    let mut add_channel_curve =
+        |target: Value, point: Point| match channel_curves.iter_mut().find(|(t, _)| *t == target) {
             Some((_, points)) => points.push(point),
-            None => lanes.push((target, vec![point])),
+            None => channel_curves.push((target, vec![point])),
         };
     for (i, event) in events.iter().enumerate() {
         let keys = event.keys();
@@ -233,12 +235,12 @@ pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>,
         if zone_master != Some(channel) {
             target["channel"] = json!(channel);
         }
-        add_lane(target, step(at, value));
+        add_channel_curve(target, step(at, value));
     }
     for (note, target, points) in notes {
         let mut curve = Automation::new(NodeId(0), Opaque(target));
         curve.points = points;
-        events[note].expression.push(curve);
+        events[note].automation.push(curve);
     }
     let events = events
         .into_iter()
@@ -249,7 +251,7 @@ pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>,
         })
         .map(|(_, event)| event)
         .collect();
-    let lanes = lanes
+    let channel_curves = channel_curves
         .into_iter()
         .map(|(target, points)| {
             let mut curve = Automation::new(NodeId(0), Opaque(target));
@@ -257,12 +259,12 @@ pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>,
             curve
         })
         .collect();
-    (events, lanes, spec)
+    (events, channel_curves, spec)
 }
 
 /// How a message sorts among those on its tick: configuration first, a
-/// note's off before the next one's on, a note's first expression before its
-/// on, then everything else.
+/// note's off before the next one's on, a note's first curve value before
+/// its on, then everything else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Order {
     Configure,
@@ -347,7 +349,7 @@ fn sampled<T: PartialEq>(
 }
 
 /// **A sequence as the messages a file of it holds**, in beats, sorted: its
-/// events, its lanes on their channels and its notes' expression -- as the
+/// events, its automation on its channels and its notes' own -- as the
 /// spec says it, MIDI 1.0 when it names none (and then a curve 1.0 cannot say
 /// is left out, as an OSC event is). MIDI 2.0 has no voice in a 1.0 file of
 /// its own, so it is written as MPE there: a member channel per note.
@@ -384,7 +386,7 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
         let is_note = render::Type::of(&keys) == render::Type::Note;
         let sustain = render::sustain_of(&keys).max(0.0);
         let reach = event
-            .expression
+            .automation
             .iter()
             .filter_map(|c| c.points.last())
             .map(|p| p.at)
@@ -433,7 +435,7 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
             .get("midinote")
             .and_then(Value::as_f64)
             .map(|k| k.round() as u8);
-        for curve in event.expression.iter().filter(|c| c.enabled) {
+        for curve in event.automation.iter().filter(|c| c.enabled) {
             let kind = CurveKind::of(&curve.target.0);
             let (on, key) = match spec {
                 MidiSpec::Midi1 if kind == CurveKind::Pressure => (channel, key),
@@ -457,19 +459,19 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
     if channels_used.is_empty() {
         channels_used.push(0);
     }
-    for lane in sequence.lanes.iter().filter(|l| l.enabled) {
-        let kind = CurveKind::of(&lane.target.0);
+    for curve in sequence.automation.iter().filter(|l| l.enabled) {
+        let kind = CurveKind::of(&curve.target.0);
         if kind == CurveKind::Control {
             continue;
         }
-        let channels: Vec<u8> = match (zone_master, lane.target.0.get("channel")) {
+        let channels: Vec<u8> = match (zone_master, curve.target.0.get("channel")) {
             (Some(master), _) => vec![master],
             (None, Some(channel)) => vec![channel.as_f64().unwrap_or(0.0) as u8],
             (None, None) => channels_used.clone(),
         };
-        let last = lane.points.last().map_or(0.0, |p| p.at);
+        let last = curve.points.last().map_or(0.0, |p| p.at);
         for channel in channels {
-            let said = sampled(&lane.points, 0.0, last.max(end), 0.0, |v| {
+            let said = sampled(&curve.points, 0.0, last.max(end), 0.0, |v| {
                 message(kind, channel, None, v, CHANNEL_BEND)
             });
             out.extend(said.into_iter().map(|(t, bytes)| (t, Order::After, bytes)));
@@ -573,8 +575,8 @@ fn widened(bytes: &[u8]) -> Option<Vec<u32>> {
 
 /// **A sequence as the Universal MIDI Packets a MIDI 2.0 clip of it holds**,
 /// in beats, sorted: its notes at 16-bit velocity, its other MIDI events
-/// widened, its lanes as 32-bit channel messages and its notes' expression
-/// as per-note ones -- per-note pitch bend, poly pressure, the registered
+/// widened, its automation as 32-bit channel messages and its notes' as
+/// per-note ones -- per-note pitch bend, poly pressure, the registered
 /// per-note controller 74 for timbre and an assignable one for a CC. What a
 /// spec cannot say of one note is left out, as in a 1.0 file; MPE and 2.0
 /// both say it all, a note being its own address here.
@@ -597,7 +599,7 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
         let channel = keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0) as u8 & 0x0F;
         let sustain = render::sustain_of(&keys).max(0.0);
         let reach = event
-            .expression
+            .automation
             .iter()
             .filter_map(|c| c.points.last())
             .map(|p| p.at)
@@ -635,7 +637,7 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
         if !channels_used.contains(&channel) {
             channels_used.push(channel);
         }
-        for curve in event.expression.iter().filter(|c| c.enabled) {
+        for curve in event.automation.iter().filter(|c| c.enabled) {
             let kind = CurveKind::of(&curve.target.0);
             if !per_note(kind) {
                 continue;
@@ -652,18 +654,18 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
     if channels_used.is_empty() {
         channels_used.push(0);
     }
-    for lane in sequence.lanes.iter().filter(|l| l.enabled) {
-        let kind = CurveKind::of(&lane.target.0);
+    for curve in sequence.automation.iter().filter(|l| l.enabled) {
+        let kind = CurveKind::of(&curve.target.0);
         if kind == CurveKind::Control {
             continue;
         }
-        let channels: Vec<u8> = match lane.target.0.get("channel") {
+        let channels: Vec<u8> = match curve.target.0.get("channel") {
             Some(channel) => vec![channel.as_f64().unwrap_or(0.0) as u8],
             None => channels_used.clone(),
         };
-        let last = lane.points.last().map_or(0.0, |p| p.at);
+        let last = curve.points.last().map_or(0.0, |p| p.at);
         for channel in channels {
-            let said = sampled(&lane.points, 0.0, last.max(end), 0.0, |v| {
+            let said = sampled(&curve.points, 0.0, last.max(end), 0.0, |v| {
                 packet(kind, channel, None, v)
             });
             out.extend(said.into_iter().map(|(t, words)| (t, Order::After, words)));
@@ -675,9 +677,9 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
 
 /// **A MIDI 2.0 clip's packets as a sequence's events and curves**, in beats:
 /// note on and off paired into notes (the 16-bit velocity as a fraction of
-/// 127), a channel's controllers, bend and pressure as its lanes, each
+/// 127), a channel's controllers, bend and pressure as its automation, each
 /// note's per-note bend, poly pressure, timbre (registered per-note 74) and
-/// assignable controllers as its expression, a program change as an event.
+/// assignable controllers as the note's own, a program change as an event.
 /// What else the clip holds -- a tempo is the caller's -- is not a note's.
 pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automation>) {
     let mut events: Vec<Event> = Vec::new();
@@ -766,7 +768,7 @@ pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automati
                 .map(|(i, _)| i)
         })
     };
-    let mut lanes: Vec<(Value, Vec<Point>)> = Vec::new();
+    let mut channel_curves: Vec<(Value, Vec<Point>)> = Vec::new();
     let mut notes: Vec<(usize, Value, Vec<Point>)> = Vec::new();
     for (at, status, channel, index, extra, data) in said {
         let fraction = f64::from(data) / FULL;
@@ -795,9 +797,9 @@ pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automati
         };
         let value = (value * 1e6).round() / 1e6;
         match key {
-            None => match lanes.iter_mut().find(|(t, _)| *t == target) {
+            None => match channel_curves.iter_mut().find(|(t, _)| *t == target) {
                 Some((_, points)) => points.push(step(at, value)),
-                None => lanes.push((target, vec![step(at, value)])),
+                None => channel_curves.push((target, vec![step(at, value)])),
             },
             Some(key) => {
                 let Some(note) = note_for(channel, key, at) else {
@@ -817,9 +819,9 @@ pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automati
     for (note, target, points) in notes {
         let mut curve = Automation::new(NodeId(0), Opaque(target));
         curve.points = points;
-        events[note].expression.push(curve);
+        events[note].automation.push(curve);
     }
-    let lanes = lanes
+    let channel_curves = channel_curves
         .into_iter()
         .map(|(target, points)| {
             let mut curve = Automation::new(NodeId(0), Opaque(target));
@@ -827,5 +829,5 @@ pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automati
             curve
         })
         .collect();
-    (events, lanes)
+    (events, channel_curves)
 }

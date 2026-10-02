@@ -27,7 +27,7 @@ fn a_stitched_take_is_asked_for_again() {
             1,
             r#"{"type":"window","title":"w","children":[
                 {"id":10,"type":"multitrack",
-                 "lanes":["one","",100,0,0,1,1],
+                 "tracks":["one","",100,0,0,1,1],
                  "clips":["j","one",0,10,0,"",3]}]}"#,
         ),
         from(),

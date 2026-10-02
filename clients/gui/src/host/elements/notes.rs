@@ -1,5 +1,5 @@
-//! `notes` -- the editor-grade piano roll: a keyboard gutter, a note grid and an
-//! OSC lane, placed on a navigation group's shared time axis. A note's velocity
+//! `notes` -- the editor-grade piano roll: a keyboard gutter, a note grid and its
+//! OSC markers, placed on a navigation group's shared time axis. A note's velocity
 //! is drawn inside it, as its fill, and edited on it: Shift and a vertical drag.
 //!
 //! **The leaf that is placed on somebody else's axis and edits what is drawn on
@@ -33,7 +33,7 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Bounds};
-use crate::host::structures::notes::OscMark;
+use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, OnAxis, Swept,
@@ -54,12 +54,15 @@ const HZ_NOTE_H: f32 = 8.0;
 /// The shortest note a resize may leave, in axis units.
 const MIN_DUR: f64 = 1.0;
 
-/// A piano roll. `selected`, `drag`, `held` and `step` are native view state --
-/// the gestures and the MIDI leg build them and no `/gui_set` writes them.
+/// A piano roll. `drag`, `held` and `step` are native view state -- the
+/// gestures and the MIDI leg build them and no `/gui_set` writes them.
+/// `selected` is view state too, built by the hand, and the one a script may
+/// read (`/gui_query`) and write (`/gui_set selected`): the notes it names are
+/// the objects a script holds, so marking them is an edit of the picture only.
 #[derive(Debug, Clone)]
 pub struct Notes {
     notes: Vec<notes::Note>,
-    osc: Vec<notes::OscMark>,
+    osc: Vec<notes::OscMarker>,
     /// The multi-note selection (note indices). It clears when a script
     /// replaces `notes`, since the indices would dangle over the new list.
     selected: Vec<usize>,
@@ -78,7 +81,7 @@ pub struct Notes {
     /// as new events that had lost what the roll cannot draw. The list that
     /// arrives is named by the ids beside it whichever of the two came first.
     id_list: Option<Value>,
-    osc_lane: bool,
+    osc_markers: bool,
     midi_in: bool,
     label: Option<String>,
     /// The MIDI spec the notes are written for, as a reader names it, shown
@@ -100,7 +103,7 @@ pub struct Notes {
     /// it, which reads as a broken editor rather than as samples that cannot
     /// be edited here. So the refusal happens at the press, where it is seen.
     editable: bool,
-    /// The lanes under the plane: curves over the whole sequence.
+    /// The rows under the plane: the sequence's curves.
     rows: Vec<curves::Row>,
     /// The notes' own curves, each over the note it names.
     layers: Vec<curves::Layer>,
@@ -172,10 +175,10 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         notes,
         ids,
         id_list: None,
-        // The OSC lane shows when there are markers or it is explicitly asked
-        // for (so an empty lane can still be opened to author them).
-        osc_lane: props
-            .get("osc_lane")
+        // The OSC markers' strip shows when there are markers or it is
+        // explicitly asked for (so an empty one can still be opened).
+        osc_markers: props
+            .get("osc_markers")
             .and_then(truthy)
             .unwrap_or(!osc.is_empty()),
         osc,
@@ -322,7 +325,7 @@ impl Notes {
         let mut r = pianoroll::regions(
             rect,
             self.editor.ruler != Ruler::Off,
-            self.osc_lane,
+            self.osc_markers,
             indent,
             m,
         );
@@ -363,7 +366,7 @@ impl Notes {
         let full = pianoroll::regions(
             ctx.rect,
             self.editor.ruler != Ruler::Off,
-            self.osc_lane,
+            self.osc_markers,
             ctx.indent,
             ctx.metrics,
         );
@@ -436,7 +439,7 @@ impl Notes {
         let nav = self.view(input.time);
         let axis = self.axis(input.metrics);
         let (fx, fy) = (at.0 as f32, at.1 as f32);
-        if self.osc_lane && r.osc.contains(at.0, at.1) {
+        if self.osc_markers && r.osc.contains(at.0, at.1) {
             // No marker index: the lane shows and does not write, so which
             // marker the pointer is nearest is nobody's question here.
             return Hit {
@@ -527,6 +530,22 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
+            "selected" => {
+                // The notes to mark, by the ids they carry -- or by index, on
+                // a roll that was handed none.
+                let named: Vec<u64> = parse::as_array_props("selected", v)
+                    .get("selected")
+                    .and_then(Value::as_array)
+                    .map(|list| list.iter().filter_map(Value::as_u64).collect())
+                    .unwrap_or_default();
+                self.selected = (0..self.notes.len())
+                    .filter(|&i| {
+                        let key = if self.ids { self.notes[i].id } else { i as u64 };
+                        named.contains(&key)
+                    })
+                    .collect();
+                true
+            }
             "curves" => {
                 self.rows = curves::parse_rows(&parse::as_array_props("curves", v));
                 self.rebuild_bodies();
@@ -545,7 +564,7 @@ impl Element for Notes {
             "min" => v.as_f64().map(|x| self.min = self.row_of(x)).is_some(),
             "max" => v.as_f64().map(|x| self.max = self.row_of(x)).is_some(),
             "snap" => v.as_f64().map(|x| self.snap = x.max(0.0)).is_some(),
-            "osc_lane" => truthy(v).map(|b| self.osc_lane = b).is_some(),
+            "osc_markers" => truthy(v).map(|b| self.osc_markers = b).is_some(),
             "midi_in" => truthy(v).map(|b| self.midi_in = b).is_some(),
             "label" => set_label(&mut self.label, v),
             "midi" => v
@@ -595,8 +614,8 @@ impl Element for Notes {
             let compass = (self.min, self.max);
             pianoroll::draw_out_of_range(d, r.grid, &nav, 0.0, &self.notes, axis, compass);
         }
-        if self.osc_lane {
-            pianoroll::draw_osc_lane(d, r.osc, &nav, 0.0, &self.osc);
+        if self.osc_markers {
+            pianoroll::draw_osc_markers(d, r.osc, &nav, 0.0, &self.osc);
         }
         self.draw_curves(d, ctx);
         if let Some(text) = &self.label {
@@ -638,6 +657,20 @@ impl Element for Notes {
             (
                 "osc".into(),
                 Value::from(notes::osc_json(&self.osc).to_string()),
+            ),
+            (
+                "selected".into(),
+                Value::from(
+                    Value::from(
+                        self.selected
+                            .iter()
+                            .filter_map(|&i| self.notes.get(i))
+                            .zip(self.selected.iter())
+                            .map(|(n, &i)| if self.ids { n.id } else { i as u64 })
+                            .collect::<Vec<_>>(),
+                    )
+                    .to_string(),
+                ),
             ),
         ]
     }
@@ -1415,7 +1448,7 @@ impl Notes {
         Claim::take().edge_scrolling()
     }
 
-    /// A press on the **markers lane**, which shows and does not write.
+    /// A press on the **OSC markers**, which show and do not write.
     ///
     /// A roll is the editor of things that have a **pitch**: that is what its
     /// grid is a grid of. The other items a timeline holds have none -- an OSC
@@ -1447,9 +1480,9 @@ impl Notes {
             return Claim::Take(Take {
                 events: Events::refused(
                     "osc",
-                    "the markers lane shows what a timeline holds besides notes, and does \
-                     not write it: a marker is the message it sends, and its address is \
-                     not something this lane can say",
+                    "the OSC markers show what a timeline holds besides notes, and do not \
+                     write it: a marker is the message it sends, and its address is \
+                     not something this strip can say",
                 ),
                 ..Take::default()
             });
@@ -1529,7 +1562,7 @@ fn set_ids(notes: &mut [Note], ids: Option<&Value>) -> bool {
 /// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, ...]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
-fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
+fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMarker> {
     let Some(Value::Array(items)) = props.get("osc") else {
         return Vec::new();
     };
@@ -1540,7 +1573,7 @@ fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
         .filter_map(|c| {
             let time = c[0].as_f64()?.max(0.0);
             let label = c[1].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-            Some(OscMark { time, label })
+            Some(OscMarker { time, label })
         })
         .collect()
 }
@@ -1557,6 +1590,37 @@ mod tests {
 
     fn roll(json: &str) -> Notes {
         from_props(&props(json))
+    }
+
+    /// **The notes a script marks are the ones a query names**, by the ids
+    /// the roll was handed -- the objects a script holds -- and by index on a
+    /// roll handed none.
+    #[test]
+    fn a_selection_is_set_and_queried_by_the_notes_ids() {
+        let selected = |r: &Notes| -> Value {
+            let (_, v) = r.info().into_iter().find(|(k, _)| k == "selected").unwrap();
+            serde_json::from_str(v.as_str().unwrap()).unwrap()
+        };
+        let mut r = roll(
+            r#"{"notes": [0, 1, 60, 100, 0, 1, 1, 62, 100, 0, 2, 1, 64, 100, 0],
+                "note_ids": [7, 8, 9]}"#,
+        );
+        assert_eq!(selected(&r), serde_json::json!([]));
+        assert!(r.set("selected", &Value::from("[9, 7]")));
+        assert_eq!(
+            selected(&r),
+            serde_json::json!([7, 9]),
+            "in the roll's order"
+        );
+        assert!(r.set("selected", &Value::from("[]")));
+        assert_eq!(selected(&r), serde_json::json!([]));
+        let mut bare = roll(r#"{"notes": [0, 1, 60, 100, 0, 1, 1, 62, 100, 0]}"#);
+        assert!(bare.set("selected", &Value::from("[1]")));
+        assert_eq!(
+            selected(&bare),
+            serde_json::json!([1]),
+            "by index without ids"
+        );
     }
 
     /// **A roll asks the window to follow the clock only while something is
@@ -1619,11 +1683,11 @@ mod tests {
     fn parses_defaults_and_the_wire_lists() {
         let r = roll("{}");
         assert_eq!((r.min, r.max), (PITCH_MIN, PITCH_MAX));
-        assert!(!r.osc_lane && !r.midi_in && !r.ids);
+        assert!(!r.osc_markers && !r.midi_in && !r.ids);
         assert_eq!(r.snap, 0.0);
         assert!(r.notes.is_empty() && r.osc.is_empty());
 
-        // The canonical quintuple form, and the OSC lane opening because
+        // The canonical quintuple form, and the OSC markers' strip opening because
         // there are markers.
         let r = roll(
             r#"{"notes":[0.0,100.0,60.0,90,2],"osc":[50.0,"hit"],
@@ -1639,7 +1703,7 @@ mod tests {
             (90, 2),
             "a float velocity is the same velocity"
         );
-        assert!(r.osc_lane, "markers open their lane");
+        assert!(r.osc_markers, "markers open their lane");
         assert!(r.midi_in);
         assert_eq!(r.snap, 25.0);
     }
@@ -2397,7 +2461,7 @@ mod tests {
         );
     }
 
-    /// **The markers lane shows and does not write.**
+    /// **The OSC markers show and do not write.**
     ///
     /// A roll is the editor of things that have a pitch; the other items a
     /// timeline holds have none and are drawn below it as markers. The lane
@@ -2412,9 +2476,9 @@ mod tests {
     /// Nothing tested this lane's editing at all, which is why the gesture
     /// could contradict a recorded decision and stay.
     #[test]
-    fn the_markers_lane_refuses_the_press_that_meant_to_edit_it() {
+    fn the_osc_markers_refuse_the_press_that_meant_to_edit_them() {
         let m = Metrics::default();
-        let mut r = roll(r#"{"notes":[0.0,100.0,60.0,100,0],"osc":[50.0,"/bar"],"osc_lane":1}"#);
+        let mut r = roll(r#"{"notes":[0.0,100.0,60.0,100,0],"osc":[50.0,"/bar"],"osc_markers":1}"#);
         assert_eq!(r.osc.len(), 1, "the marker it was given");
         let mut i = input(&m, rect(), axis(1000.0));
         let lane = r.regions(rect(), pianoroll::KEYBOARD_W, &m).osc;

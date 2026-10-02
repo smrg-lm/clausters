@@ -585,3 +585,50 @@ every bulk path already has, recorded in `docs/ipc.md`.
 | `clausters_ws_close` | — | `n/a` — as above |
 | `clausters_ws_last_error` | — | `n/a` — as above |
 | `clausters_core_abi_version` | — | `n/a` — the cdylib is loaded by a client built separately, so it answers a version handshake (`CORE_ABI_VERSION`); the wasm module ships inside the npm package and is rebuilt with it, so there are never two versions to reconcile |
+
+
+## The client surface: one capability, two shapes
+
+The tables above are the core's doors. This section is the other half of the
+same rule, one level up: **the two clients have one surface**, and where a
+language needs a different *shape* for the same capability, the difference is
+written here as `idiom` rather than discovered by reading both. A difference of
+*capability* is not idiom; it is a gap, and goes in a plan.
+
+The shapes repeat, so they are grouped by cause.
+
+**A mapping read with an operator in Python is read with methods in
+TypeScript**, which has no indexing operator for an object:
+
+- an event of a sequence (`SeqEvent`): Python `event["midinote"]`,
+  `event["midinote"] = 62`, `"midinote" in event` and iterating its keys;
+  TypeScript `event.get("midinote")`, `event.set("midinote", 62)`,
+  `event.has("midinote")` and `event.keys()`;
+- a live collection (`seq.events`, `seq.automation`, an event's
+  `automation`): Python `collection[i]`; TypeScript `collection.item(i)`.
+  Both iterate, both answer `len(...)` / `.length`.
+
+**A `with` block is a callback**: Python `with seq.history("humanize"): ...`;
+TypeScript `seq.history.entry("humanize", () => ...)`, the shape
+`session.use(...)` already has for `with session:`.
+
+**What asks the engine or the host is asynchronous in TypeScript**, so a
+Python property that reads becomes a method, a property that writes becomes a
+`set…` method, and a verb that sends answers a promise:
+
+- the transport (`Transport`): Python `t.playing`, `t.end`, `t.end = 4`,
+  `t.span = (0, 2)`; TypeScript `await t.playing()`, `await t.end()`,
+  `await t.setEnd(4)`, `await t.setSpan([0, 2])`. `t.span` and `t.looping`
+  read local state and stay properties in both;
+- what the hand marked (`NotesEditor`, `MultitrackEditor`): Python
+  `roll.selected`, `editor.selected`; TypeScript `await roll.selected()`,
+  `await editor.selected()`. An `AudioEditor`'s is its own state and stays a
+  property in both, and marking it moves the transport's span, so Python
+  `editor.select(segment)` is TypeScript `await editor.select(segment)`;
+- playing a sequence: Python `play(seq)` and `seq.play()` answer the
+  `Transport`; TypeScript answers a promise of it;
+- the default session's server: Python `main.server_or_boot()`; TypeScript
+  `await main.serverOrBoot()`.
+
+**Options are one object in TypeScript**, as everywhere in that client:
+Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.

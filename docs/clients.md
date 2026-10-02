@@ -139,10 +139,10 @@ like the timeline views.
 ### The editor views: a multitrack editor and a patcher
 
 The newest arc of the GUI is a **DAW-style multitrack editor** over the
-document (`crates/clausters-document`): a `track` is a lane, a `clip` is a
-placed rectangle spanning `[offset, offset + dur]` on a time axis the lanes of a
+document (`crates/clausters-document`): a `track` is a row, a `clip` is a
+placed rectangle spanning `[offset, offset + dur]` on a time axis the tracks of a
 window **share** (they zoom and pan as one navigation group, and the axis spans
-every lane). A clip's body is one of three, and the choice is the only thing
+every track). A clip's body is one of three, and the choice is the only thing
 that differs between them:
 
 - a **take** — a server buffer, a mapped file or a prebuilt peak cache, decimated
@@ -150,7 +150,7 @@ that differs between them:
   clip costs a screen's worth of columns and never rides the wire as JSON;
 - a **piano-roll** of note events (time and pitch);
 - an **automation curve** — the same `curve` element that stands on its own,
-  placed on the lane and editable in place, evaluated through the same
+  placed on the track and editable in place, evaluated through the same
   envelope-shape math the server's `EnvGen` plays.
 
 Everything is editable back: dragging a clip or its edge emits `"clip"`, dragging
@@ -170,11 +170,11 @@ documentation is the document chapter of each client's book.
 
 **Playing any of these views is one shared object**, not a per-view transport:
 `clausters.gui.PlayheadSync` keeps the views' line in step with what plays, and
-every view — a lane, a piano-roll, an engraved page — uses that one. It holds no
+every view — a multitrack, a piano-roll, an engraved page — uses that one. It holds no
 tempo: beats cross through the map of what plays (a timeline's own, the
 document's).
 What a view contributes is a single conversion (its cursor's unit: timeline
-samples for a lane, score milliseconds for a page); everything else is the same
+samples for a multitrack, score milliseconds for a page); everything else is the same
 two numbers the host already understands. A port keeps that shape: the anchor
 arithmetic is small, but splitting it per view is how a client ends up with three
 transports that disagree about where the sound ends.

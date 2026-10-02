@@ -137,6 +137,11 @@ export class Playback {
      * statement: `GuiHost.headClock` and the transport's own are the same
      * decision, and letting them disagree draws a line nobody put there.
      */
+    /** The transport it plays on, by number -- the crate's word for it. */
+    get transportId(): number {
+        return this.instance?.transport() ?? 0;
+    }
+
     attach(host: GuiHost | null, window: number | { readonly id: number }): void {
         if (host === null) return;
         this.transport.host = host;

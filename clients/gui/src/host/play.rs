@@ -245,6 +245,12 @@ impl Host {
         self.follow.looping
     }
 
+    /// Sets the loop switch, as a script's `/gui_set looping` does: what
+    /// `L` would have left, so the next press starts from it.
+    pub fn set_monitor_loop(&mut self, on: bool) {
+        self.follow.looping = on;
+    }
+
     /// **A `/transport_query.reply` heard**: a transition from rolling to
     /// stopped that no stop of this host's accounts for is a pass that ended
     /// without it -- the engine on its end mark, or another client -- so the

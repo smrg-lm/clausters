@@ -1,8 +1,8 @@
 //! The multitrack: what a multitrack editor edits, written down.
 //!
-//! Source, **region**, **lane**, **track**, **automation** -- the field's own
+//! Source, **region**, **take lane**, **track**, **automation** -- the field's own
 //! vocabulary, not this project's invention, and the layer that was missing.
-//! Until now a multitrack was a *projection* out of a general tree: a lane was
+//! Until now a multitrack was a *projection* out of a general tree: a row was
 //! what a view made of an aggregate, and the state a multitrack actually has --
 //! which track a thing is on, its order, its layer, its identity -- had nowhere
 //! to live but the widget tree, which is drawn, and drawing frees.
@@ -12,7 +12,7 @@
 //! REAPER splits the slot in time (`MediaItem`: position, length, fades) from
 //! what fills it (`MediaItem_Take`: the source, its offset, its playrate). We
 //! do not, and the reason is not the cost of the extra level: **a track holding
-//! several lanes is already the comping mechanism**, so the split would give a
+//! several take lanes is already the comping mechanism**, so the split would give a
 //! second one at a different level for the same job. REAPER 7 itself added
 //! fixed item lanes as the alternative to recording into takes, with an action
 //! named *convert takes to lanes*.
@@ -28,7 +28,7 @@
 //!
 //! # A region is not a clip
 //!
-//! `Region` is this model's word and **clip** is the picture's. A clip, a lane
+//! `Region` is this model's word and **clip** is the picture's. A clip, a track
 //! row, a waveform are what a host draws; a region is what an intent names.
 //! Zrythm made this same turn and merged the two, renaming `Region` to `Clip`;
 //! they are kept apart here, because the multitrack's defects came precisely
@@ -199,7 +199,7 @@ impl Content {
     }
 }
 
-/// One placed thing on a lane: a span of the timeline, and what fills it.
+/// One placed thing on a take lane: a span of the timeline, and what fills it.
 ///
 /// The span is the region's own -- position, length, fades, layer -- and it is
 /// measured in **seconds**, the multitrack's axis: where a thing sits is
@@ -220,7 +220,7 @@ pub struct Region {
     /// show part of what it holds, and trimming moves this without touching the
     /// source.
     pub length: Second,
-    /// Which of the overlapping regions on this lane draws and plays on top.
+    /// Which of the overlapping regions on this take lane draws and plays on top.
     ///
     /// Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
     /// stack needs an order that survives a save. Higher is nearer the front.
@@ -240,7 +240,7 @@ pub struct Region {
     ///
     /// The same [`Automation`] a track carries, in the other place it belongs,
     /// and the difference is only *where it hangs*: a track's curve runs the
-    /// length of the track and is drawn in a lane beside it, a region's runs the
+    /// length of the track and is drawn in a row beside it, a region's runs the
     /// length of the region and is drawn **inside** it. Both exist and neither
     /// stands in for the other -- a clip that has curves is a small track acting
     /// on itself alone.
@@ -304,14 +304,14 @@ impl Region {
 ///
 /// Ardour's structure and our name -- its `Playlist` is this, and *playlist* is
 /// a word every other program spends on something else. A track holds several
-/// and plays one, which is what comping is: record six passes into six lanes,
+/// and plays one, which is what comping is: record six passes into six take lanes,
 /// then take from each.
 ///
 /// The regions are kept in **position order**, so a written session is stable
 /// under re-saving and a diff of two saves is the edits rather than the
 /// iteration order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Lane {
+pub struct TakeLane {
     /// Its identity.
     pub id: NodeId,
     /// A label -- "take 3", "comp", "verse".
@@ -325,8 +325,8 @@ pub struct Lane {
     pub extra: Extra,
 }
 
-impl Lane {
-    /// An empty lane.
+impl TakeLane {
+    /// An empty take lane.
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
@@ -364,13 +364,23 @@ impl Lane {
     }
 }
 
-/// A curve over one parameter, in the arrangement's own time.
+/// A curve over one parameter, in the time of whatever holds it.
 ///
 /// The points are [`crate::Point`]s and this crate reads nothing about their
 /// shape, for the reason that module states. What is *here* rather than there
-/// is the placement: which parameter, whose track, and whether the lane is
-/// showing -- because a curve with no arrangement around it has no parameter to
-/// be about.
+/// is the placement: which parameter, and whether the curve is showing --
+/// because a curve with nothing around it has no parameter to be about.
+///
+/// **One type, four holders, and the holder says what a point's `at` is.** A
+/// [`Track`]'s curve is in seconds from the multitrack's start and a
+/// [`Region`]'s in seconds from the region's; an
+/// [`EventSequence`](crate::events::EventSequence)'s is in beats from the
+/// sequence's start and an event's in beats from the note's -- running past
+/// its end into the release. The target's vocabulary is the holder's too:
+/// `{"port": ...}` on a track, `{"control" | "bend" | "pressure" | "timbre" |
+/// "cc": ...}` with a `channel` in a sequence. What is the same in all four --
+/// the points, their editing, their drawing, their tabulation -- is why it is
+/// one type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
     /// Its identity.
@@ -384,10 +394,11 @@ pub struct Automation {
     /// belong to whoever wrote the def.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub target: Opaque,
-    /// The curve. `at` is in seconds, like every other placement here.
+    /// The curve, `at` in the unit and from the origin of whatever holds it
+    /// (see the type).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<crate::Point>,
-    /// Whether the lane is shown. **The view's**, and here rather than in the
+    /// Whether the curve is shown. **The view's**, and here rather than in the
     /// host because which curves a person had open is part of reopening the
     /// multitrack as they left it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -424,13 +435,13 @@ impl Automation {
     }
 }
 
-/// A row of the multitrack: several lanes, one of them playing, plus the
+/// A row of the multitrack: several take lanes, one of them playing, plus the
 /// curves over it and whatever the client says it is.
 ///
 /// **What a track *is* -- an instrument, a bus, a folder -- is not here.** That
 /// is `config`, carried and never interpreted, for the reason a leaf is opaque:
 /// a def is code in the language of whoever wrote it. What the document owns is
-/// the structure: which lanes, which one plays, what is placed on them.
+/// the structure: which take lanes, which one plays, what is placed on them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     /// Its identity.
@@ -438,15 +449,15 @@ pub struct Track {
     /// What it is called.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Its contents. A track always has at least one lane; the several are what
+    /// Its contents. A track always has at least one take lane; the several are what
     /// comping is made of.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub lanes: Vec<Lane>,
-    /// Which lane plays, as an index into [`Track::lanes`].
+    pub take_lanes: Vec<TakeLane>,
+    /// Which lane plays, as an index into [`Track::take_lanes`].
     ///
     /// An index and not an id because it is a *choice among these*, and a
     /// choice that names something absent is a state the format should not be
-    /// able to express. [`Track::active_lane`] answers `None` when it does
+    /// able to express. [`Track::active_take_lane`] answers `None` when it does
     /// anyway, rather than panicking on a file somebody hand-edited.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub active: usize,
@@ -495,13 +506,13 @@ fn is_zero_usize(n: &usize) -> bool {
 }
 
 impl Track {
-    /// A track with one empty lane, which is the smallest one that means
+    /// A track with one empty take lane, which is the smallest one that means
     /// anything.
     pub fn new(id: NodeId, lane: NodeId) -> Self {
         Self {
             id,
             name: None,
-            lanes: vec![Lane::new(lane)],
+            take_lanes: vec![TakeLane::new(lane)],
             active: 0,
             automation: Vec::new(),
             muted: false,
@@ -519,24 +530,24 @@ impl Track {
         self
     }
 
-    /// The lane that plays, or `None` when [`Track::active`] names one that is
+    /// The take lane that plays, or `None` when [`Track::active`] names one that is
     /// not there.
-    pub fn active_lane(&self) -> Option<&Lane> {
-        self.lanes.get(self.active)
+    pub fn active_take_lane(&self) -> Option<&TakeLane> {
+        self.take_lanes.get(self.active)
     }
 
-    /// The lane that plays, to be edited.
-    pub fn active_lane_mut(&mut self) -> Option<&mut Lane> {
-        self.lanes.get_mut(self.active)
+    /// The take lane that plays, to be edited.
+    pub fn active_take_lane_mut(&mut self) -> Option<&mut TakeLane> {
+        self.take_lanes.get_mut(self.active)
     }
 
-    /// Where the track's last region ends, across **every** lane -- what it
+    /// Where the track's last region ends, across **every** take lane -- what it
     /// spans, not what it plays, since an alternate take is still part of the
     /// multitrack.
     pub fn end(&self) -> Second {
-        self.lanes
+        self.take_lanes
             .iter()
-            .map(Lane::end)
+            .map(TakeLane::end)
             .fold(Second::ZERO, Second::max)
     }
 }
@@ -762,29 +773,31 @@ impl Multitrack {
         Self::default()
     }
 
-    /// The lane with this id, wherever it is, and the track that holds it.
-    pub fn lane(&self, id: NodeId) -> Option<(&Track, &Lane)> {
+    /// The take lane with this id, wherever it is, and the track that holds it.
+    pub fn take_lane(&self, id: NodeId) -> Option<(&Track, &TakeLane)> {
         self.tracks
             .iter()
-            .find_map(|t| t.lanes.iter().find(|l| l.id == id).map(|l| (t, l)))
+            .find_map(|t| t.take_lanes.iter().find(|l| l.id == id).map(|l| (t, l)))
     }
 
     /// The same, to be edited.
-    pub fn lane_mut(&mut self, id: NodeId) -> Option<&mut Lane> {
+    pub fn take_lane_mut(&mut self, id: NodeId) -> Option<&mut TakeLane> {
         self.tracks
             .iter_mut()
-            .flat_map(|t| t.lanes.iter_mut())
+            .flat_map(|t| t.take_lanes.iter_mut())
             .find(|l| l.id == id)
     }
 
-    /// The region with this id, and where it sits: which track, which lane.
+    /// The region with this id, and where it sits: which track, which take lane.
     ///
     /// A region names one appearance, so this answers with the address an
     /// intent needs rather than only the object.
-    pub fn locate(&self, id: NodeId) -> Option<(&Track, &Lane, &Region)> {
-        self.tracks
-            .iter()
-            .find_map(|t| t.lanes.iter().find_map(|l| l.region(id).map(|r| (t, l, r))))
+    pub fn locate(&self, id: NodeId) -> Option<(&Track, &TakeLane, &Region)> {
+        self.tracks.iter().find_map(|t| {
+            t.take_lanes
+                .iter()
+                .find_map(|l| l.region(id).map(|r| (t, l, r)))
+        })
     }
 
     /// Every automation curve in the multitrack -- a track's, and the ones a region
@@ -796,7 +809,7 @@ impl Multitrack {
     pub fn automations(&self) -> impl Iterator<Item = &Automation> {
         self.tracks.iter().flat_map(|t| {
             t.automation.iter().chain(
-                t.lanes
+                t.take_lanes
                     .iter()
                     .flat_map(|l| l.regions.iter().flat_map(|r| r.automation.iter())),
             )
@@ -814,7 +827,7 @@ impl Multitrack {
             if let Some(found) = t.automation.iter_mut().find(|a| a.id == id) {
                 return Some(found);
             }
-            t.lanes
+            t.take_lanes
                 .iter_mut()
                 .flat_map(|l| l.regions.iter_mut())
                 .flat_map(|r| r.automation.iter_mut())
@@ -832,7 +845,7 @@ impl Multitrack {
         self.tracks.iter_mut().find(|t| t.id == id)
     }
 
-    /// Where the last region ends, across every track and every lane -- how long
+    /// Where the last region ends, across every track and every take lane -- how long
     /// the multitrack is.
     pub fn end(&self) -> Second {
         self.tracks
@@ -871,14 +884,14 @@ impl Multitrack {
         self.meter.insert(at, meter);
     }
 
-    /// Every region in the multitrack, in track then lane then position
-    /// order -- **every** lane, not only the ones that play, because an
+    /// Every region in the multitrack, in track then take lane then position
+    /// order -- **every** take lane, not only the ones that play, because an
     /// alternate take still names the source it plays and a save that forgot
     /// it would reopen missing the take nobody chose yet.
     pub fn regions(&self) -> impl Iterator<Item = &Region> {
         self.tracks
             .iter()
-            .flat_map(|t| t.lanes.iter())
+            .flat_map(|t| t.take_lanes.iter())
             .flat_map(|l| l.regions.iter())
     }
 
@@ -936,7 +949,7 @@ mod tests {
     fn one_source_under_six_regions_is_referenced_and_not_copied() {
         // The oldest open decision, as a test: six placements, six identities,
         // one source.
-        let mut lane = Lane::new(NodeId(10));
+        let mut lane = TakeLane::new(NodeId(10));
         for i in 0..6 {
             lane.place(region(100 + i, i as f64 * 4.0, 4.0));
         }
@@ -960,7 +973,7 @@ mod tests {
 
     #[test]
     fn placing_keeps_a_lane_in_position_order() {
-        let mut lane = Lane::new(NodeId(10));
+        let mut lane = TakeLane::new(NodeId(10));
         lane.place(region(3, 8.0, 2.0));
         lane.place(region(1, 0.0, 2.0));
         lane.place(region(2, 4.0, 2.0));
@@ -972,14 +985,16 @@ mod tests {
     #[test]
     fn a_track_spans_every_lane_and_plays_one() {
         let mut track = Track::new(NodeId(1), NodeId(10));
-        track.lanes.push(Lane::new(NodeId(11)).named("take 2"));
         track
-            .active_lane_mut()
+            .take_lanes
+            .push(TakeLane::new(NodeId(11)).named("take 2"));
+        track
+            .active_take_lane_mut()
             .unwrap()
             .place(region(100, 0.0, 4.0));
-        track.lanes[1].place(region(200, 0.0, 16.0));
-        assert_eq!(track.active_lane().unwrap().id, NodeId(10));
-        assert_eq!(track.active_lane().unwrap().end(), Second(4.0));
+        track.take_lanes[1].place(region(200, 0.0, 16.0));
+        assert_eq!(track.active_take_lane().unwrap().id, NodeId(10));
+        assert_eq!(track.active_take_lane().unwrap().end(), Second(4.0));
         // An alternate take is still part of the multitrack.
         assert_eq!(track.end(), Second(16.0));
     }
@@ -988,7 +1003,7 @@ mod tests {
     fn an_active_lane_that_is_not_there_answers_nothing() {
         let mut track = Track::new(NodeId(1), NodeId(10));
         track.active = 7;
-        assert!(track.active_lane().is_none());
+        assert!(track.active_take_lane().is_none());
     }
 
     #[test]
@@ -1114,9 +1129,13 @@ mod tests {
         a.set_meter(Meter::at(Beat(0.0), 3, 4));
         a.loop_span = Some(Span::new(Second(0.0), Second(12.0)));
         let mut one = Track::new(NodeId(1), NodeId(10)).named("drums");
-        one.active_lane_mut().unwrap().place(region(100, 0.0, 4.0));
+        one.active_take_lane_mut()
+            .unwrap()
+            .place(region(100, 0.0, 4.0));
         let mut two = Track::new(NodeId(2), NodeId(20)).named("bass");
-        two.active_lane_mut().unwrap().place(region(200, 8.0, 24.0));
+        two.active_take_lane_mut()
+            .unwrap()
+            .place(region(200, 8.0, 24.0));
         a.tracks.push(one);
         a.tracks.push(two);
         assert_eq!(a.end(), Second(32.0));

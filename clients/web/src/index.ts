@@ -176,7 +176,8 @@ export * as seq from "./seq/index.ts";
 // them; the enumerative half (the value patterns) stays behind `seq`.
 export { Event, rest } from "./seq/event.ts";
 export { Timeline } from "./seq/timeline.ts";
-export { EventSequence } from "./seq/sequence.ts";
+export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./seq/sequence.ts";
+export { UndoHistory } from "./history.ts";
 export * as data from "./data/index.ts";
 // A client's id spaces on a server: the type `Server.ids` answers with.
 export { IdSpaces, loadCore } from "./base/core.ts";
@@ -187,7 +188,7 @@ export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
 export { OscNrtInterface, OscScore, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
-export { Server } from "./defs/server/index.ts";
+export { Server, Transport } from "./defs/server/index.ts";
 // The records the transport surface reports, for the same reason: a public
 // signature that names a type the reference cannot reach is a broken page.
 export type { TransportGrid, TransportState } from "./defs/server/index.ts";
@@ -240,8 +241,8 @@ export {
     Content,
     Fade,
     FrozenSource,
-    Lane,
-    LaneView,
+    TakeLane,
+    TakeLaneView,
     Marker,
     Meter,
     Region,

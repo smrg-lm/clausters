@@ -1257,7 +1257,8 @@ mod tests {
     /// nothing to do.
     #[test]
     fn an_instance_remembers_across_two_calls() {
-        let multitrack = br#"{"version":1,"tracks":[{"id":1,"lanes":[{"id":2,"regions":[]}]}]}"#;
+        let multitrack =
+            br#"{"version":1,"tracks":[{"id":1,"take_lanes":[{"id":2,"regions":[]}]}]}"#;
         let sources = b"{}";
         let instance = clausters_editing_instance_new();
         let read = |cap: usize| {

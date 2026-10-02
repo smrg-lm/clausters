@@ -836,6 +836,14 @@ opened it.
   in both clients. It already has a history — `edit(curve)` joins the context as an
   external member — so what an application would add is one implementation in
   Rust and chrome of its own. Whether that is worth a milestone is the decision.
+  **What goes when it becomes one** *(noted 2026-10-02, at the user's request,
+  when the three applications took `selected` and a transport's `span`)*: the
+  `selection` dict `PointsEditor` keeps in both clients (`start`, `len`, a
+  `value` band), and its override of `_observe` / `observe` that fills it —
+  the last of the old sweep handling, moved off the base `Editor` so the
+  applications carry none. In its place the curve gets the same two words:
+  `selected` as its points, and a time range wherever a curve keeps one — it
+  has no transport, so that is the question this milestone answers.
 
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
@@ -1369,6 +1377,19 @@ Every entry carries a checkbox.
   one take per editor, so what tabs or a list of open files look like, and
   whether the files share one position or each locates to its own cursor on
   a switch, is open.
+
+- ⬜ **A roll with no sequence: whether the bare `pianoroll` stays** *(the
+  user, 2026-10-01, deleting the bare `multitrack` builder in
+  `clients/python/PLAN.md`, `C57.0`; one question of `X6`)*. Both clients
+  still build a `pianoroll` widget by hand, over no `EventSequence`: in
+  `editors/pianoroll` and `editors/pianoroll_midi`, and in a column of
+  `panels/gestures`. The two editor examples predate the notes editor (`X3`)
+  and teach what it no longer is — their docstring had the OSC markers
+  edited by hand, which they no longer are (`C57.0` names them `OscMarker`) — and `edit_notes` and
+  `edit_midi_file` show the same through the application. Open: whether a
+  roll drawn with no sequence has any use (a multitrack's had none: an edit
+  has nowhere to live), and so whether the builder and those two examples go,
+  as the bare `multitrack` did, or stay as a view.
 
 ## Found by use: the running list of fixes
 

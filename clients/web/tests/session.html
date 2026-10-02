@@ -168,6 +168,15 @@
           ]));
           return () => head.stop();
         });
+        await heard("EventSequence", async () => {
+          // Concrete events, played on the server: a lane on its notes
+          // transport, and the Transport it is on answered.
+          const transport = await play(new seq.EventSequence([
+            [0.0, new Event({ degree: 2, dur: 0.3, amp: 0.2, instrument: "session_voice" })],
+            [0.3, new Event({ degree: 5, dur: 0.3, amp: 0.2, instrument: "session_voice" })],
+          ]));
+          return () => transport.stop();
+        });
         await heard("Curve", async () => {
           // A curve sweeping a drone's freq from inside the node: one `envGen`
           // over a `Bpf`, so there is one node and nothing to map.

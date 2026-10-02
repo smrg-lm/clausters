@@ -21,7 +21,7 @@
  *   structure, and a view that computed its own would be a second answer.
  *
  * A multitrack application is this class plus what only a tree has: a held document,
- * several views of one multitrack, the lanes and clips, and a transport.
+ * several views of one multitrack, the tracks and boxes, and a transport.
  * **Transport and render are not here** -- a bare structure at most sounds; it
  * has no multitrack to move over.
  *
@@ -34,13 +34,13 @@ import {
     viewNotAnEdit,
 } from "../../core/clausters_core_web.js";
 import { TempoMap } from "../../base/time.ts";
-import type { Intent, Selection } from "../../document.ts";
+import type { Intent } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue } from "../host.ts";
-import { Editing, FIRST_VERSION } from "./context.ts";
-import type { RecordingLeg } from "./context.ts";
-import type { Adopting, Applier } from "./context.ts";
+import { Editing, FIRST_VERSION } from "../../history.ts";
+import type { RecordingLeg } from "../../history.ts";
+import type { Adopting, Applier } from "../../history.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
 import { Echo } from "./echo.ts";
@@ -165,20 +165,13 @@ export class Editor<S = unknown> implements Adopting {
     domain: Domain<S> | null;
     view: View<S> | null;
     /**
-     * The last selection swept in this editor's windows. It is a plain value and
-     * not part of what is edited, which is the crate's own line: a selection is
-     * screen state, never persisted and never logged.
-     */
-    selection: Selection | Record<string, never> = {};
-    /**
      * **Where the reader is**, in this editor's own units (beats for a timeline,
      * seconds for a multitrack, a take or a curve) --
      * the position cursor a click placed, and `null` until one
      * has been. It is where a playback starts and where a paste lands, which is
      * why it is worth keeping: the playhead is where the *music* is and moves on
      * its own, and an anchor that moved on its own would not be an anchor.
-     * Screen state like the selection, never logged and never part of what is
-     * edited.
+     * Screen state, never logged and never part of what is edited.
      */
     cursor: number | null = null;
     /**
@@ -305,7 +298,7 @@ export class Editor<S = unknown> implements Adopting {
      * Timeline samples as a position in the structure's own units: beats for a
      * structure with a tempo map, seconds for one without (a take, a curve).
      */
-    private position(units: number): number {
+    protected position(units: number): number {
         return this.tempoMap() === null ? this.unitsToSecs(units) : this.unitsToBeats(units);
     }
 
@@ -777,9 +770,9 @@ export class Editor<S = unknown> implements Adopting {
      * A tag that says what the view is looking at rather than what changed.
      *
      * Nothing here reaches a history: the crate is explicit that a selection, a
-     * zoom and which layer the hand is on are never part of what is edited. The
-     * selection is still kept **typed**, because it is the value an operation is
-     * handed.
+     * zoom and which layer the hand is on are never part of what is edited.
+     * What the hand marked is each editor's to keep, in its structure's own
+     * type, so a sweep is nothing here.
      */
     protected observe(wid: number, tag: string, values: readonly unknown[]): boolean {
         if (tag === "locate" && values.length > 0) {
@@ -797,40 +790,8 @@ export class Editor<S = unknown> implements Adopting {
             this.onLocate?.(this.cursor);
             return false;
         }
-        if (tag === "selection") {
-            const selection: Record<string, unknown> = {
-                start: values.length > 0 ? this.position(Number(values[0])) : 0.0,
-                len: values.length > 1 ? this.position(Number(values[1])) : 0.0,
-            };
-            if (values.length >= 4) {
-                // The sweep restricted the value axis too. Carried **as it
-                // came**: it is in the structure's own domain, and no unit of
-                // this editor's applies to it.
-                selection.value = { min: Number(values[2]), max: Number(values[3]) };
-            }
-            this.selection = selection as unknown as Selection;
-            this.selected();
-        }
         return false;
     }
-
-    /**
-     * This editor's selection moved.
-     *
-     * Nothing on its own -- a structure's selection is that structure's. A view
-     * **composed** inside a bigger editor hands it up instead, because the range
-     * an operation is given must be the same value whichever of the multitrack's
-     * windows it was swept in.
-     */
-    protected selected(): void {
-        this.composedIn?.adoptSelection(this as Editor);
-    }
-
-    /**
-     * A view composed inside this one swept a marquee. Nothing by default;
-     * a view over an arrangement names what it is a selection *of*.
-     */
-    adoptSelection(_editor: Editor): void {}
 
     /**
      * The position cursor was placed at `at`, in the structure's own units, here
@@ -855,7 +816,8 @@ export class Editor<S = unknown> implements Adopting {
     protected edit(payload: unknown, label: string, coalesce = false): boolean {
         if (this.domain === null) return false;
         const before = this.domain.current(this.structure, payload);
-        if (!this.domain.project(this.structure, payload)) return false;
+        const domain = this.domain;
+        if (!this.editing.applying(() => domain.project(this.structure, payload))) return false;
         log.debug("record [%s] %s", label, (payload as { intent?: unknown }).intent);
         if (before !== null && before !== undefined) {
             this.editing.record(
@@ -892,7 +854,8 @@ export class Editor<S = unknown> implements Adopting {
         let moved = false;
         for (const payload of payloads) {
             const before = this.domain.current(this.structure, payload);
-            if (!this.domain.project(this.structure, payload)) continue;
+            const domain = this.domain;
+            if (!this.editing.applying(() => domain.project(this.structure, payload))) continue;
             moved = true;
             if (before !== null && before !== undefined) {
                 legs.push({
