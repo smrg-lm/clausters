@@ -44,7 +44,7 @@ use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::edit::MultitrackIntent;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
 use clausters_document::multitrack::{Multitrack, picture};
-use clausters_document::{NodeId, Opaque, Second, SourceId};
+use clausters_document::{NodeId, Second, SourceId};
 
 use crate::intake::{Intake, groups, number, text};
 
@@ -490,19 +490,12 @@ pub fn points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         .chain(&picture::layers(multitrack))
     {
         for point in &curve.points {
-            let data = point.data.0.as_object();
-            let read = |key: &str, default: f64| {
-                data.and_then(|d| d.get(key))
-                    .and_then(Value::as_f64)
-                    .unwrap_or(default)
-            };
-            out.extend([
-                json!(curve.automation.0.to_string()),
-                json!(look.frame_at(point.at)),
-                json!(point.value),
-                json!(read("shape", 1.0)),
-                json!(read("curve", 0.0)),
-            ]);
+            out.push(json!(curve.automation.0.to_string()));
+            out.extend(
+                crate::points::quad(look.frame_at(point.at), point)
+                    .into_iter()
+                    .map(|n| json!(n)),
+            );
         }
     }
     out
@@ -844,17 +837,12 @@ fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
             order.push(name.clone());
             Vec::new()
         });
-        points.push(clausters_document::points::Point {
-            at: look.secs_at(number(&group[1])),
-            value: number(&group[2]),
-            // **What a shape is stays the client's**: the document carries a
-            // point's data and never reads it, which is what keeps an undo from
-            // putting a bent curve back straight.
-            data: Opaque(json!({
-                "shape": number(&group[3]) as i64,
-                "curve": number(&group[4]),
-            })),
-        });
+        points.push(crate::points::point(
+            look.secs_at(number(&group[1])),
+            number(&group[2]),
+            number(&group[3]),
+            number(&group[4]),
+        ));
     }
     order
         .into_iter()

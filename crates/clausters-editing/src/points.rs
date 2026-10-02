@@ -23,6 +23,8 @@
 use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::curve_axis;
+use clausters_document::Opaque;
+use clausters_document::points::Point;
 
 use crate::intake::Intake;
 
@@ -76,28 +78,65 @@ pub fn props_json(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> String
     Value::Object(props(points, kept, held)).to_string()
 }
 
+/// **A break point as the wire carries it**: where it sits -- `at`, already in
+/// the units the view counts -- what it says there, and the shape and the
+/// curvature of the segment it starts, read off the point's `data`. A point
+/// that says nothing about its segment is linear, which is what a curve drawn
+/// somewhere that has no shapes means.
+///
+/// The one reading of a point's `data` every curve on screen goes through:
+/// a curve editor's, a multitrack's automation and a roll's.
+pub fn quad(at: f64, point: &Point) -> [f64; QUAD] {
+    let data = point.data.0.as_object();
+    let read = |key: &str, default: f64| {
+        data.and_then(|d| d.get(key))
+            .and_then(Value::as_f64)
+            .unwrap_or(default)
+    };
+    [at, point.value, read("shape", 1.0), read("curve", 0.0)]
+}
+
+/// **A break point out of the wire's numbers** -- the other direction of
+/// [`quad`], with `at` already taken back to the curve's own time.
+///
+/// **What a shape is stays the client's.** The document carries a point's
+/// `data` and never reads it, which is what keeps an undo from putting a bent
+/// curve back straight; this only says where on the point it rides.
+pub fn point(at: f64, value: f64, shape: f64, curve: f64) -> Point {
+    Point {
+        at,
+        value,
+        data: Opaque(json!({ "shape": shape as i64, "curve": curve })),
+    }
+}
+
+/// Whether two curves say the same thing, as a widget that holds them as `f32`
+/// hands them back: a report of an untouched curve is not an edit of it.
+pub fn same(a: &[Point], b: &[Point]) -> bool {
+    let close = |x: f64, y: f64| (x - y).abs() <= 1e-4 * x.abs().max(1.0);
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(p, q)| {
+            quad(p.at, p)
+                .iter()
+                .zip(quad(q.at, q))
+                .all(|(x, y)| close(*x, y))
+        })
+}
+
 /// The curve as the `points` vocabulary holds it, out of the flat `t v shape
 /// curve` quads the widget and an `Env` both speak.
-///
-/// **What a shape is stays the client's.** The crate carries a point's `data`
-/// and never reads it, which is what keeps an undo from putting a bent curve
-/// back straight; this only says where on the point it rides.
-///
-/// The other direction -- the vocabulary's points back as quads -- is a client's,
-/// because what it crosses into is that client's own envelope object.
-pub fn state(points: &[f64]) -> Vec<Value> {
+pub fn state(points: &[f64]) -> Vec<Point> {
     points
         .as_chunks::<QUAD>()
         .0
         .iter()
-        .map(|quad| {
-            json!({
-                "at": quad[0],
-                "value": quad[1],
-                "data": { "shape": quad[2] as i64, "curve": quad[3] },
-            })
-        })
+        .map(|q| point(q[0], q[1], q[2], q[3]))
         .collect()
+}
+
+/// The other direction: a curve as the flat quads, on its own time.
+pub fn quads(points: &[Point]) -> Vec<f64> {
+    points.iter().flat_map(|p| quad(p.at, p)).collect()
 }
 
 /// **What a gesture over a curve means.**

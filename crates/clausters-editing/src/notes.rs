@@ -262,18 +262,13 @@ fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
 
 /// A point as the wire carries it, `at` already in view units.
 fn point_values(name: &str, at: f64, point: &clausters_document::Point) -> [Value; 5] {
-    let data = point.data.0.as_object();
-    let read = |key: &str, default: f64| {
-        data.and_then(|d| d.get(key))
-            .and_then(Value::as_f64)
-            .unwrap_or(default)
-    };
+    let [at, value, shape, curve] = crate::points::quad(at, point);
     [
         json!(name),
         json!(at),
-        json!(point.value),
-        json!(read("shape", 1.0)),
-        json!(read("curve", 0.0)),
+        json!(value),
+        json!(shape),
+        json!(curve),
     ]
 }
 
@@ -488,11 +483,7 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
             .filter_map(|p| {
                 let p = p.as_array()?;
                 let f = |i: usize| p.get(i).and_then(Value::as_f64).unwrap_or(0.0);
-                Some(clausters_document::Point {
-                    at: beat_at(f(0)),
-                    value: f(1),
-                    data: Opaque(json!({"shape": f(2), "curve": f(3)})),
-                })
+                Some(crate::points::point(beat_at(f(0)), f(1), f(2), f(3)))
             })
             .collect()
     };
@@ -500,7 +491,7 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
     let mut intents = Vec::new();
     for curve in &mut after.automation {
         let points = points_of(&curve.id.0.to_string(), &|units| axis.beat(units));
-        if !same_points(&curve.points, &points) {
+        if !crate::points::same(&curve.points, &points) {
             curve.points = points;
             intents.push(EventsIntent::Automation {
                 automation: curve.clone(),
@@ -514,7 +505,7 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
             let points = points_of(&curve.id.0.to_string(), &|units| {
                 axis.beat(from + units) - start
             });
-            if !same_points(&curve.points, &points) {
+            if !crate::points::same(&curve.points, &points) {
                 curve.points = points;
                 intents.push(EventsIntent::EventAutomation {
                     id: event.id,
@@ -534,21 +525,6 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
         serde_json::to_value(&intent).unwrap_or(Value::Null),
         "draw a curve",
     )
-}
-
-/// Whether two curves' points say the same thing, as a roll that holds them
-/// as `f32` hands them back.
-fn same_points(a: &[clausters_document::Point], b: &[clausters_document::Point]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(p, q)| {
-            let shape = |p: &clausters_document::Point, key: &str, default: f64| {
-                p.data.0.get(key).and_then(Value::as_f64).unwrap_or(default)
-            };
-            same(p.at, q.at)
-                && same(p.value, q.value)
-                && same(shape(p, "shape", 1.0), shape(q, "shape", 1.0))
-                && same(shape(p, "curve", 0.0), shape(q, "curve", 0.0))
-        })
 }
 
 /// The sequence after an `osc` gesture -- the notes untouched and the markers
