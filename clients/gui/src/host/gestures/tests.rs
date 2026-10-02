@@ -1583,6 +1583,24 @@ fn alt_sweeps_a_range_over_a_roll_and_an_alt_click_toggles_a_note() {
     );
 }
 
+/// **A curve standing on its own asks for a frame per pointer move**, since
+/// it draws a readout of what the pointer is over; a window of controls asks
+/// for none.
+#[test]
+fn a_window_with_a_standalone_curve_redraws_on_hover() {
+    let host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":70,"type":"curve","min":0.0,"max":1.0,
+             "points":[0.0,0.0,1,0.0, 1.0,1.0,1,0.0]}]}"#,
+    );
+    assert!(host.window_def(1).unwrap().has_hover_readout());
+    let quiet = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":71,"type":"button","label":"play"}]}"#,
+    );
+    assert!(!quiet.window_def(1).unwrap().has_hover_readout());
+}
+
 /// The multi-note selection of a roll -- view state no query reports, reached
 /// through the element's own `as_any` door, which is what it is for.
 fn selected_notes(host: &Host, id: i32) -> Vec<usize> {

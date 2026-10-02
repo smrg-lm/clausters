@@ -58,13 +58,18 @@ impl Widget {
     }
 
     /// Whether this tree contains a widget whose overlay follows the pointer --
-    /// the cursor readout a signal element over *stored* samples draws, and the
-    /// timeline containers'. The windowed front asks on cursor motion: such a
-    /// window needs a frame per move (a fully static one, like a plot's, has no
-    /// other frame source; a live one is already redrawn every tick).
+    /// the cursor readout a signal element over *stored* samples draws, the
+    /// timeline containers', and any element that says it draws one
+    /// ([`Element::hover_readout`], a curve standing on its own). The windowed
+    /// front asks on cursor motion: such a window needs a frame per move (a
+    /// fully static one, like a plot's, has no other frame source; a live one
+    /// is already redrawn every tick).
     pub fn has_hover_readout(&self) -> bool {
-        self.descendants()
-            .any(|w| w.is_timeline() || w.signal().is_some_and(|el| !el.is_live()))
+        self.descendants().any(|w| {
+            w.is_timeline()
+                || w.signal().is_some_and(|el| !el.is_live())
+                || w.kind.as_element().is_some_and(Element::hover_readout)
+        })
     }
 }
 

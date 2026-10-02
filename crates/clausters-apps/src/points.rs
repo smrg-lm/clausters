@@ -168,13 +168,13 @@ pub fn window(
         "title": title,
         "w": size.0,
         "h": size.1,
-        "flow": "row",
-        "children": [Value::Object(picture), column(ids.shape)],
+        "flow": "col",
+        "children": [Value::Object(picture), controls(ids.shape)],
     })
 }
 
 /// **The window's widget ids**, which are the caller's: the curve's, and the
-/// shape menu's in the column beside it.
+/// shape menu's in the row under it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ids {
     /// The curve.
@@ -183,9 +183,8 @@ pub struct Ids {
     pub shape: Option<i32>,
 }
 
-/// How wide the column beside the curve is: wide enough that a control in it
-/// reads as a control and not as a strip.
-pub const COLUMN_W: f64 = 220.0;
+/// How tall the row of controls under the curve is.
+pub const CONTROLS_H: f64 = 40.0;
 
 /// **The shapes a segment can take**, in the order of their numbers, so a
 /// menu's index is the shape: what an envelope's segments are written with.
@@ -195,13 +194,13 @@ pub fn shapes() -> Vec<&'static str> {
         .collect()
 }
 
-/// **The column beside the curve**: the menu that sets the selected
-/// segment's shape. A script's own widgets are the client's to append to it.
-fn column(shape: Option<i32>) -> Value {
+/// **The row of controls under the curve**: the menu that sets the selected
+/// segment's shape, side by side with whatever the client appends to it, the
+/// lot in a quarter of the width and the rest left empty.
+fn controls(shape: Option<i32>) -> Value {
     let mut menu = json!({
         "type": "menu",
         "name": "shape",
-        "label": "segment shape",
         "options": shapes(),
         "index": clausters_core::envshape::SHAPE_LINEAR,
     });
@@ -210,10 +209,13 @@ fn column(shape: Option<i32>) -> Value {
     }
     json!({
         "type": "layout",
-        "flow": "col",
-        "w": COLUMN_W,
+        "flow": "row",
+        "h": CONTROLS_H,
         "gap": 6.0,
-        "children": [menu],
+        "children": [
+            {"type": "layout", "flow": "row", "weight": 1.0, "gap": 6.0, "children": [menu]},
+            {"type": "layout", "weight": 3.0},
+        ],
     })
 }
 

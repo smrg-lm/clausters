@@ -928,17 +928,22 @@ opened it.
   **And then, by use** *(the user, the same day, over `edit_env`)*: a
   segment's shape is set as an `Env`'s is, by selecting the segment and
   choosing it from the menu that moves to a column beside the curve; the
-  readout is a hover's, not a click's or an edit's, and sits top right; the
+  readout follows the hover and the edit, and sits top right; the
   selected segment is heavier and in another color, since the lit one was the
   trace's own green; the hint label the example appended goes, since an
   application carries none; and the script's controls stand in that column,
   wide enough to read as controls. Done: the host's `curve` selects a segment
   on a press (`"segment"` event, `segment` prop) and draws it in the
   selection's color, the lit one in the accent's quiet form; the application's
-  window is a row of the curve and a column (`points::COLUMN_W`) holding the
-  shape menu over `envshape::shape_name`'s names, into which both clients
-  append `extra`; a choice there is an edit through the same path a gesture
-  takes. The web `EditOptions` gained the `extra` the Python `edit` already
+  window is the curve over a row of controls holding the shape menu over
+  `envshape::shape_name`'s names, into which both clients append `extra` --
+  first a column beside the curve, then, by the user, the row under it, the
+  controls side by side in a quarter of the width (how a window's controls
+  are laid out is widget chrome, a later milestone's); a choice there is an
+  edit through the same path a gesture takes. The curve's readout redraws on
+  hover -- a window asked for a frame per pointer move only for timelines and
+  signals, never for an element that said it draws a readout -- and reads
+  while a point or a segment is being edited too. The web `EditOptions` gained the `extra` the Python `edit` already
   took and the example already passed.
 
 - ⬜ **X5 - The score editor.** The third of the three applications over the

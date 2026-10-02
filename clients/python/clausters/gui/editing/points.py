@@ -51,7 +51,8 @@ class PointsDomain(Domain):
 
 
 class PointsView(View):
-    """One ``curve`` widget and a column beside it, composed by the crate."""
+    """One ``curve`` widget and a row of controls under it, composed by the
+    crate."""
 
     def build(self, editor) -> dict:
         wid = self.widget(editor, "curve", editor.structure)
@@ -60,10 +61,10 @@ class PointsView(View):
         editor._sync_core()
         tree = editor._call("window", widget=wid, shape=shape)
         # **A script's own widgets are its objects**, so they are appended here
-        # rather than composed in the crate -- into the column beside the
-        # curve, under the segment's shape menu.
-        column = tree["children"][1]
-        column["children"] = [*column.get("children", ()), *editor.extra]
+        # rather than composed in the crate -- into the row under the curve,
+        # beside the segment's shape menu.
+        row = tree["children"][1]["children"][0]
+        row["children"] = [*row.get("children", ()), *editor.extra]
         return tree
 
     def props(self, editor, widget_id: int) -> dict:
@@ -99,8 +100,8 @@ class PointsEditor(Editor):
     The window shows the rules: the time ruler under the curve, in its own
     seconds, the value ruler beside it, and a readout of what the pointer is
     over -- a point's value against the range, and the shape of its segment.
-    A click on a segment selects it, and the menu in the column beside the
-    curve sets its shape; ``extra`` widgets go in that column, under it.
+    A click on a segment selects it, and the menu in the row under the curve
+    sets its shape; ``extra`` widgets go in that row, beside it.
     """
 
     def __init__(self, curve, *, sample_rate: float, title: str = "Curve",

@@ -462,6 +462,13 @@ pub fn descent(scale: f32) -> f32 {
     DESCENT as f32 * scale
 }
 
+/// How far a glyph's ink may reach **above** the body box at `scale` -- an
+/// accent over a capital ([`ASCENT`]): the other half of [`descent`], for a
+/// caption hung from an edge above it rather than sat on one below.
+pub fn ascent(scale: f32) -> f32 {
+    ASCENT as f32 * scale
+}
+
 /// Appends `s` to `mesh` with the **top of its body box** at `(x, y)`, each
 /// font-pixel a `scale` x `scale` rectangle of `color`.
 ///

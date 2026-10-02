@@ -382,14 +382,17 @@ impl Curve {
 
     /// Draws [`Self::readout`] in the field's top-right corner, right-aligned
     /// inside the field and dropping its tail first where the field is
-    /// narrow, as a roll draws its own.
+    /// narrow, as a roll draws its own in its bottom-right one.
+    ///
+    /// **Hung as the roll's is sat**: the roll's sits two pixels over the
+    /// bottom edge and its ink hangs a [`font::descent`] below that; this one
+    /// hangs two pixels under the top edge with the [`font::ascent`] its ink
+    /// may reach above the body box cleared too, less the same descent, so the
+    /// gap between the ink and the edge is the roll's mirrored.
     fn draw_readout(&self, d: &mut Draw, ctx: &Ctx, ax: &Axes) {
-        // **A hover's, not a gesture's**: while a press is held -- a click,
-        // a drag, a bend -- the hand is editing and the picture is what it
-        // reads.
-        if self.grab.is_some() {
-            return;
-        }
+        // On hover and while editing alike: a point being dragged is under the
+        // pointer that drags it, and a segment being bent under the one that
+        // bends it, so the readout follows the edit as it happens.
         let Some(at) = ctx.world.cursor else {
             return;
         };
@@ -400,7 +403,11 @@ impl Curve {
         let m = ctx.metrics;
         let room = ax.body.w - 2.0 * m.pad;
         let w = font::width(&text, m.caption_scale).min(room);
-        let (x, y) = (ax.body.x + ax.body.w - w - m.pad, ax.body.y + 2.0);
+        let scale = m.caption_scale;
+        let (x, y) = (
+            ax.body.x + ax.body.w - w - m.pad,
+            ax.body.y + 2.0 + font::ascent(scale) - font::descent(scale),
+        );
         let color = d.parts().2.ruler_text;
         crate::host::graphics::plate_text(d, &text, x, y, room, m.caption_scale, color);
     }

@@ -32,7 +32,7 @@ What to do in the window: <b>drag a point</b> to move it (times stay monotonic
 between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
 <b>Ctrl+click</b> on empty curve area adds a point, on a point removes it;
 <b>click a segment</b> to select it, and set its shape with the <b>segment
-shape</b> menu in the column beside the curve; <b>hover</b> a point or a
+shape</b> menu in the row under the curve; <b>hover</b> a point or a
 segment and the readout in the corner says its time, its value against the
 range and the segment's shape; <b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and
 redo -- the history belongs to the envelope, not to the window.
@@ -90,7 +90,7 @@ redo -- the history belongs to the envelope, not to the window.
         // One verb, with a widget of the page's own. `edit` dispatches on
         // **what the structure holds**: an `Env` can give and take break
         // points, so it opens as a PointsEditor. `extra` appends widgets to the
-        // column beside the curve, under the segment shape menu -- they are the
+        // row under the curve, beside the segment shape menu -- they are the
         // page's, and the editor never touches their ids -- and `editor.window`
         // resolves them by name.
         editor = await gui.edit(env, {

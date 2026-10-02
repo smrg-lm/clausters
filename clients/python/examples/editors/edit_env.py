@@ -14,7 +14,7 @@ What to do in the window:
   curve shape, like an `Env`'s numeric curvature);
 - **Ctrl+click** on empty curve area adds a point, on a point removes it;
 - **click a segment** to select it, and set its shape with the **segment
-  shape** menu in the column beside the curve;
+  shape** menu in the row under the curve;
 - **hover** a point or a segment: the readout in the corner says its time,
   its value against the range, and the segment's shape;
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
@@ -83,8 +83,8 @@ def play():
 # ## One verb, with a widget of the script's own
 # `clausters.gui.edit` dispatches on **what the structure holds**: an `Env` can
 # give and take break points, so it opens as a
-# `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets to the column
-# beside the curve, under the segment shape menu -- they are the script's, and
+# `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets to the row
+# under the curve, beside the segment shape menu -- they are the script's, and
 # the editor never touches their ids -- and
 # `clausters.gui.editing.Editor.window` resolves them by name.
 

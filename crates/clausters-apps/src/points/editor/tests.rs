@@ -231,19 +231,20 @@ fn the_window_shows_its_rulers() {
     assert_eq!(curve["sample_rate"], 1.0);
 }
 
-/// **The column beside the curve holds the shape menu**, over every shape a
-/// segment can take, in the order of their numbers.
+/// **The row under the curve holds the shape menu**, over every shape a
+/// segment can take, in the order of their numbers, in a quarter of the width.
 #[test]
-fn the_window_has_a_column_with_the_shape_menu() {
+fn the_window_has_a_row_with_the_shape_menu() {
     let mut e = editor(shared(), r#"{"rate": 100.0}"#);
     let tree = e.window(Ids {
         curve: 40,
         shape: Some(41),
     });
-    assert_eq!(tree["flow"], "row");
-    let column = &tree["children"][1];
-    assert_eq!(column["flow"], "col");
-    let menu = &column["children"][0];
+    assert_eq!(tree["flow"], "col");
+    let row = &tree["children"][1];
+    assert_eq!(row["flow"], "row");
+    assert_eq!(row["children"][1]["weight"], 3.0, "the rest of the width");
+    let menu = &row["children"][0]["children"][0];
     assert_eq!(menu["id"], 41);
     assert_eq!(menu["options"][2], "exp");
     assert_eq!(menu["options"][5], "curve");

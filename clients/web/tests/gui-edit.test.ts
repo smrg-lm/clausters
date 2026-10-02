@@ -205,10 +205,10 @@ test("an automation is kept in the range of what it automates", async () => {
     assert.equal(cutoff.toPoints()[5], 127);
 });
 
-test("a selected segment takes its shape from the menu beside the curve", async () => {
-    // A click on a segment selects it; the menu in the column beside the curve
-    // sets its shape, as an edit the curve's history takes back. The page's own
-    // widgets go in that column, under the menu.
+test("a selected segment takes its shape from the menu under the curve", async () => {
+    // A click on a segment selects it; the menu in the row under the curve sets
+    // its shape, as an edit the curve's history takes back. The page's own
+    // widgets go in that row, beside the menu.
     const curve = aCurve();
     const editor = await edit(curve, {
         sampleRate: SR, open: false, extra: [button({ name: "play" })],
@@ -217,7 +217,7 @@ test("a selected segment takes its shape from the menu beside the curve", async 
     await editor.open(asHost(host));
     const tree = host.trees[0] as GuiNode;
     const wid = (tree.children as GuiNode[])[0]?.id as number;
-    const column = (tree.children as GuiNode[])[1]!;
+    const column = ((tree.children as GuiNode[])[1]!.children as GuiNode[])[0]!;
     const shape = (column.children as GuiNode[])[0]?.id as number;
     assert.equal((column.children as GuiNode[])[1]?.name, "play");
     assert.equal(editor.apply("/gui_event", [wid, 1, 0, "segment", 0]), false);
