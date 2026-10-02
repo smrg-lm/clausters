@@ -407,7 +407,7 @@ class AudioEditor(Editor):
                 self.on_locate(self.cursor)
         if outcome.get("selection") is not None:
             self.selection = outcome["selection"]
-            self.selected()
+            self.selection_moved()
         self.echo.send(outcome.get("answer"))
         return changed
 

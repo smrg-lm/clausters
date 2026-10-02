@@ -137,6 +137,38 @@ fn the_space_bar_plays_the_time_range_a_sweep_left() {
     );
 }
 
+/// **The time range is one state, the hand's and the client's**: a sweep
+/// reports it, the client sets it through `span`, the roll draws it, and the
+/// space bar plays it either way.
+#[test]
+fn a_span_set_by_the_client_is_drawn_and_played_as_a_sweep_is() {
+    let mut e = editor(shared());
+    let swept = e.event(&gesture("selection", vec![json!(50.0), json!(100.0)]), 1);
+    assert_eq!(swept.span, Some(json!([0.5, 1.5])), "a sweep reports it");
+    call_json(&mut e, r#"{"verb": "span", "span": [1.0, 2.0]}"#);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(
+        (props["sel_start"].clone(), props["sel_len"].clone()),
+        (json!(100.0), json!(100.0))
+    );
+    let space = e.event(
+        &Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(39), json!(3), json!(0), json!("play"), json!(0)],
+        },
+        1,
+    );
+    assert_eq!(
+        space.play,
+        Some(json!({"looping": false, "range": [1.0, 2.0]}))
+    );
+    call_json(&mut e, r#"{"verb": "span", "span": null}"#);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(props["sel_len"], json!(0.0), "no span, no band");
+}
+
 /// **`L` over the window changes the pass in progress**: the loop switch's
 /// new state and the time range a sweep left, apart from a play.
 #[test]

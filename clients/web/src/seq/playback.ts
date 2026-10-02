@@ -17,6 +17,7 @@ import { NotesPlayback as CorePlayback, StepRunner } from "../core/clausters_cor
 import type { Server } from "../defs/server/index.ts";
 import type { Transport, TransportDriver } from "../defs/server/transport.ts";
 import { runSteps } from "../steps.ts";
+import { contexts } from "../history.ts";
 import { EventSequence } from "./sequence.ts";
 
 /** Where a pass ends: open, where the last note ends, or at a beat. */
@@ -59,6 +60,14 @@ export class NotesPlayback implements TransportDriver {
     cursor = 0;
     /** Where a pass ends. */
     end: PassEnd = null;
+    /**
+     * The time range a pass plays and a loop repeats, `[start, end]` in the
+     * planned sequence's beats, or `null` -- the same one a sweep leaves on a
+     * roll, and drawn there.
+     */
+    span: [number, number] | null = null;
+    /** Whether the loop switch is on: the span, or every note with none. */
+    looping = false;
     readonly server: Server;
     #paused = false;
     /**
@@ -131,6 +140,12 @@ export class NotesPlayback implements TransportDriver {
         } = {},
     ): Promise<void> {
         if (end !== undefined) this.end = end;
+        const span = range === null ? null : [range[0], range[1]] as [number, number];
+        const moved = this.planned !== sequence
+            || JSON.stringify(span) !== JSON.stringify(this.span);
+        this.span = span;
+        this.looping = looping;
+        if (moved) this.#show(sequence);
         this.planned = sequence;
         this.cursor = at;
         this.#paused = false;
@@ -183,7 +198,7 @@ export class NotesPlayback implements TransportDriver {
             await this.call("resume", this.planned);
             return;
         }
-        await this.load(this.planned, at ?? this.cursor);
+        await this.load(this.planned, at ?? this.cursor, { range: this.span, looping: this.looping });
     }
 
     async setEnd(end: PassEnd): Promise<void> {
@@ -206,13 +221,38 @@ export class NotesPlayback implements TransportDriver {
     async locate(at: number): Promise<void> {
         if (this.planned === null) return;
         this.cursor = at;
-        if (await this.playing()) await this.load(this.planned, at);
+        if (await this.playing()) await this.load(this.planned, at, { range: this.span, looping: this.looping });
         else await this.call("cue", this.planned, { at });
     }
 
-    async loop(span: [number, number] | null): Promise<void> {
+    /**
+     * The time range: kept stopped or rolling, drawn on every roll over the
+     * planned sequence, and followed at once by a loop in progress.
+     */
+    async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
+        this.span = span === null ? null : [span[0], span[1]];
         if (this.planned === null) return;
-        await this.call("loop", this.planned, { range: span, loop: span !== null });
+        if (show) this.#show(this.planned);
+        if (this.looping) await this.#loop();
+    }
+
+    /** The loop switch, as `L` is: kept stopped, and followed at once by a pass in progress. */
+    async setLooping(on: boolean): Promise<void> {
+        this.looping = on;
+        if (this.planned !== null) await this.#loop();
+    }
+
+    #loop(): Promise<void> {
+        return this.call("loop", this.planned!, { range: this.span, loop: this.looping });
+    }
+
+    /** Every roll over `sequence` draws the span. */
+    #show(sequence: EventSequence): void {
+        const context = contexts.get(sequence);
+        for (const view of context?.views() ?? []) {
+            const roll = view as unknown as { structure?: unknown; showSpan?(span: [number, number] | null): void };
+            if (roll.structure === sequence) roll.showSpan?.(this.span);
+        }
     }
 }
 

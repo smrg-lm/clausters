@@ -1568,7 +1568,7 @@ coda = seq.events.add(6.0, Event(midinote=74, dur=1.0))
 roll = edit(seq)
 
 with seq.history("humanize"):            # one entry, labelled "humanize"
-    for event in seq.events.range(0.0, 4.0):
+    for event in seq.events.between(0.0, 4.0):
         event.at += 0.01                 # a move
         if event["midinote"] >= 67:
             event["velocity"] = 90       # a set, with the core's coherence
@@ -5250,6 +5250,24 @@ work, where a pending item reads as done.)*
     unless more than 64 were wanted.
   - Open: whether the shared transport stays with the first fix, or
     `play(sequence)` takes a transport of its own.
+
+- ✅ **A loop asked while stopped was lost, and a script's loop was not the
+  roll's** *(found 2026-10-02 by the user, trying `C58` by hand:
+  `t.loop(0, 2)` did nothing)*. The crate's loop verb applies only to a
+  rolling pass and nothing kept it, and a short pass had already ended on its
+  contents. And the roll's loop is a selection plus a switch — Alt+drag a
+  time range, then `L` — which the script's call never touched, so a window
+  open on the sequence showed nothing of it. The user asked for the API to
+  follow the GUI's actions, and named the two selections apart.
+  *(Fixed 2026-10-02: the transport keeps a `span` and a loop switch as
+  state, kept stopped and read by the next play, and with a sequence loaded
+  they are its rolls' — a span set from the script is drawn as the band a
+  sweep leaves, a range swept there reads as the span, and `L` is the same
+  switch: `t.loop(0, 2)`, `t.unloop()`, `t.span`, `t.looping`. The events a
+  hand marked are the window's: `roll.selected` (a query of the host's new
+  `selected` prop, by note id), `roll.select(events)` and `roll.unselect()`.
+  `seq.events.range` became `between`, off Python's `range`. The editors'
+  hook `selected()` became `selection_moved()` to free the name.)*
 
 ## Future directions (a design that is not a fix)
 

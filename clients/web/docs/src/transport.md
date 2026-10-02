@@ -146,6 +146,14 @@ timeline.transport = right;                 // a timeline on transport 1
 
 Its positions are those of what is loaded on it: with nothing loaded, the transport's own seconds; once `play(sequence)` has put a sequence's lane there, that sequence's beats — `play` answers the `Transport` it loaded, so `transport.locate(4)` is beat 4 of the sequence and `await transport.wait()` resolves when its last note ends.
 
+**The loop is the roll's.** A transport keeps a time range, its `span`, and a loop switch, and both are state rather than commands: kept while it is stopped, read by the next `play`. With a sequence loaded they are the ones its rolls show — the band an Alt+drag sweeps, and `L` — so a span set here is drawn there and a range swept there reads here, and `play` plays the span from its start to its end, as the space bar does.
+
+```js
+await transport.loop(0, 2);       // span [0, 2] and the loop on: Alt+drag and L at once
+await transport.unloop();         // the loop off; the span stays
+await transport.setSpan(null);    // no span: play plays from the cursor
+```
+
 A node reads the transport that governs it — the nearest governed group above it — so a reader following `transportPos` needs no id of its own: it follows whichever transport its group is bound to, and transport 0 when none is. `transportState()` says which transport it read in its `transport` field.
 
 What must go on running while a transport is stopped and still has to know it — an output with its meter and its declick, beside the governed group or around it — **follows** the transport instead of being governed by it: `transportFollow(group)` has its nodes read the transport and nothing freeze them.

@@ -60,6 +60,16 @@ class FakeHost:
     def close(self, id):
         self.closed.append(id)
 
+    def set(self, id, **props):
+        """A live set, kept per widget so a query answers it -- as the host
+        answers what a set wrote."""
+        self.__dict__.setdefault("props", {}).setdefault(id, {}).update(props)
+
+    def query(self, id, timeout=1.0):
+        from clausters.gui.host import WidgetInfo
+
+        return WidgetInfo("notes", dict(self.__dict__.get("props", {}).get(id, {})))
+
     def head_clock(self, id, which, transport=0):
         self.clocks.append((id, which, transport))
 
@@ -653,6 +663,57 @@ def test_play_answers_the_transport_the_sequence_plays_on():
     assert server.sent, "each verb is the playback's"
     server.state["playing"] = False        # the pass reached its end
     assert transport.wait(timeout=1.0) is True
+
+
+def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():
+    """A short pass ends before a script asks for its loop: the loop is the
+    playback's state, kept stopped, and the next play loops the span."""
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    transport = seq.play(server=server)
+    server.state["playing"] = False        # the pass reached its end
+    transport.loop(0.0, 2.0)
+    assert transport.span == (0.0, 2.0) and transport.looping
+    server.sent.clear()
+    transport.play()
+    loops = [args for addr, args in server.sent if addr == "/transport_loop" and len(args) > 1]
+    assert [int(a.value if hasattr(a, "value") else a) for a in loops[-1][1:]] == [0, 100], \
+        "beats [0, 2) at two beats a second and 100 samples a second"
+    transport.unloop()
+    assert not transport.looping and transport.span == (0.0, 2.0), "the span stays"
+
+
+def test_the_span_is_drawn_on_the_roll_and_a_sweep_is_the_span():
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    roll = NotesEditor(seq, sample_rate=SR, server=server)
+    host, wid = opened(roll)
+    transport = seq.play(server=server)
+    transport.span = (1.0, 2.0)
+    _seq, corrections, _reason = host.acks[-1]
+    props = dict(corrections)[wid]
+    assert (props["sel_start"], props["sel_len"]) == (BEAT, BEAT), "the band a sweep leaves"
+    roll.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * BEAT])
+    assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
+
+
+def test_what_the_roll_marks_is_the_events_themselves():
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (1.0, Event(midinote=62, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    roll = edit(seq, sample_rate=SR, open=False)
+    opened(roll)
+    first, second, third = seq.events
+    assert roll.selected == []
+    roll.select(seq.events.between(1.0, 3.0))
+    assert roll.selected == [second, third]
+    for event in roll.selected:
+        event["velocity"] = 90
+    assert second["velocity"] == 90 and "velocity" not in first
+    roll.unselect()
+    assert roll.selected == []
 
 
 def test_two_rolls_over_one_sequence_send_the_lane_one_change_once():

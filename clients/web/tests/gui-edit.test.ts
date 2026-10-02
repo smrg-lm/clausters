@@ -52,7 +52,14 @@ class FakeHost {
         this.trees.push(tree);
         return { id };
     }
-    set(): void {}
+    /** A live set, kept per widget so a query answers it -- as the host answers what a set wrote. */
+    props = new Map<number, Record<string, PropValue>>();
+    set(id: number, props: Record<string, PropValue>): void {
+        this.props.set(id, { ...(this.props.get(id) ?? {}), ...props });
+    }
+    async query(id: number): Promise<{ type: string; props: Record<string, PropValue> }> {
+        return { type: "notes", props: { ...(this.props.get(id) ?? {}) } };
+    }
     headClock(id: { id: number }, which: string, transport = 0): void {
         this.clocks.push([id.id, which, transport]);
     }
@@ -682,6 +689,65 @@ test("play answers the transport the sequence plays on", async () => {
     assert.ok(server.sent.length > 0, "each verb is the playback's");
     server.state.playing = false; // the pass reached its end
     assert.equal(await transport.wait(1.0), true);
+});
+
+test("a loop asked while stopped is kept for the next play", async () => {
+    // A short pass ends before a page asks for its loop: the loop is the
+    // playback's state, kept stopped, and the next play loops the span.
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const transport = await seq.play({ server: server as never });
+    server.state.playing = false; // the pass reached its end
+    await transport.loop(0.0, 2.0);
+    assert.deepEqual(transport.span, [0, 2]);
+    assert.ok(transport.looping);
+    server.sent = [];
+    await transport.play();
+    const loops = server.sent.filter(([addr, args]) => addr === "/transport_loop" && args.length > 1);
+    const span = loops.at(-1)![1].slice(1).map((a) => Number(Array.isArray(a) ? a[1] : a));
+    assert.deepEqual(span, [0, 100], "beats [0, 2) at two beats a second and 100 samples a second");
+    await transport.unloop();
+    assert.ok(!transport.looping);
+    assert.deepEqual(transport.span, [0, 2], "the span stays");
+});
+
+test("the span is drawn on the roll, and a sweep is the span", async () => {
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const roll = new NotesEditor(seq, { sampleRate: SR, server: server as never });
+    const { host, wid } = await opened(roll);
+    const transport = await seq.play({ server: server as never });
+    await transport.setSpan([1.0, 2.0]);
+    const [, corrections] = host.acks.at(-1)!;
+    const props = new Map(corrections).get(wid)!;
+    assert.deepEqual([props.sel_start, props.sel_len], [BEAT, BEAT], "the band a sweep leaves");
+    roll.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * BEAT]);
+    await roll.settled();
+    assert.deepEqual(transport.span, [0, 2], "a sweep is the transport's span");
+});
+
+test("what the roll marks is the events themselves", async () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [1.0, new Event({ midinote: 62, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const roll = await edit(seq, { sampleRate: SR, open: false }) as unknown as NotesEditor;
+    await opened(roll);
+    const [first, second, third] = seq.events;
+    assert.deepEqual(await roll.selected(), []);
+    roll.select(seq.events.between(1.0, 3.0));
+    assert.deepEqual(await roll.selected(), [second, third]);
+    for (const event of await roll.selected()) event.set("velocity", 90);
+    assert.ok(second.get("velocity") === 90 && first.get("velocity") === undefined);
+    roll.unselect();
+    assert.deepEqual(await roll.selected(), []);
 });
 
 test("two rolls over one sequence send the lane one change once", async () => {

@@ -49,6 +49,7 @@ class NotesView(View):
         # another picture of it, and a window beside one in MIDI notes must not
         # draw on its widget.
         wid = self.widget(editor, "notes", editor.structure, editor.y_axis)
+        editor._roll = wid
         editor._sync_core()
         tree = editor._call("window", widget=wid)
         # **A script's own widgets are its objects**, so they are appended here
@@ -92,6 +93,8 @@ class NotesEditor(Editor):
         self._elsewhere = None
         #: Where a pass ends (`end`).
         self._end = None
+        #: The roll's widget id, once drawn.
+        self._roll = None
         self._member, self._structure_id = self._editing.open_notes(
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
@@ -244,6 +247,46 @@ class NotesEditor(Editor):
         super().reflect_step()
         self._update()
 
+    # ---- the roll's two selections ----
+
+    def show_span(self, span) -> None:
+        """Draw ``span`` -- ``(start, end)`` in beats, or ``None`` -- as the
+        roll's time range, the band a sweep leaves, and play it on the space
+        bar. What `clausters.defs.Transport.span` sets on every roll over the
+        sequence it plays."""
+        self._call("span", span=None if span is None else [float(span[0]), float(span[1])])
+        super().adopt()
+
+    @property
+    def selected(self) -> list:
+        """**The events marked on the roll** -- by a click, Shift+click or a
+        marquee -- as the `clausters.seq.SeqEvent` objects they are, in beat
+        order. The picture's, not the sequence's: it enters no history and
+        each window has its own. Empty with no window open. (The time range a
+        sweep leaves is the transport's `clausters.defs.Transport.span`.)"""
+        import json
+
+        if self._host is None or self._window is None:
+            return []
+        marked = self._host.query(self._roll).props.get("selected") or "[]"
+        events = self.structure.events
+        held = {e._id: e for e in events}
+        return [held[i] for i in json.loads(marked) if i in held]
+
+    def select(self, events) -> None:
+        """Mark ``events`` -- `clausters.seq.SeqEvent` objects of this sequence
+        -- on the roll, in place of what was marked."""
+        import json
+
+        if self._host is None or self._window is None:
+            return
+        ids = [e._id for e in events if getattr(e, "_sequence", None) is self.structure]
+        self._host.set(self._roll, selected=json.dumps(ids))
+
+    def unselect(self) -> None:
+        """Mark nothing on the roll."""
+        self.select([])
+
     def adopt(self) -> None:
         """The sequence changed by another route -- another window, a script's
         change, a step a script took: the window is corrected, and the lane
@@ -305,12 +348,22 @@ class NotesEditor(Editor):
             else:
                 pass_ = outcome["play"]
                 self.play(range=pass_.get("range"), looping=bool(pass_.get("looping")))
+        if "span" in outcome and self._server is not None \
+                and self._playback.planned is self.structure:
+            # A sweep moved the time range: it is the playback's span, so a
+            # script reads it, and the other rolls over the sequence draw it.
+            self._playback.set_span(outcome["span"])
         if outcome.get("loop") is not None and self._server is not None:
-            # `L`: the pass in progress loops, or stops looping, from where it
-            # stands; a stopped playback reads the switch on its next play.
+            # `L`: the loop switch -- followed at once by a pass in progress,
+            # read by a stopped playback on its next play.
             pass_ = outcome["loop"]
-            self._playback.call("loop", self.structure, range=pass_.get("range"),
-                                loop=bool(pass_.get("looping")))
+            playback = self._playback
+            if playback.planned is self.structure:
+                playback.set_span(pass_.get("range"), show=False)
+                playback.set_looping(bool(pass_.get("looping")))
+            else:
+                playback.call("loop", self.structure, range=pass_.get("range"),
+                              loop=bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
         return changed
 

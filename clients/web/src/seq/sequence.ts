@@ -155,7 +155,7 @@ export class EventSequence {
     /**
      * **The events, as objects**, in beat order: a live collection -- iterate
      * it, index it, ask it what is {@link SeqEvents.at} a beat or in a
-     * {@link SeqEvents.range} -- whose members are {@link SeqEvent}s, each a
+     * {@link SeqEvents.between} -- whose members are {@link SeqEvent}s, each a
      * view of one event the sequence holds. The same event read twice is the
      * same object.
      */
@@ -449,6 +449,11 @@ export class SeqEvent {
         return written;
     }
 
+    /** The event's identity in its sequence, for the host that names it. @internal */
+    get id(): number {
+        return this.#id;
+    }
+
     /** The sequence that holds the event, or `null` once it holds it no more. */
     get sequence(): EventSequence | null {
         return this.#sequence.writtenOf(this.#id) === null ? null : this.#sequence;
@@ -582,7 +587,7 @@ export class SeqEvents {
     }
 
     /** The events in the half-open beat window `[t0, t1)`. */
-    range(t0: number, t1: number): SeqEvent[] {
+    between(t0: number, t1: number): SeqEvent[] {
         return this.#of(this.#sequence.idsOf({ from: Number(t0), to: Number(t1) }));
     }
 }

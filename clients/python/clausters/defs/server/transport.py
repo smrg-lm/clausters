@@ -422,6 +422,9 @@ class Transport:
         #: playback of a sequence, which speaks its beats.
         self._driver = None
         self._rate = None
+        #: The span and the loop switch with nothing loaded, in seconds.
+        self._span = None
+        self._looping = False
 
     @property
     def server(self):
@@ -491,22 +494,60 @@ class Transport:
         self._view.transport_locate_sample(self._seconds(at))
         return self
 
-    def loop(self, start: float, end: float) -> "Transport":
-        """Loop the span ``[start, end)``: a rolling transport wraps when it
-        reaches the end, with nothing sent per pass."""
+    @property
+    def span(self):
+        """**The time range** ``(start, end)`` a pass plays and a loop
+        repeats, or ``None``. With a sequence loaded it is the range a sweep
+        leaves on its roll -- set it here and the roll draws it, sweep it there
+        and it reads here -- and `play` plays it, from its start to its end,
+        as the space bar does. Kept while stopped."""
         if self._driver is not None:
-            self._driver.loop((float(start), float(end)))
+            return self._driver.span
+        return self._span
+
+    @span.setter
+    def span(self, span) -> None:
+        if self._driver is not None:
+            self._driver.set_span(span)
+            return
+        self._span = None if span is None else (float(span[0]), float(span[1]))
+        if self._looping:
+            self._loop_raw()
+
+    @property
+    def looping(self) -> bool:
+        """Whether the loop switch is on."""
+        if self._driver is not None:
+            return self._driver.looping
+        return self._looping
+
+    def loop(self, start: "float | None" = None, end: "float | None" = None) -> "Transport":
+        """**Loop**: with ``start`` and ``end``, set the `span` to them first;
+        then turn the loop on over the span -- or, with none, over every note
+        of the sequence loaded. A rolling transport follows at once, a stopped
+        one on its next `play`. The `L` key over a roll is the same switch."""
+        if start is not None and end is not None:
+            self.span = (start, end)
+        if self._driver is not None:
+            self._driver.set_looping(True)
             return self
-        self._view.transport_loop((self._seconds(start), self._seconds(end)))
+        self._looping = True
+        self._loop_raw()
         return self
 
     def unloop(self) -> "Transport":
-        """Stop looping: the transport rolls on past the span."""
+        """Turn the loop off; the `span` stays."""
         if self._driver is not None:
-            self._driver.loop(None)
+            self._driver.set_looping(False)
             return self
+        self._looping = False
         self._view.transport_loop(None)
         return self
+
+    def _loop_raw(self) -> None:
+        if self._span is None:
+            return
+        self._view.transport_loop((self._seconds(self._span[0]), self._seconds(self._span[1])))
 
     @property
     def end(self):

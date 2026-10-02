@@ -256,6 +256,19 @@ that sequence's beats — `play` answers the `Transport` it loaded, so
 `transport.locate(4)` is beat 4 of the sequence and `transport.wait()` returns
 when its last note ends.
 
+**The loop is the roll's.** A transport keeps a time range, its `span`, and a
+loop switch, and both are state rather than commands: kept while it is
+stopped, read by the next `play`. With a sequence loaded they are the ones its
+rolls show — the band an Alt+drag sweeps, and `L` — so a span set here is drawn
+there and a range swept there reads here, and `play` plays the span from its
+start to its end, as the space bar does.
+
+```python
+transport.loop(0, 2)          # span (0, 2) and the loop on: Alt+drag and L at once
+transport.unloop()            # the loop off; the span stays
+transport.span = None         # no span: play plays from the cursor
+```
+
 A node reads the transport that governs it — the nearest governed group above
 it — so a reader following `transport_pos` needs no id of its own: it follows
 whichever transport its group is bound to, and transport 0 when none is.

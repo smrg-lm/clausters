@@ -75,7 +75,7 @@ def test_the_events_are_objects_and_one_event_is_one_object():
     assert first.at == 0.0 and first["midinote"] == 60 and "midinote" in first
     assert first.event["midinote"] == 60 and isinstance(first.event, Event)
     assert [e["midinote"] for e in seq.events.at(1.0)] == [62, 64]
-    assert [e["midinote"] for e in seq.events.range(0.5, 3.0)] == [62, 64], "half-open"
+    assert [e["midinote"] for e in seq.events.between(0.5, 3.0)] == [62, 64], "half-open"
     assert seq.events[-1]["midinote"] == 67 and len(seq.events) == 4
     assert {first: "a key"}[seq.events[0]] == "a key"
 

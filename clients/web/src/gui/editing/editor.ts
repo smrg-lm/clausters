@@ -809,7 +809,7 @@ export class Editor<S = unknown> implements Adopting {
                 selection.value = { min: Number(values[2]), max: Number(values[3]) };
             }
             this.selection = selection as unknown as Selection;
-            this.selected();
+            this.selectionMoved();
         }
         return false;
     }
@@ -822,7 +822,7 @@ export class Editor<S = unknown> implements Adopting {
      * an operation is given must be the same value whichever of the multitrack's
      * windows it was swept in.
      */
-    protected selected(): void {
+    protected selectionMoved(): void {
         this.composedIn?.adoptSelection(this as Editor);
     }
 

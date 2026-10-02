@@ -526,7 +526,10 @@ export interface TransportDriver {
     pause(): Promise<void>;
     stop(): Promise<void>;
     locate(at: number): Promise<void>;
-    loop(span: [number, number] | null): Promise<void>;
+    span: [number, number] | null;
+    looping: boolean;
+    setSpan(span: readonly [number, number] | null): Promise<void>;
+    setLooping(on: boolean): Promise<void>;
     end: null | "contents" | number;
     setEnd(end: null | "contents" | number): Promise<void>;
 }
@@ -556,6 +559,9 @@ export class Transport {
     /** What is loaded on it and plays through it, when something is. @internal */
     driver: TransportDriver | null = null;
     #rate: number | null = null;
+    /** The span and the loop switch with nothing loaded, in seconds. */
+    #span: [number, number] | null = null;
+    #looping = false;
 
     /** @internal */
     constructor(server: Server, id: number) {
@@ -638,18 +644,64 @@ export class Transport {
         return this;
     }
 
-    /** Loops the span `[start, end)`: a rolling transport wraps when it reaches the end. */
-    async loop(start: number, end: number): Promise<this> {
-        if (this.driver !== null) await this.driver.loop([start, end]);
-        else await this.view.transportLoop([await this.#samples(start), await this.#samples(end)]);
+    /**
+     * **The time range** `[start, end]` a pass plays and a loop repeats, or
+     * `null`. With a sequence loaded it is the range a sweep leaves on its
+     * roll -- set it here and the roll draws it, sweep it there and it reads
+     * here -- and `play` plays it, from its start to its end, as the space bar
+     * does. Kept while stopped. Set with {@link Transport.setSpan}.
+     */
+    get span(): [number, number] | null {
+        return this.driver !== null ? this.driver.span : this.#span;
+    }
+
+    /** Sets the time range: see {@link Transport.span}. */
+    async setSpan(span: readonly [number, number] | null): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.setSpan(span);
+            return this;
+        }
+        this.#span = span === null ? null : [span[0], span[1]];
+        if (this.#looping) await this.#loopRaw();
         return this;
     }
 
-    /** Stops looping: the transport rolls on past the span. */
-    async unloop(): Promise<this> {
-        if (this.driver !== null) await this.driver.loop(null);
-        else await this.view.transportLoop(null);
+    /** Whether the loop switch is on. */
+    get looping(): boolean {
+        return this.driver !== null ? this.driver.looping : this.#looping;
+    }
+
+    /**
+     * **Loops**: with `start` and `end`, sets the span to them first; then turns
+     * the loop on over the span -- or, with none, over every note of the
+     * sequence loaded. A rolling transport follows at once, a stopped one on its
+     * next `play`. The `L` key over a roll is the same switch.
+     */
+    async loop(start?: number, end?: number): Promise<this> {
+        if (start !== undefined && end !== undefined) await this.setSpan([start, end]);
+        if (this.driver !== null) {
+            await this.driver.setLooping(true);
+            return this;
+        }
+        this.#looping = true;
+        await this.#loopRaw();
         return this;
+    }
+
+    /** Turns the loop off; the span stays. */
+    async unloop(): Promise<this> {
+        if (this.driver !== null) {
+            await this.driver.setLooping(false);
+            return this;
+        }
+        this.#looping = false;
+        await this.view.transportLoop(null);
+        return this;
+    }
+
+    async #loopRaw(): Promise<void> {
+        if (this.#span === null) return;
+        await this.view.transportLoop([await this.#samples(this.#span[0]), await this.#samples(this.#span[1])]);
     }
 
     /**

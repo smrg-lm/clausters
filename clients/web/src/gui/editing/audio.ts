@@ -587,7 +587,7 @@ export class AudioEditor extends Editor<Buffer> {
         }
         if (outcome.selection !== undefined) {
             this.selection = outcome.selection as unknown as Selection;
-            this.selected();
+            this.selectionMoved();
         }
         // The answer asks the window to read the join again, so it goes once
         // the steps that replace the join have landed.

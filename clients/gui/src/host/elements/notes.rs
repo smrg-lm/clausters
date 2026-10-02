@@ -54,8 +54,11 @@ const HZ_NOTE_H: f32 = 8.0;
 /// The shortest note a resize may leave, in axis units.
 const MIN_DUR: f64 = 1.0;
 
-/// A piano roll. `selected`, `drag`, `held` and `step` are native view state --
-/// the gestures and the MIDI leg build them and no `/gui_set` writes them.
+/// A piano roll. `drag`, `held` and `step` are native view state -- the
+/// gestures and the MIDI leg build them and no `/gui_set` writes them.
+/// `selected` is view state too, built by the hand, and the one a script may
+/// read (`/gui_query`) and write (`/gui_set selected`): the notes it names are
+/// the objects a script holds, so marking them is an edit of the picture only.
 #[derive(Debug, Clone)]
 pub struct Notes {
     notes: Vec<notes::Note>,
@@ -527,6 +530,22 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
+            "selected" => {
+                // The notes to mark, by the ids they carry -- or by index, on
+                // a roll that was handed none.
+                let named: Vec<u64> = parse::as_array_props("selected", v)
+                    .get("selected")
+                    .and_then(Value::as_array)
+                    .map(|list| list.iter().filter_map(Value::as_u64).collect())
+                    .unwrap_or_default();
+                self.selected = (0..self.notes.len())
+                    .filter(|&i| {
+                        let key = if self.ids { self.notes[i].id } else { i as u64 };
+                        named.contains(&key)
+                    })
+                    .collect();
+                true
+            }
             "curves" => {
                 self.rows = curves::parse_rows(&parse::as_array_props("curves", v));
                 self.rebuild_bodies();
@@ -638,6 +657,20 @@ impl Element for Notes {
             (
                 "osc".into(),
                 Value::from(notes::osc_json(&self.osc).to_string()),
+            ),
+            (
+                "selected".into(),
+                Value::from(
+                    Value::from(
+                        self.selected
+                            .iter()
+                            .filter_map(|&i| self.notes.get(i))
+                            .zip(self.selected.iter())
+                            .map(|(n, &i)| if self.ids { n.id } else { i as u64 })
+                            .collect::<Vec<_>>(),
+                    )
+                    .to_string(),
+                ),
             ),
         ]
     }
@@ -1557,6 +1590,37 @@ mod tests {
 
     fn roll(json: &str) -> Notes {
         from_props(&props(json))
+    }
+
+    /// **The notes a script marks are the ones a query names**, by the ids
+    /// the roll was handed -- the objects a script holds -- and by index on a
+    /// roll handed none.
+    #[test]
+    fn a_selection_is_set_and_queried_by_the_notes_ids() {
+        let selected = |r: &Notes| -> Value {
+            let (_, v) = r.info().into_iter().find(|(k, _)| k == "selected").unwrap();
+            serde_json::from_str(v.as_str().unwrap()).unwrap()
+        };
+        let mut r = roll(
+            r#"{"notes": [0, 1, 60, 100, 0, 1, 1, 62, 100, 0, 2, 1, 64, 100, 0],
+                "note_ids": [7, 8, 9]}"#,
+        );
+        assert_eq!(selected(&r), serde_json::json!([]));
+        assert!(r.set("selected", &Value::from("[9, 7]")));
+        assert_eq!(
+            selected(&r),
+            serde_json::json!([7, 9]),
+            "in the roll's order"
+        );
+        assert!(r.set("selected", &Value::from("[]")));
+        assert_eq!(selected(&r), serde_json::json!([]));
+        let mut bare = roll(r#"{"notes": [0, 1, 60, 100, 0, 1, 1, 62, 100, 0]}"#);
+        assert!(bare.set("selected", &Value::from("[1]")));
+        assert_eq!(
+            selected(&bare),
+            serde_json::json!([1]),
+            "by index without ids"
+        );
     }
 
     /// **A roll asks the window to follow the clock only while something is

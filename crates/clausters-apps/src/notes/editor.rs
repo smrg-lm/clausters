@@ -52,6 +52,11 @@ pub struct Outcome {
     /// playback there, and a play starts from it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
+    /// **The time range a sweep left**, when the hand moved it: `[start, end]`
+    /// in beats, or `null` once it was cleared. Not an edit: the caller hands
+    /// it to the playback, whose span it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -170,9 +175,20 @@ impl NotesEditor {
         if self.widget.map(i64::from) != Some(widget) {
             return Vec::new();
         }
+        let held = self.held();
+        let mut props = correction(&held, &self.domain, self.rate);
+        // The time range is drawn where the hand sweeps one, so a span set
+        // from the client shows as the band a sweep leaves.
+        let axis = Axis::of(&held, self.rate);
+        let (start, len) = self.range.map_or((0.0, 0.0), |(a, b)| {
+            let start = axis.units(a);
+            (start, axis.units(b) - start)
+        });
+        props.insert("sel_start".into(), json!(start));
+        props.insert("sel_len".into(), json!(len));
         vec![Correction {
             widget,
-            props: Value::Object(correction(&self.held(), &self.domain, self.rate)),
+            props: Value::Object(props),
         }]
     }
 
@@ -221,6 +237,7 @@ impl NotesEditor {
             };
             let (start, len) = (at(0), at(1));
             self.range = (len > 0.0).then(|| (axis.beat(start), axis.beat(start + len)));
+            out.span = Some(self.range.map_or(Value::Null, |(a, b)| json!([a, b])));
             return (None, Vec::new());
         }
         if tag == "locate" {
@@ -386,6 +403,8 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `domain`, `title`, `w`, `h`: `{}`.
 /// - `state` -- the sequence, whole.
+/// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
+///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
@@ -432,6 +451,14 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             "{}".into()
         }
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
+        "span" => {
+            editor.range = request
+                .get("span")
+                .and_then(Value::as_array)
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)))
+                .filter(|(a, b)| b > a);
+            "{}".into()
+        }
         _ => "{}".into(),
     }
 }

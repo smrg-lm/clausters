@@ -55,6 +55,12 @@ class NotesPlayback:
         self.cursor = 0.0
         #: Where a pass ends: ``None``, ``"contents"`` or a beat.
         self.end = None
+        #: The time range a pass plays and a loop repeats, ``(start, end)`` in
+        #: the planned sequence's beats, or ``None`` -- the same one a sweep
+        #: leaves on a roll, and drawn there.
+        self.span = None
+        #: Whether the loop switch is on: the span, or every note with none.
+        self.looping = False
         self._paused = False
         #: The transport it plays on -- the crate's word for it.
         self.transport_id = int(self._native.call(
@@ -97,6 +103,10 @@ class NotesPlayback:
         self.call("play", sequence, **{"from": float(at)},
                   range=list(range) if range is not None else None,
                   loop=bool(looping))
+        if self.planned is not sequence or tuple(range or ()) != tuple(self.span or ()):
+            self.span = None if range is None else (float(range[0]), float(range[1]))
+            self._show(sequence)
+        self.looping = bool(looping)
         self.planned = sequence
         self.cursor = float(at)
         self._paused = False
@@ -137,7 +147,8 @@ class NotesPlayback:
             self.call("resume", self.planned)
             self._paused = False
             return
-        self.load(self.planned, self.cursor if at is None else float(at))
+        self.load(self.planned, self.cursor if at is None else float(at),
+                  range=self.span, looping=self.looping)
 
     def set_end(self, end) -> None:
         self.end = end
@@ -159,15 +170,42 @@ class NotesPlayback:
             return
         self.cursor = float(at)
         if self.playing():
-            self.load(self.planned, self.cursor)
+            self.load(self.planned, self.cursor, range=self.span, looping=self.looping)
         else:
             self.call("cue", self.planned, at=self.cursor)
 
-    def loop(self, span) -> None:
+    def set_span(self, span, *, show: bool = True) -> None:
+        """The time range: kept stopped or rolling, drawn on every roll over
+        the planned sequence, and followed at once by a loop in progress."""
+        self.span = None if span is None else (float(span[0]), float(span[1]))
+        if self.planned is None:
+            return
+        if show:
+            self._show(self.planned)
+        if self.looping:
+            self._loop()
+
+    def set_looping(self, on: bool) -> None:
+        """The loop switch, as `L` is: kept stopped, and followed at once by
+        a pass in progress."""
+        self.looping = bool(on)
         if self.planned is not None:
-            self.call("loop", self.planned,
-                      range=list(span) if span is not None else None,
-                      loop=span is not None)
+            self._loop()
+
+    def _loop(self) -> None:
+        self.call("loop", self.planned,
+                  range=list(self.span) if self.span is not None else None,
+                  loop=self.looping)
+
+    def _show(self, sequence) -> None:
+        """Every roll over ``sequence`` draws the span."""
+        from ..history import ATTR
+
+        context = getattr(sequence, ATTR, None)
+        for view in [] if context is None else context.views():
+            show = getattr(view, "show_span", None)
+            if show is not None and view.structure is sequence:
+                show(self.span)
 
 
 def play_sequence(sequence, at: float = 0.0, server=None):

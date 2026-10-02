@@ -32,6 +32,7 @@ import { resolveServer } from "../../defs/wire.ts";
 import type { TempoMap } from "../../base/time.ts";
 import { NotesPlayback } from "../../seq/playback.ts";
 import { EventSequence } from "../../seq/sequence.ts";
+import type { SeqEvent } from "../../seq/sequence.ts";
 import { MidiItem } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import type { PlayDestination } from "../../seq/timeline.ts";
@@ -53,6 +54,7 @@ interface Outcome {
     play?: { looping: boolean; range?: [number, number] | null };
     loop?: { looping: boolean; range?: [number, number] | null };
     locate?: number;
+    span?: [number, number] | null;
 }
 
 /**
@@ -82,6 +84,7 @@ export class NotesView extends View<EventSequence> {
         // is another picture of it, and a window beside one in MIDI notes
         // must not draw on its widget.
         const wid = this.widget(editor, "notes", editor.structure, ed.yAxis);
+        ed.rollId = wid;
         ed.syncCore();
         const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
@@ -114,6 +117,8 @@ export class NotesEditor extends Editor<EventSequence> {
     #elsewhere: Timeline | null = null;
     /** Where a pass ends ({@link NotesEditor.end}). */
     #end: End = null;
+    /** The roll's widget id, once drawn. @internal */
+    rollId: number | null = null;
 
     constructor(sequence: EventSequence, options: NotesEditorOptions) {
         const domain = new NotesDomain();
@@ -356,6 +361,48 @@ export class NotesEditor extends Editor<EventSequence> {
         this.#update();
     }
 
+    // ---- the roll's two selections ----
+
+    /**
+     * Draws `span` -- `[start, end]` in beats, or `null` -- as the roll's time
+     * range, the band a sweep leaves, and plays it on the space bar. What
+     * `Transport.setSpan` sets on every roll over the sequence it plays.
+     */
+    showSpan(span: readonly [number, number] | null): void {
+        this.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
+        super.adopt();
+    }
+
+    /**
+     * **The events marked on the roll** -- by a click, Shift+click or a
+     * marquee -- as the `SeqEvent` objects they are, in beat order. The
+     * picture's, not the sequence's: it enters no history and each window has
+     * its own. Empty with no window open. A method here, the reference
+     * client's property: asking the host is a round trip. (The time range a
+     * sweep leaves is the transport's `span`.)
+     */
+    async selected(): Promise<SeqEvent[]> {
+        const host = this.app.host;
+        if (host === null || this.rollId === null || this.window === null) return [];
+        const marked = (await host.query(this.rollId)).props.selected;
+        const ids = JSON.parse(typeof marked === "string" ? marked : "[]") as number[];
+        const held = new Map([...this.structure.events].map((e) => [e.id, e]));
+        return ids.flatMap((id) => held.get(id) ?? []);
+    }
+
+    /** Marks `events` -- `SeqEvent` objects of this sequence -- on the roll, in place of what was marked. */
+    select(events: Iterable<SeqEvent>): void {
+        const host = this.app.host;
+        if (host === null || this.rollId === null || this.window === null) return;
+        const ids = [...events].filter((e) => e.sequence === this.structure).map((e) => e.id);
+        host.set(this.rollId, { selected: JSON.stringify(ids) });
+    }
+
+    /** Marks nothing on the roll. */
+    unselect(): void {
+        this.select([]);
+    }
+
     // ---- the crate's turns ----
 
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
@@ -411,17 +458,28 @@ export class NotesEditor extends Editor<EventSequence> {
             });
             this.#work.catch(() => {});
         }
+        const span = outcome.span;
+        if (span !== undefined && this.#server !== null && this.#playback.planned === this.structure) {
+            // A sweep moved the time range: it is the playback's span, so a
+            // page reads it, and the other rolls over the sequence draw it.
+            const playback = this.#playback;
+            this.#work = this.#work.then(() => playback.setSpan(span));
+            this.#work.catch(() => {});
+        }
         const relooped = outcome.loop;
         if (relooped !== undefined && this.#server !== null) {
-            // `L`: the pass in progress loops, or stops looping, from where it
-            // stands; a stopped playback reads the switch on its next play.
+            // `L`: the loop switch -- followed at once by a pass in progress,
+            // read by a stopped playback on its next play.
             const playback = this.#playback;
-            this.#work = this.#work.then(() =>
-                playback.call("loop", this.structure, {
-                    range: relooped.range ?? null,
-                    loop: relooped.looping,
-                }),
-            );
+            const range = relooped.range ?? null;
+            this.#work = this.#work.then(async () => {
+                if (playback.planned === this.structure) {
+                    await playback.setSpan(range, { show: false });
+                    await playback.setLooping(relooped.looping);
+                } else {
+                    await playback.call("loop", this.structure, { range, loop: relooped.looping });
+                }
+            });
             this.#work.catch(() => {});
         }
         this.echo.send(outcome.answer);

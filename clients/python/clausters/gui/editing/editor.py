@@ -642,10 +642,10 @@ class Editor:
                 # this editor's applies to it.
                 self.selection["value"] = {"min": float(values[2]),
                                            "max": float(values[3])}
-            self.selected()
+            self.selection_moved()
         return False
 
-    def selected(self) -> None:
+    def selection_moved(self) -> None:
         """This editor's selection moved.
 
         Nothing on its own -- a structure's selection is that structure's. A view

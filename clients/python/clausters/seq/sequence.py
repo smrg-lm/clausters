@@ -101,7 +101,7 @@ class EventSequence:
     def events(self) -> "SeqEvents":
         """**The events, as objects**, in beat order: a live collection --
         iterate it, index it, ask it what is `SeqEvents.at` a beat or in a
-        `SeqEvents.range` -- whose members are `SeqEvent`s, each a view of
+        `SeqEvents.between` -- whose members are `SeqEvent`s, each a view of
         one event the sequence holds. The same event read twice is the same
         object."""
         return SeqEvents(self)
@@ -445,7 +445,7 @@ class SeqEvents:
         """The events exactly at ``beat``, in the order they were placed."""
         return self._of(self._sequence._ids(at=float(beat)))
 
-    def range(self, t0: float, t1: float) -> "list[SeqEvent]":
+    def between(self, t0: float, t1: float) -> "list[SeqEvent]":
         """The events in the half-open beat window ``[t0, t1)``."""
         return self._of(self._sequence._ids(**{"from": float(t0), "to": float(t1)}))
 
