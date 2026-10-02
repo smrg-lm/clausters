@@ -191,6 +191,7 @@ class NotesPlayback:
         self.looping = bool(on)
         if self.planned is not None:
             self._loop()
+            self._each_roll(self.planned, lambda roll: roll.show_looping(self.looping))
 
     def _loop(self) -> None:
         self.call("loop", self.planned,
@@ -199,13 +200,16 @@ class NotesPlayback:
 
     def _show(self, sequence) -> None:
         """Every roll over ``sequence`` draws the span."""
+        self._each_roll(sequence, lambda roll: roll.show_span(self.span))
+
+    @staticmethod
+    def _each_roll(sequence, do) -> None:
         from ..history import ATTR
 
         context = getattr(sequence, ATTR, None)
         for view in [] if context is None else context.views():
-            show = getattr(view, "show_span", None)
-            if show is not None and view.structure is sequence:
-                show(self.span)
+            if getattr(view, "show_span", None) is not None and view.structure is sequence:
+                do(view)
 
 
 def play_sequence(sequence, at: float = 0.0, server=None):

@@ -20,6 +20,13 @@ import { runSteps } from "../steps.ts";
 import { contexts } from "../history.ts";
 import { EventSequence } from "./sequence.ts";
 
+/** What the playback asks of a roll over the sequence it plays. */
+interface Roll {
+    structure?: unknown;
+    showSpan?(span: [number, number] | null): void;
+    showLooping?(on: boolean): void;
+}
+
 /** Where a pass ends: open, where the last note ends, or at a beat. */
 export type PassEnd = null | "contents" | number;
 
@@ -239,7 +246,9 @@ export class NotesPlayback implements TransportDriver {
     /** The loop switch, as `L` is: kept stopped, and followed at once by a pass in progress. */
     async setLooping(on: boolean): Promise<void> {
         this.looping = on;
-        if (this.planned !== null) await this.#loop();
+        if (this.planned === null) return;
+        await this.#loop();
+        this.#eachRoll(this.planned, (roll) => roll.showLooping?.(on));
     }
 
     #loop(): Promise<void> {
@@ -248,10 +257,14 @@ export class NotesPlayback implements TransportDriver {
 
     /** Every roll over `sequence` draws the span. */
     #show(sequence: EventSequence): void {
+        this.#eachRoll(sequence, (roll) => roll.showSpan?.(this.span));
+    }
+
+    #eachRoll(sequence: EventSequence, run: (roll: Roll) => void): void {
         const context = contexts.get(sequence);
         for (const view of context?.views() ?? []) {
-            const roll = view as unknown as { structure?: unknown; showSpan?(span: [number, number] | null): void };
-            if (roll.structure === sequence) roll.showSpan?.(this.span);
+            const roll = view as unknown as Roll;
+            if (roll.structure === sequence && roll.showSpan !== undefined) run(roll);
         }
     }
 }

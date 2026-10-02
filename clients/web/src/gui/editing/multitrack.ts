@@ -32,6 +32,8 @@
 import { MULTITRACK, editingStitch } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import { Multitrack } from "../../multitrack.ts";
+import type { Region } from "../../multitrack.ts";
+import type { Transport, TransportDriver } from "../../defs/server/transport.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import type { Answer } from "./echo.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -545,6 +547,78 @@ export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack
  * and `redo` walk it, and a second window over the same multitrack walks the same
  * one.
  */
+/**
+ * **What a multitrack's `Transport` plays through**: the editor's playback, its
+ * positions the multitrack's seconds, and the time range and the loop switch
+ * the window shows -- the band a sweep leaves and `L` -- kept here, stopped or
+ * rolling, so a page and a hand read and write one state.
+ */
+class Driver implements TransportDriver {
+    /** The time range `[start, end]` in seconds, or `null`. */
+    span: [number, number] | null = null;
+    /** Whether the loop switch is on: the span, or the whole multitrack. */
+    looping = false;
+
+    private readonly editor: MultitrackEditor;
+
+    constructor(editor: MultitrackEditor) {
+        this.editor = editor;
+    }
+
+    get #playback(): Playback {
+        return this.editor.playback!;
+    }
+
+    async playing(): Promise<boolean> {
+        await this.#playback.refresh();
+        return this.#playback.playing;
+    }
+
+    async play(at?: number): Promise<void> {
+        if (at !== undefined) {
+            this.editor.cursor = at;
+            this.#playback.cue(at);
+        }
+        await this.#playback.play({ range: this.span, looping: this.looping });
+    }
+
+    async pause(): Promise<void> {
+        this.#playback.pause();
+    }
+
+    async stop(): Promise<void> {
+        this.editor.stop();
+    }
+
+    async locate(at: number): Promise<void> {
+        this.editor.cursor = at;
+        if (await this.playing()) this.#playback.locate(at);
+        else this.#playback.cue(at);
+    }
+
+    get end(): null | "contents" | number {
+        return this.#playback.end;
+    }
+
+    async setEnd(end: null | "contents" | number): Promise<void> {
+        this.#playback.end = end;
+    }
+
+    async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
+        this.span = span === null ? null : [span[0], span[1]];
+        this.editor.syncCore();
+        this.editor.coreCall("span", { span: this.span });
+        if (show) this.editor.adopt();
+        if (this.looping) await this.#playback.setLoop({ range: this.span, looping: true });
+    }
+
+    async setLooping(on: boolean): Promise<void> {
+        this.looping = on;
+        await this.#playback.setLoop({ range: this.span, looping: on });
+        this.editor.showLooping(on);
+    }
+}
+
 export class MultitrackEditor extends Editor<Multitrack> {
     /**
      * The axis and the buffer table this window crosses to -- the two things
@@ -600,6 +674,66 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }
+    }
+
+    /** What the `transport` plays through. */
+    readonly #driver = new Driver(this);
+
+    /**
+     * **The multitrack's transport**, as the object a page plays: a `Transport`
+     * whose verbs (`play`, `pause`, `stop`, `locate`, `loop`, `wait`) and
+     * `span` speak the multitrack's seconds -- the span is the band an Alt+drag
+     * sweeps, the loop switch is `L`, and each side reads what the other set.
+     * `null` for a multitrack opened with no server.
+     */
+    get transport(): Transport | null {
+        if (this.playback === null) return null;
+        const transport = this.playback.server.transportAt(this.playback.transportId);
+        transport.driver = this.#driver;
+        return transport;
+    }
+
+    // ---- what the hand marked ----
+
+    /**
+     * **The regions the hand holds** -- a click, Alt+click or a marquee over the
+     * boxes -- as the `Region` objects of this multitrack, in the order the
+     * boxes are drawn. The picture's, not the multitrack's: it enters no
+     * history. Empty with no window open. A method here, the reference
+     * client's property: asking the host is a round trip. (The time range a
+     * sweep leaves is the transport's `span`.)
+     */
+    async selected(): Promise<Region[]> {
+        const host = this.app.host;
+        const widget = this.multitrackWidget;
+        if (host === null || widget === null || this.windowId === null) return [];
+        const held = (await host.query(widget)).props.selected;
+        const names = JSON.parse(typeof held === "string" ? held : "[]") as string[];
+        const regions = new Map<string, Region>();
+        for (const track of this.structure.tracks) {
+            for (const lane of track.takeLanes) for (const r of lane.regions) regions.set(String(r.id), r);
+        }
+        return names.flatMap((name) => regions.get(name) ?? []);
+    }
+
+    /** Holds `regions` -- `Region` objects of this multitrack -- in the window, in place of what was held. */
+    select(regions: Iterable<Region>): void {
+        const host = this.app.host;
+        const widget = this.multitrackWidget;
+        if (host === null || widget === null || this.windowId === null) return;
+        host.set(widget, { selected: JSON.stringify([...regions].map((r) => String(r.id))) });
+    }
+
+    /** Holds nothing. */
+    unselect(): void {
+        this.select([]);
+    }
+
+    /** The window's loop switch, as `L` leaves it. @internal */
+    showLooping(on: boolean): void {
+        const host = this.app.host;
+        const widget = this.multitrackWidget;
+        if (host !== null && widget !== null && this.windowId !== null) host.set(widget, { looping: on ? 1 : 0 });
     }
 
     /** This editor's member in its editing context. */
@@ -711,10 +845,15 @@ export class MultitrackEditor extends Editor<Multitrack> {
             this.onLocate?.(this.cursor);
         }
         if (outcome.selection !== undefined) {
-            this.selection = outcome.selection as unknown as Selection;
+            // A sweep's time range is the transport's span: what the space bar
+            // plays and the loop repeats, and what a page reads.
+            const swept = outcome.selection as unknown as { start?: number; len?: number };
+            const start = Number(swept.start ?? 0);
+            const length = Number(swept.len ?? 0);
+            this.#driver.span = length > 0 ? [start, start + length] : null;
         }
         if (outcome.cursor !== undefined) this.cursor = outcome.cursor;
-        if (outcome.transport !== undefined) this.transported = this.transport(outcome.transport);
+        if (outcome.transport !== undefined) this.transported = this.carryTransport(outcome.transport);
         if (outcome.open !== undefined) this.openRoll(outcome.open);
         this.echo.send(outcome.answer);
         return changed;
@@ -854,7 +993,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
     private transported: Promise<void> = Promise.resolve();
 
     /** Carry out what a turn asked the transport to do, on the playback. */
-    private async transport(verb: TransportVerb): Promise<void> {
+    private async carryTransport(verb: TransportVerb): Promise<void> {
         const playback = this.playback;
         if (playback === null) return;
         if (verb.verb === "toggle") {
@@ -867,12 +1006,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
             // The space bar: a stop goes back to the position cursor, so the
             // play cursor lands where the reader left the mark; a play is the
             // time range a sweep left, and the loop switch over it.
+            this.#driver.looping = verb.looping ?? false;
             await playback.refresh();
             if (playback.playing) playback.stop();
             else await playback.play({ range: verb.range ?? null, looping: verb.looping ?? false });
         } else if (verb.verb === "loop") {
             // `L`: the pass in progress loops, or stops looping, from where it
             // stands; a stopped transport reads the switch on its next play.
+            this.#driver.looping = verb.looping ?? false;
             await playback.setLoop({ range: verb.range ?? null, looping: verb.looping ?? false });
         } else if (verb.verb === "stop") {
             playback.stop();

@@ -257,6 +257,13 @@ class NotesEditor(Editor):
         self._call("span", span=None if span is None else [float(span[0]), float(span[1])])
         super().adopt()
 
+    def show_looping(self, on: bool) -> None:
+        """The window's loop switch, as `L` leaves it: what
+        `clausters.defs.Transport.loop` turns on every roll over the
+        sequence it plays."""
+        if self._host is not None and self._window is not None and self._roll is not None:
+            self._host.set(self._roll, looping=1 if on else 0)
+
     @property
     def selected(self) -> list:
         """**The events marked on the roll** -- by a click, Shift+click or a

@@ -374,6 +374,17 @@ export class NotesEditor extends Editor<EventSequence> {
     }
 
     /**
+     * The window's loop switch, as `L` leaves it: what `Transport.loop` turns
+     * on every roll over the sequence it plays.
+     */
+    showLooping(on: boolean): void {
+        const host = this.app.host;
+        if (host !== null && this.rollId !== null && this.window !== null) {
+            host.set(this.rollId, { looping: on ? 1 : 0 });
+        }
+    }
+
+    /**
      * **The events marked on the roll** -- by a click, Shift+click or a
      * marquee -- as the `SeqEvent` objects they are, in beat order. The
      * picture's, not the sequence's: it enters no history and each window has

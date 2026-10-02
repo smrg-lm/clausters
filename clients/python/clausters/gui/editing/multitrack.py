@@ -335,6 +335,69 @@ def _plain(value):
     return value
 
 
+class _Driver:
+    """**What a multitrack's `clausters.defs.Transport` plays through**: the
+    editor's playback, its positions the multitrack's seconds, and the time
+    range and the loop switch the window shows -- the band a sweep leaves and
+    `L` -- kept here, stopped or rolling, so a script and a hand read and
+    write one state."""
+
+    def __init__(self, editor):
+        self.editor = editor
+        #: The time range ``(start, end)`` in seconds, or ``None``.
+        self.span = None
+        #: Whether the loop switch is on: the span, or the whole multitrack.
+        self.looping = False
+
+    @property
+    def _playback(self):
+        return self.editor.playback
+
+    def playing(self) -> bool:
+        return self._playback.playing
+
+    def play(self, at=None) -> None:
+        if at is not None:
+            self.editor.cursor = float(at)
+            self._playback.cue(float(at))
+        self._playback.play(range=self.span, looping=self.looping)
+
+    def pause(self) -> None:
+        self._playback.pause()
+
+    def stop(self) -> None:
+        self.editor.stop()
+
+    def locate(self, at: float) -> None:
+        self.editor.cursor = float(at)
+        if self._playback.playing:
+            self._playback.locate(float(at))
+        else:
+            self._playback.cue(float(at))
+
+    @property
+    def end(self):
+        return self._playback.end
+
+    def set_end(self, end) -> None:
+        self._playback.end = end
+
+    def set_span(self, span, *, show: bool = True) -> None:
+        self.span = None if span is None else (float(span[0]), float(span[1]))
+        editor = self.editor
+        editor._sync_core()
+        editor._call("span", span=None if self.span is None else list(self.span))
+        if show:
+            editor.adopt()
+        if self.looping:
+            self._playback.set_loop(range=self.span, looping=True)
+
+    def set_looping(self, on: bool) -> None:
+        self.looping = bool(on)
+        self._playback.set_loop(range=self.span, looping=self.looping)
+        self.editor._show_looping(self.looping)
+
+
 class MultitrackEditor(Editor):
     """A multitrack on screen, editable back into the `clausters.multitrack.Multitrack`
     the caller already holds.
@@ -385,10 +448,63 @@ class MultitrackEditor(Editor):
         self.rolls = {}
         #: The transport row's ids, once the window has numbered them.
         self._controls = None
+        #: What the `transport` plays through.
+        self._driver = _Driver(self)
         if server is not None:
             from .playback import Playback
 
             self.playback = Playback(self, server=server)
+
+    @property
+    def transport(self):
+        """**The multitrack's transport**, as the object a script plays: a
+        `clausters.defs.Transport` whose verbs (``play``, ``pause``,
+        ``stop``, ``locate``, ``loop``, ``wait``) and ``span`` speak the
+        multitrack's seconds -- the span is the band an Alt+drag sweeps, the
+        loop switch is `L`, and each side reads what the other set. ``None``
+        for a multitrack opened with no server."""
+        if self.playback is None:
+            return None
+        transport = self.playback.server.transport_at(self.playback._instance.transport())
+        transport._driver = self._driver
+        return transport
+
+    # ---- what the hand marked ----
+
+    @property
+    def selected(self) -> list:
+        """**The regions the hand holds** -- a click, Alt+click or a marquee
+        over the boxes -- as the `clausters.multitrack.Region` objects of this
+        multitrack, in the order the boxes are drawn. The picture's, not the
+        multitrack's: it enters no history. Empty with no window open. (The
+        time range a sweep leaves is the transport's `span`.)"""
+        import json
+
+        if self._host is None or self._window is None or self.multitrack_widget is None:
+            return []
+        held = self._host.query(self.multitrack_widget).props.get("selected") or "[]"
+        regions = {str(r.id): r for track in self.structure.tracks
+                   for lane in track.take_lanes for r in lane.regions}
+        return [regions[name] for name in json.loads(held) if name in regions]
+
+    def select(self, regions) -> None:
+        """Hold ``regions`` -- `clausters.multitrack.Region` objects of this
+        multitrack -- in the window, in place of what was held."""
+        import json
+
+        if self._host is None or self._window is None or self.multitrack_widget is None:
+            return
+        names = [str(r.id) for r in regions]
+        self._host.set(self.multitrack_widget, selected=json.dumps(names))
+
+    def unselect(self) -> None:
+        """Hold nothing."""
+        self.select([])
+
+    def _show_looping(self, on: bool) -> None:
+        """The window's loop switch, as `L` leaves it."""
+        if self._host is not None and self._window is not None and self.multitrack_widget is not None:
+            self._host.set(self.multitrack_widget, looping=1 if on else 0)
 
     @property
     def multitrack_widget(self) -> "int | None":
@@ -469,7 +585,11 @@ class MultitrackEditor(Editor):
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
         if outcome.get("selection") is not None:
-            self.selection = outcome["selection"]
+            # A sweep's time range is the transport's span: what the space
+            # bar plays and the loop repeats, and what a script reads.
+            swept = outcome["selection"]
+            start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
+            self._driver.span = (start, start + length) if length > 0 else None
         if outcome.get("cursor") is not None:
             self.cursor = float(outcome["cursor"])
         if outcome.get("transport") is not None:
@@ -610,6 +730,7 @@ class MultitrackEditor(Editor):
             # The space bar: a stop goes back to the position cursor, so the
             # play cursor lands where the reader left the mark; a play is the
             # time range a sweep left, and the loop switch over it.
+            self._driver.looping = bool(verb.get("looping"))
             if self.playback.playing:
                 self.playback.stop()
             else:
@@ -618,6 +739,7 @@ class MultitrackEditor(Editor):
         elif kind == "loop":
             # `L`: the pass in progress loops, or stops looping, from where it
             # stands; a stopped transport reads the switch on its next play.
+            self._driver.looping = bool(verb.get("looping"))
             self.playback.set_loop(range=verb.get("range"),
                                    looping=bool(verb.get("looping")))
         elif kind == "stop":

@@ -24,6 +24,7 @@ import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, TakeLane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
+import { Transport } from "../src/defs/server/transport.ts";
 
 await loadCore();
 
@@ -209,7 +210,13 @@ class AdoptingHost {
         }
     }
     ack(): void {}
-    set(): void {}
+    held = new Map<number, Record<string, unknown>>();
+    set(wid: number, props: Record<string, unknown>): void {
+        this.held.set(wid, { ...this.held.get(wid), ...props });
+    }
+    async query(wid: number): Promise<{ type: string; props: Record<string, unknown> }> {
+        return { type: "multitrack", props: { ...this.held.get(wid) } };
+    }
 }
 
 function wired(ed: MultitrackEditor): AdoptingHost {
@@ -901,3 +908,72 @@ test("a join the history let go of is freed and leaves the table", async () => {
     assert.ok(freed);
     assert.deepEqual([...domain.bridge.sources.buffers], [[1, 7]]);
 });
+
+/** A playback that records what the transport asks of it. */
+function recording() {
+    const calls: unknown[][] = [];
+    const held = new Map<number, Transport>();
+    const playback = {
+        calls,
+        playing: false,
+        end: null,
+        meters: new Map(),
+        transportId: 0,
+        server: {
+            transportAt: (n: number) => {
+                if (!held.has(n)) held.set(n, new Transport(playback.server as never, n));
+                return held.get(n)!;
+            },
+        },
+        async refresh() { return playback; },
+        async play(pass: { range?: unknown; looping?: boolean } = {}) {
+            calls.push(["play", pass.range ?? null, pass.looping ?? false]);
+        },
+        async setLoop(pass: { range?: unknown; looping?: boolean } = {}) {
+            calls.push(["loop", pass.range ?? null, pass.looping ?? false]);
+        },
+        pause() { calls.push(["pause"]); },
+        cue(at: number) { calls.push(["cue", at]); },
+        locate(at: number) { calls.push(["locate", at]); },
+    };
+    return playback;
+}
+
+test("the multitrack transport keeps its span and loop and draws them", async () => {
+    // The transport's span is the band a sweep leaves and the loop switch is
+    // L's, kept stopped, read by the next play.
+    const ed = editor(multitrack());
+    const host = wired(ed);
+    const playback = recording();
+    (ed as unknown as { playback: unknown }).playback = playback;
+    const transport = ed.transport!;
+    assert.equal(transport, ed.transport, "one transport, one object");
+    await transport.loop(1.0, 3.0);
+    assert.deepEqual(transport.span, [1.0, 3.0]);
+    assert.ok(transport.looping);
+    assert.deepEqual(playback.calls.at(-1), ["loop", [1.0, 3.0], true]);
+    const shown = props(ed);
+    assert.deepEqual([shown.sel_start, shown.sel_len], [SR, 2 * SR], "the band a sweep leaves");
+    assert.equal(host.held.get(ed.multitrackWidget!)?.looping, 1, "the window's L switch");
+    await transport.play();
+    assert.deepEqual(playback.calls.at(-1), ["play", [1.0, 3.0], true]);
+    await transport.unloop();
+    assert.ok(!transport.looping);
+    assert.deepEqual(transport.span, [1.0, 3.0]);
+    const wid = [...ed.view!.widgets.keys()][0];
+    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "selection", 0.0, 2 * SR]);
+    assert.deepEqual(transport.span, [0.0, 2.0], "a sweep is the transport's span");
+});
+
+test("what the multitrack holds is its regions", async () => {
+    const held = multitrack();
+    const ed = editor(held);
+    wired(ed);
+    const regions = held.tracks.flatMap((t) => t.takeLanes.flatMap((lane) => lane.regions));
+    assert.deepEqual(await ed.selected(), []);
+    ed.select(regions.slice(1));
+    assert.deepEqual(await ed.selected(), regions.slice(1));
+    ed.unselect();
+    assert.deepEqual(await ed.selected(), []);
+});
+

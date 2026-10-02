@@ -251,9 +251,12 @@ that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 script. **The space bar is play/stop**: a stop goes back to the position
 cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
 drag does in the audio editor: the space bar plays it from its start to its end,
-and the loop switch (**L**) loops it, or the whole multitrack with no range --
-the playback's `play(range=..., looping=...)` from a script, as the notes editor's `play` takes it too. **Where a pass ends** is
-the playback's `end`: `None` by default, the transport rolling on past the
+and the loop switch (**L**) loops it, or the whole multitrack with no range.
+From a script both are the transport's: `editor.transport` is the
+`Transport` the multitrack plays on, in seconds, so `editor.transport.loop(1, 3)`
+draws the band and turns `L` on, and a range swept by hand reads back as
+`editor.transport.span` (see [The transport](transport.md)). **Where a pass ends** is
+the transport's `end`: `None` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
 end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened
 with no server still edits; it is simply not heard.
@@ -460,39 +463,28 @@ hand put it, and what comes back is where it landed — so a redo replays the
 edit**, so undoing needs no second path: it is the same intent machinery running
 backwards, and the window adopts the result exactly as it adopts a snap.
 
-### The selection: what was swept, and what is under it
+### What the hand marked, and what it swept
 
-A sweep on a track is not an edit — nothing in the multitrack changes — but it
-is the **value** an operation is handed, so the editor keeps it typed:
-
-```python
-# after sweeping a marquee on a track
-editor.selection                 # {"start": 1.0, "len": 2.0}   (beats)
-editor.resolve_selection()       # [{"node": 3, "source": {...}, "range": [...], ...}]
-```
-
-Two things are worth knowing about what is in there. The span is in **beats**,
-the unit the arrangement is written in, converted from the timeline samples the
-window reported — the crate holds whatever unit it is given and converts
-nothing, because the tempo is yours. And a sweep with **height** over a view
-that measures a value carries that band too, in the element's own domain:
+Two things on a multitrack window are marked by hand and are not edits —
+nothing in the multitrack changes — and each is read in the type it is of.
+**What is held** is regions: a click, Alt+click or a marquee over the boxes,
+and `editor.selected` answers them as the `Region` objects of this multitrack.
+**What is swept** is a time range, an Alt+drag across the tracks, and it is the
+transport's: `editor.transport.span`, in seconds, the one the space bar plays
+and `L` loops.
 
 ```python
-editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0.25},
-                    #  "nodes": [4]}
+editor.selected                    # [Region(...), Region(...)]
+editor.select(track.take_lanes[0].regions)
+editor.unselect()                  # hold nothing
+editor.transport.loop(1.0, 3.0)    # the band drawn, the loop on
+editor.transport.span              # (1.0, 3.0)
 ```
 
-`nodes` says what the selection is *of*: the element when the sweep was inside
-one, and nothing at all when it was across a track, which is a selection of the
-shared time axis. `resolve_selection` turns that into the samples underneath —
-one entry per leaf, with the placement's base, the element's trim and the clamp
-at both ends already applied — and returns nothing where an aggregate or a
-generator is in the way rather than under it.
-
-The value band travels with the selection and does not narrow that answer: what
-lies under a range of amplitudes is the same samples as what lies under the
-whole span. Reading *only* those samples is an operation over the range, not a
-resolution of it.
+Both are the picture's state: they enter no history, and a script setting one
+is drawn the way a hand setting it is. The notes editor reads the same two
+words — its `selected` is events, its span the transport's — and the audio
+editor's selection is samples.
 
 The other scrap of screen state a driver can ask for is **which layer of a clip
 the hand is on** — its placement, its notes, its curve:
@@ -501,7 +493,7 @@ the hand is on** — its placement, its notes, its curve:
 editor.edit_layer(element, member)   # "roll", say, or None
 ```
 
-Both are asked for the way every other route here is: by the **placement**. A
+It is asked for the way every other route here is: by the **placement**. A
 widget id is the picture's name for a widget and is minted afresh every time the
 window is redrawn, so nothing that has to outlive a redraw is keyed by one — the
 same rule the history follows, one level down: identity belongs to the data,

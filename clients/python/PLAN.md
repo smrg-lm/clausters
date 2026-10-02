@@ -1862,11 +1862,15 @@ the books, and the existing examples extended.
     are the frames of the range — which is a particular case of the rule, not
     a second rule: `selected` is the samples (the data, with the value band
     of a sweep with height), `span` the interval.
-  What is left is the other two applications: the multitrack and the audio
-  editor expose their transport as a `Transport` (`span`, `loop`, `unloop`,
-  and the rest of its verbs), and `editor.selection` — today the swept
-  range, its `nodes` and its `value` band in one dict — is split between
-  `selected` and the transport's `span`. Both clients, both books.
+  Done for the multitrack: `editor.transport` is the `Transport` it plays
+  on, in seconds, its `span` the band a sweep leaves (drawn from a script
+  through the crate's `span` verb) and its loop switch the window's `L`
+  (a `/gui_set looping` the host takes as the key); `editor.selected` is
+  the held `Region`s, read and set through the host's `selected` prop.
+  What is left is the audio editor: its transport as a `Transport`, and
+  `editor.selection` — today the swept range, its `nodes` and its `value`
+  band in one dict — split between `selected` (the samples) and the
+  transport's `span`. Both clients, both books.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 

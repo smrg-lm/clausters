@@ -245,9 +245,9 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **`C61` - `span` and `selected`, the same two words in every editor**
   *(`clients/python/PLAN.md`, "A script plays and holds what the editors
-  do")*. The rule is decided and done for the roll; what is left is the
-  multitrack and the audio editor: their transport as a `Transport` with a
-  `span`, and `editor.selection` split between `selected` and that span.
+  do")*. The rule is decided and done for the roll and the multitrack; what
+  is left is the audio editor: its transport as a `Transport` with a `span`,
+  and `editor.selection` split between `selected` and that span.
 
 - ⬜ **`C59` - a sequence back in a `Timeline`** and **`C60` - the multitrack
   is held as a handle** *(`clients/python/PLAN.md`, "A script plays and holds

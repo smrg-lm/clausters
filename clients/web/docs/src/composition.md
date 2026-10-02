@@ -248,9 +248,15 @@ that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 page. **The space bar is play/stop**: a stop goes back to the position
 cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
 drag does in the audio editor: the space bar plays it from its start to its end,
-and the loop switch (**L**) loops it, or the whole multitrack with no range --
-the playback's `play({ range, looping })` from a script, as the notes editor's `play` takes it too. **Where a pass ends** is
-the playback's `end`: `null` by default, the transport rolling on past the
+and the loop switch (**L**) loops it, or the whole multitrack with no range.
+From a page both are the transport's: `editor.transport` is the `Transport` the
+multitrack plays on, in seconds, so `await editor.transport.loop(1, 3)` draws the
+band and turns `L` on, and a range swept by hand reads back as
+`editor.transport.span` (see [The transport](transport.md)). What the hand holds
+-- a click, Alt+click or a marquee over the boxes -- is `await editor.selected()`,
+the `Region` objects of this multitrack; `editor.select(regions)` holds them from
+the page and `editor.unselect()` holds nothing. **Where a pass ends** is
+the transport's `end`: `null` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
 end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened with
 no server still edits; it is simply not heard.

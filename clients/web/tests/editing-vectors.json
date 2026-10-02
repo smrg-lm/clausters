@@ -2609,6 +2609,8 @@
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],
+                  "sel_len": 0.0,
+                  "sel_start": 0.0,
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "tracks": [
                     "10",
@@ -2976,6 +2978,8 @@
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],
+                  "sel_len": 0.0,
+                  "sel_start": 0.0,
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "tracks": [
                     "10",
@@ -3116,6 +3120,8 @@
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],
+                  "sel_len": 0.0,
+                  "sel_start": 0.0,
                   "tempo_map": "[{\"beats\":0.0,\"tempo\":1.0}]",
                   "tracks": [
                     "10",

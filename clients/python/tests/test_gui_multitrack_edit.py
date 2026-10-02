@@ -611,7 +611,12 @@ class _AdoptingHost:
         pass
 
     def set(self, wid, **props):
-        pass
+        self.__dict__.setdefault("props", {}).setdefault(wid, {}).update(props)
+
+    def query(self, wid, timeout=1.0):
+        from clausters.gui.host import WidgetInfo
+
+        return WidgetInfo("multitrack", dict(self.__dict__.get("props", {}).get(wid, {})))
 
 
 def _wired(ed) -> _AdoptingHost:
@@ -824,3 +829,71 @@ def test_a_join_the_history_let_go_of_is_freed_and_leaves_the_table():
     editing.release([{"member": 3, "sources": [5]}])
     assert join.freed
     assert domain.bridge.sources.buffers == {1: 7}
+
+
+class _RecordingPlayback:
+    """A playback that records what the transport asks of it."""
+
+    def __init__(self):
+        from clausters.defs import Transport
+
+        self.calls = []
+        self.playing = False
+        self.end = None
+        self.meters = {}
+        held = {}
+        self.server = type("S", (), {
+            "transport_at": lambda _s, n: held.setdefault(n, Transport(self.server, n)),
+        })()
+        self._instance = type("I", (), {"transport": lambda _s: 0})()
+
+    def play(self, range=None, looping=False):
+        self.calls.append(("play", range, looping))
+
+    def set_loop(self, range=None, looping=False):
+        self.calls.append(("loop", range, looping))
+
+    def pause(self):
+        self.calls.append(("pause",))
+
+    def cue(self, at):
+        self.calls.append(("cue", at))
+
+    def locate(self, at):
+        self.calls.append(("locate", at))
+
+
+def test_the_multitrack_transport_keeps_its_span_and_loop_and_draws_them():
+    """The multitrack's transport: its span is the band a sweep
+    leaves and the loop switch is L's, kept stopped, read by the next play."""
+    ed = editor(multitrack())
+    host = _wired(ed)
+    ed.playback = _RecordingPlayback()
+    transport = ed.transport
+    assert transport is ed.transport, "one transport, one object"
+    transport.loop(1.0, 3.0)
+    assert transport.span == (1.0, 3.0) and transport.looping
+    assert ed.playback.calls[-1] == ("loop", (1.0, 3.0), True)
+    shown = props(ed)
+    assert (shown["sel_start"], shown["sel_len"]) == (SR, 2 * SR), "the band a sweep leaves"
+    assert host.props[ed.multitrack_widget]["looping"] == 1, "the window's L switch"
+    transport.play()
+    assert ed.playback.calls[-1] == ("play", (1.0, 3.0), True)
+    transport.unloop()
+    assert not transport.looping and transport.span == (1.0, 3.0)
+    wid = next(iter(ed.view.widgets))
+    ed._route([wid, "selection", 0.0, 2 * SR])
+    assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
+
+
+def test_what_the_multitrack_holds_is_its_regions():
+    held = multitrack()
+    ed = editor(held)
+    _wired(ed)
+    regions = [r for t in held.tracks for lane in t.take_lanes for r in lane.regions]
+    assert ed.selected == []
+    ed.select(regions[1:])
+    assert ed.selected == regions[1:]
+    ed.unselect()
+    assert ed.selected == []
+
