@@ -35,6 +35,7 @@ import type { MultitrackEditorOptions } from "./multitrack.ts";
 import type { AudioEditorOptions } from "./audio.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
+import type { PointsEditorOptions } from "./points.ts";
 import { AudioEditor, isTake } from "./audio.ts";
 import { main } from "../../base/main.ts";
 
@@ -95,14 +96,14 @@ export interface EditOptions {
     sources?: MultitrackEditorOptions["sources"];
     server?: Server;
     /**
-     * **A curve's own two**, ignored by every other structure: the value axis
-     * it is drawn against, both or neither. Without them the axis is derived
-     * from the break-points with a tenth of headroom, so the field's floor sits
-     * below the lowest value -- fine for a curve whose range is open, wrong for
-     * one that means something at its ends (an amplitude envelope's zero).
+     * **A curve's own four**, ignored by every other structure: the ranges its
+     * values (`min`/`max`) and its times (`start`/`end`) are kept in, each
+     * pair both or neither ({@link PointsEditorOptions}).
      */
-    min?: number;
-    max?: number;
+    min?: PointsEditorOptions["min"];
+    max?: PointsEditorOptions["max"];
+    start?: PointsEditorOptions["start"];
+    end?: PointsEditorOptions["end"];
     /**
      * **A buffer's own three**, ignored by every other structure: the audio
      * editor's history limits and where a take leaves memory for
@@ -116,7 +117,7 @@ export interface EditOptions {
 /** Builds the editor `structure` asks for, without opening it. */
 function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     const {
-        sampleRate = 0, host: _h, stage: _s, open: _o, min, max, ...rest
+        sampleRate = 0, host: _h, stage: _s, open: _o, min, max, start, end, ...rest
     } = options;
     if (isTake(structure)) {
         return new AudioEditor(structure, {
@@ -129,6 +130,8 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
             sampleRate,
             min,
             max,
+            start,
+            end,
             ...rest,
         }) as unknown as Editor<never>;
     }

@@ -139,6 +139,29 @@ pub fn quads(points: &[Point]) -> Vec<f64> {
     points.iter().flat_map(|p| quad(p.at, p)).collect()
 }
 
+/// **The value range of the parameter a curve automates**, out of its target:
+/// `{"cc": n}` 0 to 127, `{"bend": ...}` 2 semitones either way, `{"pressure":
+/// ...}`, `{"timbre": ...}`, `{"control": name}` and anything else 0 to 1 --
+/// and a `min`/`max` on the target wins, either end alone.
+///
+/// **The document says what a curve automates and never reads it**, so the
+/// range is a fact about the parameter and is stated where the parameter is.
+/// This is the one reading of it: the roll's curves, the multitrack's and the
+/// points editor's bounds all go through here.
+pub fn range(target: &Value) -> (f64, f64) {
+    let target = target.as_object();
+    let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
+    let read = |key: &str| target.and_then(|t| t.get(key)).and_then(Value::as_f64);
+    let (min, max) = if has("cc") {
+        (0.0, 127.0)
+    } else if has("bend") {
+        (-2.0, 2.0)
+    } else {
+        (0.0, 1.0)
+    };
+    (read("min").unwrap_or(min), read("max").unwrap_or(max))
+}
+
 /// **What a gesture over a curve means.**
 ///
 /// One tag and one verb: a `bpf` reports the whole curve, so the edit is the
@@ -196,6 +219,19 @@ mod tests {
         );
         assert!(bigger.max > first.max, "and it grows where the data left");
         assert_eq!(bigger.duration, 9.0);
+    }
+
+    /// **A parameter's range is read one way**: by what it automates, with a
+    /// `min`/`max` on the target winning, either end alone.
+    #[test]
+    fn a_range_is_the_parameter_s() {
+        assert_eq!(range(&json!({"cc": 74})), (0.0, 127.0));
+        assert_eq!(range(&json!({"bend": true, "channel": 1})), (-2.0, 2.0));
+        assert_eq!(range(&json!({"pressure": true})), (0.0, 1.0));
+        assert_eq!(range(&json!({"port": 3})), (0.0, 1.0), "a level, unity");
+        assert_eq!(range(&json!({"bend": true, "max": 12.0})), (-2.0, 12.0));
+        assert_eq!(range(&json!({"min": -1.0, "max": 1.0})), (-1.0, 1.0));
+        assert_eq!(range(&Value::Null), (0.0, 1.0));
     }
 
     /// A curve that spans nothing states no duration, rather than stating zero.

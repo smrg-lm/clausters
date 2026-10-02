@@ -108,12 +108,12 @@ def set_curve(spec):
 # %%
 editor = edit(
     env, sample_rate=48_000.0, title="amp env -> EnvGen",
-    # **The axis is declared.** An amplitude envelope means something at its
-    # ends, and a derived axis pads the data's range by a tenth -- which puts
-    # the field's floor below zero, so the one value that matters here cannot be
-    # reached by hand. Declaring it puts 0 on the floor; it still grows if a
-    # point is dragged outside.
-    min=0.0, max=1.0,
+    # **The ranges are rules.** An amplitude envelope means something at its
+    # ends: its values are kept from 0 to 1 and its times within two seconds,
+    # so no point leaves the field. The window shows both -- the rulers, and
+    # the readout of the point under the pointer against them. A normalized
+    # envelope would be the same with ``end=1.0``.
+    min=0.0, max=1.0, start=0.0, end=2.0,
     extra=[menu(name="curve", options=[str(c) for c in CURVES],
                 label="curve (all segments)"),
            button(name="play", label="play"),

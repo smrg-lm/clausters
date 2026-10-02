@@ -19,7 +19,8 @@ import { Domain, Editing, Editor, NotesEditor, PointsEditor, View, edit, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { POINTS } from "../src/document.ts";
-import { Bpf } from "../src/defs/ugens/index.ts";
+import { Bpf, Env } from "../src/defs/ugens/index.ts";
+import { Automation } from "../src/multitrack.ts";
 import { Event } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
@@ -173,6 +174,34 @@ test("a sweep over a curve is its span and selects its points", async () => {
     editor.span = null;
     assert.equal(editor.span, null);
     assert.deepEqual(editor.selected, []);
+});
+
+test("a normalized envelope is kept inside its ranges", async () => {
+    // Time and value both from 0 to 1: a point a hand reports outside is kept
+    // inside, and the curve the page holds is written that way.
+    const env = new Env([0.0, 1.0, 0.0], [0.5, 0.5]);
+    const editor = (await edit(env, {
+        sampleRate: SR, open: false, min: 0.0, max: 1.0, start: 0.0, end: 1.0,
+    })) as unknown as PointsEditor;
+    const { wid } = await opened(editor);
+    assert.deepEqual(editor.rules, { values: [0, 1], time: [0, 1] });
+    assert.equal(
+        editor.apply("/gui_event", [wid, 1, 0, "points",
+            0.0, -0.2, 1, 0.0, 0.4, 1.5, 1, 0.0, 1.6, 0.0, 1, 0.0]),
+        true,
+    );
+    assert.deepEqual(env.toPoints(), [0.0, 0.0, 1, 0.0, 0.4, 1.0, 1, 0.0, 1.0, 0.0, 1, 0.0]);
+});
+
+test("an automation is kept in the range of what it automates", async () => {
+    // With nothing declared, a curve over a parameter is kept in that
+    // parameter's range -- the one the roll and the multitrack draw it over.
+    const cutoff = new Automation({ target: { cc: 74 }, points: [[0.0, 10.0], [1.0, 100.0]] });
+    const editor = (await edit(cutoff, { sampleRate: SR, open: false })) as unknown as PointsEditor;
+    const { wid } = await opened(editor);
+    assert.deepEqual(editor.rules, { values: [0, 127], time: null });
+    editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 10.0, 1, 0.0, 1.0, 200.0, 1, 0.0]);
+    assert.equal(cutoff.toPoints()[5], 127);
 });
 
 test("an edit made against a picture an undo replaced is refused", async () => {
@@ -482,13 +511,16 @@ test("a window over a held curve and the roll are one order", async () => {
     const { wid } = await opened(curve);
     const values = () => bend.points.map((p) => p.value);
     const drawn = rollHost.acks.length;
-    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 5.0, 1, 0.0]);
-    assert.deepEqual(values(), [0, 5]);
+    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, -1.5, 1, 0.0]);
+    assert.deepEqual(values(), [0, -1.5]);
     assert.ok(rollHost.acks.length > drawn, "the roll is redrawn");
     assert.ok(roll.undo() && !roll.canUndo, "one gesture, one entry");
     assert.deepEqual(values(), [0, 2]);
     assert.ok(curve.redo());
-    assert.deepEqual(values(), [0, 5]);
+    assert.deepEqual(values(), [0, -1.5]);
+    // A bend is kept in its range, two semitones either way, as the roll
+    // draws it.
+    assert.deepEqual((curve as unknown as PointsEditor).rules.values, [-2, 2]);
 });
 
 test("a sequence nobody asked a history of records nothing", async () => {

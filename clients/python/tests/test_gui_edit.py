@@ -16,7 +16,7 @@ from clausters import TempoMap
 from clausters.gui import edit
 from clausters.gui.editing import Editing, NotesEditor, PointsEditor
 from clausters.seq import EventSequence, Timeline
-from clausters.defs.ugens import Bpf
+from clausters.defs.ugens import Bpf, Env
 from clausters.defs import Server
 from clausters.base import OscNrtInterface
 from clausters.seq.event import Event
@@ -208,6 +208,35 @@ def test_a_sweep_over_a_curve_is_its_span_and_selects_its_points():
     assert editor.selected == [tuple(flat[4:8])]
     editor.span = None
     assert editor.span is None and editor.selected == []
+
+
+def test_a_normalized_envelope_is_kept_inside_its_ranges():
+    """Time and value both from 0 to 1: a point a hand reports outside is kept
+    inside, and the curve the script holds is written that way."""
+    env = Env([0.0, 1.0, 0.0], [0.5, 0.5])
+    editor = edit(env, sample_rate=SR, open=False, min=0.0, max=1.0, start=0.0, end=1.0)
+    host, wid = opened(editor)
+    assert editor.rules == {"values": (0.0, 1.0), "time": (0.0, 1.0)}
+    assert editor.apply("/gui_event", [wid, 1, 0, "points",
+                                       0.0, -0.2, 1, 0.0,
+                                       0.4, 1.5, 1, 0.0,
+                                       1.6, 0.0, 1, 0.0]) is True
+    assert env.to_points() == pytest.approx([0.0, 0.0, 1, 0.0,
+                                             0.4, 1.0, 1, 0.0,
+                                             1.0, 0.0, 1, 0.0])
+
+
+def test_an_automation_is_kept_in_the_range_of_what_it_automates():
+    """With nothing declared, a curve over a parameter is kept in that
+    parameter's range -- the one the roll and the multitrack draw it over."""
+    from clausters.multitrack import Automation
+
+    cutoff = Automation({"cc": 74}, [(0.0, 10.0), (1.0, 100.0)])
+    editor = edit(cutoff, sample_rate=SR, open=False)
+    host, wid = opened(editor)
+    assert editor.rules == {"values": (0.0, 127.0), "time": None}
+    editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 10.0, 1, 0.0, 1.0, 200.0, 1, 0.0])
+    assert cutoff.to_points()[5] == 127.0
 
 
 def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
@@ -496,12 +525,15 @@ def test_a_window_over_a_held_curve_and_the_roll_are_one_order():
     _host, wid = opened(curve)
     assert curve._editing is roll._editing
     drawn = len(roll_host.acks)
-    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 5.0, 1, 0.0])
-    assert [p["value"] for p in bend.points] == [0.0, 5.0]
+    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, -1.5, 1, 0.0])
+    assert [p["value"] for p in bend.points] == [0.0, -1.5]
     assert len(roll_host.acks) > drawn, "the roll is redrawn"
     assert roll.undo() is True and not roll.can_undo, "one gesture, one entry"
     assert [p["value"] for p in bend.points] == [0.0, 2.0]
-    assert curve.redo() is True and [p["value"] for p in bend.points] == [0.0, 5.0]
+    assert curve.redo() is True and [p["value"] for p in bend.points] == [0.0, -1.5]
+    # A bend is kept in its range, two semitones either way, as the roll
+    # draws it.
+    assert curve.rules["values"] == (-2.0, 2.0)
 
 
 def test_a_sequence_nobody_asked_a_history_of_records_nothing():

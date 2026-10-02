@@ -78,21 +78,34 @@ class PointsEditor(Editor):
         curve: what to edit -- anything with ``to_points``/``set_points``.
         sample_rate: the rate the curve's time axis counts in.
         title: the window's title.
-        min: with ``max``, the **value axis** the curve is drawn against. Without
-            them the axis is derived from the break-points with a tenth of
-            headroom, which leaves the field's floor below the lowest value --
-            fine for a curve whose range is open, wrong for one that means
-            something at its ends (an amplitude envelope's zero, a pan's
-            extremes). Declared, the axis still **grows** to hold a point dragged
-            outside it; it just never starts narrower than what the caller said.
-        max: the top of that axis.
+        min: with ``max``, the **range the curve's values are kept in** -- a
+            rule, not a picture: the value axis is the range and holds, and no
+            point is left outside it. Without them a curve that automates a
+            parameter (a `clausters.multitrack.Automation` with a ``target``)
+            is kept in that parameter's range, the one the roll and the
+            multitrack draw it over; and a curve that says nothing (an
+            `clausters.defs.ugens.Env`, a `clausters.defs.ugens.Bpf`) is drawn
+            on an axis derived from its points, which grows to hold one dragged
+            past it.
+        max: the top of that range.
+        start: with ``end``, the range the curve's times are kept in -- a
+            normalized envelope is ``start=0.0, end=1.0`` beside ``min=0.0,
+            max=1.0``.
+        end: the end of that range.
+
+    The window shows the rules: the time ruler under the curve, in its own
+    seconds, the value ruler beside it, and a readout of what the pointer is
+    over -- a point's value against the range, and the shape of its segment.
     """
 
     def __init__(self, curve, *, sample_rate: float, title: str = "Curve",
-                 min=None, max=None, **options):
+                 min=None, max=None, start=None, end=None, **options):
         if (min is None) != (max is None):
             raise ValueError(
-                "a declared axis needs both ends: pass min and max, or neither")
+                "a declared range needs both ends: pass min and max, or neither")
+        if (start is None) != (end is None):
+            raise ValueError(
+                "a declared range needs both ends: pass start and end, or neither")
         domain = PointsDomain()
         super().__init__(curve, sample_rate=sample_rate, domain=domain,
                          view=PointsView(), title=title, **options)
@@ -101,9 +114,11 @@ class PointsEditor(Editor):
         request = {"rate": self.sample_rate, "title": self.title,
                    "w": int(self.size[0]), "h": int(self.size[1]),
                    "points": [float(x) for x in curve.to_points()],
-                   "name": _name(curve)}
+                   "name": _name(curve), "target": _target(curve)}
         if min is not None:
             request.update(min=float(min), max=float(max))
+        if start is not None:
+            request.update(start=float(start), end=float(end))
         self._member, self._structure_id = self._editing.open(
             "openPoints", f"object:{id(curve)}", request, curve, domain)
 
@@ -117,7 +132,19 @@ class PointsEditor(Editor):
         self._call("sync", window=self._window, rate=self.sample_rate,
                    title=self.title, w=int(self.size[0]), h=int(self.size[1]),
                    points=[float(x) for x in self.structure.to_points()],
-                   name=_name(self.structure))
+                   name=_name(self.structure), target=_target(self.structure))
+
+    @property
+    def rules(self) -> dict:
+        """**The ranges the curve is edited inside**: ``{"values": (low,
+        high), "time": (low, high)}``, each ``None`` where there is none --
+        the declared ones, and where no value range was declared, the range of
+        the parameter the curve automates."""
+        self._sync_core()
+        rules = self._call("rules")
+        return {key: None if rules.get(key) is None
+                else (float(rules[key][0]), float(rules[key][1]))
+                for key in ("values", "time")}
 
     # ---- the time range, and the points in it ----
 
@@ -192,6 +219,13 @@ class PointsEditor(Editor):
                 self.on_locate(self.cursor)
         self.echo.send(outcome.get("answer"))
         return changed
+
+
+def _target(curve):
+    """What the curve automates, for a curve that says (an
+    `clausters.multitrack.Automation`), else ``None``."""
+    target = getattr(curve, "target", None)
+    return target if isinstance(target, dict) else None
 
 
 def _name(curve) -> str:

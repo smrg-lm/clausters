@@ -111,17 +111,32 @@ export class PointsView extends View<EditableCurve> {
 /** What {@link PointsEditor} takes on top of the generic editor's options. */
 export interface PointsEditorOptions extends GenericEditorOptions<EditableCurve> {
     /**
-     * With {@link PointsEditorOptions.max}, the **value axis** the curve is
-     * drawn against. Without them the axis is derived from the break-points
-     * with a tenth of headroom, which leaves the field's floor below the lowest
-     * value -- fine for a curve whose range is open, wrong for one that means
-     * something at its ends (an amplitude envelope's zero, a pan's extremes).
-     * Declared, the axis still **grows** to hold a point dragged outside it; it
-     * just never starts narrower than what the caller said.
+     * With {@link PointsEditorOptions.max}, the **range the curve's values are
+     * kept in** -- a rule, not a picture: the value axis is the range and
+     * holds, and no point is left outside it. Without them a curve that
+     * automates a parameter (a `multitrack.Automation` with a `target`) is
+     * kept in that parameter's range, the one the roll and the multitrack
+     * draw it over; and a curve that says nothing (an `Env`, a `Bpf`) is drawn
+     * on an axis derived from its points, which grows to hold one dragged past
+     * it.
      */
     min?: number;
-    /** The top of that axis. */
+    /** The top of that range. */
     max?: number;
+    /**
+     * With {@link PointsEditorOptions.end}, the range the curve's times are
+     * kept in -- a normalized envelope is `start: 0, end: 1` beside `min: 0,
+     * max: 1`.
+     */
+    start?: number;
+    /** The end of that range. */
+    end?: number;
+}
+
+/** The ranges a curve is edited inside, each `[low, high]` or `null`. */
+export interface PointsRules {
+    values: [number, number] | null;
+    time: [number, number] | null;
 }
 
 /**
@@ -130,6 +145,10 @@ export interface PointsEditorOptions extends GenericEditorOptions<EditableCurve>
  * Nothing is handed back at the end: the object the page passed in *is* the
  * edited one, and reading its `toPoints` after an edit is how a caller sees
  * what was drawn.
+ *
+ * The window shows the rules: the time ruler under the curve, in its own
+ * seconds, the value ruler beside it, and a readout of what the pointer is
+ * over -- a point's value against the range, and the shape of its segment.
  */
 export class PointsEditor extends Editor<EditableCurve> {
     /** This editor's member in its editing context. */
@@ -138,10 +157,15 @@ export class PointsEditor extends Editor<EditableCurve> {
     curveId: number | null = null;
 
     constructor(curve: EditableCurve, options: PointsEditorOptions) {
-        const { min, max, ...rest } = options;
+        const { min, max, start, end, ...rest } = options;
         if ((min === undefined) !== (max === undefined)) {
             throw new TypeError(
-                "a declared axis needs both ends: pass min and max, or neither",
+                "a declared range needs both ends: pass min and max, or neither",
+            );
+        }
+        if ((start === undefined) !== (end === undefined)) {
+            throw new TypeError(
+                "a declared range needs both ends: pass start and end, or neither",
             );
         }
         const domain = new PointsDomain();
@@ -153,8 +177,10 @@ export class PointsEditor extends Editor<EditableCurve> {
             h: this.size[1],
             points: curve.toPoints().map(Number),
             name: nameOf(curve),
+            target: targetOf(curve),
         };
         if (min !== undefined) Object.assign(request, { min, max });
+        if (start !== undefined) Object.assign(request, { start, end });
         const opened = this.editing.open(
             "openPoints",
             keyOf("object", curve),
@@ -190,7 +216,21 @@ export class PointsEditor extends Editor<EditableCurve> {
             h: this.size[1],
             points: this.structure.toPoints().map(Number),
             name: nameOf(this.structure),
+            target: targetOf(this.structure),
         });
+    }
+
+    /**
+     * **The ranges the curve is edited inside**, each `[low, high]` or `null`
+     * where there is none -- the declared ones, and where no value range was
+     * declared, the range of the parameter the curve automates.
+     */
+    get rules(): PointsRules {
+        this.syncCore();
+        const rules = this.coreCall("rules");
+        const pair = (r: unknown): [number, number] | null =>
+            Array.isArray(r) ? [Number(r[0]), Number(r[1])] : null;
+        return { values: pair(rules.values), time: pair(rules.time) };
     }
 
     // ---- the time range, and the points in it ----
@@ -272,6 +312,12 @@ export class PointsEditor extends Editor<EditableCurve> {
         this.echo.send(outcome.answer);
         return changed;
     }
+}
+
+/** What the curve automates, for a curve that says (a `multitrack.Automation`), else `null`. */
+function targetOf(curve: EditableCurve): unknown {
+    const target = (curve as { target?: unknown }).target;
+    return target !== null && typeof target === "object" && !Array.isArray(target) ? target : null;
 }
 
 function nameOf(curve: EditableCurve): string {

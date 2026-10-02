@@ -12,6 +12,8 @@ What to do in the window:
 - **drag a point** to move it (times stay monotonic between its neighbours);
 - **drag a segment** vertically to bend its curvature;
 - **Ctrl+click** on empty curve area adds a point, on a point removes it;
+- **hover** a point or a segment: the readout in the corner says its time,
+  its value against the range, and the segment's shape;
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
   curve, not to the window, which is what the second cell shows.
 
@@ -72,10 +74,11 @@ curve = Bpf([(0.0, 200.0, "lin"),      # linear up
 # Nothing here plays, so nothing is booted -- and with no server there is no
 # sample clock to put the session's clocks on, so they keep wall-clock time.
 session = Session.live(boot=False, timebase=MonotonicTimebase())
-# The axis is declared: a cutoff lives above zero, and a derived one pads the
-# data's range by a tenth -- which here puts the field's floor at -180 Hz, where
-# a point dragged down crosses zero and the exponential segment above it reads
-# linearly, having no ratio between its ends.
+# The range is declared, and it is a rule: a cutoff lives from 20 Hz to 5 kHz,
+# so no point leaves it. Without it the axis would be derived from the points
+# with a tenth of headroom -- which here puts the field's floor at -180 Hz,
+# where a point dragged down crosses zero and the exponential segment above it
+# reads linearly, having no ratio between its ends.
 editor = edit(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
 
 # %% [markdown]

@@ -23,6 +23,25 @@ pub const SHAPE_SQUARED: i32 = 6;
 pub const SHAPE_CUBED: i32 = 7;
 pub const SHAPE_HOLD: i32 = 8;
 
+/// **A shape number's name**, as a client spells it when it writes an
+/// envelope (`"lin"`, `"exp"`, `"sin"` ...): what a view shows a reader for a
+/// segment. The custom-curvature shape is `"curve"`, whose value is the
+/// segment's own; a number no shape has is `"?"`.
+pub fn shape_name(shape: i32) -> &'static str {
+    match shape {
+        SHAPE_STEP => "step",
+        SHAPE_LINEAR => "lin",
+        SHAPE_EXPONENTIAL => "exp",
+        SHAPE_SINE => "sin",
+        SHAPE_WELCH => "wel",
+        SHAPE_CURVE => "curve",
+        SHAPE_SQUARED => "sqr",
+        SHAPE_CUBED => "cub",
+        SHAPE_HOLD => "hold",
+        _ => "?",
+    }
+}
+
 /// SuperCollider envelope shape number, `t` in `[0, 1)` the position within the
 /// segment, `a` the start level, `b` the target, `c` the curve value (only used
 /// by the custom-curvature shape). Returns the interpolated level.

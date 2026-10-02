@@ -54,10 +54,6 @@ pub const ROW_H: f64 = 96.0;
 /// How tall an automation's own row under a track is drawn.
 pub const CURVE_H: f64 = 40.0;
 
-/// The value range a curve is drawn over when its target says nothing: unity,
-/// which is what an unlabelled level means.
-const UNIT: (f64, f64) = (0.0, 1.0);
-
 /// **The tempo a multitrack that states none is drawn at**, in beats per
 /// second: one, so a beat of its ruler is a second.
 ///
@@ -290,17 +286,10 @@ impl Look<'_> {
     }
 }
 
-/// The value range a curve is drawn over, out of what it automates.
-///
-/// **The document says what a curve automates and never reads it**, so which
-/// range that parameter has -- a gain over one, a pan over another -- is a fact
-/// about the parameter and is stated where the parameter is.
+/// The value range a curve is drawn over, out of what it automates
+/// ([`crate::points::range`]).
 fn domain(curve: &picture::Curve) -> (f64, f64) {
-    let Value::Object(target) = &curve.target.0 else {
-        return UNIT;
-    };
-    let read = |key: &str, default: f64| target.get(key).and_then(Value::as_f64).unwrap_or(default);
-    (read("min", UNIT.0), read("max", UNIT.1))
+    crate::points::range(&curve.target.0)
 }
 
 /// The rows as the widget's flat sextuples: name, label, height, mute, solo,

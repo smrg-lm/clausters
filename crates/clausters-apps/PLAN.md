@@ -879,6 +879,52 @@ opened it.
   prepares and does not do; it goes with "An application inside another"
   (`crates/clausters-document/PLAN.md`, Future directions).
 
+- ✅ **X10 - The points editor's ranges, as rules.** *(Asked for by the user
+  2026-10-02, after `X4`: a points editor can be given rules with ranges --
+  a normalized `Env` is time on x and amplitude on y, both from 0 to 1, and
+  another curve wants another range, as an automation does; and the rules are
+  the application's, integrated and visible by default; and a value readout
+  like the roll's, the points' values against the rules and the shape of the
+  curve being edited. Done the same day.)*
+
+  **What exists.** Two rules for a curve's value range, written apart: the
+  roll's (`clausters_editing::notes`, by what the curve automates -- a CC 0 to
+  127, a bend 2 semitones either way, pressure, timbre and a control 0 to 1 --
+  with a `min`/`max` on the target winning) and the multitrack's
+  (`clausters_editing::multitrack`, the target's `min`/`max` over 0 to 1).
+  The points editor has none: its declared `min`/`max` are a floor the axis
+  grows past, so a hand drags a point anywhere, and it draws no rulers.
+
+  **The design** *(recommended, the user agreeing)*:
+
+  - **One rule for a parameter's range**, `clausters_editing::points::range`
+    over what a curve automates, read by the roll, the multitrack and the
+    points editor alike.
+  - **A curve's bounds**: its values from the parameter it automates (an
+    `Automation`'s target), or from what the caller declares (`min`/`max`),
+    which wins; its time from what the caller declares (`start`/`end`). A
+    curve that says nothing about a range (an `Env`, a `Bpf` with no
+    declaration) keeps today's derived axis, which grows.
+  - **A bound is a rule, not a floor**: the axis is the bound and holds, the
+    host keeps the hand inside the field it draws, and the crate clamps
+    every point a gesture reports into it.
+  - **Visible by default**: the window draws the curve with its time ruler
+    (in the curve's own seconds) and its value ruler on.
+  - **A readout**, the roll's: a `curve` standing on its own reads, in its
+    field's corner, the point under the pointer (its number, time and value
+    against the range) or the curve's value there, and the shape of the
+    segment (`clausters_core::envshape::shape_name`).
+
+  **What shipped.** `clausters_editing::points::range`, which the roll's
+  curves and the multitrack's now read (a CC automation on a track is drawn
+  over 0 to 127, where the multitrack's own copy drew it over 0 to 1);
+  `clausters_apps::points::Rules` (`Rules::of` the curve and the declaration,
+  `keep` on every gesture), the window's rulers and the `rules` verb; the
+  `target` an `Automation` carries handed to the crate by both clients, and
+  `start`/`end` beside `min`/`max` on `PointsEditor` and `edit`, with
+  `editor.rules` to read them; the host's `curve` readout. `edit_env` and
+  `edit_curve` declare their ranges as rules, in both clients.
+
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
   what is still open about editing a page are the N track's

@@ -74,7 +74,7 @@ export { Playback } from "./playback.ts";
 // read it; what a page sees now is the reconciler's answer.
 export type { End, Pass, Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
-export type { EditableCurve, PointsEditorOptions } from "./points.ts";
+export type { EditableCurve, PointsEditorOptions, PointsRules } from "./points.ts";
 export { MEASURES, SamplesView, measures } from "./samples.ts";
 export type { Measure } from "./samples.ts";
 export { Echo } from "./echo.ts";

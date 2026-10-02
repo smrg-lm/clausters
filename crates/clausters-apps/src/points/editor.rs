@@ -12,7 +12,7 @@ use clausters_document::{Applied, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::points;
 
-use super::{Held, Shared, props, window};
+use super::{Held, Rules, Shared, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
 
 /// The vocabulary the editor's structure is registered under.
@@ -65,6 +65,9 @@ pub struct PointsEditor {
     title: String,
     size: (i64, i64),
     held: Held,
+    /// The ranges the caller declared; the curve's own parameter fills in the
+    /// value range where it declared none ([`Rules::of`]).
+    declared: Rules,
     /// The time range a sweep left, `[start, end]` in the curve's seconds.
     span: Option<(f64, f64)>,
     /// The value band the same sweep covered, when it had height.
@@ -79,9 +82,12 @@ struct Opened {
     title: String,
     w: i64,
     h: i64,
-    /// The value axis the caller declared, both ends or neither.
+    /// The value range the caller declared, both ends or neither.
     min: Option<f64>,
     max: Option<f64>,
+    /// The time range the caller declared, both ends or neither.
+    start: Option<f64>,
+    end: Option<f64>,
     version: i64,
 }
 
@@ -94,6 +100,8 @@ impl Default for Opened {
             h: 520,
             min: None,
             max: None,
+            start: None,
+            end: None,
             version: 1,
         }
     }
@@ -121,6 +129,7 @@ impl PointsEditor {
             title: "Curve".into(),
             size: (1000, 520),
             held: Held::default(),
+            declared: Rules::default(),
             span: None,
             band: None,
         }
@@ -129,6 +138,12 @@ impl PointsEditor {
     /// The curve it edits.
     pub fn curve(&self) -> &Shared {
         &self.curve
+    }
+
+    /// **The rules the curve is edited under**, as it stands now: a target
+    /// the curve was given since is read on the next turn.
+    pub fn rules(&self) -> Rules {
+        Rules::of(&self.held(), self.declared)
     }
 
     fn held(&self) -> std::sync::MutexGuard<'_, Automation> {
@@ -142,7 +157,15 @@ impl PointsEditor {
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
         let curve = self.held().clone();
-        window(&curve, &mut self.held, widget, &self.title, self.size)
+        let rules = self.rules();
+        window(
+            &curve,
+            &mut self.held,
+            &rules,
+            widget,
+            &self.title,
+            self.size,
+        )
     }
 
     /// A position in seconds as the timeline samples the widget counts.
@@ -162,7 +185,8 @@ impl PointsEditor {
             return Vec::new();
         }
         let curve = self.held().clone();
-        let mut props = props(&curve, &mut self.held);
+        let rules = self.rules();
+        let mut props = props(&curve, &mut self.held, &rules);
         // The time range is drawn where the hand sweeps one, so a span set
         // from the client shows as the band a sweep leaves.
         let (start, len) = self.span.map_or((0.0, 0.0), |(a, b)| {
@@ -255,7 +279,11 @@ impl PointsEditor {
                 (None, Vec::new())
             }
             "points" => {
-                let flat: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
+                // **Inside the rules**, whatever the hand reported: the host
+                // keeps a drag in the field it draws, and this is the rule
+                // itself, for every caller that reports a curve.
+                let mut flat: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
+                self.rules().keep(&mut flat);
                 let intake = points::intake(tag, &flat);
                 let Some(payload) = intake.payloads.into_iter().next() else {
                     return (None, Vec::new());
@@ -329,16 +357,19 @@ impl Converse for PointsEditor {
 }
 
 /// **A points editor from JSON**: `{"rate", "title", "w", "h", "min", "max",
-/// "version"}` over `curve`. `min` and `max` declare the value axis the curve
-/// is first drawn against; it still grows to hold a point dragged outside it.
+/// "start", "end", "version"}` over `curve`. `min` and `max` declare the range
+/// its values are kept in, over the range of the parameter it automates;
+/// `start` and `end` the range its times are kept in.
 pub fn new_json(curve: Shared, request: &str) -> PointsEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = PointsEditor::new(curve, opened.rate, opened.version);
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
-    if let (Some(min), Some(max)) = (opened.min, opened.max) {
-        editor.held.axis = Some((min.min(max), min.max(max)));
-    }
+    let ordered = |a: f64, b: f64| (a.min(b), a.max(b));
+    editor.declared = Rules {
+        values: opened.min.zip(opened.max).map(|(a, b)| ordered(a, b)),
+        time: opened.start.zip(opened.end).map(|(a, b)| ordered(a, b)),
+    };
     editor
 }
 
@@ -347,8 +378,10 @@ pub fn new_json(curve: Shared, request: &str) -> PointsEditor {
 /// - `window` -- `widget`: the GuiDef, the curve under that id.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `points` (the curve
-///   as its holder has it now, flat quads), `name`, `rate`, `title`, `w`, `h`:
-///   `{}`.
+///   as its holder has it now, flat quads), `name`, `target`, `rate`,
+///   `title`, `w`, `h`: `{}`.
+/// - `rules` -- `{"values", "time"}`: the ranges the curve is edited inside,
+///   each `[low, high]` or `null`.
 /// - `state` -- `{"points"}`: the curve as flat quads.
 /// - `span` -- `span`, when given: `[start, end]` in the curve's seconds, or
 ///   `null` -- the time range drawn as the band a sweep leaves, with no value
@@ -389,6 +422,9 @@ pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
             if let Some(name) = request.get("name").and_then(Value::as_str) {
                 editor.held().name = (!name.is_empty()).then(|| name.to_string());
             }
+            if let Some(target) = request.get("target") {
+                editor.held().target = Opaque(target.clone());
+            }
             if let Some(rate) = request.get("rate").and_then(Value::as_f64) {
                 editor.rate = rate;
             }
@@ -415,6 +451,11 @@ pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
             json!({ "span": editor.span.map(|(a, b)| json!([a, b])) }).to_string()
         }
         "selected" => json!({ "points": editor.selected() }).to_string(),
+        "rules" => {
+            let rules = editor.rules();
+            let pair = |r: Option<(f64, f64)>| r.map(|(a, b)| json!([a, b]));
+            json!({ "values": pair(rules.values), "time": pair(rules.time) }).to_string()
+        }
         _ => "{}".into(),
     }
 }

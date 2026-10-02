@@ -77,10 +77,11 @@ def test_a_curve_needs_two_points():
         Bpf([(0.0, 1.0, 1, 0.0)])
 
 
-def test_a_declared_axis_is_the_floor_and_still_grows():
+def test_a_declared_range_is_a_rule_the_axis_holds():
     # A derived axis pads the data by a tenth, which puts the field's floor
     # below the lowest value -- on an amplitude envelope that makes zero
-    # unreachable by hand. A caller who knows the range says it.
+    # unreachable by hand. A caller who knows the range says it, and it is a
+    # rule: the axis is the range, whatever the curve holds.
     from clausters.gui.editing.points import PointsEditor
 
     def axis(editor):
@@ -92,11 +93,10 @@ def test_a_declared_axis_is_the_floor_and_still_grows():
 
     declared = PointsEditor(env, sample_rate=48_000.0, min=0.0, max=1.0)
     assert axis(declared) == (0.0, 1.0)
+    assert declared.rules == {"values": (0.0, 1.0), "time": None}
 
-    # Declared is a floor, not a clamp: a point dragged outside widens it.
     env.set_points([0.0, -0.5, 1, 0.0, 1.0, 1.0, 1, 0.0])
-    low, high = axis(declared)
-    assert low < 0.0 and high == 1.0
+    assert axis(declared) == (0.0, 1.0), "the range holds"
 
 
 def test_a_declared_axis_needs_both_ends():
@@ -104,3 +104,5 @@ def test_a_declared_axis_needs_both_ends():
 
     with pytest.raises(ValueError, match="both ends"):
         PointsEditor(Env([0.0, 1.0], [1.0]), sample_rate=48_000.0, min=0.0)
+    with pytest.raises(ValueError, match="both ends"):
+        PointsEditor(Env([0.0, 1.0], [1.0]), sample_rate=48_000.0, end=1.0)

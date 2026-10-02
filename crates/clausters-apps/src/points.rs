@@ -10,13 +10,24 @@
 //! (`Shared`), and a caller whose curve is an object of its own (a client's
 //! envelope) is handed the points after every change to write back.
 //!
+//! # The rules
+//!
+//! A curve is edited inside its **ranges** ([`Rules`]): its values inside the
+//! range of the parameter it automates ([`clausters_editing::points::range`],
+//! the rule the roll and the multitrack read too) or the one its caller
+//! declares, and its time inside the one its caller declares. A range is a
+//! rule and not a picture: the axis is the range and holds, and every point a
+//! gesture reports is kept inside it. A curve with no range -- an envelope
+//! nobody declared one for -- is drawn on an axis that **only grows** while the
+//! window is open ([`clausters_editing::points::axis`]), since a curve that
+//! refits while a point is dragged moves every other point on screen.
+//!
 //! # The window
 //!
 //! One widget: the catalogue's `bpf` picture
-//! ([`clausters_document::view::catalogue`]) over the curve's points, on a
-//! value axis and a time span that **only grow** while the window is open
-//! ([`clausters_editing::points::axis`]) -- a curve that refits while a point is
-//! dragged moves every other point on screen.
+//! ([`clausters_document::view::catalogue`]) over the curve's points, with its
+//! rules **in sight**: the time ruler under it, in the curve's own seconds,
+//! and the value ruler beside it, over the range.
 //!
 //! # A turn
 //!
@@ -50,6 +61,49 @@ pub struct Held {
     pub span: f64,
 }
 
+/// **The ranges a curve is edited inside**, where it has them: its values and
+/// its time, each `(low, high)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rules {
+    /// The range its values are kept in.
+    pub values: Option<(f64, f64)>,
+    /// The range its points' times are kept in.
+    pub time: Option<(f64, f64)>,
+}
+
+impl Rules {
+    /// **The rules `curve` is edited under**: what the caller `declared`, and
+    /// where it declared no value range, the range of the parameter the curve
+    /// automates -- none for a curve that automates nothing it says.
+    pub fn of(curve: &Automation, declared: Rules) -> Rules {
+        Rules {
+            values: declared.values.or_else(|| {
+                let says = match &curve.target.0 {
+                    Value::Null => false,
+                    Value::Object(target) => !target.is_empty(),
+                    _ => true,
+                };
+                says.then(|| points::range(&curve.target.0))
+            }),
+            time: declared.time,
+        }
+    }
+
+    /// **Flat `t v shape curve` quads kept inside the ranges**: each time and
+    /// each value clamped into its own. Clamping keeps the order the times
+    /// were in, so a curve that was in order stays in order.
+    pub fn keep(&self, quads: &mut [f64]) {
+        for quad in quads.as_chunks_mut::<{ points::QUAD }>().0 {
+            if let Some((lo, hi)) = self.time {
+                quad[0] = quad[0].clamp(lo, hi);
+            }
+            if let Some((lo, hi)) = self.values {
+                quad[1] = quad[1].clamp(lo, hi);
+            }
+        }
+    }
+}
+
 /// What the curve's header says: its name, or the word for one.
 pub fn label(curve: &Automation) -> String {
     curve
@@ -60,15 +114,23 @@ pub fn label(curve: &Automation) -> String {
 }
 
 /// **The props the curve is drawn with**: its points as the flat quads the
-/// widget speaks, the value axis and the time they span -- each widened from
-/// what `held` says the window has, and `held` moved on to it.
-pub fn props(curve: &Automation, held: &mut Held) -> Map<String, Value> {
+/// widget speaks, the value axis and the time they span -- each the range
+/// `rules` keep it in, or where there is none, widened from what `held` says
+/// the window has; and `held` moved on to it.
+pub fn props(curve: &Automation, held: &mut Held, rules: &Rules) -> Map<String, Value> {
     let quads = points::quads(&curve.points);
-    let out = points::props(&quads, held.axis, held.span);
+    let mut out = points::props(&quads, held.axis, held.span);
     let axis = points::axis(&quads, held.axis, held.span);
+    let (min, max) = rules.values.unwrap_or((axis.min, axis.max));
+    let span = rules.time.map_or(axis.duration, |(_, end)| end);
+    out.insert("min".into(), json!(min));
+    out.insert("max".into(), json!(max));
+    if span > 0.0 {
+        out.insert("duration".into(), json!(span));
+    }
     *held = Held {
-        axis: Some((axis.min, axis.max)),
-        span: axis.duration,
+        axis: Some((min, max)),
+        span,
     };
     out
 }
@@ -79,11 +141,12 @@ pub fn props(curve: &Automation, held: &mut Held) -> Map<String, Value> {
 pub fn window(
     curve: &Automation,
     held: &mut Held,
+    rules: &Rules,
     widget: i32,
     title: &str,
     size: (i64, i64),
 ) -> Value {
-    let drawn = props(curve, held);
+    let drawn = props(curve, held, rules);
     let number = |key: &str| drawn.get(key).and_then(Value::as_f64).unwrap_or(0.0);
     let mut picture = catalogue::bpf(&Curve {
         points: points::quads(&curve.points),
@@ -93,6 +156,12 @@ pub fn window(
         label: label(curve),
     });
     picture.insert("id".into(), json!(widget));
+    // **The rules in sight**: the time ruler, labelled in the curve's own
+    // seconds -- a rate of one makes a unit of the axis a second -- and the
+    // value ruler over the range.
+    picture.insert("ruler".into(), json!("time"));
+    picture.insert("ruler_y".into(), json!("value"));
+    picture.insert("sample_rate".into(), json!(1.0));
     json!({
         "type": "window",
         "title": title,
@@ -105,7 +174,7 @@ pub fn window(
 
 /// A curve of its own, for a caller that hands the editor data rather than a
 /// curve it already shares: the request's `points` -- the flat `t v shape
-/// curve` quads -- under its `name`.
+/// curve` quads -- under its `name`, automating its `target`.
 pub fn shared_of(request: &Value) -> Shared {
     let flat: Vec<f64> = request
         .get("points")
@@ -114,6 +183,9 @@ pub fn shared_of(request: &Value) -> Shared {
         .unwrap_or_default();
     let mut curve = Automation::new(clausters_document::NodeId(0), Default::default());
     curve.points = points::state(&flat);
+    if let Some(target) = request.get("target").filter(|t| !t.is_null()) {
+        curve.target = clausters_document::Opaque(target.clone());
+    }
     curve.name = request
         .get("name")
         .and_then(Value::as_str)

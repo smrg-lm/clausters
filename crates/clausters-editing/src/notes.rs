@@ -220,44 +220,41 @@ pub struct Projection {
 /// How tall a sequence curve's row under the plane is drawn.
 pub const CURVE_H: f64 = 40.0;
 
-/// **What a curve is drawn over**: its label, its value range, and whether
-/// it is a bend (drawn in the plane when it is a note's). The target says
-/// what it moves -- `{"cc": n}` (0 to 127), `{"bend": ...}` (semitones, 2
-/// either way unless the target says), `{"pressure": ...}` or `{"timbre":
-/// ...}` (0 to 1), `{"control": name}` -- and an explicit `min`/`max` on it,
-/// or a name on the curve, wins. A sequence curve's `channel` (the notes' own count,
+/// **What a curve is drawn over**: its label, its value range
+/// ([`crate::points::range`]), and whether it is a bend (drawn in the plane
+/// when it is a note's). The target says what it moves -- `{"cc": n}`,
+/// `{"bend": ...}`, `{"pressure": ...}`, `{"timbre": ...}`, `{"control":
+/// name}` -- and a name on the curve wins over the label it gives. A sequence curve's `channel` (the notes' own count,
 /// from 0) is the channel it acts on, and none is every channel.
 fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
     let target = curve.target.0.as_object();
     let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
     let read = |key: &str| target.and_then(|t| t.get(key)).and_then(Value::as_f64);
-    let (label, min, max, pitch) = if let Some(cc) = read("cc") {
-        (format!("CC {cc}"), 0.0, 127.0, false)
+    let (label, pitch) = if let Some(cc) = read("cc") {
+        (format!("CC {cc}"), false)
     } else if has("bend") {
-        ("bend".to_string(), -2.0, 2.0, true)
+        ("bend".to_string(), true)
     } else if has("pressure") {
-        ("pressure".to_string(), 0.0, 1.0, false)
+        ("pressure".to_string(), false)
     } else if has("timbre") {
-        ("timbre".to_string(), 0.0, 1.0, false)
+        ("timbre".to_string(), false)
     } else {
         let name = target
             .and_then(|t| t.get("control"))
             .and_then(Value::as_str)
             .unwrap_or("curve");
-        (name.to_string(), 0.0, 1.0, false)
+        (name.to_string(), false)
     };
+    // The range is the parameter's, read by the one rule every curve's view
+    // reads it by.
+    let (min, max) = crate::points::range(&curve.target.0);
     // A curve's channel is part of what it is on, as in MIDI, and shown the
     // way MIDI shows a channel: counted from 1.
     let label = match read("channel") {
         Some(channel) => format!("{label} ch {}", channel + 1.0),
         None => label,
     };
-    (
-        curve.name.clone().unwrap_or(label),
-        read("min").unwrap_or(min),
-        read("max").unwrap_or(max),
-        pitch,
-    )
+    (curve.name.clone().unwrap_or(label), min, max, pitch)
 }
 
 /// A point as the wire carries it, `at` already in view units.

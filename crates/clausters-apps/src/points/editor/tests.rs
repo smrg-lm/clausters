@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::*;
-use crate::points::shared_of;
+use crate::points::{Rules, shared_of};
 
 /// A ramp up and down over two seconds, at a rate of 100 samples a second.
 fn shared() -> Shared {
@@ -129,10 +129,12 @@ fn a_sync_takes_the_curve_as_its_holder_has_it() {
     );
 }
 
-/// The value axis grows to hold a point dragged past it, and never narrows.
+/// A curve with no range is drawn on an axis that grows to hold a point
+/// dragged past it, and never narrows.
 #[test]
-fn the_axis_grows_with_the_curve_and_holds() {
-    let mut e = editor(shared(), r#"{"rate": 100.0, "min": 0.0, "max": 1.0}"#);
+fn with_no_range_the_axis_grows_with_the_curve_and_holds() {
+    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
+    assert_eq!(e.rules(), Rules::default());
     let out = e.event(
         &gesture("points", quads(&[0.0, 0.0, 1.0, 0.0, 1.0, 3.0, 1.0, 0.0])),
         1,
@@ -149,4 +151,73 @@ fn the_axis_grows_with_the_curve_and_holds() {
     let props: Value =
         serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
     assert_eq!(props["max"].as_f64().unwrap(), grown);
+}
+
+/// **A declared range is a rule**: the axis is the range and holds, and a
+/// point reported outside it is kept inside -- a normalized envelope, time and
+/// value both from 0 to 1.
+#[test]
+fn a_declared_range_keeps_the_curve_inside_it() {
+    let curve = shared();
+    let mut e = editor(
+        curve.clone(),
+        r#"{"rate": 100.0, "min": 0.0, "max": 1.0, "start": 0.0, "end": 1.0}"#,
+    );
+    let out = e.event(
+        &gesture("points", quads(&[0.0, -0.5, 1.0, 0.0, 1.5, 3.0, 1.0, 0.0])),
+        1,
+    );
+    assert_eq!(
+        out.points.as_deref(),
+        Some(&[0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0][..])
+    );
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("an answer with the curve");
+    };
+    let props = &corrections[0].props;
+    assert_eq!(
+        (props["min"].clone(), props["max"].clone()),
+        (json!(0.0), json!(1.0))
+    );
+    assert_eq!(
+        props["duration"],
+        json!(1.0),
+        "the time range is the span drawn"
+    );
+    assert_eq!(
+        call_json(&mut e, r#"{"verb": "rules"}"#),
+        r#"{"time":[0.0,1.0],"values":[0.0,1.0]}"#
+    );
+}
+
+/// **An automation's range is its parameter's**, read by the rule the roll
+/// and the multitrack read: a CC goes from 0 to 127 with nothing declared.
+#[test]
+fn an_automation_is_kept_in_the_range_of_what_it_automates() {
+    let curve = shared_of(&json!({
+        "points": [0.0, 10.0, 1.0, 0.0, 1.0, 100.0, 1.0, 0.0],
+        "target": {"cc": 74},
+    }));
+    let mut e = editor(curve, r#"{"rate": 100.0}"#);
+    assert_eq!(e.rules().values, Some((0.0, 127.0)));
+    let out = e.event(
+        &gesture(
+            "points",
+            quads(&[0.0, 10.0, 1.0, 0.0, 1.0, 200.0, 1.0, 0.0]),
+        ),
+        1,
+    );
+    assert_eq!(out.points.unwrap()[5], 127.0);
+}
+
+/// **The rules are in sight by default**: the window draws the time ruler,
+/// in the curve's own seconds, and the value ruler.
+#[test]
+fn the_window_shows_its_rulers() {
+    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
+    let tree = e.window(40);
+    let curve = &tree["children"][0];
+    assert_eq!(curve["ruler"], "time");
+    assert_eq!(curve["ruler_y"], "value");
+    assert_eq!(curve["sample_rate"], 1.0);
 }

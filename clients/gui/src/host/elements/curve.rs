@@ -326,6 +326,76 @@ impl Curve {
             .then(|| (points::value_at(&self.points, ax.t(at.0)), false))
     }
 
+    /// **What the pointer reads over a curve standing on its own**: the point
+    /// under it -- its number, its time and its value -- or the curve's value
+    /// at the pointer's time, each against the range the field is drawn over,
+    /// which is the rule an editor keeps the curve in; and the shape of the
+    /// segment it starts or is over, with the curvature of a custom one.
+    /// `None` off the field and off every point.
+    fn readout(&self, at: (f64, f64), ax: &Axes, rate: f64, m: &Metrics) -> Option<String> {
+        // A point on the field's edge is still under the pointer that grabs
+        // it, so a point answers before the field is asked.
+        let point = ax.hit_point(&self.points, at.0, at.1, m);
+        if point.is_none() && !ax.body.contains(at.0, at.1) {
+            return None;
+        }
+        let per_px = ax.view.len / rate / f64::from(ax.body.w.max(1.0));
+        let (head, time, value, segment) = match point {
+            Some(i) => {
+                let p = self.points.get(i)?;
+                let next = (i + 1 < self.points.len()).then_some(i);
+                (format!("point {}  ", i + 1), p.time, p.value, next)
+            }
+            None => {
+                let t = ax.t(at.0);
+                (
+                    "".into(),
+                    t,
+                    points::value_at(&self.points, t),
+                    ax.hit_segment(&self.points, at.0),
+                )
+            }
+        };
+        let (lo, hi) = (f64::from(self.min), f64::from(self.max));
+        let read = |v: f64| bpf::readout_value(v, lo, hi);
+        let shape = segment
+            .and_then(|i| self.points.get(i))
+            .map(|p| match p.shape {
+                clausters_core::envshape::SHAPE_CURVE => format!("  curve {:+.2}", p.curve),
+                shape => format!("  {}", clausters_core::envshape::shape_name(shape)),
+            });
+        Some(format!(
+            "{head}{}  {} [{}, {}]{}",
+            ruler::readout_time(time, rate, per_px),
+            read(f64::from(value)),
+            read(lo),
+            read(hi),
+            shape.unwrap_or_default(),
+        ))
+    }
+
+    /// Draws [`Self::readout`] in the field's bottom-right corner, as a roll
+    /// draws its own: right-aligned inside the field, dropping its tail first
+    /// where the field is narrow.
+    fn draw_readout(&self, d: &mut Draw, ctx: &Ctx, ax: &Axes) {
+        let Some(at) = ctx.world.cursor else {
+            return;
+        };
+        let rate = self.rate(ctx.world.sample_rate);
+        let Some(text) = self.readout(at, ax, rate, ctx.metrics) else {
+            return;
+        };
+        let m = ctx.metrics;
+        let room = ax.body.w - 2.0 * m.pad;
+        let w = font::width(&text, m.caption_scale).min(room);
+        let (x, y) = (
+            ax.body.x + ax.body.w - w - m.pad,
+            ax.body.y + ax.body.h - font::height(m.caption_scale) - 2.0,
+        );
+        let color = d.parts().2.ruler_text;
+        crate::host::graphics::plate_text(d, &text, x, y, room, m.caption_scale, color);
+    }
+
     /// The edit-back payload: the `"points"` tag plus the flat `t v shape curve`
     /// list -- the envelope's own units, which is what its owner applies.
     fn points_event(&self) -> Events {
@@ -408,6 +478,14 @@ impl Element for Curve {
             }
         };
         bpf::draw_with(d, &ax, &self.points, lit);
+        if !self.body {
+            self.draw_readout(d, ctx, &ax);
+        }
+    }
+
+    /// A curve standing on its own reads what is under the pointer.
+    fn hover_readout(&self) -> bool {
+        !self.body
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -639,6 +717,43 @@ mod tests {
             r#"{"min":0.0,"max":1.0,"duration":100.0,
                 "points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0]}"#,
         ))
+    }
+
+    /// **The readout names the point under the pointer**, its value against
+    /// the range the field is drawn over and the shape of the segment it
+    /// starts; between points it reads the curve where the pointer is.
+    #[test]
+    fn the_readout_reads_a_point_against_its_range_and_its_segment() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 400.0, 200.0);
+        let c = from_props(&props(
+            r#"{"min":0.0,"max":1.0,"duration":2.0,"sample_rate":1.0,
+                "points":[0.0,0.0,2,0.0, 1.0,0.5,5,-4.0, 2.0,0.0,1,0.0]}"#,
+        ));
+        let ax = c.axes(rect, 0.0, &m, None);
+        let on = |t: f64, v: f32| (f64::from(ax.x(t)), f64::from(ax.y(v)));
+        let point = c
+            .readout(on(1.0, 0.5), &ax, 1.0, &m)
+            .expect("over the field");
+        assert!(point.starts_with("point 2  "), "{point}");
+        assert!(point.contains("0.50 [0.00, 1.00]"), "{point}");
+        assert!(point.ends_with("curve -4.00"), "{point}");
+        let between = c
+            .readout(on(0.5, 0.9), &ax, 1.0, &m)
+            .expect("over the field");
+        assert!(!between.starts_with("point"), "{between}");
+        assert!(
+            between.ends_with("  exp"),
+            "the segment under it: {between}"
+        );
+        let last = c
+            .readout(on(2.0, 0.0), &ax, 1.0, &m)
+            .expect("over the field");
+        assert!(
+            last.ends_with("[0.00, 1.00]"),
+            "the last point starts no segment: {last}"
+        );
+        assert_eq!(c.readout((-5.0, -5.0), &ax, 1.0, &m), None);
     }
 
     #[test]
