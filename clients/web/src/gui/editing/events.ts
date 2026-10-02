@@ -27,11 +27,10 @@
  */
 
 import { EVENTS } from "../../document.ts";
-import { NotesPlayback as CorePlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
 import { resolveServer } from "../../defs/wire.ts";
-import { runSteps } from "../../steps.ts";
 import type { TempoMap } from "../../base/time.ts";
+import { NotesPlayback } from "../../seq/playback.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import { MidiItem } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
@@ -54,101 +53,6 @@ interface Outcome {
     play?: { looping: boolean; range?: [number, number] | null };
     loop?: { looping: boolean; range?: [number, number] | null };
     locate?: number;
-}
-
-/**
- * **What sounds the notes editors of one server** -- the crate's playback and
- * the steps it answers, carried out on that server. One per server, since the
- * editors on it share one transport: the one played last is the one that
- * sounds.
- */
-class NotesPlayback {
-    static readonly #of = new WeakMap<Server, NotesPlayback>();
-
-    static of(server: Server): NotesPlayback {
-        let found = NotesPlayback.#of.get(server);
-        if (found === undefined) {
-            found = new NotesPlayback(server);
-            NotesPlayback.#of.set(server, found);
-        }
-        return found;
-    }
-
-    readonly #native = new CorePlayback(-1);
-    readonly #runner = new StepRunner();
-    readonly #ready: Promise<void>;
-    /** The engine's sample rate. */
-    rate = 48_000;
-    /** The transport it plays on -- the crate's word for it. */
-    readonly transport: number;
-    /** The sequence the lane holds, if any: the one played last. */
-    planned: EventSequence | null = null;
-    readonly server: Server;
-    /**
-     * The sequence and the version the lane last took: every editor over the
-     * sequence is told of a change, and the lane takes it once.
-     */
-    #taken: [EventSequence, number] | null = null;
-    /**
-     * The calls in flight, one after another: the editors over this playback
-     * share its step runner, and two calls whose steps interleave on it wait on
-     * steps the other sent.
-     */
-    #queue: Promise<void> = Promise.resolve();
-
-    private constructor(server: Server) {
-        this.server = server;
-        this.transport = Number(
-            JSON.parse(this.#native.call(new EventSequence().seq, JSON.stringify({ verb: "state" }), server.ids))
-                .transport,
-        );
-        this.#ready = (async () => {
-            // Node ids come back on their `/node_end`, which only a registered
-            // client hears.
-            await server.notify(true);
-            this.rate = (await server.queryInfo()).nominalSampleRate;
-        })();
-    }
-
-    /** The transport as the engine has it. */
-    async state(): Promise<{ playing: boolean }> {
-        const state = await this.server.transportAt(this.transport).transportState();
-        return { playing: state.playing };
-    }
-
-    /**
-     * **The lane takes `sequence` again**, when it is the one the lane holds and
-     * it has not taken it at this `version` of its context already: every
-     * editor over a sequence is told of a change -- the one that made it, and
-     * the others adopting it -- and the lane is one.
-     */
-    update(sequence: EventSequence, version: number): Promise<void> {
-        const taken = this.#taken;
-        if (this.planned !== sequence || (taken !== null && taken[0] === sequence && taken[1] === version)) {
-            return Promise.resolve();
-        }
-        this.#taken = [sequence, version];
-        return this.call("update", sequence);
-    }
-
-    /** One verb over `sequence`, its steps carried out, after the calls before it. */
-    call(verb: string, sequence: EventSequence, args: Record<string, unknown> = {}): Promise<void> {
-        const run = this.#queue.then(() => this.#call(verb, sequence, args));
-        this.#queue = run.catch(() => {});
-        return run;
-    }
-
-    async #call(verb: string, sequence: EventSequence, args: Record<string, unknown>): Promise<void> {
-        await this.#ready;
-        const answer = JSON.parse(this.#native.call(
-            sequence.seq,
-            JSON.stringify({ verb, rate: this.rate, ...args }),
-            this.server.ids,
-        )) as Record<string, unknown>;
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        const steps = answer.steps as unknown[] | undefined;
-        if (steps !== undefined && steps.length > 0) await runSteps(this.server, this.#runner, steps);
-    }
 }
 
 /**
@@ -284,7 +188,7 @@ export class NotesEditor extends Editor<EventSequence> {
         const handle = await super.open(host, options);
         let transport: number;
         try {
-            transport = this.#playback.transport;
+            transport = this.#playback.transportId;
         } catch {
             return handle;
         }
@@ -360,14 +264,11 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#elsewhere = played;
             return this;
         }
-        const playback = this.#playback;
-        await playback.call("end", this.structure, { end: this.#end });
-        await playback.call("play", this.structure, {
-            from: start,
+        await this.#playback.load(this.structure, start, {
             range: pass.range ?? null,
-            loop: pass.looping ?? false,
+            looping: pass.looping ?? false,
+            end: this.#end,
         });
-        playback.planned = this.structure;
         return this;
     }
 

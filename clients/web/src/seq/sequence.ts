@@ -23,6 +23,10 @@ import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
 import { Automation } from "../multitrack.ts";
 import { UndoHistory, contexts } from "../history.ts";
+import { NotesPlayback, playSequence } from "./playback.ts";
+import { main } from "../base/main.ts";
+import type { Server } from "../defs/server/index.ts";
+import type { Transport } from "../defs/server/transport.ts";
 import type { PointLike } from "../multitrack.ts";
 
 /** One event of a sequence as the document writes it. */
@@ -259,8 +263,13 @@ export class EventSequence {
      */
     edit(intent: Record<string, unknown>, label: string): { applied: boolean; id?: number } {
         const context = contexts.get(this);
-        if (context === undefined) return this.applyIntent(intent, false);
-        return context.scriptEdit(this, intent, label);
+        const answer = context === undefined
+            ? this.applyIntent(intent, false)
+            : context.scriptEdit(this, intent, label);
+        // Heard where it plays: the lane holding it takes it again, once
+        // however many views over it asked.
+        if (answer.applied) NotesPlayback.changed(this, context === undefined ? null : context.version);
+        return answer;
     }
 
     /**
@@ -292,6 +301,24 @@ export class EventSequence {
     adoptCurve(curve: Automation, event: number | null, id: number): void {
         curve.bind(this, event, id);
         this.#objects.set(`curve:${id}`, new WeakRef(curve));
+    }
+
+    // ---- playing it ----
+
+    /**
+     * **Plays the sequence on the server**, from beat `at`: its events become an
+     * event lane's data on the server's notes transport, which plays them by its
+     * position, and the pass ends where the last note does. Answers that
+     * `Transport` -- its `pause`, `locate`, `loop` and `stop` speak this
+     * sequence's beats, and `wait()` resolves when the pass ends. A change made
+     * through the sequence's objects while it plays is heard from where the
+     * position is.
+     *
+     * One transport per server: what was playing on it gives way. With no
+     * `server` and none anywhere, the default session boots one.
+     */
+    async play({ at = 0, server }: { at?: number; server?: Server | null } = {}): Promise<Transport> {
+        return playSequence(this, at, await main.serverOrBoot(server));
     }
 
     // ---- MIDI files ----

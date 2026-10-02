@@ -22,10 +22,9 @@ where it lands, and what is sounding keeps its release. The space bar over the
 window plays and pauses.
 """
 
-import weakref
 
 from ... import _native
-from ..._steps import run_steps
+from ...seq.playback import NotesPlayback
 from ...seq.sequence import EventSequence
 from ...seq.timeline import Timeline
 from .domain import Domain
@@ -59,68 +58,6 @@ class NotesView(View):
 
     def props(self, editor, widget_id: int) -> dict:
         return editor._call("props", widget=int(widget_id))
-
-
-class _NotesPlayback:
-    """**What sounds the notes editors of one server** -- the crate's playback
-    and the steps it answers, carried out on that server. One per server, since
-    the editors on it share one transport: the one played last is the one that
-    sounds."""
-
-    _of = weakref.WeakKeyDictionary()
-
-    @classmethod
-    def of(cls, server) -> "_NotesPlayback":
-        found = cls._of.get(server)
-        if found is None:
-            found = cls._of[server] = cls(server)
-        return found
-
-    def __init__(self, server):
-        self.server = server
-        self._native = _native.NotesPlayback()
-        self._runner = _native.StepRunner()
-        # Node ids come back on their `/node_end`, which only a registered
-        # client hears.
-        server._ensure_recycler()
-        self._rate = None
-        #: The sequence the lane holds, if any: the one played last.
-        self.planned = None
-        #: ``(sequence, version)`` the lane last took: every editor over the
-        #: sequence is told of a change, and the lane takes it once.
-        self._taken = None
-        #: The transport it plays on -- the crate's word for it.
-        self.transport_id = int(self._native.call(
-            "state", _native.SequenceHandle(), server.ids)["transport"])
-
-    @property
-    def rate(self) -> float:
-        if self._rate is None:
-            self._rate = float(self.server.query_info().nominal_sample_rate)
-        return self._rate
-
-    def state(self) -> dict:
-        """The transport as the engine has it."""
-        return self.server.transport_at(self.transport_id).transport_state()
-
-    def update(self, sequence, version: int) -> None:
-        """**The lane takes ``sequence`` again**, when it is the one the lane
-        holds and it has not taken it at this ``version`` of its context
-        already: every editor over a sequence is told of a change -- the one
-        that made it, and the others adopting it -- and the lane is one."""
-        if self.planned is not sequence or self._taken == (id(sequence), version):
-            return
-        self._taken = (id(sequence), version)
-        self.call("update", sequence)
-
-    def call(self, verb: str, sequence, **args) -> dict:
-        """One verb over ``sequence``, its steps carried out."""
-        answer = self._native.call(verb, sequence._seq, self.server.ids,
-                                   rate=self.rate, **args)
-        steps = answer.get("steps")
-        if steps:
-            run_steps(self.server, self._runner, steps)
-        return answer
 
 
 class NotesEditor(Editor):
@@ -208,12 +145,12 @@ class NotesEditor(Editor):
     # ---- playing it ----
 
     @property
-    def _playback(self) -> _NotesPlayback:
+    def _playback(self) -> NotesPlayback:
         if self._server is None:
             from ...base.main import main
 
             self._server = main.resolve_server()
-        return _NotesPlayback.of(self._server)
+        return NotesPlayback.of(self._server)
 
     @property
     def end(self):
@@ -261,12 +198,8 @@ class NotesEditor(Editor):
             played.play(at=start, destination=destination)
             self._elsewhere = played
             return self
-        playback = self._playback
-        playback.call("end", self.structure, end=self._end)
-        playback.call("play", self.structure, **{"from": start},
-                      range=list(range) if range is not None else None,
-                      loop=bool(looping))
-        playback.planned = self.structure
+        self._playback.load(self.structure, start, range=range, looping=looping,
+                            end=self._end)
         return self
 
     def pause(self) -> "NotesEditor":

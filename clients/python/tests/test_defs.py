@@ -549,33 +549,34 @@ def test_an_event_lane_is_made_on_its_transport_set_and_freed():
 def test_transport_at_names_its_transport_and_reads_only_its_replies():
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    assert srv.transport_at(0) is srv, "transport 0 is the server itself"
+    assert srv.transport_at(0).id == 0, "the one the server's own methods address"
     two = srv.transport_at(2)
-    assert two.transport_id == 2 and two.server is srv
+    assert two.id == 2 and two.server is srv
+    assert srv.transport_at(2) is two, "one transport, one object"
     iface.queue_reply("/done", "/transport_play")
-    two.transport_play()
+    two.play()
     assert iface.sent[-1] == ("/transport_play", [2])
-    two.sched_clear("transport")
+    two.sched_clear()
     assert iface.sent[-1] == ("/sched_clear", ["transport", 2])
 
     # Another transport's push arrives first and is not this query's answer.
     base = [0, 0.0, 0, 1, 0.0, -1, 0, 0, 0, 0, -1, -1]
     iface.queue_reply("/transport_query.reply", *base, 0)
     iface.queue_reply("/transport_query.reply", *base[:5], 300, *base[6:], 2)
-    state = two.transport_state()
+    state = two.state()
     assert state["transport"] == 2 and state["group"] == 300
     assert state["follow"] is None
     assert iface.sent[-1] == ("/transport_query", [2])
     iface.queue_reply("/done", "/transport_follow")
-    two.transport_follow(400)
+    two.follow(400)
     assert iface.sent[-1] == ("/transport_follow", [2, 400])
     assert state["fade"] == 0, "a reply with no ramp field: none"
     iface.queue_reply("/done", "/transport_fade")
-    two.transport_fade(240)
+    two.fade(240)
     addr, args = iface.sent[-1]
     assert addr == "/transport_fade" and args[0] == 2 and args[1].value == 240
     iface.queue_reply("/transport_query.reply", *base[:5], 300, *base[6:], 2, -1, 240)
-    assert two.transport_state()["fade"] == 240
+    assert two.state()["fade"] == 240
 
 
 def test_records_print_readably_and_agree_with_their_container():

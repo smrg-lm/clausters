@@ -237,10 +237,9 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`C58` - `play(seq)` answers a transport**, **`C59` - a sequence back in
-  a `Timeline`** and **`C60` - the multitrack is held as a handle**
-  *(`clients/python/PLAN.md`, "A script plays and holds what the editors
-  do")*. `C58` and `C59` each open on a decision their entry names; `C60`
+- ⬜ **`C59` - a sequence back in a `Timeline`** and **`C60` - the multitrack
+  is held as a handle** *(`clients/python/PLAN.md`, "A script plays and holds
+  what the editors do")*. `C59` opens on a decision its entry names; `C60`
   revises `O10`'s rule in `crates/clausters-document/PLAN.md` and takes the
   shape `C57` settled on the sequence (objects, an identity map,
   `seq.history`) to the multitrack.

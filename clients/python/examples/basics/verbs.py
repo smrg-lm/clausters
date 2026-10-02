@@ -4,7 +4,7 @@ everything.
 
 ``play`` sounds whatever you hand it against the ambient context -- an event or
 a plain dict, a generator, a bare signal expression (a UGen graph or a Faust
-box), a named def, a timeline, a buffer -- and ``render``
+box), a named def, a timeline, a sequence, a buffer -- and ``render``
 performs the change of state offline: an expression or a pattern in, samples
 (and here a WAV) out. This tour visits every playable kind audibly, and closes
 the circle by rendering a phrase to a file, loading it back as a buffer and
@@ -116,6 +116,12 @@ tl.add(0.0, Event(degree=0, dur=0.5))
 tl.add(0.5, Event(degree=7, dur=0.5))
 play(tl)
 time.sleep(PAUSE + 1.0)
+
+print("the same timeline as a sequence, played on the server's transport")
+notes = tl.render_events()      # its events, as data
+transport = play(notes)         # a lane on the server's transport, and that Transport
+notes.events[1]["degree"] = 4   # an edit while it plays is heard where it lands
+transport.wait()                # back when the last note ends
 
 # %% render: the change of state. A pattern bounces offline to samples -- and
 # with path=, to a WAV -- with no server involved (an ephemeral one renders).

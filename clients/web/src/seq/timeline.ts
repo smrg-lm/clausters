@@ -37,6 +37,7 @@ export { MidiItem, OscItem };
 import type { EventDestination } from "./event.ts";
 import { EventPattern, Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
+import { Transport } from "../defs/server/transport.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { OscFunc } from "../responders.ts";
 import type { ResponderMessage } from "../responders.ts";
@@ -151,6 +152,7 @@ export class Timeline {
     // loaded: only reading its time needs the map.
     private mapHeld: TempoMap | null;
     private transportHeld: Server | null = null;
+    private transportObject: Transport | Server | null = null;
     /**
      * **Where this timeline's beat 0 falls on the transport**, in seconds of
      * the transport's position -- the transport's axis is physical, so the
@@ -467,16 +469,20 @@ export class Timeline {
      * **is** the following: a conductor's roll, freeze and locate drive this
      * timeline from then on.
      */
-    get transport(): Server | null {
-        return this.transportHeld;
+    get transport(): Transport | Server | null {
+        return this.transportObject;
     }
 
-    set transport(server: Server | null) {
+    set transport(transport: Transport | Server | null) {
         if (this.player !== null) {
             this.player.halt();
             this.player.close();
             this.player = null;
         }
+        this.transportObject = transport;
+        // What the plan is sent through: a server addressed through the
+        // transport, so its transport methods name that transport.
+        const server = transport instanceof Transport ? transport.view : transport;
         this.transportHeld = server;
         if (server !== null) (this.playerFor() as TransportPlayer).begin();
     }
@@ -1041,7 +1047,7 @@ export class TransportPlayer implements TreeDriver {
 
     constructor(timeline: Timeline) {
         this.timeline = timeline;
-        this.server = timeline.transport!;
+        this.server = (timeline as unknown as { transportHeld: Server }).transportHeld;
     }
 
     // the root's axis, as the clock player's

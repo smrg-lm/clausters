@@ -128,11 +128,32 @@ class Main(Environment):
         sess = getattr(getattr(self.current_routine, "clock", None), "session", None)
         return sess if sess is not None else self.current_session
 
+    def server_or_boot(self, server=None):
+        """`resolve_server`, and when there is no server anywhere, **the
+        default session gets one**: the server already answering at the default
+        address, attached, or a new one booted -- adopted as the default
+        session's either way. What a verb that needs a server and has no
+        session to ask uses, so a script needs no ``with`` to play."""
+        try:
+            return self.resolve_server(server)
+        except RuntimeError:
+            pass
+        from ..defs.server import Server
+        from ..launch import server_is_up
+
+        started = Server()
+        if server_is_up(started.target.host, started.target.port):
+            started.attach()
+        else:
+            started.boot()
+        return self.server if self.server is not None else started
+
     def resolve_server(self, server=None):
         """The server a free-standing play should target: the explicit ``server``
         if given, else the ambient session's server (the `current_session` in
         force on this thread, or the running routine's), else the default session's
-        `server`. Raises if none has been booted."""
+        `server`. Raises if none has been booted (`server_or_boot` boots
+        one)."""
         if server is not None:
             return server
         sess = self._ambient_session()

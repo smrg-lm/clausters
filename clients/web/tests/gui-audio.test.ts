@@ -100,8 +100,8 @@ class FakeServer {
     queryInfo(): Promise<{ nominalSampleRate: number }> {
         return Promise.resolve({ nominalSampleRate: SR });
     }
-    transportAt(): { transportState: () => Promise<{ playing: boolean }> } {
-        return { transportState: () => Promise.resolve({ playing: this.playing }) };
+    transportAt(): { state: () => Promise<{ playing: boolean }> } {
+        return { state: () => Promise.resolve({ playing: this.playing }) };
     }
     sendMsg(addr: string, ...args: unknown[]): void {
         this.sent.push([

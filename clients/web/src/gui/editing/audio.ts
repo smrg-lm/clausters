@@ -143,7 +143,7 @@ class AudioPlayback {
      */
     async rolling(): Promise<boolean> {
         const transport = Number((await this.call("state")).transport);
-        const playing = (await this.server.transportAt(transport).transportState()).playing;
+        const playing = (await this.server.transportAt(transport).state()).playing;
         await this.call("setRolling", { rolling: playing });
         return playing;
     }

@@ -590,9 +590,6 @@ class PlayingServer extends Server {
         super({ connection: new OscNrtInterface() });
         this.latency = 0.1;
     }
-    override transportAt(): Server {
-        return this;
-    }
     override async transportState(): Promise<never> {
         return { ...this.state } as never;
     }
@@ -646,6 +643,45 @@ test("the notes editor plays on its own transport and hears an edit", async () =
     assert.deepEqual(server.lane(), [0, 150], "the note moved to beat 3 is heard where it lands");
     await editor.stop();
     assert.ok(server.sent.map(([addr]) => addr).includes("/transport_locateSample"));
+});
+
+test("play answers the transport the sequence plays on", async () => {
+    // No window: play(sequence) loads the lane on the server's notes transport
+    // and answers that transport, whose verbs speak the sequence's beats; a
+    // change made through the sequence's objects is heard, and the pass ends
+    // where the contents do.
+    const { play } = await import("../src/play.ts");
+    const { Transport } = await import("../src/defs/server/transport.ts");
+    const server = new PlayingServer();
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [2.0, new Event({ midinote: 64, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const transport = await (play(seq, { server: server as never }) as Promise<InstanceType<typeof Transport>>);
+    assert.ok(transport instanceof Transport && await transport.playing());
+    assert.equal(transport, server.transportAt(transport.id), "one transport, one object");
+    const addrs = server.sent.map(([addr]) => addr);
+    assert.ok(addrs.includes("/lane_new") && addrs.includes("/transport_end"), "it ends with its contents");
+    assert.equal(addrs.at(-1), "/transport_play");
+    assert.deepEqual(server.lane(), [0, 100]);
+
+    server.sent = [];
+    seq.events.item(1).at = 3.0; // heard from where the position is
+    await transport.playing(); // after the calls before it
+    assert.equal(server.sent.filter(([addr]) => addr === "/lane_set").length, 1);
+    assert.deepEqual(server.lane(), [0, 150]);
+
+    assert.equal(await transport.end(), "contents");
+    await transport.setEnd(4.0); // an end marker, in its beats
+    assert.equal(await transport.end(), 4.0);
+    server.sent = [];
+    await transport.pause();
+    await transport.locate(1.0);
+    await transport.loop(0.0, 2.0);
+    await transport.stop();
+    assert.ok(server.sent.length > 0, "each verb is the playback's");
+    server.state.playing = false; // the pass reached its end
+    assert.equal(await transport.wait(1.0), true);
 });
 
 test("two rolls over one sequence send the lane one change once", async () => {

@@ -134,15 +134,17 @@ Every position is a sample of the transport; a note is a synth of the def it nam
 
 A server has several transports — 8 unless it was booted with another count (`--transports`, read back as `(await server.queryInfo()).transports`) — and each is independent: its own grid, rolling state, position, loop, end mark, governed group and clock. Two applications on one server, a multitrack and an audio editor say, each play, pause and locate their own nodes without moving the other's.
 
-Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is the same server addressed through transport `n`: its transport methods name that transport, and everything else is the server's own, so it goes wherever a server is taken as a transport.
+Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is transport `n` as an object of its own, a `Transport` — the same one every time it is asked for — played the way a routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and `unloop`, `end()` and `setEnd()` (where a pass stops), `playing()`, and a `wait()` a page awaits or not. Its other commands are there by their own names — `group`, `follow`, `fade`, `locateSample`, `laneNew`, `state` — and it goes wherever a transport is taken.
 
 ```js
-const left = server;                        // transport 0
-const right = server.transportAt(1);        // the same server, through transport 1
-await right.transportGroup(otherGroup);     // a group has one transport
-await right.transportPlay();                // rolls transport 1 alone
+const left = server;                        // transport 0, through the server's own methods
+const right = server.transportAt(1);        // transport 1, as an object
+await right.group(otherGroup);              // a group has one transport
+await right.play();                         // rolls transport 1 alone
 timeline.transport = right;                 // a timeline on transport 1
 ```
+
+Its positions are those of what is loaded on it: with nothing loaded, the transport's own seconds; once `play(sequence)` has put a sequence's lane there, that sequence's beats — `play` answers the `Transport` it loaded, so `transport.locate(4)` is beat 4 of the sequence and `await transport.wait()` resolves when its last note ends.
 
 A node reads the transport that governs it — the nearest governed group above it — so a reader following `transportPos` needs no id of its own: it follows whichever transport its group is bound to, and transport 0 when none is. `transportState()` says which transport it read in its `transport` field.
 

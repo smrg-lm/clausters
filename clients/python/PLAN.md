@@ -1761,7 +1761,7 @@ a sequence, putting it back into a `Timeline`, and holding a multitrack the
 way a sequence is held. Each milestone is a commit with both clients in it,
 the books, and the existing examples extended.
 
-- ⬜ **C58 — `play(seq)` answers a transport.** A sequence sounds only
+- ✅ **C58 — `play(seq)` answers a transport.** A sequence sounds only
   through `NotesEditor.play()` (`gui/editing/events.py`): `_NotesPlayback`,
   one per server, loads its event lane and drives it, and nothing outside the
   window reaches it. `play(sequence)` is not one of the free `play`'s kinds.
@@ -1790,6 +1790,23 @@ the books, and the existing examples extended.
   - **The default session.** `play(sequence)` with no `with` and no server
     works: today `main.resolve_server` raises unless a server was booted, so
     the default session boots one on first use.
+  *(Done 2026-10-01, with **one shared transport** — the notes editor's —
+  as the user chose: a second `play` gives way to it. `server.transport_at(n)`
+  answers a `Transport`, one object per id, with `play`, `pause`, `stop`,
+  `locate`, `loop`/`unloop`, `end`, `playing`, `state` and `wait`, and the
+  transport's other commands by their own names (`group`, `follow`, `fade`,
+  `locate_sample`, `lane_new`, `sched_clear`); the server view it sends
+  through is private, and `Timeline.transport` takes the object. Its
+  positions are those of what is loaded on it: a sequence's beats, else the
+  transport's seconds. The playback is `clausters/seq/playback.py`
+  (`src/seq/playback.ts`), shared by `play(sequence)` and the notes editor,
+  and a change made through the sequence's objects reaches the lane with or
+  without a window. `main.server_or_boot()` (`serverOrBoot()`) is the
+  default session's boot. `examples/basics/verbs` plays the rendered
+  timeline as a sequence, `examples/transports.py` moved onto the object, and
+  `docs/decisions.md` records the revision. In the web client `play` of a
+  sequence answers a promise, and `playing()`, `end()`/`setEnd()` are
+  methods.)*
 - ⬜ **C59 — A sequence back in a `Timeline`.** `X3` decided that no
   timeline is rebuilt from its values (`crates/clausters-apps/PLAN.md`):
   `render_events` is the one-way change, and what the roll edits lives in the

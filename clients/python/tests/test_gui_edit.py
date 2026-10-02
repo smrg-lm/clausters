@@ -554,7 +554,18 @@ class _PlayingServer(Server):
         self.state = {"playing": False}
 
     def transport_at(self, transport):
-        return self
+        """The transport, as the object a playback plays: its state is this
+        double's."""
+        from clausters.defs import Transport
+
+        server = self
+
+        class Rolling(Transport):
+            def state(self):
+                return dict(server.state)
+
+        held = self.__dict__.setdefault("_held", {})
+        return held.setdefault(transport, Rolling(self, transport))
 
     def transport_state(self, timeout=None):
         return dict(self.state)
@@ -606,6 +617,42 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     assert server.lane() == [0, 150], "the note moved to beat 3 is heard where it lands"
     editor.stop()
     assert "/transport_locateSample" in [addr for addr, _ in server.sent]
+
+
+def test_play_answers_the_transport_the_sequence_plays_on():
+    """No window: play(sequence) loads the lane on the server's notes
+    transport and answers that transport, whose verbs speak the sequence's
+    beats; a change made through the sequence's objects is heard, and the
+    pass ends where the contents do."""
+    from clausters import play
+    from clausters.defs import Transport
+
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    transport = play(seq, server=server)
+    assert isinstance(transport, Transport) and transport.playing
+    assert transport is server.transport_at(transport.id), "one transport, one object"
+    addrs = [addr for addr, _ in server.sent]
+    assert "/lane_new" in addrs and "/transport_end" in addrs, "it ends with its contents"
+    assert addrs[-1] == "/transport_play" and server.lane() == [0, 100]
+
+    server.sent.clear()
+    seq.events[1].at = 3.0                 # heard from where the position is
+    assert [addr for addr, _ in server.sent].count("/lane_set") == 1
+    assert server.lane() == [0, 150]
+
+    assert transport.end == "contents"
+    transport.end = 4.0                    # an end marker, in its beats
+    assert transport.end == 4.0
+    server.sent.clear()
+    transport.pause()
+    transport.locate(1.0)
+    transport.loop(0.0, 2.0)
+    transport.stop()
+    assert server.sent, "each verb is the playback's"
+    server.state["playing"] = False        # the pass reached its end
+    assert transport.wait(timeout=1.0) is True
 
 
 def test_two_rolls_over_one_sequence_send_the_lane_one_change_once():

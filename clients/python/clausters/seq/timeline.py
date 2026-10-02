@@ -124,6 +124,7 @@ class Timeline:
         self._map = tempo_map if tempo_map is not None else _native.TempoMap(float(tempo))
         self._player = None
         self._transport = None
+        self._transport_object = None
         #: **Where this timeline's beat 0 falls on the transport**, in seconds
         #: of the transport's position -- the transport's axis is physical, so
         #: the offset is too. Only read in transport mode.
@@ -363,8 +364,9 @@ class Timeline:
 
     @property
     def transport(self):
-        """The server whose **transport** plays this timeline, or ``None`` --
-        the ordinary case -- for its own clock.
+        """The **transport** that plays this timeline -- a
+        `clausters.defs.Transport`, or a server for its transport 0 -- or
+        ``None``, the ordinary case, for its own clock.
 
         One mode per root, and the same verbs in both: `play`, `pause`, `stop`
         and `locate` are the transport's own commands here, exactly as the
@@ -377,10 +379,16 @@ class Timeline:
 
         Assigning halts whatever was playing: a timeline plays in one place.
         """
-        return self._transport
+        return self._transport_object
 
     @transport.setter
-    def transport(self, server):
+    def transport(self, transport):
+        from ..defs.server.transport import Transport
+
+        self._transport_object = transport
+        # What the plan is sent through: a server addressed through the
+        # transport, so its transport methods name that transport.
+        server = transport._view if isinstance(transport, Transport) else transport
         if self._player is not None:
             self._player.halt()
             self._player.close()

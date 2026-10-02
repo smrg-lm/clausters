@@ -128,5 +128,6 @@
     - [event](api/clausters.seq.event.md)
     - [eventstream](api/clausters.seq.eventstream.md)
     - [pattern](api/clausters.seq.pattern.md)
+    - [playback](api/clausters.seq.playback.md)
     - [sequence](api/clausters.seq.sequence.md)
     - [timeline](api/clausters.seq.timeline.md)

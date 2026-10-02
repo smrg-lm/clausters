@@ -5,10 +5,11 @@ A server has several transports (`--transports`, 8 by default), and each is
 independent: its own play, pause, locate, loop and governed group. This plays
 two takes at once, one per transport, and moves them separately:
 
-- the **left** channel is a take on transport 0 -- the server itself, which is
-  what every transport method on a `Server` addresses;
+- the **left** channel is a take on transport 0 -- `server.transport_at(0)`,
+  the one every transport method on a `Server` addresses;
 - the **right** channel is the same four tones an octave up, on transport 1 --
-  `server.transport_at(1)`, the server addressed through that transport.
+  `server.transport_at(1)`. Each is a `Transport`, played as a timeline is:
+  `play`, `pause`, `locate`, `loop`, in its own seconds.
 
 Each reader follows its own transport's position (`TransportPos` -> `BufRd`)
 without being told which one: a node reads the transport that governs its
@@ -69,7 +70,7 @@ def follower_def():
 def report(left, right, what):
     """Both transports' positions, in seconds, as the engine last played
     them."""
-    at = [t.transport_state()["position_sample"] / SR for t in (left, right)]
+    at = [t.state()["position_sample"] / SR for t in (left, right)]
     print(f"  {what:<40} left {at[0]:5.2f}s   right {at[1]:5.2f}s")
 
 
@@ -78,10 +79,8 @@ def main():
         server = session.server
         follower_def().send(server)
 
-        # One transport per side. Transport 0 is the server itself; any other
-        # is the server addressed through it, and every transport method on it
-        # names that transport.
-        left = server
+        # One transport per side, each an object whose verbs are its own.
+        left = server.transport_at(0)
         right = server.transport_at(1)
         print(f"the server has {server.query_info().transports} transports")
 
@@ -93,35 +92,34 @@ def main():
             buf.set_samples(samples(octave))
             group = Group()
             Synth("transports-follower", {"bufnum": buf.bufnum, "out": side}, target=group)
-            transport.transport_group(group)
-            transport.transport_locate_sample(0)
+            transport.group(group)
+            transport.locate(0.0)
 
         print("four one-second tones on each side, the right an octave up")
-        left.transport_play()
-        right.transport_play()
+        left.play()
+        right.play()
         time.sleep(1.2)
         report(left, right, "both playing from the start")
 
-        right.transport_stop()
+        right.pause()
         time.sleep(0.8)
         report(left, right, "right stopped: the left plays on")
 
-        right.transport_locate_sample(3 * SR)
-        right.transport_play()
+        right.play(at=3.0)
         time.sleep(0.5)
         report(left, right, "right seeked to its fourth tone")
 
         # A loop on the left's second tone; the right goes on to its end.
-        left.transport_loop((1 * SR, 2 * SR))
-        left.transport_locate_sample(1 * SR)
+        left.loop(1.0, 2.0)
+        left.locate(1.0)
         # Read off the loop's beat, so each report lands somewhere else in it.
         for _ in range(3):
             time.sleep(0.7)
             report(left, right, "left looping its second tone")
 
-        left.transport_loop(None)
-        left.transport_stop()
-        right.transport_stop()
+        left.unloop()
+        left.pause()
+        right.pause()
         print("done")
 
 

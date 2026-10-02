@@ -521,34 +521,35 @@ test("an event lane is made on its transport, set and freed", { skip: !hasServer
     await withServer(async (server) => {
         const one = server.transportAt(1);
         const governed = new Group({ server });
-        await one.transportGroup(governed);
+        await one.group(governed);
         await one.laneNew(7, governed);
         await server.laneSet(7, { notes: [[0, 4_800, "default", { freq: 440 }, "gate"]] });
-        await one.transportPlay();
+        await one.play();
         await sleep(50);
-        await one.transportStop();
+        await one.pause();
         await server.laneFree(7);
         await assert.rejects(server.laneSet(7, {}), CommandError, "a freed lane is not there");
-        await one.transportGroup(null);
+        await one.group(null);
         governed.free();
     });
 });
 
-test("each transport rolls on its own, addressed through transportAt", {
+test("each transport rolls on its own, as the object transportAt answers", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        assert.equal(server.transportAt(0), server, "transport 0 is the server itself");
+        assert.equal(server.transportAt(0).id, 0, "the one the server's own methods address");
+        assert.equal(server.transportAt(1), server.transportAt(1), "one transport, one object");
         const one = server.transportAt(1);
-        assert.equal(one.transportId, 1);
+        assert.ok(one.id === 1 && one.server === server);
         assert.equal((await server.queryInfo()).transports, 8, "the default boot");
 
         const governed = new Group({ server });
-        await one.transportGroup(governed);
-        await one.transportLocateSample(4_800);
-        await one.transportPlay();
+        await one.group(governed);
+        await one.locateSample(4_800);
+        await one.play();
         await sleep(120);
-        const rolling = await one.transportState();
+        const rolling = await one.state();
         assert.equal(rolling.transport, 1);
         assert.equal(rolling.group, governed.id);
         assert.ok(rolling.playing && rolling.positionSample > 4_800, "transport 1 rolls");
@@ -562,19 +563,19 @@ test("each transport rolls on its own, addressed through transportAt", {
         // One group, one transport -- governed or following.
         await assert.rejects(server.transportGroup(governed), CommandError);
         const output = new Group({ server });
-        await one.transportFollow(output);
-        assert.equal((await one.transportState()).follow, output.id);
+        await one.follow(output);
+        assert.equal((await one.state()).follow, output.id);
         await assert.rejects(server.transportFollow(governed), CommandError);
-        await one.transportFollow(null);
+        await one.follow(null);
         output.free();
-        assert.equal((await one.transportState()).fade, 0, "no ramp by default");
-        await one.transportFade(240);
-        assert.equal((await one.transportState()).fade, 240);
-        await one.transportFade(0);
-        await assert.rejects(server.transportAt(99).transportPlay(), CommandError);
+        assert.equal((await one.state()).fade, 0, "no ramp by default");
+        await one.fade(240);
+        assert.equal((await one.state()).fade, 240);
+        await one.fade(0);
+        await assert.rejects(server.transportAt(99).play(), CommandError);
 
-        await one.transportStop();
-        await one.transportGroup(null);
+        await one.pause();
+        await one.group(null);
         governed.free();
     });
 });

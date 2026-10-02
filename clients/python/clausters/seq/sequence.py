@@ -184,11 +184,18 @@ class EventSequence:
         asked for `history` -- takes the change as a turn of it: recorded, and
         every view over the sequence told. One with none just changes."""
         from ..history import ATTR
+        from .playback import NotesPlayback
 
         context = getattr(self, ATTR, None)
         if context is None:
-            return self._apply(intent, inverse=False)
-        return context.script_edit(self, intent, label)
+            answer = self._apply(intent, inverse=False)
+        else:
+            answer = context.script_edit(self, intent, label)
+        if answer.get("applied"):
+            # Heard where it plays: the lane holding it takes it again, once
+            # however many views over it asked.
+            NotesPlayback.changed(self, None if context is None else context.version)
+        return answer
 
     @property
     def history(self):
@@ -210,6 +217,23 @@ class EventSequence:
         else:
             intent = {"intent": "eventautomation", "id": int(event), "automation": written}
         return int(self._edit(intent, label)["id"])
+
+    # ---- playing it ----
+
+    def play(self, at: float = 0.0, server=None):
+        """**Play the sequence on the server**, from beat ``at``: its events
+        become an event lane's data on the server's notes transport, which
+        plays them by its position, and the pass ends where the last note
+        does. Answers that `clausters.defs.Transport` -- its ``pause``,
+        ``locate``, ``loop`` and ``stop`` speak this sequence's beats, and
+        ``wait()`` returns when the pass ends. A change made through the
+        sequence's objects while it plays is heard from where the position is.
+
+        One transport per server: what was playing on it gives way. With no
+        ``server`` and none anywhere, the default session boots one."""
+        from .playback import play_sequence
+
+        return play_sequence(self, at, server)
 
     # ---- MIDI files ----
 

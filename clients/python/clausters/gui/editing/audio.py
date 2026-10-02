@@ -102,7 +102,7 @@ class _AudioPlayback:
         """Whether the transport rolls, as the engine answers -- a pass that
         ended on its mark stopped without anybody here saying so."""
         transport = int(self.state()["transport"])
-        playing = bool(self.server.transport_at(transport).transport_state()["playing"])
+        playing = bool(self.server.transport_at(transport).state()["playing"])
         self._native.call("setRolling", self.server.ids, rolling=playing)
         return playing
 

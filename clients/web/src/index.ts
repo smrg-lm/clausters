@@ -188,7 +188,7 @@ export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
 export { OscNrtInterface, OscScore, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
-export { Server } from "./defs/server/index.ts";
+export { Server, Transport } from "./defs/server/index.ts";
 // The records the transport surface reports, for the same reason: a public
 // signature that names a type the reference cannot reach is a broken page.
 export type { TransportGrid, TransportState } from "./defs/server/index.ts";

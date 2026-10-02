@@ -101,8 +101,7 @@ class FakeServer:
         return types.SimpleNamespace(nominal_sample_rate=SR)
 
     def transport_at(self, transport):
-        return types.SimpleNamespace(
-            transport_state=lambda: {"playing": self.playing})
+        return types.SimpleNamespace(state=lambda: {"playing": self.playing})
 
     def send_msg(self, addr, *args):
         self.sent.append((addr, args))
