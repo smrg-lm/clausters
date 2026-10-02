@@ -53,6 +53,31 @@ const TWO: &str = r#"{
 /// is the subscription -- nothing else would ask the window for the frames
 /// a level moves on -- and what a strip shows is the bus, read where it
 /// stands rather than sent per block.
+/// **The clips a script holds are the ones a query names**, by name -- the
+/// regions' ids.
+#[test]
+fn a_clip_selection_is_set_and_queried_by_name() {
+    let mut mt = multitrack();
+    let selected = |mt: &Multitrack| -> Value {
+        let (_, v) = mt
+            .info()
+            .into_iter()
+            .find(|(k, _)| k == "selected")
+            .unwrap();
+        serde_json::from_str(v.as_str().unwrap()).unwrap()
+    };
+    let names: Vec<String> = mt.clips.iter().map(|c| c.name.clone()).collect();
+    assert_eq!(selected(&mt), serde_json::json!([]));
+    let last = names.last().unwrap().clone();
+    assert!(mt.set(
+        "selected",
+        &Value::from(serde_json::json!([last]).to_string())
+    ));
+    assert_eq!(selected(&mt), serde_json::json!([last]));
+    assert!(mt.set("selected", &Value::from("[]")));
+    assert_eq!(selected(&mt), serde_json::json!([]));
+}
+
 #[test]
 fn a_metered_track_declares_its_buses_and_reads_them() {
     struct Buses;

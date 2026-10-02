@@ -439,6 +439,23 @@ impl Multitrack {
                 self.zoom_rows();
                 true
             }
+            "selected" => {
+                // The clips to hold, by name -- the regions' ids, as strings
+                // or numbers.
+                let named: Vec<String> = parse::as_array_props("selected", v)
+                    .get("selected")
+                    .and_then(Value::as_array)
+                    .map(|list| {
+                        list.iter()
+                            .map(|n| n.as_str().map_or_else(|| n.to_string(), str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.selected = (0..self.clips.len())
+                    .filter(|&i| named.contains(&self.clips[i].name))
+                    .collect();
+                true
+            }
             "clips" => {
                 // **A correction does not empty the hand.** The list is
                 // replaced whole, so the indices the selection holds mean

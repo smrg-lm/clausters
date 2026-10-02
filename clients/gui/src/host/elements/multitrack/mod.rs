@@ -216,8 +216,9 @@ pub struct Multitrack {
     /// when the press landed -- what says on release whether anything changed.
     holding: Option<(String, Value)>,
     /// Which clips the hand is holding, by index. **The hand's, not the
-    /// multitrack's**: nothing on the wire sets or reports it, exactly as nothing
-    /// reports which notes a roll has selected.
+    /// multitrack's**: no report announces it, and a script reads it with a
+    /// `/gui_query` and writes it with `/gui_set selected` -- by the clips'
+    /// names, which are the regions' ids -- as it does a roll's notes.
     pub(crate) selected: Vec<usize>,
     /// Which **track** the hand is on, by row index -- the second coordinate a
     /// paste needs (the position cursor says *when*, this says *where*), and
@@ -536,6 +537,19 @@ impl Element for Multitrack {
             ("curves".into(), model::curves_json(&self.curves)),
             ("layers".into(), model::layers_json(&self.layers)),
             ("points".into(), self.points_json()),
+            (
+                "selected".into(),
+                Value::from(
+                    Value::from(
+                        self.selected
+                            .iter()
+                            .filter_map(|&i| self.clips.get(i))
+                            .map(|c| c.name.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .to_string(),
+                ),
+            ),
         ]
     }
 
