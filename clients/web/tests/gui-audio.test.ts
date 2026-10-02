@@ -17,6 +17,7 @@ import { IdSpaces } from "../src/core/clausters_core_web.js";
 import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
+import { Transport } from "../src/defs/server/transport.ts";
 
 await loadCore();
 
@@ -387,3 +388,41 @@ test("placing the cursor cues a stopped transport there", async () => {
     await settle();
     assert.ok(!take.server.addrs().includes("/transport_locateSample"));
 });
+
+test("the take's transport plays its span and keeps the switch", async () => {
+    const take = new FakeBuffer();
+    const server = take.server;
+    const held = new Map<number, Transport>();
+    (server as unknown as { transportAt(n: number): Transport }).transportAt = (n: number) => {
+        if (!held.has(n)) {
+            const t = new Transport(server as never, n);
+            (t as unknown as { state(): Promise<{ playing: boolean }> }).state = () =>
+                Promise.resolve({ playing: server.playing });
+            held.set(n, t);
+        }
+        return held.get(n)!;
+    };
+    const [editor, host, wid] = await opened(take);
+    const props = new Map<number, Record<string, unknown>>();
+    host.set = ((w: number, p: Record<string, unknown>) => {
+        props.set(w, { ...props.get(w), ...p });
+    }) as never;
+    const transport = editor.transport!;
+    assert.equal(transport, editor.transport, "one transport, one object");
+    await transport.loop(10 / SR, 30 / SR);
+    assert.deepEqual(transport.span, [10 / SR, 30 / SR]);
+    assert.ok(transport.looping);
+    assert.deepEqual([props.get(wid)?.sel_start, props.get(wid)?.sel_len], [10, 20]);
+    assert.equal(props.get(wid)?.looping, 1, "the window's L switch");
+    server.sent.length = 0;
+    await transport.play();
+    const loops = server.sent.filter(([addr]) => addr === "/transport_loop");
+    assert.deepEqual(loops.at(-1)![1].slice(-2).map(Number), [10, 30], "the span, looped");
+    assert.equal(editor.selected!.start, 10, "what is marked is the range");
+    await editor.unselect();
+    assert.equal(transport.span, null);
+    assert.equal(editor.selected, null);
+    editor.apply("/gui_event", [wid, 9, 0, "selection", 20, 40]);
+    assert.deepEqual(transport.span, [20 / SR, 60 / SR], "a sweep is the transport's span");
+});
+

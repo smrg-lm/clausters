@@ -1842,7 +1842,7 @@ the books, and the existing examples extended.
     wrote down and answered for the edit, not for the objects. The revision
     is written there in the same commit.
   - After `C57`, which settles the shape on the smaller structure.
-- ⬜ **C61 — `span` and `selected`, the same two words in every editor**
+- ✅ **C61 — `span` and `selected`, the same two words in every editor**
   *(decided 2026-10-02 by the user: one word names one thing in every case)*.
   A view has two selections, and they are told apart by what they are, not
   by which editor holds them:
@@ -1867,10 +1867,14 @@ the books, and the existing examples extended.
   through the crate's `span` verb) and its loop switch the window's `L`
   (a `/gui_set looping` the host takes as the key); `editor.selected` is
   the held `Region`s, read and set through the host's `selected` prop.
-  What is left is the audio editor: its transport as a `Transport`, and
-  `editor.selection` — today the swept range, its `nodes` and its `value`
-  band in one dict — split between `selected` (the samples) and the
-  transport's `span`. Both clients, both books.
+  And for the audio editor: `editor.transport` is the audio editors'
+  shared `Transport` in the take's seconds, driven through the crate's
+  `span`, `locate` and `play` verbs, and `editor.selected` is a `Segment`
+  over `editor.buffer`, setting which sets the span. The value band the
+  rule names for a sweep with height is not carried: the audio editor's
+  crate never read one, so there was none to keep. `PointsEditor` and the
+  generic editor still keep the old `editor.selection` dict — written
+  under "Found by use".
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
@@ -5297,6 +5301,16 @@ work, where a pending item reads as done.)*
   `selected` prop, by note id), `roll.select(events)` and `roll.unselect()`.
   `seq.events.range` became `between`, off Python's `range`. The editors'
   hook `selected()` became `selection_moved()` to free the name.)*
+
+- ⬜ **The points editor and the generic editor still say `selection`**
+  *(found 2026-10-02 closing `C61`)*. The three applications read what the
+  hand marked as `selected`, in the structure's own type, and the time range
+  as their transport's `span`; `PointsEditor` and the generic `Editor` still
+  keep the swept range as the `editor.selection` dict (`start`, `len`, a
+  `value` band), and the hook `selection_moved()` / `adopt_selection()` it
+  feeds has no override anywhere. A curve's `selected` would be its points;
+  a curve has no transport, so where its time range lives is the open
+  question.
 
 ## Future directions (a design that is not a fix)
 

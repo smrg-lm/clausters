@@ -339,3 +339,40 @@ def test_placing_the_cursor_cues_a_stopped_transport_there():
     take.server.playing = True
     editor.apply("/gui_event", [wid, 2, 0, "locate", 60])
     assert "/transport_locateSample" not in take.server.addrs()
+
+
+def _transported(take):
+    """The take's server answering a real `Transport`, rolling as it says."""
+    from clausters.defs import Transport
+
+    server = take.server
+    held = {}
+
+    class Rolling(Transport):
+        def state(self):
+            return {"playing": server.playing}
+
+    server.transport_at = lambda n: held.setdefault(n, Rolling(server, n))
+    return server
+
+
+def test_the_take_s_transport_plays_its_span_and_keeps_the_switch():
+    take = FakeBuffer()
+    server = _transported(take)
+    editor, host, wid, _context = opened(take)
+    host.set = lambda w, **props: host.__dict__.setdefault("props", {}).setdefault(w, {}).update(props)
+    transport = editor.transport
+    assert transport is editor.transport, "one transport, one object"
+    transport.loop(10 / SR, 30 / SR)
+    assert transport.span == (10 / SR, 30 / SR) and transport.looping
+    assert host.props[wid]["sel_start"] == 10 and host.props[wid]["sel_len"] == 20
+    assert host.props[wid]["looping"] == 1, "the window's L switch"
+    server.sent.clear()
+    transport.play()
+    loops = [args for addr, args in server.sent if addr == "/transport_loop"]
+    assert loops and [a.value for a in loops[-1][-2:]] == [10, 30], "the span, looped"
+    assert editor.selected.start == 10, "what is marked is the range"
+    editor.unselect()
+    assert transport.span is None and editor.selected is None
+    editor.apply("/gui_event", [wid, 9, 0, "selection", 20, 40])
+    assert transport.span == (20 / SR, 60 / SR), "a sweep is the transport's span"

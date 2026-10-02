@@ -30,7 +30,7 @@
  */
 
 import { MULTITRACK, editingStitch } from "../../document.ts";
-import type { RecordedLeg, Selection } from "../../document.ts";
+import type { RecordedLeg } from "../../document.ts";
 import { Multitrack } from "../../multitrack.ts";
 import type { Region } from "../../multitrack.ts";
 import type { Transport, TransportDriver } from "../../defs/server/transport.ts";

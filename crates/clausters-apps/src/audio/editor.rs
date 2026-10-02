@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use clausters_core::osc::{OscMessage, OscType};
-use clausters_core::tempoclock::samples_to_secs;
+use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
 use clausters_document::clipboard::{Clipboard, Content};
 use clausters_document::parts::{self, PARTS};
 use clausters_document::session::{Location, Part, Source};
@@ -659,6 +659,29 @@ impl AudioEditor {
         samples_to_secs(units.round() as i64, self.rate)
     }
 
+    /// The frame of the take at `secs`, clamped to it.
+    fn frame_at(&self, secs: f64) -> u64 {
+        (secs_to_samples(secs, self.rate).max(0) as u64).min(self.length())
+    }
+
+    /// **The time range, set by the caller** -- `[start, end]` in seconds, or
+    /// `None` -- as a sweep leaves it: what the space bar plays. Answers the
+    /// band the window draws, `(sel_start, sel_len)` in frames.
+    pub fn set_span(&mut self, span: Option<(f64, f64)>) -> (u64, u64) {
+        self.selection = span
+            .map(|(a, b)| (self.frame_at(a), self.frame_at(b)))
+            .filter(|(a, b)| b > a);
+        self.selection.map_or((0, 0), |(a, b)| (a, b - a))
+    }
+
+    /// **The position cursor, placed by the caller** at `secs`, as a click on
+    /// the ruler places it. Answers its frame, where a stopped playback cues.
+    pub fn set_cursor(&mut self, secs: f64) -> u64 {
+        let frame = self.frame_at(secs);
+        self.cursor = Some(frame);
+        frame
+    }
+
     /// One gesture onto the take. Answers the reason and the corrections the
     /// acknowledgement carries.
     fn gesture(
@@ -1175,6 +1198,12 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   buffer; or `{"error"}`.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
 ///   is still in its buffer. Answers `{}`.
+/// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range
+///   the space bar plays, as a sweep leaves it. Answers `{"sel_start",
+///   "sel_len"}`, the band the window draws, in frames.
+/// - `locate` -- `at`, in seconds: the position cursor. Answers `{"cue"}`,
+///   its frame.
+/// - `play` -- `looping`: the [`Play`] the space bar would ask for.
 /// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
@@ -1231,6 +1260,17 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             None => "{}".into(),
         },
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
+        "span" => {
+            let span = get("span")
+                .as_array()
+                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            let (start, len) = editor.set_span(span);
+            json!({ "sel_start": start, "sel_len": len }).to_string()
+        }
+        "locate" => {
+            json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) }).to_string()
+        }
+        "play" => json!(editor.play(get("looping").as_bool().unwrap_or(false))).to_string(),
         "save" => {
             let format = get("format").as_str().unwrap_or("float").to_string();
             let to = match (get("path").as_str(), get("buffer").as_i64()) {

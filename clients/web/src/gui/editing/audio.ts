@@ -36,11 +36,12 @@
  */
 
 import { PARTS } from "../../document.ts";
-import type { Selection } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import { Buffer } from "../../defs/buffer.ts";
 import { AudioEditorPlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
+import type { Transport, TransportDriver } from "../../defs/server/transport.ts";
+import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import { Domain } from "./domain.ts";
@@ -106,11 +107,16 @@ class AudioPlayback {
 
     /** The server it plays on. */
     readonly server: Server;
+    /** The transport it plays on -- the crate's word for it -- once it is made. */
+    transportId: number | null = null;
 
     private constructor(server: Server) {
         this.server = server;
         this.#ready = (async () => {
             this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
+            this.transportId = Number(
+                JSON.parse(this.#native.call(JSON.stringify({ verb: "state" }), server.ids)).transport,
+            );
             // Node ids come back on their `/node_end`, which only a registered
             // client hears.
             await server.notify(true);
@@ -146,6 +152,102 @@ class AudioPlayback {
         const playing = (await this.server.transportAt(transport).state()).playing;
         await this.call("setRolling", { rolling: playing });
         return playing;
+    }
+}
+
+/**
+ * **What an audio editor's `Transport` plays through**: the server's audio
+ * editor playback, its positions the take's seconds, and the time range and
+ * the loop switch the window shows -- the band a sweep leaves and `L` -- kept
+ * here, stopped or rolling, so a page and a hand read and write one state.
+ * Where a pass starts and how it ends are the crate's, as the space bar's are.
+ */
+class AudioDriver implements TransportDriver {
+    /** The time range `[start, end]` in seconds, or `null`. */
+    span: [number, number] | null = null;
+    /** Whether the loop switch is on: the span, or the whole take. */
+    looping = false;
+    /** @internal */
+    paused = false;
+    private readonly editor: AudioEditor;
+    private readonly playback: AudioPlayback;
+    private readonly display: number;
+
+    constructor(editor: AudioEditor, playback: AudioPlayback, display: number) {
+        this.editor = editor;
+        this.playback = playback;
+        this.display = display;
+    }
+
+    async #focused(): Promise<boolean> {
+        return (await this.playback.call("state")).focus === this.display;
+    }
+
+    async playing(): Promise<boolean> {
+        return (await this.playback.rolling()) && (await this.#focused());
+    }
+
+    async play(at?: number): Promise<void> {
+        if (at === undefined && this.paused && (await this.#focused())) {
+            this.paused = false;
+            await this.playback.call("resume");
+            return;
+        }
+        this.paused = false;
+        if (at !== undefined) await this.locate(at);
+        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
+        await this.playback.call("play", { file: this.display, start: Math.trunc(play.start), pass: play.pass });
+    }
+
+    async pause(): Promise<void> {
+        if (!(await this.#focused())) return;
+        await this.playback.call("pause");
+        this.paused = true;
+    }
+
+    async stop(): Promise<void> {
+        this.paused = false;
+        if (!(await this.#focused())) return;
+        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
+        await this.playback.call("stop", { back: Math.trunc(play.back) });
+    }
+
+    async locate(at: number): Promise<void> {
+        const frame = Number(this.editor.coreCall("locate", { at }).cue);
+        this.editor.cursor = at;
+        if ((await this.playback.rolling()) && (await this.#focused())) {
+            await this.playback.call("locate", { frame });
+        } else {
+            await this.playback.call("cue", { frame });
+        }
+    }
+
+    get end(): "contents" {
+        return "contents";
+    }
+
+    async setEnd(end: null | "contents" | number): Promise<void> {
+        if (end !== "contents") throw new RangeError("an audio editor's pass ends where the take or the span does");
+    }
+
+    async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
+        const band = this.editor.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
+        this.span = span === null || !Number(band.sel_len) ? null : [span[0], span[1]];
+        if (show) this.editor.showBand(Number(band.sel_start), Number(band.sel_len));
+        await this.#follow();
+    }
+
+    async setLooping(on: boolean): Promise<void> {
+        this.looping = on;
+        await this.#follow();
+        this.editor.showLooping(on);
+    }
+
+    /** A pass in progress ends as the span and the switch now say. */
+    async #follow(): Promise<void> {
+        if (!(await this.#focused())) return;
+        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
+        await this.playback.call("pass", { pass: play.pass });
     }
 }
 
@@ -326,7 +428,70 @@ export class AudioEditor extends Editor<Buffer> {
         // editor was handed is written by a save and by nothing else.
         domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
         this.playback = AudioPlayback.of(this.server);
+        this.#driver = new AudioDriver(this, this.playback, this.display);
         domain.after(() => this.sound());
+    }
+
+    /** What the `transport` plays through. */
+    readonly #driver: AudioDriver;
+
+    /**
+     * **The take's transport**, as the object a page plays: a `Transport` whose
+     * verbs (`play`, `pause`, `stop`, `locate`, `loop`, `wait`) and `span`
+     * speak the take's seconds -- the span is the band a drag sweeps, the loop
+     * switch is `L`, and each side reads what the other set. The audio editors
+     * of a server share it: the take played last is the one it plays. `null`
+     * until the editor is open.
+     */
+    get transport(): Transport | null {
+        const id = this.playback.transportId;
+        if (id === null) return null;
+        const transport = this.server.transportAt(id);
+        transport.driver = this.#driver;
+        return transport;
+    }
+
+    // ---- what the hand marked ----
+
+    /**
+     * **The samples the hand marked** -- a drag over the take -- as a `Segment`
+     * over {@link AudioEditor.buffer}: from the frame the range starts on, for
+     * its seconds. `null` when nothing is marked. In an audio editor what is
+     * marked and the transport's `span` are one range, so setting either sets
+     * both.
+     */
+    get selected(): Segment<Buffer> | null {
+        const span = this.#driver.span;
+        if (span === null) return null;
+        return new Segment(this.buffer, Math.round(span[0] * this.sampleRate), span[1] - span[0]);
+    }
+
+    /** Marks `segment` -- a `Segment` over {@link AudioEditor.buffer}, its `start` a frame and its `duration` seconds. */
+    async select(segment: Segment<Buffer>): Promise<void> {
+        const start = segment.start / this.sampleRate;
+        await this.#driver.setSpan([start, start + segment.duration]);
+    }
+
+    /** Marks nothing. */
+    async unselect(): Promise<void> {
+        await this.#driver.setSpan(null);
+    }
+
+    /** The band a sweep leaves, drawn where the take is. @internal */
+    showBand(start: number, length: number): void {
+        if (this.host === null || this.window === null) return;
+        for (const wid of (this.view as SamplesView).widgets.keys()) {
+            void this.host.set(wid, { sel_start: start, sel_len: length });
+        }
+    }
+
+    /** The window's loop switch, as `L` leaves it. @internal */
+    showLooping(on: boolean): void {
+        if (this.host === null || this.window === null) return;
+        for (const wid of (this.view as SamplesView).widgets.keys()) {
+            void this.host.set(wid, { looping: on ? 1 : 0 });
+            break;
+        }
     }
 
     /**
@@ -572,8 +737,15 @@ export class AudioEditor extends Editor<Buffer> {
             domain.after(() => this.sound());
         }
         const play = outcome.play;
-        if (play !== undefined) domain.after(() => this.play(play));
+        // The loop switch rides beside the space bar and `L`: a pass that
+        // loops is the switch on.
+        if (play !== undefined) {
+            this.#driver.paused = false;
+            this.#driver.looping = (play.pass as { kind?: string }).kind === "loop";
+            domain.after(() => this.play(play));
+        }
         const pass = outcome.pass;
+        if (pass !== undefined) this.#driver.looping = (pass as { kind?: string }).kind === "loop";
         // `L`: the pass in progress ends as the switch now says; a stopped
         // playback reads it on its next play.
         if (pass !== undefined) domain.after(() => this.playback.call("pass", { pass }).then(() => {}));
@@ -586,8 +758,12 @@ export class AudioEditor extends Editor<Buffer> {
             this.onLocate?.(this.cursor);
         }
         if (outcome.selection !== undefined) {
-            this.selection = outcome.selection as unknown as Selection;
-            this.selectionMoved();
+            // A sweep's time range is the transport's span, and what the hand
+            // marked: the space bar plays it and the loop repeats it.
+            const swept = outcome.selection as unknown as { start?: number; len?: number };
+            const start = Number(swept.start ?? 0);
+            const length = Number(swept.len ?? 0);
+            this.#driver.span = length > 0 ? [start, start + length] : null;
         }
         // The answer asks the window to read the join again, so it goes once
         // the steps that replace the join have landed.

@@ -622,7 +622,9 @@ Python property that reads becomes a method, a property that writes becomes a
   read local state and stay properties in both;
 - what the hand marked (`NotesEditor`, `MultitrackEditor`): Python
   `roll.selected`, `editor.selected`; TypeScript `await roll.selected()`,
-  `await editor.selected()`;
+  `await editor.selected()`. An `AudioEditor`'s is its own state and stays a
+  property in both, and marking it moves the transport's span, so Python
+  `editor.select(segment)` is TypeScript `await editor.select(segment)`;
 - playing a sequence: Python `play(seq)` and `seq.play()` answer the
   `Transport`; TypeScript answers a promise of it;
 - the default session's server: Python `main.server_or_boot()`; TypeScript

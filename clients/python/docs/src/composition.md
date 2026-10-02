@@ -72,7 +72,16 @@ new take the size of the stroke, spliced over the frames it was drawn on. An und
 is the list before, stitched again, so it costs the list and not the samples.
 The takes a history can still reach are kept, and freed when it cannot;
 `history_bytes=` caps what only the history holds, and `resident_bytes=` how much of that stays in memory -- past it the oldest takes are written to a `scratch=` directory and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save(path)` writes it as another file and `editor.save(buffer=b)` into another buffer (`buffer=True` for a new one), which a later save then writes over. `editor.buffer` is the edited
-take, to play or read, and `editor.parts` what it is made of.
+take, to play or read, and `editor.parts` what it is made of. **It plays what it
+edits** on the audio editors' transport, and `editor.transport` is that
+`Transport` in the take's seconds: the space bar over the window plays the
+marked range, or from the position cursor, and `L` loops it -- the same
+`transport.play()`, `span` and `loop(start, end)` from a script, each side
+reading what the other set. What the hand marked is samples, and
+`editor.selected` answers them as a `Segment` over `editor.buffer` (its `start`
+a frame, its `duration` seconds); `editor.select(segment)` marks one and
+`editor.unselect()` marks nothing. In an audio editor the samples marked and the
+transport's `span` are one range, so setting either sets both.
 
 ```python
 from clausters.gui import edit

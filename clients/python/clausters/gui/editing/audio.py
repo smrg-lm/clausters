@@ -107,6 +107,96 @@ class _AudioPlayback:
         return playing
 
 
+class _AudioDriver:
+    """**What an audio editor's `clausters.defs.Transport` plays through**:
+    the server's audio editor playback, its positions the take's seconds, and
+    the time range and the loop switch the window shows -- the band a sweep
+    leaves and `L` -- kept here, stopped or rolling, so a script and a hand
+    read and write one state. Where a pass starts and how it ends are the
+    crate's, as the space bar's are."""
+
+    def __init__(self, editor):
+        self.editor = editor
+        #: The time range ``(start, end)`` in seconds, or ``None``.
+        self.span = None
+        #: Whether the loop switch is on: the span, or the whole take.
+        self.looping = False
+        self._paused = False
+
+    @property
+    def _playback(self):
+        return self.editor._playback
+
+    def _focused(self) -> bool:
+        return self._playback.state().get("focus") == self.editor._display
+
+    def playing(self) -> bool:
+        return self._playback.rolling() and self._focused()
+
+    def play(self, at=None) -> None:
+        if at is None and self._paused and self._focused():
+            self._paused = False
+            self._playback.call("resume")
+            return
+        self._paused = False
+        if at is not None:
+            self.locate(at)
+        ed = self.editor
+        play = ed._call("play", looping=self.looping)
+        self._playback.call("play", file=ed._display, start=int(play["start"]),
+                            **{"pass": play["pass"]})
+
+    def pause(self) -> None:
+        if self._focused():
+            self._playback.call("pause")
+            self._paused = True
+
+    def stop(self) -> None:
+        self._paused = False
+        if self._focused():
+            play = self.editor._call("play", looping=self.looping)
+            self._playback.call("stop", back=int(play["back"]))
+
+    def locate(self, at: float) -> None:
+        ed = self.editor
+        frame = int(ed._call("locate", at=float(at))["cue"])
+        ed.cursor = float(at)
+        if self._playback.rolling() and self._focused():
+            self._playback.call("locate", frame=frame)
+        else:
+            self._playback.call("cue", frame=frame)
+
+    @property
+    def end(self):
+        return "contents"
+
+    def set_end(self, end) -> None:
+        if end != "contents":
+            raise ValueError("an audio editor's pass ends where the take or "
+                             "the span does")
+
+    def set_span(self, span, *, show: bool = True) -> None:
+        ed = self.editor
+        band = ed._call("span", span=None if span is None
+                        else [float(span[0]), float(span[1])])
+        self.span = (None if span is None or not band["sel_len"]
+                     else (float(span[0]), float(span[1])))
+        if show:
+            ed._show_band(band)
+        self._follow()
+
+    def set_looping(self, on: bool) -> None:
+        self.looping = bool(on)
+        self._follow()
+        self.editor._show_looping(self.looping)
+
+    def _follow(self) -> None:
+        """A pass in progress ends as the span and the switch now say."""
+        if self._focused():
+            play = self.editor._call("play", looping=self.looping)
+            self._playback.call("pass", **{"pass": play["pass"]})
+
+
 class AudioDomain(Domain):
     """A take made of parts: the crate's ``parts`` vocabulary.
 
@@ -215,7 +305,60 @@ class AudioEditor(Editor):
         #: What sounds the take: the server's audio editor playback, where
         #: this editor's take is the file its join is.
         self._playback = _AudioPlayback.of(self._server)
+        #: What the `transport` plays through.
+        self._driver = _AudioDriver(self)
         self._sound()
+
+    @property
+    def transport(self):
+        """**The take's transport**, as the object a script plays: a
+        `clausters.defs.Transport` whose verbs (``play``, ``pause``,
+        ``stop``, ``locate``, ``loop``, ``wait``) and ``span`` speak the
+        take's seconds -- the span is the band a drag sweeps, the loop switch
+        is `L`, and each side reads what the other set. The audio editors of
+        a server share it: the take played last is the one it plays."""
+        transport = self._server.transport_at(int(self._playback.state()["transport"]))
+        transport._driver = self._driver
+        return transport
+
+    # ---- what the hand marked ----
+
+    @property
+    def selected(self):
+        """**The samples the hand marked** -- a drag over the take -- as a
+        `clausters.segments.Segment` over `buffer`: from the frame the range
+        starts on, for its seconds. ``None`` when nothing is marked. In an
+        audio editor what is marked and the transport's `span` are one range,
+        so setting either sets both."""
+        from ...segments import Segment
+
+        span = self._driver.span
+        if span is None:
+            return None
+        return Segment(self.buffer, round(span[0] * self.sample_rate), span[1] - span[0])
+
+    def select(self, segment) -> None:
+        """Mark ``segment`` -- a `clausters.segments.Segment` over `buffer`,
+        its ``start`` a frame and its ``duration`` seconds."""
+        start = float(segment.start) / self.sample_rate
+        self._driver.set_span((start, start + float(segment.duration)))
+
+    def unselect(self) -> None:
+        """Mark nothing."""
+        self._driver.set_span(None)
+
+    def _show_band(self, band: dict) -> None:
+        """The band a sweep leaves, drawn where the take is."""
+        if self._host is not None and self._window is not None:
+            for wid in self.view.widgets:
+                self._host.set(wid, sel_start=band["sel_start"], sel_len=band["sel_len"])
+
+    def _show_looping(self, on: bool) -> None:
+        """The window's loop switch, as `L` leaves it."""
+        if self._host is not None and self._window is not None:
+            for wid in self.view.widgets:
+                self._host.set(wid, looping=1 if on else 0)
+                break
 
     def _sound(self) -> None:
         """Make what sounds be the take as it now is -- the join and its
@@ -391,8 +534,13 @@ class AudioEditor(Editor):
             self._editing.changed()
             self._sound()
         if outcome.get("play") is not None:
+            # The loop switch rides beside the space bar and `L`: a pass that
+            # loops is the switch on.
+            self._driver._paused = False
+            self._driver.looping = outcome["play"]["pass"].get("kind") == "loop"
             self._play(outcome["play"])
         if outcome.get("pass") is not None:
+            self._driver.looping = outcome["pass"].get("kind") == "loop"
             # `L`: the pass in progress ends as the switch now says; a stopped
             # playback reads it on its next play.
             self._playback.call("pass", **{"pass": outcome["pass"]})
@@ -406,8 +554,11 @@ class AudioEditor(Editor):
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
         if outcome.get("selection") is not None:
-            self.selection = outcome["selection"]
-            self.selection_moved()
+            # A sweep's time range is the transport's span, and what the hand
+            # marked: the space bar plays it and the loop repeats it.
+            swept = outcome["selection"]
+            start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
+            self._driver.span = (start, start + length) if length > 0 else None
         self.echo.send(outcome.get("answer"))
         return changed
 

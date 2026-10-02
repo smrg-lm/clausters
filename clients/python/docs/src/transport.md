@@ -273,6 +273,8 @@ The applications' transports are the same object. A multitrack editor's
 `editor.transport` is the one it plays on, in the multitrack's seconds: its
 `span` is the band an Alt+drag sweeps over the tracks, its loop switch is that
 window's `L`, and `play`, `pause`, `stop` and `locate` are the transport row's.
+An audio editor's is the take's, in its seconds, its `span` the range a drag
+marks.
 
 A node reads the transport that governs it — the nearest governed group above
 it — so a reader following `transport_pos` needs no id of its own: it follows
