@@ -15,6 +15,7 @@ notes editor opened on it edits it in place, with no copy to write back.
 
 import json
 import weakref
+from typing import overload
 
 from .. import _native
 from .event import Event
@@ -427,6 +428,11 @@ class SeqEvents:
 
     def __iter__(self):
         return iter(self._of(self._sequence._ids()))
+
+    @overload
+    def __getitem__(self, i: int) -> SeqEvent: ...
+    @overload
+    def __getitem__(self, i: slice) -> "list[SeqEvent]": ...
 
     def __getitem__(self, i):
         ids = self._sequence._ids()
