@@ -115,6 +115,26 @@ def opened(editor):
 
 # ---- the verb ----
 
+def test_edit_takes_the_ambient_servers_rate(monkeypatch):
+    """With no ``sample_rate``, the roll is laid out at the rate of the server
+    a play would resolve -- and at 48 kHz with none."""
+    import types
+
+    from clausters.base.main import main
+
+    class Ambient:
+        def query_info(self, *_a, **_kw):
+            return types.SimpleNamespace(nominal_sample_rate=96_000.0)
+
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))])
+    monkeypatch.setattr(main, "server", None)
+    monkeypatch.setattr(main, "_ambient_session", lambda: None)
+    assert edit(seq, open=False).sample_rate == 48_000.0, "no server anywhere"
+    monkeypatch.setattr(main, "server", Ambient())
+    assert edit(seq, open=False).sample_rate == 96_000.0
+    assert edit(seq, sample_rate=44_100.0, open=False).sample_rate == 44_100.0, "a rate given wins"
+
+
 def test_the_verb_opens_the_editor_the_structure_asks_for():
     assert isinstance(edit(a_curve(), sample_rate=SR, open=False), PointsEditor)
     assert isinstance(edit(a_timeline(), sample_rate=SR, open=False), NotesEditor)

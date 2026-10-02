@@ -36,12 +36,15 @@ import type { AudioEditorOptions } from "./audio.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import { AudioEditor, isTake } from "./audio.ts";
+import { main } from "../../base/main.ts";
 
 /** What `edit` passes on to whichever editor the structure asks for. */
 export interface EditOptions {
     /**
      * The engine's rate, which fixes the data<->view bridge. A take knows its own
-     * and needs none.
+     * and needs none; anything else takes the ambient server's nominal rate --
+     * the current session's, else the default session's, as a play resolves
+     * its server -- and 48 kHz with no server anywhere.
      */
     sampleRate?: number;
     title?: string;
@@ -123,7 +126,7 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     }
     if (isCurve(structure)) {
         return new PointsEditor(structure, {
-            sampleRate: sampleRate || 48_000,
+            sampleRate,
             min,
             max,
             ...rest,
@@ -131,14 +134,14 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     }
     if (isEvents(structure) && !(structure instanceof Timeline)) {
         return new NotesEditor(structure, {
-            sampleRate: sampleRate || 48_000,
+            sampleRate,
             ...rest,
         }) as unknown as Editor<never>;
     }
     if (isMultitrack(structure)) {
         // A multitrack states its own tempo, like a timeline.
         return new MultitrackEditor(structure, {
-            sampleRate: sampleRate || 48_000,
+            sampleRate,
             ...rest,
         }) as unknown as Editor<never>;
     }
@@ -177,9 +180,26 @@ export async function edit(
     // editor's `sequence`.
     const { until, ...rest } = options;
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
+    // A take knows its own rate; anything else takes the ambient server's.
+    if (!rest.sampleRate && !isTake(opened)) rest.sampleRate = await ambientRate();
     const editor = editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
     }
     return editor;
+}
+
+/**
+ * The ambient server's nominal rate -- the current session's, else the default
+ * session's -- or 48 kHz with none, the rate a window drawn with no engine is
+ * laid out at.
+ */
+async function ambientRate(): Promise<number> {
+    let server: Server;
+    try {
+        server = main.resolveServer();
+    } catch {
+        return 48_000;
+    }
+    return (await server.queryInfo()).nominalSampleRate;
 }

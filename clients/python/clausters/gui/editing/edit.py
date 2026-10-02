@@ -54,7 +54,10 @@ def edit(structure, *, sample_rate: float = 0.0,
             the editor's ``sequence`` then holds; the timeline is not changed)
             or a `clausters.multitrack.Multitrack` (the multitrack).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
-            take knows its own and needs none.
+            take knows its own and needs none; anything else takes the
+            ambient server's nominal rate -- the current session's, else the
+            default session's, as a play resolves its server -- and 48 kHz
+            with no server anywhere.
         host: the `clausters.gui.host.GuiHost` to open on; ``None`` -- the
             ordinary case -- resolves the ambient one, the rule
             `clausters.plot`, `clausters.scope` and
@@ -93,7 +96,7 @@ def edit(structure, *, sample_rate: float = 0.0,
     if is_take(structure):
         editor = AudioEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):
-        editor = PointsEditor(structure, sample_rate=sample_rate or 48_000.0,
+        editor = PointsEditor(structure, sample_rate=sample_rate or _ambient_rate(),
                               **options)
     elif is_events(structure):
         # **A timeline is rendered, and the roll edits what it produced**: the
@@ -102,11 +105,11 @@ def edit(structure, *, sample_rate: float = 0.0,
         # editor's `sequence`.
         if isinstance(structure, Timeline):
             structure = structure.render_events(until=options.pop("until", None))
-        editor = NotesEditor(structure, sample_rate=sample_rate or 48_000.0,
+        editor = NotesEditor(structure, sample_rate=sample_rate or _ambient_rate(),
                              **options)
     elif is_multitrack(structure):
         # A multitrack states its own tempo, like a timeline.
-        editor = MultitrackEditor(structure, sample_rate=sample_rate or 48_000.0,
+        editor = MultitrackEditor(structure, sample_rate=sample_rate or _ambient_rate(),
                                   **options)
     else:
         raise TypeError(
@@ -118,3 +121,16 @@ def edit(structure, *, sample_rate: float = 0.0,
     if open:
         editor.open(host)
     return editor
+
+
+def _ambient_rate() -> float:
+    """The ambient server's nominal rate -- the current session's, else the
+    default session's -- or 48 kHz with none, the rate a window drawn with no
+    engine is laid out at."""
+    from ...base.main import main
+
+    try:
+        server = main.resolve_server()
+    except RuntimeError:
+        return 48_000.0
+    return float(server.query_info().nominal_sample_rate)

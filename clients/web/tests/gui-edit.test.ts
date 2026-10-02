@@ -386,6 +386,23 @@ test("a window over a curve and a roll undoes across both in order", async () =>
 
 // ---- a page's change is a turn ----
 
+test("edit takes the ambient server's rate", async () => {
+    // With no sampleRate, the roll is laid out at the rate of the server a play
+    // would resolve -- and at 48 kHz with none.
+    const { main } = await import("../src/base/main.ts");
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]]);
+    const held = main.server;
+    try {
+        main.server = null;
+        assert.equal((await edit(seq, { open: false })).sampleRate, 48_000, "no server anywhere");
+        main.server = { queryInfo: async () => ({ nominalSampleRate: 96_000 }) } as never;
+        assert.equal((await edit(seq, { open: false })).sampleRate, 96_000);
+        assert.equal((await edit(seq, { sampleRate: 44_100, open: false })).sampleRate, 44_100, "a rate given wins");
+    } finally {
+        main.server = held;
+    }
+});
+
 test("a page's change with the roll open redraws it and is undone there", async () => {
     const seq = new EventSequence([
         [0.0, new Event({ midinote: 60, dur: 1.0 })],
