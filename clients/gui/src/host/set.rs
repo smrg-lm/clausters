@@ -46,22 +46,31 @@ impl Host {
     /// asked for. A `/gui_set` that does not name it -- which is nearly all of
     /// them -- keeps its vector.
     pub(super) fn take_focus(props: Vec<(String, Value)>) -> (Vec<(String, Value)>, Option<bool>) {
-        if !props.iter().any(|(k, _)| k == "focus") {
+        Self::take_flag(props, "focus")
+    }
+
+    /// Takes the flag `name` out of a set, for a key that is the host's state
+    /// rather than a widget's prop.
+    pub(super) fn take_flag(
+        props: Vec<(String, Value)>,
+        name: &str,
+    ) -> (Vec<(String, Value)>, Option<bool>) {
+        if !props.iter().any(|(k, _)| k == name) {
             return (props, None);
         }
-        let mut focus = None;
+        let mut flag = None;
         let mut out = Vec::with_capacity(props.len());
         for (key, value) in props {
-            if key != "focus" {
+            if key != name {
                 out.push((key, value));
                 continue;
             }
             match widget::parse::truthy(&value) {
-                Some(on) => focus = Some(on),
-                None => diag::warn!("{GUI_SET}: focus is not a flag"),
+                Some(on) => flag = Some(on),
+                None => diag::warn!("{GUI_SET}: {name} is not a flag"),
             }
         }
-        (out, focus)
+        (out, flag)
     }
 
     /// Points the keyboard at widget `id` (`focus 1`) or takes it away from it
@@ -119,12 +128,32 @@ impl Host {
         // out before the document is written -- a query must not report it, and a
         // reloaded def must not restore a focus nobody asked for.
         let (props, focus) = Self::take_focus(props);
+        // `looping` is not a prop either: it is the loop switch `L` turns,
+        // which is the host's, so a script turning it is the key turning it --
+        // the next `L` starts from where the script left it, and the status
+        // bar says which way it went.
+        let (props, looping) = Self::take_flag(props, "looping");
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
         if !self.registry.set(id, props.clone()) {
             return false;
         }
         if let Some(on) = focus {
             self.set_focused(id, on, effects);
+        }
+        if let Some(on) = looping {
+            self.set_monitor_loop(on);
+            if let Some(root) = self.registry.root_of(id) {
+                self.say(
+                    root,
+                    crate::host::status::Line {
+                        kind: crate::host::status::Kind::Did,
+                        widget: None,
+                        verb: "loop".into(),
+                        text: if on { "loop on" } else { "loop off" }.into(),
+                    },
+                );
+                effects.push(HostEffect::Redraw(root));
+            }
         }
         // A set can retarget a view's source or widen its channel run, which
         // changes what has to be recorded; the diff below is a no-op otherwise.

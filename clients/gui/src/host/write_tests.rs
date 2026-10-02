@@ -643,6 +643,35 @@ fn a_window_that_plays_its_own_take_leaves_the_monitor_out() {
     );
 }
 
+/// **A script turns the loop switch as `L` does**: `looping` is the host's
+/// state and not a prop, so the next `L` starts from where the script left it.
+#[test]
+fn a_set_of_looping_turns_the_loop_switch() {
+    let (mut host, _server) = take_host(1, 16);
+    let set = |host: &mut Host, on: i32| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(1),
+                    OscType::String("looping".into()),
+                    OscType::Int(on),
+                ],
+            }),
+            from(),
+        );
+    };
+    assert!(!host.monitor_loops());
+    set(&mut host, 1);
+    assert!(host.monitor_loops());
+    assert!(
+        !host.toggle_monitor_loop(),
+        "L starts from the script's state"
+    );
+    set(&mut host, 0);
+    assert!(!host.monitor_loops());
+}
+
 /// **One channel of a stereo take**, which is what the server's
 /// channel-addressed write is for: the span is frames of that channel on
 /// both sides of the seam, and the other channel is not mentioned.
