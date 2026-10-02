@@ -1872,8 +1872,8 @@ the books, and the existing examples extended.
   `span`, `locate` and `play` verbs, and `editor.selected` is a `Segment`
   over `editor.buffer`, setting which sets the span. The value band the
   rule names for a sweep with height is not carried: the audio editor's
-  crate never read one, so there was none to keep. `PointsEditor` and the
-  generic editor still keep the old `editor.selection` dict — written
+  crate never read one, so there was none to keep. `PointsEditor`, not an
+  application yet, still keeps the old `editor.selection` dict — written
   under "Found by use".
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
@@ -5302,15 +5302,17 @@ work, where a pending item reads as done.)*
   `seq.events.range` became `between`, off Python's `range`. The editors'
   hook `selected()` became `selection_moved()` to free the name.)*
 
-- ⬜ **The points editor and the generic editor still say `selection`**
-  *(found 2026-10-02 closing `C61`)*. The three applications read what the
-  hand marked as `selected`, in the structure's own type, and the time range
-  as their transport's `span`; `PointsEditor` and the generic `Editor` still
-  keep the swept range as the `editor.selection` dict (`start`, `len`, a
-  `value` band), and the hook `selection_moved()` / `adopt_selection()` it
-  feeds has no override anywhere. A curve's `selected` would be its points;
-  a curve has no transport, so where its time range lives is the open
-  question.
+- ⬜ **The points editor still says `selection`** *(found 2026-10-02
+  closing `C61`)*. The three applications read what the hand marked as
+  `selected`, in the structure's own type, and the time range as their
+  transport's `span`. `PointsEditor` is not an application yet, and it still
+  keeps the swept range as the `editor.selection` dict (`start`, `len`, a
+  `value` band) through the base class `Editor`'s default handling of a
+  sweep -- which is there only for it now; the hook `selection_moved()` /
+  `adopt_selection()` that handling feeds has no override anywhere. It goes
+  when the points editor becomes an application: a curve's `selected` would
+  be its points, and a curve has no transport, so where its time range
+  lives is the question that move answers.
 
 ## Future directions (a design that is not a fix)
 
