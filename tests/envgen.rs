@@ -125,6 +125,31 @@ fn linear_segment_ramps_then_holds_the_target() {
     }
 }
 
+/// **An envelope drawn by hand is not short**: thirty linear segments, 129
+/// inputs, compile and play -- the per-UGen input list is as wide as a UGen
+/// needs, up to the ceiling, where it used to stop at 32 (seven segments).
+#[test]
+fn a_long_envelope_compiles_and_reaches_its_last_target() {
+    let step = secs(BLOCK_SIZE);
+    let segments: Vec<[f64; 4]> = (1..=30)
+        .map(|i| [f64::from(i % 2), step, 1.0, 0.0])
+        .collect();
+    let spec = envgen_spec(0.0, 0.0, -1.0, -1.0, &segments);
+    assert_eq!(spec["ugens"][0]["inputs"].as_array().unwrap().len(), 129);
+    let (mut engine, _h) = spawn(spec);
+    let out = render(&mut engine, 32);
+    let first = out[BLOCK_SIZE];
+    assert!(
+        (first - 1.0).abs() < 1e-3,
+        "the first segment rose to 1: {first}"
+    );
+    let last = *out.last().unwrap();
+    assert!(
+        last.abs() < 1e-6,
+        "and the thirtieth came back to 0: {last}"
+    );
+}
+
 #[test]
 fn exponential_segment_multiplies_by_a_constant_ratio() {
     // 0.01 -> 1.0 exponentially over 64 samples: each sample is the previous

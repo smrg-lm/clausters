@@ -40,7 +40,7 @@ usage:
       --max-nodes <n>          node slab capacity, root included (default 8192)
       --max-buffers <n>        buffer pool size (default 4096)
       --max-graph-children <n> per-group child capacity (default 512)
-      --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
+      --max-ugen-inputs <n>    accepted inputs per UGen (default 256, the max)
       --transports <n>         independent transports, 0 to n-1 (default 8,
                                at most 64)
       --udp [addr:]port    move the UDP front alone, off the base port. UDP is

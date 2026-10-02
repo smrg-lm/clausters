@@ -6,7 +6,7 @@ use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
     BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx,
-    Rate, ReplyMsg, UGen, at,
+    Rate, ReplyMsg, UGen, USUAL_UGEN_INPUTS, at,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{ControlType, InputRef, SynthDef};
@@ -282,8 +282,19 @@ impl SynthNode for UGenSynth {
             let (earlier, rest) = self.wires.split_at_mut(i);
             let output = &mut rest[0].0[..out_len];
 
-            let mut inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
             let refs = &self.def.ugens[i].inputs;
+            // **As wide as this UGen needs**: the usual list, or the whole
+            // ceiling for the few that take more (a long envelope) -- one of
+            // the two is cleared, so the common case pays for 32 slots a
+            // block, not for the ceiling.
+            let (mut usual, mut wide);
+            let inputs: &mut [&[f32]] = if refs.len() <= USUAL_UGEN_INPUTS {
+                usual = [&[][..]; USUAL_UGEN_INPUTS];
+                &mut usual
+            } else {
+                wide = [&[][..]; MAX_UGEN_INPUTS];
+                &mut wide
+            };
             for (k, r) in refs.iter().enumerate() {
                 inputs[k] = match r {
                     InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),

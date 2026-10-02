@@ -23,13 +23,13 @@ export const DEFAULT_CONTROL_BUSES = 16384;
 export const DEFAULT_SAMPLE_RATE = 48000;
 // Boot-time pre-allocated pool sizes, mirroring the Rust server's `Limits`
 // defaults (`--max-nodes`/`--max-buffers`/`--max-graph-children`/
-// `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs -- a
+// `--max-ugen-inputs`). 256 is the hard ceiling on UGen inputs -- a
 // compile-time invariant, unlike the bus counts, which are configured
 // resources with none.
 export const DEFAULT_MAX_NODES = 8192;
 export const DEFAULT_MAX_BUFFERS = 4096;
 export const DEFAULT_MAX_GRAPH_CHILDREN = 512;
-export const DEFAULT_MAX_UGEN_INPUTS = 32;
+export const DEFAULT_MAX_UGEN_INPUTS = 256;
 
 /**
  * The server's default ring count (`--taps`), when it reports none.

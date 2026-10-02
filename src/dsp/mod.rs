@@ -119,11 +119,21 @@ pub const NUM_AUDIO_BUSES: usize = 1024;
 pub const NUM_CONTROL_BUSES: usize = 16384;
 /// Hard ceiling on inputs per UGen: the synth builds its input list on a
 /// fixed stack array of this width (see `synthdef::instance`), so it is a
-/// compile-time invariant, not a tunable. EnvGen already needs 21 (ADSR).
-/// The boot-time `--max-ugen-inputs` (see [`Limits`]) is a *runtime* limit
-/// clamped to this ceiling; `--audio-buses`, by contrast, has no ceiling at
-/// all -- it is a configured resource and nothing in the code caps it.
-pub const MAX_UGEN_INPUTS: usize = 32;
+/// compile-time invariant, not a tunable. EnvGen needs `9 + 4 * segments`: 21
+/// for an ADSR, and it was 32 until an envelope drawn by hand with seven
+/// segments could not be played -- at 256 one of 61 segments can. The array is
+/// only that wide for a UGen with more than [`USUAL_UGEN_INPUTS`], so the
+/// ceiling costs the common case nothing per block, and it stays within the
+/// `u8` a `Dshuf`'s order is kept in. The boot-time `--max-ugen-inputs` (see
+/// [`Limits`]) is a *runtime* limit clamped to this ceiling; `--audio-buses`,
+/// by contrast, has no ceiling at all -- it is a configured resource and
+/// nothing in the code caps it.
+pub const MAX_UGEN_INPUTS: usize = 256;
+
+/// The inputs almost every UGen fits in: the width of the input list a synth
+/// builds per UGen per block when the UGen has no more, so a block does not
+/// clear [`MAX_UGEN_INPUTS`] slots for a two-input oscillator.
+pub const USUAL_UGEN_INPUTS: usize = 32;
 
 /// Boot-time capacities for the pre-allocated pools (scsynth's `-n`/`-b`/...).
 ///

@@ -24,14 +24,14 @@ DEFAULT_CONTROL_BUSES = 16384
 DEFAULT_SAMPLE_RATE = 48000
 # Boot-time pre-allocated pool sizes, mirroring the Rust server's `Limits`
 # defaults (`--max-nodes`/`--max-buffers`/`--max-graph-children`/
-# `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs -- a compile-time
+# `--max-ugen-inputs`). 256 is the hard ceiling on UGen inputs -- a compile-time
 # invariant, unlike the bus counts, which are configured resources with none.
 # Hardware channels default to the device's outputs (``None`` = no flag) and no
 # live input.
 DEFAULT_MAX_NODES = 8192
 DEFAULT_MAX_BUFFERS = 4096
 DEFAULT_MAX_GRAPH_CHILDREN = 512
-DEFAULT_MAX_UGEN_INPUTS = 32
+DEFAULT_MAX_UGEN_INPUTS = 256
 # The audio-tap region (`--taps`/`--tap-frames`): pre-allocated sample rings
 # an audio bus can be routed into with `Server.tap`, read by a GUI host out of
 # shared memory or streamed with `Server.stream_taps`. 0 taps disables the
@@ -91,7 +91,7 @@ class ServerOptions:
     max_graph_children: int = field(
         default_factory=lambda: server_config().get("max_graph_children", DEFAULT_MAX_GRAPH_CHILDREN)
     )
-    #: Accepted inputs per UGen (clamped to 32 by the server).
+    #: Accepted inputs per UGen (clamped to 256 by the server).
     max_ugen_inputs: int = field(
         default_factory=lambda: server_config().get("max_ugen_inputs", DEFAULT_MAX_UGEN_INPUTS)
     )
