@@ -1874,7 +1874,9 @@ the books, and the existing examples extended.
   rule names for a sweep with height is not carried: the audio editor's
   crate never read one, so there was none to keep. `PointsEditor`, not an
   application yet, still keeps the old `editor.selection` dict — written
-  under "Found by use".
+  under "Found by use". `examples/editors/span_selected` (and its page) is
+  the manual check: the three editors' transports, spans and selections,
+  step by step.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 

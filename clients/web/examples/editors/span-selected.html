@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: span, selected and transport</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #notes, #multitrack, #take { width: 720px; max-width: 100%; height: 360px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Manual check: span, selected and transport in the three
+editors. Press the buttons in order; each step says what to look at.</div>
+
+      <button id="setup">setup: one server, one host</button>
+
+      <div id="notes"></div>
+      <div>
+        <button id="notes1" disabled>notes 1: open, play</button>
+        <button id="notes2" disabled>notes 2: span, loop</button>
+        <button id="notes3" disabled>notes 3: unloop, pause, locate</button>
+        <button id="notes4" disabled>notes 4: read the span</button>
+        <button id="notes5" disabled>notes 5: selected</button>
+        <button id="notes5b" disabled>notes 5: read, unselect</button>
+      </div>
+
+      <div id="multitrack"></div>
+      <div>
+        <button id="multitrack1" disabled>multitrack 1: open, play</button>
+        <button id="multitrack2" disabled>multitrack 2: span, loop</button>
+        <button id="multitrack3" disabled>multitrack 3: unloop, read the span</button>
+        <button id="multitrack4" disabled>multitrack 4: selected</button>
+        <button id="multitrack4b" disabled>multitrack 4: read, unselect</button>
+      </div>
+
+      <div id="take"></div>
+      <div>
+        <button id="audio1" disabled>audio 1: open, play</button>
+        <button id="audio2" disabled>audio 2: span is selected</button>
+        <button id="audio3" disabled>audio 3: loop, select a segment</button>
+        <button id="audio4" disabled>audio 4: read, unselect</button>
+      </div>
+
+      <button id="close" disabled>close</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/span_selected.py, call
+      for call: one button per cell, the same material and the same verbs in
+      the same order.
+
+      The platform's differences are the usual ones: the session is the engine
+      in this tab (`Session.embed`), each editor draws into an element of the
+      page, a setter that reaches the engine is a method (`setSpan`), and what
+      reads the host is awaited (a roll's and a multitrack's `selected()`).
+
+      Serve clients/web (the package root) and open
+      /examples/editors/span-selected.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui, loadCore } from "../../dist/index.js";
+      import { Buffer } from "../../dist/defs/index.js";
+      import { Content, Multitrack, Region, TakeLane, Track } from "../../dist/multitrack.js";
+      import { Segment } from "../../dist/segments.js";
+      import { Event, EventSequence } from "../../dist/seq/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+      const step = (id, next, act) => {
+        $(id).onclick = () => act().then(() => {
+          for (const n of next) $(n).disabled = false;
+        }).catch((e) => log(`error: ${e}`));
+      };
+
+      await loadCore();
+
+      let session, server, rate;
+      let notes, n, t;
+      let frames, high, higher, a, b, mt, m, mtt;
+      let take, e, at;
+
+      // Setup: one server, one host
+      step("setup", ["notes1"], async () => {
+        $("setup").disabled = true;
+        session = (await Session.embed()).activate();
+        await session.gui();
+        server = session.server;
+        rate = (await server.queryInfo()).nominalSampleRate;
+      });
+
+      // NOTES 1: open a roll and take its transport
+      step("notes1", ["notes2"], async () => {
+        notes = new EventSequence([[0, 72], [1, 76], [2, 79], [3, 84]].map(
+          ([b, m]) => [b, new Event({ midinote: m, dur: 0.5, amp: 0.2 })]));
+        n = await gui.edit(notes, { title: "notes", stage: $("notes") });
+        t = n.transport;
+        await t.play();           // sounds the four notes, the roll's line moves
+      });
+
+      // NOTES 2: a span set from the page is drawn on the roll and played
+      step("notes2", ["notes3"], async () => {
+        await t.stop();
+        await t.setSpan([1.0, 3.0]); // the band appears over beats 1..3
+        await t.loop();           // the loop switch turns on in the roll
+        await t.play();           // repeats the 2nd and 3rd notes
+      });
+
+      // NOTES 3: unloop, pause, locate
+      step("notes3", ["notes4"], async () => {
+        await t.unloop();         // the switch turns off; the pass ends at beat 3
+        await t.pause();
+        await t.locate(0.0);
+        log(`${JSON.stringify(t.span)} ${t.looping}`); // [1,3] false
+      });
+
+      // NOTES 4: Alt+drag a new band on the roll by hand, then press this
+      step("notes4", ["notes5"], async () => {
+        log(JSON.stringify(t.span)); // the band you swept, in beats
+      });
+
+      // NOTES 5: selected from the page and by hand
+      step("notes5", ["notes5b"], async () => {
+        n.select([...notes.events].slice(0, 2)); // the first two notes are marked
+        log(String(await n.selected()));
+      });
+      // now click/marquee other notes by hand and press:
+      step("notes5b", ["multitrack1"], async () => {
+        log(String(await n.selected()));
+        n.unselect();             // nothing marked
+      });
+
+      // MULTITRACK 1: two takes in two tracks
+      step("multitrack1", ["multitrack2"], async () => {
+        frames = Math.trunc(2.0 * rate);
+        high = await Buffer.fromSamples(Float32Array.from({ length: frames },
+          (_, i) => 0.3 * Math.sin(2 * Math.PI * 660.0 * i / rate)), 1, rate, { server });
+        higher = await Buffer.fromSamples(Float32Array.from({ length: frames },
+          (_, i) => 0.3 * Math.sin(2 * Math.PI * 990.0 * i / rate)), 1, rate, { server });
+        await server.sync();
+        a = new Region({ id: 20, position: 0.0, length: 2.0, name: "660",
+          content: Content.onto({ source: { source: 1, lifetime: "session", generation: 0 },
+                                  start: 0.0, duration: 2.0 }) });
+        b = new Region({ id: 21, position: 2.0, length: 2.0, name: "990",
+          content: Content.onto({ source: { source: 2, lifetime: "session", generation: 0 },
+                                  start: 0.0, duration: 2.0 }) });
+        mt = new Multitrack();
+        mt.tracks = [new Track({ id: 10, name: "one", takeLanes: [new TakeLane({ id: 11, regions: [a] })] }),
+                     new Track({ id: 12, name: "two", takeLanes: [new TakeLane({ id: 13, regions: [b] })] })];
+        m = await gui.edit(mt, { sampleRate: rate, server, sources: { 1: high, 2: higher },
+                                 title: "multitrack", stage: $("multitrack") });
+        mtt = m.transport;
+        await mtt.play();         // 660 then 990, the line moves
+      });
+
+      // MULTITRACK 2: span and loop from the page
+      step("multitrack2", ["multitrack3"], async () => {
+        await mtt.stop();
+        await mtt.setSpan([1.0, 3.0]); // the band appears over 1..3 s
+        await mtt.loop();         // L turns on
+        await mtt.play();         // end of 660, start of 990, repeated
+      });
+
+      // MULTITRACK 3: stop the loop; sweep by hand (Alt+drag) and read it
+      step("multitrack3", ["multitrack4"], async () => {
+        await mtt.unloop();
+        await mtt.stop();
+        log(JSON.stringify(mtt.span)); // the band you swept, in seconds
+      });
+
+      // MULTITRACK 4: selected
+      step("multitrack4", ["multitrack4b"], async () => {
+        m.select([b]);            // the 990 box is held
+        log(JSON.stringify((await m.selected()).map((r) => r.name)));
+      });
+      // click the other box by hand and press:
+      step("multitrack4b", ["audio1"], async () => {
+        log(JSON.stringify((await m.selected()).map((r) => r.name)));
+        m.unselect();
+      });
+
+      // AUDIO 1: a take, its transport
+      step("audio1", ["audio2"], async () => {
+        take = await Buffer.fromSamples(Float32Array.from({ length: frames },
+          (_, i) => Math.exp(-1.5 * i / frames) * 0.5
+            * Math.sin(2 * Math.PI * 880.0 * i / rate)), 1, rate, { server });
+        await server.sync();
+        e = await gui.edit(take, { title: "take", stage: $("take") });
+        at = e.transport;
+        await at.play();          // the whole take
+      });
+
+      // AUDIO 2: span from the page = what is selected
+      step("audio2", ["audio3"], async () => {
+        await at.stop();
+        await at.setSpan([0.5, 1.0]); // the band appears over 0.5..1.0 s
+        log(`${e.selected.start} ${e.selected.duration}`); // frame 0.5*rate, 0.5 s
+        await at.play();          // only that half second
+      });
+
+      // AUDIO 3: loop, then select a Segment
+      step("audio3", ["audio4"], async () => {
+        await at.loop();
+        await at.play();          // repeats 0.5..1.0
+        await at.stop();
+        await at.unloop();
+        await e.select(new Segment(e.buffer, Math.trunc(1.2 * rate), 0.4));
+        log(JSON.stringify(at.span)); // [1.2,1.6]
+      });
+
+      // AUDIO 4: drag a range by hand, then press this
+      step("audio4", ["close"], async () => {
+        log(`${JSON.stringify(at.span)} ${e.selected?.start} ${e.selected?.duration}`);
+        await e.unselect();       // the band goes away
+        log(JSON.stringify(at.span)); // null
+      });
+
+      // Close
+      step("close", [], async () => {
+        await session.close();
+      });
+    </script>
+  </body>
+</html>

@@ -108,6 +108,9 @@ to.
 | `samples_to_file` | `source` | `idiom` — handing a take to a view. A script writes a `.f32` file the host maps and names the path; the page's host maps no file -- the page's storage is not the host's -- so a page hands the samples straight over as a `gui.source`. One call either way, in the same place |
 | — | `writeFile` | `idiom` — writing a file a page keeps. A page's files live in its origin private file system, through the client's `opfs`; a script writes its file with the language's own `pathlib`, which is no call on the client surface |
 | — | `readFile` | `idiom` — the other half of the row above: reading that file back |
+| — | `item` | `idiom` — an event of a sequence by its index. Python subscripts the live collection (`notes.events[1]`), which is no call; TypeScript has no `__getitem__`, so the same reach is `events.item(1)` |
+| — | `setSpan` | `idiom` — setting a transport's span. A script assigns the property (`t.span = (1.0, 3.0)`), which is no call; in a page the setter reaches the engine and the host and has to be awaited, and a setter cannot be, so the same act is a method (`bindings.md`, the client surface's two shapes) |
+| — | `selected` | `idiom` — what a roll's or a multitrack's hand marked. A script reads the property, which asks the host and blocks for the answer; a page awaits the answer, so the same read is a method. The audio editor's `selected` reads no host and is a property in both |
 
 ## What one side of a pair says alone
 
@@ -479,3 +482,9 @@ in the middle of an example.
 |---|---|---|
 | web | `push` | the clip envelope added to the first box's automation: `Array.push`, which the audit reads as the host's `push`. The script's `list.append` is the same line and is no call on the client |
 | web | `set` ×3 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
+
+### `basics/verbs`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `set` | a key of an event, written while it plays: the script assigns it (`notes.events[1]["degree"] = 4`), which is no call; TypeScript has no `__setitem__`, so the page writes `.set("degree", 4)`, which the audit reads as a node's `set` |
