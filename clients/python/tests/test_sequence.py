@@ -77,6 +77,8 @@ def test_the_events_are_objects_and_one_event_is_one_object():
     assert [e["midinote"] for e in seq.events.at(1.0)] == [62, 64]
     assert [e["midinote"] for e in seq.events.range(0.5, 3.0)] == [62, 64], "half-open"
     assert seq.events[-1]["midinote"] == 67 and len(seq.events) == 4
+    assert seq.events[:2] == [first, seq.events[1]] and seq.events[:2][0] is first, \
+        "a slice is a list of the same objects"
     assert {first: "a key"}[seq.events[0]] == "a key"
 
 

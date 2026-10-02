@@ -428,8 +428,11 @@ class SeqEvents:
     def __iter__(self):
         return iter(self._of(self._sequence._ids()))
 
-    def __getitem__(self, i: int) -> "SeqEvent":
-        return self._sequence._event(self._sequence._ids()[i])
+    def __getitem__(self, i):
+        ids = self._sequence._ids()
+        if isinstance(i, slice):
+            return self._of(ids[i])
+        return self._sequence._event(ids[i])
 
     def add(self, beat: float, event) -> SeqEvent:
         """**Add an event at** ``beat`` -- an `Event`, a dict of its keys, or
