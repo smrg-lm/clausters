@@ -5209,6 +5209,48 @@ work, where a pending item reads as done.)*
   have the section, with the same tree and `bassLane` names, so what was
   stale was one section in two books.)*
 
+- ⬜ **Two rolls on the shared transport: one roll's line follows the other's
+  sequence, and two sequences cannot sound together from a script**
+  *(found 2026-10-02 by the user, trying `C58` by hand with two rolls, `a`
+  and `b`)*. Every `play(sequence)` and every notes editor plays on one
+  transport, the notes editor's (`NOTES_EDITOR_TRANSPORT`, 3), as decided for
+  `C58`. Two things follow.
+  - **The line is the transport's, not the sequence's.** A roll draws its play
+    and position line from that transport (`head_clock`), so with `b` loaded
+    and `a`'s window open, `a` is silent and its line still moves with
+    `b`'s `play`, `locate` and `stop`: a window showing a position that is
+    not its own. With the shared transport kept, the fix is that a roll
+    follows the transport only while the lane holds its sequence, and rests
+    at its own position cursor otherwise, following again when its sequence
+    plays — in the shared playback and the notes editor, both clients.
+  - **`t = play(a); u = play(b)` does not play both**: the second displaces
+    the first, and `t` and `u` are one object. What sounds two sequences
+    together today is a copy that joins them (`EventSequence([(e.at,
+    e.event) for e in a.events] + ...)`), which no longer follows the edits
+    of either, or a multitrack with each sequence the source of a region on
+    its own track, which plays them on the multitrack's transport and keeps
+    each roll editing its sequence. If two sequences together is the
+    ordinary case from a script, it needs **a transport per sequence**, which
+    also ends the first problem, since each roll follows its sequence's.
+  - **What a transport per `play` would take.** The server does not create
+    transports: they are fixed slots, `--transports` (8 by default), capped
+    at 64 by the shared-memory table (`MAX_TRANSPORTS`). So it means handing
+    out a free slot. Of the 8, four are taken (0 the multitrack, 1 the audio
+    editor, 2 the host's monitor, 3 the notes editor), leaving four for
+    sequences at once unless `--transports` is raised; when none is free,
+    `play` either fails or displaces another, and which is to be decided. It
+    needs an id space for transports in `IdSpaces`, the fixed ones reserved
+    and shared between clients as node ids are; a playback per transport
+    rather than per server (its following group, its governed group, its
+    lane), with the `NOTES_EDITOR_TRANSPORT` constant gone and each roll
+    following its sequence's transport; and a rule for giving the slot back
+    — a sequence keeps its transport while it is loaded, and an explicit
+    `t.free()` or the session's close returns it, rather than the garbage
+    collector. The server itself does not change, neither protocol nor ABI,
+    unless more than 64 were wanted.
+  - Open: whether the shared transport stays with the first fix, or
+    `play(sequence)` takes a transport of its own.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A timeline of concrete events could play from an event lane**

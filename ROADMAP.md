@@ -118,7 +118,13 @@ None is open now.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-None is open now.
+- ⬜ **Two rolls on the shared transport: one roll's line follows the other's
+  sequence, and two sequences cannot sound together from a script**
+  *(`clients/python/PLAN.md`, "Found by use")*. A fix that waits on a
+  decision: keep the shared transport and have a roll follow it only while
+  the lane holds its sequence, or give `play(sequence)` a transport of its
+  own, which also fixes the line. **Related:** `C58`, which chose the shared
+  transport.
 
 ## 3. Tests and reviews pending
 
