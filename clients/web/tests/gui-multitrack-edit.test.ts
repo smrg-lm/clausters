@@ -858,6 +858,38 @@ test("the playback sends the crate's steps and waits where they say", async () =
     assert.equal(log[0]![1], "/transport_end");
 });
 
+test("a verb nobody awaited does not cross the next one on the runner", async () => {
+    // A page does not block: a cue right after the window opens is still
+    // waiting on its reply when a play comes, and the runner holds one
+    // sequence. The second walk starts when the first is done, in order.
+    const log: string[] = [];
+    const server = {
+        sendMsg: (addr: string) => log.push(`send ${addr}`),
+        request: async (addr: string, args: unknown[]) => {
+            log.push(`request ${addr}`);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            log.push(`reply ${addr}`);
+            return { addr: "/done", args: [addr, ...args.slice(0, 1).map((a) => (Array.isArray(a) ? a[1] : a))] };
+        },
+    };
+    const playback = Object.create(Playback.prototype) as Playback;
+    const held = playback as unknown as {
+        server: unknown;
+        runner: unknown;
+        run: (answer: string) => Promise<void>;
+    };
+    held.server = server;
+    held.runner = new StepRunner();
+    const multitrack = new MultitrackPlayback(8192);
+
+    const cue = held.run(multitrack.locate(1.0));
+    await held.run(multitrack.playPass(JSON.stringify({ range: null, looping: false })));
+    await cue;
+    assert.deepEqual(log.slice(0, 2), ["request /transport_locateSample", "reply /transport_locateSample"],
+        "the play waits for the cue it came after");
+    assert.ok(log.includes("reply /transport_play"), "and then goes out whole");
+});
+
 
 test("the source table says how long a source is when its buffer does", () => {
     // A box longer than its source is cut where the source ends, and only the
