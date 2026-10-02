@@ -1842,6 +1842,31 @@ the books, and the existing examples extended.
     wrote down and answered for the edit, not for the objects. The revision
     is written there in the same commit.
   - After `C57`, which settles the shape on the smaller structure.
+- ⬜ **C61 — `span` and `selected`, the same two words in every editor**
+  *(decided 2026-10-02 by the user: one word names one thing in every case)*.
+  A view has two selections, and they are told apart by what they are, not
+  by which editor holds them:
+  - **`selected`** — with `select(...)` and `unselect()` — is **what the hand
+    marked**, the view's state, in the structure's own type: a roll's events
+    (`SeqEvent`s, done for the roll in `C58`'s follow-up), a multitrack's
+    regions, an audio editor's samples. It is the window's: it enters no
+    history, and two windows over one structure each have their own.
+  - **`span`** is **the time range** an Alt+drag sweeps: drawn as a band,
+    played by `play`, repeated by the loop. It is the **transport's**, since
+    it says what sounds — it exists with no window (a sequence played with
+    `play(seq)` loops with no roll open), every window over what a transport
+    plays draws the one span, and the server's `/transport_loop` is the
+    transport's too. Done for a sequence's transport (`t.span`, `t.loop()`,
+    `t.unloop()`).
+  - In an audio editor the two **coincide** in extent — the frames selected
+    are the frames of the range — which is a particular case of the rule, not
+    a second rule: `selected` is the samples (the data, with the value band
+    of a sweep with height), `span` the interval.
+  What is left is the other two applications: the multitrack and the audio
+  editor expose their transport as a `Transport` (`span`, `loop`, `unloop`,
+  and the rest of its verbs), and `editor.selection` — today the swept
+  range, its `nodes` and its `value` band in one dict — is split between
+  `selected` and the transport's `span`. Both clients, both books.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
