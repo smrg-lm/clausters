@@ -5307,12 +5307,12 @@ work, where a pending item reads as done.)*
   `selected`, in the structure's own type, and the time range as their
   transport's `span`. `PointsEditor` is not an application yet, and it still
   keeps the swept range as the `editor.selection` dict (`start`, `len`, a
-  `value` band) through the base class `Editor`'s default handling of a
-  sweep -- which is there only for it now; the hook `selection_moved()` /
-  `adopt_selection()` that handling feeds has no override anywhere. It goes
-  when the points editor becomes an application: a curve's `selected` would
-  be its points, and a curve has no transport, so where its time range
-  lives is the question that move answers.
+  `value` band). It was the base class `Editor`'s, so every application
+  carried an `editor.selection` that stayed `{}`; the same day the field and
+  the sweep handling moved down into `PointsEditor` in both clients, and the
+  hook it fed (`selection_moved()` / `adopt_selection()`, overridden
+  nowhere) went. What is left goes with `X4` in
+  `crates/clausters-apps/PLAN.md`, which says what replaces it.
 
 ## Future directions (a design that is not a fix)
 

@@ -150,6 +150,19 @@ test("a curve is drawn, edited and read back with no multitrack", async () => {
     assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0]);
 });
 
+test("a sweep over a curve is kept and is no edit", async () => {
+    // The points editor keeps the range a sweep leaves, with its value band;
+    // the three applications keep theirs as `selected` and a transport's span,
+    // so the base editor keeps none.
+    const editor = (await edit(aCurve(), { sampleRate: SR, open: false })) as unknown as PointsEditor;
+    const { wid } = await opened(editor);
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR, -0.5, 0.25]), false);
+    assert.deepEqual(editor.selection, { start: 1.0, len: 1.0, value: { min: -0.5, max: 0.25 } });
+    assert.equal(editor.canUndo, false);
+    const roll = new NotesEditor(new EventSequence(), { sampleRate: SR });
+    assert.ok(!("selection" in roll), "an application keeps no selection dict");
+});
+
 test("an edit made against a picture an undo replaced is refused", async () => {
     // The staleness floor, on the road an editor actually travels. A host
     // stamps every event with the version it was last told, and it is told only

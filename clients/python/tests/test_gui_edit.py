@@ -187,6 +187,22 @@ def test_a_curve_is_drawn_edited_and_read_back_with_no_multitrack():
     assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0])
 
 
+def test_a_sweep_over_a_curve_is_kept_and_is_no_edit():
+    """The points editor keeps the range a sweep leaves, with its value band;
+    the three applications keep theirs as `selected` and a transport's span,
+    so the base editor keeps none."""
+    from clausters.gui.editing import MultitrackEditor
+    from clausters.multitrack import Multitrack
+
+    editor = edit(a_curve(), sample_rate=SR, open=False)
+    host, wid = opened(editor)
+    assert editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR, -0.5, 0.25]) is False
+    assert editor.selection == {"start": pytest.approx(1.0), "len": pytest.approx(1.0),
+                                "value": {"min": -0.5, "max": 0.25}}
+    assert not editor.can_undo
+    assert not hasattr(MultitrackEditor(Multitrack(), sample_rate=SR), "selection")
+
+
 def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
     # The staleness floor, on the road an editor actually travels. A host stamps
     # every event with the version it was last told, and it is told only when an

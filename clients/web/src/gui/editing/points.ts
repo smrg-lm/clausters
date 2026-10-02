@@ -26,6 +26,7 @@ import {
     pointsProps as corePointsProps,
 } from "../../core/clausters_core_web.js";
 import { POINTS, domainEdit } from "../../document.ts";
+import type { Selection } from "../../document.ts";
 import { cratePoints, flatPoints } from "../../multitrack.ts";
 import { window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -230,6 +231,29 @@ export class PointsEditor extends Editor<EditableCurve> {
             domain: new PointsDomain(),
             view: new PointsView(min === undefined ? undefined : [min, max!]),
         });
+    }
+
+    /**
+     * The last range swept on the curve: `{ start, len }` in its seconds and,
+     * for a sweep with height, `value: { min, max }` in its own values. Screen
+     * state, never part of what is edited.
+     */
+    selection: Selection | Record<string, never> = {};
+
+    protected override observe(wid: number, tag: string, values: readonly unknown[]): boolean {
+        if (tag !== "selection") return super.observe(wid, tag, values);
+        const selection: Record<string, unknown> = {
+            start: values.length > 0 ? this.position(Number(values[0])) : 0.0,
+            len: values.length > 1 ? this.position(Number(values[1])) : 0.0,
+        };
+        if (values.length >= 4) {
+            // The sweep restricted the value axis too. Carried **as it came**:
+            // it is in the structure's own domain, and no unit of this
+            // editor's applies to it.
+            selection.value = { min: Number(values[2]), max: Number(values[3]) };
+        }
+        this.selection = selection as unknown as Selection;
+        return false;
     }
 }
 

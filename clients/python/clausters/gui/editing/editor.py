@@ -142,11 +142,6 @@ class Editor:
         #: second window opened.
         self.domain = domain
         self.view = view
-        #: The last selection swept in this editor's windows, as the crate's
-        #: ``Selection``. It is a plain value and not part of what is edited,
-        #: which is the crate's own line: a selection is screen state, never
-        #: persisted and never logged.
-        self.selection: dict = {}
         #: **Where the reader is**, in the structure's own units (beats for a
         #: timeline, seconds for a multitrack, a take or a curve) -- the position
         #: cursor a click placed, and
@@ -612,8 +607,8 @@ class Editor:
 
         Nothing here reaches a history: the crate is explicit that a selection,
         a zoom and which layer the hand is on are never part of what is edited.
-        The selection is still kept **typed**, because it is the value an
-        operation is handed.
+        What the hand marked is each editor's to keep, in its structure's own
+        type, so a sweep is nothing here.
         """
         if tag == "locate" and values:
             # A click on the time ruler: the reader put the position cursor
@@ -630,35 +625,7 @@ class Editor:
                 self.composed_in.locate(self.cursor)
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
-            return False
-        if tag == "selection":
-            self.selection = {
-                "start": self._position(float(values[0])) if values else 0.0,
-                "len": (self._position(float(values[1]))
-                        if len(values) > 1 else 0.0)}
-            if len(values) >= 4:
-                # The sweep restricted the value axis too. Carried **as it
-                # came**: it is in the structure's own domain, and no unit of
-                # this editor's applies to it.
-                self.selection["value"] = {"min": float(values[2]),
-                                           "max": float(values[3])}
-            self.selection_moved()
         return False
-
-    def selection_moved(self) -> None:
-        """This editor's selection moved.
-
-        Nothing on its own -- a structure's selection is that structure's. A view
-        **composed** inside a bigger editor hands it up instead, because the
-        range an operation is given must be the same value whichever of the
-        multitrack's windows it was swept in.
-        """
-        if self.composed_in is not None:
-            self.composed_in.adopt_selection(self)
-
-    def adopt_selection(self, editor: "Editor") -> None:
-        """A view composed inside this one swept a marquee. Nothing by default;
-        a view over an arrangement names what it is a selection *of*."""
 
     def locate(self, at: float) -> None:
         """The position cursor was placed at ``at``, in the structure's own

@@ -218,7 +218,6 @@ def test_a_tag_that_is_not_an_edit_never_reaches_the_domain():
     for tag in ("selection", "view_x", "layer", "focus", "height"):
         assert ed.apply("/gui_event", [wid, 1, 0, tag, 0.0, 1.0]) is False
     assert ed.can_undo is False
-    assert ed.selection["start"] == pytest.approx(0.0)
 
 
 def test_the_routing_table_is_the_crates_and_not_this_modules():

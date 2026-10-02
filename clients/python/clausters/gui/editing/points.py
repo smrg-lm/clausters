@@ -162,6 +162,25 @@ class PointsEditor(Editor):
         super().__init__(curve, sample_rate=sample_rate,
                          domain=PointsDomain(), view=PointsView(axis),
                          title=title, **options)
+        #: The last range swept on the curve: ``{"start", "len"}`` in its
+        #: seconds and, for a sweep with height, ``"value": {"min", "max"}``
+        #: in its own values. Screen state, never part of what is edited.
+        self.selection: dict = {}
+
+    def _observe(self, wid: int, tag: str, values) -> bool:
+        if tag == "selection":
+            self.selection = {
+                "start": self._position(float(values[0])) if values else 0.0,
+                "len": (self._position(float(values[1]))
+                        if len(values) > 1 else 0.0)}
+            if len(values) >= 4:
+                # The sweep restricted the value axis too. Carried **as it
+                # came**: it is in the structure's own domain, and no unit of
+                # this editor's applies to it.
+                self.selection["value"] = {"min": float(values[2]),
+                                           "max": float(values[3])}
+            return False
+        return super()._observe(wid, tag, values)
 
 
 def _name(curve) -> str:

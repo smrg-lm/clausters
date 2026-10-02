@@ -836,6 +836,14 @@ opened it.
   in both clients. It already has a history — `edit(curve)` joins the context as an
   external member — so what an application would add is one implementation in
   Rust and chrome of its own. Whether that is worth a milestone is the decision.
+  **What goes when it becomes one** *(noted 2026-10-02, at the user's request,
+  when the three applications took `selected` and a transport's `span`)*: the
+  `selection` dict `PointsEditor` keeps in both clients (`start`, `len`, a
+  `value` band), and its override of `_observe` / `observe` that fills it —
+  the last of the old sweep handling, moved off the base `Editor` so the
+  applications carry none. In its place the curve gets the same two words:
+  `selected` as its points, and a time range wherever a curve keeps one — it
+  has no transport, so that is the question this milestone answers.
 
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
