@@ -156,6 +156,20 @@ class NotesEditor(Editor):
         return NotesPlayback.of(self._server)
 
     @property
+    def transport(self):
+        """**The transport the sequence plays on**, as the object a script
+        plays: the `clausters.defs.Transport` `clausters.play` of a sequence
+        answers, its verbs (``play``, ``pause``, ``stop``, ``locate``,
+        ``loop``, ``wait``) and ``span`` about this editor's sequence and in
+        its beats -- the span is the band an Alt+drag sweeps on the roll, the
+        loop switch is `L`, and each side reads what the other set. Every
+        sequence on a server shares it: asking for it makes this one the
+        sequence it plays, from the position cursor."""
+        playback = self._playback
+        playback.hold(self.structure, at=float(self.cursor or 0.0), end=self._end)
+        return playback.transport
+
+    @property
     def end(self):
         """**Where a pass ends**, as on a multitrack's transport: ``None`` by
         default -- the transport rolls on past the last note until it is

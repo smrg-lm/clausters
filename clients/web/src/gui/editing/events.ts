@@ -31,6 +31,7 @@ import type { Server } from "../../defs/server/index.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import type { TempoMap } from "../../base/time.ts";
 import { NotesPlayback } from "../../seq/playback.ts";
+import type { Transport } from "../../defs/server/transport.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import type { SeqEvent } from "../../seq/sequence.ts";
 import { MidiItem } from "../../seq/event.ts";
@@ -218,6 +219,21 @@ export class NotesEditor extends Editor<EventSequence> {
     get #playback(): NotesPlayback {
         this.#server ??= resolveServer(null) as unknown as Server;
         return NotesPlayback.of(this.#server);
+    }
+
+    /**
+     * **The transport the sequence plays on**, as the object a page plays: the
+     * `Transport` `play` of a sequence answers, its verbs (`play`, `pause`,
+     * `stop`, `locate`, `loop`, `wait`) and `span` about this editor's
+     * sequence and in its beats -- the span is the band an Alt+drag sweeps on
+     * the roll, the loop switch is `L`, and each side reads what the other set.
+     * Every sequence on a server shares it: asking for it makes this one the
+     * sequence it plays, from the position cursor.
+     */
+    get transport(): Transport {
+        const playback = this.#playback;
+        playback.hold(this.structure, this.cursor ?? 0, this.#end);
+        return playback.transport;
     }
 
     /**

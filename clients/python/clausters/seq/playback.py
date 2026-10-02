@@ -112,6 +112,22 @@ class NotesPlayback:
         self._paused = False
         self.transport._driver = self
 
+    def hold(self, sequence, at: float = 0.0, end=None) -> None:
+        """**``sequence`` is what the transport's verbs are about**, without
+        playing it: a notes editor handing out the transport. Nothing changes
+        when it already is; otherwise its span and its loop switch start
+        clear, and the next `play` loads it from ``at``."""
+        self.transport._driver = self
+        if self.planned is sequence:
+            return
+        self.planned = sequence
+        self.cursor = float(at)
+        self.end = end
+        self.span = None
+        self.looping = False
+        self._paused = False
+        self._taken = None
+
     def update(self, sequence, version=None) -> None:
         """**The lane takes ``sequence`` again**, when it is the one the lane
         holds and it has not taken it at this ``version`` of its context

@@ -162,6 +162,24 @@ export class NotesPlayback implements TransportDriver {
     }
 
     /**
+     * **`sequence` is what the transport's verbs are about**, without playing
+     * it: a notes editor handing out the transport. Nothing changes when it
+     * already is; otherwise its span and its loop switch start clear, and the
+     * next `play` loads it from `at`.
+     */
+    hold(sequence: EventSequence, at = 0, end: PassEnd = null): void {
+        this.transport.driver = this;
+        if (this.planned === sequence) return;
+        this.planned = sequence;
+        this.cursor = at;
+        this.end = end;
+        this.span = null;
+        this.looping = false;
+        this.#paused = false;
+        this.#taken = null;
+    }
+
+    /**
      * **The lane takes `sequence` again**, when it is the one the lane holds and
      * it has not taken it at this `version` of its context already: everything
      * over a sequence that hears of a change -- the editor that made it, the

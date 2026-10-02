@@ -701,6 +701,27 @@ def test_play_answers_the_transport_the_sequence_plays_on():
     assert transport.wait(timeout=1.0) is True
 
 
+def test_a_roll_hands_out_the_transport_play_answers():
+    """The notes editor's transport is the server's notes transport -- the
+    object `play(sequence)` answers -- and asking a roll for it makes that
+    roll's sequence the one its verbs are about, without playing it."""
+    server = _PlayingServer()
+    first = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    second = EventSequence([(0.0, Event(midinote=64, dur=1.0)),
+                            (2.0, Event(midinote=67, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    a = NotesEditor(first, sample_rate=SR, server=server)
+    b = NotesEditor(second, sample_rate=SR, server=server)
+    transport = first.play(server=server)
+    server.sent.clear()
+    assert b.transport is transport, "one transport, one object"
+    assert not server.sent, "asking for it plays nothing"
+    assert transport.span is None, "the other sequence's span is not this one's"
+    transport.loop(0.0, 2.0)
+    transport.play()
+    assert server.lane() == [0, 100], "the second sequence is what plays"
+    assert a.transport is transport
+
+
 def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():
     """A short pass ends before a script asks for its loop: the loop is the
     playback's state, kept stopped, and the next play loops the span."""

@@ -721,6 +721,29 @@ test("play answers the transport the sequence plays on", async () => {
     assert.equal(await transport.wait(1.0), true);
 });
 
+test("a roll hands out the transport play answers", async () => {
+    // The notes editor's transport is the server's notes transport -- the
+    // object `play(sequence)` answers -- and asking a roll for it makes that
+    // roll's sequence the one its verbs are about, without playing it.
+    const server = new PlayingServer();
+    const first = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) });
+    const second = new EventSequence([
+        [0.0, new Event({ midinote: 64, dur: 1.0 })],
+        [2.0, new Event({ midinote: 67, dur: 1.0 })],
+    ], { tempoMap: new TempoMap(TEMPO) });
+    const a = new NotesEditor(first, { sampleRate: SR, server: server as never });
+    const b = new NotesEditor(second, { sampleRate: SR, server: server as never });
+    const transport = await first.play({ server: server as never });
+    server.sent.length = 0;
+    assert.equal(b.transport, transport, "one transport, one object");
+    assert.equal(server.sent.length, 0, "asking for it plays nothing");
+    assert.equal(transport.span, null, "the other sequence's span is not this one's");
+    await transport.loop(0.0, 2.0);
+    await transport.play();
+    assert.deepEqual(server.lane(), [0, 100], "the second sequence is what plays");
+    assert.equal(a.transport, transport);
+});
+
 test("a loop asked while stopped is kept for the next play", async () => {
     // A short pass ends before a page asks for its loop: the loop is the
     // playback's state, kept stopped, and the next play loops the span.
