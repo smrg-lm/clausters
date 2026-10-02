@@ -12,6 +12,8 @@ What to do in the window:
 - **drag a point** to move it (times stay monotonic between its neighbours);
 - **drag a segment** vertically to bend its curvature;
 - **Ctrl+click** on empty curve area adds a point, on a point removes it;
+- **click a segment** to select it, and set its shape with the **segment
+  shape** menu in the column beside the curve;
 - **hover** a point or a segment: the readout in the corner says its time,
   its value against the range, and the segment's shape;
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the

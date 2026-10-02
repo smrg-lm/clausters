@@ -12,7 +12,7 @@ use clausters_document::{Applied, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::points;
 
-use super::{Held, Rules, Shared, props, window};
+use super::{Held, Ids, Rules, Shared, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
 
 /// The vocabulary the editor's structure is registered under.
@@ -62,6 +62,11 @@ pub struct PointsEditor {
     conversation: Conversation,
     window: Option<i32>,
     widget: Option<i32>,
+    /// The shape menu in the column beside the curve.
+    shape: Option<i32>,
+    /// **The selected segment**, by the point that starts it: what the shape
+    /// menu sets. View state, the window's.
+    segment: Option<usize>,
     title: String,
     size: (i64, i64),
     held: Held,
@@ -126,6 +131,8 @@ impl PointsEditor {
             conversation: Conversation::new(version),
             window: None,
             widget: None,
+            shape: None,
+            segment: None,
             title: "Curve".into(),
             size: (1000, 520),
             held: Held::default(),
@@ -152,20 +159,27 @@ impl PointsEditor {
         self.curve.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// **The window**, with the curve under `widget` -- which is then the one
-    /// the editor answers for.
-    pub fn window(&mut self, widget: i32) -> Value {
-        self.widget = Some(widget);
+    /// **The window**, with the curve and the shape menu under the ids given
+    /// -- which are then the ones the editor answers for.
+    pub fn window(&mut self, ids: Ids) -> Value {
+        self.widget = Some(ids.curve);
+        self.shape = ids.shape;
         let curve = self.held().clone();
         let rules = self.rules();
-        window(
-            &curve,
-            &mut self.held,
-            &rules,
-            widget,
-            &self.title,
-            self.size,
-        )
+        window(&curve, &mut self.held, &rules, ids, &self.title, self.size)
+    }
+
+    /// The selected segment, while it is one: a point starts it and another
+    /// ends it.
+    fn segment(&self) -> Option<usize> {
+        self.segment.filter(|i| i + 1 < self.held().points.len())
+    }
+
+    /// The selected segment's shape, as a menu index.
+    fn shape_of(&self, segment: usize) -> Option<i64> {
+        let curve = self.held();
+        let point = curve.points.get(segment)?;
+        Some(points::quad(point.at, point)[2] as i64)
     }
 
     /// A position in seconds as the timeline samples the widget counts.
@@ -181,6 +195,9 @@ impl PointsEditor {
     /// What `widget` is corrected with, or nothing for one that is not the
     /// curve.
     fn resync_widget(&mut self, widget: i64) -> Vec<Correction> {
+        if self.shape.map(i64::from) == Some(widget) {
+            return self.menu_correction().into_iter().collect();
+        }
         if self.widget.map(i64::from) != Some(widget) {
             return Vec::new();
         }
@@ -198,10 +215,86 @@ impl PointsEditor {
         props.insert("sel_len".into(), json!(len));
         props.insert("sel_min".into(), json!(min));
         props.insert("sel_max".into(), json!(max));
-        vec![Correction {
+        // The selected segment, which a step that took points away may have
+        // taken with it.
+        self.segment = self.segment();
+        props.insert(
+            "segment".into(),
+            json!(self.segment.map_or(-1, |i| i as i64)),
+        );
+        let mut out = vec![Correction {
             widget,
             props: Value::Object(props),
-        }]
+        }];
+        out.extend(self.menu_correction());
+        out
+    }
+
+    /// The shape menu, showing the selected segment's shape.
+    fn menu_correction(&self) -> Option<Correction> {
+        let (menu, segment) = (self.shape?, self.segment()?);
+        Some(Correction {
+            widget: i64::from(menu),
+            props: json!({ "index": self.shape_of(segment)? }),
+        })
+    }
+
+    /// **The menu chose shape `shape`** for the selected segment: an edit of
+    /// the curve, recorded like a gesture's -- or a refusal, with no segment
+    /// selected.
+    fn set_shape(&mut self, shape: i32, out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        let Some(segment) = self.segment() else {
+            return (
+                Some("select a segment of the curve first".into()),
+                Vec::new(),
+            );
+        };
+        let mut flat = points::quads(&self.held().points);
+        flat[segment * points::QUAD + 2] = f64::from(shape);
+        self.edit(flat, "set the segment's shape".into(), out)
+    }
+
+    /// **Flat quads made the curve**, inside its rules: applied to the shared
+    /// curve and recorded with the points as they were as its inverse, the
+    /// points handed to the caller and the curve's widgets corrected.
+    fn edit(
+        &mut self,
+        mut flat: Vec<f64>,
+        label: String,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        self.rules().keep(&mut flat);
+        let payload = json!({ "intent": "setpoints", "points": points::state(&flat) });
+        let recorded = {
+            let mut curve = self.held();
+            let backward = vocabulary::payload(&Points(curve.points.clone()).state());
+            let applied = edit(&mut curve, &Opaque(payload.clone()));
+            if let Some(why) = applied.reason {
+                drop(curve);
+                let widget = self.widget.map_or(0, i64::from);
+                return (Some(why), self.resync_widget(widget));
+            }
+            applied.applied.then(|| {
+                out.points = Some(points::quads(&curve.points));
+                Record {
+                    label,
+                    legs: vec![Leg {
+                        forward: json!({ "edit": payload }),
+                        backward: backward.0,
+                        key: POINTS.into(),
+                        ..Leg::default()
+                    }],
+                }
+            })
+        };
+        if let Some(record) = recorded {
+            out.record = Some(record);
+            out.changed = true;
+            out.version += 1;
+        }
+        // The axis may have grown under the point the hand dragged out.
+        let widget = self.widget.map_or(0, i64::from);
+        (None, self.resync_widget(widget))
     }
 
     /// **Every widget of the window, corrected** -- what a history step leaves
@@ -258,7 +351,20 @@ impl PointsEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         let at = |i: usize| values.get(i).and_then(Value::as_f64).unwrap_or(0.0);
+        if self.shape.map(i64::from) == Some(widget) {
+            // The menu reports its index as its value, where a tag would be.
+            return match tag.parse::<f64>() {
+                Ok(index) => self.set_shape(index as i32, out),
+                Err(_) => (None, Vec::new()),
+            };
+        }
         match tag {
+            "segment" => {
+                // A press on a segment chose it, or one on a point let it go:
+                // the menu shows the shape of the one chosen.
+                self.segment = usize::try_from(at(0) as i64).ok();
+                (None, self.menu_correction().into_iter().collect())
+            }
             "selection" => {
                 // A sweep's time range, on the axis's samples, kept in the
                 // curve's seconds; a sweep with height covered a value band
@@ -282,40 +388,12 @@ impl PointsEditor {
                 // **Inside the rules**, whatever the hand reported: the host
                 // keeps a drag in the field it draws, and this is the rule
                 // itself, for every caller that reports a curve.
-                let mut flat: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
-                self.rules().keep(&mut flat);
+                let flat: Vec<f64> = values.iter().filter_map(Value::as_f64).collect();
                 let intake = points::intake(tag, &flat);
-                let Some(payload) = intake.payloads.into_iter().next() else {
+                if intake.payloads.is_empty() {
                     return (None, Vec::new());
-                };
-                let recorded = {
-                    let mut curve = self.held();
-                    let backward = vocabulary::payload(&Points(curve.points.clone()).state());
-                    let applied = edit(&mut curve, &Opaque(payload.clone()));
-                    if let Some(why) = applied.reason {
-                        drop(curve);
-                        return (Some(why), self.resync_widget(widget));
-                    }
-                    applied.applied.then(|| {
-                        out.points = Some(points::quads(&curve.points));
-                        Record {
-                            label: intake.label,
-                            legs: vec![Leg {
-                                forward: json!({ "edit": payload }),
-                                backward: backward.0,
-                                key: POINTS.into(),
-                                ..Leg::default()
-                            }],
-                        }
-                    })
-                };
-                if let Some(record) = recorded {
-                    out.record = Some(record);
-                    out.changed = true;
-                    out.version += 1;
                 }
-                // The axis may have grown under the point the hand dragged out.
-                (None, self.resync_widget(widget))
+                self.edit(flat, intake.label, out)
             }
             _ => (None, Vec::new()),
         }
@@ -338,7 +416,7 @@ impl Converse for PointsEditor {
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.widget.map(i64::from) == Some(widget)
+        [self.widget, self.shape].contains(&i32::try_from(widget).ok())
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -375,7 +453,8 @@ pub fn new_json(curve: Shared, request: &str) -> PointsEditor {
 
 /// **One verb of the editor's own door**, over JSON:
 ///
-/// - `window` -- `widget`: the GuiDef, the curve under that id.
+/// - `window` -- `widget`, `shape`: the GuiDef, the curve under the one id and
+///   the shape menu, in the column beside it, under the other.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `points` (the curve
 ///   as its holder has it now, flat quads), `name`, `target`, `rate`,
@@ -399,7 +478,15 @@ pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_default()
     {
-        "window" => editor.window(widget).to_string(),
+        "window" => editor
+            .window(Ids {
+                curve: widget,
+                shape: request
+                    .get("shape")
+                    .and_then(Value::as_i64)
+                    .map(|id| id as i32),
+            })
+            .to_string(),
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {
             Some(c) => c.props.to_string(),
             None => "{}".into(),

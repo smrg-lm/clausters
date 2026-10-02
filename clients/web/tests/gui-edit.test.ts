@@ -28,6 +28,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { OscNrtInterface } from "../src/base/connection.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
+import { button } from "../src/gui/guidef.ts";
 
 await loadCore();
 
@@ -202,6 +203,28 @@ test("an automation is kept in the range of what it automates", async () => {
     assert.deepEqual(editor.rules, { values: [0, 127], time: null });
     editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 10.0, 1, 0.0, 1.0, 200.0, 1, 0.0]);
     assert.equal(cutoff.toPoints()[5], 127);
+});
+
+test("a selected segment takes its shape from the menu beside the curve", async () => {
+    // A click on a segment selects it; the menu in the column beside the curve
+    // sets its shape, as an edit the curve's history takes back. The page's own
+    // widgets go in that column, under the menu.
+    const curve = aCurve();
+    const editor = await edit(curve, {
+        sampleRate: SR, open: false, extra: [button({ name: "play" })],
+    });
+    const host = new FakeHost();
+    await editor.open(asHost(host));
+    const tree = host.trees[0] as GuiNode;
+    const wid = (tree.children as GuiNode[])[0]?.id as number;
+    const column = (tree.children as GuiNode[])[1]!;
+    const shape = (column.children as GuiNode[])[0]?.id as number;
+    assert.equal((column.children as GuiNode[])[1]?.name, "play");
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "segment", 0]), false);
+    assert.equal(editor.apply("/gui_event", [shape, 2, 0, 3]), true);
+    assert.equal(curve.toPoints()[2], 3, "the segment is sine");
+    assert.equal(editor.undo(), true);
+    assert.equal(curve.toPoints()[2], 2, "and exponential again");
 });
 
 test("an edit made against a picture an undo replaced is refused", async () => {

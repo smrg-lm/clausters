@@ -86,17 +86,20 @@ export class PointsDomain extends Domain<EditableCurve> {
     }
 }
 
-/** One `curve` widget, composed by the crate. */
+/** One `curve` widget and a column beside it, composed by the crate. */
 export class PointsView extends View<EditableCurve> {
     build(editor: Editor<EditableCurve>): GuiNode {
         const ed = editor as PointsEditor;
         const wid = this.widget(editor, "curve", editor.structure);
+        const shape = this.widget(editor, "shape", editor.structure);
         ed.curveId = wid;
         ed.syncCore();
-        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
+        const tree = ed.coreCall("window", { widget: wid, shape }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
-        // rather than composed in the crate.
-        tree.children = [...(tree.children ?? []), ...editor.extra];
+        // rather than composed in the crate -- into the column beside the
+        // curve, under the segment's shape menu.
+        const column = (tree.children as GuiNode[])[1]!;
+        column.children = [...(column.children ?? []), ...editor.extra];
         return tree;
     }
 
@@ -148,7 +151,9 @@ export interface PointsRules {
  *
  * The window shows the rules: the time ruler under the curve, in its own
  * seconds, the value ruler beside it, and a readout of what the pointer is
- * over -- a point's value against the range, and the shape of its segment.
+ * over -- a point's value against the range, and the shape of its segment. A
+ * click on a segment selects it, and the menu in the column beside the curve
+ * sets its shape; `extra` widgets go in that column, under it.
  */
 export class PointsEditor extends Editor<EditableCurve> {
     /** This editor's member in its editing context. */

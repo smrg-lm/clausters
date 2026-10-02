@@ -46,6 +46,11 @@ pub struct Curve {
     /// The grab in flight -- the state that used to be two `Drag` variants,
     /// because the widget could not hold it.
     grab: Option<Grab>,
+    /// **The selected segment**, by the point that starts it: the one a press
+    /// on a segment chose, which an editor's controls act on -- its shape,
+    /// say. View state, set back by the `segment` prop and reported by the
+    /// `"segment"` event (`-1` for none).
+    selected: Option<usize>,
     /// Whether a hand may edit this curve. See `notes::Notes::editable`: the
     /// picture must not follow a hand that cannot edit, so the refusal happens
     /// at the press rather than when an owner declines the edit afterwards.
@@ -135,6 +140,7 @@ fn from_props(props: &Map<String, Value>) -> Curve {
         exp: props.get("exp").and_then(truthy).unwrap_or(false),
         label: label(props),
         grab: None,
+        selected: None,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
         editor: standalone_chrome(props),
         body: false,
@@ -374,10 +380,16 @@ impl Curve {
         ))
     }
 
-    /// Draws [`Self::readout`] in the field's bottom-right corner, as a roll
-    /// draws its own: right-aligned inside the field, dropping its tail first
-    /// where the field is narrow.
+    /// Draws [`Self::readout`] in the field's top-right corner, right-aligned
+    /// inside the field and dropping its tail first where the field is
+    /// narrow, as a roll draws its own.
     fn draw_readout(&self, d: &mut Draw, ctx: &Ctx, ax: &Axes) {
+        // **A hover's, not a gesture's**: while a press is held -- a click,
+        // a drag, a bend -- the hand is editing and the picture is what it
+        // reads.
+        if self.grab.is_some() {
+            return;
+        }
         let Some(at) = ctx.world.cursor else {
             return;
         };
@@ -388,10 +400,7 @@ impl Curve {
         let m = ctx.metrics;
         let room = ax.body.w - 2.0 * m.pad;
         let w = font::width(&text, m.caption_scale).min(room);
-        let (x, y) = (
-            ax.body.x + ax.body.w - w - m.pad,
-            ax.body.y + ax.body.h - font::height(m.caption_scale) - 2.0,
-        );
+        let (x, y) = (ax.body.x + ax.body.w - w - m.pad, ax.body.y + 2.0);
         let color = d.parts().2.ruler_text;
         crate::host::graphics::plate_text(d, &text, x, y, room, m.caption_scale, color);
     }
@@ -402,6 +411,18 @@ impl Curve {
         let mut args = vec![OscType::String("points".into())];
         args.extend(points::points_args(&self.points));
         Events::message(args)
+    }
+
+    /// **Selects segment `index`** (or none) on a curve standing on its own,
+    /// and the `"segment"` report of it when it changed -- `-1` for none. A
+    /// body selects nothing: a clip's curve is its container's to address.
+    fn select_segment(&mut self, index: Option<usize>) -> Option<Vec<OscType>> {
+        if self.body || self.selected == index {
+            return None;
+        }
+        self.selected = index;
+        let at = index.map_or(-1, |i| i as i32);
+        Some(vec![OscType::String("segment".into()), OscType::Int(at)])
     }
 }
 
@@ -428,6 +449,14 @@ impl Element for Curve {
             "duration" => set_f64(&mut self.duration, v),
             "exp" => truthy(v).map(|b| self.exp = b).is_some(),
             "label" => set_label(&mut self.label, v),
+            // The selected segment, by the point that starts it; a negative
+            // index, or one past the last segment, is none.
+            "segment" => {
+                let Some(i) = v.as_f64() else { return false };
+                self.selected =
+                    (i >= 0.0 && (i as usize) + 1 < self.points.len()).then_some(i as usize);
+                true
+            }
             _ => false,
         }
     }
@@ -477,7 +506,7 @@ impl Element for Curve {
                     .and_then(|(x, _)| ax.hit_segment(&self.points, x)),
             }
         };
-        bpf::draw_with(d, &ax, &self.points, lit);
+        bpf::draw_with(d, &ax, &self.points, lit, self.selected);
         if !self.body {
             self.draw_readout(d, ctx, &ax);
         }
@@ -491,10 +520,16 @@ impl Element for Curve {
     fn info(&self) -> Vec<(String, Value)> {
         // The list as the JSON string `/gui_set points` already accepts: a
         // query gives back exactly what a set would take.
-        vec![(
-            "points".into(),
-            Value::from(points::points_json(&self.points).to_string()),
-        )]
+        vec![
+            (
+                "points".into(),
+                Value::from(points::points_json(&self.points).to_string()),
+            ),
+            (
+                "segment".into(),
+                Value::from(self.selected.map_or(-1, |i| i as i64)),
+            ),
+        ]
     }
 
     fn body_role(&self) -> Option<BodyRole> {
@@ -522,7 +557,7 @@ impl Element for Curve {
             let (_mesh, m, _theme) = d.parts();
             self.axes(rect, 0.0, m, Some(*time))
         };
-        bpf::draw_with(d, &ax, &self.points, None);
+        bpf::draw_with(d, &ax, &self.points, None, None);
     }
 
     /// **A curve's own contents are its break-points and the segments between
@@ -563,11 +598,20 @@ impl Element for Curve {
                 Some(_) => return Claim::Decline,
                 None => self.grab = Some(Grab::Point(ax.add_point(&mut self.points, at.0, at.1))),
             }
-            return Claim::events(self.points_event());
+            // A point added or removed renumbers the segments after it, so
+            // the one selected is no longer the one it was.
+            let events = self.points_event();
+            return Claim::events(match self.select_segment(None) {
+                Some(cleared) => events.and(cleared),
+                None => events,
+            });
         }
         if let Some(i) = hit {
             self.grab = Some(Grab::Point(i));
-            return Claim::take();
+            return match self.select_segment(None) {
+                Some(cleared) => Claim::events(Events::message(cleared)),
+                None => Claim::take(),
+            };
         }
         // Bending a **segment** is the gesture of whoever holds the layer.
         // Standing on its own the whole field is the element's; inside a
@@ -584,7 +628,12 @@ impl Element for Curve {
                 press_y: at.1,
                 from: self.points.get(index).map_or(0.0, |p| p.curve),
             });
-            return Claim::take();
+            // **A press on a segment selects it**, and the bend is the same
+            // press held and moved.
+            return match self.select_segment(Some(index)) {
+                Some(chosen) => Claim::events(Events::message(chosen)),
+                None => Claim::take(),
+            };
         }
         // Nothing of this element's: the press goes back to the chain, where a
         // container's own plan (a clip's move, a plane's pan) is waiting.
@@ -899,6 +948,44 @@ mod tests {
         let before = points::value_at(&c.points, 50.0);
         c.drag((x, field.y as f64), &input(&m, rect, None));
         assert!(points::value_at(&c.points, 50.0) > before, "bent upward");
+    }
+
+    /// **A press on a segment selects it**, reported as `"segment"`; a press
+    /// on a point lets it go, and the prop sets it back. While the press is
+    /// held the readout is not drawn: the hand is editing.
+    #[test]
+    fn a_press_selects_a_segment_and_a_point_lets_it_go() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 120.0, 120.0);
+        let mut c = ramp();
+        let field = controls::body_rect(rect, false, &m);
+        let mid = (
+            field.x as f64 + field.w as f64 * 0.5,
+            field.y as f64 + field.h as f64 * 0.5,
+        );
+        let Claim::Take(take) = c.press(mid, &input(&m, rect, None)) else {
+            panic!("the segment's press");
+        };
+        let msgs = take.events.into_messages();
+        assert_eq!(
+            msgs[0],
+            vec![OscType::String("segment".into()), OscType::Int(0)]
+        );
+        assert_eq!(c.selected, Some(0));
+        c.release(mid, true, &input(&m, rect, None));
+        let corner = (field.x as f64, field.y as f64 + field.h as f64);
+        let Claim::Take(take) = c.press(corner, &input(&m, rect, None)) else {
+            panic!("the point's press");
+        };
+        assert_eq!(
+            take.events.into_messages()[0],
+            vec![OscType::String("segment".into()), OscType::Int(-1)]
+        );
+        assert_eq!(c.selected, None);
+        assert!(c.set("segment", &serde_json::json!(0)));
+        assert_eq!(c.selected, Some(0));
+        assert!(c.set("segment", &serde_json::json!(1)));
+        assert_eq!(c.selected, None, "past the last segment is none");
     }
 
     /// **A bend is where the pointer is, not where it has been.** The

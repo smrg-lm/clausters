@@ -925,6 +925,22 @@ opened it.
   `editor.rules` to read them; the host's `curve` readout. `edit_env` and
   `edit_curve` declare their ranges as rules, in both clients.
 
+  **And then, by use** *(the user, the same day, over `edit_env`)*: a
+  segment's shape is set as an `Env`'s is, by selecting the segment and
+  choosing it from the menu that moves to a column beside the curve; the
+  readout is a hover's, not a click's or an edit's, and sits top right; the
+  selected segment is heavier and in another color, since the lit one was the
+  trace's own green; the hint label the example appended goes, since an
+  application carries none; and the script's controls stand in that column,
+  wide enough to read as controls. Done: the host's `curve` selects a segment
+  on a press (`"segment"` event, `segment` prop) and draws it in the
+  selection's color, the lit one in the accent's quiet form; the application's
+  window is a row of the curve and a column (`points::COLUMN_W`) holding the
+  shape menu over `envshape::shape_name`'s names, into which both clients
+  append `extra`; a choice there is an edit through the same path a gesture
+  takes. The web `EditOptions` gained the `extra` the Python `edit` already
+  took and the example already passed.
+
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
   what is still open about editing a page are the N track's

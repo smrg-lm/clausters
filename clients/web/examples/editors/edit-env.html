@@ -31,10 +31,11 @@ server's <code>envGen</code> plays, so what is drawn is exactly what is heard.
 What to do in the window: <b>drag a point</b> to move it (times stay monotonic
 between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
 <b>Ctrl+click</b> on empty curve area adds a point, on a point removes it;
-<b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and redo -- the history belongs to the
-envelope, not to the window; and the <b>curve menu</b> applies one shape to
-every segment at once, which is a write to the <code>Env</code> and not a
-gesture.
+<b>click a segment</b> to select it, and set its shape with the <b>segment
+shape</b> menu in the column beside the curve; <b>hover</b> a point or a
+segment and the readout in the corner says its time, its value against the
+range and the segment's shape; <b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and
+redo -- the history belongs to the envelope, not to the window.
 </div>
 
       <button id="run">open the editor</button>
@@ -63,12 +64,6 @@ gesture.
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // The curve specs the menu offers -- shape names plus two custom
-      // curvatures, exactly the values an `Env`'s `curve` takes. "hold" is the
-      // constant lane (each point's value held until the next); `Env.step`
-      // builds SuperCollider's "step" sequences separately.
-      const CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0];
-
       let server = null, editor = null, env = null;
 
       /** One note through the envelope as currently drawn. */
@@ -79,20 +74,6 @@ gesture.
         await new SynthDef("edit_env_voice", out(0.0, sig), out(1.0, sig)).send(server);
         new Synth("edit_env_voice", {}, { server });
         log(`played ${env.times.length} segments over ${JSON.stringify(env.times)} s`);
-      }
-
-      /**
-       * One curve spec applied to **every** segment.
-       *
-       * A write to the envelope rather than a gesture on the curve: the shapes
-       * are the `Env`'s own field, so this sets them and asks the window to
-       * come in step. Nothing converts, because there is no second copy of the
-       * curve to keep aligned.
-       */
-      function setCurve(spec) {
-        env.curves = env.times.map(() => spec);
-        editor.adopt();
-        log(`curve -> ${spec}`);
       }
 
       async function run() {
@@ -106,11 +87,12 @@ gesture.
         // this object knows it is going to be edited.
         env = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"]);
 
-        // One verb, with two widgets of the page's own. `edit` dispatches on
+        // One verb, with a widget of the page's own. `edit` dispatches on
         // **what the structure holds**: an `Env` can give and take break
-        // points, so it opens as a PointsEditor. `extra` appends widgets after
-        // the picture -- they are the page's, and the editor never touches
-        // their ids -- and `editor.window` resolves them by name.
+        // points, so it opens as a PointsEditor. `extra` appends widgets to the
+        // column beside the curve, under the segment shape menu -- they are the
+        // page's, and the editor never touches their ids -- and `editor.window`
+        // resolves them by name.
         editor = await gui.edit(env, {
           sampleRate: 48_000, title: "amp env -> EnvGen", stage: $("stage"),
           // **The ranges are rules.** An amplitude envelope means something at
@@ -119,15 +101,9 @@ gesture.
           // rulers, and the readout of the point under the pointer against
           // them. A normalized envelope would be the same with `end: 1.0`.
           min: 0.0, max: 1.0, start: 0.0, end: 2.0,
-          extra: [
-            gui.menu(CURVES.map(String), { name: "curve", label: "curve (all segments)" }),
-            gui.button({ name: "play", label: "play" }),
-            gui.label("drag points/segments; Ctrl+click adds/removes; play sends it",
-              { name: "hint" }),
-          ],
+          extra: [gui.button({ name: "play", label: "play" })],
         });
         editor.window.widget("play").onClick(() => play());
-        editor.window.widget("curve").onEvent((index) => setCurve(CURVES[Number(index)]));
         log(`opened window ${editor.id} -- draw the envelope, then press play`);
 
         // The envelope is the page's object, so the page may write it too:

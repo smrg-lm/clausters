@@ -142,10 +142,11 @@ pub fn window(
     curve: &Automation,
     held: &mut Held,
     rules: &Rules,
-    widget: i32,
+    ids: Ids,
     title: &str,
     size: (i64, i64),
 ) -> Value {
+    let widget = ids.curve;
     let drawn = props(curve, held, rules);
     let number = |key: &str| drawn.get(key).and_then(Value::as_f64).unwrap_or(0.0);
     let mut picture = catalogue::bpf(&Curve {
@@ -167,8 +168,52 @@ pub fn window(
         "title": title,
         "w": size.0,
         "h": size.1,
+        "flow": "row",
+        "children": [Value::Object(picture), column(ids.shape)],
+    })
+}
+
+/// **The window's widget ids**, which are the caller's: the curve's, and the
+/// shape menu's in the column beside it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Ids {
+    /// The curve.
+    pub curve: i32,
+    /// The menu that sets the selected segment's shape.
+    pub shape: Option<i32>,
+}
+
+/// How wide the column beside the curve is: wide enough that a control in it
+/// reads as a control and not as a strip.
+pub const COLUMN_W: f64 = 220.0;
+
+/// **The shapes a segment can take**, in the order of their numbers, so a
+/// menu's index is the shape: what an envelope's segments are written with.
+pub fn shapes() -> Vec<&'static str> {
+    (0..=clausters_core::envshape::SHAPE_HOLD)
+        .map(clausters_core::envshape::shape_name)
+        .collect()
+}
+
+/// **The column beside the curve**: the menu that sets the selected
+/// segment's shape. A script's own widgets are the client's to append to it.
+fn column(shape: Option<i32>) -> Value {
+    let mut menu = json!({
+        "type": "menu",
+        "name": "shape",
+        "label": "segment shape",
+        "options": shapes(),
+        "index": clausters_core::envshape::SHAPE_LINEAR,
+    });
+    if let (Some(id), Some(map)) = (shape, menu.as_object_mut()) {
+        map.insert("id".into(), json!(id));
+    }
+    json!({
+        "type": "layout",
         "flow": "col",
-        "children": [Value::Object(picture)],
+        "w": COLUMN_W,
+        "gap": 6.0,
+        "children": [menu],
     })
 }
 

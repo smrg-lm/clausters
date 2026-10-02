@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::*;
-use crate::points::{Rules, shared_of};
+use crate::points::{Ids, Rules, shared_of};
 
 /// A ramp up and down over two seconds, at a rate of 100 samples a second.
 fn shared() -> Shared {
@@ -13,7 +13,10 @@ fn shared() -> Shared {
 
 fn editor(curve: Shared, request: &str) -> PointsEditor {
     let mut editor = new_json(curve, request);
-    editor.window(40);
+    editor.window(Ids {
+        curve: 40,
+        shape: Some(41),
+    });
     call_json(&mut editor, r#"{"verb": "sync", "window": 39}"#);
     editor
 }
@@ -34,7 +37,10 @@ fn quads(values: &[f64]) -> Vec<Value> {
 #[test]
 fn the_window_draws_the_curve_on_the_axis_the_caller_declared() {
     let mut e = editor(shared(), r#"{"rate": 100.0, "min": 0.0, "max": 1.0}"#);
-    let tree = e.window(40);
+    let tree = e.window(Ids {
+        curve: 40,
+        shape: Some(41),
+    });
     let curve = &tree["children"][0];
     assert_eq!(curve["type"], "curve");
     assert_eq!(curve["id"], 40);
@@ -215,9 +221,70 @@ fn an_automation_is_kept_in_the_range_of_what_it_automates() {
 #[test]
 fn the_window_shows_its_rulers() {
     let mut e = editor(shared(), r#"{"rate": 100.0}"#);
-    let tree = e.window(40);
+    let tree = e.window(Ids {
+        curve: 40,
+        shape: Some(41),
+    });
     let curve = &tree["children"][0];
     assert_eq!(curve["ruler"], "time");
     assert_eq!(curve["ruler_y"], "value");
     assert_eq!(curve["sample_rate"], 1.0);
+}
+
+/// **The column beside the curve holds the shape menu**, over every shape a
+/// segment can take, in the order of their numbers.
+#[test]
+fn the_window_has_a_column_with_the_shape_menu() {
+    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
+    let tree = e.window(Ids {
+        curve: 40,
+        shape: Some(41),
+    });
+    assert_eq!(tree["flow"], "row");
+    let column = &tree["children"][1];
+    assert_eq!(column["flow"], "col");
+    let menu = &column["children"][0];
+    assert_eq!(menu["id"], 41);
+    assert_eq!(menu["options"][2], "exp");
+    assert_eq!(menu["options"][5], "curve");
+}
+
+/// **A segment the curve reports selected is what the menu sets**: the menu
+/// shows its shape, and a choice there is an edit, with its inverse.
+#[test]
+fn the_menu_sets_the_selected_segment_s_shape() {
+    let curve = shared();
+    let mut e = editor(curve.clone(), r#"{"rate": 100.0}"#);
+    let refused = e.event(&menu_choice(2), 1);
+    assert!(!refused.changed, "no segment selected, nothing set");
+    let out = e.event(&gesture("segment", vec![json!(1)]), 1);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("the menu corrected");
+    };
+    assert_eq!(corrections[0].widget, 41);
+    assert_eq!(corrections[0].props["index"], 1, "the segment is linear");
+    let out = e.event(&menu_choice(3), 1);
+    assert!(out.changed);
+    assert_eq!(
+        out.record.as_ref().unwrap().label,
+        "set the segment's shape"
+    );
+    assert_eq!(
+        out.points.as_ref().unwrap()[6],
+        3.0,
+        "the second segment is sine"
+    );
+    let back = e.apply(&out.record.unwrap().legs[0].backward).unwrap();
+    assert_eq!(back[6], 1.0);
+    // A press on a point lets the segment go.
+    e.event(&gesture("segment", vec![json!(-1)]), 2);
+    assert!(!e.event(&menu_choice(4), 2).changed);
+}
+
+/// The menu's report: its index where a tag would be.
+fn menu_choice(index: i64) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(41), json!(1), json!(0), json!(index)],
+    }
 }

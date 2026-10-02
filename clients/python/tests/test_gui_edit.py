@@ -239,6 +239,25 @@ def test_an_automation_is_kept_in_the_range_of_what_it_automates():
     assert cutoff.to_points()[5] == 127.0
 
 
+def test_a_selected_segment_takes_its_shape_from_the_menu_beside_the_curve():
+    """A click on a segment selects it; the menu in the column beside the
+    curve sets its shape, as an edit the curve's history takes back. The
+    script's own widgets go in that column, under the menu."""
+    from clausters.gui import button
+
+    curve = a_curve()
+    editor = edit(curve, sample_rate=SR, open=False, extra=[button(name="play")])
+    host, wid = opened(editor)
+    column = host.trees[0]["children"][1]
+    shape = column["children"][0]["id"]
+    assert column["children"][1]["name"] == "play"
+    assert editor.apply("/gui_event", [wid, 1, 0, "segment", 0]) is False
+    assert editor.apply("/gui_event", [shape, 2, 0, 3]) is True
+    assert curve.to_points()[2] == 3, "the segment is sine"
+    assert editor.undo() is True
+    assert curve.to_points()[2] == 2, "and exponential again"
+
+
 def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
     # The staleness floor, on the road an editor actually travels. A host stamps
     # every event with the version it was last told, and it is told only when an

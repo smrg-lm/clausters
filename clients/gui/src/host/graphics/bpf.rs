@@ -187,7 +187,7 @@ pub fn readout_value(value: f64, min: f64, max: f64) -> String {
 /// Only the curve: the field it sits in and whatever names it are the *view's*,
 /// and a container's body has neither.
 pub fn draw(d: &mut Draw, ax: &Axes, points: &[BpfPoint]) {
-    draw_with(d, ax, points, None)
+    draw_with(d, ax, points, None, None)
 }
 
 /// The same, with one **segment lit**: the part a vertical drag would bend.
@@ -198,25 +198,39 @@ pub fn draw(d: &mut Draw, ax: &Axes, points: &[BpfPoint]) {
 /// vocabulary is the clip grip's, applied here: the affordance belongs to what
 /// is **held** rather than to where the pointer is, so a bend in flight keeps
 /// its segment lit even when the pointer has drifted off it.
-pub fn draw_with(d: &mut Draw, ax: &Axes, points: &[BpfPoint], lit: Option<usize>) {
+///
+/// A **selected** segment -- the one an editor's controls act on -- is drawn
+/// heavier still and in the selection's color, so it reads apart from the
+/// trace it is part of; where it is also the lit one, selected wins.
+pub fn draw_with(
+    d: &mut Draw,
+    ax: &Axes,
+    points: &[BpfPoint],
+    lit: Option<usize>,
+    selected: Option<usize>,
+) {
     let (mesh, m, theme) = d.parts();
     if ax.body.w < 1.0 || ax.body.h <= 0.0 || points.is_empty() {
         return;
     }
-    let span = lit.and_then(|i| Some((points.get(i)?.time, points.get(i + 1)?.time)));
+    let span_of = |i: usize| Some((points.get(i)?.time, points.get(i + 1)?.time));
+    let span = lit.and_then(span_of);
+    let chosen = selected.and_then(span_of);
     let columns = ax.body.w.max(1.0) as usize;
     let mut prev = [ax.body.x, ax.y(value_at(points, ax.t(ax.body.x as f64)))];
     for c in 1..=columns {
         let x = ax.body.x + c as f32;
         let p = [x, ax.y(value_at(points, ax.t(x as f64)))];
-        // The lit segment is the accent at the weight a handle has, so it reads
-        // as *grabbable* rather than as a second signal drawn over the first.
-        let inside = span.is_some_and(|(a, b)| {
-            let t = ax.t(x as f64);
-            t >= a && t < b
-        });
-        let (w, color) = if inside {
-            (m.trace_w + m.divider_w, theme.accent)
+        // The lit segment is the accent's quiet form at the weight a handle
+        // has, so it reads as *grabbable* -- darker than the trace, which is
+        // the accent's own lit green and would hide it -- rather than as a
+        // second signal drawn over the first.
+        let t = ax.t(x as f64);
+        let inside = |span: Option<(f64, f64)>| span.is_some_and(|(a, b)| t >= a && t < b);
+        let (w, color) = if inside(chosen) {
+            (m.trace_w + 2.0 * m.divider_w, theme.selection)
+        } else if inside(span) {
+            (m.trace_w + m.divider_w, theme.accent_dim)
         } else {
             (m.trace_w, theme.trace)
         };

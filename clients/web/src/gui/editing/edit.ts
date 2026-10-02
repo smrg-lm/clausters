@@ -36,6 +36,7 @@ import type { AudioEditorOptions } from "./audio.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
+import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor, isTake } from "./audio.ts";
 import { main } from "../../base/main.ts";
 
@@ -52,6 +53,11 @@ export interface EditOptions {
     width?: number;
     height?: number;
     baseId?: number;
+    /**
+     * Widgets of the page's own, appended to the editor's window and resolved
+     * by name on its `window`.
+     */
+    extra?: GenericEditorOptions<never>["extra"];
     /**
      * An editing context the caller already has, for a view that joins one --
      * which is what makes a composed window undo across several structures in

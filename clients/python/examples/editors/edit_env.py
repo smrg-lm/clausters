@@ -13,10 +13,12 @@ What to do in the window:
 - **drag a segment** vertically to bend its curvature (it becomes the custom
   curve shape, like an `Env`'s numeric curvature);
 - **Ctrl+click** on empty curve area adds a point, on a point removes it;
+- **click a segment** to select it, and set its shape with the **segment
+  shape** menu in the column beside the curve;
+- **hover** a point or a segment: the readout in the corner says its time,
+  its value against the range, and the segment's shape;
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
-  envelope, not to the window;
-- the **curve menu** applies one shape to every segment at once, which is a
-  write to the `clausters.defs.Env` and not a gesture.
+  envelope, not to the window.
 
 The sibling `edit_curve.py` opens the same widget over a `clausters.defs.Bpf` --
 the same envelope in absolute coordinates -- and never plays it. This one is the
@@ -40,7 +42,7 @@ import sys
 
 from clausters import Session, Synth
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
-from clausters.gui import button, edit, label, menu
+from clausters.gui import button, edit
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -62,12 +64,6 @@ session.gui()
 # %%
 env = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
 
-#: The curve specs the menu offers -- shape names plus two custom curvatures,
-#: exactly the values an `clausters.defs.Env`'s ``curve`` takes. "hold" is the
-#: constant lane (each point's value held until the next); ``Env.step`` builds
-#: SuperCollider's "step" sequences separately.
-CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0]
-
 
 # %% [markdown]
 # ## One note, shaped by the envelope as it now stands
@@ -83,26 +79,14 @@ def play():
     print(f"played {len(env.times)} segments over {env.times} s")
 
 
-def set_curve(spec):
-    """One curve spec applied to **every** segment.
-
-    A write to the envelope rather than a gesture on the curve: the shapes are
-    the `clausters.defs.Env`'s own field, so this sets them and asks the window
-    to come in step. Nothing converts, because there is no second copy of the
-    curve to keep aligned.
-    """
-    env.curves = [spec] * len(env.times)
-    editor.adopt()
-    print(f"curve -> {spec}")
-
-
 # %% [markdown]
-# ## One verb, with two widgets of the script's own
+# ## One verb, with a widget of the script's own
 # `clausters.gui.edit` dispatches on **what the structure holds**: an `Env` can
 # give and take break points, so it opens as a
-# `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets after the
-# picture -- they are the script's, and the editor never touches their ids --
-# and `clausters.gui.editing.Editor.window` resolves them by name.
+# `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets to the column
+# beside the curve, under the segment shape menu -- they are the script's, and
+# the editor never touches their ids -- and
+# `clausters.gui.editing.Editor.window` resolves them by name.
 
 
 # %%
@@ -114,14 +98,9 @@ editor = edit(
     # the readout of the point under the pointer against them. A normalized
     # envelope would be the same with ``end=1.0``.
     min=0.0, max=1.0, start=0.0, end=2.0,
-    extra=[menu(name="curve", options=[str(c) for c in CURVES],
-                label="curve (all segments)"),
-           button(name="play", label="play"),
-           label(name="hint",
-                 text="drag points/segments; Ctrl+click adds/removes; play sends it")],
+    extra=[button(name="play", label="play")],
 )
 editor.window["play"].on_click(lambda *_: play())
-editor.window["curve"].on_event(lambda index: set_curve(CURVES[int(index)]))
 print(f"opened window {editor.id} -- draw the envelope, then press play")
 
 # %% [markdown]
