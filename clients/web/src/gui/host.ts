@@ -1291,6 +1291,11 @@ export class GuiHost {
         }
         this.pending.clear();
         this.handlers.clear();
+        // Detached, this client reaches none of its windows any more: they
+        // read as closed, so a read-out ticking on one stops and a `wait`
+        // on them returns, as both do when the reference client's host stops.
+        this.opened.clear();
+        this.notifyWaiters();
     }
 }
 

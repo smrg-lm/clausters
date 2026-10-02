@@ -968,12 +968,20 @@ export class MultitrackEditor extends Editor<Multitrack> {
      */
     private async tick(): Promise<void> {
         const playback = this.playback;
-        if (this.closed || playback === null || this.windowHandle === null) return;
-        await playback.refresh();
+        const handle = this.windowHandle;
+        if (this.closed || playback === null || handle === null || handle.closed) return;
+        try {
+            await playback.refresh();
+        } catch (error) {
+            // A session closed while the reading was out: its answer never
+            // comes, and there is nothing left to show it in.
+            if (handle.closed) return;
+            throw error;
+        }
         this.syncCore();
         const text = String(this.coreCall("clock", { position: playback.position }).text);
         if (text !== this.shown) {
-            this.windowHandle.widget(CLOCK).set({ text });
+            handle.widget(CLOCK).set({ text });
             this.shown = text;
         }
         setTimeout(() => void this.tick(), CLOCK_TICK * 1000);

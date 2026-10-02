@@ -397,6 +397,23 @@ test("GuiHost: closing a window from the page resolves what was waiting", async 
     assert.equal(await waited, true, "`close` is a close like any other");
 });
 
+test("GuiHost: a client that stops reaches no window, and what waited returns", async () => {
+    // A session's close stops its host client; a read-out ticking on one of
+    // its windows must see the window gone rather than query a closed server.
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const win = gui.open(window({}, button({ name: "go" })));
+    const waited = gui.wait();
+    gui.stop();
+    assert.equal(await waited, true);
+    assert.equal(win.closed, true);
+});
+
 test("GuiHost: an owner of data is handed a message before the widget handles", () => {
     // The order the reference client's `deliver` fixes: an editor plugs in
     // through `onMessage` and applies the edit, and a script's `onEvent` on the
