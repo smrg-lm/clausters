@@ -399,7 +399,10 @@ test sees.
 `clausters_editing_points_props` assembles the whole payload a `bpf` widget is
 set with, axis included. The rule stays in the core because it serves views
 that are not projections (a clip's curve body); the assembly is a projection and
-sits over it.
+sits over it. Neither client's points editor calls either door any more: the
+editor is the crate's application (`clausters_apps::points`), which calls the
+projection itself, so both doors are kept for a caller drawing a curve of its
+own.
 
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
 |---|---|---|

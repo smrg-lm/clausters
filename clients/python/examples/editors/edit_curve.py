@@ -78,6 +78,18 @@ session = Session.live(boot=False, timebase=MonotonicTimebase())
 # linearly, having no ratio between its ends.
 editor = edit(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
 
+# %% [markdown]
+# ## A time range, and the points in it
+#
+# A curve has no transport, so the time range is the editor's own:
+# ``editor.span`` is ``(start, end)`` in the curve's seconds, and
+# ``editor.selected`` is the break points inside it, as the
+# ``(t, value, shape, curve)`` quads `clausters.defs.Bpf.to_points` speaks.
+
+# %%
+editor.span = (0.25, 2.5)
+print("span:", editor.span, "selected:", editor.selected)
+
 
 # %% [markdown]
 # ## Two windows, one stack

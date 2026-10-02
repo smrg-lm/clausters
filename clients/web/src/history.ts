@@ -67,6 +67,8 @@ export interface Applier {
  */
 export interface StepHandler extends Applier {
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
+    /** A points editor's: write the curve's points back, as flat quads. */
+    write?(structure: never | object, points: readonly number[]): void;
     /** An audio editor's: carry out the steps that stitch its take again. */
     run?(structure: never | object, steps: unknown[]): void;
     /**
@@ -121,7 +123,7 @@ export interface RecordingLeg {
 
 /** One thing a step does, for a page to carry out. */
 export interface Effect {
-    /** `"multitrack"`, `"samples"`, `"audio"` or `"external"`. */
+    /** `"multitrack"`, `"samples"`, `"audio"`, `"points"` or `"external"`. */
     kind: string;
     /** The member it is for. */
     member: number;
@@ -131,6 +133,8 @@ export interface Effect {
     payloads?: unknown[];
     /** An audio editor's: the steps that stitch its take again. */
     steps?: unknown[];
+    /** A points editor's: the curve's points, as flat quads, to write back. */
+    points?: number[];
 }
 
 /**
@@ -289,8 +293,8 @@ export class Editing {
     // ---- members ----
 
     /**
-     * **Open an editor in this context** -- `verb` is `"openMultitrack"` or
-     * `"openAudio"` -- as the structure `key` names, and answer its member and
+     * **Open an editor in this context** -- `verb` is `"openMultitrack"`,
+     * `"openAudio"` or `"openPoints"` -- as the structure `key` names, and answer its member and
      * identity. `handler` is what carries a step out for it: the editor's
      * domain. Throws with the crate's reason when it refuses the request.
      */
@@ -598,6 +602,10 @@ export class Editing {
             }
             if (effect.kind === "audio") {
                 held.handler.run?.(held.structure as never, effect.steps ?? []);
+                continue;
+            }
+            if (effect.kind === "points") {
+                held.handler.write?.(held.structure as never, effect.points ?? []);
                 continue;
             }
             for (const payload of effect.payloads ?? []) {

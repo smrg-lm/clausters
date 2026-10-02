@@ -829,21 +829,55 @@ opened it.
   amplitude ("A roll's edit sends every note at its velocity's amplitude",
   Found by use).
 
-- ⬜ **X4 - The points editor: whether it is one.** *(Undecided; the user,
-  2026-09-14, is in doubt: it may be good for it to have undo, and perhaps chrome
-  could be added to it.)* What exists: the `bpf` element, `clausters_editing::points`
-  (its view projection since `O25`), and `PointsDomain`/`PointsView`/`PointsEditor`
-  in both clients. It already has a history — `edit(curve)` joins the context as an
-  external member — so what an application would add is one implementation in
-  Rust and chrome of its own. Whether that is worth a milestone is the decision.
-  **What goes when it becomes one** *(noted 2026-10-02, at the user's request,
-  when the three applications took `selected` and a transport's `span`)*: the
-  `selection` dict `PointsEditor` keeps in both clients (`start`, `len`, a
-  `value` band), and its override of `_observe` / `observe` that fills it —
-  the last of the old sweep handling, moved off the base `Editor` so the
-  applications carry none. In its place the curve gets the same two words:
-  `selected` as its points, and a time range wherever a curve keeps one — it
-  has no transport, so that is the question this milestone answers.
+- ✅ **X4 - The points editor: the automation editor seen on its own.**
+  *(Undecided 2026-09-14 -- the user was in doubt: it may be good for it to
+  have undo, and perhaps chrome could be added to it. Decided and done
+  2026-10-02, at the user's request: it is an application, so that it adopts
+  the document and can be integrated with the other editors later; it is an
+  automation editor seen on its own, which is also how an envelope is made; and
+  the user asked that it duplicate no code the multitrack's and the roll's
+  automation already have.)* What existed: the `bpf` element, `clausters_editing::points`
+  (its view projection since `O25`), and `PointsDomain`/`PointsView`/
+  `PointsEditor` in both clients, a client-side editor whose history was an
+  external member.
+
+  **What it is now.** `clausters_apps::points`: the editor holds the
+  document's `Automation` -- the curve a track, a region, a sequence and a
+  note hold -- shared (`Arc<Mutex<_>>`) by every points editor opened under
+  one key, and edits it with the `points` vocabulary (`setpoints`), the edit a
+  multitrack addresses to a curve it holds as `SetAutomation`. The window, the
+  value axis and the time span it keeps while open (both only grow; a declared
+  axis is the floor), the turn, the entry and its inverse, and the step
+  (`Effect::Points`) are the crate's. It joins the context as
+  `Member::Points` through the `openPoints` verb, so no symbol crossed either
+  ABI. Both clients' `PointsEditor` is a handle that keeps what a language
+  owns: the socket, handing the crate the curve as the script holds it
+  (`sync`), and writing back the points each edit and each step leave
+  (`PointsDomain.write`), since an `Env`, a `Bpf` and a client's `Automation`
+  are objects of the client's.
+
+  **`selection` went** in both clients, with its `_observe` / `observe`
+  override. A curve has no transport, so the time range a sweep leaves is the
+  editor's own `span`, `(start, end)` in the curve's seconds, settable and
+  drawn as the band a sweep leaves; `selected` is the points inside it -- and
+  inside its value band, for a sweep with height -- as the `(t, v, shape,
+  curve)` quads `to_points` speaks.
+
+  **One reading of a point on the wire.** The conversion between a document
+  point and the `t v shape curve` numbers was written four times -- the curve
+  projection, the multitrack's automation out and back, the roll's curves out
+  and back. It is `clausters_editing::points::{quad, point, same}` now, and
+  the three read through it.
+
+  **Left open:** the sweep itself -- a curve standing on its own joins no
+  navigation group, so no hand can leave the range yet, and one set from a
+  script is drawn nowhere (`clients/gui/PLAN.md`, Found by use, "A curve
+  standing on its own cannot be swept"); the range and the points in it are
+  read and set from the script meanwhile. And opening an automation a
+  multitrack or a sequence holds in this
+  editor, sharing it rather than a copy, is the integration this milestone
+  prepares and does not do; it goes with "An application inside another"
+  (`crates/clausters-document/PLAN.md`, Future directions).
 
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and

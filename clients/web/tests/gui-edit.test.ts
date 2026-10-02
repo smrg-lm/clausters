@@ -15,9 +15,10 @@ import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Editing, NotesEditor, PointsEditor, edit, watch }
+import { Domain, Editing, Editor, NotesEditor, PointsEditor, View, edit, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
+import { POINTS } from "../src/document.ts";
 import { Bpf } from "../src/defs/ugens/index.ts";
 import { Event } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
@@ -150,17 +151,28 @@ test("a curve is drawn, edited and read back with no multitrack", async () => {
     assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0]);
 });
 
-test("a sweep over a curve is kept and is no edit", async () => {
-    // The points editor keeps the range a sweep leaves, with its value band;
-    // the three applications keep theirs as `selected` and a transport's span,
-    // so the base editor keeps none.
-    const editor = (await edit(aCurve(), { sampleRate: SR, open: false })) as unknown as PointsEditor;
+test("a sweep over a curve is its span and selects its points", async () => {
+    // A curve has no transport, so the time range a sweep leaves is the
+    // points editor's own `span`, in the curve's seconds; the points inside it
+    // -- and inside its value band, for a sweep with height -- are `selected`.
+    // Neither is an edit.
+    const curve = aCurve();
+    const editor = (await edit(curve, { sampleRate: SR, open: false })) as unknown as PointsEditor;
     const { wid } = await opened(editor);
-    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR, -0.5, 0.25]), false);
-    assert.deepEqual(editor.selection, { start: 1.0, len: 1.0, value: { min: -0.5, max: 0.25 } });
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR]), false);
+    assert.deepEqual(editor.span, [1.0, 2.0]);
+    const flat = curve.toPoints();
+    assert.deepEqual(editor.selected, [flat.slice(4, 8)]);
     assert.equal(editor.canUndo, false);
-    const roll = new NotesEditor(new EventSequence(), { sampleRate: SR });
-    assert.ok(!("selection" in roll), "an application keeps no selection dict");
+
+    editor.span = [0.0, 1.0];
+    assert.deepEqual(editor.selected, [flat.slice(0, 4)]);
+    // A sweep with height keeps the points inside its value band too.
+    editor.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * SR, 500.0, 1000.0]);
+    assert.deepEqual(editor.selected, [flat.slice(4, 8)]);
+    editor.span = null;
+    assert.equal(editor.span, null);
+    assert.deepEqual(editor.selected, []);
 });
 
 test("an edit made against a picture an undo replaced is refused", async () => {
@@ -580,6 +592,48 @@ test("two editors in one application keep their own floor", async () => {
     );
 });
 
+/** A number somebody edits. The whole structure. */
+class Dial {
+    value = 0.0;
+}
+
+/**
+ * `Dial`'s vocabulary: one verb, and the state it replaces -- the twin of the
+ * Python suite's, for the one test that reads the generic editor's path, which
+ * no application in this package takes any more.
+ */
+class DialDomain extends Domain<Dial> {
+    override readonly name = POINTS;
+
+    override payload(_structure: Dial, tag: string, values: readonly unknown[]): unknown {
+        if (tag !== "dial") return null;
+        return { intent: "setpoints", points: [{ at: 0.0, value: Number(values[0]) }] };
+    }
+
+    current(structure: Dial, _payload: unknown): unknown {
+        return { intent: "setpoints", points: [{ at: 0.0, value: structure.value }] };
+    }
+
+    project(structure: Dial, payload: unknown): boolean {
+        const value = Number((payload as { points: { value: number }[] }).points[0]!.value);
+        if (value === structure.value) return false;
+        structure.value = value;
+        return true;
+    }
+}
+
+/** One widget drawing one number. */
+class DialView extends View<Dial> {
+    build(editor: Editor<Dial>): GuiNode {
+        const wid = this.widget(editor, "dial", editor.structure);
+        return { type: "window", children: [{ id: wid, type: "number", value: editor.structure.value }] };
+    }
+
+    override props(editor: Editor<Dial>): Record<string, PropValue> {
+        return { value: editor.structure.value };
+    }
+}
+
 test("the editing trace is silent until it is watched", async () => {
     // The five joints, and the fact that they cost nothing unarmed. A window in
     // front of a person fails in ways nothing else sees, so the path says what
@@ -588,25 +642,21 @@ test("the editing trace is silent until it is watched", async () => {
     //
     // The Python twin is
     // `test_gui_editing.py::test_the_editing_trace_is_silent_until_it_is_watched`.
-    const curve = aCurve();
-    const editor = await edit(curve, { sampleRate: SR, open: false });
-    const { wid } = await opened(editor);
+    const editor = new Editor(new Dial(), {
+        sampleRate: SR, domain: new DialDomain(), view: new DialView(),
+    });
+    const host = new FakeHost();
+    await editor.open(asHost(host));
+    const wid = ((host.trees[0] as GuiNode).children as GuiNode[])[0]?.id as number;
 
     const quiet: string[] = [];
-    assert.equal(
-        editor.apply("/gui_event", [wid, 1, 0, "points", 0.0, 250.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
-        true,
-    );
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "dial", 0.25]), true);
     assert.equal(quiet.length, 0, "silent unless asked");
 
     const said: string[] = [];
     watch({ debug: (line) => said.push(line), warn: (line) => said.push(line) });
     try {
-        assert.equal(
-            editor.apply("/gui_event",
-                [wid, 2, 0, "points", 0.0, 350.0, 1, 0.0, 1.0, 500.0, 2, 0.0]),
-            true,
-        );
+        assert.equal(editor.apply("/gui_event", [wid, 2, 0, "dial", 0.75]), true);
     } finally {
         unwatch();
     }

@@ -5307,7 +5307,7 @@ work, where a pending item reads as done.)*
   builtin). The editors' hook `selected()` became `selection_moved()` to
   free the name.)*
 
-- ⬜ **The points editor still says `selection`** *(found 2026-10-02
+- ✅ **The points editor still says `selection`** *(found 2026-10-02
   closing `C61`)*. The three applications read what the hand marked as
   `selected`, in the structure's own type, and the time range as their
   transport's `span`. `PointsEditor` is not an application yet, and it still
@@ -5318,6 +5318,9 @@ work, where a pending item reads as done.)*
   hook it fed (`selection_moved()` / `adopt_selection()`, overridden
   nowhere) went. What is left goes with `X4` in
   `crates/clausters-apps/PLAN.md`, which says what replaces it.
+  *(Fixed 2026-10-02 with `X4`: the points editor is the crate's application,
+  and the dict is its `span` -- the time range, its own since a curve has no
+  transport -- and `selected`, the points the sweep covers.)*
 
 ## Future directions (a design that is not a fix)
 

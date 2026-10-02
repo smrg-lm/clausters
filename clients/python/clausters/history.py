@@ -123,8 +123,8 @@ class Editing:
 
     def open(self, verb: str, key: str, request: dict, structure,
              handler) -> tuple:
-        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``
-        or ``"openAudio"`` -- as the structure ``key`` names, and answer its
+        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``,
+        ``"openAudio"`` or ``"openPoints"`` -- as the structure ``key`` names, and answer its
         ``(member, identity)``.
 
         ``handler`` is what carries a step out for it: the editor's domain.
@@ -355,7 +355,8 @@ class Editing:
     def carry(self, stepped: dict) -> None:
         """**Carry a step's effects out** on the structures they name: a multitrack
         written back, a take's writes projected, an audio editor's join
-        stitched again, an external member's payloads applied -- and then the
+        stitched again, a curve's points written back, an external member's
+        payloads applied -- and then the
         takes the step let go of freed."""
         with self.applying():
             self._carry(stepped)
@@ -372,6 +373,9 @@ class Editing:
                 continue
             if effect.get("kind") == "audio":
                 handler.run(structure, effect.get("steps") or [])
+                continue
+            if effect.get("kind") == "points":
+                handler.write(structure, effect.get("points") or [])
                 continue
             for payload in effect.get("payloads") or ():
                 if isinstance(payload, dict):

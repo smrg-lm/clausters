@@ -589,7 +589,10 @@ for itself.** `clausters.gui.edit` dispatches on what the structure holds —
 (a `Timeline` is rendered into one first) and a `pianoroll` —
 the notes editor, like the audio and the multitrack editors, being the shared
 crate's application (`clausters_apps::notes`), which edits the sequence the
-script's handle names in place —
+script's handle names in place, and the points editor too
+(`clausters_apps::points`: the automation editor seen on its own, over the
+document's `Automation`, whose points each client writes back onto the curve
+object it holds) —
 and each is the generic `Editor` with a `Domain` and a `View` in it and nothing
 else. The inverse is the crate's, through `clausters_domain_edit`: the state
 goes in with the payload and comes back as what the structure now is *plus* what

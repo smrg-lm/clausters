@@ -81,20 +81,22 @@ def test_a_declared_axis_is_the_floor_and_still_grows():
     # A derived axis pads the data by a tenth, which puts the field's floor
     # below the lowest value -- on an amplitude envelope that makes zero
     # unreachable by hand. A caller who knows the range says it.
-    from clausters.gui.editing.points import PointsView
+    from clausters.gui.editing.points import PointsEditor
+
+    def axis(editor):
+        props = editor.view.props(editor, editor.draw()["children"][0]["id"])
+        return props["min"], props["max"]
 
     env = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
-    derived = PointsView().drawn(env, env.to_points())
-    assert (derived["min"], derived["max"]) == (-0.1, 1.1)
+    assert axis(PointsEditor(env, sample_rate=48_000.0)) == (-0.1, 1.1)
 
-    view = PointsView((0.0, 1.0))
-    declared = view.drawn(env, env.to_points())
-    assert (declared["min"], declared["max"]) == (0.0, 1.0)
+    declared = PointsEditor(env, sample_rate=48_000.0, min=0.0, max=1.0)
+    assert axis(declared) == (0.0, 1.0)
 
     # Declared is a floor, not a clamp: a point dragged outside widens it.
     env.set_points([0.0, -0.5, 1, 0.0, 1.0, 1.0, 1, 0.0])
-    grown = view.drawn(env, env.to_points())
-    assert grown["min"] < 0.0 and grown["max"] == 1.0
+    low, high = axis(declared)
+    assert low < 0.0 and high == 1.0
 
 
 def test_a_declared_axis_needs_both_ends():

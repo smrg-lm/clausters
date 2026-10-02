@@ -286,17 +286,19 @@ def test_a_new_structure_does_not_inherit_a_freed_ones_screen_state():
     # is gone, an aggregate drawn expanded because a cut let go of one.
     import gc
 
-    from clausters.gui.editing import PointsView
+    from clausters.gui.editing import PointsEditor
 
-    view = PointsView()
+    def drawn(curve):
+        editor = PointsEditor(curve, sample_rate=48_000.0)
+        return editor.view.props(editor, editor.draw()["children"][0]["id"])
+
     gone = Bpf([(0.0, 0.0), (2.0, 100.0)])
-    view.drawn(gone, gone.to_points())
+    drawn(gone)
     del gone
     gc.collect()
 
     fresh = Bpf([(0.0, 0.0), (2.0, 1.0)])
-    drawn = view.drawn(fresh, fresh.to_points())
-    assert drawn["max"] < 10.0, f"it took the freed curve's axis: {drawn}"
+    assert drawn(fresh)["max"] < 10.0, "it took the freed curve's axis"
 
 
 def test_a_drawers_id_space_goes_when_the_drawer_does():

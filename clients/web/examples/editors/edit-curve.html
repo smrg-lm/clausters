@@ -115,6 +115,13 @@ lands.</div>
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),
           min: 20.0, max: 5000.0,
         });
+
+        // A time range, and the points in it. A curve has no transport, so
+        // the time range is the editor's own: `editor.span` is `[start, end]`
+        // in the curve's seconds, and `editor.selected` is the break points
+        // inside it, as the `[t, value, shape, curve]` quads `toPoints` speaks.
+        editor.span = [0.25, 2.5];
+        log(`span: ${JSON.stringify(editor.span)} selected: ${JSON.stringify(editor.selected)}`);
         log("draw in the window; Ctrl+Z undoes. Close it when you are done.");
 
         // Calling `edit` again over the **same** curve gives a second window.

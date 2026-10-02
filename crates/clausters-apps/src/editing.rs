@@ -41,6 +41,7 @@ use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::notes::Shared;
 use crate::notes::editor::{self as notes, NotesEditor};
+use crate::points::editor::{self as points, PointsEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -59,6 +60,9 @@ pub enum Member {
     Audio(Box<AudioEditor>),
     /// A notes editor over an event sequence it shares with its holder.
     Notes(Box<NotesEditor>),
+    /// A points editor over a curve it shares with every points editor opened
+    /// under the same key.
+    Points(Box<PointsEditor>),
     /// A structure the crate does not apply: the context records and walks for
     /// it, and hands its legs back to be applied.
     External {
@@ -73,6 +77,7 @@ impl Member {
             Member::Multitrack(_) => MULTITRACK.into(),
             Member::Audio(_) => audio::DOMAIN.into(),
             Member::Notes(_) => notes::DOMAIN.into(),
+            Member::Points(_) => points::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
         }
     }
@@ -95,6 +100,8 @@ pub enum Outcome {
     Audio(audio::Outcome),
     /// A notes editor's.
     Notes(notes::Outcome),
+    /// A points editor's.
+    Points(points::Outcome),
 }
 
 impl Outcome {
@@ -103,6 +110,7 @@ impl Outcome {
             Outcome::Multitrack(o) => o.turn,
             Outcome::Audio(o) => o.turn,
             Outcome::Notes(o) => o.turn,
+            Outcome::Points(o) => o.turn,
         }
     }
 
@@ -111,6 +119,7 @@ impl Outcome {
             Outcome::Multitrack(o) => o.record.as_ref(),
             Outcome::Audio(o) => o.record.as_ref(),
             Outcome::Notes(o) => o.record.as_ref(),
+            Outcome::Points(o) => o.record.as_ref(),
         }
     }
 
@@ -119,6 +128,7 @@ impl Outcome {
             Outcome::Multitrack(o) => o.changed,
             Outcome::Audio(o) => o.changed,
             Outcome::Notes(o) => o.changed,
+            Outcome::Points(o) => o.changed,
         }
     }
 
@@ -127,6 +137,7 @@ impl Outcome {
             Outcome::Multitrack(o) => o.version,
             Outcome::Audio(o) => o.version,
             Outcome::Notes(o) => o.version,
+            Outcome::Points(o) => o.version,
         }
     }
 
@@ -135,6 +146,7 @@ impl Outcome {
             Outcome::Multitrack(o) => (o.seq, o.redo),
             Outcome::Audio(o) => (o.seq, o.redo),
             Outcome::Notes(o) => (o.seq, o.redo),
+            Outcome::Points(o) => (o.seq, o.redo),
         }
     }
 
@@ -143,6 +155,7 @@ impl Outcome {
             Outcome::Multitrack(o) => o.answer = Some(answer),
             Outcome::Audio(o) => o.answer = Some(answer),
             Outcome::Notes(o) => o.answer = Some(answer),
+            Outcome::Points(o) => o.answer = Some(answer),
         }
     }
 }
@@ -214,6 +227,16 @@ pub enum Effect {
         member: MemberId,
         /// Whether the sequence changed.
         applied: bool,
+    },
+    /// A points editor applied the step to the curve it shares: the points it
+    /// leaves, as flat `t v shape curve` quads, for a holder whose curve is an
+    /// object of its own to write back.
+    #[serde(rename_all = "camelCase")]
+    Points {
+        /// The member.
+        member: MemberId,
+        /// The curve's points.
+        points: Vec<f64>,
     },
     /// Payloads an external member applies, in order.
     #[serde(rename_all = "camelCase")]
@@ -641,6 +664,7 @@ impl Editing {
             Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
             Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
             Member::Notes(editor) => Outcome::Notes(editor.event(event, version)),
+            Member::Points(editor) => Outcome::Points(editor.event(event, version)),
             Member::External { .. } => return None,
         };
         if let Some(record) = outcome.record().cloned() {
@@ -670,6 +694,9 @@ impl Editing {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
                     Member::Notes(editor) => {
+                        outcome.answer(editor.acknowledge(seq, version, reason));
+                    }
+                    Member::Points(editor) => {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
                     Member::External { .. } => {}
@@ -755,6 +782,19 @@ impl Editing {
                             applied: done,
                         });
                     }
+                    // One curve, shared by every points editor over it: the
+                    // first applies the step and the rest are corrected.
+                    Member::Points(editor) if !written => {
+                        written = true;
+                        let mut left = None;
+                        for payload in payloads {
+                            left = editor.apply(&payload.0).or(left);
+                        }
+                        if let Some(points) = left {
+                            applied = true;
+                            out.effects.push(Effect::Points { member, points });
+                        }
+                    }
                     Member::External { .. } if !written => {
                         written = true;
                         applied |= !payloads.is_empty();
@@ -797,6 +837,7 @@ impl Editing {
                 Member::Multitrack(editor) => editor.resync_all(version),
                 Member::Audio(editor) => editor.resync_all(version),
                 Member::Notes(editor) => editor.resync_all(version),
+                Member::Points(editor) => editor.resync_all(version),
                 Member::External { .. } => continue,
             };
             if answer != Answer::Silent {
@@ -847,6 +888,11 @@ struct RecordedLeg {
 ///   editor then holds alone -- a caller that shares one opens it with
 ///   [`Editing::open_notes`]) and what a notes editor is built from
 ///   (`clausters_apps::notes::editor::new_json`): `{"member", "structure"}`.
+/// - `openPoints` -- `key`, `points` (the curve as flat quads) and `name`,
+///   and what a points editor is built from
+///   (`clausters_apps::points::editor::new_json`): `{"member", "structure"}`.
+///   A second points editor under a key one already has edits that one's
+///   curve.
 /// - `external` -- `key`, `domain`: `{"member", "structure"}`.
 /// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
 /// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
@@ -890,6 +936,13 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let request = request.to_string();
             let editor = notes::new_json(notes::shared_of(&request), &request);
             joined(editing, &key, Member::Notes(Box::new(editor)))
+        }
+        "openPoints" => {
+            let curve = editing
+                .shared_curve(&key)
+                .unwrap_or_else(|| crate::points::shared_of(&request));
+            let editor = points::new_json(curve, &request.to_string());
+            joined(editing, &key, Member::Points(Box::new(editor)))
         }
         "bytes" => {
             editing.set_bytes(get(&request, "bytes").as_u64());
@@ -958,6 +1011,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 }
                 Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
                 Some(Member::Notes(editor)) => notes::call_json(editor, &call.to_string()),
+                Some(Member::Points(editor)) => points::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             }
         }
@@ -986,6 +1040,18 @@ impl Editing {
         }
         let editor = notes::new_json(sequence, &request.to_string());
         joined(self, key, Member::Notes(Box::new(editor)))
+    }
+}
+
+impl Editing {
+    /// The curve a points editor under `key` already edits, so a second
+    /// window over it edits the same one.
+    fn shared_curve(&self, key: &str) -> Option<crate::points::Shared> {
+        let structure = self.keys.get(key)?;
+        self.seats.iter().find_map(|seat| match &seat.member {
+            Member::Points(editor) if seat.structure == *structure => Some(editor.curve().clone()),
+            _ => None,
+        })
     }
 }
 
@@ -1689,6 +1755,56 @@ mod tests {
 
     fn call(editing: &mut Editing, request: Value) -> Value {
         serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    }
+
+    /// Two windows over one curve edit one curve, and an undo in either hands
+    /// the holder the points to write back once.
+    #[test]
+    fn two_points_editors_over_one_curve_share_it_and_one_undo() {
+        let mut editing = Editing::default();
+        let open = |editing: &mut Editing, widget: i64| -> Value {
+            let member = call(
+                editing,
+                json!({"verb": "openPoints", "key": "object:1", "rate": 100.0,
+                       "points": [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0]}),
+            )["member"]
+                .clone();
+            call(
+                editing,
+                json!({"verb": "member", "member": member, "call": {"verb": "window", "widget": widget}}),
+            );
+            member
+        };
+        let first = open(&mut editing, 40);
+        let second = open(&mut editing, 41);
+        assert_eq!(
+            editing.structure(int(&first) as MemberId),
+            editing.structure(int(&second) as MemberId)
+        );
+        let turned = call(
+            &mut editing,
+            json!({"verb": "event", "member": first, "addr": "/gui_event",
+                   "args": [40, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 0.5, 1, 0.0]}),
+        );
+        assert_eq!(
+            turned["outcome"]["points"],
+            json!([0.0, 0.0, 1.0, 0.0, 1.0, 0.5, 1.0, 0.0])
+        );
+        let state = call(
+            &mut editing,
+            json!({"verb": "member", "member": second, "call": {"verb": "state"}}),
+        );
+        assert_eq!(
+            state["points"][5], 0.5,
+            "the other window's curve is the same one"
+        );
+        let corrected = &turned["corrections"][0];
+        assert_eq!(corrected["member"], second);
+        let stepped = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+        assert_eq!(stepped["effects"].as_array().unwrap().len(), 1);
+        assert_eq!(stepped["effects"][0]["kind"], "points");
+        assert_eq!(stepped["effects"][0]["points"][5], 1.0);
+        assert_eq!(stepped["corrections"].as_array().unwrap().len(), 2);
     }
 
     /// An audio editor over take 3 (100 frames), drawn through join 9 by

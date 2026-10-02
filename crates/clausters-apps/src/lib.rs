@@ -35,5 +35,6 @@ pub mod audio;
 pub mod editing;
 pub mod multitrack;
 pub mod notes;
+pub mod points;
 pub mod samples;
 pub mod turn;

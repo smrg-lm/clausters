@@ -7721,3 +7721,18 @@ module of its own.
   velocity and channel. The multitrack draws the same readout over its rows
   and its clip envelopes. Both read a value through the curve element's own
   `hover_value`, and format it by one rule (`graphics::bpf::readout_value`).
+
+- ⬜ **A curve standing on its own cannot be swept** *(found 2026-10-02
+  closing `X4` in `crates/clausters-apps/PLAN.md`)*. The points editor keeps
+  the time range a sweep leaves as its `span`, and the points inside it as
+  `selected`, but no hand can leave one: a standalone `curve` navigates no
+  time axis (`OnAxis::navigates_time` is `false`), so it joins no navigation
+  group, every modifier hands the press to its points, and a `sel_start` /
+  `sel_len` it is set with is drawn nowhere. The client's old `selection`
+  dict read a report that never came. What the fix takes: the curve joining a
+  group, opt-in as a signal view's `navigable` is, so the pictures that draw
+  a bare envelope do not move; Alt sweeping the range there, as on a roll,
+  with the value band through `select_in`; and its axis in **samples** at its
+  `sample_rate` rather than in its own seconds, since the group rounds a
+  selection to whole samples and a three-second curve would be swept in
+  whole seconds.

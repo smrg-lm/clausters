@@ -1,17 +1,19 @@
 /**
- * Editing a **break-point curve**: its vocabulary, its picture and its editor.
+ * Editing a **break-point curve**: the points editor (mirrors
+ * `clausters/gui/editing/points.py`).
  *
- * The smallest of the three fundamental structures, and the one that shows the
- * shape of all of them: a {@link Domain} that turns the `bpf` view's `points`
- * payload into the crate's vocabulary and back, a {@link View} that is one `bpf`
- * widget, and an editor that is {@link Editor} with those two in it and nothing
- * else.
+ * It is the automation editor seen on its own: what it edits is a curve over
+ * one parameter -- a `multitrack.Automation`, the curve a track, a region, a
+ * sequence and a note hold -- with nothing around it, which is also how an
+ * envelope is made: an `Env` and a `Bpf` are curves nobody holds yet.
  *
- * **How an edit inverts is the crate's**, reached through {@link domainEdit}:
- * the payload goes in with the curve as it stands, and what comes back is the
- * curve as it now is *and* the payload that puts it back -- one call, because the
- * inverse has to be read before the edit lands. Nothing here computes an
- * inverse, which is the whole reason the domain seam exists.
+ * **The editor is the crate's** (the `openPoints` member of `EditingCore`): the
+ * window, the value axis and the time span it keeps while open, what a gesture
+ * does to the curve, the entry it leaves and the corrections it answers with,
+ * the time range a sweep leaves and the points inside it. The crate edits a
+ * curve of its own, the document's; what is here is what a language owns --
+ * the socket, handing the crate the curve as the page holds it, and writing
+ * back onto that object the points each edit and each step leave.
  *
  * **What a shape is stays the client's.** The crate carries a point's `data` and
  * never reads it, so the segment shapes an `Env` needs travel in it -- without
@@ -21,19 +23,15 @@
  * @module
  */
 
-import {
-    curveAxis as coreCurveAxis,
-    pointsProps as corePointsProps,
-} from "../../core/clausters_core_web.js";
-import { POINTS, domainEdit } from "../../document.ts";
-import type { Selection } from "../../document.ts";
-import { cratePoints, flatPoints } from "../../multitrack.ts";
-import { window as guiWindow } from "../guidef.ts";
+import { POINTS } from "../../document.ts";
+import { keyOf } from "../../history.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
+import type { Answer } from "./echo.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { plain } from "./samples.ts";
 import { View } from "./view.ts";
 
 /**
@@ -47,157 +45,82 @@ import { View } from "./view.ts";
 export interface EditableCurve {
     toPoints(): number[];
     setPoints(points: readonly number[]): unknown;
-    name?: string;
+    name?: string | null;
 }
 
-/** One point as the crate holds it. */
-export interface CratePoint {
-    at: number;
-    value: number;
-    data?: { shape?: number; curve?: number };
+/** What one turn of the core came to. */
+interface Outcome {
+    turn?: string;
+    changed?: boolean;
+    answer?: Answer;
+    points?: number[];
+    locate?: number;
+    span?: [number, number] | null;
 }
 
 /**
- * A curve's vocabulary: the crate's `points`, with the shape of each segment
- * carried in the point's own `data`.
- *
- * **What it asks of the structure is `toPoints` and `setPoints`**, and nothing
- * about its type -- an `Env`, a `Bpf` and a `multitrack.Automation` are all
- * curves here, and a fourth thing that learns the pair would be too.
+ * A curve's vocabulary, the crate's `points`. The crate applies an edit and a
+ * step to the curve it holds; what is here is writing the points they leave
+ * back onto the curve the page holds.
  */
 export class PointsDomain extends Domain<EditableCurve> {
     override readonly name = POINTS;
     override readonly ingested = true;
 
+    /** The crate reads the inverse off the curve it holds. */
+    current(_structure: EditableCurve, _payload: unknown): unknown {
+        return null;
+    }
+
+    /** The crate applied the edit to the curve it holds. */
+    project(_structure: EditableCurve, _payload: unknown): boolean {
+        return false;
+    }
+
     /**
-     * The curve as the crate holds it -- the state `current` is read against and
-     * `project` writes back.
-     *
-     * **The curve seam, not a gesture.** It is here rather than in the crate
-     * for the reason `project` is: what it crosses is the object *this page*
-     * holds, and the vocabulary on the other side is already the crate's. Both
-     * directions are {@link cratePoints} and {@link flatPoints}, written once
-     * because a `multitrack.Automation` converts the same way.
+     * Write the crate's points -- flat `t v shape curve` quads -- onto the
+     * curve, its segments' shapes as the integers they are.
      */
-    state(structure: EditableCurve): CratePoint[] {
-        return cratePoints(structure.toPoints()) as unknown as CratePoint[];
-    }
-
-    current(structure: EditableCurve, payload: unknown): unknown {
-        return domainEdit(this.name, this.state(structure), payload)?.current ?? null;
-    }
-
-    project(structure: EditableCurve, payload: unknown): boolean {
-        const edited = domainEdit(this.name, this.state(structure), payload);
-        if (edited === undefined || !edited.applied) return false;
-        structure.setPoints(flatPoints(edited.state as CratePoint[]));
-        return true;
+    write(structure: EditableCurve, points: readonly number[]): void {
+        structure.setPoints(points.map((x, i) => (i % 4 === 2 ? Math.trunc(Number(x)) : Number(x))));
     }
 }
 
-/** One `bpf`: the curve on its own axis. */
-/**
- * The axis a break-point curve is **drawn** against, as `[lo, hi]`: its values'
- * range with a tenth of headroom, and a flat curve still gets a band to be
- * dragged in.
- *
- * Pass the axis a view already has as `kept` and it is held, widened only where
- * the data stopped fitting inside it -- a range recomputed on every redraw makes
- * an edit rescale the picture, so dragging one point visibly moves every other
- * one.
- *
- * The rule is the shared core's, and both the standalone curve editor and the
- * clip body that draws the same curve ask it, in both clients: a drawing rule
- * with two implementations is how one curve comes to be drawn two ways.
- */
-export function curveAxis(
-    values: readonly number[],
-    kept?: readonly [number, number],
-): [number, number] {
-    const out = coreCurveAxis(
-        Float64Array.from(values),
-        kept?.[0],
-        kept?.[1],
-    );
-    return [Number(out[0]), Number(out[1])];
-}
-
+/** One `curve` widget, composed by the crate. */
 export class PointsView extends View<EditableCurve> {
-    /**
-     * The axis the **caller declared**, or `undefined` to derive one.
-     *
-     * A derived axis is the break-points' own range with a tenth of headroom,
-     * which is right when the range is unknown -- a flat curve still needs a
-     * band to be dragged in -- and wrong when it is known: on an amplitude
-     * envelope it puts the field's floor below zero, so the one value that
-     * matters cannot be reached by hand. A caller who knows the range says it,
-     * and it is the axis's **floor**, widened like any other but never
-     * narrowed.
-     */
-    private declared: [number, number] | undefined;
-
-    /**
-     * The value axis this view is drawing against, and the time it spans, kept
-     * per structure so a redraw does not re-fit them. Both only ever **grow** --
-     * see {@link axis}.
-     */
-    private kept = new Map<unknown, [number, number]>();
-    private span = new Map<unknown, number>();
-
-    constructor(axis?: readonly [number, number]) {
-        super();
-        this.declared = axis === undefined ? undefined : [axis[0], axis[1]];
-    }
-
-    /**
-     * The props this curve is drawn with, and the axis they settled on
-     * remembered for the next time.
-     *
-     * **The projection is the crate's** (`pointsProps`): the points, the value
-     * axis they stand on and the time they span, all in one answer, so a page
-     * and a script set the same widget with the same props. What is kept here
-     * is only what a *view* keeps -- the axis and the span in hand -- because
-     * both only ever grow, and a curve that refits while a point is being
-     * dragged moves every other point on screen.
-     */
-    drawn(structure: EditableCurve, points: readonly number[]): Record<string, PropValue> {
-        const kept = this.kept.get(structure) ?? this.declared;
-        const props = JSON.parse(
-            corePointsProps(
-                Float64Array.from(points, Number),
-                kept?.[0],
-                kept?.[1],
-                this.span.get(structure) ?? 0.0,
-            ),
-        ) as Record<string, PropValue>;
-        this.kept.set(structure, [Number(props.min), Number(props.max)]);
-        this.span.set(structure, Number(props.duration ?? 0.0));
-        return props;
-    }
-
     build(editor: Editor<EditableCurve>): GuiNode {
-        const drawn = this.drawn(editor.structure, editor.structure.toPoints());
-        return guiWindow(
-            { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
-            this.catalogue(editor, "bpf", "curve", editor.structure, {
-                ...drawn,
-                duration: Number(drawn.duration ?? 0.0),
-                label: nameOf(editor.structure),
-            }),
-            ...editor.extra,
-        );
+        const ed = editor as PointsEditor;
+        const wid = this.widget(editor, "curve", editor.structure);
+        ed.curveId = wid;
+        ed.syncCore();
+        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
+        // **A page's own widgets are its objects**, so they are appended here
+        // rather than composed in the crate.
+        tree.children = [...(tree.children ?? []), ...editor.extra];
+        return tree;
     }
 
-    override props(editor: Editor<EditableCurve>): Record<string, PropValue> {
-        return this.drawn(editor.structure, editor.structure.toPoints());
+    override props(editor: Editor<EditableCurve>, widgetId: number): Record<string, PropValue> {
+        return (editor as PointsEditor).coreCall("props", { widget: widgetId }) as Record<
+            string,
+            PropValue
+        >;
     }
 }
 
 /** What {@link PointsEditor} takes on top of the generic editor's options. */
 export interface PointsEditorOptions extends GenericEditorOptions<EditableCurve> {
-    /** The bottom of the value axis, with {@link PointsEditorOptions.max}. */
+    /**
+     * With {@link PointsEditorOptions.max}, the **value axis** the curve is
+     * drawn against. Without them the axis is derived from the break-points
+     * with a tenth of headroom, which leaves the field's floor below the lowest
+     * value -- fine for a curve whose range is open, wrong for one that means
+     * something at its ends (an amplitude envelope's zero, a pan's extremes).
+     * Declared, the axis still **grows** to hold a point dragged outside it; it
+     * just never starts narrower than what the caller said.
+     */
     min?: number;
-    /** The top of the value axis, with {@link PointsEditorOptions.min}. */
+    /** The top of that axis. */
     max?: number;
 }
 
@@ -209,15 +132,11 @@ export interface PointsEditorOptions extends GenericEditorOptions<EditableCurve>
  * what was drawn.
  */
 export class PointsEditor extends Editor<EditableCurve> {
-    /**
-     * `min`/`max` declare the **value axis** the curve is drawn against, both
-     * or neither. Without them the axis is derived from the break-points with a
-     * tenth of headroom, which leaves the field's floor below the lowest value
-     * -- fine for a curve whose range is open, wrong for one that means
-     * something at its ends (an amplitude envelope's zero, a pan's extremes).
-     * Declared, the axis still **grows** to hold a point dragged outside it; it
-     * just never starts narrower than what the caller said.
-     */
+    /** This editor's member in its editing context. */
+    private readonly member: number;
+    /** The curve's widget id, once drawn. @internal */
+    curveId: number | null = null;
+
     constructor(curve: EditableCurve, options: PointsEditorOptions) {
         const { min, max, ...rest } = options;
         if ((min === undefined) !== (max === undefined)) {
@@ -225,40 +144,138 @@ export class PointsEditor extends Editor<EditableCurve> {
                 "a declared axis needs both ends: pass min and max, or neither",
             );
         }
-        super(curve, {
-            title: "Curve",
-            ...rest,
-            domain: new PointsDomain(),
-            view: new PointsView(min === undefined ? undefined : [min, max!]),
-        });
+        const domain = new PointsDomain();
+        super(curve, { title: "Curve", ...rest, domain, view: new PointsView() });
+        const request: Record<string, unknown> = {
+            rate: this.sampleRate,
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+            points: curve.toPoints().map(Number),
+            name: nameOf(curve),
+        };
+        if (min !== undefined) Object.assign(request, { min, max });
+        const opened = this.editing.open(
+            "openPoints",
+            keyOf("object", curve),
+            request,
+            curve,
+            domain,
+        );
+        this.member = opened.member;
+        this.structureId = opened.identity;
     }
 
     /**
-     * The last range swept on the curve: `{ start, len }` in its seconds and,
-     * for a sweep with height, `value: { min, max }` in its own values. Screen
-     * state, never part of what is edited.
+     * One verb of this editor's member, through the context.
+     *
+     * @internal
      */
-    selection: Selection | Record<string, never> = {};
+    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return this.editing.member(this.member, verb, args);
+    }
 
-    protected override observe(wid: number, tag: string, values: readonly unknown[]): boolean {
-        if (tag !== "selection") return super.observe(wid, tag, values);
-        const selection: Record<string, unknown> = {
-            start: values.length > 0 ? this.position(Number(values[0])) : 0.0,
-            len: values.length > 1 ? this.position(Number(values[1])) : 0.0,
-        };
-        if (values.length >= 4) {
-            // The sweep restricted the value axis too. Carried **as it came**:
-            // it is in the structure's own domain, and no unit of this
-            // editor's applies to it.
-            selection.value = { min: Number(values[2]), max: Number(values[3]) };
+    /**
+     * Hand the crate the window it is open in, the chrome, and the curve as
+     * the page holds it now.
+     *
+     * @internal
+     */
+    syncCore(): void {
+        this.coreCall("sync", {
+            window: this.windowId,
+            rate: this.sampleRate,
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+            points: this.structure.toPoints().map(Number),
+            name: nameOf(this.structure),
+        });
+    }
+
+    // ---- the time range, and the points in it ----
+
+    /**
+     * **The time range** -- `[start, end]` in the curve's seconds, or `null` --
+     * whose points {@link PointsEditor.selected} reads: what a sweep over the
+     * curve leaves, with no value band when it is set here. A curve has no
+     * transport, so the range is the editor's own: screen state, never part of
+     * what is edited.
+     */
+    get span(): [number, number] | null {
+        const span = this.coreCall("span").span as [number, number] | null | undefined;
+        return span === null || span === undefined ? null : [Number(span[0]), Number(span[1])];
+    }
+
+    set span(span: readonly [number, number] | null) {
+        this.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
+        this.adopt();
+    }
+
+    /**
+     * **The break points the sweep covers** -- inside its time range and, for
+     * a sweep with height, inside its value band -- as the `[t, v, shape,
+     * curve]` quads `toPoints` speaks, in order. Empty with no range.
+     */
+    get selected(): [number, number, number, number][] {
+        this.syncCore();
+        const indices = (this.coreCall("selected").points ?? []) as number[];
+        const flat = this.structure.toPoints();
+        return indices.map((i) => flat.slice(4 * i, 4 * i + 4) as [number, number, number, number]);
+    }
+
+    // ---- the crate's turns ----
+
+    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
+        this.syncCore();
+        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const outcome = (turned.outcome ?? {}) as Outcome;
+        if (outcome.turn === "closed") return this.closedWindow();
+        if (outcome.turn === "step") {
+            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
+            this.echo.send(outcome.answer);
+            return stepped;
         }
-        this.selection = selection as unknown as Selection;
-        return false;
+        return this.take(outcome);
+    }
+
+    protected override route(args: readonly unknown[]): boolean {
+        this.syncCore();
+        const [wid, tag, ...values] = args;
+        const turned = this.editing.event(
+            this.member,
+            "/gui_event",
+            plain([wid, 0, 0, tag, ...values]) as unknown[],
+        );
+        return this.take((turned.outcome ?? {}) as Outcome);
+    }
+
+    private take(outcome: Outcome): boolean {
+        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        const points = outcome.points;
+        if (points !== undefined) {
+            // The crate's curve moved: the page's follows it, as part of the
+            // entry the turn recorded rather than as a change of its own.
+            this.editing.applying(() => (this.domain as PointsDomain).write(this.structure, points));
+        }
+        const changed = outcome.changed === true;
+        if (changed) {
+            this.dirty = true;
+            this.editing.changed();
+        }
+        if (outcome.locate !== undefined) {
+            this.cursor = outcome.locate;
+            this.locate(this.cursor);
+            this.composedIn?.locate(this.cursor);
+            this.onLocate?.(this.cursor);
+        }
+        this.echo.send(outcome.answer);
+        return changed;
     }
 }
 
 function nameOf(curve: EditableCurve): string {
-    const name = (curve as { name?: string }).name;
+    const name = (curve as { name?: string | null }).name;
     return typeof name === "string" && name ? name : "curve";
 }
 
