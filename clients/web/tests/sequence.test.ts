@@ -88,7 +88,7 @@ test("the events are objects, and one event is one object", () => {
     assert.ok(first.at === 0 && first.get("midinote") === 60 && first.has("midinote"));
     assert.ok(first.event instanceof Event && first.event.get("midinote") === 60);
     assert.deepEqual(seq.events.at(1.0).map((e) => e.get("midinote")), [62, 64]);
-    assert.deepEqual(seq.events.between(0.5, 3.0).map((e) => e.get("midinote")), [62, 64], "half-open");
+    assert.deepEqual(seq.events.range(0.5, 3.0).map((e) => e.get("midinote")), [62, 64], "half-open");
     assert.ok(seq.events.item(-1).get("midinote") === 67 && seq.events.length === 4);
     assert.equal(new Map([[first, "a key"]]).get(seq.events.item(0)), "a key");
 });

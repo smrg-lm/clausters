@@ -1568,7 +1568,7 @@ coda = seq.events.add(6.0, Event(midinote=74, dur=1.0))
 roll = edit(seq)
 
 with seq.history("humanize"):            # one entry, labelled "humanize"
-    for event in seq.events.between(0.0, 4.0):
+    for event in seq.events.range(0.0, 4.0):
         event.at += 0.01                 # a move
         if event["midinote"] >= 67:
             event["velocity"] = 90       # a set, with the core's coherence
@@ -5299,8 +5299,11 @@ work, where a pending item reads as done.)*
   switch: `t.loop(0, 2)`, `t.unloop()`, `t.span`, `t.looping`. The events a
   hand marked are the window's: `roll.selected` (a query of the host's new
   `selected` prop, by note id), `roll.select(events)` and `roll.unselect()`.
-  `seq.events.range` became `between`, off Python's `range`. The editors'
-  hook `selected()` became `selection_moved()` to free the name.)*
+  `seq.events.range` became `between`, off Python's `range` — and went
+  back to `range` once the editors no longer used the word (2026-10-02, the
+  user: it is the more correct word, and a method does not shadow the
+  builtin). The editors' hook `selected()` became `selection_moved()` to
+  free the name.)*
 
 - ⬜ **The points editor still says `selection`** *(found 2026-10-02
   closing `C61`)*. The three applications read what the hand marked as

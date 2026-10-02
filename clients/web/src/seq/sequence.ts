@@ -155,7 +155,7 @@ export class EventSequence {
     /**
      * **The events, as objects**, in beat order: a live collection -- iterate
      * it, index it, ask it what is {@link SeqEvents.at} a beat or in a
-     * {@link SeqEvents.between} -- whose members are {@link SeqEvent}s, each a
+     * {@link SeqEvents.range} -- whose members are {@link SeqEvent}s, each a
      * view of one event the sequence holds. The same event read twice is the
      * same object.
      */
@@ -587,7 +587,7 @@ export class SeqEvents {
     }
 
     /** The events in the half-open beat window `[t0, t1)`. */
-    between(t0: number, t1: number): SeqEvent[] {
+    range(t0: number, t1: number): SeqEvent[] {
         return this.#of(this.#sequence.idsOf({ from: Number(t0), to: Number(t1) }));
     }
 }

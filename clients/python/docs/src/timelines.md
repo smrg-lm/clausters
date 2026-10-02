@@ -145,7 +145,7 @@ for event in seq.events:
 
 first = seq.events[0]                     # a SeqEvent: a view of one event
 first is seq.events.at(0.0)[0]            # True: one event, one object
-seq.events.between(0.0, 2.0)              # the events in [0, 2), in beat order
+seq.events.range(0.0, 2.0)              # the events in [0, 2), in beat order
 first.automation                          # its own curves, as Automation objects
 
 first.at = 2.0                            # a move: the other note keeps its data
@@ -157,7 +157,7 @@ level.points = [(0.0, 0.2), (4.0, 0.6)]   # the curve, written back whole
 last.remove()                             # last is detached from now on
 ```
 
-**What a script reads is objects.** `seq.events` is a live collection of `SeqEvent`s in beat order — iterate it, index it, ask it what is `at` a beat or `between` two — and a `SeqEvent` is a view of one event the sequence holds, not a copy: its `at`, its keys (`event["midinote"]`) and its `automation` are read from the sequence each time, so after a hand moves the note in the roll the object reads where it now is. The same event read twice is the same object, so one works as a key of a `dict`. `event.event` is a free `Event` with the same keys, to play or to copy. The curves over the whole sequence are `seq.automation`, and each is a `clausters.multitrack.Automation` — the type a track's and a region's curves are — whose points are on the sequence's beats; an event's are measured from its start and may run past its end, into its release. An event the sequence no longer holds is **detached**: its `sequence` is `None` and reading it raises.
+**What a script reads is objects.** `seq.events` is a live collection of `SeqEvent`s in beat order — iterate it, index it, ask it what is `at` a beat or in a `range` of two — and a `SeqEvent` is a view of one event the sequence holds, not a copy: its `at`, its keys (`event["midinote"]`) and its `automation` are read from the sequence each time, so after a hand moves the note in the roll the object reads where it now is. The same event read twice is the same object, so one works as a key of a `dict`. `event.event` is a free `Event` with the same keys, to play or to copy. The curves over the whole sequence are `seq.automation`, and each is a `clausters.multitrack.Automation` — the type a track's and a region's curves are — whose points are on the sequence's beats; an event's are measured from its start and may run past its end, into its release. An event the sequence no longer holds is **detached**: its `sequence` is `None` and reading it raises.
 
 **And what it writes, it writes through them.** Setting `at` moves the event, setting a key writes it with its family's coherence — a moved `midinote` moves the `freq` and the `degree` it holds — and `remove()` takes it out; `seq.events.add` answers the `SeqEvent` it made. A collection of curves takes `add(target, points, name=)` and answers the curve, and a curve is changed by assigning its fields (`points`, `name`, `target`, `enabled`) or with `set_points`, and removed with `remove()`. A free `Automation` a script built is added as it is, and from then on it is the view. `seq.automation.to_events(curve)` gives a curve of the sequence to the notes it reaches, and `seq.automation.from_events(target)` gathers the notes' curves back into one of the sequence's and answers it. No call takes or answers an id: each object holds its event's identity, which is what keeps an edit from naming the wrong note — removing one leaves every other note its own, and an identity is never handed out twice. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
 
@@ -165,7 +165,7 @@ last.remove()                             # last is detached from now on
 
 ```python
 with seq.history("humanize"):             # one entry, called "humanize"
-    for event in seq.events.between(0.0, 4.0):
+    for event in seq.events.range(0.0, 4.0):
         event.at += 0.01
         if event["midinote"] >= 67:
             event["velocity"] = 90

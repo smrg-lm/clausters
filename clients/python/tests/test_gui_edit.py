@@ -743,7 +743,7 @@ def test_what_the_roll_marks_is_the_events_themselves():
     opened(roll)
     first, second, third = seq.events
     assert roll.selected == []
-    roll.select(seq.events.between(1.0, 3.0))
+    roll.select(seq.events.range(1.0, 3.0))
     assert roll.selected == [second, third]
     for event in roll.selected:
         event["velocity"] = 90

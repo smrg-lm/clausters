@@ -772,7 +772,7 @@ test("what the roll marks is the events themselves", async () => {
     await opened(roll);
     const [first, second, third] = seq.events;
     assert.deepEqual(await roll.selected(), []);
-    roll.select(seq.events.between(1.0, 3.0));
+    roll.select(seq.events.range(1.0, 3.0));
     assert.deepEqual(await roll.selected(), [second, third]);
     for (const event of await roll.selected()) event.set("velocity", 90);
     assert.ok(second.get("velocity") === 90 && first.get("velocity") === undefined);
