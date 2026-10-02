@@ -3,6 +3,7 @@ and a live RT clock next to an offline NRT render -- run in one script without
 clobbering each other. This is the no-global-state litmus test.
 """
 
+import socket
 import struct
 import threading
 
@@ -86,9 +87,13 @@ def test_two_clocks_render_independently():
 
 def test_rt_and_nrt_in_the_same_script():
     _embed_or_skip()
-    # A live RT clock churning on a background thread (emits to a socket with no
-    # listener -- harmless), set up to thrash the execution context fast.
-    rt_server = Server(interface=OscUdpInterface().start())
+    # A live RT clock churning on a background thread, set up to thrash the
+    # execution context fast. It emits to a socket this test holds and never
+    # reads -- **not** to the default port, where a server a person left
+    # running would take every bundle and log a failure for each.
+    sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sink.bind(("127.0.0.1", 0))
+    rt_server = Server(port=sink.getsockname()[1], interface=OscUdpInterface().start())
     rt_clock = TempoClock(tempo=50.0)
 
     def churn():
@@ -114,6 +119,7 @@ def test_rt_and_nrt_in_the_same_script():
     finally:
         rt_clock.stop()
         rt_server.close()
+        sink.close()
 
 
 if __name__ == "__main__":
