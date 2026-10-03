@@ -869,11 +869,11 @@ opened it.
   and back. It is `clausters_editing::points::{quad, point, same}` now, and
   the three read through it.
 
-  **Left open:** the sweep itself -- a curve standing on its own joins no
-  navigation group, so no hand can leave the range yet, and one set from a
-  script is drawn nowhere (`clients/gui/PLAN.md`, Found by use, "A curve
-  standing on its own cannot be swept"); the range and the points in it are
-  read and set from the script meanwhile. And opening an automation a
+  **Left open:** the range and the selection themselves -- no hand can
+  leave them and no operation of this editor reads them, since `C61`'s rule
+  was decided for the multitrack, the roll and the audio editor and read
+  here as one for every editor (`clients/gui/PLAN.md`, Found by use, "The
+  points editor carries a range and a selection it has no use for"). And opening an automation a
   multitrack or a sequence holds in this
   editor, sharing it rather than a copy, is the integration this milestone
   prepares and does not do; it goes with "An application inside another"

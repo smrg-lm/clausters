@@ -1954,8 +1954,13 @@ existing examples rewritten rather than new ones:
   through the handle.)*
 - ✅ **C61 — `span` and `selected`, the same two words in every editor**
   *(decided 2026-10-02 by the user: one word names one thing in every case)*.
-  A view has two selections, and they are told apart by what they are, not
-  by which editor holds them:
+  **Its context** *(the user, 2026-10-03)*: the editors it was decided for
+  are the multitrack, the roll and the audio editor, whose operations act on
+  what the hand marks -- not every editor. The points editor took the two
+  words as well, with nothing to act on them ("The points editor carries a
+  range and a selection it has no use for", `clients/gui/PLAN.md`). A view has
+  two selections, and they are told apart by what they are, not by which
+  editor holds them:
   - **`selected`** — with `select(...)` and `unselect()` — is **what the hand
     marked**, the view's state, in the structure's own type: a roll's events
     (`SeqEvent`s, done for the roll in `C58`'s follow-up), a multitrack's

@@ -7724,17 +7724,41 @@ module of its own.
   and its clip envelopes. Both read a value through the curve element's own
   `hover_value`, and format it by one rule (`graphics::bpf::readout_value`).
 
-- ⬜ **A curve standing on its own cannot be swept** *(found 2026-10-02
-  closing `X4` in `crates/clausters-apps/PLAN.md`)*. The points editor keeps
-  the time range a sweep leaves as its `span`, and the points inside it as
-  `selected`, but no hand can leave one: a standalone `curve` navigates no
-  time axis (`OnAxis::navigates_time` is `false`), so it joins no navigation
-  group, every modifier hands the press to its points, and a `sel_start` /
-  `sel_len` it is set with is drawn nowhere. The client's old `selection`
-  dict read a report that never came. What the fix takes: the curve joining a
-  group, opt-in as a signal view's `navigable` is, so the pictures that draw
-  a bare envelope do not move; Alt sweeping the range there, as on a roll,
-  with the value band through `select_in`; and its axis in **samples** at its
-  `sample_rate` rather than in its own seconds, since the group rounds a
-  selection to whole samples and a three-second curve would be swept in
-  whole seconds.
+- ⬜ **The points editor carries a range and a selection it has no use for**
+  *(found 2026-10-02 closing `X4` in `crates/clausters-apps/PLAN.md`, as "A
+  curve standing on its own cannot be swept"; rewritten 2026-10-03 with the
+  user, who placed the defect in the rule rather than in the gesture)*.
+  `C61`'s two words (`clients/python/PLAN.md`) were decided for the three
+  applications being made at the time -- the multitrack, the roll and the
+  audio editor -- where what the hand marks is what their operations act on:
+  held regions, events moved, deleted, quantized and copied together, a
+  range of samples. `X4` then gave the points editor the same `span` and
+  `selected`, reading the rule as one for every editor, outside the context
+  it was decided in. In the points editor no operation acts on a group of
+  points -- what a hand takes there is one segment, for its shape -- so the
+  range and the points in it are surface no hand makes and nothing reads,
+  and the sweep this entry first asked for would have been a gesture with
+  no consequence.
+
+  **It is also the class hierarchy failing.** The three applications each
+  write `selected`, `select` and `unselect` on their own, over the host's
+  `selected` prop, and the points editor has a `span` and a `selected` of
+  another shape; the base `Editor` says nothing about either. Marking is a
+  capability some editors have, not a level of the hierarchy, so the fix is
+  a **mixin** -- a trait, in Rust's terms -- that the editors whose
+  operations act on what is marked take, and that the points editor does
+  not until it has such operations. Its `span` and `selected` go, in both
+  clients and in the crate's points editor.
+
+  **If it ever has them** (moving or deleting several points, copying a
+  stretch of an envelope, scaling the values in a band), the sweep is what
+  it takes: a standalone `curve` navigates no time axis
+  (`OnAxis::navigates_time` is `false`), so it joins no navigation group,
+  every modifier hands the press to its points, and a `sel_start` /
+  `sel_len` it is set with is drawn nowhere. The curve would join a group,
+  opt-in as a signal view's `navigable` is, so the pictures that draw a bare
+  envelope do not move; Alt would sweep the range there, as on a roll, with
+  the value band through `select_in`; and its axis would be in **samples**
+  at its `sample_rate` rather than in its own seconds, since the group
+  rounds a selection to whole samples and a three-second curve would be
+  swept in whole seconds.

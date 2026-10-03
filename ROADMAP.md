@@ -176,9 +176,9 @@ its plan; the plan is where its acceptance is read.
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
   edits -- its recording (`X3.10`) waits for `T10`, skipped for now;
-  the points editor's sweep, which a curve standing on its own cannot take
-  yet (`clients/gui/PLAN.md`, Found by use, "A curve standing on its own
-  cannot be swept"); **`X5`** the score editor over
+  the points editor's range and selection, which it has no use for and which
+  go behind a mixin (`clients/gui/PLAN.md`, Found by use, "The points editor
+  carries a range and a selection it has no use for"); **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
