@@ -1842,6 +1842,62 @@ the books, and the existing examples extended.
     wrote down and answered for the edit, not for the objects. The revision
     is written there in the same commit.
   - After `C57`, which settles the shape on the smaller structure.
+
+  **The rule, written down first** *(the user, 2026-10-03: the rule does
+  not hold for the editors, and it is subject to review)*. `O10`'s rule was
+  already broken by the sequence — `X3.2` made it a handle and `C57` gave it
+  live objects and an identity map — and nothing said so. It is written in
+  `docs/decisions.md` ("A structure an editor holds is a handle") and under
+  `O10`: the structures an editor edits in place are handles with live
+  objects; the general tree and `clausters.form` still round-trip; and the
+  rule as a whole is under review rather than settled.
+
+  **Decisions:**
+  - **Sources stay the session's values.** A source is an entry of the
+    session's table, not of the multitrack — the multitrack names it by id
+    from a region's window — so holding it as a live object is a handle on
+    the *session*, a structure of its own. `Session` keeps its table as it
+    is and holds the multitrack's handle; a session handle is not this
+    milestone.
+  - **What has no identity stays a value**: `Content`, `Fade`, `Tempo`,
+    `Meter` and `Span` are read as values and written whole through the
+    object that holds them (`region.fade_in = Fade(0.1)`,
+    `mt.set_tempo(Tempo(...))`). A `Marker` has an id, so it is a view.
+  - **Every write is the crate's vocabulary**, with no new verb: a region's
+    place is `PlaceRegion`, its length and window `TrimRegion`, its fades
+    `FadeRegion`, a curve's points `SetAutomation`, a marker `SetMarker` /
+    `RemoveMarker`, the loop and punch `SetRange`, the maps `SetTempoMap` /
+    `SetMeterMap`, which take lane plays `SetActiveTakeLane`; any other field
+    of a region, or a region added or removed, is its take lane's
+    `SetTakeLane`, and any other field of a track, a take lane or a track's
+    curve is `SetTracks`. Both are whole, and cost a copy of what they state
+    — the crate's own trade-off for those verbs.
+  - **Ids are minted by the crate** and never reused within a session: the
+    handle keeps the highest it ever handed out beside `fresh_id`, so an id
+    an undo took away is not given to something new while a redo could still
+    bring the old one back.
+
+**The steps**, each a commit with both clients in it, the books, and the
+existing examples rewritten rather than new ones:
+
+- ⬜ **C60.1 — The handle.** `clausters_document::multitrack::call_json`,
+  the door a handle speaks (reads by id, `apply` answering the inverse, ids
+  minted); its C ABI and wasm faces, declared in `docs/bindings.md`; the
+  multitrack editor over the shared structure, and `openMultitrack` over a
+  handle, as `openNotes` is over a sequence's.
+- ⬜ **C60.2 — The objects.** `Multitrack` over the handle in both clients:
+  `mt.tracks`, `track.take_lanes`, `lane.regions`, `track.automation`,
+  `region.automation`, `mt.markers` as live collections whose `add` answers
+  the object and whose members `remove()`; the fields read from the crate
+  and written through the vocabulary above; an identity map; no constructor
+  takes an id and no call answers or takes one (`mt.track(id)`,
+  `lane.region(id)` go). The dataclass mirror is deleted, not kept beside the
+  objects, and every call site is rewritten in the same pass.
+- ⬜ **C60.3 — `mt.history`.** A script's change through the objects is a
+  turn of the multitrack's context — the editor's when one is open, which
+  redraws and undoes it — and `with mt.history(label)` makes a block one
+  entry. The editor stops writing the multitrack back onto the script's
+  objects: there is only the one.
 - ✅ **C61 — `span` and `selected`, the same two words in every editor**
   *(decided 2026-10-02 by the user: one word names one thing in every case)*.
   A view has two selections, and they are told apart by what they are, not

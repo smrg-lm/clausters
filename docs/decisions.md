@@ -9201,3 +9201,34 @@ pushed the voice out of range.
   compile `tests/common/sine.json`, the old graph, so a change of the default's
   tone never moves what the engine is checked against — the arpeggio golden
   stayed byte-identical.
+
+## A structure an editor holds is a handle
+
+The document crate was bound with a rule: the clients **round-trip the
+format** and do not hold handles into a Rust object graph -- one function
+across the ABI instead of an accessor per field of a tree. It was decided for
+the document's general tree, against the surface an accessor handle costs,
+and it was relaxed once already, for cost: a document handle with the same
+three verbs the by-value binding had.
+
+**It does not hold for the structures an editor edits in place.** A notes
+editor edits the very `EventSequence` a script names, so the sequence became a
+handle, and its events and curves then became live objects over it with an
+identity map: an object read twice is one object, a read asks the
+structure, and a write goes through the structure's vocabulary and, when it
+has one, its history. That broke the rule, and nothing said so. The multitrack
+follows: a script and a window over one multitrack are two holders of
+one tree, not a tree and a copy that has to be written back after every turn.
+
+The reasons are the editor's, not the ABI's. A copy has to be reconciled after
+every gesture, and a script's change to it is no turn the window sees -- not
+redrawn, not undone by the window's Ctrl+Z. A copy also has to carry the
+document's ids into the client's surface, which is how a script came to build a
+`Track(id=1)` and look a region up by number. With one tree, the ids stay the
+crate's and the objects stand for the structures.
+
+The rule is **under review**, not replaced: the general tree and
+`clausters.form` still round-trip, and which structures stay values -- a
+session's source table, a fade, a tempo entry -- is decided structure by
+structure, by whether something edits it in place.
+
