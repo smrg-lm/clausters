@@ -9202,7 +9202,7 @@ pushed the voice out of range.
   tone never moves what the engine is checked against — the arpeggio golden
   stayed byte-identical.
 
-## A structure an editor holds is a handle, and handles are case by case
+## The round-trip rule is annulled: the applications hold the structures
 
 The document crate was bound with a rule: the clients **round-trip the
 format** and do not hold handles into a Rust object graph -- one function
@@ -9227,9 +9227,20 @@ document's ids into the client's surface, which is how a script came to build a
 `Track(id=1)` and look a region up by number. With one tree, the ids stay the
 crate's and the objects stand for the structures.
 
-So the rule is **no longer a constraint**: the editors changed the design.
-Whether a structure is a handle or round-trips is decided case by case -- a
-structure an editor edits in place is a handle, while the general tree and
-`clausters.form` still round-trip, and a session's source table, a fade or a
-tempo entry stay values -- by whether something edits it in place.
+**So the rule is annulled, not relaxed.** It was written for a design in which
+a client held the document and the crate was a function it handed the document
+to -- apply an intent, answer the new document and the outcome. The
+applications changed that design: the editors, the editing context with its
+history, and the playback are the shared crate's (`clausters-apps`), and they
+hold the structures they edit. A client is then one more holder of a structure
+an application holds, and a handle is simply what holding it is; the rule has
+nothing left to govern. It is also what makes the standalone host the same
+program: it runs the same editors over the same structures with no language
+attached, where a design that kept the document in each client would have
+had a third copy to keep in step.
+
+What still crosses by value does so because it is **data**, not because a rule
+asks for it: a whole multitrack handed to `domain_edit` as JSON, a session file,
+`clausters.form`'s conversion, and the values a structure is made of -- a fade,
+a tempo entry, a region's content.
 

@@ -1844,14 +1844,14 @@ the books, and the existing examples extended.
   - After `C57`, which settles the shape on the smaller structure.
 
   **The rule, written down first** *(the user, 2026-10-03: `O10`'s rule is
-  no longer valid — the editors changed the design, it is not a constraint
-  any more, and some structures will be handles and some will not)*. The
-  sequence had already left it — `X3.2` made it a handle and `C57` gave it
-  live objects and an identity map — and nothing said so. It is written in
-  `docs/decisions.md` ("A structure an editor holds is a handle, and handles
-  are case by case") and under `O10`: a structure an editor edits in place is
-  a handle with live objects; the general tree and `clausters.form` still
-  round-trip; the choice is made case by case.
+  no longer valid — it predates the applications that use the document and
+  its history, and moving their logic into Rust, which also serves the
+  standalone host, annulled it)*. The sequence had already left it — `X3.2`
+  made it a handle and `C57` gave it live objects and an identity map — and
+  nothing said so. It is written in `docs/decisions.md` ("The round-trip rule
+  is annulled: the applications hold the structures") and under `O10`: the
+  applications hold the structures they edit, a client holding one holds a
+  handle, and what still crosses by value is data rather than a rule.
 
   **Decisions:**
   - **Sources stay the session's values.** A source is an entry of the
