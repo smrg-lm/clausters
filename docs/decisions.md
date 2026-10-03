@@ -9202,7 +9202,7 @@ pushed the voice out of range.
   tone never moves what the engine is checked against — the arpeggio golden
   stayed byte-identical.
 
-## A structure an editor holds is a handle
+## A structure an editor holds is a handle, and handles are case by case
 
 The document crate was bound with a rule: the clients **round-trip the
 format** and do not hold handles into a Rust object graph -- one function
@@ -9227,8 +9227,9 @@ document's ids into the client's surface, which is how a script came to build a
 `Track(id=1)` and look a region up by number. With one tree, the ids stay the
 crate's and the objects stand for the structures.
 
-The rule is **under review**, not replaced: the general tree and
-`clausters.form` still round-trip, and which structures stay values -- a
-session's source table, a fade, a tempo entry -- is decided structure by
-structure, by whether something edits it in place.
+So the rule is **no longer a constraint**: the editors changed the design.
+Whether a structure is a handle or round-trips is decided case by case -- a
+structure an editor edits in place is a handle, while the general tree and
+`clausters.form` still round-trip, and a session's source table, a fade or a
+tempo entry stay values -- by whether something edits it in place.
 

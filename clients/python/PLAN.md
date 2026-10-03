@@ -1843,14 +1843,15 @@ the books, and the existing examples extended.
     is written there in the same commit.
   - After `C57`, which settles the shape on the smaller structure.
 
-  **The rule, written down first** *(the user, 2026-10-03: the rule does
-  not hold for the editors, and it is subject to review)*. `O10`'s rule was
-  already broken by the sequence — `X3.2` made it a handle and `C57` gave it
+  **The rule, written down first** *(the user, 2026-10-03: `O10`'s rule is
+  no longer valid — the editors changed the design, it is not a constraint
+  any more, and some structures will be handles and some will not)*. The
+  sequence had already left it — `X3.2` made it a handle and `C57` gave it
   live objects and an identity map — and nothing said so. It is written in
-  `docs/decisions.md` ("A structure an editor holds is a handle") and under
-  `O10`: the structures an editor edits in place are handles with live
-  objects; the general tree and `clausters.form` still round-trip; and the
-  rule as a whole is under review rather than settled.
+  `docs/decisions.md` ("A structure an editor holds is a handle, and handles
+  are case by case") and under `O10`: a structure an editor edits in place is
+  a handle with live objects; the general tree and `clausters.form` still
+  round-trip; the choice is made case by case.
 
   **Decisions:**
   - **Sources stay the session's values.** A source is an entry of the
@@ -1872,10 +1873,10 @@ the books, and the existing examples extended.
     `SetTakeLane`, and any other field of a track, a take lane or a track's
     curve is `SetTracks`. Both are whole, and cost a copy of what they state
     — the crate's own trade-off for those verbs.
-  - **Ids are minted by the crate** and never reused within a session: the
-    handle keeps the highest it ever handed out beside `fresh_id`, so an id
-    an undo took away is not given to something new while a redo could still
-    bring the old one back.
+  - **Ids are minted by the crate**, from what the multitrack names
+    (`fresh_id`, past its markers too). An id an undo took away may be minted
+    again, which is safe: recording any edit drops the redo that could have
+    brought the old one back.
 
 **The steps**, each a commit with both clients in it, the books, and the
 existing examples rewritten rather than new ones:
