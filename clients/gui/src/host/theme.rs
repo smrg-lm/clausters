@@ -138,11 +138,12 @@ theme_roles! {
     // -- View fields, lanes and grids --
     /// The dark body of the heavy views (waveform, spectrogram, patch).
     view_field = [0.08, 0.09, 0.11, 1.0];
-    /// A lane's background (a track lane, the piano roll's grid).
+    /// A lane's background: the piano roll's grid.
     lane = [0.09, 0.10, 0.13, 1.0];
     /// A track's header strip.
     header = [0.14, 0.16, 0.20, 1.0];
-    /// The alternate, darker lane (black-key rows, the velocity lane).
+    /// The alternate, darker lane: the roll's black-key rows, and the gutter
+    /// a roll in hertz draws its ruler in.
     lane_alt = [0.07, 0.08, 0.10, 1.0];
     /// The divider line between stacked channels (a multichannel view's
     /// rows, never a track's lanes).

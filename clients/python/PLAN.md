@@ -5299,7 +5299,7 @@ work, where a pending item reads as done.)*
   manual test differ from the package. `BUILD.md`'s artifact table and
   `docs/contributing.md` say what the wheel's host is.
 
-- ⬜ **"Lane" has a fifth sense in the host: a horizontal band of a
+- ✅ **"Lane" has a fifth sense in the host: a horizontal band of a
   drawing** *(found 2026-10-01, renaming the multitrack widget's row to
   `TrackRow` in `C57.0`)*. Beside the four structures `C57.0` names, the host
   calls any horizontal strip of a view a lane: the theme's `lane` and
@@ -5311,6 +5311,14 @@ work, where a pending item reads as done.)*
   role is a name on the wire (`theme={"lane": ...}`) and moves with any
   rename. Open: whether the drawing word stays "lane" — the DAW's word for a
   strip, as in "automation lane" — or every band is named for what it shows.
+  *(Decided 2026-10-03 with the user: it stays. Reading the host found more
+  than this entry listed -- a signal view's row, which may hold several
+  channels overlaid, a whole view stacked on a shared time axis, and a roll's
+  curve rows -- all drawing, none a structure, and "lane" is the field's word
+  for a strip. A rename would be some 380 internal names and a theme role on
+  the wire for no reader's gain. What was wrong is fixed: the two theme roles'
+  comments named a track's lane and a velocity lane, neither of which paints
+  with them.)*
 
 - ✅ **The composition chapter's "Mixing is the multitrack's" describes the
   tree that was walked off** *(found 2026-10-01, renaming take lanes in
