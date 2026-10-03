@@ -1757,8 +1757,7 @@ work with the default session, with no `with` a script does not need.)*
 
 `C57` makes what a script holds of a sequence an object; this arc makes the
 rest of what the editors do reachable from a script with no window: playing
-a sequence, putting it back into a `Timeline`, and holding a multitrack the
-way a sequence is held. Each milestone is a commit with both clients in it,
+a sequence and holding a multitrack the way a sequence is held. Each milestone is a commit with both clients in it,
 the books, and the existing examples extended.
 
 - ✅ **C58 — `play(seq)` answers a transport.** A sequence sounds only
@@ -1807,7 +1806,8 @@ the books, and the existing examples extended.
   `docs/decisions.md` records the revision. In the web client `play` of a
   sequence answers a promise, and `playing()`, `end()`/`setEnd()` are
   methods.)*
-- ⬜ **C59 — A sequence back in a `Timeline`.** `X3` decided that no
+- ✅ **C59 — A sequence back in a `Timeline`** *(closed 2026-10-03 without
+  being implemented)*. `X3` decided that no
   timeline is rebuilt from its values (`crates/clausters-apps/PLAN.md`):
   `render_events` is the one-way change, and what the roll edits lives in the
   `EventSequence`. Reloading the *sequence* already works — inline in a
@@ -1820,6 +1820,19 @@ the books, and the existing examples extended.
   The reason to want either was playing the sequence from the client; with
   `C58` that is `play(sequence)`, so what is left is placing an edited
   sequence among a `Timeline`'s other entries.
+
+  **Not a case to support** *(the user, 2026-10-03, after it had been built
+  once)*: a `Timeline` is a client abstraction that renders to an
+  `EventSequence`, the structure shared with the server, and the sequence is
+  played by the server's transport. That direction is the whole relation, and
+  `C59` should not have been opened. Built as an entry, the sequence made the
+  timeline's client-side tree do what a transport's position already does --
+  a sequence's beats placed by a client clock, matched per entry, re-read on
+  each edit, measured through seconds -- and it played none of the sequence's
+  curves. That build is kept on a local branch (`c59-sequence-in-timeline`)
+  and is not on `main`. The one thing it surfaced that stands on its own is
+  that **no event with automation could be played from the client** except
+  through a sequence's lane: that is `C62`.
 - ✅ **C60 — The multitrack is held as a handle.** A sequence is a handle
   over the Rust structure: one tree. A `Multitrack` is a mirror —
   `Multitrack`, `Track`, `Region`, `Source` are dataclasses
@@ -1959,6 +1972,49 @@ existing examples rewritten rather than new ones:
   under "Found by use". `examples/editors/span_selected` (and its page) is
   the manual check: the three editors' transports, spans and selections,
   step by step.
+- ⬜ **C62 — An event carries its curves** *(opened 2026-10-03 by the user,
+  from `C59`'s review: there is no way to play an event with automation from
+  the client)*. A sequence's curves -- a channel's automation (a level, a CC)
+  and a note's own (a bend, its expression) -- sound only on the sequence's
+  own playback: the event lane on a transport, where
+  `clausters_editing::note_curves` samples each curve into a table and plays
+  the notes inside event graphs (`clausters_core::event_graph`). An `Event`,
+  a pattern or a routine has no curve at all, and `render_events` has none to
+  keep. Decided with the user:
+  - **A curve is part of the event**: `Event(..., automation=[curve])`, so
+    whatever plays events -- a pattern, a routine, a timeline -- plays its
+    curves, and `render_events` keeps them because they travel in the
+    events. A **channel's** curve is a playable of its own
+    (`Automation({"control": "amp", "channel": 0}, points)`), read by the
+    notes on that channel.
+  - **From the client, a curve is control events** (`set`) the client
+    schedules on its clock, and **the instrument goes inside a graph def**
+    beside a control member those `set`s drive -- the event graphs the lane
+    builds (`note_graph`, `channel_graph`, `pitch_def`), with the table
+    reader swapped for a control member. One rule for the graphs and for the
+    sampling (`value_at` every `CURVE_STEP`), so the two paths cannot sound
+    different.
+  - **A channel is a graph instance**: a group holding a member per channel
+    curve, each writing a private control bus, and a slot per sounding note
+    -- each slot its own group with the instrument, the note's own curve
+    members and the pitch node when it bends.
+  - **Who makes the channel's instance**: the first thing that sounds on that
+    channel and destination, curve or note; it is freed when nothing sounds
+    in it.
+  - **A slot's def is chosen when it is added** -- a server change
+    (`/graph_addSlot` given the note's graph def), rather than a new channel
+    instance per new shape of note with every `set` sent to the old and the
+    new instance while the old one still sounds. A channel's graph declares
+    one slot per shape of note today, which a lane knows from the whole
+    sequence and a pattern never does; and `/graph_new` cannot hand a
+    free-standing note graph the channel's buses, since an `external` bus is
+    bound only by a parent.
+  - **The control member ramps linearly over one step**, not a `Lag`: a
+    table read interpolates linearly between its samples, and `set` plus a
+    10 ms `Lag` would be steps smoothed exponentially and late -- a different
+    sound. The client sends each value one step early, timetagged on the
+    same grid, which gives the table's linear reading with the same sampling.
+    The 10 ms lag stays only where it is today, on a channel's curves.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
@@ -5414,8 +5470,9 @@ work, where a pending item reads as done.)*
 
 ## Future directions (a design that is not a fix)
 
-- ⬜ **A timeline of concrete events could play from an event lane**
-  *(noted 2026-09-28, closing `PLAN.md` `T8`)*. A `Timeline` on a transport
+- ✅ **A timeline of concrete events could play from an event lane**
+  *(noted 2026-09-28, closing `PLAN.md` `T8`; closed 2026-10-03 with `C59`,
+  not taken)*. A `Timeline` on a transport
   stamps its plan on the transport's clock and re-cues it after every locate
   (`timelines.md`), which is right for what is generated as it plays — a
   pattern, a routine — and is the transport's own work for items that are
@@ -5423,6 +5480,12 @@ work, where a pending item reads as done.)*
   (`Timeline.render_events` already makes them a sequence), leaving the plan to
   what only code can say. Whether a timeline splits its items that way, and
   what a mixed one does at a locate, is the design.
+  *(Not taken: splitting a timeline's items between a lane and the client's
+  plan is the timeline doing the transport's work again, half on each side
+  -- what `C59` was closed for. A timeline is rendered whole:
+  `render_events` turns it into an `EventSequence`, a pattern's and a
+  routine's output included, and that sequence plays on the transport, so no
+  timeline is ever mixed at a locate.)*
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather

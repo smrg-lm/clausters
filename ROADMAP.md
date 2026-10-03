@@ -245,9 +245,12 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`C59` - a sequence back in a `Timeline`** *(`clients/python/PLAN.md`,
-  "A script plays and holds what the editors do")*. It opens on a decision its
-  entry names.
+- ⬜ **`C62` - an event carries its curves** *(`clients/python/PLAN.md`,
+  "A script plays and holds what the editors do")*. Opened 2026-10-03 by the
+  user: no event with automation can be played from the client except through
+  a sequence's lane, so a pattern, a routine and a timeline have no curves.
+  Its decisions are written; it needs a server change (`/graph_addSlot` given
+  a def).
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**

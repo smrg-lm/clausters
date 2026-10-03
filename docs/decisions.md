@@ -9244,3 +9244,27 @@ asks for it: a whole multitrack handed to `domain_edit` as JSON, a session file,
 and the values a structure is made of -- a fade, a tempo entry, a region's
 content.
 
+
+## A timeline renders to a sequence and holds none
+
+A `Timeline` is a client abstraction: entries placed in beats, some of them
+code -- a pattern, a routine -- whose output exists only once it runs. Its
+relation to the server is one direction: `render_events` turns it into an
+`EventSequence`, the structure the server shares, with what the code yields
+rendered as events, and that sequence plays on a transport. Locate, loop and
+stop are then the transport's.
+
+The other direction was built once and taken out (2026-10-03): an edited
+sequence placed back in a timeline as an entry. To play it there, the
+timeline's client-side tree had to place a sequence's beats on a client clock,
+re-read it on every edit, and measure it through seconds -- a transport's
+position done a second time, outside the transport -- and it still played none
+of the sequence's curves, which sound only on the sequence's lane. A proposal
+in the same family, a timeline splitting its items between a lane (the data)
+and the client's plan (the code), was dropped for the same reason. Nothing that
+a transport plays better is a timeline's entry.
+
+What the attempt surfaced is kept on its own merits: an event played from the
+client had no way to carry automation. That is solved in the events, so that
+whatever plays them -- a pattern, a routine, a timeline -- plays their curves,
+not by putting a sequence back in a timeline.
