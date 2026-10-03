@@ -249,8 +249,9 @@ its plan; the plan is where its acceptance is read.
   "A script plays and holds what the editors do")*. Opened 2026-10-03 by the
   user: no event with automation can be played from the client except through
   a sequence's lane, so a pattern, a routine and a timeline have no curves.
-  Its decisions are written; it needs a server change (`/graph_addSlot` given
-  a def).
+  The direction is written and still open: an event graph per instrument,
+  sent with its def, its readers as slots added only for the controls a
+  note's curves drive; it needs `/graph_map` to name a private bus.
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**

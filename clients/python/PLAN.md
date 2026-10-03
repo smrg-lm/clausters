@@ -1974,47 +1974,75 @@ existing examples rewritten rather than new ones:
   step by step.
 - ⬜ **C62 — An event carries its curves** *(opened 2026-10-03 by the user,
   from `C59`'s review: there is no way to play an event with automation from
-  the client)*. A sequence's curves -- a channel's automation (a level, a CC)
+  the client; the direction below is the user's, still open to whatever
+  comes up)*. A sequence's curves -- a channel's automation (a level, a CC)
   and a note's own (a bend, its expression) -- sound only on the sequence's
   own playback: the event lane on a transport, where
   `clausters_editing::note_curves` samples each curve into a table and plays
   the notes inside event graphs (`clausters_core::event_graph`). An `Event`,
   a pattern or a routine has no curve at all, and `render_events` has none to
-  keep. Decided with the user:
+  keep.
   - **A curve is part of the event**: `Event(..., automation=[curve])`, so
     whatever plays events -- a pattern, a routine, a timeline -- plays its
     curves, and `render_events` keeps them because they travel in the
     events. A **channel's** curve is a playable of its own
     (`Automation({"control": "amp", "channel": 0}, points)`), read by the
     notes on that channel.
+  - **No def is loaded while anything plays.** A def is sent asynchronously
+    and a Faust one may take long to compile, so nothing that sounds may wait
+    on one. Everything a note with curves is made of is loaded beforehand,
+    and playing it is instantiating only -- commands a timed bundle takes.
+  - **One event graph per instrument, sent with its def.** A SynthDef or
+    FaustDef that is to be played with automation (a flag on the def) has its
+    event graph made by `event_graph` and sent with it, under the `tmp_ev`
+    prefix the server never persists. It holds the def as its voice (marked
+    `ends`), a private control bus per control, and **one slot per control's
+    reader** -- and the pitch node's slot, for a def with `freq` -- none of
+    them built until a note asks. Not one graph per combination of curved
+    controls, which a pattern only reveals as it plays: then a new
+    combination would be a def to load mid-play. Not a reader on every
+    control either, which would cost a node per control on every note.
+  - **Playing a note**: an `Event` with no automation is a `/synth_new`, as
+    today. One with automation is a `/graph_new` of its def's event graph,
+    then a `/graph_addSlot` per control its curves drive, and a `/graph_map`
+    of that port onto the slot's bus -- so a control with no curve keeps the
+    value it was started with, and a reader runs only where there is a curve,
+    as on the lane.
+  - **The one server change: `/graph_map` names a private bus.** It takes a
+    bus number today (`src/osc/translate/graph.rs`), and an instance's private
+    buses have numbers no client is told. Mapping a port onto one of its own
+    graph's buses by name is the same operation aimed inside the graph, not a
+    feature for notes. The mapping cannot be fixed in the def's `maps`
+    instead: a control mapped to a bus no reader writes would read that bus,
+    not its value.
   - **From the client, a curve is control events** (`set`) the client
-    schedules on its clock, and **the instrument goes inside a graph def**
-    beside a control member those `set`s drive -- the event graphs the lane
-    builds (`note_graph`, `channel_graph`, `pitch_def`), with the table
-    reader swapped for a control member. One rule for the graphs and for the
-    sampling (`value_at` every `CURVE_STEP`), so the two paths cannot sound
-    different.
-  - **A channel is a graph instance**: a group holding a member per channel
-    curve, each writing a private control bus, and a slot per sounding note
-    -- each slot its own group with the instrument, the note's own curve
-    members and the pitch node when it bends.
-  - **Who makes the channel's instance**: the first thing that sounds on that
-    channel and destination, curve or note; it is freed when nothing sounds
-    in it.
-  - **A slot's def is chosen when it is added** -- a server change
-    (`/graph_addSlot` given the note's graph def), rather than a new channel
-    instance per new shape of note with every `set` sent to the old and the
-    new instance while the old one still sounds. A channel's graph declares
-    one slot per shape of note today, which a lane knows from the whole
-    sequence and a pattern never does; and `/graph_new` cannot hand a
-    free-standing note graph the channel's buses, since an `external` bus is
-    bound only by a parent.
-  - **The control member ramps linearly over one step**, not a `Lag`: a
-    table read interpolates linearly between its samples, and `set` plus a
-    10 ms `Lag` would be steps smoothed exponentially and late -- a different
-    sound. The client sends each value one step early, timetagged on the
-    same grid, which gives the table's linear reading with the same sampling.
-    The 10 ms lag stays only where it is today, on a channel's curves.
+    schedules on its clock, onto the port of the reader's slot. One rule for
+    the graphs and for the sampling (`value_at` every `CURVE_STEP`), both in
+    `clausters-core`, so the two paths cannot sound different.
+  - **The reader ramps linearly over one step**, not a `Lag`: a table read
+    interpolates linearly between its samples, and `set` plus a 10 ms `Lag`
+    would be steps smoothed exponentially and late -- a different sound. The
+    client sends each value one step early, timetagged on the same grid,
+    which gives the table's linear reading with the same sampling. The 10 ms
+    lag stays only where it is today, on a channel's curves.
+  - **A channel is a graph instance**: a group holding a reader per channel
+    curve, each writing a private control bus, and its notes as slots -- so
+    they read the channel's buses, which an `external` bus is bound to only
+    by a parent. It is made by the first thing that sounds on that channel
+    and destination, curve or note, and freed when nothing sounds in it.
+
+  **Open:**
+  - **Which notes a channel holds.** A channel's graph declares its slots
+    beforehand, a note's event graph each, and a channel belongs to no def:
+    a note of an instrument it did not declare can come after it is made.
+  - **A FaustDef written as source.** The client knows a def's controls only
+    from its `signals` or `box` form (`control_names`); a source def's are
+    known once the server has compiled it, so its event graph waits on a
+    query of them.
+  - **The lane on the same graph.** The lane builds a graph per combination
+    of curved controls today, its readers reading tables. Whether it moves to
+    the per-instrument graph, with table readers in the slots, is what keeps
+    one shape of graph for a note whichever path plays it.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
