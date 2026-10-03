@@ -427,8 +427,8 @@ opened it.
 
   - ✅ **X3.0 - Before the editor.** The float velocity the host read as 100
     ("A roll's edit sends every note at its velocity's amplitude", Found by use),
-    and a timeline on a server transport hearing an edit (`C54`). Left: `C54`'s
-    by-ear pass over `editors/edit_notes`, which is the user's.
+    and a timeline on a server transport hearing an edit (`C54`). `C54` was
+    closed 2026-10-03 without its by-ear pass, and its edit half removed.
   - ✅ **X3.1 - `Event` in the core**: families, coherence, `alter`, `type`,
     render per destination; the C and wasm doors; both clients delegate and
     delete their own derivation (`midinote()`, `freq()`, `sustain()`, velocity ↔

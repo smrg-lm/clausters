@@ -4437,7 +4437,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `clients/python/PLAN.md` ("A timeline plays what is under the cursor, and an
   edit reaches the pass that is running"), opened 2026-09-08 when the by-ear
   check of this work found the other half of it: a clip dragged while the line
-  is about to reach it is left sounding where it no longer is.
+  is about to reach it is left sounding where it no longer is. *(`C54` closed
+  2026-10-03: the multitrack's transport and the event lane do this, and no
+  client re-cues.)*
 
   **Related:** `O24`. This is what a multitrack's transport *is*, and doing it
   before the application is taking it off the application's first day.

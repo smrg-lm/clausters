@@ -253,32 +253,6 @@ its plan; the plan is where its acceptance is read.
   sent with its def, its readers as slots added only for the controls a
   note's curves drive; it needs `/graph_map` to name a private bus.
 
-- ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
-  the pass that is running**, with its port **`W31`**
-  *(`clients/python/PLAN.md`; `clients/web/PLAN.md`)*. Opened 2026-09-08 by the
-  user, hearing the by-ear check of the host's cursor work: a clip dragged while
-  the line is about to reach it goes on sounding where it no longer is. Not the
-  branch's, and near work all the same - it is the **sound** half of the rule
-  whose drawn half shipped that day ("One cursor, it is the transport's, and the
-  content never moves it", `clients/gui/PLAN.md`), and `O24`'s multitrack is an
-  editor that rewrites a playing timeline by hand, which is exactly what
-  `seq.timeline` was not written for -- a mismatch and not a verdict on the
-  object.
-
-  **Its first question was answered on 2026-09-08 and most of it moved into
-  `O24`.** The multitrack plays through the **server's transport** rather than
-  scanning a queue in a client, so the audio half needs no player anywhere. What
-  is still `C54`/`W31` is the **events** half -- a region of notes fires voices,
-  so it keeps a queue on `/sched_atTransport` and a re-cue on a locate -- which
-  is now near `O24` rather than before it, and small enough to land with the
-  multitrack's roll lane. Its reproduction is the plan's "A pass re-cued from
-  the playhead drops the clip the playhead is inside", whose rule (discrete
-  contents start at the next onset) was decided with the `Timeline` on
-  2026-09-17. **The ground moved under it that day**: `Playhead` is gone, and a
-  `Timeline` on a server transport re-cues on a locate with `/sched_clear
-  "transport"`, so the milestone's "what is there today" is to be re-read
-  against that before it is taken up.
-
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
   layer only: the sub-two-sample columns and the joined segments take the same

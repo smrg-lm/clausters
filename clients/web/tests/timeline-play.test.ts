@@ -16,7 +16,7 @@ import { Routine } from "../src/base/stream.ts";
 import type { OscNrtInterface } from "../src/base/connection.ts";
 import { Session } from "../src/session.ts";
 import { Event } from "../src/seq/event.ts";
-import { Entry, OscItem, Timeline } from "../src/seq/timeline.ts";
+import { OscItem, Timeline } from "../src/seq/timeline.ts";
 
 await loadCore();
 
@@ -264,77 +264,6 @@ test("a tempo change on the map is heard", async () => {
     assert.deepEqual(secs("/a"), [0, 1, 2, 2.5]);
 });
 
-// ---- an edit reaches the pass that is running ----
-
-/**
- * Plays four `/a` a beat apart and applies `edit(timeline, entries)` at
- * `secs`; the score seconds of `/a` and `/b`.
- */
-async function editedAt(
-    secs: number,
-    edit: (tl: Timeline, entries: Entry[]) => void,
-): Promise<[number[], number[]]> {
-    const { s, secs: heard } = await nrt();
-    const tl = new Timeline();
-    const entries = [0, 1, 2, 3].map((b) => tl.add(b, OscItem("/a")));
-    tl.play({ destination: s.server });
-    at(s, secs, () => edit(tl, entries));
-    render(s);
-    return [heard("/a"), heard("/b")];
-}
-
-test("an item added behind the line replays nothing", async () => {
-    // The pass is located by time: an insert before it shifts nothing it reads.
-    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(0.5, OscItem("/b"))),
-        [[0, 1, 2, 3], []]);
-});
-
-test("an item removed behind the line skips nothing", async () => {
-    assert.deepEqual(await editedAt(1.5, (tl, e) => tl.remove(e[0]!)), [[0, 1, 2, 3], []]);
-});
-
-test("an item added ahead sounds on its own beat", async () => {
-    // Before the beat the pass was sleeping to, so the edit has to wake it.
-    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(1.75, OscItem("/b"))),
-        [[0, 1, 2, 3], [1.75]]);
-});
-
-test("an item removed ahead goes quiet", async () => {
-    assert.deepEqual(await editedAt(1.5, (tl, e) => tl.remove(e[2]!)), [[0, 1, 3], []]);
-});
-
-test("an item moved across the line sounds where it lands ahead", async () => {
-    // Dragged from behind the line to ahead of it: heard once more, there.
-    // Dragged from ahead to behind: not recovered.
-    assert.deepEqual(await editedAt(1.5, (tl, e) => tl.move(e[0]!, 2.5)),
-        [[0, 1, 2, 2.5, 3], []]);
-    assert.deepEqual(await editedAt(1.5, (tl, e) => tl.move(e[3]!, 0.5)), [[0, 1, 2], []]);
-});
-
-test("an edit on the beat just played does not play it again", async () => {
-    // An item rendered at beat 2 edits its own timeline there: the pass is past
-    // that onset, so neither the item nor one added at the same beat plays.
-    class EditsAtItsOnset {
-        readonly timeline: Timeline;
-
-        constructor(timeline: Timeline) {
-            this.timeline = timeline;
-        }
-
-        play(): void {
-            this.timeline.add(2, OscItem("/b"));
-        }
-    }
-
-    const { s, secs } = await nrt();
-    const tl = new Timeline(osc("/a", [0, 1, 2, 3]));
-    tl.add(2, new EditsAtItsOnset(tl));
-    tl.play({ destination: s.server });
-    render(s);
-    assert.deepEqual(secs("/a"), [0, 1, 2, 3]);
-    assert.deepEqual(secs("/b"), []);
-});
-
 test("items at one beat still play in the order they were added", async () => {
     const heard: string[] = [];
 
@@ -355,47 +284,4 @@ test("items at one beat still play in the order they were added", async () => {
     tl.play({ destination: s.server });
     render(s);
     assert.deepEqual(heard, ["zero", "first", "second"]);
-});
-
-test("a replace mid-pass plays each onset once", async () => {
-    // The editor's write-back is `replace`, which builds every entry anew.
-    assert.deepEqual(await editedAt(1.5, (tl) => tl.replace(osc("/a", [0, 1, 2, 3]))),
-        [[0, 1, 2, 3], []]);
-});
-
-test("an edit inside a child reaches the parent's pass", async () => {
-    const { s, secs } = await nrt();
-    const child = new Timeline(osc("/a", [0, 2]));
-    const parent = new Timeline();
-    parent.add(1, child);
-    parent.play({ destination: s.server });
-    at(s, 1.5, () => child.add(1, OscItem("/b")));
-    render(s);
-    assert.deepEqual(secs("/a"), [1, 3]);
-    assert.deepEqual(secs("/b"), [2]);
-});
-
-test("a child moved while it plays goes on from where it lands", async () => {
-    const { s, secs } = await nrt();
-    const child = new Timeline(osc("/b", [0, 1, 2, 3]));
-    const parent = new Timeline();
-    const entry = parent.add(0, child);
-    parent.play({ destination: s.server });
-    // At second 1.5 the child is at its beat 1.5; moved to start at 1, it is at
-    // its beat 0.5 there, so its next onset is its beat 1, at second 2.
-    at(s, 1.5, () => parent.move(entry, 1));
-    render(s);
-    assert.deepEqual(secs("/b"), [0, 1, 2, 3, 4]);
-});
-
-test("a child removed while it plays goes quiet", async () => {
-    const { s, secs } = await nrt();
-    const child = new Timeline(osc("/b", [0, 1, 2, 3]));
-    const parent = new Timeline(osc("/a", [3]));
-    const entry = parent.add(0, child);
-    parent.play({ destination: s.server });
-    at(s, 1.5, () => parent.remove(entry));
-    render(s);
-    assert.deepEqual(secs("/b"), [0, 1]);
-    assert.deepEqual(secs("/a"), [3]);
 });

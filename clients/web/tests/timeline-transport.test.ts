@@ -336,58 +336,9 @@ function rolledTo(server: TransportServer, secs: number): void {
     server.state.positionSample = Math.trunc(secs * SR);
 }
 
-test("an edit while rolling re-plans from where the transport is", async () => {
-    const server = new TransportServer();
-    const tl = timeline();
-    tl.transport = server;
-    tl.play({ at: 0, destination: server });
-    await tl.refresh();
-    rolledTo(server, 1.2); // beat 2.4
-    server.calls = [];
-    (server.connection as OscNrtInterface).score.clear();
-
-    tl.add(2.3, OscItem("/b")); // just behind the position
-    await tl.refresh();
-
-    assert.deepEqual(server.calls[0], ["clear", "transport"]);
-    // The plan is written again on the samples the first one used: the item
-    // at beat 3 stays at 1.5 s, and the new one a tenth of a beat behind the
-    // position -- stamped `latency` ahead, so not yet sounded -- is planned
-    // too, at 1.15 s. The item at beat 2, a full latency behind, has sounded.
-    assert.deepEqual(server.onsets(), [1.15, 1.5]);
-});
-
-test("an edit before any play plans nothing", async () => {
-    const server = new TransportServer();
-    const tl = timeline();
-    tl.transport = server;
-    tl.add(1.0, OscItem("/b"));
-    await tl.refresh();
-    assert.deepEqual(server.onsets(), []);
-});
-
-test("an edit while paused rewrites the frozen queue", async () => {
-    const server = new TransportServer();
-    const tl = timeline();
-    tl.transport = server;
-    tl.play({ at: 0, destination: server });
-    await tl.refresh();
-    rolledTo(server, 0.55);
-    tl.pause();
-    await tl.refresh();
-    (server.connection as OscNrtInterface).score.clear();
-
-    tl.add(2.5, OscItem("/b"));
-    await tl.refresh();
-    // From the paused position on, with the new item among them and the onset
-    // at half a second, which the pause froze before it sounded; a resume
-    // carries the rewritten queue on.
-    assert.deepEqual(server.onsets(), [0.5, 1, 1.25, 1.5]);
-});
-
 test("a re-cue keeps the release of what is sounding", async () => {
-    // A note that started before the re-cue is still sounding, and its release
-    // is in the queue the re-cue clears: it is sent back, on its own sample, or
+    // A note that started before a locate is still sounding, and its release
+    // is in the queue the locate clears: it is sent back, on its own sample, or
     // the note would never end.
     const server = new TransportServer();
     const tl = new Timeline(
@@ -401,12 +352,7 @@ test("a re-cue keeps the release of what is sounding", async () => {
     rolledTo(server, 1.0); // sounding
     (server.connection as OscNrtInterface).score.clear();
 
-    tl.add(3.0, OscItem("/b"));
-    await tl.refresh();
-    assert.deepEqual(server.onsets(), [1.5, 2]);
-
-    // A locate keeps it too: the transport's clock does not jump.
-    (server.connection as OscNrtInterface).score.clear();
+    // The transport's clock does not jump, so the release is due where it was.
     tl.locate(6.0);
     await tl.refresh();
     assert.deepEqual(server.onsets(), [2]);

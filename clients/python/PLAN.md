@@ -200,8 +200,8 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
 
 - ✅ **C37 — The free-standing `scope`: real-time views of a live bus** *(done 2026-07-16)*: the real-time sibling of C36's `plot` — the three tap-fed instruments the host already carries (the G18 oscilloscope, the G19 phasescope and live spectrum), reachable in one verb. `clausters.scope(bus, view="signal"|"phase"|"spectrum")` resolves the ambient live server (`main.resolve_server`) and the ambient GUI host — the same owned host `plot` uses, here booted **wired to the server** (address + `shm` segment, the native tap read path; an owned host booted leg-less is rebooted wired when a leg is first needed); a `server` handle without a segment fails early with guidance (pass `host=` for an attached or browser host). The tap indices come from a new **client-side tap registry** (`Server.taps`, a `TapAllocator` over the core occupancy map, sized from `ServerOptions.taps` like the bus allocators — S10 spirit: freed runs reuse, double free and exhaustion raise), so two scopes never fight over one ring; the phase view takes a run of **two adjacent** taps for the stereo pair `bus`/`bus + 1`. The verb routes each tap (`/bus_tap`), opens the window and returns a `ScopeWindow` whose `set` retunes the display live and whose `close` releases everything — `/bus_tap … -1`, the registry run, the window. Host side, the `spectrum` widget's `log_freq` grew into `freq_scale` = linear/log/mel/bark through the shared `display_to_hz` geometry (the G20b move; the boolean stays as a legacy alias in parse and `/gui_set`), so the spectroscope's axis matches the spectrogram's and is retunable live. Docs: the Sessions page's "Scoping a live signal" section; example `examples/views/scoping.py`; a manual smoke step. Tests: `tests/test_scope.py` — the tap registry (recycle/adjacent pairs/misuse), per-view tree building and tap release against fake host/server; the host-side scale in the gui crate's widget tests. *(Follow-up: GUI G28 generalized the verb to `channels` consecutive buses — multichannel lanes/overlay, axis rulers, a visible trigger — and its docs to a brief user manual.)*
 
-- ⬜ **C54 — A timeline plays what is under the cursor, and an edit reaches the
-  pass that is running** *(opened 2026-09-08 by the user, after hearing a clip
+- ✅ **C54 — A timeline plays what is under the cursor, and an edit reaches the
+  pass that is running** *(closed 2026-10-03; opened 2026-09-08 by the user, after hearing a clip
   dragged while the line was about to reach it: "hay que revisar la
   implementacion del sistema de reproduccion de las lineas temporales editables
   de los clientes ... los elementos estan en una cola temporal, cuando el cursor
@@ -335,6 +335,22 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   sounding: `sched_clear("transport")` took them with the onsets, and a note
   that was on at a locate never ended. The player keeps what it queued and
   sends those releases back on their own samples. Four tests each side.
+
+  **Closed 2026-10-03 by the user, and the edit half taken out.** What opened
+  it is gone: the multitrack plays through the server's transport (`O24`), a
+  sequence's notes play on an event lane (`PLAN.md`, `T8`), and the notes
+  editor edits an `EventSequence`, which the lane hears from where the
+  position is. A `Timeline` is a client abstraction rendered into that
+  sequence (`docs/decisions.md`, "A timeline renders to a sequence and holds
+  none"), and it is not a live-coding surface, so nothing edits one while it
+  plays. Removed in both clients: an edit telling the players of the timeline
+  and its ancestors, the pass woken and rejoined after an edit (and the lock
+  the editor's thread needed), a child following its entry mid-pass, and the
+  re-plan on a transport. Kept, since they are not about edits: the pass
+  located by a beat rather than an index, and a re-cue -- a locate, a
+  conductor's locate -- sending back the releases of what is sounding. The
+  by-ear pass over `editors/edit_notes` does not apply: that window edits the
+  sequence, not a timeline.
 
 
 - ✅ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.
@@ -4988,8 +5004,8 @@ work, where a pending item reads as done.)*
   on a 96 000-frame take at 48 kHz: a `dur` of 2.0 sounded its two seconds at
   tempo 1 and was freed after **one** at tempo 2 — half the take.
 
-- ⬜ **A pass re-cued from the playhead drops the clip the playhead is
-  inside** *(found 2026-09-07 by the user, by eye, in `editors/multitrack`:
+- ✅ **A pass re-cued from the playhead drops the clip the playhead is
+  inside** *(closed 2026-10-03 with `C54`; found 2026-09-07 by the user, by eye, in `editors/multitrack`:
   moving a clip **onto the playhead** while the piece plays makes it fall
   silent)*. `Playhead.play(at=...)` starts the scan at
   `Timeline.index_at(at)`, which is *the first item at or after that beat*, so
@@ -5090,6 +5106,10 @@ work, where a pending item reads as done.)*
   when the line reaches it, and one dragged away from the line goes quiet --
   the server's transport doing it, as `O24` designed. What keeps this entry
   open is the events half, whose by-ear pass waits on `X3` (see `C54`).
+  *(Closed 2026-10-03: the events half is the event lane's, keyed by the
+  transport's position, so a note under the line starts at its next onset
+  with nothing re-cued in a client; `C54` says why its timeline half had no
+  case left.)*
 
 - ✅ **Half the editors a hand can use have no history, because they edit
   through the raw event** *(found 2026-09-07 by the user, by eye, in

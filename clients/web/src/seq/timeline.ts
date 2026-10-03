@@ -211,7 +211,6 @@ export class Timeline {
         }
         const entry = new Entry(beat, item);
         this.entries.splice(this.insertIndex(beat), 0, entry);
-        this.edited();
         return entry;
     }
 
@@ -220,7 +219,6 @@ export class Timeline {
         const i = this.entries.indexOf(entry);
         if (i >= 0) this.entries.splice(i, 1);
         if (entry.item instanceof Timeline) entry.item.parent = null;
-        this.edited();
         return this;
     }
 
@@ -230,7 +228,6 @@ export class Timeline {
         if (i >= 0) this.entries.splice(i, 1);
         entry.beat = newBeat;
         this.entries.splice(this.insertIndex(newBeat), 0, entry);
-        this.edited();
         return entry;
     }
 
@@ -238,7 +235,6 @@ export class Timeline {
     clear(): this {
         for (const e of this.entries) if (e.item instanceof Timeline) e.item.parent = null;
         this.entries = [];
-        this.edited();
         return this;
     }
 
@@ -262,25 +258,7 @@ export class Timeline {
         for (const e of this.entries) if (e.item instanceof Timeline) e.item.parent = null;
         for (const child of children) child.parent = this;
         this.entries = entries;
-        this.edited();
         return this;
-    }
-
-    /**
-     * Tells whatever is playing this timeline -- itself, or an ancestor it is a
-     * child of -- that the plan changed under it.
-     *
-     * **An edit reaches the pass that is running.** A pass is located by time
-     * rather than by a place in the list, so it only has to hear that the list
-     * changed: what is due next is read again from where the pass is, an item
-     * added ahead of it sounds when the line reaches it, one removed ahead of it
-     * does not, and one whose onset the line has already passed is not
-     * recovered.
-     */
-    private edited(): void {
-        for (let node: Timeline | null = this; node !== null; node = node.parent) {
-            node.player?.edited();
-        }
     }
 
     /**
@@ -325,7 +303,6 @@ export class Timeline {
             entry.beat = Math.max(0, Math.round(entry.beat / grid) * grid);
         }
         this.entries.sort((a, b) => a.beat - b.beat);
-        this.edited();
         return this;
     }
 
@@ -807,11 +784,8 @@ function firstUnreached(entries: readonly Entry[], beat: number, inclusive: bool
  * seconds, where its pass is, and the children it has entered.
  *
  * **Where the pass is, is a beat** -- `beat`, and whether an item *at* that
- * beat is still to come (`inclusive`) -- and never an index into the list. An
- * index is a position stored in terms of the content, so it moves when the
- * content does: an item added behind it made the pass replay what it had just
- * played, and one removed behind it made it skip what came next. The list is
- * read again on every step instead.
+ * beat is still to come (`inclusive`) -- and never an index into the list,
+ * which is read again on every step.
  */
 class TimelineNode {
     readonly player: TreeDriver;
@@ -914,47 +888,6 @@ class TimelineNode {
         }
     }
 
-    /**
-     * Brings this subtree to `secs` of the root's axis after an edit.
-     *
-     * The pass moves up to the beat that corresponds, so an onset the line has
-     * already passed is not recovered, whichever list it passed it in. A child
-     * keeps playing where it is only while its entry still places it there: one
-     * removed, or moved, is released, and whatever child the position is inside
-     * is entered at the beat that corresponds -- the rule `enter` follows,
-     * applied to the list as the edit left it.
-     */
-    follow(secs: number): void {
-        const tl = this.timeline;
-        const local = tl.map.beatsAt(secs - this.origin);
-        if (local > this.beat) {
-            this.beat = local;
-            this.inclusive = true;
-        }
-        const placed = new Map<Timeline, number>();
-        for (const e of tl.entryList.slice(0, this.index())) {
-            if (e.item instanceof Timeline) placed.set(e.item, this.origin + tl.map.secsAt(e.beat));
-        }
-        const kept: TimelineNode[] = [];
-        for (const child of this.children) {
-            const origin = placed.get(child.timeline);
-            if (origin !== undefined && Math.abs(origin - child.origin) < 1e-9) {
-                placed.delete(child.timeline);
-                child.follow(secs);
-                kept.push(child);
-            } else {
-                this.player.release(child);
-            }
-        }
-        for (const [child, origin] of placed) {
-            const at = child.map.beatsAt(secs - origin);
-            if ((at >= 0 && at < child.duration()) || child.looping()) {
-                kept.push(new TimelineNode(this.player, child, origin, at));
-            }
-        }
-        this.children = kept;
-    }
-
     prune(): void {
         this.children = this.children.filter((c) => c.nextDue() !== null);
         for (const c of this.children) c.prune();
@@ -983,8 +916,8 @@ class TimelineNode {
  * **Clearing the queue keeps what is sounding.** The queue holds the releases
  * of the nodes already started as well as the onsets still to come, and
  * dropping a release leaves its note on forever. So every bundle the plan
- * queues is kept here, and a re-cue -- a locate, a conductor's locate, an edit
- * -- sends back the ones that only address nodes already started, on their own
+ * queues is kept here, and a re-cue -- a locate, a conductor's locate -- sends
+ * back the ones that only address nodes already started, on their own
  * samples: the transport's clock does not jump, so a release is due where it
  * always was.
  *
@@ -1032,11 +965,6 @@ export class TransportPlayer implements TreeDriver {
      * sounding. What a re-cue sends back.
      */
     private queued: [number, readonly TimedMessage[], boolean][] = [];
-    /**
-     * Whether the transport's queue holds a plan: written by a play or a
-     * re-cue, kept by a pause, gone after a locate that re-plans nothing.
-     */
-    private planned = false;
 
     /**
      * The server whose transport this plays on, held rather than read from the
@@ -1167,7 +1095,6 @@ export class TransportPlayer implements TreeDriver {
             this.reported = { ...this.reported, positionSample: sample };
             this.cued = sample;
             if (cue && this.reported.playing) await this.plan(beat);
-            else this.planned = false;
         });
     }
 
@@ -1189,32 +1116,6 @@ export class TransportPlayer implements TreeDriver {
      */
     release(_node: TimelineNode | null): void {
         this.owned = [];
-    }
-
-    /**
-     * The plan changed under a queue that holds it: write it again from where
-     * the transport is, rolling or paused.
-     *
-     * The walk starts `latency` earlier than the position, since an onset just
-     * behind the position was stamped `latency` ahead of it and has not
-     * sounded yet: clearing the queue took it, and the re-plan puts it back on
-     * the same sample. What was sounding keeps its release (see the class),
-     * and an onset the transport has passed is not recovered -- the clock
-     * player's rule for an edit.
-     */
-    edited(): void {
-        this.queue(async () => {
-            if (!this.planned) return;
-            const rate = await this.rateOf();
-            const state = await this.server.transportState();
-            const secs = Math.max(this.timelineSecs(Number(state.positionSample)), 0);
-            const lead = Math.max(secs - this.server.latency, 0);
-            this.clear(Number(state.transportSample));
-            await this.plan(this.rootBeat(secs), this.rootBeat(lead), [
-                Number(state.transportSample),
-                rate,
-            ]);
-        });
     }
 
     /**
@@ -1275,22 +1176,17 @@ export class TransportPlayer implements TreeDriver {
      * The walk is the clock player's -- the same nodes, the same entry rule, the
      * same units -- with the waiting taken out: there is no time to pass here,
      * since every item names a sample of a clock the engine is running.
-     * `at` is the beat the transport's clock stands on at `clock` (a
-     * `[transportSample, rate]` asked for when not given); `since`, where the
-     * walk starts, is `at` unless an edit asks for the onsets just behind it
-     * too.
+     * `at` is the beat the transport's clock stands on, and where the walk
+     * starts.
      */
-    private async plan(at: number, since = at, clock?: [number, number]): Promise<void> {
-        const [base, rate] = clock ?? [
-            Number((await this.server.transportState()).transportSample),
-            await this.rateOf(),
-        ];
+    private async plan(at: number): Promise<void> {
+        const base = Number((await this.server.transportState()).transportSample);
+        const rate = await this.rateOf();
         this.stamp = [base, this.rootSecs(at), rate];
-        this.planned = true;
         const stub = { clock: null as unknown, logicalBeat: 0 };
         const previous = setCurrentRoutine(stub as unknown as Stream);
         try {
-            this.root = new TimelineNode(this, this.timeline, 0, since);
+            this.root = new TimelineNode(this, this.timeline, 0, at);
             this.finished = false;
             for (;;) {
                 const due = this.root.nextDue();
@@ -1412,8 +1308,6 @@ export class TimelinePlayer implements TreeDriver {
     private engine: Routine | null = null;
     private epoch = 0;
     private held = 0;
-    /** The beat the pass is sleeping to: an onset, or the loop's end. */
-    private due = 0;
 
     readonly timeline: Timeline;
 
@@ -1433,23 +1327,6 @@ export class TimelinePlayer implements TreeDriver {
 
     /** Nothing to give up: a timeline on its own clock listens to nothing. */
     close(): void {}
-
-    /**
-     * The plan changed while it plays: wakes the pass now, so it reads again
-     * what is due next instead of sleeping to what was. The pass itself is
-     * brought to the new list when it runs.
-     */
-    edited(): void {
-        if (!this.running || this.root === null || this.clock === null) return;
-        this.epoch += 1;
-        const epoch = this.epoch;
-        if (this.engine !== null) this.clock.unsched(this.engine);
-        const player = this;
-        this.engine = new Routine(function* () {
-            yield* player.rejoin(epoch);
-        });
-        this.clock.schedAbs(this.clock.beats(), this.engine);
-    }
 
     rootSecs(beat: number): number {
         return this.timeline.map.secsAt(beat);
@@ -1594,23 +1471,7 @@ export class TimelinePlayer implements TreeDriver {
     *run(epoch: number, at: number): Generator<number, void, unknown> {
         this.root = new TimelineNode(this, this.timeline, 0, at);
         const me = currentRoutine()!;
-        this.due = at;
         if (me.logicalBeat < at) yield at - me.logicalBeat;
-        yield* this.pass(epoch);
-    }
-
-    /**
-     * The pass after an edit: the tree brought to where the clock is, and on
-     * from there.
-     *
-     * **Never past the beat the pass was sleeping to.** A clock wakes a little
-     * late, so an edit can arrive after an onset's time and before the pass has
-     * played it; moving the pass to the clock's beat then would skip a note
-     * nobody passed.
-     */
-    *rejoin(epoch: number): Generator<number, void, unknown> {
-        const at = Math.min(currentRoutine()!.logicalBeat, this.due);
-        this.root!.follow(this.rootSecs(at));
         yield* this.pass(epoch);
     }
 
@@ -1622,7 +1483,6 @@ export class TimelinePlayer implements TreeDriver {
             if (loop !== null && (due === null || due[0] >= this.rootSecs(loop[1]))) {
                 const wait = loop[1] - me.logicalBeat;
                 if (wait > 0) {
-                    this.due = loop[1];
                     yield wait;
                     if (!(this.running && epoch === this.epoch)) return;
                 }
@@ -1640,7 +1500,6 @@ export class TimelinePlayer implements TreeDriver {
             const beat = due[2] ?? this.rootBeat(due[0]);
             const wait = beat - me.logicalBeat;
             if (wait > 0) {
-                this.due = beat;
                 yield wait;
                 if (!(this.running && epoch === this.epoch)) return;
             }

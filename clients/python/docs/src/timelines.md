@@ -92,7 +92,7 @@ The clock it plays on belongs to **the session it sounds in**: it is made there,
 
 **What is sounding when a timeline moves.** A locate, a stop or a loop's wrap does not cut what already started: notes keep their own releases. What comes next is decided by what the contents are — a discrete item (an event, a message, a routine) plays from the **next onset**, and one whose onset the new position has passed is not recovered.
 
-**Editing it while it plays.** A pass is located by **time**, not by a place in the list, and every edit — `add`, `remove`, `move`, `clear`, `replace`, `quantize` — reaches the pass that is running. So an item added ahead of the line sounds when the line reaches it, one removed or moved away before then does not, and one whose onset the line has already passed is not recovered: the same rule as a locate, applied to the edit. An edit behind the line shifts nothing — the pass neither plays again what it just played nor skips what comes next. A child timeline follows its entry: moved while it plays, it goes on from where it landed; removed, it goes quiet. Edits may come from another thread, such as the event loop an editor's gestures arrive on.
+**It is edited before it plays.** A pass reads the plan as it goes, and nothing re-cues it when the plan changes, so an edit is heard from the next play or locate. What is edited while it sounds is an `EventSequence`: `render_events` turns a timeline into one, and the sequence plays on a transport, where an edit through its objects is heard from where the position is.
 
 ## Timelines in timelines
 
@@ -209,7 +209,7 @@ The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport'
 
 **A conductor drives every follower**, and the mode is the whole of the following: a play, a stop or a locate somebody else sent arrives as a `/transport_query.reply` broadcast, and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each estimating its own. `conductor.py` ([Examples](examples.md)) puts two followers on one transport.
 
-**An edit is heard while it rolls**, and while it is paused. The plan is written again from where the transport stands: the queue is cleared and every item from the position on is stamped anew, starting `latency` earlier so an onset stamped just before the edit and not yet sounded is put back on its sample. An onset the transport has passed is not recovered, the rule a timeline on its own clock follows. **What is sounding keeps its release** through any re-cue — an edit, a locate, a conductor's locate: the timeline keeps what it queued, and sends back the releases of the notes already started, on their own samples.
+**What is sounding keeps its release** through any re-cue — a locate, a conductor's locate: the timeline keeps what it queued, and sends back the releases of the notes already started, on their own samples.
 
 **What the mode refuses**, because it would be a second answer to a question the engine already answers: a `quant` (the start is the transport's — locate where you want it and roll), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position, so it is refused by name. All three are the client-clock mode's.
 

@@ -168,7 +168,6 @@ class Timeline:
             item.parent = self
         entry = _Entry(float(beat), item)
         bisect.insort(self._entries, entry, key=lambda e: e.beat)
-        self._edited()
         return entry
 
     def remove(self, entry):
@@ -176,7 +175,6 @@ class Timeline:
         self._entries.remove(entry)
         if isinstance(entry.item, Timeline):
             entry.item.parent = None
-        self._edited()
         return self
 
     def move(self, entry, new_beat):
@@ -184,7 +182,6 @@ class Timeline:
         self._entries.remove(entry)
         entry.beat = float(new_beat)
         bisect.insort(self._entries, entry, key=lambda e: e.beat)
-        self._edited()
         return entry
 
     def clear(self):
@@ -193,7 +190,6 @@ class Timeline:
             if isinstance(e.item, Timeline):
                 e.item.parent = None
         self._entries.clear()
-        self._edited()
         return self
 
     def replace(self, items):
@@ -220,24 +216,7 @@ class Timeline:
         for child in children:
             child.parent = self
         self._entries = entries
-        self._edited()
         return self
-
-    def _edited(self):
-        """Tell whatever is playing this timeline -- itself, or an ancestor it
-        is a child of -- that the plan changed under it.
-
-        **An edit reaches the pass that is running.** A pass is located by
-        time rather than by a place in the list, so it only has to hear that
-        the list changed: what is due next is read again from where the pass
-        is, an item added ahead of it sounds when the line reaches it, one
-        removed ahead of it does not, and one whose onset the line has already
-        passed is not recovered."""
-        node = self
-        while node is not None:
-            if node._player is not None:
-                node._player.edited()
-            node = node.parent
 
     def _check_child(self, item, replacing=False):
         """Refuses a child that already has another parent, or that is this
@@ -279,7 +258,6 @@ class Timeline:
         for e in self._entries:
             e.beat = max(0.0, round(e.beat / g) * g)
         self._entries.sort(key=lambda e: e.beat)
-        self._edited()
         return self
 
     # ---- random access by time ----
@@ -643,10 +621,7 @@ class _Node:
 
     **Where the pass is, is a beat** -- ``beat``, and whether an item *at*
     that beat is still to come (``inclusive``) -- and never an index into the
-    list. An index is a position stored in terms of the content, so it moves
-    when the content does: an item added behind it made the pass replay what it
-    had just played, and one removed behind it made it skip what came next.
-    The list is read again on every step instead."""
+    list, which is read again on every step."""
 
     def __init__(self, player, timeline, origin, beat):
         self.player = player
@@ -729,38 +704,6 @@ class _Node:
             else:
                 self.player.render(self, e.beat, item)
 
-    def follow(self, secs):
-        """Bring this subtree to ``secs`` of the root's axis after an edit.
-
-        The pass moves up to the beat that corresponds, so an onset the line
-        has already passed is not recovered, whichever list it passed it in.
-        A child keeps playing where it is only while its entry still places it
-        there: one removed, or moved, is released, and whatever child the
-        position is inside is entered at the beat that corresponds -- the rule
-        `enter` follows, applied to the list as the edit left it."""
-        tl = self.timeline
-        local = tl._map.beats_at(secs - self.origin)
-        if local > self.beat:
-            self.beat, self.inclusive = local, True
-        placed = {}
-        for e in tl._entries[:self._index()]:
-            if isinstance(e.item, Timeline):
-                placed[id(e.item)] = (e.item, self.origin + tl._map.secs_at(e.beat))
-        kept = []
-        for child in self.children:
-            where = placed.get(id(child.timeline))
-            if where is not None and abs(where[1] - child.origin) < 1e-9:
-                del placed[id(child.timeline)]
-                child.follow(secs)
-                kept.append(child)
-            else:
-                self.player.release(child)
-        for child, origin in placed.values():
-            at = child._map.beats_at(secs - origin)
-            if 0.0 <= at < child.duration() or child._looping():
-                kept.append(_Node(self.player, child, origin, at))
-        self.children = kept
-
     def prune(self):
         self.children = [c for c in self.children if c.next_due() is not None]
         for c in self.children:
@@ -785,8 +728,8 @@ class _TransportPlayer:
     **Clearing the queue keeps what is sounding.** The queue holds the
     releases of the nodes already started as well as the onsets still to come,
     and dropping a release leaves its note on forever. So every bundle the plan
-    queues is kept here, and a re-cue -- a locate, a conductor's locate, an edit
-    -- sends back the ones that only address nodes already started, on their own
+    queues is kept here, and a re-cue -- a locate, a conductor's locate --
+    sends back the ones that only address nodes already started, on their own
     samples: the transport's clock does not jump, so a release is due where it
     always was.
     """
@@ -823,11 +766,8 @@ class _TransportPlayer:
         #: transport, ``started`` once it is known to address only nodes that
         #: are already sounding. What a re-cue sends back.
         self._queued = []
-        #: Whether the transport's queue holds a plan: written by a play or a
-        #: re-cue, kept by a pause, gone after a locate that re-plans nothing.
-        self._planned = False
-        #: A re-cue from an edit, a broadcast and a verb may land on three
-        #: threads, and each one clears and rewrites the same queue.
+        #: A re-cue from a broadcast and one from a verb land on two threads,
+        #: and each one clears and rewrites the same queue.
         self._lock = threading.RLock()
 
     # the root's axis, as the clock player's
@@ -943,8 +883,6 @@ class _TransportPlayer:
             self._cued = sample
             if cue and self._reported.get("playing"):
                 self._plan(beat)
-            else:
-                self._planned = False
         return self
 
     def halt(self):
@@ -1012,26 +950,6 @@ class _TransportPlayer:
         is the transport's (cleared by a locate)."""
         self.owned = []
 
-    def edited(self):
-        """The plan changed under a queue that holds it: write it again from
-        where the transport is, rolling or paused.
-
-        The walk starts `latency` earlier than the position, since an onset
-        just behind the position was stamped `latency` ahead of it and has not
-        sounded yet: clearing the queue took it, and the re-plan puts it back
-        on the same sample. What was sounding keeps its release (see the
-        class), and an onset the transport has passed is not recovered -- the
-        clock player's rule for an edit."""
-        with self._lock:
-            if not self._planned:
-                return self
-            state = self._state()
-            secs = max(self._timeline_secs(state), 0.0)
-            self._clear(state)
-            lead = max(secs - getattr(self.server, "latency", 0.0), 0.0)
-            self._plan(self.root_beat(secs), since=self.root_beat(lead), state=state)
-        return self
-
     def _clear(self, state):
         """Clear the transport's queue and send back the releases of the nodes
         already sounding, on their own samples."""
@@ -1072,25 +990,23 @@ class _TransportPlayer:
         finally:
             me.clock, me._logical_beat = saved
 
-    def _plan(self, at, since=None, state=None):
+    def _plan(self, at, state=None):
         """Write the whole tree from ``at`` onto the transport's clock.
 
         The walk is the clock player's -- the same nodes, the same entry rule,
         the same units -- with the waiting taken out: there is no time to pass
         here, since every item names a sample of a clock the engine is running.
         ``at`` is the beat the transport's clock stands on in ``state`` (asked
-        for when not given); ``since``, where the walk starts, is ``at`` unless
-        an edit asks for the onsets just behind it too.
+        for when not given), and where the walk starts.
         """
         state = self._state() if state is None else state
         rate = self._rate()
         base = state["transport_sample"] / rate
         self._stamp = (base * rate, self.root_secs(at), rate)
-        self._planned = True
         stub = _PlanMoment()
         previous, main.current_routine = main.current_routine, stub
         try:
-            self.root = _Node(self, self.timeline, 0.0, float(at if since is None else since))
+            self.root = _Node(self, self.timeline, 0.0, float(at))
             self.finished = False
             while True:
                 due = self.root.next_due()
@@ -1140,11 +1056,6 @@ class _Player:
         self._engine = None
         self._epoch = 0
         self._held = 0.0
-        #: The beat the pass is sleeping to: an onset, or the loop's end.
-        self._due = 0.0
-        #: What an edit on another thread and the pass's own loop wrap take in
-        #: turn: both move where the pass is, and neither may land half-done.
-        self._lock = threading.Lock()
 
     # the root's axis: its beats and their seconds, through its map
     def root_secs(self, beat):
@@ -1236,23 +1147,6 @@ class _Player:
         """Nothing to ask: on its own clock the position is here."""
         return self
 
-    def edited(self):
-        """The plan changed while it plays: wake the pass now, so it reads
-        again what is due next instead of sleeping to what was.
-
-        Safe from another thread -- the host's event loop is where an editor's
-        edits arrive. Only the scheduling happens here; the pass itself is
-        brought to the new list on the clock's thread, where it runs."""
-        with self._lock:
-            if not self.running or self.root is None or self.clock is None:
-                return
-            self._epoch += 1
-            epoch = self._epoch
-            if self._engine is not None:
-                self.clock.unsched(self._engine)
-            self._engine = Routine(lambda: self._rejoin(epoch))
-            self.clock.sched_abs(self.clock.beats(), self._engine)
-
     def close(self):
         """Nothing to give up: a timeline on its own clock listens to nothing."""
         return self
@@ -1298,21 +1192,8 @@ class _Player:
     def _run(self, epoch, at):
         self.root = _Node(self, self.timeline, 0.0, at)
         me = main.current_routine
-        self._due = at
         if me._logical_beat < at:
             yield at - me._logical_beat
-        yield from self._pass(epoch)
-
-    def _rejoin(self, epoch):
-        """The pass after an edit: the tree brought to where the clock is, and
-        on from there.
-
-        **Never past the beat the pass was sleeping to.** A clock wakes a
-        little late, so an edit can arrive after an onset's time and before the
-        pass has played it; moving the pass to the clock's beat then would skip
-        a note nobody passed."""
-        at = min(main.current_routine._logical_beat, self._due)
-        self.root.follow(self.root_secs(at))
         yield from self._pass(epoch)
 
     def _pass(self, epoch):
@@ -1325,19 +1206,12 @@ class _Player:
                 if due is None or due[0] >= end_secs:
                     wait = loop[1] - me._logical_beat
                     if wait > 0:
-                        self._due = loop[1]
                         yield wait
                         if not (self.running and epoch == self._epoch):
                             return
-                    with self._lock:
-                        # An edit that arrived since the check above has
-                        # scheduled the pass that goes on; this one leaves
-                        # without moving the clock under it.
-                        if epoch != self._epoch:
-                            return
-                        self.release(None)
-                        self.clock.locate(loop[0])
-                        self.root = _Node(self, self.timeline, 0.0, loop[0])
+                    self.release(None)
+                    self.clock.locate(loop[0])
+                    self.root = _Node(self, self.timeline, 0.0, loop[0])
                     continue
             if due is None:
                 self._held = me._logical_beat
@@ -1347,7 +1221,6 @@ class _Player:
             beat = due[2] if due[2] is not None else self.root_beat(due[0])
             wait = beat - me._logical_beat
             if wait > 0:
-                self._due = beat
                 yield wait
                 if not (self.running and epoch == self._epoch):
                     return

@@ -1931,7 +1931,7 @@ wrapped beside the model, and `edit()` opening a piece.
   `edit-multitrack.html`, one program in two languages.)*
 
 
-### W31 - The timeline plays what is under the cursor (port of `C54`)
+### ✅ W31 - The timeline plays what is under the cursor (port of `C54`) *(closed 2026-10-03)*
 
 The port half of `C54` (`clients/python/PLAN.md`, "A timeline plays what is
 under the cursor, and an edit reaches the pass that is running"), which carries
@@ -1974,6 +1974,10 @@ in the same commit and with the same eleven tests; what both still wait on is
 written in `C54` ("Where it stands"). The transport half -- an edit heard on a
 server transport, and a re-cue that keeps the releases of what is sounding --
 landed in both on the same day, with the same four tests.
+
+**Closed 2026-10-03 with `C54`**, and its edit half taken out of
+`src/seq/timeline.ts` in the same commit as the Python one: `C54` says what
+went, what stayed and why no case was left for it.
 
 
 ## Parity gaps carried from the Python client
