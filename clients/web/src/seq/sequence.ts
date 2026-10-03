@@ -22,7 +22,7 @@ import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
 import { Automation } from "../multitrack.ts";
-import { UndoHistory, contexts } from "../history.ts";
+import { UndoHistory, contexts, keyOf } from "../history.ts";
 import { NotesPlayback, playSequence } from "./playback.ts";
 import { main } from "../base/main.ts";
 import type { Server } from "../defs/server/index.ts";
@@ -295,6 +295,59 @@ export class EventSequence {
             ? { intent: "automation", automation: written }
             : { intent: "eventautomation", id: event, automation: written };
         return Number(this.edit(intent, label).id);
+    }
+
+    /**
+     * Curve `id` as written, while the sequence -- or, with `event`, that
+     * event -- holds it: the curve holder's read, as a multitrack's.
+     *
+     * @internal
+     */
+    writtenCurve(event: number | null, id: number): Record<string, unknown> | null {
+        return (this.curvesOf(event) ?? []).find((c) => Number(c.id) === id) ?? null;
+    }
+
+    /** Removes curve `id` from the sequence, or from `event`. @internal */
+    removeCurve(event: number | null, id: number): void {
+        this.edit(
+            event === null
+                ? { intent: "removeautomation", curve: id }
+                : { intent: "removeeventautomation", id: event, curve: id },
+            "remove a curve",
+        );
+    }
+
+    // ---- what a history asks of it ----
+
+    /** The key and the domain it joins a history under -- a notes editor's. @internal */
+    scriptKey(): [string, string] {
+        return [keyOf("sequence", this), "events"];
+    }
+
+    /** The edit that puts the sequence back as it is now. @internal */
+    restore(): Record<string, unknown> {
+        return { intent: "restore", sequence: this.data() };
+    }
+
+    /**
+     * The edit a redo applies: `intent` with the identity it was given, so a
+     * redone add brings back the same event -- and the same object. An edit
+     * that mints identities of its own is redone as the state it left.
+     *
+     * @internal
+     */
+    forwardOf(intent: Record<string, unknown>, minted: number | undefined): Record<string, unknown> {
+        if (minted === undefined) return intent;
+        if (intent.intent === "add") {
+            return { ...intent, event: { ...(intent.event as Record<string, unknown>), id: Number(minted) } };
+        }
+        if (intent.intent === "automation" || intent.intent === "eventautomation") {
+            return {
+                ...intent,
+                automation: { ...(intent.automation as Record<string, unknown>), id: Number(minted) },
+            };
+        }
+        return this.restore();
     }
 
     /** Makes a free curve the view of curve `id`, in the identity map. @internal */

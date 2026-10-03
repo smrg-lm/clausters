@@ -43,6 +43,23 @@
 
 import { EditingCore } from "./core/clausters_core_web.js";
 import type { EventSequence } from "./seq/sequence.ts";
+import type { Multitrack } from "./multitrack.ts";
+
+/**
+ * **What a history asks of a structure a page changes** -- a sequence, a
+ * multitrack -- through its objects: its own door, the key and the domain it
+ * joins a history under, and the edit a redo applies. A structure that can be
+ * restored whole says how; one that cannot is recorded as the edits made.
+ */
+export interface ScriptStructure {
+    applyIntent(
+        intent: Record<string, unknown>,
+        inverse?: boolean,
+    ): { applied: boolean; current?: unknown; id?: number; reason?: string };
+    scriptKey(): [string, string];
+    forwardOf(intent: Record<string, unknown>, minted: number | undefined): Record<string, unknown>;
+    restore?(): Record<string, unknown>;
+}
 
 /**
  * The version an unedited context is at. One rather than zero, because zero is
@@ -253,7 +270,12 @@ export class Editing {
      * The {@link UndoHistory.entry} blocks open over a structure: one entry,
      * recorded when the outermost closes.
      */
-    readonly #blocks = new Map<object, { depth: number; before: unknown; changed: boolean }>();
+    readonly #blocks = new Map<object, {
+        depth: number;
+        before: unknown;
+        changed: boolean;
+        legs: { structure: number; forward: unknown; backward: unknown }[] | null;
+    }>();
     /**
      * How deep an editor's or a step's own write is. A change it makes through
      * a structure's objects -- a points editor over a held curve writes the
@@ -316,6 +338,32 @@ export class Editing {
     }
 
     /**
+     * **Open a multitrack editor over `multitrack`** -- a `Multitrack`, which
+     * the editor then edits in place -- as the structure `key` names, and
+     * answer its member and identity. Throws with the crate's reason when it
+     * refuses.
+     */
+    openMultitrack(
+        key: string,
+        multitrack: Multitrack,
+        request: Record<string, unknown>,
+        handler: StepHandler | null,
+    ): { member: number; identity: number } {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        const answer = JSON.parse(
+            this.#core.openMultitrack(multitrack.handle, JSON.stringify({ key, ...request })),
+        ) as Record<string, unknown>;
+        if (typeof answer.error === "string" || answer.member === undefined) {
+            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
+        }
+        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
+        this.handlers.set(opened.member, { structure: multitrack, handler });
+        if (!this.structures.has(multitrack)) this.structures.set(multitrack, opened);
+        this.claim(multitrack);
+        return opened;
+    }
+
+    /**
      * **Open a notes editor over `sequence`** -- an `EventSequence`, which the
      * editor then edits in place -- as the structure `key` names, and answer its
      * member and identity. Throws with the crate's reason when it refuses.
@@ -364,25 +412,20 @@ export class Editing {
     }
 
     /**
-     * The sequence's identity in the order -- a notes editor's when one is open
-     * on it, else an external member joined now, keyed as a notes editor's is so
-     * the two are one structure.
+     * The identity in the order of a structure a page changes -- an editor's
+     * when one is open on it, else an external member joined now, keyed as
+     * that editor's would be so the two are one structure.
      */
-    #sequenceIdentity(sequence: EventSequence): number {
-        const found = this.structures.get(sequence);
+    #scriptIdentity(structure: ScriptStructure): number {
+        const found = this.structures.get(structure);
         if (found !== undefined) return found.identity;
-        return this.open("external", keyOf("sequence", sequence), { domain: "events" }, sequence, {
-            project: (structure, payload) =>
-                (structure as EventSequence).applyIntent(payload as Record<string, unknown>, false).applied,
+        const [key, domain] = structure.scriptKey();
+        return this.open("external", key, { domain }, structure, {
+            project: (held, payload) =>
+                (held as ScriptStructure).applyIntent(payload as Record<string, unknown>, false).applied,
         }).identity;
     }
 
-    /**
-     * **One change a page makes to a sequence in this context**, as a turn:
-     * applied, recorded -- as its own entry, or into the {@link UndoHistory.entry}
-     * block open over the sequence -- and every view over it told. Answers
-     * what the sequence's door answers.
-     */
     /**
      * Runs an editor's or a step's own write: a change made through objects
      * inside it is applied and told to the views, and recorded by nobody but
@@ -397,33 +440,48 @@ export class Editing {
         }
     }
 
+    /**
+     * **One change a page makes to a structure in this context** -- a
+     * sequence, a multitrack -- as a turn: applied, recorded -- as its own
+     * entry, or into the {@link UndoHistory.entry} block open over the
+     * structure -- and every view over it told. Answers what the structure's
+     * door answers.
+     */
     scriptEdit(
-        sequence: EventSequence,
+        structure: ScriptStructure,
         intent: Record<string, unknown>,
         label: string,
-    ): { applied: boolean; current?: unknown; id?: number } {
-        const block = this.#blocks.get(sequence);
+    ): { applied: boolean; current?: unknown; id?: number; reason?: string } {
+        const block = this.#blocks.get(structure);
         return this.turn(null, () => {
             if (this.#applying > 0) {
-                const answer = sequence.applyIntent(intent, false);
+                const answer = structure.applyIntent(intent, false);
                 if (answer.applied) this.changed();
                 return answer;
             }
-            if (block !== undefined) {
-                const answer = sequence.applyIntent(intent, false);
+            if (block !== undefined && block.legs === null) {
+                // A block over a structure that is restored whole: its state
+                // before and after are the entry.
+                const answer = structure.applyIntent(intent, false);
                 if (answer.applied) {
                     block.changed = true;
                     this.changed();
                 }
                 return answer;
             }
-            const answer = sequence.applyIntent(intent, true);
+            const answer = structure.applyIntent(intent, true);
             if (answer.applied) {
-                this.record([{
-                    structure: this.#sequenceIdentity(sequence),
-                    forward: { edit: forwardOf(sequence, intent, answer.id) },
+                const leg = {
+                    structure: this.#scriptIdentity(structure),
+                    forward: { edit: structure.forwardOf(intent, answer.id) },
                     backward: answer.current,
-                }], { label });
+                };
+                if (block !== undefined) {
+                    block.changed = true;
+                    block.legs!.push(leg);
+                } else {
+                    this.record([leg], { label });
+                }
                 this.changed();
             }
             return answer;
@@ -431,12 +489,17 @@ export class Editing {
     }
 
     /**
-     * Runs `run`, and everything a page changes in the sequence inside it is
+     * Runs `run`, and everything a page changes in the structure inside it is
      * **one** entry, called `label`, and one turn. Blocks nest: an inner one
      * is part of the outer.
+     *
+     * A structure that can be **restored whole** (a sequence) is recorded as
+     * its state before and after; one that cannot (a multitrack, whose
+     * vocabulary states its parts) as the edits made, in order, which an undo
+     * walks back in reverse.
      */
-    block<T>(sequence: EventSequence, label: string, run: () => T): T {
-        const open = this.#blocks.get(sequence);
+    block<T>(structure: ScriptStructure, label: string, run: () => T): T {
+        const open = this.#blocks.get(structure);
         if (open !== undefined) {
             open.depth += 1;
             try {
@@ -445,21 +508,29 @@ export class Editing {
                 open.depth -= 1;
             }
         }
-        const block = { depth: 1, before: restoreOf(sequence), changed: false };
-        this.#blocks.set(sequence, block);
+        const whole = structure.restore !== undefined;
+        const block = {
+            depth: 1,
+            before: whole ? structure.restore!() : null,
+            changed: false,
+            legs: whole ? null : [] as { structure: number; forward: unknown; backward: unknown }[],
+        };
+        this.#blocks.set(structure, block);
         // Recorded inside the turn, so the views are told the version the
         // entry moved to rather than the one before it.
         return this.turn(null, () => {
             try {
                 return run();
             } finally {
-                this.#blocks.delete(sequence);
-                if (block.changed) {
+                this.#blocks.delete(structure);
+                if (block.changed && block.legs === null) {
                     this.record([{
-                        structure: this.#sequenceIdentity(sequence),
-                        forward: { edit: restoreOf(sequence) },
+                        structure: this.#scriptIdentity(structure),
+                        forward: { edit: structure.restore!() },
                         backward: block.before,
                     }], { label });
+                } else if (block.changed) {
+                    this.record(block.legs!, { label });
                 }
             }
         });
@@ -756,34 +827,6 @@ export class Editing {
     }
 }
 
-/** The edit that puts the sequence back as it is now. */
-function restoreOf(sequence: EventSequence): Record<string, unknown> {
-    return { intent: "restore", sequence: sequence.data() };
-}
-
-/**
- * The edit a redo applies: `intent` with the identity it was given, so a redone
- * add brings back the same event -- and the same object. An edit that mints
- * identities of its own is redone as the state it left.
- */
-function forwardOf(
-    sequence: EventSequence,
-    intent: Record<string, unknown>,
-    minted: number | undefined,
-): Record<string, unknown> {
-    if (minted === undefined) return intent;
-    if (intent.intent === "add") {
-        return { ...intent, event: { ...(intent.event as Record<string, unknown>), id: Number(minted) } };
-    }
-    if (intent.intent === "automation" || intent.intent === "eventautomation") {
-        return {
-            ...intent,
-            automation: { ...(intent.automation as Record<string, unknown>), id: Number(minted) },
-        };
-    }
-    return restoreOf(sequence);
-}
-
 /**
  * **A structure's history, as a page reads it**: the undo order its editors
  * share, which a page's own changes join.
@@ -795,11 +838,11 @@ function forwardOf(
  * Ctrl+Z in a window takes back what the page did.
  */
 export class UndoHistory {
-    readonly #structure: EventSequence;
+    readonly #structure: ScriptStructure;
     readonly #context: Editing;
 
     /** @internal */
-    constructor(structure: EventSequence) {
+    constructor(structure: ScriptStructure) {
         this.#structure = structure;
         this.#context = Editing.of(structure);
     }

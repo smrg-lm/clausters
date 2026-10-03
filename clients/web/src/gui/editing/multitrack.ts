@@ -283,38 +283,16 @@ export class MultitrackDomain extends Domain<Multitrack> {
 
     /**
      * Carry out a step of the history the context applied to the multitrack: a
-     * source the edit mints, and the multitrack as it now stands written back onto
-     * the object the page holds.
+     * source the edit mints. The multitrack itself is the one the page holds,
+     * already stepped.
      *
-     * **The source first.** A join over fragments mints the source its box is a
-     * window onto, and a box over a source nothing answers for is left out of the
-     * plan -- so building it after the multitrack names it would be one pass of
-     * silence. It runs again on a redo, which is right: the source is gone the
-     * moment nothing windows it.
+     * A join over fragments mints the source its box is a window onto, and a
+     * box over a source nothing answers for is left out of the plan. It runs
+     * again on a redo, which is right: the source is gone the moment nothing
+     * windows it.
      */
-    stepped(multitrack: Multitrack, applied: Record<string, unknown>): void {
+    stepped(_multitrack: Multitrack, applied: Record<string, unknown>): void {
         this.mint(applied.minted);
-        if (applied.applied === true && applied.multitrack !== undefined && applied.multitrack !== null) {
-            this.writeBack(multitrack, applied.multitrack as Record<string, unknown>);
-        }
-    }
-
-    /**
-     * Write a multitrack the crate answered onto **the object the page holds**: a
-     * multitrack handed back would be a second multitrack, and the caller's would go
-     * stale.
-     *
-     * @internal
-     */
-    writeBack(multitrack: Multitrack, state: Record<string, unknown>): void {
-        const written = Multitrack.read(state);
-        multitrack.version = written.version;
-        multitrack.tracks = written.tracks;
-        multitrack.tempo = written.tempo;
-        multitrack.meter = written.meter;
-        multitrack.markers = written.markers;
-        multitrack.loopSpan = written.loopSpan;
-        multitrack.punch = written.punch;
     }
 
     /**
@@ -657,15 +635,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
         // editing context, which reads a message, records what a gesture did
         // and takes the steps of the one order the multitrack shares with whatever
         // else is open in it.
-        const opened = this.editing.open("openMultitrack", keyOf("multitrack", multitrack), {
-            multitrack: multitrack.write(),
+        const opened = this.editing.openMultitrack(keyOf("multitrack", multitrack), multitrack, {
             rate: this.bridge.rate,
             link: link ?? null,
             transport: server !== undefined,
             title,
             w: this.size[0],
             h: this.size[1],
-        }, multitrack, domain);
+        }, domain);
         this.member = opened.member;
         this.structureId = opened.identity;
         for (const [source, sequence] of bridge.sources.sequences()) {
@@ -710,9 +687,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const held = (await host.query(widget)).props.selected;
         const names = JSON.parse(typeof held === "string" ? held : "[]") as string[];
         const regions = new Map<string, Region>();
-        for (const track of this.structure.tracks) {
-            for (const lane of track.takeLanes) for (const r of lane.regions) regions.set(String(r.id), r);
-        }
+        for (const r of this.structure.regions()) regions.set(String(r.ident), r);
         return names.flatMap((name) => regions.get(name) ?? []);
     }
 
@@ -721,7 +696,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const host = this.app.host;
         const widget = this.multitrackWidget;
         if (host === null || widget === null || this.windowId === null) return;
-        host.set(widget, { selected: JSON.stringify([...regions].map((r) => String(r.id))) });
+        host.set(widget, { selected: JSON.stringify([...regions].map((r) => String(r.ident))) });
     }
 
     /** Holds nothing. */
@@ -763,8 +738,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /**
-     * Hand the core what this page holds: the multitrack a page may have changed,
-     * the buffer table, the meters, the cursor and the window.
+     * Hand the core what this page holds: the buffer table, the meters, the
+     * cursor and the window. The multitrack is the one it already edits.
      *
      * @internal
      */
@@ -774,7 +749,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
             meters.push({ track, bus, channels });
         }
         this.coreCall("sync", {
-            multitrack: this.structure.write(),
             sources: this.bridge.sources.held(),
             meters,
             cursor: this.cursor ?? null,
@@ -830,9 +804,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
         for (const minted of outcome.minted ?? []) domain.mint(minted);
         const changed = outcome.changed === true;
         if (changed) {
-            // **The entry is already recorded and the version moved**: both are
-            // the context's. What is left is the object the page holds.
-            domain.writeBack(this.structure, outcome.multitrack ?? {});
+            // **The entry is already recorded and the version moved**, and the
+            // multitrack the page holds is the one edited: all the crate's.
             this.dirty = true;
             this.editing.changed();
         }

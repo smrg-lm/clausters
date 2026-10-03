@@ -24,31 +24,32 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.multitrack import (Multitrack, Content, TakeLane,  # noqa: E402
-                                   Region, Track)
+from clausters.multitrack import Multitrack  # noqa: E402
 
 
 def multitrack() -> dict:
-    """The multitrack the arrangement's edits are applied to, built with the client.
+    """The multitrack the arrangement's edits are applied to, as the client
+    writes it.
 
-    Written through `clausters.multitrack` rather than by hand, unlike the
-    document below, and on purpose: what crosses here is a whole multitrack as
-    JSON state, so the vector is worth more if the state is the one this client
-    actually writes. Two tracks, two take lanes on the first, one region on each --
-    the smallest multitrack a move between tracks has somewhere to move to.
+    Read through `clausters.multitrack` and written back rather than handed on
+    as typed, on purpose: what crosses here is a whole multitrack as JSON
+    state, so the vector is worth more if the state is the one the client's
+    handle writes. Two tracks, two take lanes on the first, one region on each
+    -- the smallest multitrack a move between tracks has somewhere to move to.
+    The ids are the file's: the edits below name them.
     """
-    vocals = Track(id=10, name="vocals", take_lanes=[TakeLane(id=11), TakeLane(id=12)])
-    vocals.take_lanes[0].place(Region(id=100, position=0.0, length=4.0,
-                                 content=Content.composite(
-                                     {"id": 1, "kind": "aggregate",
-                                      "grouping": "concrete", "members": []})))
-    vocals.take_lanes[1].place(Region(id=101, position=8.0, length=4.0,
-                                 content=Content.composite(
-                                     {"id": 2, "kind": "aggregate",
-                                      "grouping": "concrete", "members": []})))
-    # Mono, so the new width field is exercised rather than defaulted away.
-    guitar = Track(id=20, name="guitar", take_lanes=[TakeLane(id=21)], channels=1)
-    return Multitrack(tracks=[vocals, guitar]).write()
+    def region(id: int, at: float, node: int) -> dict:
+        return {"id": id, "position": at, "length": 4.0,
+                "content": {"fill": "composite",
+                            "node": {"id": node, "kind": "aggregate",
+                                     "grouping": "concrete"}}}
+    return Multitrack.read({"tracks": [
+        {"id": 10, "name": "vocals", "take_lanes": [
+            {"id": 11, "regions": [region(100, 0.0, 1)]},
+            {"id": 12, "regions": [region(101, 8.0, 2)]}]},
+        # Mono, so the width field is exercised rather than defaulted away.
+        {"id": 20, "name": "guitar", "channels": 1, "take_lanes": [{"id": 21}]},
+    ]}).write()
 
 
 #: A region moved to the other track: one intent, because where a region is

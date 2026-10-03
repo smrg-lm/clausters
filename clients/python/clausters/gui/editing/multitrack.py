@@ -9,9 +9,10 @@ editor that is `clausters.gui.editing.Editor` with those two in it.
 is, what a gesture means, how an edit inverts, what the window is and what the
 host is answered with are the shared crate's
 (`clausters._native.EditingCore`), which the standalone host runs and
-the web client binds too. What this adds is what a language owns: the
-`clausters.multitrack.Multitrack` object a script holds and gets written back
-onto, which server buffer a source was read into, and the socket.
+the web client binds too. What this adds is what a language owns: which server
+buffer a source was read into, and the socket. The multitrack itself is the
+crate's too: the `clausters.multitrack.Multitrack` a script holds is a handle
+over the one the editor edits, so there is nothing to write back.
 
 **Seconds meet frames through the rate alone.** A multitrack is placed in
 seconds, so a position and a length are each their seconds times the rate, and
@@ -201,32 +202,16 @@ class MultitrackDomain(Domain):
         return structure.write()
 
     def stepped(self, structure, applied: dict) -> None:
-        """Carry out a step of the history the context applied to the multitrack: a
-        source the edit mints, and the multitrack as it now stands written back onto
-        the object the script holds.
+        """Carry out a step of the history the context applied to the
+        multitrack: a source the edit mints. The multitrack itself is the one
+        the script holds, already stepped.
 
-        **The source first.** A join over fragments mints the source its box is
-        a window onto, and a box over a source nothing answers for is left out of
-        the plan -- so building it after the multitrack names it would be one pass of
-        silence. It runs again on a redo, which is right: the source is gone the
-        moment nothing windows it.
+        A join over fragments mints the source its box is a window onto, and a
+        box over a source nothing answers for is left out of the plan. It runs
+        again on a redo, which is right: the source is gone the moment nothing
+        windows it.
         """
         self._mint(applied.get("minted"))
-        if applied.get("applied") and applied.get("multitrack") is not None:
-            self.write_back(structure, applied["multitrack"])
-
-    def write_back(self, structure, state: dict) -> None:
-        """Write a multitrack the crate answered onto **the object the script
-        holds**: a multitrack handed back would be a second multitrack, and the caller's
-        would go stale."""
-        written = Multitrack.read(state)
-        structure.version = written.version
-        structure.tracks = written.tracks
-        structure.tempo = written.tempo
-        structure.meter = written.meter
-        structure.markers = written.markers
-        structure.loop_span = written.loop_span
-        structure.punch = written.punch
 
     def _mint(self, minted) -> None:
         """Install a source an edit made, and put it in the table.
@@ -435,12 +420,12 @@ class MultitrackEditor(Editor):
         #: editing context, which reads a message, records what a gesture did
         #: and takes the steps of the one order the multitrack shares with whatever
         #: else is open in it.
-        self._member, self._structure_id = self._editing.open(
-            "openMultitrack", f"multitrack:{id(multitrack)}", {
-                "multitrack": multitrack.write(), "rate": float(sample_rate),
-                "link": link, "transport": server is not None, "title": title,
+        self._member, self._structure_id = self._editing.open_multitrack(
+            f"multitrack:{id(multitrack)}", multitrack, {
+                "rate": float(sample_rate), "link": link,
+                "transport": server is not None, "title": title,
                 "w": int(self.size[0]), "h": int(self.size[1])},
-            multitrack, domain)
+            domain)
         for source, sequence in bridge.sources.sequences().items():
             self._editing.bind_sequence(self._member, source, sequence)
         self._shown = None
@@ -483,8 +468,7 @@ class MultitrackEditor(Editor):
         if self._host is None or self._window is None or self.multitrack_widget is None:
             return []
         held = self._host.query(self.multitrack_widget).props.get("selected") or "[]"
-        regions = {str(r.id): r for track in self.structure.tracks
-                   for lane in track.take_lanes for r in lane.regions}
+        regions = {str(r._id): r for r in self.structure.regions()}
         return [regions[name] for name in json.loads(held) if name in regions]
 
     def select(self, regions) -> None:
@@ -494,7 +478,7 @@ class MultitrackEditor(Editor):
 
         if self._host is None or self._window is None or self.multitrack_widget is None:
             return
-        names = [str(r.id) for r in regions]
+        names = [str(r._id) for r in regions]
         self._host.set(self.multitrack_widget, selected=json.dumps(names))
 
     def unselect(self) -> None:
@@ -515,14 +499,15 @@ class MultitrackEditor(Editor):
     # ---- the crate's turns ----
 
     def _sync_core(self) -> None:
-        """Hand the core what this client holds: the multitrack a script may have
-        changed, the buffer table, the meters, the cursor and the window."""
+        """Hand the core what this client holds: the buffer table, the meters,
+        the cursor and the window. The multitrack is the one it already
+        edits."""
         playback = self.playback
         meters = [] if playback is None else [
             {"track": int(track), "bus": int(bus), "channels": int(channels)}
             for track, (bus, channels) in playback.meters.items()]
         self._call(
-            "sync", multitrack=self.structure.write(),
+            "sync",
             sources={str(k): v for k, v in self.bridge.sources.held().items()},
             meters=meters, cursor=self.cursor, window=self._window,
             controls=self._controls)
@@ -570,9 +555,8 @@ class MultitrackEditor(Editor):
             self.domain._mint(minted)
         changed = bool(outcome.get("changed"))
         if changed:
-            # **The entry is already recorded and the version moved**: both are
-            # the context's. What is left is the object the script holds.
-            self.domain.write_back(self.structure, outcome["multitrack"])
+            # **The entry is already recorded and the version moved**, and the
+            # multitrack the script holds is the one edited: all the crate's.
             self.dirty = True
             self._editing.changed()
         if outcome.get("locate") is not None:

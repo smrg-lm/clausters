@@ -116,9 +116,7 @@ there.</div>
       import { gui } from "../../dist/index.js";
       import { Buffer, Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
-      import {
-        Automation, Content, TakeLane, Multitrack, Region, Session as SavedSession, Source, Track,
-      } from "../../dist/multitrack.js";
+      import { Content, Multitrack, Session as SavedSession, Source } from "../../dist/multitrack.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -138,14 +136,11 @@ there.</div>
         return stats.samples;
       }
 
-      /** A box over the whole of one source, from its start. */
-      function box(id, at, source, name) {
-        return new Region({
-          id, position: at, length: TAKE_DUR, name,
-          content: Content.onto({
-            source: { source, lifetime: "session", generation: 0 },
-            start: 0.0, duration: TAKE_DUR,
-          }),
+      /** The whole of one source, from its start. */
+      function window(source) {
+        return Content.onto({
+          source: { source, lifetime: "session", generation: 0 },
+          start: 0.0, duration: TAKE_DUR,
         });
       }
 
@@ -208,46 +203,42 @@ there.</div>
         // JavaScript in it. Which buffer each source was read into is the one
         // thing about a multitrack that is not in it, and it travels beside it
         // in `Sources`.
-        const noiseGain = new Automation({
-          id: 100, name: "gain", visible: true,
-          target: { port: "gain" },
-          points: [{ at: 0.0, value: 1.0 }, { at: 8.0, value: 0.2 }],
-        });
-        const whiteFade = new Automation({
-          id: 101, name: "fade", visible: true,
-          target: { port: "gain" },
-          points: [{ at: 0.0, value: 0.2 }, { at: TAKE_DUR, value: 1.0 }],
-        });
-        const first = box(20, 0.0, 1, "white");
-        first.automation.push(whiteFade);
-
         const multitrack = new Multitrack();
-        multitrack.tracks = [
-          new Track({
-            id: 10, name: "noise", automation: [noiseGain],
-            takeLanes: [new TakeLane({ id: 11, regions: [first, box(21, 6.0, 4, "pink")] })],
-          }),
-          new Track({
-            id: 12, name: "tone",
-            takeLanes: [new TakeLane({
-              id: 13, regions: [box(22, 2.0, 2, "glide"), box(24, 8.0, 5, "comp"),
-                                box(25, 10.0, 6, "loud")],
-            })],
-          }),
-          // **The fader is the track's own field**, like its width: what a
-          // multitrack sounds like is the multitrack's, so it is saved with it and
-          // reopens as it was.
-          new Track({
-            id: 14, name: "bass", level: 0.7,
-            takeLanes: [new TakeLane({ id: 15, regions: [box(23, 4.0, 3, "saw")] })],
-          }),
-          // **A box of notes** is a box like any other: a window onto source 7,
-          // which is the sequence above rather than a take.
-          new Track({
-            id: 16, name: "keys",
-            takeLanes: [new TakeLane({ id: 17, regions: [box(26, 12.0, 7, "keys")] })],
-          }),
-        ];
+        const noise = multitrack.tracks.add("noise");
+        const tone = multitrack.tracks.add("tone");
+        // **The fader is the track's own field**, like its width: what a
+        // multitrack sounds like is the multitrack's, so it is saved with it and
+        // reopens as it was.
+        const bass = multitrack.tracks.add("bass", { level: 0.7 });
+        const keysTrack = multitrack.tracks.add("keys");
+
+        // Each track starts with one take lane, and a box is placed on it: where
+        // it starts, how long it is, and the source it is a window onto. The
+        // multitrack names every box, so the page holds the box and never its
+        // number.
+        const first = noise.activeTakeLane.regions.add(0.0, TAKE_DUR, window(1), { name: "white" });
+        noise.activeTakeLane.regions.add(6.0, TAKE_DUR, window(4), { name: "pink" });
+        tone.activeTakeLane.regions.add(2.0, TAKE_DUR, window(2), { name: "glide" });
+        tone.activeTakeLane.regions.add(8.0, TAKE_DUR, window(5), { name: "comp" });
+        tone.activeTakeLane.regions.add(10.0, TAKE_DUR, window(6), { name: "loud" });
+        bass.activeTakeLane.regions.add(4.0, TAKE_DUR, window(3), { name: "saw" });
+        // **A box of notes** is a box like any other: a window onto source 7,
+        // which is the sequence above rather than a take.
+        keysTrack.activeTakeLane.regions.add(12.0, TAKE_DUR, window(7), { name: "keys" });
+
+        // **A track automation**: a row of its own under the track, as long as
+        // the timeline, because a track's gain does not begin and end with a box.
+        // The target names the **port** it drives on whatever it is on -- the one
+        // shape the document crate reads there, because a curve that named
+        // nothing could only be guessed at.
+        noise.automation.add({ port: "gain" },
+                             { points: [[0.0, 1.0], [8.0, 0.2]], name: "gain", visible: true });
+
+        // **A clip envelope**: a layer drawn inside its box, lasting exactly as
+        // long as the box does. Its time is the box's own, from zero, and its
+        // port is the clip's.
+        first.automation.add({ port: "gain" },
+                             { points: [[0.0, 0.2], [TAKE_DUR, 1.0]], name: "fade", visible: true });
 
         // ---- the same multitrack, written down as a session ----
         // The takes above exist only on this page's engine, so a program that

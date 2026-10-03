@@ -353,7 +353,7 @@ def editor_exchange():
                  [[roles.get(w, w), props] for w, props in corrections]]
                 for kind, s, version, reason, corrections in host.messages],
             "playback": list(playback.calls),
-            "regions": [[t.id, r.id, r.position, r.length]
+            "regions": [[t._id, r._id, r.position, r.length]
                         for t in multitrack.tracks for lane in t.take_lanes
                         for r in lane.regions],
         })

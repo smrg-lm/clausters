@@ -138,21 +138,48 @@ The vocabulary is the field's own:
   precisely so that no two tracks can disagree about them.
 
 ```javascript
-import { Content, TakeLane, Multitrack, Region, Tempo, Track } from "clausters";
+import { Content, Fade, Multitrack, Tempo } from "clausters";
 
 const multitrack = new Multitrack();
 multitrack.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
 const bar = multitrack.tempoMap().secsAt(4);             // where the second bar begins
 
-const drums = new Track({ id: 1, name: "drums", takeLanes: [new TakeLane({ id: 2 })] });
-drums.activeTakeLane.place(new Region({
-    id: 3, position: bar, length: 2.5, content: Content.onto(take),
-}));
-multitrack.tracks.push(drums);
+const drums = multitrack.tracks.add("drums");            // a Track, with one take lane
+const hit = drums.activeTakeLane.regions.add(bar, 2.5, Content.onto(take));
+hit.fadeIn = new Fade(0.01);
+drums.automation.add({ port: "gain" }, { points: [[0, 1], [8, 0.5]], name: "gain" });
+multitrack.markers.add(bar, "verse");
 
 const written = multitrack.write();   // the crate's JSON
 Multitrack.read(written);
 ```
+
+**What a page reads and writes is objects.** A `Multitrack` is a handle over
+the multitrack the shared crate holds — the very one a multitrack editor opened
+on it edits — and `multitrack.tracks`, a track's `takeLanes`, a take lane's
+`regions`, the curves of a track or a region (`automation`) and
+`multitrack.markers` are live collections: iterate them, index them with
+`item(i)` where Python indexes, and `add` answers the object it made. Each
+object is a view of what the multitrack holds, not a copy, so after a hand drags
+a box in the window the `Region` a page holds reads where it now is; the same
+structure read twice is the same object. A change is made through the object it
+changes — `hit.position = 4`, `hit.place(otherLane, { position: 4 })`,
+`drums.muted = true`, `hit.remove()` — and no call takes or answers an id: the
+ids are the crate's. A tempo entry, a meter entry, a span, a fade and a region's
+`content` have no identity of their own, so they are read as values and written
+whole through what holds them. A structure the multitrack no longer holds —
+removed, or undone away — leaves its object **detached**: `held` is false and
+reading it throws, until an undo brings it back. A multitrack is a handle over
+the core, so the core is loaded (`loadCore`) before one is made.
+
+**A change is a turn of the multitrack's history, when it has one.**
+`multitrack.history` is that history — the undo order every editor open on the
+multitrack shares — and asking for it, or opening an editor, is what gives a
+multitrack one. From then on each change made through the objects is an entry
+the windows redraw and one Ctrl+Z in a window takes back, and
+`multitrack.history.entry("tidy", () => { ... })` — Python's `with
+multitrack.history("tidy"):` — makes everything inside it one entry. A
+multitrack nobody asked a history of changes freely and records nothing.
 
 A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
@@ -165,20 +192,24 @@ session saved in beats, before this, is converted when it is read.
 
 ### Editing a multitrack: the verbs a multitrack admits
 
-The multitrack has an edit vocabulary of its own, and it is reached through the same
-door every other structure is — `domainEdit`, with `MULTITRACK` as the
-vocabulary. Hand over the multitrack as the crate's JSON and the edit; take back the
-multitrack as it now stands and the edit that puts it back.
+The multitrack has an edit vocabulary of its own, and every change made through
+its objects is one of its verbs: a region's place is `placeregion`, its length
+and window `trimregion`, its fades `faderegion`, a curve's points
+`setautomation`, a marker `setmarker`. The same vocabulary is reached as data
+through the door every other structure is — `domainEdit`, with `MULTITRACK` as
+the vocabulary: hand over a multitrack as the crate's JSON and an edit, which
+names what it moves by the ids the JSON holds, and take back the multitrack as
+it now stands and the edit that puts it back.
 
 ```javascript
 import { document as doc } from "clausters";
 
-const edited = doc.domainEdit(doc.MULTITRACK, multitrack.write(), {
+const edited = doc.domainEdit(doc.MULTITRACK, written, {
     intent: "placeregion", region: 3, track: 1, take_lane: 2,
     position: 16, layer: 0,
 });
 edited.applied;                     // true
-Multitrack.read(edited.state);      // the multitrack with the region moved
+edited.state;                       // the multitrack, as JSON, with the region moved
 edited.current;                     // the edit that puts it back
 ```
 

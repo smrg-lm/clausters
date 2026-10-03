@@ -8,7 +8,7 @@ import math
 from clausters import Session
 from clausters.defs import Buffer
 from clausters.gui import edit
-from clausters.multitrack import Content, Multitrack, Region, TakeLane, Track
+from clausters.multitrack import Content, Multitrack
 from clausters.segments import Segment
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
@@ -54,16 +54,15 @@ high = Buffer.from_samples([0.3 * math.sin(2 * math.pi * 660.0 * i / rate)
 higher = Buffer.from_samples([0.3 * math.sin(2 * math.pi * 990.0 * i / rate)
                               for i in range(frames)], 1, rate, server=server)
 server.sync()
-a = Region(id=20, position=0.0, length=2.0, name="660",
-           content=Content.onto({"source": {"source": 1, "lifetime": "session",
-                                            "generation": 0},
-                                 "start": 0.0, "duration": 2.0}))
-b = Region(id=21, position=2.0, length=2.0, name="990",
-           content=Content.onto({"source": {"source": 2, "lifetime": "session",
-                                            "generation": 0},
-                                 "start": 0.0, "duration": 2.0}))
-mt = Multitrack(tracks=[Track(id=10, name="one", take_lanes=[TakeLane(id=11, regions=[a])]),
-                        Track(id=12, name="two", take_lanes=[TakeLane(id=13, regions=[b])])])
+mt = Multitrack()
+a = mt.tracks.add("one").active_take_lane.regions.add(
+    0.0, 2.0, Content.onto({"source": {"source": 1, "lifetime": "session",
+                                       "generation": 0},
+                            "start": 0.0, "duration": 2.0}), name="660")
+b = mt.tracks.add("two").active_take_lane.regions.add(
+    2.0, 2.0, Content.onto({"source": {"source": 2, "lifetime": "session",
+                                       "generation": 0},
+                            "start": 0.0, "duration": 2.0}), name="990")
 m = edit(mt, sample_rate=rate, server=server, sources={1: high, 2: higher},
          title="multitrack")
 mtt = m.transport

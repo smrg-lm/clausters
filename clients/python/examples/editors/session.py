@@ -63,9 +63,7 @@ import time
 import wave
 
 import clausters
-from clausters.multitrack import (Multitrack, Content, TakeLane, Region, Session,
-                                   Source, Span, Tempo, Track, View)
-from clausters.document import MULTITRACK, domain_edit
+from clausters.multitrack import Content, Multitrack, Session, Source, Span, Tempo, View
 from clausters.play import play
 
 SAMPLE_RATE = 48_000
@@ -141,52 +139,42 @@ multitrack = Multitrack()
 multitrack.set_tempo(Tempo(at=0.0, tempo=2.0))     # beats per second: 120 a minute
 
 #: The take, twice, at two places: two regions, two identities, **one** source.
-#: Nothing is copied, and trimming one leaves the other where it was.
-tone = Track(id=10, name="tone", take_lanes=[TakeLane(id=11)])
-tone.active_take_lane.place(Region(id=12, position=0.0, length=4.0, name="first",
-                              content=Content.onto(window())))
-tone.active_take_lane.place(Region(id=13, position=8.0, length=2.0, name="again",
-                              content=Content.onto(window(start=0.5))))
+#: Nothing is copied, and trimming one leaves the other where it was. A track
+#: starts with one take lane, and the multitrack names every track, take lane
+#: and region: the script holds them, never their numbers.
+tone = multitrack.tracks.add("tone")
+tone.active_take_lane.regions.add(0.0, 4.0, Content.onto(window()), name="first")
+again = tone.active_take_lane.regions.add(8.0, 2.0, Content.onto(window(start=0.5)),
+                                          name="again")
 
 #: **Mute is the multitrack's.** A track left muted here reopens muted, because
 #: it says something about the multitrack. A track's *height* does not, so no session
 #: carries one.
-echo = Track(id=20, name="echo", muted=True, take_lanes=[TakeLane(id=21)])
-echo.active_take_lane.place(Region(id=22, position=4.0, length=4.0,
-                              content=Content.onto(window())))
+echo = multitrack.tracks.add("echo", muted=True)
+echo.active_take_lane.regions.add(4.0, 4.0, Content.onto(window()))
 
-multitrack.tracks.extend([tone, echo])
 print(f"the multitrack is {multitrack.end:.0f} s long, over {len(multitrack.tracks)} tracks")
 
 # %% [markdown]
 # ## Editing it: one edit, one undo
 #
-# The multitrack has a vocabulary of its own, reached through the door every other
-# structure is reached through. Two things about it are worth seeing rather than
-# reading: **where a region is** means track, take lane and second together, so moving
-# one to the other track is a single edit -- there is no moment in between where
-# it is on no take lane at all; and the crate hands back the edit that *puts it back*
-# in the same answer, because an inverse has to be read before the edit lands.
+# The multitrack has a vocabulary of its own, and every change a script makes
+# through its objects is one edit of it. Two things about it are worth seeing
+# rather than reading: **where a region is** means track, take lane and second
+# together, so moving one to the other track is a single edit -- there is no
+# moment in between where it is on no take lane at all; and the multitrack's
+# **history** takes it back in one step, because the crate reads the edit that
+# puts it back before the edit lands.
 
 # %%
-moved = domain_edit(
-    MULTITRACK, multitrack.write(),
-    {"intent": "placeregion", "region": 13, "track": 20, "take_lane": 21,
-     "position": 12.0, "layer": 0},
-)
-after = Multitrack.read(moved["state"])
-where = next((t, l, r) for t in after.tracks for l in t.take_lanes
-             for r in l.regions if r.id == 13)
-print(f"  moved:  region 13 is on track {where[0].id}, take lane {where[1].id}, "
-      f"at {where[2].position:.0f} s")
-print(f"  and to put it back: {moved['current']}")
+history = multitrack.history         # asking for it is what gives it one
+again.place(echo.active_take_lane, position=12.0)
+print(f"  moved:  {again.name!r} is on {again.track.name!r}, at {again.position:.0f} s "
+      f"-- one edit, {history.undo_label!r}")
 
-#: The other direction, through the same door -- and the multitrack is exactly the
-#: one that was built above, which is what "absolute" buys.
-multitrack = Multitrack.read(domain_edit(MULTITRACK, moved["state"],
-                                     moved["current"])["state"])
-print(f"  undone: the multitrack is {multitrack.end:.0f} s long again, "
-      f"over {len(multitrack.tracks)} tracks")
+history.undo()
+print(f"  undone: {again.name!r} is on {again.track.name!r} again, at "
+      f"{again.position:.0f} s, and the multitrack is {multitrack.end:.0f} s long")
 
 # %% [markdown]
 # ## Written as a session
@@ -203,10 +191,9 @@ print(f"  undone: the multitrack is {multitrack.end:.0f} s long again, "
 #: the person loses on a reopen unless the file carries it. A list, because a
 #: multitrack drawn in two windows has two views and they disagree on purpose.
 window = View(name="arranger", visible=Span(0.0, multitrack.end), quant=1.0)
-window.track_view(10).height = 96.0
-window.track_view(10).take_lanes_shown = True
-window.track_view(20).color = "#4488cc"
-window.selected = [12]
+window.track_view(tone).height = 96.0
+window.track_view(tone).take_lanes_shown = True
+window.track_view(echo).color = "#4488cc"
 
 session = Session(multitrack=multitrack, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
@@ -275,21 +262,21 @@ def run() -> None:
         #: heights and the grid are the person's, and a reader that ignored
         #: them would open the same music into a window that had forgotten
         #: everything about how it was left.
+        first_track = reopened.multitrack.tracks[0]
         for window in reopened.views:
             print(f"  window {window.name!r}: grid {window.quant:g}, "
-                  f"track 10 at height {window.track(10).height}, "
-                  f"holding {window.selected}")
+                  f"{first_track.name!r} at height {window.track(first_track).height}")
 
         for track in reopened.multitrack.tracks:
             state = " (muted)" if track.muted else ""
             for region in track.active_take_lane.regions:
                 print(f"  {region.position:6.2f}  {track.name}{state}: "
-                      f"{region.name or region.id} "
+                      f"{region.name or 'unnamed'} "
                       f"({region.length:.0f} s)")
 
         # The two regions of the first track name one source, and there is one
         # buffer behind them.
-        first = reopened.multitrack.track(10).active_take_lane.regions[0]
+        first = first_track.active_take_lane.regions[0]
         named = first.content.window["source"]["source"]
         buffer = buffers.get(named)
         if buffer is None:

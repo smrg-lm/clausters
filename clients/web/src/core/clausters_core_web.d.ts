@@ -106,6 +106,12 @@ export class EditingCore {
      */
     constructor();
     /**
+     * Opens a multitrack editor over `multitrack`, which it then edits in
+     * place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
+     * carries the `key` and what the editor is built from.
+     */
+    openMultitrack(multitrack: JsMultitrack, request: string): string;
+    /**
      * Opens a notes editor over `sequence`, which it then edits in place --
      * the C ABI's `clausters_apps_editing_open_notes`. `request` carries the
      * `key` and what the editor is built from.
@@ -382,6 +388,25 @@ export class JsEventSequence {
     /**
      * A sequence read from `json` (the sequence, or a bare list of events);
      * empty for an empty string.
+     */
+    constructor(json: string);
+}
+
+/**
+ * JS face: a multitrack (`clausters_document::Multitrack`) a script holds,
+ * every verb through one JSON door, as the C ABI's
+ * `clausters_document_multitrack_*`.
+ */
+export class JsMultitrack {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb, as `clausters_document::multitrack::handle::call_json`
+     * answers it.
+     */
+    call(request: string): string;
+    /**
+     * A multitrack read from `json`; empty for an empty string.
      */
     constructor(json: string);
 }
@@ -1793,6 +1818,7 @@ export interface InitOutput {
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_jseventsequence_free: (a: number, b: number) => void;
+    readonly __wbg_jsmultitrack_free: (a: number, b: number) => void;
     readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
     readonly __wbg_notesplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
@@ -1836,6 +1862,7 @@ export interface InitOutput {
     readonly editingcore_bindSequence: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_new: () => number;
+    readonly editingcore_openMultitrack: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
@@ -1879,6 +1906,8 @@ export interface InitOutput {
     readonly itemId: (a: number, b: number) => number;
     readonly jseventsequence_call: (a: number, b: number, c: number) => [number, number];
     readonly jseventsequence_new: (a: number, b: number) => [number, number, number];
+    readonly jsmultitrack_call: (a: number, b: number, c: number) => [number, number];
+    readonly jsmultitrack_new: (a: number, b: number) => [number, number, number];
     readonly level_resolve: (a: number, b: number) => [number, number];
     readonly level_set: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];

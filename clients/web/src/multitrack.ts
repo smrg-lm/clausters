@@ -63,6 +63,7 @@
  */
 
 import {
+    JsMultitrack,
     StepRunner,
     editingDefaultTempo,
     multitrackNames as coreNames,
@@ -76,6 +77,8 @@ import type { Curve as CurveSpec, PointsLike } from "./defs/ugens/env.ts";
 import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
 import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
+import { requireCore } from "./base/core.ts";
+import { UndoHistory, contexts, keyOf } from "./history.ts";
 import { readFileAt, writeFileAt } from "./base/files.ts";
 import { EventSequence } from "./seq/sequence.ts";
 import { runSteps } from "./steps.ts";
@@ -238,177 +241,6 @@ export class Content {
 }
 
 /**
- * One placed thing on a take lane: a span of the timeline, and what fills it.
- *
- * `position` and `length` are the region's own, in seconds. They are **not** the
- * content's: a region may show part of what it holds, and trimming moves these
- * without touching the source.
- */
-export class Region {
-    id: number;
-    position: number;
-    length: number;
-    content: Content;
-    name?: string;
-    /**
-     * Which of the overlapping regions on this take lane draws and plays on top.
-     * Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
-     * stack needs an order that survives a save.
-     */
-    layer: number;
-    fadeIn?: Fade;
-    fadeOut?: Fade;
-    muted: boolean;
-    /**
-     * The curves that act on **this placement alone** -- its own gain, its pan,
-     * the parameters of whatever fills it.
-     *
-     * The same {@link Automation} a track carries, in the other place it
-     * belongs: a track's curve runs the length of the track and is drawn in a
-     * row beside it, a region's runs the length of the region and is drawn
-     * **inside** it. A clip that has curves is a small track acting on itself
-     * alone.
-     */
-    automation: Automation[];
-    extra: Extra;
-
-    constructor(fields: {
-        id: number;
-        position: number;
-        length: number;
-        content: Content;
-        name?: string;
-        layer?: number;
-        fadeIn?: Fade;
-        fadeOut?: Fade;
-        muted?: boolean;
-        automation?: Automation[];
-        extra?: Extra;
-    }) {
-        this.id = fields.id;
-        this.position = fields.position;
-        this.length = fields.length;
-        this.content = fields.content;
-        this.name = fields.name;
-        this.layer = fields.layer ?? 0;
-        this.fadeIn = fields.fadeIn;
-        this.fadeOut = fields.fadeOut;
-        this.muted = fields.muted ?? false;
-        this.automation = fields.automation ?? [];
-        this.extra = fields.extra ?? {};
-    }
-
-    /** Where it ends: its position plus its length. */
-    get end(): number {
-        return this.position + this.length;
-    }
-
-    /**
-     * Whether the two occupy any of the same time. Half-open, so a region
-     * ending exactly where the next begins does not overlap it -- which is what
-     * makes a cut into two regions not a crossfade.
-     */
-    overlaps(other: Region): boolean {
-        return this.position < other.end && other.position < this.end;
-    }
-
-    write(): Extra {
-        const out: Extra = {
-            id: this.id,
-            position: this.position,
-            length: this.length,
-            content: this.content.write(),
-        };
-        if (this.name !== undefined) out.name = this.name;
-        if (this.layer) out.layer = this.layer;
-        if (this.fadeIn) out.fade_in = this.fadeIn.write();
-        if (this.fadeOut) out.fade_out = this.fadeOut.write();
-        if (this.muted) out.muted = true;
-        if (this.automation.length) out.automation = this.automation.map((a) => a.write());
-        return { ...out, ...this.extra };
-    }
-
-    static read(written: Extra): Region {
-        return new Region({
-            id: num(written.id),
-            position: num(written.position),
-            length: num(written.length),
-            content: Content.read((written.content as Extra) ?? {}),
-            name: written.name as string | undefined,
-            layer: num(written.layer),
-            fadeIn: written.fade_in ? Fade.read(written.fade_in as Extra) : undefined,
-            fadeOut: written.fade_out ? Fade.read(written.fade_out as Extra) : undefined,
-            muted: Boolean(written.muted),
-            automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
-            extra: rest(written, "id", "position", "length", "content", "name",
-                        "layer", "fade_in", "fade_out", "muted", "automation"),
-        });
-    }
-}
-
-/**
- * One of a track's several contents: an ordered list of regions.
- *
- * Ardour's structure and our name -- its *playlist* is this, and that word is
- * spent on something else everywhere. {@link TakeLane.place} keeps the list in
- * position order, so a re-saved session is stable and a diff of two saves is
- * the edits rather than the iteration order.
- */
-export class TakeLane {
-    id: number;
-    name?: string;
-    regions: Region[];
-    extra: Extra;
-
-    constructor(fields: { id: number; name?: string; regions?: Region[]; extra?: Extra }) {
-        this.id = fields.id;
-        this.name = fields.name;
-        this.regions = fields.regions ?? [];
-        this.extra = fields.extra ?? {};
-    }
-
-    /**
-     * Places a region and keeps the take lane in position order. Returns it, so a
-     * caller can go on holding what it just placed.
-     */
-    place(region: Region): Region {
-        const at = this.regions.findIndex(
-            (held) => held.position > region.position
-                || (held.position === region.position && held.layer > region.layer),
-        );
-        if (at < 0) this.regions.push(region);
-        else this.regions.splice(at, 0, region);
-        return region;
-    }
-
-    /** The region with this id, if it is here. */
-    region(id: number): Region | undefined {
-        return this.regions.find((r) => r.id === id);
-    }
-
-    /** Where the last region ends, or zero when there are none. */
-    get end(): number {
-        return this.regions.reduce((most, r) => Math.max(most, r.end), 0);
-    }
-
-    write(): Extra {
-        const out: Extra = { id: this.id };
-        if (this.name !== undefined) out.name = this.name;
-        if (this.regions.length) out.regions = this.regions.map((r) => r.write());
-        return { ...out, ...this.extra };
-    }
-
-    static read(written: Extra): TakeLane {
-        return new TakeLane({
-            id: num(written.id),
-            name: written.name as string | undefined,
-            regions: ((written.regions as Extra[]) ?? []).map(Region.read),
-            extra: rest(written, "id", "name", "regions"),
-        });
-    }
-}
-
-/**
  * A break-point list as the **document's** points: `{ at, value, data }`, with
  * the segment's shape in the point's own `data`.
  *
@@ -461,18 +293,19 @@ function documentPoints(points: Iterable<PointLike>): Extra[] {
 }
 
 /**
- * What holds a curve that is not a free value: a sequence, which reads its
- * curves for a view and writes them back.
+ * What holds a curve that is not a free value -- a sequence and the event id
+ * or `null`, a multitrack and the track or the region -- which reads a curve
+ * for its view, writes it back and removes it.
  *
  * @internal
  */
 export interface CurveHolder {
-    /** The curves as written -- the sequence's for `null`, else that event's; `null` when it holds no such event. */
-    curvesOf(event: number | null): Extra[] | null;
+    /** Curve `id` as written, while `scope` holds it; `null` when it does not. */
+    writtenCurve(scope: never, id: number): Extra | null;
     /** Writes a curve whole, and answers its id. */
-    writeCurve(event: number | null, written: Extra, label: string): number;
-    /** One change, through the holder's vocabulary. */
-    edit(intent: Extra, label: string): unknown;
+    writeCurve(scope: never, written: Extra, label: string): number;
+    /** Removes curve `id` from `scope`. */
+    removeCurve(scope: never, id: number): void;
 }
 
 /** The fields a curve writes under their own names. */
@@ -490,19 +323,18 @@ const CURVE_FIELDS = ["id", "target", "name", "points", "visible", "enabled", "e
  * on an `EventSequence`, beats from the note's start on one of its events.
  *
  * **One class, free or held.** Built by a script, a curve is a **value** that
- * nothing holds. Added to a sequence or to one of its events
- * (`seq.automation.add`, `event.automation.add`) it is a **live view** of the
- * curve the sequence holds: reading a field asks the sequence, so it reads
- * what an editor left there, writing one writes the curve back into the
- * sequence, and the same curve read twice is the same object. A curve the sequence no longer holds -- removed, or undone away --
- * is **detached**: {@link Automation.held} is `false` and reading it throws,
- * until an undo brings it back.
- *
- * A curve on a multitrack is a value either way, written whole with the
- * multitrack; its `id` is the multitrack's to keep.
+ * nothing holds. Added to a holder -- a sequence or one of its events
+ * (`seq.automation.add`, `event.automation.add`), a track or a region of a
+ * multitrack (`track.automation.add`, `region.automation.add`) -- it is a
+ * **live view** of the curve the holder keeps: reading a field asks the
+ * holder, so it reads what an editor left there, writing one writes the curve
+ * back, and the same curve read twice is the same object. A curve its holder
+ * no longer keeps -- removed, or undone away -- is **detached**:
+ * {@link Automation.held} is `false` and reading it throws, until an undo
+ * brings it back.
  */
 export class Automation {
-    #holder: [CurveHolder, number | null] | null = null;
+    #holder: [CurveHolder, unknown] | null = null;
     #id: number;
     #value: {
         target?: unknown;
@@ -533,33 +365,28 @@ export class Automation {
         };
     }
 
-    /**
-     * The view of curve `id` of `holder` -- over the whole sequence when
-     * `event` is `null`, else over that event.
-     *
-     * @internal
-     */
-    static heldBy(holder: CurveHolder, event: number | null, id: number): Automation {
+    /** The view of curve `id` that `holder` keeps in `scope`. @internal */
+    static heldBy(holder: CurveHolder, scope: unknown, id: number): Automation {
         const curve = new Automation({ id });
-        curve.bind(holder, event, id);
+        curve.bind(holder, scope, id);
         return curve;
     }
 
-    /** Becomes the view of curve `id` the holder now holds. @internal */
-    bind(holder: CurveHolder, event: number | null, id: number): void {
-        this.#holder = [holder, event];
+    /** Becomes the view of curve `id` the holder now keeps. @internal */
+    bind(holder: CurveHolder, scope: unknown, id: number): void {
+        this.#holder = [holder, scope];
         this.#id = Math.trunc(id);
         this.#value = null;
     }
 
     /** @internal */
-    get holder(): [CurveHolder, number | null] | null {
+    get holder(): [CurveHolder, unknown] | null {
         return this.#holder;
     }
 
     /**
-     * The sequence that holds the curve, whose history it shares
-     * (`Editing.of`), or `null` for a free value.
+     * The structure that holds the curve -- a sequence, a multitrack -- whose
+     * history it shares (`Editing.of`), or `null` for a free value.
      *
      * @internal
      */
@@ -574,15 +401,15 @@ export class Automation {
             const value = this.#value!;
             return { id: this.#id, ...value, points: [...value.points] };
         }
-        const [holder, event] = this.#holder;
-        const found = (holder.curvesOf(event) ?? []).find((c) => Number(c.id) === this.#id);
-        if (found === undefined) throw new Error("the sequence no longer holds this curve");
+        const [holder, scope] = this.#holder;
+        const found = holder.writtenCurve(scope as never, this.#id);
+        if (found === null) throw new Error("its holder no longer keeps this curve");
         return found;
     }
 
     /**
      * Writes one field: into the value, or -- for a held curve -- the whole
-     * curve back into the sequence, which keeps its id.
+     * curve back into its holder, which keeps its id.
      */
     #write(name: string, value: unknown): void {
         if (this.#holder === null) {
@@ -596,30 +423,24 @@ export class Automation {
         } else {
             written[name] = value;
         }
-        const [holder, event] = this.#holder;
-        holder.writeCurve(event, written, "edit a curve");
+        const [holder, scope] = this.#holder;
+        holder.writeCurve(scope as never, written, "edit a curve");
     }
 
     /**
-     * Removes the curve from the sequence that holds it. This object is left
-     * detached, and an undo that brings the curve back brings it back too. A
-     * free curve is held by nothing, so there is nothing to remove it from:
-     * that throws.
+     * Removes the curve from what holds it. This object is left detached, and
+     * an undo that brings the curve back brings it back too. A free curve is
+     * held by nothing, so there is nothing to remove it from: that throws.
      */
     remove(): void {
         if (this.#holder === null) throw new Error("a free curve is held by nothing");
         this.#written();
-        const [holder, event] = this.#holder;
-        holder.edit(
-            event === null
-                ? { intent: "removeautomation", curve: this.#id }
-                : { intent: "removeeventautomation", id: event, curve: this.#id },
-            "remove a curve",
-        );
+        const [holder, scope] = this.#holder;
+        holder.removeCurve(scope as never, this.#id);
     }
 
     /**
-     * Whether a sequence holds the curve: `false` for a free value, and for a
+     * Whether something holds the curve: `false` for a free value, and for a
      * view whose curve was removed.
      */
     get held(): boolean {
@@ -638,7 +459,7 @@ export class Automation {
     }
 
     set id(value: number) {
-        if (this.#holder !== null) throw new Error("a held curve keeps the id its sequence gave it");
+        if (this.#holder !== null) throw new Error("a held curve keeps the id its holder gave it");
         this.#id = Math.trunc(value);
     }
 
@@ -762,116 +583,810 @@ export class Automation {
 }
 
 /**
- * A row of the arrangement: several take lanes, one of them playing, the curves over
- * it, and whatever the client says it is.
+ * **An object that stands for one structure of a multitrack**: the multitrack
+ * and the structure's id, never a copy. Reading a field asks the multitrack, so
+ * it reads what an editor left there; writing one is an edit in the
+ * multitrack's vocabulary. The same structure read twice is the same object
+ * (the multitrack keeps an identity map), and one the multitrack no longer
+ * holds -- removed, or undone away -- is **detached**: `held` is `false` and
+ * reading it throws, until an undo brings it back.
+ */
+abstract class Held {
+    /** @internal */
+    readonly owner: Multitrack;
+    /** @internal */
+    readonly ident: number;
+
+    /** @internal */
+    constructor(owner: Multitrack, id: number) {
+        this.owner = owner;
+        this.ident = Math.trunc(id);
+    }
+
+    /** The door's verb that reads one of these, and what it is called. */
+    protected abstract get verb(): string;
+    protected abstract get noun(): string;
+
+    /** What the door answers for this structure; throws when it is gone. @internal */
+    found(): Extra {
+        const found = this.owner.call(this.verb, { id: this.ident }) as Extra | null;
+        if (found === null) throw new Error(`clausters: the multitrack no longer holds this ${this.noun}`);
+        return found;
+    }
+
+    /** Whether the multitrack still holds it. */
+    get held(): boolean {
+        return this.owner.call(this.verb, { id: this.ident }) !== null;
+    }
+
+    /** The multitrack it belongs to. */
+    get multitrack(): Multitrack {
+        return this.owner;
+    }
+
+    /** The multitrack, whose history it shares (`Editing.of`). @internal */
+    get historyOwner(): object {
+        return this.owner;
+    }
+}
+
+/** The fields a region writes under their own names. */
+const REGION_FIELDS = ["id", "position", "length", "content", "name", "layer",
+    "fade_in", "fade_out", "muted", "automation"];
+
+/** The fields a track writes under their own names. */
+const TRACK_FIELDS = ["id", "name", "take_lanes", "active", "automation", "muted",
+    "soloed", "level", "channels", "config"];
+
+/**
+ * **One placed thing on a take lane**: a span of the timeline, and what fills
+ * it -- a view of a region the multitrack holds, made by `lane.regions.add`.
  *
- * **What a track *is* -- an instrument, a bus, a folder -- is not here.** That is
- * `config`, carried and never interpreted, for the reason a leaf is opaque: a
- * def is code in the language of whoever wrote it. What the document owns is
+ * `position` and `length` are the region's own, in seconds. They are **not**
+ * the content's: a region may show part of what it holds, and trimming moves
+ * these without touching the source. Each field is written through the
+ * multitrack's own verb: the position and the layer are where it is placed,
+ * the length and the content what it shows, the fades its fades, and the rest
+ * a rewrite of its take lane.
+ */
+export class Region extends Held {
+    protected get verb(): string {
+        return "region";
+    }
+
+    protected get noun(): string {
+        return "region";
+    }
+
+    #region(): Extra {
+        return this.found().region as Extra;
+    }
+
+    /** The take lane it sits on. */
+    get takeLane(): TakeLane {
+        return this.owner.viewOf(TakeLane, num(this.found().takeLane));
+    }
+
+    /** The track it belongs to. */
+    get track(): Track {
+        return this.owner.viewOf(Track, num(this.found().track));
+    }
+
+    /** Where it starts on the timeline, in seconds. */
+    get position(): number {
+        return num(this.#region().position);
+    }
+
+    set position(value: number) {
+        this.place(undefined, { position: value });
+    }
+
+    /** Which of the overlapping regions on its take lane is on top -- higher is nearer the front. */
+    get layer(): number {
+        return num(this.#region().layer);
+    }
+
+    set layer(value: number) {
+        this.place(undefined, { layer: value });
+    }
+
+    /**
+     * **Places it**: on `takeLane` -- of this track or of another -- at
+     * `position`, on `layer`, each left as it is when not given. One edit,
+     * whatever moved, so it undoes in one step.
+     */
+    place(takeLane?: TakeLane, { position, layer }: { position?: number; layer?: number } = {}): void {
+        const found = this.found();
+        const region = found.region as Extra;
+        this.owner.editIntent({
+            intent: "placeregion",
+            region: this.ident,
+            track: takeLane === undefined ? num(found.track) : num(takeLane.found().track),
+            take_lane: takeLane === undefined ? num(found.takeLane) : takeLane.ident,
+            position: position ?? num(region.position),
+            layer: Math.trunc(layer ?? num(region.layer)),
+        }, "move a region");
+    }
+
+    /** How long it occupies, in seconds -- not the content's length. */
+    get length(): number {
+        return num(this.#region().length);
+    }
+
+    set length(value: number) {
+        this.trim({ length: value });
+    }
+
+    /** What fills it, as a value: change it by assigning one. */
+    get content(): Content {
+        return Content.read((this.#region().content as Extra) ?? {});
+    }
+
+    set content(value: Content) {
+        this.trim({ content: value });
+    }
+
+    /**
+     * **How much of it shows, and from where**: a right-hand trim moves the
+     * length, a left-hand one the position, the length and the window into the
+     * source -- which is why the content is part of it. What is not given is
+     * left as it is.
+     */
+    trim({ position, length, content }: { position?: number; length?: number; content?: Content } = {}): void {
+        const region = this.#region();
+        const intent: Extra = {
+            intent: "trimregion",
+            region: this.ident,
+            position: position ?? num(region.position),
+            length: length ?? num(region.length),
+        };
+        if (content !== undefined) intent.content = content.write();
+        this.owner.editIntent(intent, "trim a region");
+    }
+
+    /** Its fade in, as a value, or `undefined`. */
+    get fadeIn(): Fade | undefined {
+        const fade = this.#region().fade_in as Extra | undefined;
+        return fade ? Fade.read(fade) : undefined;
+    }
+
+    set fadeIn(value: Fade | undefined) {
+        this.#fades(value, this.fadeOut);
+    }
+
+    /** Its fade out, as a value, or `undefined`. */
+    get fadeOut(): Fade | undefined {
+        const fade = this.#region().fade_out as Extra | undefined;
+        return fade ? Fade.read(fade) : undefined;
+    }
+
+    set fadeOut(value: Fade | undefined) {
+        this.#fades(this.fadeIn, value);
+    }
+
+    #fades(fadeIn: Fade | undefined, fadeOut: Fade | undefined): void {
+        const intent: Extra = { intent: "faderegion", region: this.ident };
+        if (fadeIn !== undefined) intent.fade_in = fadeIn.write();
+        if (fadeOut !== undefined) intent.fade_out = fadeOut.write();
+        this.owner.editIntent(intent, "fade a region");
+    }
+
+    /** What a reader calls it -- a label, never a second identity. */
+    get name(): string | undefined {
+        return (this.#region().name as string | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        this.#write("name", value, "rename a region");
+    }
+
+    /** Silenced without being removed. The region's own, not its track's. */
+    get muted(): boolean {
+        return Boolean(this.#region().muted);
+    }
+
+    set muted(value: boolean) {
+        this.#write("muted", Boolean(value), "mute a region");
+    }
+
+    /** Fields a newer writer wrote, carried as they are. */
+    get extra(): Extra {
+        return rest(this.#region(), ...REGION_FIELDS);
+    }
+
+    /**
+     * **The curves that act on this placement alone**, as a live collection:
+     * drawn inside the region, their points in seconds from its start.
+     */
+    get automation(): Curves {
+        return new Curves(this.owner, ["region", this.ident]);
+    }
+
+    /** Where it ends: its position plus its length. */
+    get end(): number {
+        const region = this.#region();
+        return num(region.position) + num(region.length);
+    }
+
+    /**
+     * Whether the two occupy any of the same time. Half-open, so a region
+     * ending exactly where the next begins does not overlap it -- which is what
+     * makes a cut into two regions not a crossfade.
+     */
+    overlaps(other: Region): boolean {
+        return this.position < other.end && other.position < this.end;
+    }
+
+    /** One field written by rewriting its take lane, which keeps every region's identity. */
+    #write(field: string, value: unknown, label: string): void {
+        const lane = num(this.found().takeLane);
+        const regions = this.owner.laneRegions(lane);
+        for (const region of regions) {
+            if (num(region.id) !== this.ident) continue;
+            if (value === undefined || value === null) delete region[field];
+            else region[field] = value;
+        }
+        this.owner.editIntent({ intent: "settakelane", take_lane: lane, regions }, label);
+    }
+
+    /**
+     * Takes it off its take lane. This object is left detached, and an undo
+     * that brings the region back brings it back too.
+     */
+    remove(): void {
+        const lane = num(this.found().takeLane);
+        const regions = this.owner.laneRegions(lane).filter((r) => num(r.id) !== this.ident);
+        this.owner.editIntent({ intent: "settakelane", take_lane: lane, regions }, "remove a region");
+    }
+
+    /** The region as the crate writes it. */
+    write(): Extra {
+        return { ...this.#region() };
+    }
+}
+
+/**
+ * **The regions a take lane holds, as a live collection**, in position order:
+ * iterate it, index it with `item`, and `add` one.
+ */
+export class Regions {
+    readonly #lane: TakeLane;
+
+    /** @internal */
+    constructor(lane: TakeLane) {
+        this.#lane = lane;
+    }
+
+    #ids(): number[] {
+        const ids = this.#lane.owner.idsOf("regions", { takeLane: this.#lane.ident });
+        if (ids === null) throw new Error("clausters: the multitrack no longer holds this take lane");
+        return ids;
+    }
+
+    /** How many regions it holds. */
+    get length(): number {
+        return this.#ids().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<Region> {
+        return this.#ids().map((id) => this.#lane.owner.viewOf(Region, id))[Symbol.iterator]();
+    }
+
+    /** The region at index `i` in position order (negative counts from the end). */
+    item(i: number): Region {
+        const id = this.#ids().at(i);
+        if (id === undefined) throw new RangeError(`the take lane holds no region at index ${i}`);
+        return this.#lane.owner.viewOf(Region, id);
+    }
+
+    /**
+     * **Places a region** at `position` for `length` seconds, filled with
+     * `content`, and answers it. The multitrack names it.
+     */
+    add(position: number, length: number, content: Content, {
+        name, layer = 0, fadeIn, fadeOut, muted = false,
+    }: { name?: string; layer?: number; fadeIn?: Fade; fadeOut?: Fade; muted?: boolean } = {}): Region {
+        const owner = this.#lane.owner;
+        const [id] = owner.mint(1);
+        const written: Extra = { id, position, length, content: content.write() };
+        if (name !== undefined) written.name = String(name);
+        if (layer) written.layer = Math.trunc(layer);
+        if (fadeIn !== undefined) written.fade_in = fadeIn.write();
+        if (fadeOut !== undefined) written.fade_out = fadeOut.write();
+        if (muted) written.muted = true;
+        owner.editIntent({
+            intent: "settakelane",
+            take_lane: this.#lane.ident,
+            regions: [...owner.laneRegions(this.#lane.ident), written],
+        }, "add a region");
+        return owner.viewOf(Region, id!);
+    }
+}
+
+/**
+ * **One of a track's several contents**: an ordered list of regions -- a view
+ * of a take lane the multitrack holds, made by `track.takeLanes.add` (a track
+ * starts with one).
+ */
+export class TakeLane extends Held {
+    protected get verb(): string {
+        return "takeLane";
+    }
+
+    protected get noun(): string {
+        return "take lane";
+    }
+
+    #lane(): Extra {
+        return this.found().takeLane as Extra;
+    }
+
+    /** The track that holds it. */
+    get track(): Track {
+        return this.owner.viewOf(Track, num(this.found().track));
+    }
+
+    /** What a reader calls it. */
+    get name(): string | undefined {
+        return (this.#lane().name as string | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        const track = num(this.found().track);
+        this.owner.rewriteTrack(track, (t) => {
+            for (const lane of (t.take_lanes as Extra[] | undefined) ?? []) {
+                if (num(lane.id) !== this.ident) continue;
+                if (value === undefined) delete lane.name;
+                else lane.name = value;
+            }
+        }, "rename a take lane");
+    }
+
+    /** Its regions, as a live collection in position order. */
+    get regions(): Regions {
+        return new Regions(this);
+    }
+
+    /** Where its last region ends, or zero when there are none. */
+    get end(): number {
+        return ((this.#lane().regions as Extra[] | undefined) ?? [])
+            .reduce((most, r) => Math.max(most, num(r.position) + num(r.length)), 0);
+    }
+
+    /** Takes it off its track, with its regions. This object is left detached. */
+    remove(): void {
+        const track = num(this.found().track);
+        this.owner.rewriteTrack(track, (t) => {
+            t.take_lanes = ((t.take_lanes as Extra[] | undefined) ?? [])
+                .filter((lane) => num(lane.id) !== this.ident);
+        }, "remove a take lane");
+    }
+
+    /** The take lane as the crate writes it. */
+    write(): Extra {
+        return { ...this.#lane() };
+    }
+}
+
+/**
+ * **The take lanes a track holds, as a live collection**: iterate it, index it
+ * with `item`, and `add` one.
+ */
+export class TakeLanes {
+    readonly #track: Track;
+
+    /** @internal */
+    constructor(track: Track) {
+        this.#track = track;
+    }
+
+    /** @internal */
+    ids(): number[] {
+        const ids = this.#track.owner.idsOf("takeLanes", { track: this.#track.ident });
+        if (ids === null) throw new Error("clausters: the multitrack no longer holds this track");
+        return ids;
+    }
+
+    /** How many take lanes it holds. */
+    get length(): number {
+        return this.ids().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<TakeLane> {
+        return this.ids().map((id) => this.#track.owner.viewOf(TakeLane, id))[Symbol.iterator]();
+    }
+
+    /** The take lane at index `i` (negative counts from the end). */
+    item(i: number): TakeLane {
+        const id = this.ids().at(i);
+        if (id === undefined) throw new RangeError(`the track holds no take lane at index ${i}`);
+        return this.#track.owner.viewOf(TakeLane, id);
+    }
+
+    /** **Adds an empty take lane** under the others, and answers it. */
+    add(name?: string): TakeLane {
+        const owner = this.#track.owner;
+        const [id] = owner.mint(1);
+        const written: Extra = { id };
+        if (name !== undefined) written.name = String(name);
+        owner.rewriteTrack(this.#track.ident, (t) => {
+            t.take_lanes = [...((t.take_lanes as Extra[] | undefined) ?? []), written];
+        }, "add a take lane");
+        return owner.viewOf(TakeLane, id!);
+    }
+}
+
+/**
+ * **A row of the multitrack**: several take lanes, one of them playing, the
+ * curves over it, and whatever the client says it is -- a view of a track the
+ * multitrack holds, made by `mt.tracks.add`.
+ *
+ * **What a track *is* -- an instrument, a bus, a folder -- is not here.** That
+ * is `config`, carried and never interpreted, for the reason a leaf is opaque:
+ * a def is code in the language of whoever wrote it. What the document owns is
  * the structure: which take lanes, which one plays, what is placed on them.
  */
-export class Track {
-    id: number;
-    name?: string;
-    takeLanes: TakeLane[];
-    /** Which lane plays, as an index into {@link Track.takeLanes}. */
-    active: number;
-    automation: Automation[];
-    muted: boolean;
+export class Track extends Held {
+    protected get verb(): string {
+        return "track";
+    }
+
+    protected get noun(): string {
+        return "track";
+    }
+
+    #set(field: string, value: unknown, label: string): void {
+        this.owner.rewriteTrack(this.ident, (t) => {
+            if (value === undefined || value === null) delete t[field];
+            else t[field] = value;
+        }, label);
+    }
+
+    /** What a reader calls it. */
+    get name(): string | undefined {
+        return (this.found().name as string | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        this.#set("name", value, "rename a track");
+    }
+
+    /** Silenced. */
+    get muted(): boolean {
+        return Boolean(this.found().muted);
+    }
+
+    set muted(value: boolean) {
+        this.#set("muted", Boolean(value), "mute a track");
+    }
+
     /**
      * Marked as soloed. Whether a solo anywhere silences everything else is the
      * mixer's rule and not the document's.
      */
-    soloed: boolean;
-    /**
-     * Where this track's fader is, as a linear gain. A field of its own for the
-     * reason {@link Track.channels} is one: what a multitrack sounds like is the
-     * multitrack's, not a key one client reads out of a table it was only meant to
-     * carry.
-     */
-    level: number;
-    /**
-     * How wide this track is, in channels. A field of its own rather than a
-     * line in {@link Track.config}, because it decides the mix: reopening a
-     * multitrack has to give back the mix it was left with, and both clients have to
-     * write it the same way. Two unless the track says otherwise.
-     */
-    channels: number;
-    config?: unknown;
-    extra: Extra;
+    get soloed(): boolean {
+        return Boolean(this.found().soloed);
+    }
 
-    constructor(fields: {
-        id: number;
-        name?: string;
-        takeLanes?: TakeLane[];
-        active?: number;
-        automation?: Automation[];
-        muted?: boolean;
-        soloed?: boolean;
-        level?: number;
-        channels?: number;
-        config?: unknown;
-        extra?: Extra;
-    }) {
-        this.id = fields.id;
-        this.name = fields.name;
-        this.takeLanes = fields.takeLanes ?? [];
-        this.active = fields.active ?? 0;
-        this.automation = fields.automation ?? [];
-        this.muted = fields.muted ?? false;
-        this.soloed = fields.soloed ?? false;
-        this.level = fields.level ?? 1;
-        this.channels = fields.channels ?? 2;
-        this.config = fields.config;
-        this.extra = fields.extra ?? {};
+    set soloed(value: boolean) {
+        this.#set("soloed", Boolean(value), "solo a track");
+    }
+
+    /** Where its fader is, as a linear gain. */
+    get level(): number {
+        const level = this.found().level;
+        return level === undefined ? 1 : num(level);
+    }
+
+    set level(value: number) {
+        this.#set("level", Number(value), "set a track's level");
+    }
+
+    /** How wide it is, in channels -- two unless it says otherwise. */
+    get channels(): number {
+        const channels = this.found().channels;
+        return channels === undefined ? 2 : num(channels);
+    }
+
+    set channels(value: number) {
+        this.#set("channels", Math.trunc(value), "set a track's width");
+    }
+
+    /** What the client says the track is, carried and never read. */
+    get config(): unknown {
+        return this.found().config;
+    }
+
+    set config(value: unknown) {
+        this.#set("config", value, "configure a track");
+    }
+
+    /** Fields a newer writer wrote, carried as they are. */
+    get extra(): Extra {
+        return rest(this.found(), ...TRACK_FIELDS);
+    }
+
+    /** Its take lanes, as a live collection. */
+    get takeLanes(): TakeLanes {
+        return new TakeLanes(this);
     }
 
     /**
-     * The take lane that plays, or `undefined` when {@link Track.active} names one
-     * that is not there.
+     * Which take lane plays, as an index into {@link Track.takeLanes}. Setting it
+     * is comping's one verb.
      */
+    get active(): number {
+        return num(this.found().active);
+    }
+
+    set active(index: number) {
+        this.activeTakeLane = this.takeLanes.item(index);
+    }
+
+    /** The take lane that plays, or `undefined` when `active` names one that is not there. */
     get activeTakeLane(): TakeLane | undefined {
-        return this.takeLanes[this.active];
+        const ids = this.takeLanes.ids();
+        const id = ids[this.active];
+        return id === undefined ? undefined : this.owner.viewOf(TakeLane, id);
+    }
+
+    set activeTakeLane(lane: TakeLane | undefined) {
+        if (lane === undefined) return;
+        this.owner.editIntent(
+            { intent: "setactivetakelane", track: this.ident, take_lane: lane.ident },
+            "choose a take",
+        );
     }
 
     /**
-     * Where the track's last region ends, across **every** take lane -- what it spans
+     * **The curves over the track**, as a live collection: drawn in rows beside
+     * it, their points in the multitrack's seconds.
+     */
+    get automation(): Curves {
+        return new Curves(this.owner, ["track", this.ident]);
+    }
+
+    /**
+     * Where its last region ends, across **every** take lane -- what it spans
      * rather than what it plays, since an alternate take is still part of the
      * multitrack.
      */
     get end(): number {
-        return this.takeLanes.reduce((most, lane) => Math.max(most, lane.end), 0);
+        let end = 0;
+        for (const lane of (this.found().take_lanes as Extra[] | undefined) ?? []) {
+            for (const r of (lane.regions as Extra[] | undefined) ?? []) {
+                end = Math.max(end, num(r.position) + num(r.length));
+            }
+        }
+        return end;
     }
 
+    /** Takes it out of the multitrack, with everything on it. This object is left detached. */
+    remove(): void {
+        const tracks = this.owner.tracksWritten().filter((t) => num(t.id) !== this.ident);
+        this.owner.editIntent({ intent: "settracks", tracks }, "remove a track");
+    }
+
+    /** The track as the crate writes it. */
     write(): Extra {
-        const out: Extra = { id: this.id };
-        if (this.name !== undefined) out.name = this.name;
-        if (this.takeLanes.length) out.take_lanes = this.takeLanes.map((lane) => lane.write());
-        if (this.active) out.active = this.active;
-        if (this.automation.length) out.automation = this.automation.map((a) => a.write());
-        if (this.muted) out.muted = true;
-        if (this.soloed) out.soloed = true;
-        if (this.level !== 1) out.level = this.level;
-        if (this.channels !== 2) out.channels = this.channels;
-        if (this.config !== undefined) out.config = this.config;
-        return { ...out, ...this.extra };
+        return { ...this.found() };
+    }
+}
+
+/**
+ * **The multitrack's tracks, as a live collection** in the order shown:
+ * iterate it, index it with `item`, and `add` one.
+ */
+export class Tracks {
+    readonly #owner: Multitrack;
+
+    /** @internal */
+    constructor(owner: Multitrack) {
+        this.#owner = owner;
     }
 
-    static read(written: Extra): Track {
-        return new Track({
-            id: num(written.id),
-            name: written.name as string | undefined,
-            takeLanes: ((written.take_lanes as Extra[]) ?? []).map(TakeLane.read),
-            active: num(written.active),
-            automation: ((written.automation as Extra[]) ?? []).map(Automation.read),
-            muted: Boolean(written.muted),
-            soloed: Boolean(written.soloed),
-            level: written.level === undefined ? 1 : num(written.level),
-            channels: written.channels === undefined ? 2 : num(written.channels),
-            config: written.config,
-            extra: rest(written, "id", "name", "take_lanes", "active", "automation",
-                        "muted", "soloed", "level", "channels", "config"),
-        });
+    #ids(): number[] {
+        return this.#owner.idsOf("tracks") ?? [];
+    }
+
+    /** How many tracks there are. */
+    get length(): number {
+        return this.#ids().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<Track> {
+        return this.#ids().map((id) => this.#owner.viewOf(Track, id))[Symbol.iterator]();
+    }
+
+    /** The track at index `i` (negative counts from the end). */
+    item(i: number): Track {
+        const id = this.#ids().at(i);
+        if (id === undefined) throw new RangeError(`the multitrack holds no track at index ${i}`);
+        return this.#owner.viewOf(Track, id);
+    }
+
+    /** **Adds a track** under the others, with one empty take lane, and answers it. */
+    add(name?: string, {
+        muted = false, soloed = false, level = 1, channels = 2, config,
+    }: { muted?: boolean; soloed?: boolean; level?: number; channels?: number; config?: unknown } = {}): Track {
+        const [trackId, laneId] = this.#owner.mint(2);
+        const written: Extra = { id: trackId, take_lanes: [{ id: laneId }] };
+        if (name !== undefined) written.name = String(name);
+        if (muted) written.muted = true;
+        if (soloed) written.soloed = true;
+        if (level !== 1) written.level = Number(level);
+        if (channels !== 2) written.channels = Math.trunc(channels);
+        if (config !== undefined) written.config = config;
+        this.#owner.editIntent(
+            { intent: "settracks", tracks: [...this.#owner.tracksWritten(), written] },
+            "add a track",
+        );
+        return this.#owner.viewOf(Track, trackId!);
+    }
+}
+
+/**
+ * **A named point on the timeline**, at a second -- a view of a marker the
+ * multitrack holds, made by `mt.markers.add`.
+ */
+export class Marker extends Held {
+    protected get verb(): string {
+        return "marker";
+    }
+
+    protected get noun(): string {
+        return "marker";
+    }
+
+    /** Where it is, in seconds. */
+    get at(): number {
+        return num(this.found().at);
+    }
+
+    set at(value: number) {
+        this.#set(value, this.name);
+    }
+
+    /** What it is called. */
+    get name(): string | undefined {
+        return (this.found().name as string | undefined) ?? undefined;
+    }
+
+    set name(value: string | undefined) {
+        this.#set(this.at, value);
+    }
+
+    #set(at: number, name: string | undefined): void {
+        const intent: Extra = { intent: "setmarker", marker: this.ident, at };
+        if (name !== undefined) intent.name = String(name);
+        this.owner.editIntent(intent, "set a marker");
+    }
+
+    /** Takes it off the timeline. This object is left detached. */
+    remove(): void {
+        this.found();
+        this.owner.editIntent({ intent: "removemarker", marker: this.ident }, "remove a marker");
+    }
+
+    /** The marker as the crate writes it. */
+    write(): Extra {
+        return { ...this.found() };
+    }
+}
+
+/**
+ * **The multitrack's markers, as a live collection** in position order:
+ * iterate it, index it with `item`, and `add` one. Several may share an
+ * instant: unlike a tempo, two names for one moment is a thing people do.
+ */
+export class Markers {
+    readonly #owner: Multitrack;
+
+    /** @internal */
+    constructor(owner: Multitrack) {
+        this.#owner = owner;
+    }
+
+    #ids(): number[] {
+        return this.#owner.idsOf("markers") ?? [];
+    }
+
+    /** How many markers there are. */
+    get length(): number {
+        return this.#ids().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<Marker> {
+        return this.#ids().map((id) => this.#owner.viewOf(Marker, id))[Symbol.iterator]();
+    }
+
+    /** The marker at index `i` in position order (negative counts from the end). */
+    item(i: number): Marker {
+        const id = this.#ids().at(i);
+        if (id === undefined) throw new RangeError(`the multitrack holds no marker at index ${i}`);
+        return this.#owner.viewOf(Marker, id);
+    }
+
+    /** **Places a marker** at `at` seconds, and answers it. */
+    add(at: number, name?: string): Marker {
+        const [id] = this.#owner.mint(1);
+        const intent: Extra = { intent: "setmarker", marker: id, at };
+        if (name !== undefined) intent.name = String(name);
+        this.#owner.editIntent(intent, "add a marker");
+        return this.#owner.viewOf(Marker, id!);
+    }
+}
+
+/** Which holds a multitrack's curve: a track or a region, by id. */
+type CurveScope = ["track" | "region", number];
+
+/**
+ * **Curves a track or a region holds, as a live collection** of
+ * {@link Automation} views: iterate it, index it with `item`, and `add` one.
+ */
+export class Curves {
+    readonly #owner: Multitrack;
+    readonly #scope: CurveScope;
+
+    /** @internal */
+    constructor(owner: Multitrack, scope: CurveScope) {
+        this.#owner = owner;
+        this.#scope = scope;
+    }
+
+    #ids(): number[] {
+        const [kind, id] = this.#scope;
+        const ids = this.#owner.idsOf("automation", { [kind]: id });
+        if (ids === null) throw new Error(`clausters: the multitrack no longer holds this ${kind}`);
+        return ids;
+    }
+
+    /** How many curves there are. */
+    get length(): number {
+        return this.#ids().length;
+    }
+
+    [Symbol.iterator](): IterableIterator<Automation> {
+        return this.#ids().map((id) => this.#owner.curveView(this.#scope, id))[Symbol.iterator]();
+    }
+
+    /** The curve at index `i` (negative counts from the end). */
+    item(i: number): Automation {
+        const id = this.#ids().at(i);
+        if (id === undefined) throw new RangeError(`there is no curve at index ${i}`);
+        return this.#owner.curveView(this.#scope, id);
+    }
+
+    /**
+     * **Adds a curve** and answers it, held: `target` says what it moves, in
+     * the client's terms (`{ port: "gain" }`), `points` are `[second, value]`
+     * pairs or the document's points, `name` labels it. Or `target` is a free
+     * {@link Automation}, which is added as it is and becomes the view.
+     */
+    add(target: unknown, {
+        points = [], name, visible = false, enabled = true,
+    }: { points?: Iterable<PointLike>; name?: string; visible?: boolean; enabled?: boolean } = {}): Automation {
+        let curve: Automation | null = null;
+        let written: Extra;
+        if (target instanceof Automation) {
+            curve = target;
+            if (curve.holder !== null) {
+                throw new Error("clausters: this curve is held already: add a copy of it "
+                    + "(Automation.read(curve.write()))");
+            }
+            written = curve.write();
+        } else {
+            written = { target, points: documentPoints(points) };
+            if (name !== undefined) written.name = String(name);
+            if (visible) written.visible = true;
+            if (!enabled) written.enabled = false;
+        }
+        const [id] = this.#owner.mint(1);
+        written.id = id;
+        this.#owner.withCurves(this.#scope, (curves) => [...curves, written], "add a curve");
+        if (curve === null) return this.#owner.curveView(this.#scope, id!);
+        this.#owner.adoptCurve(curve, this.#scope, id!);
+        return curve;
     }
 }
 
@@ -946,36 +1461,6 @@ export class Meter {
     }
 }
 
-/** A named point on the timeline, at a second. */
-export class Marker {
-    id: number;
-    at: number;
-    name?: string;
-    extra: Extra;
-
-    constructor(fields: { id: number; at: number; name?: string; extra?: Extra }) {
-        this.id = fields.id;
-        this.at = fields.at;
-        this.name = fields.name;
-        this.extra = fields.extra ?? {};
-    }
-
-    write(): Extra {
-        const out: Extra = { id: this.id, at: this.at };
-        if (this.name !== undefined) out.name = this.name;
-        return { ...out, ...this.extra };
-    }
-
-    static read(written: Extra): Marker {
-        return new Marker({
-            id: num(written.id),
-            at: num(written.at),
-            name: written.name as string | undefined,
-            extra: rest(written, "id", "at", "name"),
-        });
-    }
-}
-
 /**
  * A span of the timeline: the loop, the punch, a named region of the multitrack.
  *
@@ -1004,57 +1489,322 @@ export class Span {
 }
 
 /**
- * The tracks, and the timeline they are placed on.
+ * **The tracks, and the timeline they are placed on** -- a handle over the
+ * multitrack the shared crate holds, which a multitrack editor opened on it
+ * edits in place.
  *
- * What is here rather than on a track is what the **multitrack** has one of: the
- * tempo map, the meter map, the markers, the loop. A track has none of them and
- * never disagrees with another track about them, which is the whole argument
- * for where they live.
+ * What is here rather than on a track is what the **multitrack** has one of:
+ * the tempo map, the meter map, the markers, the loop. A track has none of them
+ * and never disagrees with another track about them, which is the whole
+ * argument for where they live.
+ *
+ * **What a page reads and writes is objects**: {@link Multitrack.tracks}, a
+ * track's {@link Track.takeLanes}, a take lane's {@link TakeLane.regions}, the
+ * curves of a track or a region and the {@link Multitrack.markers} are live
+ * collections whose `add` answers the object it made, and every object is a
+ * view of what the multitrack holds -- so a change is made through the object
+ * it changes (`region.position = 2.0`, `track.muted = true`,
+ * `region.remove()`), and no call takes or answers an id. A tempo entry, a
+ * meter entry, a span, a fade and a region's content have no identity of their
+ * own: they are read as values and written whole through what holds them.
  */
-export class Multitrack {
-    /**
-     * What this multitrack is *at*, and the whole of what a stale edit is stale
-     * against -- the twin of the document's own version, and deliberately a
-     * second counter: an editor of the multitrack is not editing the tree, so one
-     * number would make every edit to either look like a change to both.
-     */
-    version = FIRST_VERSION;
-    tracks: Track[] = [];
-    /**
-     * How wide the multitrack is, in channels -- the master's own width, and what a
-     * track's output is mixed into. Here for the reason {@link Track.channels}
-     * is.
-     */
-    channels = 2;
-    tempo: Tempo[] = [];
-    meter: Meter[] = [];
-    markers: Marker[] = [];
-    loopSpan?: Span;
-    punch?: Span;
-    extra: Extra = {};
+export class Multitrack implements CurveHolder {
+    readonly #mt: JsMultitrack;
 
-    /** The track with this id. */
-    track(id: number): Track | undefined {
-        return this.tracks.find((t) => t.id === id);
+    /** What {@link Multitrack.read} hands the constructor, for the one call it makes. */
+    static #reading: Extra | null = null;
+
+    /** @param options `channels`: how wide the multitrack is -- the master's own width. */
+    constructor({ channels = 2 }: { channels?: number } = {}) {
+        requireCore("a Multitrack");
+        const reading = Multitrack.#reading;
+        Multitrack.#reading = null;
+        const written = reading ?? (channels === 2 ? null : { channels: Math.trunc(channels) });
+        this.#mt = new JsMultitrack(written === null ? "" : JSON.stringify(written));
+    }
+
+    /** A multitrack from the crate's JSON -- what `write` and a session file hold. */
+    static read(written: Extra): Multitrack {
+        Multitrack.#reading = { ...(written ?? {}) };
+        return new Multitrack();
+    }
+
+    /** The multitrack as the crate's JSON. Nothing said is nothing written. */
+    write(): Extra {
+        return this.call("state") as Extra;
+    }
+
+    // ---- the door, and the identity map ----
+
+    /** The handle a multitrack editor opens over. @internal */
+    get handle(): JsMultitrack {
+        return this.#mt;
+    }
+
+    /** One verb of the multitrack's door; throws with the crate's error. @internal */
+    call(verb: string, args: Extra = {}): unknown {
+        const answer = JSON.parse(this.#mt.call(JSON.stringify({ verb, ...args }))) as unknown;
+        if (answer !== null && typeof answer === "object" && "error" in (answer as Extra)) {
+            throw new Error(`clausters: ${String((answer as Extra).error)}`);
+        }
+        return answer;
+    }
+
+    /** `kind:id` to the one object that stands for that structure, while anything holds it. */
+    readonly #objects = new Map<string, WeakRef<object>>();
+
+    #object<T extends object>(key: string, make: () => T): T {
+        const found = this.#objects.get(key)?.deref();
+        if (found !== undefined) return found as T;
+        const made = make();
+        this.#objects.set(key, new WeakRef(made));
+        return made;
+    }
+
+    /** The object of the structure `id` is, of class `cls` -- the same one every time. @internal */
+    viewOf<T extends Held>(cls: new (owner: Multitrack, id: number) => T, id: number): T {
+        return this.#object(`${cls.name}:${id}`, () => new cls(this, id));
+    }
+
+    /** The object of curve `id`, held by `scope` -- the same one every time. @internal */
+    curveView(scope: CurveScope, id: number): Automation {
+        return this.#object(`curve:${id}`, () => Automation.heldBy(this, scope, id));
+    }
+
+    /** Makes a free curve the view of curve `id`, in the identity map. @internal */
+    adoptCurve(curve: Automation, scope: CurveScope, id: number): void {
+        curve.bind(this, scope, id);
+        this.#objects.set(`curve:${id}`, new WeakRef(curve));
+    }
+
+    /** The ids a container holds, in the order shown, or `null` when it is not there. @internal */
+    idsOf(of: string, where: Extra = {}): number[] | null {
+        const ids = (this.call("ids", { of, ...where }) as { ids: number[] | null }).ids;
+        return ids === null ? null : ids.map(Number);
+    }
+
+    /** `count` ids nothing in the multitrack names. @internal */
+    mint(count: number): number[] {
+        return ((this.call("mint", { count }) as { ids: number[] }).ids).map(Number);
     }
 
     /**
-     * Where the last region ends, across every track and every take lane -- how long
-     * the multitrack is.
+     * Applies one edit in the multitrack's vocabulary and answers `{applied,
+     * current?, reason?}`. The door the objects write through.
+     *
+     * @internal
+     */
+    applyIntent(intent: Extra, inverse = true): { applied: boolean; current?: unknown; reason?: string } {
+        return this.call("apply", { intent, inverse }) as { applied: boolean; current?: unknown; reason?: string };
+    }
+
+    /**
+     * **One change a page makes through an object**: applied, and answered as
+     * {@link Multitrack.applyIntent} answers; throws with the multitrack's
+     * reason when it refuses. `label` is what an undo would call it.
+     *
+     * A multitrack with a history -- one an editor is open on, or one a page
+     * asked for {@link Multitrack.history} -- takes the change as a turn of
+     * it: recorded, and every window over it redrawn. One with none just
+     * changes.
+     *
+     * @internal
+     */
+    editIntent(intent: Extra, label: string): { applied: boolean; reason?: string } {
+        const context = contexts.get(this);
+        const answer = context === undefined
+            ? this.applyIntent(intent, false)
+            : context.scriptEdit(this, intent, label);
+        if (!answer.applied && answer.reason) throw new Error(`clausters: ${answer.reason}`);
+        return answer;
+    }
+
+    /** The tracks as written. @internal */
+    tracksWritten(): Extra[] {
+        return [...((this.write().tracks as Extra[] | undefined) ?? [])];
+    }
+
+    /** The regions of take lane `lane`, as written. @internal */
+    laneRegions(lane: number): Extra[] {
+        const found = this.call("takeLane", { id: lane }) as { takeLane: Extra } | null;
+        if (found === null) throw new Error("clausters: the multitrack no longer holds this take lane");
+        return [...((found.takeLane.regions as Extra[] | undefined) ?? [])];
+    }
+
+    /**
+     * Rewrites one track with `change` -- a function over its written form -- as
+     * the tracks stated whole, which keeps every identity.
+     *
+     * @internal
+     */
+    rewriteTrack(id: number, change: (track: Extra) => void, label: string): void {
+        const tracks = this.tracksWritten();
+        for (const track of tracks) if (num(track.id) === id) change(track);
+        this.editIntent({ intent: "settracks", tracks }, label);
+    }
+
+    // ---- what a history asks of it ----
+
+    /** The key and the domain it joins a history under -- a multitrack editor's. @internal */
+    scriptKey(): [string, string] {
+        return [keyOf("multitrack", this), "multitrack"];
+    }
+
+    /**
+     * The edit a redo applies: the intent itself, which already names every
+     * identity it makes -- the ids are minted before it is sent.
+     *
+     * @internal
+     */
+    forwardOf(intent: Extra): Extra {
+        return intent;
+    }
+
+    /**
+     * **The multitrack's history**: the undo order its editors share, made on
+     * first ask. From then on every change made through the multitrack's
+     * objects is an entry of it, and a turn the windows over it see;
+     * `mt.history.entry("tidy", () => ...)` makes everything inside it one
+     * entry.
+     */
+    get history(): UndoHistory {
+        return new UndoHistory(this);
+    }
+
+    // ---- the curve holder ----
+
+    /** Curve `id` as written, while `scope` holds it. @internal */
+    writtenCurve(scope: CurveScope, id: number): Extra | null {
+        const found = this.call("automation", { id }) as Extra | null;
+        if (found === null || num(found[scope[0]]) !== scope[1] || found[scope[0]] === undefined) return null;
+        return found.automation as Extra;
+    }
+
+    /**
+     * Rewrites the curves `scope` holds with `change`, through the edit that
+     * states their holder: the tracks for a track's, the take lane for a
+     * region's.
+     *
+     * @internal
+     */
+    withCurves(scope: CurveScope, change: (curves: Extra[]) => Extra[], label: string): void {
+        const [kind, id] = scope;
+        if (kind === "track") {
+            this.rewriteTrack(id, (t) => {
+                t.automation = change([...((t.automation as Extra[] | undefined) ?? [])]);
+            }, label);
+            return;
+        }
+        const found = this.call("region", { id }) as Extra | null;
+        if (found === null) throw new Error("clausters: the multitrack no longer holds this region");
+        const lane = num(found.takeLane);
+        const regions = this.laneRegions(lane);
+        for (const region of regions) {
+            if (num(region.id) === id) {
+                region.automation = change([...((region.automation as Extra[] | undefined) ?? [])]);
+            }
+        }
+        this.editIntent({ intent: "settakelane", take_lane: lane, regions }, label);
+    }
+
+    /**
+     * Writes a curve whole and answers its id. Its points alone are the
+     * multitrack's own curve verb, the one a curve drawn in a row is.
+     *
+     * @internal
+     */
+    writeCurve(scope: CurveScope, written: Extra, label: string): number {
+        const id = num(written.id);
+        const current = this.writtenCurve(scope, id);
+        const without = (curve: Extra) => JSON.stringify(rest(curve, "points"));
+        if (current !== null && without(current) === without(written)) {
+            this.editIntent({ intent: "setautomation", automation: id,
+                              points: [...((written.points as Extra[] | undefined) ?? [])] }, label);
+            return id;
+        }
+        this.withCurves(scope, (curves) => curves.map((c) => (num(c.id) === id ? written : c)), label);
+        return id;
+    }
+
+    /** Removes curve `id` from `scope`. @internal */
+    removeCurve(scope: CurveScope, id: number): void {
+        this.withCurves(scope, (curves) => curves.filter((c) => num(c.id) !== id), "remove a curve");
+    }
+
+    // ---- reading ----
+
+    /** What this multitrack is *at*, and the whole of what a stale edit is stale against. */
+    get version(): number {
+        const version = this.write().version;
+        return version === undefined ? FIRST_VERSION : num(version);
+    }
+
+    /**
+     * How wide the multitrack is, in channels -- the master's own width, and
+     * what a track's output is mixed into.
+     */
+    get channels(): number {
+        const channels = this.write().channels;
+        return channels === undefined ? 2 : num(channels);
+    }
+
+    /** Fields a newer writer wrote, carried as they are. */
+    get extra(): Extra {
+        return rest(this.write(), "version", "tracks", "channels", "tempo", "meter",
+                    "markers", "loop_span", "punch");
+    }
+
+    /** The tracks, as a live collection in the order shown. */
+    get tracks(): Tracks {
+        return new Tracks(this);
+    }
+
+    /** The named points, as a live collection in position order. */
+    get markers(): Markers {
+        return new Markers(this);
+    }
+
+    /**
+     * Where the last region ends, across every track and every take lane -- how
+     * long the multitrack is.
      */
     get end(): number {
-        return this.tracks.reduce((most, t) => Math.max(most, t.end), 0);
+        let end = 0;
+        for (const track of this.tracksWritten()) {
+            for (const lane of (track.take_lanes as Extra[] | undefined) ?? []) {
+                for (const r of (lane.regions as Extra[] | undefined) ?? []) {
+                    end = Math.max(end, num(r.position) + num(r.length));
+                }
+            }
+        }
+        return end;
     }
 
     /**
-     * Every region, in track then take lane then position order -- **every** take lane,
-     * not only the ones that play, because an alternate take still names the
-     * source it plays.
+     * Every region, in track then take lane then position order -- **every**
+     * take lane, not only the ones that play, because an alternate take still
+     * names the source it plays.
      */
     *regions(): Generator<Region> {
-        for (const track of this.tracks) {
-            for (const lane of track.takeLanes) yield* lane.regions;
+        for (const track of this.tracksWritten()) {
+            for (const lane of (track.take_lanes as Extra[] | undefined) ?? []) {
+                for (const region of (lane.regions as Extra[] | undefined) ?? []) {
+                    yield this.viewOf(Region, num(region.id));
+                }
+            }
         }
+    }
+
+    // ---- the timeline's own: the two maps and the two spans ----
+
+    /** The tempo map's entries, in position order, as values. Change it with {@link Multitrack.setTempo}. */
+    get tempo(): Tempo[] {
+        return ((this.write().tempo as Extra[] | undefined) ?? []).map(Tempo.read);
+    }
+
+    /** The meter map's entries, in position order, as values. Change it with {@link Multitrack.setMeter}. */
+    get meter(): Meter[] {
+        return ((this.write().meter as Extra[] | undefined) ?? []).map(Meter.read);
     }
 
     /**
@@ -1097,58 +1847,45 @@ export class Multitrack {
      * -- two tempos at one position is a state the map should not hold.
      */
     setTempo(tempo: Tempo): void {
-        this.tempo = this.tempo.filter((t) => t.at !== tempo.at);
-        this.tempo.push(tempo);
-        this.tempo.sort((a, b) => a.at - b.at);
+        const entries = [...this.tempo.filter((t) => t.at !== tempo.at), tempo]
+            .sort((a, b) => a.at - b.at);
+        this.editIntent({ intent: "settempomap", tempo: entries.map((t) => t.write()) }, "set the tempo");
     }
 
     /** Adds a meter entry, on the same rule. */
     setMeter(meter: Meter): void {
-        this.meter = this.meter.filter((m) => m.at !== meter.at);
-        this.meter.push(meter);
-        this.meter.sort((a, b) => a.at - b.at);
+        const entries = [...this.meter.filter((m) => m.at !== meter.at), meter]
+            .sort((a, b) => a.at - b.at);
+        this.editIntent({ intent: "setmetermap", meter: entries.map((m) => m.write()) }, "set the meter");
     }
 
     /**
-     * Adds a marker, in position order. Several may share an instant: unlike a
-     * tempo, two names for one moment is a thing people do.
+     * Where the loop is, or `undefined`. Whether looping is *on* is the
+     * transport's; what the multitrack holds is where.
      */
-    addMarker(marker: Marker): void {
-        this.markers.push(marker);
-        this.markers.sort((a, b) => a.at - b.at);
+    get loopSpan(): Span | undefined {
+        const span = this.write().loop_span as Extra | undefined;
+        return span ? Span.read(span) : undefined;
     }
 
-    /** The arrangement as the crate's JSON. Nothing said is nothing written. */
-    write(): Extra {
-        const out: Extra = {};
-        // Out of the file while it is the first version, so an unedited multitrack
-        // still writes an empty object: the reader defaults back to the same
-        // number, so nothing is lost by leaving it out.
-        if (this.version !== FIRST_VERSION) out.version = this.version;
-        if (this.tracks.length) out.tracks = this.tracks.map((t) => t.write());
-        if (this.channels !== 2) out.channels = this.channels;
-        if (this.tempo.length) out.tempo = this.tempo.map((t) => t.write());
-        if (this.meter.length) out.meter = this.meter.map((m) => m.write());
-        if (this.markers.length) out.markers = this.markers.map((m) => m.write());
-        if (this.loopSpan) out.loop_span = this.loopSpan.write();
-        if (this.punch) out.punch = this.punch.write();
-        return { ...out, ...this.extra };
+    set loopSpan(span: Span | undefined) {
+        this.#range("loop", span);
     }
 
-    /** An arrangement from the crate's JSON. */
-    static read(written: Extra): Multitrack {
-        const multitrack = new Multitrack();
-        multitrack.version = (written.version as number) ?? FIRST_VERSION;
-        multitrack.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
-        multitrack.channels = written.channels === undefined ? 2 : num(written.channels);
-        multitrack.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
-        multitrack.meter = ((written.meter as Extra[]) ?? []).map(Meter.read);
-        multitrack.markers = ((written.markers as Extra[]) ?? []).map(Marker.read);
-        if (written.loop_span) multitrack.loopSpan = Span.read(written.loop_span as Extra);
-        if (written.punch) multitrack.punch = Span.read(written.punch as Extra);
-        multitrack.extra = rest(written, "version", "tracks", "channels", "tempo", "meter",
-                           "markers", "loop_span", "punch");
-        return multitrack;
+    /** Where recording punches in and out, or `undefined`. */
+    get punch(): Span | undefined {
+        const span = this.write().punch as Extra | undefined;
+        return span ? Span.read(span) : undefined;
+    }
+
+    set punch(span: Span | undefined) {
+        this.#range("punch", span);
+    }
+
+    #range(which: "loop" | "punch", span: Span | undefined): void {
+        const intent: Extra = { intent: "setrange", range: which };
+        if (span !== undefined) intent.span = span.write();
+        this.editIntent(intent, `set the ${which}`);
     }
 }
 
@@ -1471,31 +2208,32 @@ export class View {
     takeLanes = new Map<number, TakeLaneView>();
     extra: Extra = {};
 
-    /** How this track is drawn, or the default when nobody touched it. */
-    track(id: number): TrackView {
-        return this.tracks.get(id) ?? new TrackView();
+    /** How `track` is drawn, or the default when nobody touched it. */
+    track(track: Track): TrackView {
+        return this.tracks.get(track.ident) ?? new TrackView();
     }
 
     /**
-     * How this track is drawn, to be edited -- created on first use, which is
+     * How `track` is drawn, to be edited -- created on first use, which is
      * what makes "nobody has touched it" cost nothing to store.
      */
-    trackView(id: number): TrackView {
-        let view = this.tracks.get(id);
+    trackView(track: Track): TrackView {
+        let view = this.tracks.get(track.ident);
         if (!view) {
             view = new TrackView();
-            this.tracks.set(id, view);
+            this.tracks.set(track.ident, view);
         }
         return view;
     }
 
-    /** How this lane is drawn, or the default. */
-    takeLane(id: number): TakeLaneView {
-        return this.takeLanes.get(id) ?? new TakeLaneView();
+    /** How `lane` is drawn, or the default. */
+    takeLane(lane: TakeLane): TakeLaneView {
+        return this.takeLanes.get(lane.ident) ?? new TakeLaneView();
     }
 
-    /** How this lane is drawn, to be edited. See {@link View.trackView}. */
-    takeLaneView(id: number): TakeLaneView {
+    /** How `lane` is drawn, to be edited. See {@link View.trackView}. */
+    takeLaneView(lane: TakeLane): TakeLaneView {
+        const id = lane.ident;
         let view = this.takeLanes.get(id);
         if (!view) {
             view = new TakeLaneView();
@@ -1514,13 +2252,13 @@ export class View {
      */
     prune(multitrack: Multitrack): boolean {
         const held = new Set<number>();
-        for (const track of multitrack.tracks) {
-            held.add(track.id);
-            for (const lane of track.takeLanes) {
-                held.add(lane.id);
-                for (const region of lane.regions) held.add(region.id);
+        for (const track of multitrack.tracksWritten()) {
+            held.add(num(track.id));
+            for (const lane of (track.take_lanes as Extra[] | undefined) ?? []) {
+                held.add(num(lane.id));
+                for (const region of (lane.regions as Extra[] | undefined) ?? []) held.add(num(region.id));
             }
-            for (const curve of track.automation) held.add(curve.id);
+            for (const curve of (track.automation as Extra[] | undefined) ?? []) held.add(num(curve.id));
         }
         const before = [this.tracks.size, this.takeLanes.size, this.selected.length,
                         this.focused, this.detail].join(",");

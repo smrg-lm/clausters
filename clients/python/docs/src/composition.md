@@ -151,20 +151,46 @@ The vocabulary is the field's own:
   precisely so that no two tracks can disagree about them.
 
 ```python
-from clausters.multitrack import Content, TakeLane, Multitrack, Region, Tempo, Track
+from clausters.multitrack import Content, Fade, Multitrack, Tempo
 
 multitrack = Multitrack()
 multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))       # beats per second: 96 a minute
 bar = multitrack.tempo_map().secs_at(4.0)            # where the second bar begins
 
-drums = Track(id=1, name="drums", take_lanes=[TakeLane(id=2)])
-drums.active_take_lane.place(Region(id=3, position=bar, length=2.5,
-                               content=Content.onto(take)))
-multitrack.tracks.append(drums)
+drums = multitrack.tracks.add("drums")               # a Track, with one take lane
+hit = drums.active_take_lane.regions.add(bar, 2.5, Content.onto(take))
+hit.fade_in = Fade(0.01)
+drums.automation.add({"port": "gain"}, [(0.0, 1.0), (8.0, 0.5)], name="gain")
+multitrack.markers.add(bar, "verse")
 
 written = multitrack.write()          # the crate's JSON
 multitrack = Multitrack.read(written)
 ```
+
+**What a script reads and writes is objects.** A `Multitrack` is a handle over
+the multitrack the shared crate holds — the very one a multitrack editor opened
+on it edits — and `multitrack.tracks`, a track's `take_lanes`, a take lane's
+`regions`, the curves of a track or a region (`automation`) and
+`multitrack.markers` are live collections: iterate them, index them, and `add`
+answers the object it made. Each object is a view of what the multitrack holds,
+not a copy, so after a hand drags a box in the window the `Region` a script holds
+reads where it now is; the same structure read twice is the same object. A
+change is made through the object it changes — `hit.position = 4.0`,
+`hit.place(other_lane, position=4.0)`, `drums.muted = True`, `hit.remove()` —
+and no call takes or answers an id: the ids are the crate's. A tempo entry, a
+meter entry, a span, a fade and a region's `content` have no identity of their
+own, so they are read as values and written whole through what holds them. A
+structure the multitrack no longer holds — removed, or undone away — leaves its
+object **detached**: `held` is false and reading it raises, until an undo brings
+it back.
+
+**A change is a turn of the multitrack's history, when it has one.**
+`multitrack.history` is that history — the undo order every editor open on the
+multitrack shares — and asking for it, or opening an editor, is what gives a
+multitrack one. From then on each change made through the objects is an entry
+the windows redraw and one Ctrl+Z in a window takes back, and `with
+multitrack.history("tidy"):` makes everything inside it one entry. A multitrack
+nobody asked a history of changes freely and records nothing.
 
 A **region** is the model's word and a **clip** is the picture's: a clip, a track
 row, a waveform are what the host draws; a region is what an edit names. And
@@ -177,21 +203,25 @@ session saved in beats, before this, is converted when it is read.
 
 ### Editing a multitrack: the verbs a multitrack admits
 
-The multitrack has an edit vocabulary of its own, and it is reached through the same
-door every other structure is — `domain_edit`, with `MULTITRACK` as the
-vocabulary. Hand over the multitrack as the crate's JSON and the edit; take back the
-multitrack as it now stands and the edit that puts it back.
+The multitrack has an edit vocabulary of its own, and every change made through
+its objects is one of its verbs: a region's place is `placeregion`, its length
+and window `trimregion`, its fades `faderegion`, a curve's points
+`setautomation`, a marker `setmarker`. The same vocabulary is reached as data
+through the door every other structure is — `domain_edit`, with `MULTITRACK` as
+the vocabulary: hand over a multitrack as the crate's JSON and an edit, which
+names what it moves by the ids the JSON holds, and take back the multitrack as
+it now stands and the edit that puts it back.
 
 ```python
 from clausters.document import MULTITRACK, domain_edit
 
 edited = domain_edit(
-    MULTITRACK, multitrack.write(),
+    MULTITRACK, written,
     {"intent": "placeregion", "region": 3, "track": 1, "take_lane": 2,
      "position": 16.0, "layer": 0},
 )
 edited["applied"]                       # True
-Multitrack.read(edited["state"])        # the multitrack with the region moved
+edited["state"]                         # the multitrack, as JSON, with the region moved
 edited["current"]                       # the edit that puts it back
 ```
 
@@ -484,7 +514,7 @@ and `L` loops.
 
 ```python
 editor.selected                    # [Region(...), Region(...)]
-editor.select(track.take_lanes[0].regions)
+editor.select(list(track.take_lanes[0].regions))
 editor.unselect()                  # hold nothing
 editor.transport.loop(1.0, 3.0)    # the band drawn, the loop on
 editor.transport.span              # (1.0, 3.0)

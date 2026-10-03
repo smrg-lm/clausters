@@ -1,7 +1,7 @@
 // The multitrack model against the Python client's, on the shared vector.
 //
 // `gen-multitrack-vectors.py` writes out the multitrack the Rust suite already
-// parses -- one definition, three readers: the Python client that built it, the
+// parses -- one definition, three readers: the Python client that wrote it, the
 // crate that defines the format, and this client. Here it is read, asked the
 // same questions the Rust test asks, and written back; what comes out must be
 // what went in.
@@ -10,7 +10,8 @@
 // sites, so a field spelled `fadeIn` on the way out, a default written when it
 // should have been left out, or an unknown field dropped would ship green.
 //
-// Run with `npm test` (no wasm needed: this module is plain TypeScript).
+// Run with `npm test`. A multitrack is a handle over the shared crate's, so
+// the core is loaded first.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -21,14 +22,22 @@ import { SESSION_FORMAT } from "../src/document.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
-import { Multitrack, Content, Fade, FrozenSource, TakeLane, TakeLaneView, Region,
+import { Automation, Multitrack, Content, Fade, FrozenSource, TakeLaneView, Region,
          Session, Source, Span, Tempo, Track, TrackView,
          View } from "../src/multitrack.ts";
+import type { TakeLane } from "../src/multitrack.ts";
+
+await loadCore();
 
 const VECTOR = new URL("./multitrack-vectors.json", import.meta.url);
 
 async function vector(): Promise<Record<string, unknown>> {
     return JSON.parse(await readFile(VECTOR, "utf8"));
+}
+
+/** The track the vector names `id` -- the file's ids, which both suites read by. */
+function track(multitrack: Multitrack, id: number): Track {
+    return [...multitrack.tracks].find((t) => t.ident === id)!;
 }
 
 test("the client's arrangement parses and survives a round trip", async () => {
@@ -52,21 +61,21 @@ test("the two sides agree about what the multitrack is", async () => {
 
 test("a comped track keeps every take and plays the one it names", async () => {
     const multitrack = Multitrack.read(await vector());
-    const vocals = multitrack.track(10);
-    assert.equal(vocals?.takeLanes.length, 3, "the takes nobody chose are kept");
-    assert.equal(vocals?.active, 1);
-    assert.equal(vocals?.activeTakeLane?.name, "take 2");
-    const sources = vocals?.takeLanes.flatMap((lane) => lane.regions).map(
+    const vocals = track(multitrack, 10);
+    assert.equal(vocals.takeLanes.length, 3, "the takes nobody chose are kept");
+    assert.equal(vocals.active, 1);
+    assert.equal(vocals.activeTakeLane?.name, "take 2");
+    const sources = [...vocals.takeLanes].flatMap((lane) => [...lane.regions]).map(
         (r) => (r.content.window?.source as Record<string, unknown>).source);
     assert.deepEqual(sources, [100, 101, 102]);
 });
 
 test("an overlap keeps its crossfade, its layer and its playrate", async () => {
     const multitrack = Multitrack.read(await vector());
-    const lane = multitrack.track(30)!.takeLanes[0];
-    assert.ok(lane.regions[0].overlaps(lane.regions[1]));
-    assert.equal(lane.regions[0].fadeOut?.length, 4);
-    const second = lane.regions[1];
+    const lane = track(multitrack, 30).takeLanes.item(0);
+    assert.ok(lane.regions.item(0).overlaps(lane.regions.item(1)));
+    assert.equal(lane.regions.item(0).fadeOut?.length, 4);
+    const second = lane.regions.item(1);
     assert.equal(second.layer, 1, "which one is on top");
     assert.equal(second.muted, true);
     assert.deepEqual(second.fadeIn?.shape, { curve: "exp" });
@@ -76,7 +85,7 @@ test("an overlap keeps its crossfade, its layer and its playrate", async () => {
 
 test("a composite region arrives as the general tree", async () => {
     const multitrack = Multitrack.read(await vector());
-    const region = multitrack.track(40)!.takeLanes[0].regions[0];
+    const region = track(multitrack, 40).takeLanes.item(0).regions.item(0);
     assert.equal(region.content.fill, "composite");
     assert.equal(region.content.node?.id, 43);
     assert.equal(region.content.node?.kind, "aggregate");
@@ -84,73 +93,154 @@ test("a composite region arrives as the general tree", async () => {
 
 test("an automation curve keeps the shapes neither side reads", async () => {
     const multitrack = Multitrack.read(await vector());
-    const curve = multitrack.track(30)!.automation[0];
+    const curve = track(multitrack, 30).automation.item(0);
     assert.ok(curve.visible && curve.enabled);
     assert.deepEqual(curve.target, { ctl: "level" });
-    assert.deepEqual(curve.points[1].data, { shape: "exp" });
+    assert.deepEqual(curve.points[1]!.data, { shape: "exp" });
 });
 
 test("a region carries curves of its own and they are not its track's", async () => {
     // The two places a curve belongs: a track's runs the length of the track and
-    // is drawn in a lane beside it, a region's runs the length of the region and
+    // is drawn in a row beside it, a region's runs the length of the region and
     // is drawn inside it. One type, so one reader.
     const multitrack = Multitrack.read(await vector());
-    const region = multitrack.track(30)!.takeLanes[0].regions[0];
-    assert.equal(region.automation[0].id, 35);
-    assert.deepEqual(region.automation[0].target, { ctl: "gain" });
-    assert.equal(region.automation[0].points.length, 2);
-    assert.ok(multitrack.track(30)!.automation[0].id !== region.automation[0].id);
+    const guitars = track(multitrack, 30);
+    const region = guitars.takeLanes.item(0).regions.item(0);
+    assert.deepEqual(region.automation.item(0).target, { ctl: "gain" });
+    assert.equal(region.automation.item(0).points.length, 2);
+    assert.notEqual(guitars.automation.item(0), region.automation.item(0));
 });
 
 test("a field the other client added and this build has no name for survives",
      async () => {
     const multitrack = Multitrack.read(await vector());
     assert.deepEqual(multitrack.extra.groove, { name: "mpc60" });
-    const region = multitrack.track(40)!.takeLanes[0].regions[0];
+    const region = track(multitrack, 40).takeLanes.item(0).regions.item(0);
     assert.deepEqual(region.extra.warp, { mode: "beats" });
 });
 
 // ---- the rules this client keeps on its own ----
 
-test("regions that touch do not overlap and regions that share time do", () => {
-    const at = (id: number, position: number, length: number) => new Region({
-        id, position, length, content: Content.onto({ source: { node: 1 } }),
-    });
-    assert.equal(at(1, 0, 4).overlaps(at(2, 4, 4)), false);
-    assert.equal(at(1, 0, 4).overlaps(at(2, 3, 4)), true);
+const window = (source = 1) => Content.onto({
+    source: { source, lifetime: "session", generation: 0 }, start: 0, duration: 4,
 });
 
-test("placing keeps a lane in position order", () => {
-    const lane = new TakeLane({ id: 10 });
-    for (const [id, position] of [[3, 8], [1, 0], [2, 4]]) {
-        lane.place(new Region({
-            id, position, length: 2, content: Content.onto({ source: { node: 1 } }),
-        }));
-    }
-    assert.deepEqual(lane.regions.map((r) => r.position), [0, 4, 8]);
+/** A multitrack with one track, and the take lane it starts with. */
+function oneLane(name?: string): [Multitrack, Track, TakeLane] {
+    const multitrack = new Multitrack();
+    const t = multitrack.tracks.add(name);
+    return [multitrack, t, t.activeTakeLane!];
+}
+
+test("regions that touch do not overlap and regions that share time do", () => {
+    const [, , lane] = oneLane();
+    const a = lane.regions.add(0, 4, window());
+    const b = lane.regions.add(4, 4, window());
+    const c = lane.regions.add(3, 4, window());
+    assert.equal(a.overlaps(b), false);
+    assert.equal(a.overlaps(c), true);
+});
+
+test("a lane keeps its regions in position order", () => {
+    const [, , lane] = oneLane();
+    for (const position of [8, 0, 4]) lane.regions.add(position, 2, window());
+    assert.deepEqual([...lane.regions].map((r) => r.position), [0, 4, 8]);
     assert.equal(lane.end, 10);
 });
 
 test("a track spans every lane and plays one", () => {
-    const track = new Track({
-        id: 1, takeLanes: [new TakeLane({ id: 10 }), new TakeLane({ id: 11, name: "take 2" })],
-    });
-    const region = (id: number, length: number) => new Region({
-        id, position: 0, length, content: Content.onto({ source: { node: 1 } }),
-    });
-    track.activeTakeLane!.place(region(100, 4));
-    track.takeLanes[1].place(region(200, 16));
-    assert.equal(track.activeTakeLane?.id, 10);
+    const [, t, first] = oneLane();
+    const second = t.takeLanes.add("take 2");
+    first.regions.add(0, 4, window());
+    second.regions.add(0, 16, window());
+    assert.equal(t.activeTakeLane, first);
     // An alternate take is still part of the multitrack.
-    assert.equal(track.end, 16);
-    track.active = 7;
-    assert.equal(track.activeTakeLane, undefined);
+    assert.equal(t.end, 16);
+    t.activeTakeLane = second;
+    assert.equal(t.active, 1);
+    assert.equal(t.activeTakeLane, second);
 });
 
-test("the tempo map is where the beats fall over the seconds", async () => {
+test("one structure is one object", () => {
+    // What a page reads is the structure, not a copy of it: the same region
+    // read twice is the same object, and it reads what the multitrack holds now.
+    const [multitrack, t, lane] = oneLane("drums");
+    const r = lane.regions.add(1, 2, window());
+    assert.equal(multitrack.tracks.item(0), t);
+    assert.equal(lane.regions.item(0), r);
+    assert.equal(r.takeLane, lane);
+    assert.equal(r.track, t);
+    assert.equal(multitrack.regions().next().value, r);
+    r.position = 3;
+    assert.equal(lane.regions.item(0).position, 3);
+});
+
+test("no call takes or answers an id", () => {
+    // The ids are the crate's: nothing a page builds is given one, and nothing a
+    // page asks for is answered with one.
+    const [multitrack, t, lane] = oneLane();
+    const r = lane.regions.add(0, 2, window());
+    for (const held of [t, lane, r]) assert.equal("id" in held, false);
+    assert.equal("track" in multitrack, false);
+    assert.equal("region" in lane, false);
+});
+
+test("each field is written through the multitrack's own verb", () => {
+    const [multitrack, t, lane] = oneLane();
+    const other = multitrack.tracks.add("other").activeTakeLane!;
+    const r = lane.regions.add(0, 4, window(), { name: "take" });
+    r.length = 2;
+    r.fadeIn = new Fade(0.5);
+    r.fadeOut = new Fade(0.25, { curve: "exp" });
+    r.muted = true;
+    r.name = "kept";
+    r.place(other, { position: 6 });
+    assert.deepEqual([r.position, r.length, r.muted, r.name], [6, 2, true, "kept"]);
+    assert.equal(r.takeLane, other);
+    assert.equal(r.track, other.track);
+    assert.equal(r.fadeIn?.length, 0.5);
+    assert.deepEqual(r.fadeOut?.shape, { curve: "exp" });
+    t.name = "drums";
+    t.level = 0.7;
+    t.soloed = true;
+    assert.deepEqual([t.name, t.level, t.soloed], ["drums", 0.7, true]);
+    assert.ok(multitrack.version > 1, "every edit moves the multitrack's version");
+});
+
+test("a removed structure leaves its object detached", () => {
+    const [multitrack, t, lane] = oneLane();
+    const r = lane.regions.add(0, 4, window());
+    r.remove();
+    assert.equal(r.held, false);
+    assert.equal(lane.regions.length, 0);
+    assert.throws(() => r.position, /no longer holds/);
+    t.remove();
+    assert.equal(lane.held, false);
+    assert.equal(multitrack.tracks.length, 0);
+});
+
+test("a track and a region carry curves of their own", () => {
+    const [, t, lane] = oneLane();
+    const r = lane.regions.add(0, 20, window());
+    const level = t.automation.add({ ctl: "level" }, { points: [[0, 0], [4, 1]], visible: true });
+    const gain = r.automation.add({ ctl: "gain" }, { points: [[0, 1]], name: "gain" });
+    assert.equal(t.automation.item(0), level);
+    assert.equal(r.automation.item(0), gain);
+    assert.ok(level.visible);
+    assert.equal(gain.name, "gain");
+    level.points = [[0, 0.5]];
+    assert.deepEqual(level.points, [{ at: 0, value: 0.5 }]);
+    const free = new Automation({ target: { ctl: "pan" }, points: [[0, 0]] });
+    assert.equal(r.automation.add(free), free);
+    assert.ok(free.held);
+    gain.remove();
+    assert.equal(gain.held, false);
+    assert.deepEqual([...r.automation], [free]);
+});
+
+test("the tempo map is where the beats fall over the seconds", () => {
     // The multitrack is in seconds; the map it holds says where its beats and
     // bars fall, so a script can put a region on a bar -- and it moves nothing.
-    await loadCore();
     const multitrack = new Multitrack();
     assert.ok(Math.abs(multitrack.tempoMap().secsAt(3) - 3) < 1e-9, "one beat a second where it states no tempo");
     multitrack.setTempo(new Tempo({ at: 0, tempo: 2 }));
@@ -168,13 +258,24 @@ test("two tempos at one beat is a state the map cannot hold", () => {
     assert.equal(new Multitrack().tempoAt(0), undefined);
 });
 
+test("two markers may share an instant because people do that", () => {
+    const multitrack = new Multitrack();
+    multitrack.markers.add(16, "B");
+    multitrack.markers.add(16, "chorus");
+    const a = multitrack.markers.add(0, "A");
+    assert.deepEqual([...multitrack.markers].map((m) => m.name), ["A", "B", "chorus"]);
+    a.at = 20;
+    assert.equal([...multitrack.markers].at(-1)?.name, "A");
+    a.remove();
+    assert.equal(multitrack.markers.length, 2);
+    assert.equal(a.held, false);
+});
+
 test("nothing said is nothing written", () => {
     assert.deepEqual(new Multitrack().write(), {});
-    const written = new Region({
-        id: 1, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
-    }).write();
-    assert.deepEqual(Object.keys(written).sort(),
-                     ["content", "id", "length", "position"]);
+    const [, , lane] = oneLane();
+    const written = lane.regions.add(0, 4, window()).write();
+    assert.deepEqual(Object.keys(written).sort(), ["content", "id", "length", "position"]);
     assert.equal((written.content as Record<string, unknown>).playrate, undefined);
 });
 
@@ -186,10 +287,7 @@ test("the multitrack carries its own version and keeps it out of an empty file",
     assert.equal(new Multitrack().version, 1);
     assert.equal(new Multitrack().write().version, undefined);
     assert.equal(Multitrack.read({}).version, 1);
-    const edited = new Multitrack();
-    edited.version = 4;
-    assert.equal(edited.write().version, 4);
-    assert.equal(Multitrack.read(edited.write()).version, 4);
+    assert.equal(Multitrack.read({ version: 4 }).write().version, 4);
 });
 
 test("a fill this build does not know is carried whole", () => {
@@ -202,6 +300,39 @@ test("a half-open span meets the next one without covering an instant twice", ()
     assert.equal(first.length, 8);
     assert.equal(first.end, new Span(8, 16).start);
     assert.equal(new Fade(4).write().length, 4);
+});
+
+// ---- the history: a page's changes, recorded and walked ----
+
+test("a multitrack with a history records each change and walks it", () => {
+    const [multitrack, , lane] = oneLane();
+    const history = multitrack.history;
+    const r = lane.regions.add(0, 2, window());
+    r.position = 3;
+    assert.equal(history.undoLabel, "move a region");
+    assert.ok(history.undo());
+    assert.equal(r.position, 0);
+    assert.ok(history.undo());
+    assert.equal(r.held, false, "the add, taken back");
+    assert.ok(history.redo());
+    assert.ok(r.held);
+    assert.equal(lane.regions.item(0), r, "the same object");
+});
+
+test("a block is one entry undone in one step", () => {
+    const [multitrack, t, lane] = oneLane();
+    const history = multitrack.history;
+    const r = lane.regions.add(0, 2, window());
+    history.entry("tidy", () => {
+        r.position = 5;
+        r.length = 1;
+        t.name = "kept";
+    });
+    assert.equal(history.undoLabel, "tidy");
+    history.undo();
+    assert.deepEqual([r.position, r.length, t.name], [0, 2, undefined]);
+    history.redo();
+    assert.deepEqual([r.position, r.length, t.name], [5, 1, "kept"]);
 });
 
 // ---- the session: the multitrack, and where its samples are ----
@@ -273,7 +404,7 @@ test("the multitrack inside the session is the same multitrack", async () => {
 
 test("an absent multitrack reads as an empty one rather than as nothing", () => {
     const session = Session.read({ format: SESSION_FORMAT });
-    assert.deepEqual(session.multitrack.tracks, []);
+    assert.equal(session.multitrack.tracks.length, 0);
     assert.deepEqual(session.write(), { format: SESSION_FORMAT });
 });
 
@@ -306,21 +437,23 @@ test("a format 2 session opens in seconds", async () => {
     const session = Session.read(old);
     assert.equal(session.format, SESSION_FORMAT);
     assert.equal(session.multitrack.tempo[0]!.tempo, 2.0);
-    const region = session.multitrack.tracks[0]!.takeLanes[0]!.regions[0]!;
+    const region = session.multitrack.tracks.item(0).takeLanes.item(0).regions.item(0);
     assert.deepEqual([region.position, region.length], [1.0, 2.0]);
-    assert.equal(session.multitrack.markers[0]!.at, 4.0);
+    assert.equal(session.multitrack.markers.item(0).at, 4.0);
 });
 
 // ---- the presentation: what a window shows of a multitrack ----
 
+/**
+ * Vocals (10) on take lanes 11 and 12, a region (20) on the first, and a second
+ * track (30) with its take lane (31) -- the ids a view is written by.
+ */
 function aMultitrack(): Multitrack {
-    const multitrack = new Multitrack();
-    const vocals = new Track({ id: 10, takeLanes: [new TakeLane({ id: 11 }), new TakeLane({ id: 12 })] });
-    vocals.takeLanes[0].place(new Region({
-        id: 20, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
-    }));
-    multitrack.tracks.push(vocals, new Track({ id: 30, takeLanes: [new TakeLane({ id: 31 })] }));
-    return multitrack;
+    return Multitrack.read({ tracks: [
+        { id: 10, take_lanes: [
+            { id: 11, regions: [{ id: 20, position: 0, length: 4, content: window().write() }] },
+            { id: 12 }] },
+        { id: 30, take_lanes: [{ id: 31 }] }] });
 }
 
 test("the session carries two views of one multitrack and they disagree on purpose", async () => {
@@ -337,10 +470,11 @@ test("the session carries two views of one multitrack and they disagree on purpo
     assert.equal(arranger.autofit, true, "the default, and left out of the file");
     assert.deepEqual(arranger.selected, [20, 32]);
     assert.equal(arranger.focused, 20);
-    assert.equal(arranger.track(10).height, 96);
-    assert.equal(arranger.track(10).takeLanesShown, true, "comping open");
-    assert.equal(arranger.track(30).color, "#4488cc");
-    assert.equal(arranger.takeLane(12).height, 32);
+    const vocals = track(session.multitrack, 10);
+    assert.equal(arranger.track(vocals).height, 96);
+    assert.equal(arranger.track(vocals).takeLanesShown, true, "comping open");
+    assert.equal(arranger.track(track(session.multitrack, 30)).color, "#4488cc");
+    assert.equal(arranger.takeLane(vocals.takeLanes.item(1)).height, 32);
     assert.deepEqual(arranger.extra.fold, "tracks", "a newer window's own state");
 
     const editor = session.views[1];
@@ -363,29 +497,31 @@ test("a view says nothing about what plays", () => {
     const view = new View();
     view.name = "arranger";
     view.visible = new Span(0, 32);
-    view.trackView(10).height = 96;
+    view.trackView(multitrack.tracks.item(0)).height = 96;
     const session = new Session();
     session.multitrack = multitrack;
     session.views = [view];
     const back = Session.read(session.write());
     assert.deepEqual(back.multitrack.write(), written);
-    assert.equal(back.views[0].track(10).height, 96);
+    assert.equal(back.views[0]!.track(back.multitrack.tracks.item(0)).height, 96);
 });
 
 test("a track nobody touched reads as the default and costs nothing", () => {
+    const vocals = aMultitrack().tracks.item(0);
     const view = new View();
-    assert.deepEqual(view.track(10), new TrackView());
-    assert.deepEqual(view.takeLane(11), new TakeLaneView());
+    assert.deepEqual(view.track(vocals), new TrackView());
+    assert.deepEqual(view.takeLane(vocals.takeLanes.item(0)), new TakeLaneView());
     assert.equal(view.tracks.size, 0, "asking is not touching");
-    view.trackView(10).takeLanesShown = true;
+    view.trackView(vocals).takeLanesShown = true;
     assert.equal(view.tracks.size, 1);
 });
 
 test("state goes when the thing goes", () => {
     const view = new View();
-    view.trackView(10).height = 96;
-    view.trackView(999).height = 48;
-    view.takeLaneView(11).height = 24;
+    view.tracks.set(10, new TrackView());
+    view.tracks.get(10)!.height = 96;
+    view.tracks.set(999, new TrackView());
+    view.takeLanes.set(11, new TakeLaneView());
     view.selected = [20, 777];
     view.focused = 777;
     view.detail = 20;

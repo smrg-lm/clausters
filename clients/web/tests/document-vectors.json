@@ -2143,18 +2143,17 @@
                 "id": 11,
                 "regions": [
                   {
-                    "id": 100,
-                    "position": 0.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 1,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 1,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 100,
+                    "length": 4.0,
+                    "position": 0.0
                   }
                 ]
               },
@@ -2162,32 +2161,31 @@
                 "id": 12,
                 "regions": [
                   {
-                    "id": 101,
-                    "position": 8.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 2,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 2,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 101,
+                    "length": 4.0,
+                    "position": 8.0
                   }
                 ]
               }
             ]
           },
           {
+            "channels": 1,
             "id": 20,
             "name": "guitar",
             "take_lanes": [
               {
                 "id": 21
               }
-            ],
-            "channels": 1
+            ]
           }
         ]
       },
@@ -2281,18 +2279,17 @@
                 "id": 11,
                 "regions": [
                   {
-                    "id": 100,
-                    "position": 0.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 1,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 1,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 100,
+                    "length": 4.0,
+                    "position": 0.0
                   }
                 ]
               },
@@ -2300,32 +2297,31 @@
                 "id": 12,
                 "regions": [
                   {
-                    "id": 101,
-                    "position": 8.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 2,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 2,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 101,
+                    "length": 4.0,
+                    "position": 8.0
                   }
                 ]
               }
             ]
           },
           {
+            "channels": 1,
             "id": 20,
             "name": "guitar",
             "take_lanes": [
               {
                 "id": 21
               }
-            ],
-            "channels": 1
+            ]
           }
         ]
       },
@@ -2441,18 +2437,17 @@
                 "id": 11,
                 "regions": [
                   {
-                    "id": 100,
-                    "position": 0.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 1,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 1,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 100,
+                    "length": 4.0,
+                    "position": 0.0
                   }
                 ]
               },
@@ -2460,32 +2455,31 @@
                 "id": 12,
                 "regions": [
                   {
-                    "id": 101,
-                    "position": 8.0,
-                    "length": 4.0,
                     "content": {
                       "fill": "composite",
                       "node": {
-                        "id": 2,
-                        "kind": "aggregate",
                         "grouping": "concrete",
-                        "members": []
+                        "id": 2,
+                        "kind": "aggregate"
                       }
-                    }
+                    },
+                    "id": 101,
+                    "length": 4.0,
+                    "position": 8.0
                   }
                 ]
               }
             ]
           },
           {
+            "channels": 1,
             "id": 20,
             "name": "guitar",
             "take_lanes": [
               {
                 "id": 21
               }
-            ],
-            "channels": 1
+            ]
           }
         ]
       },

@@ -1,5 +1,5 @@
-"""Write the parity vector the Rust suite reads: an arrangement built with the
-Python client's `clausters.multitrack`, as it writes it.
+"""Write the parity vector the Rust suite reads: a multitrack read and written
+by the Python client's `clausters.multitrack`, as it writes it.
 
 Nothing checks that the two sides agree on the format unless something crosses
 between them, and no build ever reaches this client's call sites. So the vector
@@ -14,6 +14,9 @@ is on top, a composite region placing the general tree, an automation curve on a
 track and another on a region, whose point shapes nothing here reads, a tempo
 map that ramps, a meter change,
 markers sharing a beat, a loop and a punch, and a field a newer writer added.
+Its ids are stated here, since both suites look things up by them: the
+multitrack is read from data and written back through the client's handle,
+which is what the client writes.
 The session it also writes carries **two views** of that one multitrack, which is
 where the presentation lives: parallel to the model, never inside it, and two
 because a multitrack drawn in two windows has two and they disagree on purpose.
@@ -29,9 +32,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
-from clausters.multitrack import (Multitrack, Automation, Content, Fade,  # noqa: E402
-                                   TakeLane, Marker, Meter, Region, Session, Span,
-                                   Source, Tempo, Track, View)
+from clausters.multitrack import (Multitrack, Content, Fade,  # noqa: E402
+                                   Meter, Session, Span, Source, Tempo, View)
 
 
 def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
@@ -44,68 +46,66 @@ def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
 
 
 def build() -> Multitrack:
-    multitrack = Multitrack()
+    multitrack = Multitrack.read({
+        "tracks": [
+            # Comped from three takes, playing the second.
+            {"id": 10, "name": "vocals", "active": 1, "take_lanes": [
+                {"id": 11 + index, "name": name, "regions": [
+                    {"id": 20 + index, "name": f"vox {index}", "position": 0.0,
+                     "length": 16.0,
+                     "content": Content.onto(window(100 + index)).write()}]}
+                for index, name in enumerate(("take 1", "take 2", "comp"))]},
+            # Two regions overlapping, crossfaded, the layer saying which is on top.
+            {"id": 30, "name": "guitars", "soloed": True, "take_lanes": [
+                {"id": 31, "regions": [
+                    {"id": 32, "position": 0.0, "length": 20.0,
+                     "content": Content.onto(window(200)).write(),
+                     "fade_out": Fade(length=4.0).write(),
+                     # ...and a curve on the **region**, which is the other place
+                     # one belongs: a track's runs the length of the track and is
+                     # drawn beside it, this one runs the length of the region and
+                     # is drawn inside it.
+                     "automation": [
+                         {"id": 35, "name": "gain", "target": {"ctl": "gain"},
+                          "points": [{"at": 0.0, "value": 1.0, "data": {}},
+                                     {"at": 20.0, "value": 0.0, "data": {}}]}]},
+                    {"id": 33, "position": 16.0, "length": 16.0, "layer": 1,
+                     "muted": True,
+                     "content": Content.onto(window(201, start=2.0), playrate=1.5,
+                                             args={"seed": 7}).write(),
+                     "fade_in": Fade(length=4.0, shape={"curve": "exp"}).write()}]}],
+             "automation": [
+                 {"id": 34, "name": "level", "target": {"ctl": "level"}, "visible": True,
+                  "points": [{"at": 0.0, "value": 0.0, "data": {}},
+                             {"at": 16.0, "value": 1.0, "data": {"shape": "exp"}}]}]},
+            # The general tree, placed: what a composite region is for -- with a
+            # field a newer writer added.
+            {"id": 40, "name": "sections", "take_lanes": [
+                {"id": 41, "regions": [
+                    {"id": 42, "position": 32.0, "length": 16.0,
+                     "content": Content.composite({
+                         "id": 43,
+                         "kind": "aggregate",
+                         "grouping": "concrete",
+                         "members": [{"offset": 0.0, "node": {"id": 44, "kind": "clang"}}],
+                     }).write(),
+                     "warp": {"mode": "beats"}}]}]},
+        ],
+        "markers": [{"id": 1, "at": 0.0, "name": "intro"},
+                    {"id": 2, "at": 32.0, "name": "B"}],
+        # A field a newer writer added, on the multitrack.
+        "groove": {"name": "mpc60"},
+    })
     multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
     multitrack.set_tempo(Tempo(at=32.0, tempo=2.0, ramp=True))
     multitrack.set_meter(Meter(at=0.0, beats=4, unit=4))
     multitrack.set_meter(Meter(at=32.0, beats=7, unit=8))
-    multitrack.add_marker(Marker(id=1, at=0.0, name="intro"))
-    multitrack.add_marker(Marker(id=2, at=32.0, name="B"))
     multitrack.loop_span = Span(start=0.0, end=32.0)
     multitrack.punch = Span(start=8.0, end=16.0)
-
-    # Comped from three takes, playing the second.
-    vocals = Track(id=10, name="vocals", active=1, take_lanes=[
-        TakeLane(id=11, name="take 1"), TakeLane(id=12, name="take 2"),
-        TakeLane(id=13, name="comp"),
-    ])
-    for index, lane in enumerate(vocals.take_lanes):
-        lane.place(Region(id=20 + index, position=0.0, length=16.0,
-                          name=f"vox {index}",
-                          content=Content.onto(window(100 + index))))
-
-    # Two regions overlapping, crossfaded, the layer saying which is on top.
-    guitars = Track(id=30, name="guitars", soloed=True, take_lanes=[TakeLane(id=31)])
-    guitars.take_lanes[0].place(Region(
-        id=32, position=0.0, length=20.0, content=Content.onto(window(200)),
-        fade_out=Fade(length=4.0)))
-    guitars.take_lanes[0].place(Region(
-        id=33, position=16.0, length=16.0, layer=1, muted=True,
-        content=Content.onto(window(201, start=2.0), playrate=1.5,
-                             args={"seed": 7}),
-        fade_in=Fade(length=4.0, shape={"curve": "exp"})))
-    guitars.automation.append(Automation(
-        id=34, name="level", target={"ctl": "level"}, visible=True,
-        points=[{"at": 0.0, "value": 0.0, "data": {}},
-                {"at": 16.0, "value": 1.0, "data": {"shape": "exp"}}]))
-    # ...and a curve on the **region**, which is the other place one belongs: a
-    # track's runs the length of the track and is drawn beside it, this one runs
-    # the length of the region and is drawn inside it.
-    guitars.take_lanes[0].regions[0].automation.append(Automation(
-        id=35, name="gain", target={"ctl": "gain"},
-        points=[{"at": 0.0, "value": 1.0, "data": {}},
-                {"at": 20.0, "value": 0.0, "data": {}}]))
-
-    # The general tree, placed: what a composite region is for.
-    sections = Track(id=40, name="sections", take_lanes=[TakeLane(id=41)])
-    sections.take_lanes[0].place(Region(
-        id=42, position=32.0, length=16.0,
-        content=Content.composite({
-            "id": 43,
-            "kind": "aggregate",
-            "grouping": "concrete",
-            "members": [{"offset": 0.0, "node": {"id": 44, "kind": "clang"}}],
-        })))
-
-    # A field a newer writer added, on the region and on the multitrack.
-    sections.take_lanes[0].regions[0].extra["warp"] = {"mode": "beats"}
-    multitrack.extra["groove"] = {"name": "mpc60"}
-
-    multitrack.tracks.extend([vocals, guitars, sections])
     return multitrack
 
 
-def views() -> list:
+def views(multitrack: Multitrack) -> list:
     """How the multitrack was being looked at: two windows over one multitrack.
 
     They disagree on purpose -- that is what a second window is for -- and the
@@ -113,13 +113,14 @@ def views() -> list:
     would push the second back to being anonymous, which is what the view
     objects exist to stop.
     """
+    vocals, guitars, _ = multitrack.tracks
     arranger = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
     arranger.selected = [20, 32]
     arranger.focused = 20
-    arranger.track_view(10).height = 96.0
-    arranger.track_view(10).take_lanes_shown = True
-    arranger.track_view(30).color = "#4488cc"
-    arranger.take_lane_view(12).height = 32.0
+    arranger.track_view(vocals).height = 96.0
+    arranger.track_view(vocals).take_lanes_shown = True
+    arranger.track_view(guitars).color = "#4488cc"
+    arranger.take_lane_view(vocals.take_lanes[1]).height = 32.0
     #: A field a newer window wrote and this build has no name for: carried, so
     #: an older reader opening the session and saving it does not lose it.
     arranger.extra["fold"] = "tracks"
@@ -140,8 +141,9 @@ def saved() -> Session:
     that is there, samples nobody wrote down, and a working copy whose
     destructive edit is still open.
     """
-    session = Session(multitrack=build(), provenance={"script": "make.py"},
-                      views=views())
+    multitrack = build()
+    session = Session(multitrack=multitrack, provenance={"script": "make.py"},
+                      views=views(multitrack))
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
             2, 480_000, 48_000.0)

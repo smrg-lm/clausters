@@ -21,7 +21,8 @@ import {
 } from "../src/gui/editing/index.ts";
 import { Editing } from "../src/history.ts";
 import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
-import { Automation, Content, TakeLane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
+import { Content, Multitrack, Tempo } from "../src/multitrack.ts";
+import type { Region, Track } from "../src/multitrack.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import { Transport } from "../src/defs/server/transport.ts";
@@ -38,37 +39,33 @@ function window(source: number, start = 0.0, duration = 2.0): Content {
     });
 }
 
-/** Two tracks: the first holding two regions, the second one. */
+/**
+ * Two tracks, as a session file holds them: the first (10, its take lane 11)
+ * holding two regions (12, 13), the second (20, 21) one (22). The ids are the
+ * file's, and the wire names rows and boxes by them.
+ */
+function twoTracks(): Record<string, unknown> {
+    const region = (id: number, position: number) =>
+        ({ id, position, length: 2.0, content: window(1).write() });
+    return { tracks: [
+        { id: 10, name: "one", take_lanes: [{ id: 11, regions: [region(12, 0.0), region(13, 4.0)] }] },
+        { id: 20, name: "two", take_lanes: [{ id: 21, regions: [region(22, 0.0)] }] },
+    ] };
+}
+
+/** {@link twoTracks}, read. */
 function multitrack(): Multitrack {
-    const held = new Multitrack();
-    held.tracks = [
-        new Track({
-            id: 10,
-            name: "one",
-            takeLanes: [
-                new TakeLane({
-                    id: 11,
-                    regions: [
-                        new Region({ id: 12, position: 0.0, length: 2.0, content: window(1) }),
-                        new Region({ id: 13, position: 4.0, length: 2.0, content: window(1) }),
-                    ],
-                }),
-            ],
-        }),
-        new Track({
-            id: 20,
-            name: "two",
-            takeLanes: [
-                new TakeLane({
-                    id: 21,
-                    regions: [
-                        new Region({ id: 22, position: 0.0, length: 2.0, content: window(1) }),
-                    ],
-                }),
-            ],
-        }),
-    ];
-    return held;
+    return Multitrack.read(twoTracks());
+}
+
+/** The track the wire names `id`. */
+function track(held: Multitrack, id: number): Track {
+    return [...held.tracks].find((t) => t.ident === id)!;
+}
+
+/** Every region, in track then take lane then position order. */
+function regionsOf(held: Multitrack): Region[] {
+    return [...held.regions()];
 }
 
 /** An editor with no window: what is checked here is the seam, and opening one
@@ -246,7 +243,7 @@ test("a name the host minted is answered with the one the multitrack kept", () =
     const host = wired(ed);
     const wid = [...ed.view!.widgets.keys()][0];
     const ids = () =>
-        held.tracks.flatMap((t) => t.takeLanes.flatMap((l) => l.regions.map((r) => r.id)));
+        regionsOf(held).map((r) => r.ident);
     const apply = (seq: number, tag: string, values: unknown[]) =>
         ed.apply("/gui_event", [
             wid,
@@ -287,7 +284,7 @@ test("a name the host minted is answered with the one the multitrack kept", () =
     // And a track made in the host: the same rule.
     const rows = [...(props(ed).tracks as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0, 0];
     apply(3, "tracks", rows);
-    assert.deepEqual(host.rows, held.tracks.map((t) => String(t.id)));
+    assert.deepEqual(host.rows, [...held.tracks].map((t) => String(t.ident)));
     assert.equal(held.tracks.length, 3);
 });
 
@@ -380,11 +377,11 @@ test("a move reaches the multitrack and undoes", () => {
         ["13", "10", 4.0 * SR, 2.0 * SR],
         ["22", "20", 0.0, 2.0 * SR],
     ]));
-    near(held.track(10)!.takeLanes[0].regions[0].position, 2.0);
+    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 2.0);
     assert.ok(ed.undo());
-    near(held.track(10)!.takeLanes[0].regions[0].position, 0.0);
+    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 0.0);
     assert.ok(ed.redo());
-    near(held.track(10)!.takeLanes[0].regions[0].position, 2.0);
+    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 2.0);
 });
 
 test("a block move is one entry", () => {
@@ -399,7 +396,7 @@ test("a block move is one entry", () => {
     ]));
     // Read through the multitrack each time: an edit replaces what the multitrack holds,
     // so a reference taken before one is a reference to what it held then.
-    const at = () => held.track(10)!.takeLanes[0].regions.map((r) => r.position);
+    const at = () => [...track(held, 10).takeLanes.item(0).regions].map((r) => r.position);
     assert.deepEqual(at(), [2.0, 6.0]);
     assert.ok(ed.undo());
     assert.deepEqual(at(), [0.0, 4.0], "both back, in one step");
@@ -413,9 +410,9 @@ test("a clip that crossed changes track and undoes", () => {
         ["13", "10", 4.0 * SR, 2.0 * SR],
         ["22", "20", 0.0, 2.0 * SR],
     ]));
-    assert.ok(held.track(20)!.takeLanes[0].regions.some((r) => r.id === 12));
+    assert.ok([...track(held, 20).takeLanes.item(0).regions].some((r) => r.ident === 12));
     assert.ok(ed.undo());
-    assert.ok(held.track(10)!.takeLanes[0].regions.some((r) => r.id === 12));
+    assert.ok([...track(held, 10).takeLanes.item(0).regions].some((r) => r.ident === 12));
 });
 
 test("a box the multitrack does not know becomes a region", () => {
@@ -429,11 +426,11 @@ test("a box the multitrack does not know becomes a region", () => {
         ["13", "10", 4.0 * SR, 2.0 * SR],
         ["22", "20", 0.0, 2.0 * SR],
     ]));
-    const ids = held.track(10)!.takeLanes[0].regions.map((r) => r.id);
+    const ids = [...track(held, 10).takeLanes.item(0).regions].map((r) => r.ident);
     assert.equal(ids.length, 3, "the two that stayed and the new one");
     assert.ok(ids.includes(12) && ids.includes(13), "it took an unused id");
     assert.ok(ed.undo());
-    assert.equal(held.track(10)!.takeLanes[0].regions.length, 2);
+    assert.equal(track(held, 10).takeLanes.item(0).regions.length, 2);
 });
 
 test("a report of what holds is not an edit", () => {
@@ -459,11 +456,11 @@ test("the strip is the multitrack's and undoes", () => {
             "20", "", 96.0, 1, 0, 0.5, 0,
         ]),
     );
-    assert.equal(held.track(20)!.muted, true);
-    near(held.track(20)!.level, 0.5);
-    assert.equal(held.track(10)!.muted, false, "the one nobody touched is untouched");
+    assert.equal(track(held, 20).muted, true);
+    near(track(held, 20).level, 0.5);
+    assert.equal(track(held, 10).muted, false, "the one nobody touched is untouched");
     assert.ok(ed.undo());
-    assert.equal(held.track(20)!.muted, false);
+    assert.equal(track(held, 20).muted, false);
 });
 
 test("edit opens a multitrack", async () => {
@@ -483,7 +480,7 @@ test("two windows over one multitrack walk one stack", () => {
         ["22", "20", 0.0, 2.0 * SR],
     ]));
     assert.ok(two.undo(), "the history is the data's, not the window's");
-    near(held.track(10)!.takeLanes[0].regions[0].position, 0.0);
+    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 0.0);
 });
 
 // ---- the curves: the light views, in the two places one lives ----
@@ -491,23 +488,18 @@ test("two windows over one multitrack walk one stack", () => {
 /** The same multitrack, with a track automation on the first track and an envelope
  * inside its first box. */
 function curved(): Multitrack {
-    const written = multitrack();
-    written.tracks[0].automation.push(new Automation({
-        id: 30,
-        name: "gain",
-        target: { ctl: "gain", max: 2.0 },
-        points: [{ at: 0.0, value: 1.0 },
-                 { at: 4.0, value: 0.0, data: { shape: 5, curve: 4.0 } }],
+    const data = twoTracks() as { tracks: Record<string, unknown>[] };
+    const first = data.tracks[0]!;
+    first.automation = [{
+        id: 30, name: "gain", target: { ctl: "gain", max: 2.0 },
+        points: [{ at: 0.0, value: 1.0 }, { at: 4.0, value: 0.0, data: { shape: 5, curve: 4.0 } }],
         visible: true,
-    }));
-    written.tracks[0].takeLanes[0].regions[0].automation.push(new Automation({
-        id: 31,
-        name: "env",
-        target: { ctl: "amp" },
-        points: [{ at: 0.0, value: 0.0 }],
-        visible: true,
-    }));
-    return written;
+    }];
+    const box = ((first.take_lanes as Record<string, unknown>[])[0]!.regions as Record<string, unknown>[])[0]!;
+    box.automation = [{
+        id: 31, name: "env", target: { ctl: "amp" }, points: [{ at: 0.0, value: 0.0 }], visible: true,
+    }];
+    return Multitrack.read(data);
 }
 
 test("a track curve is a row and a box curve is a layer", () => {
@@ -548,10 +540,10 @@ test("a point dragged is one edit and the curve that did not move is not", () =>
     flat[2] = 0.25; // the first point of `gain`, moved
     assert.ok((ed as unknown as { route(args: unknown[]): boolean })
         .route([wid, "points", ...flat]));
-    const gain = () => written.tracks[0].automation.find((a) => a.id === 30)!;
+    const gain = () => [...written.tracks.item(0).automation].find((a) => a.id === 30)!;
     near(Number(gain().points[0].value), 0.25);
     assert.deepEqual(gain().points[1].data, { shape: 5, curve: 4.0 });
-    const env = written.tracks[0].takeLanes[0].regions[0].automation[0];
+    const env = written.tracks.item(0).takeLanes.item(0).regions.item(0).automation.item(0);
     assert.equal(env.points[0].value, 0.0, "the curve nobody touched");
 
     assert.ok(ed.undo());
@@ -562,7 +554,7 @@ test("a curve the multitrack hid is drawn nowhere", () => {
     // Which curves a person had open is part of reopening the multitrack as they
     // left it, so it is read out of the document rather than kept in the view.
     const written = curved();
-    written.tracks[0].automation[0].visible = false;
+    written.tracks.item(0).automation.item(0).visible = false;
     assert.equal(props(editor(written)).hidden, "30");
 });
 
@@ -605,21 +597,16 @@ test("a layer's points are its box's own time", () => {
     // A track automation runs the timeline and is measured from the origin; a
     // clip envelope is drawn inside its box and is measured from where that box
     // starts. It is the one thing that differs between the two on the wire.
-    const written = multitrack();
-    const late = written.tracks[1].takeLanes[0].regions[0];
+    const data = twoTracks() as { tracks: Record<string, unknown>[] };
+    // The box at four seconds on the second track, with an envelope of its own.
+    const late = ((data.tracks[1]!.take_lanes as Record<string, unknown>[])[0]!
+        .regions as Record<string, unknown>[])[0]!;
     late.position = 4.0;
-    late.automation.push(new Automation({
-        id: 40,
-        name: "fade",
-        visible: true,
-        points: [{ at: 0.0, value: 0.0 }, { at: 2.0, value: 1.0 }],
-    }));
-    written.tracks[0].automation.push(new Automation({
-        id: 41,
-        name: "gain",
-        visible: true,
-        points: [{ at: 4.0, value: 0.5 }],
-    }));
+    late.automation = [{ id: 40, name: "fade", visible: true,
+                         points: [{ at: 0.0, value: 0.0 }, { at: 2.0, value: 1.0 }] }];
+    data.tracks[0]!.automation = [{ id: 41, name: "gain", visible: true,
+                                    points: [{ at: 4.0, value: 0.5 }] }];
+    const written = Multitrack.read(data);
 
     const ed = editor(written);
     const flat = props(ed).points as unknown[];
@@ -643,7 +630,7 @@ test("a layer's points are its box's own time", () => {
     assert.ok((ed as unknown as { route(args: unknown[]): boolean })
         .route([wid, "points", ...edited]));
     // The multitrack is re-read on an edit, so the region is looked up again.
-    const fade = written.tracks[1].takeLanes[0].regions[0].automation[0];
+    const fade = written.tracks.item(1).takeLanes.item(0).regions.item(0).automation.item(0);
     near(Number(fade.points[0].at), 0.0);
     near(Number(fade.points[0].value), 0.25);
     near(Number(fade.points[1].at), 2.0);
@@ -712,7 +699,7 @@ test("a box is planned in frames from where its window opens", () => {
     // knows the rate its samples were written at. A trimmed box reads on
     // rather than restarting.
     const ed = editor(multitrack());
-    const region = ed.structure.tracks[0].takeLanes[0].regions[1];
+    const region = ed.structure.tracks.item(0).takeLanes.item(0).regions.item(1);
     region.content = window(1, 0.5, 2.0);
     const reader = plan(ed).tracks[0].clips[1].readers[0];
     assert.equal(reader.buffer, 7, "the buffer the source was read into");
@@ -728,14 +715,14 @@ test("a muted box and an unloaded source are not read", () => {
     // source nobody loaded is not planned at all -- the second is a multitrack that
     // arrived without its takes, which is not the same as a silent one.
     const ed = editor(multitrack());
-    const region = ed.structure.tracks[0].takeLanes[0].regions[0];
+    const region = ed.structure.tracks.item(0).takeLanes.item(0).regions.item(0);
     region.muted = true;
     assert.equal(plan(ed).tracks[0].clips[0].mute, 1.0);
 
     region.muted = false;
     region.content = window(9);        // a source the table has no buffer for
     const planned = plan(ed).tracks[0].clips.map((c) => c.region);
-    assert.ok(!planned.includes(region.id));
+    assert.ok(!planned.includes(region.ident));
 });
 
 test("the source table carries the width that picks the wiring", () => {
@@ -1001,7 +988,7 @@ test("what the multitrack holds is its regions", async () => {
     const held = multitrack();
     const ed = editor(held);
     wired(ed);
-    const regions = held.tracks.flatMap((t) => t.takeLanes.flatMap((lane) => lane.regions));
+    const regions = regionsOf(held);
     assert.deepEqual(await ed.selected(), []);
     ed.select(regions.slice(1));
     assert.deepEqual(await ed.selected(), regions.slice(1));
@@ -1009,3 +996,52 @@ test("what the multitrack holds is its regions", async () => {
     assert.deepEqual(await ed.selected(), []);
 });
 
+
+// ---- a page's change, beside the window ----
+
+test("a page's change is the editor's turn and its undo takes it back", () => {
+    // The page and the window hold one multitrack: a change made through the
+    // objects is recorded in the history the window walks, so its Ctrl+Z takes
+    // it back -- and the object reads what the multitrack holds after either.
+    const held = multitrack();
+    const ed = editor(held);
+    const box = track(held, 10).takeLanes.item(0).regions.item(0);
+    box.position = 1.5;
+    assert.equal(held.history.undoLabel, "move a region");
+    assert.ok(ed.undo());
+    near(box.position, 0.0);
+    assert.ok(ed.redo());
+    near(box.position, 1.5);
+});
+
+test("a page's block is one entry the window undoes", () => {
+    const held = multitrack();
+    const ed = editor(held);
+    const lane = track(held, 10).takeLanes.item(0);
+    const [first, second] = [...lane.regions];
+    held.history.entry("tidy", () => {
+        first!.position = 1.0;
+        second!.length = 1.0;
+        track(held, 20).muted = true;
+    });
+    assert.equal(held.history.undoLabel, "tidy");
+    assert.ok(ed.undo());
+    near(first!.position, 0.0);
+    near(second!.length, 2.0);
+    assert.equal(track(held, 20).muted, false);
+});
+
+test("a gesture leaves the page's objects reading what it did", () => {
+    // There is nothing to write back: the region a page holds is a view of the
+    // one the window moved.
+    const held = multitrack();
+    const ed = editor(held);
+    const box = track(held, 10).takeLanes.item(0).regions.item(0);
+    assert.ok(report(ed, [
+        ["12", "20", 3.0 * SR, 2.0 * SR],
+        ["13", "10", 4.0 * SR, 2.0 * SR],
+        ["22", "20", 0.0, 2.0 * SR],
+    ]));
+    near(box.position, 3.0);
+    assert.equal(box.track, track(held, 20));
+});

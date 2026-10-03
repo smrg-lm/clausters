@@ -95,6 +95,22 @@ class EventSequence:
         written = self._seq.call("automation", **args)
         return None if written is None else list(written.get("automation") or ())
 
+    def _curve(self, event: "int | None", id: int) -> "dict | None":
+        """Curve ``id`` as written, while the sequence -- or, with ``event``,
+        that event -- holds it: the curve holder's read, as a multitrack's."""
+        for written in self._curves(event) or ():
+            if int(written.get("id", 0)) == int(id):
+                return written
+        return None
+
+    def _remove_curve(self, event: "int | None", id: int) -> None:
+        """Remove curve ``id`` from the sequence, or from ``event``."""
+        if event is None:
+            intent = {"intent": "removeautomation", "curve": int(id)}
+        else:
+            intent = {"intent": "removeeventautomation", "id": int(event), "curve": int(id)}
+        self._edit(intent, "remove a curve")
+
     def _ids(self, **window) -> list:
         return [int(i) for i in self._seq.call("ids", **window)["ids"]]
 
@@ -197,6 +213,32 @@ class EventSequence:
             # however many views over it asked.
             NotesPlayback.changed(self, None if context is None else context.version)
         return answer
+
+    # ---- what a history asks of it ----
+
+    def _script_key(self) -> tuple:
+        """The key and the domain it joins a history under -- a notes
+        editor's, so the two are one structure."""
+        return f"sequence:{id(self)}", _native.EVENTS
+
+    def _restore(self) -> dict:
+        """The edit that puts the sequence back as it is now."""
+        return {"intent": "restore", "sequence": self.data()}
+
+    def _forward(self, intent: dict, answer: dict) -> dict:
+        """The edit a redo applies: ``intent`` with the identity it was given,
+        so a redone add brings back the same event -- and the same object. An
+        edit that mints identities of its own is redone as the state it
+        left."""
+        minted = answer.get("id")
+        kind = intent.get("intent")
+        if minted is None:
+            return intent
+        if kind == "add":
+            return {**intent, "event": {**intent["event"], "id": int(minted)}}
+        if kind in ("automation", "eventautomation"):
+            return {**intent, "automation": {**intent["automation"], "id": int(minted)}}
+        return self._restore()
 
     @property
     def history(self):

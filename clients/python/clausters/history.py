@@ -157,6 +157,23 @@ class Editing:
         self.claim(sequence)
         return member, identity
 
+    def open_multitrack(self, key: str, multitrack, request: dict, handler) -> tuple:
+        """**Open a multitrack editor over ``multitrack``** -- a
+        `clausters.multitrack.Multitrack`, which the editor then edits in place
+        -- as the structure ``key`` names, and answer its ``(member, identity)``.
+
+        Raises:
+            ValueError: the crate refused the request, with its reason.
+        """
+        answer = self.core.open_multitrack(multitrack._mt, key=str(key), **request)
+        if "error" in answer or "member" not in answer:
+            raise ValueError(answer.get("error", "the context opened nothing"))
+        member, identity = int(answer["member"]), int(answer["structure"])
+        self._handlers[member] = (multitrack, handler)
+        self._structures.setdefault(id(multitrack), (multitrack, member, identity))
+        self.claim(multitrack)
+        return member, identity
+
     def bind_sequence(self, member: int, source: int, sequence) -> dict:
         """**Bind a multitrack member's ``source`` to ``sequence``** -- a
         `clausters.seq.EventSequence` -- so a region over it draws the
@@ -172,15 +189,16 @@ class Editing:
         script's change has to be a turn here to reach them."""
         setattr(structure, ATTR, self)
 
-    def _sequence_identity(self, sequence) -> int:
-        """The sequence's identity in the order -- a notes editor's when one
-        is open on it, else an external member joined now, keyed as a notes
-        editor's is so the two are one structure."""
-        found = self._structures.get(id(sequence))
+    def _script_identity(self, structure) -> int:
+        """The identity in the order of a structure a script changes -- an
+        editor's when one is open on it, else an external member joined now,
+        keyed as that editor's would be so the two are one structure."""
+        found = self._structures.get(id(structure))
         if found is not None:
             return found[2]
-        _, identity = self.open("external", f"sequence:{id(sequence)}",
-                                {"domain": _native.EVENTS}, sequence, _SequenceSteps())
+        key, domain = structure._script_key()
+        _, identity = self.open("external", key, {"domain": domain}, structure,
+                                _ScriptSteps())
         return identity
 
     @contextmanager
@@ -194,38 +212,51 @@ class Editing:
         finally:
             self._applying -= 1
 
-    def script_edit(self, sequence, intent: dict, label: str) -> dict:
-        """**One change a script makes to a sequence in this context**, as a
-        turn: applied, recorded -- as its own entry, or into the ``with
-        history(label)`` block open over the sequence -- and every view over
-        it told. Answers what the sequence's door answers."""
-        block = self._blocks.get(id(sequence))
+    def script_edit(self, structure, intent: dict, label: str) -> dict:
+        """**One change a script makes to a structure in this context** -- a
+        sequence, a multitrack -- as a turn: applied, recorded -- as its own
+        entry, or into the ``with history(label)`` block open over the
+        structure -- and every view over it told. Answers what the
+        structure's door answers."""
+        block = self._blocks.get(id(structure))
         with self.turn(None):
             if self._applying:
-                answer = sequence._apply(intent, inverse=False)
+                answer = structure._apply(intent, inverse=False)
                 if answer.get("applied"):
                     self.changed()
                 return answer
-            if block is not None:
-                answer = sequence._apply(intent, inverse=False)
+            if block is not None and block[3] is None:
+                # A block over a structure that is restored whole: its state
+                # before and after are the entry.
+                answer = structure._apply(intent, inverse=False)
                 if answer.get("applied"):
                     block[2] = True
                     self.changed()
                 return answer
-            answer = sequence._apply(intent, inverse=True)
+            answer = structure._apply(intent, inverse=True)
             if answer.get("applied"):
-                self.record([{"structure": self._sequence_identity(sequence),
-                              "forward": {"edit": _forward(sequence, intent, answer)},
-                              "backward": answer["current"]}], label=label)
+                leg = {"structure": self._script_identity(structure),
+                       "forward": {"edit": structure._forward(intent, answer)},
+                       "backward": answer["current"]}
+                if block is not None:
+                    block[2] = True
+                    block[3].append(leg)
+                else:
+                    self.record([leg], label=label)
                 self.changed()
             return answer
 
     @contextmanager
-    def block(self, sequence, label: str):
-        """Everything a script changes in the sequence inside it is **one**
+    def block(self, structure, label: str):
+        """Everything a script changes in the structure inside it is **one**
         entry, called ``label``, and one turn. Blocks nest: an inner one is
-        part of the outer."""
-        key = id(sequence)
+        part of the outer.
+
+        A structure that can be **restored whole** (a sequence) is recorded as
+        its state before and after; one that cannot (a multitrack, whose
+        vocabulary states its parts) as the edits made, in order, which an
+        undo walks back in reverse."""
+        key = id(structure)
         block = self._blocks.get(key)
         if block is not None:
             block[0] += 1
@@ -234,7 +265,9 @@ class Editing:
             finally:
                 block[0] -= 1
             return
-        self._blocks[key] = block = [1, _restore(sequence), False]
+        restore = getattr(structure, "_restore", None)
+        before = restore() if restore is not None else None
+        self._blocks[key] = block = [1, before, False, None if restore is not None else []]
         # Recorded inside the turn, so the views are told the version the
         # entry moved to rather than the one before it.
         with self.turn(None):
@@ -242,10 +275,12 @@ class Editing:
                 yield
             finally:
                 del self._blocks[key]
-                if block[2]:
-                    self.record([{"structure": self._sequence_identity(sequence),
-                                  "forward": {"edit": _restore(sequence)},
+                if block[2] and block[3] is None:
+                    self.record([{"structure": self._script_identity(structure),
+                                  "forward": {"edit": structure._restore()},
                                   "backward": block[1]}], label=label)
+                elif block[2]:
+                    self.record(block[3], label=label)
 
     def identity(self, structure, domain: str, applier=None) -> int:
         """This structure's identity in the order, joining it as an **external
@@ -507,32 +542,12 @@ class Editing:
             pass
 
 
-class _SequenceSteps:
-    """What puts a step back onto a sequence a script joined: the payload,
-    through the sequence's own door."""
+class _ScriptSteps:
+    """What puts a step back onto a structure a script joined -- a sequence,
+    a multitrack: the payload, through the structure's own door."""
 
-    def project(self, sequence, payload: dict) -> bool:
-        return bool(sequence._apply(payload, inverse=False).get("applied"))
-
-
-def _restore(sequence) -> dict:
-    """The edit that puts the sequence back as it is now."""
-    return {"intent": "restore", "sequence": sequence.data()}
-
-
-def _forward(sequence, intent: dict, answer: dict) -> dict:
-    """The edit a redo applies: ``intent`` with the identity it was given,
-    so a redone add brings back the same event -- and the same object. An
-    edit that mints identities of its own is redone as the state it left."""
-    minted = answer.get("id")
-    kind = intent.get("intent")
-    if minted is None:
-        return intent
-    if kind == "add":
-        return {**intent, "event": {**intent["event"], "id": int(minted)}}
-    if kind in ("automation", "eventautomation"):
-        return {**intent, "automation": {**intent["automation"], "id": int(minted)}}
-    return _restore(sequence)
+    def project(self, structure, payload: dict) -> bool:
+        return bool(structure._apply(payload, inverse=False).get("applied"))
 
 
 class UndoHistory:

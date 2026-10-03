@@ -52,7 +52,8 @@ export type { AudioEditorOptions } from "./audio.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "../../history.ts";
 export type {
-    Adopting, Applier, Effect, Freed, RecordingLeg, StepHandler, Stepped, Stored, Turned,
+    Adopting, Applier, Effect, Freed, RecordingLeg, ScriptStructure, StepHandler, Stepped,
+    Stored, Turned,
 } from "../../history.ts";
 export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";

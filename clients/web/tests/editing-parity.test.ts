@@ -278,9 +278,7 @@ test("and the multitrack editor answers a recorded exchange the same in both cli
         );
         assert.deepEqual(calls, turn.playback, turn.name);
         assert.deepEqual(
-            multitrack.tracks.flatMap((t) =>
-                t.takeLanes.flatMap((l) => l.regions.map((r) => [t.id, r.id, r.position, r.length]))
-            ),
+            [...multitrack.regions()].map((r) => [r.track.ident, r.ident, r.position, r.length]),
             turn.regions,
             turn.name,
         );

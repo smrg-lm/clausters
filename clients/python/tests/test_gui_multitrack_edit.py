@@ -14,7 +14,7 @@ import pytest
 from clausters import _native
 
 from clausters.gui.editing import MultitrackEditor, Sources, edit
-from clausters.multitrack import Content, TakeLane, Multitrack, Region, Tempo, Track
+from clausters.multitrack import Content, Multitrack, Tempo
 
 SR = 48_000.0
 
@@ -25,19 +25,26 @@ def window(source: int, start: float = 0.0, duration: float = 2.0) -> Content:
                          "start": start, "duration": duration})
 
 
+def two_tracks() -> dict:
+    """Two tracks, as a session file holds them: the first (10, its take lane
+    11) holding two regions (12, 13), the second (20, 21) one (22). The ids are
+    the file's, and the wire names rows and boxes by them."""
+    def region(id: int, at: float) -> dict:
+        return {"id": id, "position": at, "length": 2.0, "content": window(1).write()}
+    return {"tracks": [
+        {"id": 10, "name": "one", "take_lanes": [
+            {"id": 11, "regions": [region(12, 0.0), region(13, 4.0)]}]},
+        {"id": 20, "name": "two", "take_lanes": [{"id": 21, "regions": [region(22, 0.0)]}]}]}
+
+
 def multitrack() -> Multitrack:
-    """Two tracks: the first holding two regions, the second one."""
-    first = Track(id=10, name="one",
-                  take_lanes=[TakeLane(id=11, regions=[
-                      Region(id=12, position=0.0, length=2.0,
-                             content=window(1)),
-                      Region(id=13, position=4.0, length=2.0,
-                             content=window(1))])])
-    second = Track(id=20, name="two",
-                   take_lanes=[TakeLane(id=21, regions=[
-                       Region(id=22, position=0.0, length=2.0,
-                              content=window(1))])])
-    return Multitrack(tracks=[first, second])
+    """`two_tracks`, read."""
+    return Multitrack.read(two_tracks())
+
+
+def track(held: Multitrack, id: int):
+    """The track the wire names ``id``."""
+    return next(t for t in held.tracks if t._id == id)
 
 
 def editor(multitrack: Multitrack, **options) -> MultitrackEditor:
@@ -256,11 +263,11 @@ def test_a_move_reaches_the_multitrack_and_undoes():
     assert report(ed, [("12", "10", 2.0 * SR, 2.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(2.0)
+    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(2.0)
     assert ed.undo()
-    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(0.0)
+    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(0.0)
     assert ed.redo()
-    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(2.0)
+    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(2.0)
 
 
 def test_a_block_move_is_one_entry():
@@ -273,7 +280,7 @@ def test_a_block_move_is_one_entry():
                        ("22", "20", 0.0, 2.0 * SR)])
     # Read through the multitrack each time: an edit replaces what the multitrack holds,
     # so a reference taken before one is a reference to what it held then.
-    at = lambda: [r.position for r in held.track(10).take_lanes[0].regions]
+    at = lambda: [r.position for r in track(held, 10).take_lanes[0].regions]
     assert at() == pytest.approx([2.0, 6.0])
     assert ed.undo()
     assert at() == pytest.approx([0.0, 4.0]), "both back, in one step"
@@ -285,9 +292,9 @@ def test_a_clip_that_crossed_changes_track_and_undoes():
     assert report(ed, [("12", "20", 0.0, 2.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    assert any(r.id == 12 for r in held.track(20).take_lanes[0].regions)
+    assert any(r._id == 12 for r in track(held, 20).take_lanes[0].regions)
     assert ed.undo()
-    assert any(r.id == 12 for r in held.track(10).take_lanes[0].regions)
+    assert any(r._id == 12 for r in track(held, 10).take_lanes[0].regions)
 
 
 def test_a_box_the_multitrack_does_not_know_becomes_a_region():
@@ -299,12 +306,12 @@ def test_a_box_the_multitrack_does_not_know_becomes_a_region():
                        ("12 2", "10", 1.0 * SR, 1.0 * SR),
                        ("13", "10", 4.0 * SR, 2.0 * SR),
                        ("22", "20", 0.0, 2.0 * SR)])
-    lane = held.track(10).take_lanes[0]
+    lane = track(held, 10).take_lanes[0]
     assert len(lane.regions) == 3, "the two that stayed and the new one"
-    assert {r.id for r in lane.regions} > {12, 13}, "it took an unused id"
+    assert {r._id for r in lane.regions} > {12, 13}, "it took an unused id"
     del lane
     assert ed.undo()
-    assert len(held.track(10).take_lanes[0].regions) == 2
+    assert len(track(held, 10).take_lanes[0].regions) == 2
 
 
 def test_a_report_of_what_holds_is_not_an_edit():
@@ -324,11 +331,11 @@ def test_the_strip_is_the_multitracks_and_undoes():
     assert ed._route([wid, "tracks",
                       "10", "", 96.0, 0, 0, 1.0, 0,
                       "20", "", 96.0, 1, 0, 0.5, 0])
-    assert held.track(20).muted
-    assert held.track(20).level == pytest.approx(0.5)
-    assert not held.track(10).muted, "the one nobody touched is untouched"
+    assert track(held, 20).muted
+    assert track(held, 20).level == pytest.approx(0.5)
+    assert not track(held, 10).muted, "the one nobody touched is untouched"
     assert ed.undo()
-    assert not held.track(20).muted
+    assert not track(held, 20).muted
 
 
 def test_edit_opens_a_multitrack():
@@ -345,7 +352,7 @@ def test_two_windows_over_one_multitrack_walk_one_stack():
                         ("13", "10", 4.0 * SR, 2.0 * SR),
                         ("22", "20", 0.0, 2.0 * SR)])
     assert two.undo(), "the history is the data's, not the window's"
-    assert held.track(10).take_lanes[0].regions[0].position == pytest.approx(0.0)
+    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(0.0)
 
 
 # ---- the curves: the light views, in the two places one lives ----
@@ -353,19 +360,16 @@ def test_two_windows_over_one_multitrack_walk_one_stack():
 def curved() -> Multitrack:
     """The same multitrack, with a track automation on the first track and an
     envelope inside its first box."""
-    from clausters.multitrack import Automation
-
-    written = multitrack()
-    written.tracks[0].automation.append(
-        Automation(id=30, name="gain", target={"ctl": "gain", "max": 2.0},
-                   points=[{"at": 0.0, "value": 1.0},
-                           {"at": 4.0, "value": 0.0,
-                            "data": {"shape": 5, "curve": 4.0}}],
-                   visible=True))
-    written.tracks[0].take_lanes[0].regions[0].automation.append(
-        Automation(id=31, name="env", target={"ctl": "amp"},
-                   points=[{"at": 0.0, "value": 0.0}], visible=True))
-    return written
+    data = two_tracks()
+    data["tracks"][0]["automation"] = [
+        {"id": 30, "name": "gain", "target": {"ctl": "gain", "max": 2.0},
+         "points": [{"at": 0.0, "value": 1.0},
+                    {"at": 4.0, "value": 0.0, "data": {"shape": 5, "curve": 4.0}}],
+         "visible": True}]
+    data["tracks"][0]["take_lanes"][0]["regions"][0]["automation"] = [
+        {"id": 31, "name": "env", "target": {"ctl": "amp"},
+         "points": [{"at": 0.0, "value": 0.0}], "visible": True}]
+    return Multitrack.read(data)
 
 
 def test_a_track_curve_is_a_row_and_a_box_curve_is_a_layer():
@@ -403,14 +407,14 @@ def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
     flat = list(props(ed)["points"])
     flat[2] = 0.25   # the first point of `gain`, moved
     assert ed._route([wid, "points", *flat])
-    gain = next(a for a in written.tracks[0].automation if a.id == 30)
+    gain = next(a for a in written.tracks[0].automation if a._id == 30)
     assert gain.points[0]["value"] == pytest.approx(0.25)
     assert gain.points[1]["data"] == {"shape": 5, "curve": 4.0}
     env = written.tracks[0].take_lanes[0].regions[0].automation[0]
     assert env.points[0]["value"] == 0.0, "the curve nobody touched"
 
     assert ed.undo()
-    gain = next(a for a in written.tracks[0].automation if a.id == 30)
+    gain = next(a for a in written.tracks[0].automation if a._id == 30)
     assert gain.points[0]["value"] == pytest.approx(1.0)
 
 
@@ -459,19 +463,16 @@ def test_a_layer_s_points_are_its_box_s_own_time():
     """A track automation runs the timeline and is measured from the origin; a
     clip envelope is drawn inside its box and is measured from where that box
     starts. It is the one thing that differs between the two on the wire."""
-    from clausters.multitrack import Automation
-
-    written = multitrack()
-    # The box at beat 4 on the second track, with an envelope of its own.
-    late = written.tracks[1].take_lanes[0].regions[0]
-    late.position = 4.0
-    late.automation.append(
-        Automation(id=40, name="fade", visible=True,
-                   points=[{"at": 0.0, "value": 0.0},
-                           {"at": 2.0, "value": 1.0}]))
-    written.tracks[0].automation.append(
-        Automation(id=41, name="gain", visible=True,
-                   points=[{"at": 4.0, "value": 0.5}]))
+    data = two_tracks()
+    # The box at four seconds on the second track, with an envelope of its own.
+    late = data["tracks"][1]["take_lanes"][0]["regions"][0]
+    late["position"] = 4.0
+    late["automation"] = [{"id": 40, "name": "fade", "visible": True,
+                           "points": [{"at": 0.0, "value": 0.0},
+                                      {"at": 2.0, "value": 1.0}]}]
+    data["tracks"][0]["automation"] = [{"id": 41, "name": "gain", "visible": True,
+                                        "points": [{"at": 4.0, "value": 0.5}]}]
+    written = Multitrack.read(data)
 
     ed = editor(written)
     flat = props(ed)["points"]
@@ -543,7 +544,7 @@ def test_a_muted_box_and_an_unloaded_source_are_not_read():
     region.muted = False
     region.content = window(9)          # a source the table has no buffer for
     planned = [c["region"] for c in _plan(ed)["tracks"][0]["clips"]]
-    assert region.id not in planned
+    assert region._id not in planned
 
 
 def test_the_source_table_carries_the_width_that_picks_the_wiring():
@@ -647,7 +648,7 @@ def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
     wid = next(iter(ed.view.widgets))
 
     def ids():
-        return [r.id for t in held.tracks for lane in t.take_lanes for r in lane.regions]
+        return [r._id for t in held.tracks for lane in t.take_lanes for r in lane.regions]
 
     def boxes():
         flat = props(ed)["clips"]
@@ -685,7 +686,7 @@ def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
     # with it -- a track that reached the server has buses to read.
     rows = list(props(ed)["tracks"]) + ["track 1", "three", 96.0, 0, 0, 1.0, 0]
     ed.apply("/gui_event", [wid, 3, ed._version, "tracks", *rows])
-    assert host.rows == [str(t.id) for t in held.tracks]
+    assert host.rows == [str(t._id) for t in held.tracks]
     assert len(held.tracks) == 3
 
 
@@ -897,3 +898,46 @@ def test_what_the_multitrack_holds_is_its_regions():
     ed.unselect()
     assert ed.selected == []
 
+
+
+# ---- a script's change, beside the window ----
+
+def test_a_scripts_change_is_the_editors_turn_and_its_undo_takes_it_back():
+    """The script and the window hold one multitrack: a change made through the
+    objects is recorded in the history the window walks, so its Ctrl+Z takes
+    it back -- and the object reads what the multitrack holds after either."""
+    held = multitrack()
+    ed = editor(held)
+    box = track(held, 10).take_lanes[0].regions[0]
+    box.position = 1.5
+    assert ed._editing.undo_label == "move a region"
+    assert ed.undo()
+    assert box.position == pytest.approx(0.0)
+    assert ed.redo()
+    assert box.position == pytest.approx(1.5)
+
+
+def test_a_scripts_block_is_one_entry_the_window_undoes():
+    held = multitrack()
+    ed = editor(held)
+    first, second = track(held, 10).take_lanes[0].regions
+    with held.history("tidy"):
+        first.position = 1.0
+        second.length = 1.0
+        track(held, 20).muted = True
+    assert ed._editing.undo_label == "tidy"
+    assert ed.undo()
+    assert (first.position, second.length) == (pytest.approx(0.0), pytest.approx(2.0))
+    assert not track(held, 20).muted
+
+
+def test_a_gesture_leaves_the_scripts_objects_reading_what_it_did():
+    """There is nothing to write back: the region a script holds is a view of
+    the one the window moved."""
+    held = multitrack()
+    ed = editor(held)
+    box = track(held, 10).take_lanes[0].regions[0]
+    assert report(ed, [("12", "20", 3.0 * SR, 2.0 * SR),
+                       ("13", "10", 4.0 * SR, 2.0 * SR),
+                       ("22", "20", 0.0, 2.0 * SR)])
+    assert box.position == pytest.approx(3.0) and box.track is track(held, 20)

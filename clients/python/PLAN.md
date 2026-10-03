@@ -1820,7 +1820,7 @@ the books, and the existing examples extended.
   The reason to want either was playing the sequence from the client; with
   `C58` that is `play(sequence)`, so what is left is placing an edited
   sequence among a `Timeline`'s other entries.
-- ⬜ **C60 — The multitrack is held as a handle.** A sequence is a handle
+- ✅ **C60 — The multitrack is held as a handle.** A sequence is a handle
   over the Rust structure: one tree. A `Multitrack` is a mirror —
   `Multitrack`, `Track`, `Region`, `Source` are dataclasses
   (`clausters/multitrack.py`) that cross as JSON (`write`/`read`): two
@@ -1894,7 +1894,7 @@ existing examples rewritten rather than new ones:
   handle. Python binds it as `_native.MultitrackHandle` and
   `EditingCore.open_multitrack`; the web wrapper comes with the objects in
   `C60.2`, where the first caller is.)*
-- ⬜ **C60.2 — The objects.** `Multitrack` over the handle in both clients:
+- ✅ **C60.2 — The objects.** `Multitrack` over the handle in both clients:
   `mt.tracks`, `track.take_lanes`, `lane.regions`, `track.automation`,
   `region.automation`, `mt.markers` as live collections whose `add` answers
   the object and whose members `remove()`; the fields read from the crate
@@ -1902,11 +1902,28 @@ existing examples rewritten rather than new ones:
   takes an id and no call answers or takes one (`mt.track(id)`,
   `lane.region(id)` go). The dataclass mirror is deleted, not kept beside the
   objects, and every call site is rewritten in the same pass.
-- ⬜ **C60.3 — `mt.history`.** A script's change through the objects is a
+- ✅ **C60.3 — `mt.history`.** A script's change through the objects is a
   turn of the multitrack's context — the editor's when one is open, which
   redraws and undoes it — and `with mt.history(label)` makes a block one
   entry. The editor stops writing the multitrack back onto the script's
   objects: there is only the one.
+
+  *(`C60.2` and `C60.3` done 2026-10-03, in one commit, since the editor had
+  to move onto the handle the moment the mirror went. `Multitrack` is a
+  handle (`_native.MultitrackHandle`, web `JsMultitrack`) with an identity
+  map; `Region`, `TakeLane`, `Track` and `Marker` are views with no public
+  constructor, and `Tracks`, `TakeLanes`, `Regions`, `Markers` and `Curves`
+  the live collections (indexed in Python, `item(i)` in the web client);
+  `Automation`'s holder is a sequence or a multitrack through one protocol
+  (`_curve`/`_write_curve`/`_remove_curve`). The editing context's
+  `script_edit` and `block` take any structure that answers `_apply`,
+  `_script_key` and `_forward`: a sequence's block is still its state before
+  and after, a multitrack's is the edits made, which an undo walks in
+  reverse. `View` takes the objects (`view.track_view(track)`), the editor
+  opens over the handle (`open_multitrack`) and syncs no multitrack, and
+  `Session` compares by what it writes. The shared vector generator reads
+  its multitrack from data with the ids both suites look up, and writes it
+  through the handle.)*
 - ✅ **C61 — `span` and `selected`, the same two words in every editor**
   *(decided 2026-10-02 by the user: one word names one thing in every case)*.
   A view has two selections, and they are told apart by what they are, not

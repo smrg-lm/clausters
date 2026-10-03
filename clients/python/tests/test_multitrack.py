@@ -17,56 +17,137 @@ def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
             "start": start, "duration": duration}
 
 
-def region(id: int, at: float, length: float, source: int = 1) -> Region:
-    return Region(id=id, position=at, length=length,
-                  content=Content.onto(window(source)))
+def one_lane(**track) -> tuple:
+    """A multitrack with one track, and the take lane it starts with."""
+    multitrack = Multitrack()
+    t = multitrack.tracks.add(**track)
+    return multitrack, t, t.active_take_lane
+
+
+def place(lane, at: float, length: float, source: int = 1, **fields) -> Region:
+    return lane.regions.add(at, length, Content.onto(window(source)), **fields)
 
 
 def test_a_region_ends_where_its_span_ends_and_not_where_its_content_does():
-    # The window is four seconds of the source; the region shows one beat of
+    # The window is four seconds of the source; the region shows one second of
     # it. Trimming moves the region and never the source.
-    r = region(1, 4.0, 1.0)
+    _, _, lane = one_lane()
+    r = place(lane, 4.0, 1.0)
     assert r.end == 5.0
     assert r.content.window["duration"] == 4.0
 
 
 def test_regions_that_touch_do_not_overlap_and_regions_that_share_time_do():
-    assert not region(1, 0.0, 4.0).overlaps(region(2, 4.0, 4.0))
-    assert region(1, 0.0, 4.0).overlaps(region(2, 3.0, 4.0))
+    _, _, lane = one_lane()
+    a, b, c = place(lane, 0.0, 4.0), place(lane, 4.0, 4.0), place(lane, 3.0, 4.0)
+    assert not a.overlaps(b)
+    assert a.overlaps(c)
 
 
 def test_one_source_under_six_regions_is_referenced_and_not_copied():
     # Six placements, six identities, one source. That is the whole of
-    # non-destructive editing, and it is what a region's own id is for.
-    lane = TakeLane(id=10)
-    for i in range(6):
-        lane.place(region(100 + i, i * 4.0, 4.0, source=1))
+    # non-destructive editing, and it is what a region's own identity is for.
+    _, _, lane = one_lane()
+    made = [place(lane, i * 4.0, 4.0, source=1) for i in range(6)]
     assert len(lane.regions) == 6
     assert {r.content.window["source"]["source"] for r in lane.regions} == {1}
-    assert lane.region(103).position == 12.0
-    assert lane.region(999) is None
+    assert made[3].position == 12.0
+    assert len(set(made)) == 6
 
 
-def test_placing_keeps_a_lane_in_position_order():
-    lane = TakeLane(id=10)
-    for id, at in ((3, 8.0), (1, 0.0), (2, 4.0)):
-        lane.place(region(id, at, 2.0))
+def test_a_lane_keeps_its_regions_in_position_order():
+    _, _, lane = one_lane()
+    for at in (8.0, 0.0, 4.0):
+        place(lane, at, 2.0)
     assert [r.position for r in lane.regions] == [0.0, 4.0, 8.0]
     assert lane.end == 10.0
 
 
 def test_a_track_spans_every_lane_and_plays_one():
-    track = Track(id=1, take_lanes=[TakeLane(id=10), TakeLane(id=11, name="take 2")], active=0)
-    track.active_take_lane.place(region(100, 0.0, 4.0))
-    track.take_lanes[1].place(region(200, 0.0, 16.0))
-    assert track.active_take_lane.id == 10
+    _, track, first = one_lane()
+    second = track.take_lanes.add("take 2")
+    place(first, 0.0, 4.0)
+    place(second, 0.0, 16.0)
+    assert track.active_take_lane is first
     assert track.active_take_lane.end == 4.0
     # An alternate take is still part of the multitrack.
     assert track.end == 16.0
+    track.active_take_lane = second
+    assert track.active == 1 and track.active_take_lane is second
 
 
-def test_an_active_lane_that_is_not_there_answers_nothing():
-    assert Track(id=1, take_lanes=[TakeLane(id=10)], active=7).active_take_lane is None
+def test_one_structure_is_one_object():
+    """What a script reads is the structure, not a copy of it: the same region
+    read twice is the same object, and it reads what the multitrack holds now."""
+    multitrack, track, lane = one_lane(name="drums")
+    r = place(lane, 1.0, 2.0)
+    assert multitrack.tracks[0] is track
+    assert lane.regions[0] is r and r.take_lane is lane and r.track is track
+    assert next(multitrack.regions()) is r
+    r.position = 3.0
+    assert lane.regions[0].position == 3.0
+    assert {r: "a key"}[lane.regions[0]] == "a key"
+
+
+def test_no_call_takes_or_answers_an_id():
+    """The ids are the crate's: nothing a script builds is given one, and
+    nothing a script asks for is answered with one."""
+    import inspect
+
+    for cls in (Region, Track, TakeLane, Marker):
+        assert "id" not in [p for p in inspect.signature(cls.__init__).parameters
+                            if p != "self"]
+    multitrack = Multitrack()
+    assert not hasattr(multitrack, "track")
+    _, _, lane = one_lane()
+    assert not hasattr(lane, "region")
+
+
+def test_each_field_is_written_through_the_multitrack_s_own_verb():
+    multitrack, track, lane = one_lane()
+    other = multitrack.tracks.add("other").active_take_lane
+    r = place(lane, 0.0, 4.0, name="take")
+    r.length = 2.0
+    r.fade_in = Fade(0.5)
+    r.fade_out = Fade(0.25, shape={"curve": "exp"})
+    r.muted = True
+    r.name = "kept"
+    r.place(other, position=6.0)
+    assert (r.position, r.length, r.muted, r.name) == (6.0, 2.0, True, "kept")
+    assert r.take_lane is other and r.track is other.track
+    assert r.fade_in == Fade(0.5) and r.fade_out.shape == {"curve": "exp"}
+    track.name, track.level, track.soloed = "drums", 0.7, True
+    assert (track.name, track.level, track.soloed) == ("drums", 0.7, True)
+    assert multitrack.version > 1, "every edit moves the multitrack's version"
+
+
+def test_a_removed_structure_leaves_its_object_detached():
+    multitrack, track, lane = one_lane()
+    r = place(lane, 0.0, 4.0)
+    r.remove()
+    assert not r.held and len(lane.regions) == 0
+    with pytest.raises(ValueError, match="no longer holds"):
+        r.position
+    track.remove()
+    assert not lane.held and len(multitrack.tracks) == 0
+
+
+def test_a_track_and_a_region_carry_curves_of_their_own():
+    """The two places a curve belongs: a track's runs the length of the track
+    and is drawn in a row beside it, a region's runs the length of the region
+    and is drawn inside it. One type, written through its holder."""
+    _, track, lane = one_lane()
+    r = place(lane, 0.0, 20.0)
+    level = track.automation.add({"ctl": "level"}, [(0.0, 0.0), (4.0, 1.0)], visible=True)
+    gain = r.automation.add({"ctl": "gain"}, [(0.0, 1.0)], name="gain")
+    assert track.automation[0] is level and r.automation[0] is gain
+    assert level.visible and gain.name == "gain"
+    level.points = [(0.0, 0.5)]
+    assert level.points == [{"at": 0.0, "value": 0.5}]
+    free = Automation({"ctl": "pan"}, [(0.0, 0.0)])
+    assert r.automation.add(free) is free and free.held
+    gain.remove()
+    assert not gain.held and list(r.automation) == [free]
 
 
 def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
@@ -107,10 +188,14 @@ def test_two_tempos_at_one_beat_is_a_state_the_map_cannot_hold():
 
 def test_two_markers_may_share_an_instant_because_people_do_that():
     multitrack = Multitrack()
-    multitrack.add_marker(Marker(id=1, at=16.0, name="B"))
-    multitrack.add_marker(Marker(id=2, at=16.0, name="chorus"))
-    multitrack.add_marker(Marker(id=3, at=0.0, name="A"))
+    multitrack.markers.add(16.0, "B")
+    multitrack.markers.add(16.0, "chorus")
+    a = multitrack.markers.add(0.0, "A")
     assert [m.name for m in multitrack.markers] == ["A", "B", "chorus"]
+    a.at = 20.0
+    assert [m.name for m in multitrack.markers][-1] == "A"
+    a.remove()
+    assert len(multitrack.markers) == 2 and not a.held
 
 
 def test_a_span_that_meets_the_next_one_covers_no_instant_twice():
@@ -122,7 +207,8 @@ def test_nothing_said_is_nothing_written():
     # An empty multitrack writes an empty object rather than zero of everything, and
     # a plain region writes no layer, no fades, no mute and no playrate.
     assert Multitrack().write() == {}
-    written = region(1, 0.0, 4.0).write()
+    _, _, lane = one_lane()
+    written = place(lane, 0.0, 4.0).write()
     assert set(written) == {"id", "position", "length", "content"}
     assert "playrate" not in written["content"]
 
@@ -135,9 +221,7 @@ def test_the_multitrack_carries_its_own_version_and_keeps_it_out_of_an_empty_fil
     assert Multitrack().version == 1
     assert "version" not in Multitrack().write()
     assert Multitrack.read({}).version == 1
-    edited = Multitrack(version=4)
-    assert edited.write()["version"] == 4
-    assert Multitrack.read(edited.write()).version == 4
+    assert Multitrack.read({"version": 4}).write()["version"] == 4
 
 
 def test_a_whole_multitrack_round_trips():
@@ -145,45 +229,29 @@ def test_a_whole_multitrack_round_trips():
     multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
     multitrack.set_meter(Meter(at=0.0, beats=7, unit=8))
     multitrack.loop_span = Span(0.0, 12.0)
-    track = Track(id=1, name="guitars", soloed=True, take_lanes=[TakeLane(id=2)])
-    first = track.take_lanes[0].place(region(3, 0.0, 20.0))
-    first.fade_out = Fade(length=4.0)
-    second = track.take_lanes[0].place(Region(
-        id=4, position=16.0, length=16.0, layer=1, muted=True,
-        content=Content.onto(window(2), playrate=1.5, args={"seed": 7}),
-        fade_in=Fade(length=4.0, shape={"curve": "exp"})))
-    track.automation.append(Automation(
-        id=5, target={"ctl": "level"}, visible=True,
-        points=[{"at": 0.0, "value": 0.0, "data": {}}]))
-    multitrack.tracks.append(track)
+    track = multitrack.tracks.add("guitars", soloed=True)
+    lane = track.active_take_lane
+    first = place(lane, 0.0, 20.0, fade_out=Fade(length=4.0))
+    second = lane.regions.add(
+        16.0, 16.0, Content.onto(window(2), playrate=1.5, args={"seed": 7}),
+        layer=1, muted=True, fade_in=Fade(length=4.0, shape={"curve": "exp"}))
+    track.automation.add({"ctl": "level"}, [{"at": 0.0, "value": 0.0, "data": {}}],
+                         visible=True)
 
     back = Multitrack.read(multitrack.write())
-    assert back == multitrack
+    assert back.write() == multitrack.write()
     assert back.end == 32.0
+    assert back.loop_span == Span(0.0, 12.0)
     assert back.tracks[0].take_lanes[0].regions[1].content.playrate == 1.5
     assert second.overlaps(first)
 
 
-def test_a_region_carries_curves_of_its_own_and_they_are_not_its_tracks():
-    """The two places a curve belongs: a track's runs the length of the track
-    and is drawn in a lane beside it, a region's runs the length of the region
-    and is drawn inside it. One type, so one reader -- which is what a round trip
-    checks."""
-    r = region(3, 0.0, 20.0)
-    r.automation.append(Automation(
-        id=9, name="gain", target={"ctl": "gain"},
-        points=[{"at": 0.0, "value": 1.0, "data": {}}]))
-    back = Region.read(r.write())
-    assert back == r
-    assert back.automation[0].target == {"ctl": "gain"}
-    # A region with none writes none: nothing said is nothing written.
-    assert "automation" not in region(4, 0.0, 4.0).write()
-
-
 def test_a_composite_region_carries_the_general_tree_unchanged():
-    node = {"id": 50, "kind": "aggregate", "grouping": "concrete", "members": []}
-    r = Region(id=1, position=0.0, length=8.0, content=Content.composite(node))
-    assert Region.read(r.write()).content.node == node
+    # As the crate writes it: an empty list of members is nothing said.
+    node = {"id": 50, "kind": "aggregate", "grouping": "concrete"}
+    _, _, lane = one_lane()
+    r = lane.regions.add(0.0, 8.0, Content.composite(node))
+    assert r.content.node == node
 
 
 def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
@@ -199,6 +267,7 @@ def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
     }
     multitrack = Multitrack.read(written)
     assert multitrack.write() == written
+    assert multitrack.tracks[0].take_lanes[0].regions[0].extra == {"warp": {"mode": "beats"}}
 
 
 def test_a_fill_this_build_does_not_know_is_carried_whole():
@@ -207,11 +276,9 @@ def test_a_fill_this_build_does_not_know_is_carried_whole():
 
 
 def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
-    multitrack = Multitrack()
-    track = Track(id=1, take_lanes=[TakeLane(id=2), TakeLane(id=3)], active=0)
-    track.take_lanes[0].place(region(4, 0.0, 4.0, source=700))
-    track.take_lanes[1].place(region(5, 0.0, 4.0, source=701))
-    multitrack.tracks.append(track)
+    multitrack, track, first = one_lane()
+    place(first, 0.0, 4.0, source=700)
+    place(track.take_lanes.add(), 0.0, 4.0, source=701)
     named = [r.content.window["source"]["source"] for r in multitrack.regions()]
     assert named == [700, 701]
 
@@ -223,9 +290,8 @@ from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 
 def test_a_session_round_trips_with_its_table():
-    multitrack = Multitrack()
-    multitrack.tracks.append(Track(id=1, take_lanes=[TakeLane(id=2)]))
-    multitrack.tracks[0].take_lanes[0].place(region(3, 0.0, 4.0, source=700))
+    multitrack, _, lane = one_lane()
+    place(lane, 0.0, 4.0, source=700)
     session = Session(multitrack=multitrack,
                       sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
                       provenance={"script": "make.py"})
@@ -238,7 +304,7 @@ def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a multitrack, possibly
     # empty, so nothing downstream has to ask whether there is one.
     session = Session.read({"format": SESSION_FORMAT})
-    assert session.multitrack.tracks == []
+    assert len(session.multitrack.tracks) == 0
     assert session.write() == {"format": SESSION_FORMAT}
 
 
@@ -261,11 +327,9 @@ def test_a_save_knows_what_it_cannot_promise():
 
 
 def test_a_source_only_a_region_names_is_reported_missing():
-    multitrack = Multitrack()
-    track = Track(id=1, take_lanes=[TakeLane(id=2), TakeLane(id=3)])
-    track.take_lanes[0].place(region(4, 0.0, 4.0, source=700))
-    track.take_lanes[1].place(region(5, 0.0, 4.0, source=701))
-    multitrack.tracks.append(track)
+    multitrack, track, first = one_lane()
+    place(first, 0.0, 4.0, source=700)
+    place(track.take_lanes.add(), 0.0, 4.0, source=701)
     session = Session(multitrack=multitrack, sources={700: Source.file("one.wav")})
     # Every lane, not only the one that plays.
     assert session.dangling() == [701]
@@ -332,11 +396,14 @@ from clausters.multitrack import TakeLaneView, TrackView, View  # noqa: E402
 
 
 def a_multitrack() -> Multitrack:
-    multitrack = Multitrack()
-    vocals = Track(id=10, take_lanes=[TakeLane(id=11), TakeLane(id=12)])
-    vocals.take_lanes[0].place(region(20, 0.0, 4.0, source=700))
-    multitrack.tracks.extend([vocals, Track(id=30, take_lanes=[TakeLane(id=31)])])
-    return multitrack
+    """Vocals (10) on take lanes 11 and 12, a region (20) on the first, and a
+    second track (30) with its take lane (31) -- the ids a view is written by."""
+    return Multitrack.read({"tracks": [
+        {"id": 10, "take_lanes": [
+            {"id": 11, "regions": [{"id": 20, "position": 0.0, "length": 4.0,
+                                    "content": {"fill": "window", "window": window(700)}}]},
+            {"id": 12}]},
+        {"id": 30, "take_lanes": [{"id": 31}]}]})
 
 
 def test_a_view_that_says_nothing_writes_an_empty_object():
@@ -350,12 +417,13 @@ def test_a_view_says_nothing_about_what_plays():
     # every view and the multitrack is the same multitrack.
     multitrack = a_multitrack()
     written = multitrack.write()
+    vocals = multitrack.tracks[0]
     view = View(name="arranger", visible=Span(0.0, 32.0))
-    view.track_view(10).height = 96.0
+    view.track_view(vocals).height = 96.0
     session = Session(multitrack=multitrack, views=[view])
     back = Session.read(session.write())
     assert back.multitrack.write() == written
-    assert back.views[0].track(10).height == 96.0
+    assert back.views[0].track(back.multitrack.tracks[0]).height == 96.0
 
 
 def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose():
@@ -373,11 +441,12 @@ def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose()
 
 
 def test_a_track_nobody_touched_reads_as_the_default_and_costs_nothing():
+    vocals = a_multitrack().tracks[0]
     view = View()
-    assert view.track(10) == TrackView()
-    assert view.take_lane(11) == TakeLaneView()
+    assert view.track(vocals) == TrackView()
+    assert view.take_lane(vocals.take_lanes[0]) == TakeLaneView()
     assert view.tracks == {}, "asking is not touching"
-    view.track_view(10).take_lanes_shown = True
+    view.track_view(vocals).take_lanes_shown = True
     assert len(view.tracks) == 1
 
 
@@ -386,9 +455,9 @@ def test_state_goes_when_the_thing_goes():
     # structure's terms: a height kept for a track that is not the same track is
     # a defect that looks like a feature.
     view = View()
-    view.track_view(10).height = 96.0
-    view.track_view(999).height = 48.0
-    view.take_lane_view(11).height = 24.0
+    view.tracks[10] = TrackView(height=96.0)
+    view.tracks[999] = TrackView(height=48.0)
+    view.take_lanes[11] = TakeLaneView(height=24.0)
     view.selected = [20, 777]
     view.focused = 777
     view.detail = 20
@@ -415,3 +484,39 @@ def test_a_session_written_without_views_reads_back_without_them():
     session = Session(multitrack=a_multitrack())
     assert "views" not in session.write()
     assert Session.read(session.write()).views == []
+
+
+# ---- the history: a script's changes, recorded and walked ----
+
+def test_a_multitrack_with_a_history_records_each_change_and_walks_it():
+    multitrack, track, lane = one_lane()
+    history = multitrack.history
+    r = place(lane, 0.0, 2.0)
+    r.position = 3.0
+    assert history.undo_label == "move a region"
+    assert history.undo() and r.position == 0.0
+    assert history.undo() and not r.held, "the add, taken back"
+    assert history.redo() and r.held and lane.regions[0] is r, "the same object"
+
+
+def test_a_block_is_one_entry_undone_in_one_step():
+    multitrack, track, lane = one_lane()
+    history = multitrack.history
+    r = place(lane, 0.0, 2.0)
+    with multitrack.history("tidy"):
+        r.position = 5.0
+        r.length = 1.0
+        track.name = "kept"
+    assert history.undo_label == "tidy"
+    history.undo()
+    assert (r.position, r.length, track.name) == (0.0, 2.0, None)
+    history.redo()
+    assert (r.position, r.length, track.name) == (5.0, 1.0, "kept")
+
+
+def test_a_multitrack_nobody_asked_a_history_of_records_nothing():
+    multitrack, _, lane = one_lane()
+    place(lane, 0.0, 2.0).position = 1.0
+    from clausters.history import ATTR
+
+    assert getattr(multitrack, ATTR, None) is None

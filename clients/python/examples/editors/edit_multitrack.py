@@ -90,8 +90,7 @@ from clausters import Buffer, Session, Synth
 from clausters.defs import Part, SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
-from clausters.multitrack import (Automation, Content, TakeLane, Multitrack, Region,
-                                  Source, Track)
+from clausters.multitrack import Content, Multitrack, Source
 from clausters.multitrack import Session as SavedSession
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
@@ -165,7 +164,7 @@ KEYS = EventSequence([(beat, Event(midinote=note, sustain=0.4, amp=0.2))
 
 # %% [markdown]
 # ## The multitrack
-# Three tracks, one take lane each, five boxes. A **source id** is what the document
+# Four tracks, one take lane each, seven boxes. A **source id** is what the document
 # names -- never a path and never a buffer number -- because a multitrack must open in
 # a program that has no Python in it. Which buffer each source was read into is
 # the one thing about a multitrack that is not in the multitrack, and it travels beside it
@@ -178,50 +177,46 @@ SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
            6: "loud"}
 
 
-def box(id: int, at: float, source: int, name: str) -> Region:
-    """A box over the whole of one source, from its start."""
-    return Region(id=id, position=at, length=TAKE_DUR, name=name,
-                  content=Content.onto({"source": {"source": source,
-                                                   "lifetime": "session",
-                                                   "generation": 0},
-                                        "start": 0.0, "duration": TAKE_DUR}))
+def window(source: int) -> Content:
+    """The whole of one source, from its start."""
+    return Content.onto({"source": {"source": source, "lifetime": "session",
+                                    "generation": 0},
+                         "start": 0.0, "duration": TAKE_DUR})
 
+
+multitrack = Multitrack()
+noise = multitrack.tracks.add("noise")
+tone = multitrack.tracks.add("tone")
+#: **The fader is the track's own field**, like its width: what a multitrack
+#: sounds like is the multitrack's, so it is saved with it and reopens as it was.
+bass = multitrack.tracks.add("bass", level=0.7)
+keys = multitrack.tracks.add("keys")
+
+#: Each track starts with one take lane, and a box is placed on it: where it
+#: starts, how long it is, and the source it is a window onto. The multitrack
+#: names every box, so the script holds the box and never its number.
+first = noise.active_take_lane.regions.add(0.0, TAKE_DUR, window(1), name="white")
+noise.active_take_lane.regions.add(6.0, TAKE_DUR, window(4), name="pink")
+tone.active_take_lane.regions.add(2.0, TAKE_DUR, window(2), name="glide")
+tone.active_take_lane.regions.add(8.0, TAKE_DUR, window(5), name="comp")
+tone.active_take_lane.regions.add(10.0, TAKE_DUR, window(6), name="loud")
+bass.active_take_lane.regions.add(4.0, TAKE_DUR, window(3), name="saw")
+#: **A box of notes** is a box like any other: a window onto source 7, which
+#: is the sequence above rather than a take.
+keys.active_take_lane.regions.add(12.0, TAKE_DUR, window(7), name="keys")
 
 #: **A track automation**: a row of its own under the track, as long as the
-#: timeline, because a track's gain does not begin and end with a box. ``target``
-#: names the **port** it drives on whatever it is on -- the one shape the document
-#: crate reads there, because a curve that named nothing could only be guessed at.
-noise_gain = Automation(id=100, name="gain", visible=True,
-                        target={"port": "gain"},
-                        points=[{"at": 0.0, "value": 1.0},
-                                {"at": 8.0, "value": 0.2}])
+#: timeline, because a track's gain does not begin and end with a box. The
+#: target names the **port** it drives on whatever it is on -- the one shape
+#: the document crate reads there, because a curve that named nothing could
+#: only be guessed at.
+noise.automation.add({"port": "gain"}, [(0.0, 1.0), (8.0, 0.2)],
+                     name="gain", visible=True)
 
 #: **A clip envelope**: a layer drawn inside its box, lasting exactly as long as
 #: the box does. Its time is the box's own, from zero, and its port is the clip's.
-white_fade = Automation(id=101, name="fade", visible=True,
-                        target={"port": "gain"},
-                        points=[{"at": 0.0, "value": 0.2},
-                                {"at": TAKE_DUR, "value": 1.0}])
-
-first = box(20, 0.0, 1, "white")
-first.automation.append(white_fade)
-
-multitrack = Multitrack(tracks=[
-    Track(id=10, name="noise", automation=[noise_gain],
-          take_lanes=[TakeLane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
-    Track(id=12, name="tone",
-          take_lanes=[TakeLane(id=13, regions=[box(22, 2.0, 2, "glide"),
-                                      box(24, 8.0, 5, "comp"),
-                                      box(25, 10.0, 6, "loud")])]),
-    #: **The fader is the track's own field**, like its width: what a multitrack
-    #: sounds like is the multitrack's, so it is saved with it and reopens as it was.
-    Track(id=14, name="bass", level=0.7,
-          take_lanes=[TakeLane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
-    #: **A box of notes** is a box like any other: a window onto source 7, which
-    #: is the sequence above rather than a take.
-    Track(id=16, name="keys",
-          take_lanes=[TakeLane(id=17, regions=[box(26, 12.0, 7, "keys")])]),
-])
+first.automation.add({"port": "gain"}, [(0.0, 0.2), (TAKE_DUR, 1.0)],
+                     name="fade", visible=True)
 
 # %% [markdown]
 # ## The same multitrack, for a host with no Python behind it

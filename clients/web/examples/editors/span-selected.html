@@ -71,7 +71,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
     <script type="module">
       import { Session, gui, loadCore } from "../../dist/index.js";
       import { Buffer } from "../../dist/defs/index.js";
-      import { Content, Multitrack, Region, TakeLane, Track } from "../../dist/multitrack.js";
+      import { Content, Multitrack } from "../../dist/multitrack.js";
       import { Segment } from "../../dist/segments.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
@@ -148,15 +148,13 @@ editors. Press the buttons in order; each step says what to look at.</div>
         higher = await Buffer.fromSamples(Float32Array.from({ length: frames },
           (_, i) => 0.3 * Math.sin(2 * Math.PI * 990.0 * i / rate)), 1, rate, { server });
         await server.sync();
-        a = new Region({ id: 20, position: 0.0, length: 2.0, name: "660",
-          content: Content.onto({ source: { source: 1, lifetime: "session", generation: 0 },
-                                  start: 0.0, duration: 2.0 }) });
-        b = new Region({ id: 21, position: 2.0, length: 2.0, name: "990",
-          content: Content.onto({ source: { source: 2, lifetime: "session", generation: 0 },
-                                  start: 0.0, duration: 2.0 }) });
         mt = new Multitrack();
-        mt.tracks = [new Track({ id: 10, name: "one", takeLanes: [new TakeLane({ id: 11, regions: [a] })] }),
-                     new Track({ id: 12, name: "two", takeLanes: [new TakeLane({ id: 13, regions: [b] })] })];
+        a = mt.tracks.add("one").activeTakeLane.regions.add(
+          0.0, 2.0, Content.onto({ source: { source: 1, lifetime: "session", generation: 0 },
+                                   start: 0.0, duration: 2.0 }), { name: "660" });
+        b = mt.tracks.add("two").activeTakeLane.regions.add(
+          2.0, 2.0, Content.onto({ source: { source: 2, lifetime: "session", generation: 0 },
+                                   start: 0.0, duration: 2.0 }), { name: "990" });
         m = await gui.edit(mt, { sampleRate: rate, server, sources: { 1: high, 2: higher },
                                  title: "multitrack", stage: $("multitrack") });
         mtt = m.transport;
