@@ -1829,8 +1829,7 @@ the books, and the existing examples extended.
   timeline's client-side tree do what a transport's position already does --
   a sequence's beats placed by a client clock, matched per entry, re-read on
   each edit, measured through seconds -- and it played none of the sequence's
-  curves. That build is kept on a local branch (`c59-sequence-in-timeline`)
-  and is not on `main`. The one thing it surfaced that stands on its own is
+  curves. That build never reached `main`, and was discarded. The one thing it surfaced that stands on its own is
   that **no event with automation could be played from the client** except
   through a sequence's lane: that is `C62`.
 - ✅ **C60 — The multitrack is held as a handle.** A sequence is a handle
