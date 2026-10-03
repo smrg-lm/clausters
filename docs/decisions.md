@@ -9241,6 +9241,6 @@ had a third copy to keep in step.
 
 What still crosses by value does so because it is **data**, not because a rule
 asks for it: a whole multitrack handed to `domain_edit` as JSON, a session file,
-`clausters.form`'s conversion, and the values a structure is made of -- a fade,
-a tempo entry, a region's content.
+and the values a structure is made of -- a fade, a tempo entry, a region's
+content.
 
