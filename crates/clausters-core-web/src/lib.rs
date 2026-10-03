@@ -1594,6 +1594,18 @@ impl JsEditing {
         self.0.open_notes(&key, sequence.0.clone(), request)
     }
 
+    /// Opens a multitrack editor over `multitrack`, which it then edits in
+    /// place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
+    /// carries the `key` and what the editor is built from.
+    #[wasm_bindgen(js_name = openMultitrack)]
+    pub fn open_multitrack(&mut self, multitrack: &JsMultitrack, request: &str) -> String {
+        let key = serde_json::from_str::<serde_json::Value>(request)
+            .ok()
+            .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+            .unwrap_or_default();
+        self.0.open_multitrack(&key, multitrack.0.clone(), request)
+    }
+
     /// Binds a multitrack member's source to `sequence`, so a region over it
     /// draws the sequence's notes -- the C ABI's
     /// `clausters_apps_editing_bind_sequence`. `request` is `{"member",
@@ -2482,6 +2494,36 @@ impl JsEventSequence {
     pub fn call(&mut self, request: &str) -> String {
         let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
         clausters_document::events::call_json(&mut held, request)
+    }
+}
+
+/// JS face: a multitrack (`clausters_document::Multitrack`) a script holds,
+/// every verb through one JSON door, as the C ABI's
+/// `clausters_document_multitrack_*`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct JsMultitrack(clausters_apps::multitrack::Shared);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl JsMultitrack {
+    /// A multitrack read from `json`; empty for an empty string.
+    #[wasm_bindgen(constructor)]
+    pub fn new(json: &str) -> Result<JsMultitrack, JsError> {
+        let multitrack = if json.is_empty() {
+            clausters_document::Multitrack::default()
+        } else {
+            serde_json::from_str(json)
+                .map_err(|e| JsError::new(&format!("not a multitrack: {e}")))?
+        };
+        Ok(Self(clausters_apps::multitrack::shared(multitrack)))
+    }
+
+    /// One verb, as `clausters_document::multitrack::handle::call_json`
+    /// answers it.
+    pub fn call(&mut self, request: &str) -> String {
+        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        clausters_document::multitrack::handle::call_json(&mut held, request)
     }
 }
 

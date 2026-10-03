@@ -35,6 +35,15 @@ use clausters_editing::multitrack::{self as projection, Look};
 
 pub mod editor;
 
+/// A multitrack the editor and its holder edit together -- a script's handle
+/// and the window over it are two holders of one tree.
+pub type Shared = std::sync::Arc<std::sync::Mutex<Multitrack>>;
+
+/// `multitrack`, shared.
+pub fn shared(multitrack: Multitrack) -> Shared {
+    std::sync::Arc::new(std::sync::Mutex::new(multitrack))
+}
+
 /// The name of the transport row's rewind button.
 pub const REWIND: &str = "transport_rewind";
 /// The name of the transport row's play/pause button.

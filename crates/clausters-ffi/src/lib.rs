@@ -517,7 +517,7 @@ pub use time::*;
 /// the lanes over their channels (a bare list of events is still read).
 /// New: `clausters_editing_playback_set_loop`, the loop switch while the
 /// multitrack plays. **Not additive** -- a signature moved.
-pub const CORE_ABI_VERSION: u32 = 78;
+pub const CORE_ABI_VERSION: u32 = 79;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

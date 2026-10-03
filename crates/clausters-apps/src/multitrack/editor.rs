@@ -185,7 +185,10 @@ pub struct Applied {
 /// view's end of the conversation with the host.
 #[derive(Clone, Debug)]
 pub struct MultitrackEditor {
-    multitrack: Multitrack,
+    /// **The multitrack, shared with whoever holds it** -- a script's handle
+    /// over it edits what this editor draws, and a turn here is what that
+    /// handle reads.
+    multitrack: super::Shared,
     rate: f64,
     sources: HashMap<SourceId, i64>,
     /// How many frames each take holds, where the caller said: what refuses a
@@ -224,6 +227,12 @@ impl MultitrackEditor {
     /// An editor over `multitrack`, drawn on an axis of `rate` frames a second, whose
     /// history is at `version`.
     pub fn new(multitrack: Multitrack, rate: f64, version: i64) -> Self {
+        Self::over(super::shared(multitrack), rate, version)
+    }
+
+    /// An editor over a multitrack it shares with whoever handed it: what a
+    /// change through that holder makes is what this editor draws next.
+    pub fn over(multitrack: super::Shared, rate: f64, version: i64) -> Self {
         Self {
             multitrack,
             rate,
@@ -276,15 +285,23 @@ impl MultitrackEditor {
         self.controls
     }
 
-    /// The multitrack.
-    pub fn multitrack(&self) -> &Multitrack {
-        &self.multitrack
+    /// The multitrack, held while the guard lives.
+    pub fn multitrack(&self) -> std::sync::MutexGuard<'_, Multitrack> {
+        self.multitrack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The multitrack as it is shared: what a handle opened over this editor's
+    /// structure holds.
+    pub fn shared(&self) -> super::Shared {
+        self.multitrack.clone()
     }
 
     /// Replaces the multitrack -- a caller that edited it by a route that was not a
     /// turn of this editor.
     pub fn set_multitrack(&mut self, multitrack: Multitrack) {
-        self.multitrack = multitrack;
+        *self.multitrack() = multitrack;
     }
 
     /// **The joins a caller holds**, by source -- the segments each is made
@@ -335,7 +352,7 @@ impl MultitrackEditor {
     /// against before it is freed, since a region still windowing it is a
     /// root the history does not know about.
     pub fn joins_read(&self) -> Vec<SourceId> {
-        self.multitrack
+        self.multitrack()
             .regions()
             .filter_map(|region| region.content.source())
             .filter(|source| self.segments.contains_key(source))
@@ -467,7 +484,7 @@ impl MultitrackEditor {
 
     /// **What the clock reads** with the multitrack at `position` seconds.
     pub fn clock(&self, position: f64) -> String {
-        format!("{position:8.3} s   of {:.3} s", self.multitrack.end().0)
+        format!("{position:8.3} s   of {:.3} s", self.multitrack().end().0)
     }
 
     /// **The window**, composed around the multitrack's widget and ruler ids, which
@@ -530,7 +547,7 @@ impl MultitrackEditor {
         }
         if let Some((true, _)) = self.edit(payload) {
             out.applied = true;
-            out.multitrack = serde_json::to_value(&self.multitrack).ok();
+            out.multitrack = serde_json::to_value(&*self.multitrack()).ok();
         }
         out
     }
@@ -584,12 +601,13 @@ impl MultitrackEditor {
             segments: &self.segments,
             sequences: &self.sequences,
         };
-        projection::placed_notes(&self.multitrack, &table)
+        projection::placed_notes(&self.multitrack(), &table)
     }
 
     /// The window over the editor's state, handed to `f`.
     fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
-        let tempo = projection::tempo_map(&self.multitrack);
+        let multitrack = self.multitrack();
+        let tempo = projection::tempo_map(&multitrack);
         let table = Table {
             buffers: &self.sources,
             lengths: &self.lengths,
@@ -601,7 +619,7 @@ impl MultitrackEditor {
             sources: &table,
         };
         f(&Window {
-            multitrack: &self.multitrack,
+            multitrack: &multitrack,
             look: &look,
             tempo: &tempo,
             widget,
@@ -617,7 +635,7 @@ impl MultitrackEditor {
 
     /// What the multitrack calls its rows, its boxes and its curves.
     fn names(&self) -> [HashSet<String>; 3] {
-        let named = projection::names(&self.multitrack);
+        let named = projection::names(&self.multitrack());
         let set = |key: &str| -> HashSet<String> {
             named[key]
                 .as_array()
@@ -707,7 +725,7 @@ impl MultitrackEditor {
         // box reads, and what that editor does is what reaches a history.
         if tag == "open" {
             let named = values.first().map(crate::turn::text).unwrap_or_default();
-            out.open = clausters_document::multitrack::picture::boxes(&self.multitrack)
+            out.open = clausters_document::multitrack::picture::boxes(&self.multitrack())
                 .into_iter()
                 .find(|b| b.region.0.to_string() == named)
                 .and_then(|b| b.source)
@@ -730,7 +748,7 @@ impl MultitrackEditor {
                 rate: self.rate,
                 sources: &table,
             };
-            projection::intake(&self.multitrack, tag, values, &look)
+            projection::intake(&self.multitrack(), tag, values, &look)
         };
         if taken.payloads.is_empty() {
             // Nothing, or a refusal. A refusal says why and hands the widget back
@@ -779,7 +797,7 @@ impl MultitrackEditor {
             }
             out.version += 1;
             out.changed = true;
-            out.multitrack = serde_json::to_value(&self.multitrack).ok();
+            out.multitrack = serde_json::to_value(&*self.multitrack()).ok();
         }
         (None, Vec::new())
     }
@@ -812,13 +830,13 @@ impl MultitrackEditor {
     /// Applies one payload, answering whether it moved anything and the payload
     /// that puts it back. `None` for a payload the multitrack cannot read.
     fn edit(&mut self, payload: &Value) -> Option<(bool, Option<Value>)> {
-        let state = Opaque(serde_json::to_value(&self.multitrack).ok()?);
+        let state = Opaque(serde_json::to_value(&*self.multitrack()).ok()?);
         let edited = domain::edit(MULTITRACK, &state, &Opaque(payload.clone()))?;
         let current = edited.current.map(|c| c.0);
         if !edited.applied {
             return Some((false, current));
         }
-        self.multitrack = serde_json::from_value(edited.state.0).ok()?;
+        *self.multitrack() = serde_json::from_value(edited.state.0).ok()?;
         Some((true, current))
     }
 
@@ -911,6 +929,7 @@ fn minted(payload: &Value) -> Option<Value> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct New {
+    #[serde(default)]
     multitrack: Value,
     #[serde(default)]
     rate: f64,
@@ -935,9 +954,20 @@ fn outcome(outcome: &Outcome) -> String {
 
 /// An editor built from a JSON request, or `None` for one that names no multitrack.
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
-    let request: New = serde_json::from_str(request).ok()?;
-    let multitrack: Multitrack = serde_json::from_value(request.multitrack).ok()?;
-    let mut editor = MultitrackEditor::new(multitrack, request.rate, request.version);
+    let parsed: New = serde_json::from_str(request).ok()?;
+    let multitrack: Multitrack = serde_json::from_value(parsed.multitrack.clone()).ok()?;
+    Some(built(super::shared(multitrack), parsed))
+}
+
+/// **An editor over a multitrack a caller shares** -- a binding's handle -- built
+/// from the rest of a JSON request; a `multitrack` in it is not read. `None`
+/// for a request that does not read.
+pub fn over_json(multitrack: super::Shared, request: &str) -> Option<MultitrackEditor> {
+    Some(built(multitrack, serde_json::from_str(request).ok()?))
+}
+
+fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
+    let mut editor = MultitrackEditor::over(multitrack, request.rate, request.version);
     let transport = match request.transport {
         Value::Bool(true) => Transport::Unnumbered,
         Value::Object(_) => serde_json::from_value::<TransportIds>(request.transport)
@@ -950,7 +980,7 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
         &request.title,
         (request.w, request.h),
     );
-    Some(editor)
+    editor
 }
 
 /// **One verb of an editor, over JSON** -- the door both clients bind.

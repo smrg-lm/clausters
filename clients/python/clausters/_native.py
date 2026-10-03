@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 78
+CORE_ABI_VERSION = 79
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -324,6 +324,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_document_sequence_call.restype = ctypes.c_size_t
+    # A multitrack a script holds: a handle and one JSON door.
+    lib.clausters_document_multitrack_new.restype = ctypes.c_void_p
+    lib.clausters_document_multitrack_new.argtypes = [u8p_early, ctypes.c_size_t]
+    lib.clausters_document_multitrack_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_document_multitrack_free.restype = None
+    lib.clausters_document_multitrack_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_document_multitrack_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_sync.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
         u8p_early, ctypes.c_size_t, ctypes.c_float, ctypes.c_void_p,
@@ -394,6 +403,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_open_notes.restype = ctypes.c_size_t
+    lib.clausters_apps_editing_open_multitrack.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_editing_open_multitrack.restype = ctypes.c_size_t
     lib.clausters_apps_editing_bind_sequence.argtypes = [
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -1885,6 +1898,38 @@ class SequenceHandle:
         return answer
 
 
+class MultitrackHandle:
+    """**A multitrack** (`clausters_document_multitrack_*`): the document's
+    `Multitrack`, held on the Rust side, every verb through `call`.
+    `clausters.multitrack.Multitrack` is the class a script uses."""
+
+    def __init__(self, data=None):
+        body = b"" if data is None else json.dumps(data).encode("utf-8")
+        self._handle = lib().clausters_document_multitrack_new(
+            as_u8(body) if body else None, len(body))
+        if not self._handle:
+            raise ValueError("not a multitrack")
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the handle; an editor opened on it keeps the multitrack."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_document_multitrack_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **args):
+        """One verb: its answer. Raises `ValueError` for a refusal."""
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_document_multitrack_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        answer = json.loads(raw.decode("utf-8"))
+        if isinstance(answer, dict) and "error" in answer:
+            raise ValueError(answer["error"])
+        return answer
+
+
 class Instance:
     """**What is sounding of one multitrack**, held across edits.
 
@@ -2072,6 +2117,18 @@ class EditingCore:
         body = json.dumps(request).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_open_notes,
                              ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                             as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def open_multitrack(self, multitrack: "MultitrackHandle", **request) -> dict:
+        """Open a multitrack editor over ``multitrack``, which it then edits in
+        place (`clausters_apps_editing_open_multitrack`): ``{"member",
+        "structure"}``, or ``{"error"}``."""
+        if not self._handle:
+            return {}
+        body = json.dumps(request).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_open_multitrack,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(multitrack._handle),
                              as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 

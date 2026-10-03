@@ -158,6 +158,60 @@ pub unsafe extern "C" fn clausters_apps_editing_open_notes(
     n
 }
 
+/// **Opens a multitrack editor over a multitrack the caller holds**:
+/// `multitrack` is a handle from `clausters_document_multitrack_new`, which the
+/// editor then edits in place -- the script reads every edit through that same
+/// handle. `request` is `{"key", ...}` with what
+/// `clausters_apps::multitrack::editor::over_json` reads; the answer is
+/// `{"member", "structure"}` or `{"error"}`. Sizes with a null `out` and fills
+/// with a second call, and opens once across the two (a later call with the
+/// same request hands the answer over).
+///
+/// # Safety
+/// `e` and `multitrack` must be live handles, `request` readable for
+/// `request_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_open_multitrack(
+    e: *mut FfiEditing,
+    multitrack: *mut crate::document::FfiMultitrack,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both are live or null.
+    let (Some(handle), Some(multitrack)) = (unsafe { e.as_ref() }, unsafe { multitrack.as_ref() })
+    else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    let asked = format!("openMultitrack {request}");
+    let answer = match pending.take() {
+        Some((was, answer)) if was == asked => answer,
+        _ => {
+            let key = serde_json::from_str::<serde_json::Value>(&request)
+                .ok()
+                .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+                .unwrap_or_default();
+            editing.open_multitrack(&key, multitrack.0.clone(), &request)
+        }
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((asked, answer));
+    }
+    n
+}
+
 /// **Binds a multitrack member's source to a sequence handle**:
 /// `{"member", "source"}` into [`Editing::bind_sequence`], so a region over
 /// that source draws the handle's notes. Answers the member's corrected

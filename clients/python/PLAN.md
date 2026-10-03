@@ -1881,11 +1881,19 @@ the books, and the existing examples extended.
 **The steps**, each a commit with both clients in it, the books, and the
 existing examples rewritten rather than new ones:
 
-- ⬜ **C60.1 — The handle.** `clausters_document::multitrack::call_json`,
+- ✅ **C60.1 — The handle.** `clausters_document::multitrack::call_json`,
   the door a handle speaks (reads by id, `apply` answering the inverse, ids
   minted); its C ABI and wasm faces, declared in `docs/bindings.md`; the
   multitrack editor over the shared structure, and `openMultitrack` over a
   handle, as `openNotes` is over a sequence's.
+  *(Done 2026-10-03: the door is `clausters_document::multitrack::handle`,
+  the C ABI `clausters_document_multitrack_{new,free,call}` and
+  `clausters_apps_editing_open_multitrack` (core ABI 79, additive), wasm
+  `JsMultitrack` and `JsEditing.openMultitrack`; the editor holds
+  `clausters_apps::multitrack::Shared` and `over_json` opens one over a
+  handle. Python binds it as `_native.MultitrackHandle` and
+  `EditingCore.open_multitrack`; the web wrapper comes with the objects in
+  `C60.2`, where the first caller is.)*
 - ⬜ **C60.2 — The objects.** `Multitrack` over the handle in both clients:
   `mt.tracks`, `track.take_lanes`, `lane.regions`, `track.automation`,
   `region.automation`, `mt.markers` as live collections whose `add` answers

@@ -49,6 +49,7 @@ use crate::timebase::{Beat, Second};
 use crate::{Node, NodeId, Opaque, SegmentRef, SourceId};
 
 pub mod edit;
+pub mod handle;
 pub mod nodes;
 pub mod picture;
 
