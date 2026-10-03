@@ -582,6 +582,12 @@ class Driver implements TransportDriver {
         this.#playback.end = end;
     }
 
+    /**
+     * Nothing: a multitrack plays on the transport addressed by number, which
+     * is nobody's to give back.
+     */
+    async free(): Promise<void> {}
+
     async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
         this.span = span === null ? null : [span[0], span[1]];
         this.editor.syncCore();

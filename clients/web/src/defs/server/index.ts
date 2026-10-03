@@ -81,6 +81,7 @@ import {
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_NODES,
     DEFAULT_TAPS,
+    DEFAULT_TRANSPORTS,
 } from "./options.ts";
 import type { ServerSizing } from "./options.ts";
 import { ServerMidi } from "./midi.ts";
@@ -88,6 +89,7 @@ import { ServerQueries } from "./queries.ts";
 import { ServerStreams } from "./streams.ts";
 import { ServerTransport } from "./transport.ts";
 import { area } from "../../base/log.ts";
+import { NotesPlayback } from "../../seq/playback.ts";
 
 // The package's public surface: `Server` plus what its configuration is made
 // of. The names re-exported here are the ones the module answered to before it
@@ -102,6 +104,7 @@ export {
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
+    DEFAULT_TRANSPORTS,
     formatLoad,
     formatServerInfo,
     formatServerStatus,
@@ -333,7 +336,8 @@ export class Server {
      * allocators are views of, shaped by `sizing` and sliced by `share` -- the
      * core's policy (`clausters_core::ids`), so the outputs at the bottom of
      * the audio space are the server's own count and the GraphDef windows stay
-     * clear. A score's node space is unbounded: an offline score has no
+     * clear. The transports a sequence played on its own takes one of are a
+     * space of it too. A score's node space is unbounded: an offline score has no
      * `/node_end` stream to recycle from.
      */
     get ids(): IdSpaces {
@@ -345,13 +349,21 @@ export class Server {
             requireCore("the id spaces");
             const s = this.sizing;
             this.built.ids = this.scoring
-                ? IdSpaces.score(s.maxNodes, s.audioBuses, s.channels, s.controlBuses, s.maxBuffers)
+                ? IdSpaces.score(
+                      s.maxNodes,
+                      s.audioBuses,
+                      s.channels,
+                      s.controlBuses,
+                      s.maxBuffers,
+                      s.transports,
+                  )
                 : new IdSpaces(
                       s.maxNodes,
                       s.audioBuses,
                       s.channels,
                       s.controlBuses,
                       s.maxBuffers,
+                      s.transports,
                       this.share.index,
                       this.share.of,
                   );
@@ -522,6 +534,7 @@ export class Server {
             maxBuffers: DEFAULT_MAX_BUFFERS,
             channels: 2,
             taps: DEFAULT_TAPS,
+            transports: DEFAULT_TRANSPORTS,
             ...sizing,
         };
         this.timeout = timeout;
@@ -745,6 +758,7 @@ export class Server {
             maxBuffers: info.maxBuffers,
             channels: info.channels,
             taps: info.taps,
+            transports: info.transports,
         };
         this.built = {};        // rebuilt against the sizes just read
         return this;
@@ -1483,6 +1497,7 @@ export class Server {
      * handle booted, `close` stops it too.
      */
     async quit(): Promise<void> {
+        NotesPlayback.forgetAll(this);
         this.sendMsg("/server_quit");
         await this.connection.quit?.();
         this.booted = false;
@@ -1512,6 +1527,7 @@ export class Server {
      * page does not own.
      */
     close(): void {
+        NotesPlayback.forgetAll(this);
         if (this.booted) {
             this.booted = false;
             this.sendMsg("/server_quit");

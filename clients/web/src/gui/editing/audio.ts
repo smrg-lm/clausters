@@ -107,16 +107,18 @@ class AudioPlayback {
 
     /** The server it plays on. */
     readonly server: Server;
-    /** The transport it plays on -- the crate's word for it -- once it is made. */
+    /** The transport it plays on -- one of the server's, allocated for it -- once it is made. */
     transportId: number | null = null;
 
     private constructor(server: Server) {
         this.server = server;
         this.#ready = (async () => {
             this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
-            this.transportId = Number(
-                JSON.parse(this.#native.call(JSON.stringify({ verb: "state" }), server.ids)).transport,
-            );
+            const taken = JSON.parse(
+                this.#native.call(JSON.stringify({ verb: "open" }), server.ids),
+            ) as { transport?: number; error?: string };
+            if (typeof taken.error === "string") throw new Error(`clausters: ${taken.error}`);
+            this.transportId = Number(taken.transport);
             // Node ids come back on their `/node_end`, which only a registered
             // client hears.
             await server.notify(true);
@@ -148,8 +150,8 @@ class AudioPlayback {
      * on its mark stopped without anybody here saying so.
      */
     async rolling(): Promise<boolean> {
-        const transport = Number((await this.call("state")).transport);
-        const playing = (await this.server.transportAt(transport).state()).playing;
+        await this.#ready;
+        const playing = (await this.server.transportAt(this.transportId as number).state()).playing;
         await this.call("setRolling", { rolling: playing });
         return playing;
     }
@@ -229,6 +231,12 @@ class AudioDriver implements TransportDriver {
     async setEnd(end: null | "contents" | number): Promise<void> {
         if (end !== "contents") throw new RangeError("an audio editor's pass ends where the take or the span does");
     }
+
+    /**
+     * Nothing: the transport is the audio editors' of this server, and a take
+     * is freed by closing its editor.
+     */
+    async free(): Promise<void> {}
 
     async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
         const band = this.editor.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
@@ -440,7 +448,8 @@ export class AudioEditor extends Editor<Buffer> {
      * verbs (`play`, `pause`, `stop`, `locate`, `loop`, `wait`) and `span`
      * speak the take's seconds -- the span is the band a drag sweeps, the loop
      * switch is `L`, and each side reads what the other set. The audio editors
-     * of a server share it: the take played last is the one it plays. `null`
+     * of a server share it -- one of the server's, allocated for them -- and
+     * the take played last is the one it plays. `null`
      * until the editor is open.
      */
     get transport(): Transport | null {

@@ -134,9 +134,13 @@ export class ServerTransport {
      * {@link Transport}, the same one every time it is asked for. Its verbs --
      * `play`, `pause`, `locate`, ... -- are that transport's, and it goes
      * wherever a transport is taken: `timeline.transport =
-     * server.transportAt(1)`. The methods on the server itself address
-     * transport 0. An id past the server's `--transports` fails when a command
-     * is sent, not here.
+     * server.transportAt(n)`. The methods on the server itself address
+     * transport 0, and that is the one transport a page names by number on
+     * its own: every other is taken by what plays -- a sequence, an audio
+     * editor, a GUI host's monitor -- so a number picked by hand may be
+     * somebody's. {@link ServerTransport.transportNew} takes a free one; this
+     * addresses one already known, an editor's `transport.id` say. An id past
+     * the server's `--transports` fails when a command is sent, not here.
      */
     transportAt(this: Server, transport: number): Transport {
         const server = ((this as unknown as Record<symbol, Server>)[VIEWED] ?? this) as Server;
@@ -152,6 +156,22 @@ export class ServerTransport {
             held.set(id, found);
         }
         return found;
+    }
+
+    /**
+     * **A transport nobody holds, taken from this server's**, as a
+     * {@link Transport}: for a timeline of its own, a group to govern apart
+     * from everything else that plays. It is the caller's until
+     * {@link Transport.free} gives it back.
+     *
+     * Throws when every transport is taken -- a server has a fixed number of
+     * them (`--transports`), and a GUI host sharing the server takes half.
+     */
+    transportNew(this: Server): Transport {
+        const server = ((this as unknown as Record<symbol, Server>)[VIEWED] ?? this) as Server;
+        const transport = server.transportAt(server.ids.alloc("transports", 1));
+        transport.taken = true;
+        return transport;
     }
 
     /** `/transport_query` for this handle's transport, answered by the reply about it. */
@@ -532,18 +552,25 @@ export interface TransportDriver {
     setLooping(on: boolean): Promise<void>;
     end: null | "contents" | number;
     setEnd(end: null | "contents" | number): Promise<void>;
+    free(): Promise<void>;
 }
 
 /**
  * **One of a server's transports, as an object**: what `Server.transportAt`
- * answers, and what `play(sequence)` answers for the transport the sequence's
- * lane was loaded on.
+ * answers, and what `play(sequence)` answers for the transport the sequence
+ * took -- one of its own, so two sequences play together, each driven by the
+ * object its `play` answered.
  *
  * It is played the way a routine or a timeline is: `play`, `pause`, `stop`,
  * `locate`, `loop` and `unloop`, `playing`, and `wait`, which a page awaits or
  * not. Its positions are those of **what is loaded on it**: the beats of the
  * sequence a `play(sequence)` put there, and with nothing loaded, the
  * transport's own seconds.
+ *
+ * A sequence keeps its transport until it is freed: `free` releases what
+ * sounds, frees its lane and gives the transport back to the server's, which
+ * has a fixed number of them (`--transports`). They go with the server's
+ * handle when it is closed.
  *
  * The transport's other commands are here by their own names too: `group`
  * and `follow` bind the groups it governs and leads, `fade` sets how a stop
@@ -558,6 +585,13 @@ export class Transport {
     readonly view: Server;
     /** What is loaded on it and plays through it, when something is. @internal */
     driver: TransportDriver | null = null;
+    /**
+     * Whether `transportNew` took it for a page, whose `free` then gives it
+     * back.
+     *
+     * @internal
+     */
+    taken = false;
     #rate: number | null = null;
     /** The span and the loop switch with nothing loaded, in seconds. */
     #span: [number, number] | null = null;
@@ -725,6 +759,23 @@ export class Transport {
         if (this.driver !== null) await this.driver.setEnd(end);
         else if (end === "contents") throw new Error("a transport with nothing loaded has no contents");
         else await this.view.transportEnd(end === null ? null : await this.#samples(end));
+        return this;
+    }
+
+    /**
+     * **Frees what is loaded on it, and gives it back**: the sequence a
+     * `play(sequence)` put there stops, its notes released, its lane is freed,
+     * and the transport goes back to the server's for something else to take
+     * -- this object is then a transport with nothing loaded. One
+     * `transportNew` answered goes back the same way. A transport addressed by
+     * number has nothing to free.
+     */
+    async free(): Promise<this> {
+        if (this.driver !== null) await this.driver.free();
+        else if (this.taken) {
+            this.taken = false;
+            this.#server.ids.release("transports", this.#id, 1);
+        }
         return this;
     }
 

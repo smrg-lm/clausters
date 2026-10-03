@@ -14,7 +14,9 @@ export class AudioEditorPlayback {
     call(request: string, ids: IdSpaces): string;
     /**
      * A playback; `chunk` is how many samples one fill carries, and
-     * `transport` the transport it plays on -- negative for the crate's own.
+     * `transport` the transport it plays on -- negative for one of its own,
+     * which it takes from the id spaces with its `open` verb or its first
+     * sync.
      */
     constructor(chunk: number, transport: number);
 }
@@ -305,7 +307,7 @@ export class IdSpaces {
     [Symbol.dispose](): void;
     /**
      * A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
-     * `"buffers"`); throws when the space is exhausted.
+     * `"buffers"`, `"transports"`); throws when the space is exhausted.
      */
     alloc(space: string, width: number): number;
     /**
@@ -325,7 +327,7 @@ export class IdSpaces {
      * The spaces of a live client of a server of this shape, taking share
      * `index` of `of`.
      */
-    constructor(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, index: number, of: number);
+    constructor(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number, index: number, of: number);
     /**
      * A node the server reports gone, taken back if it was this client's.
      */
@@ -337,7 +339,7 @@ export class IdSpaces {
     /**
      * The spaces of an offline score: node ids never run out.
      */
-    static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number): IdSpaces;
+    static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number): IdSpaces;
 }
 
 export class Instance {
@@ -515,7 +517,8 @@ export class NotesPlayback {
      */
     call(sequence: JsEventSequence, request: string, ids: IdSpaces): string;
     /**
-     * A playback on `transport`; negative for the crate's own.
+     * A playback on `transport`; negative for one of its own, which it takes
+     * from the id spaces with its `open` verb or its first play.
      */
     constructor(transport: number);
 }
@@ -1894,10 +1897,10 @@ export interface InitOutput {
     readonly idspaces_contains: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly idspaces_inUse: (a: number, b: number, c: number) => [number, number, number];
     readonly idspaces_narrow: (a: number, b: number, c: number) => [number, number];
-    readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly idspaces_nodeEnded: (a: number, b: number) => number;
     readonly idspaces_release: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly instance_meters: (a: number) => [number, number];
     readonly instance_new: () => number;
     readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];

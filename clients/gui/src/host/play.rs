@@ -21,9 +21,10 @@
 //! all: the server owns it, and the window reads it (`docs/decisions.md`, "A
 //! clock is not a position").
 //!
-//! **The monitor has a transport of its own**, [`MONITOR_TRANSPORT`]: playing a
-//! take in a session never moves the multitrack's position, and the audio
-//! editor's own transport is its application's.
+//! **The monitor has a transport of its own**, allocated from the host's ids
+//! the first time it plays: playing a take in a session never moves the
+//! multitrack's position, and a client's audio editor is allocated another
+//! from its own share.
 //!
 //! **Every take the monitor has played stays made, paused**, and the one
 //! played last is the focus: another take plays by switching which one runs,
@@ -71,11 +72,6 @@ pub struct Follow {
     /// Stops this host has sent and not yet heard the transition of.
     stops_in_flight: u32,
 }
-
-/// The transport the monitor plays on: neither the multitrack's (0) nor the
-/// audio editor application's
-/// ([`clausters_editing::audio_playback::AUDIO_EDITOR_TRANSPORT`]).
-pub const MONITOR_TRANSPORT: i32 = 2;
 
 impl Host {
     /// **Plays the contents a widget draws**, from `start` (a frame of the
@@ -129,7 +125,9 @@ impl Host {
         // clock is the take's own frame, since the readers play it from the
         // transport's zero. It wraps where a loop wraps and holds where a pause
         // holds, with no message per frame.
-        self.set_head_clock_of(widget_id, HeadClock::Transport(MONITOR_TRANSPORT as usize));
+        if let Some(transport) = self.monitor.transport() {
+            self.set_head_clock_of(widget_id, HeadClock::Transport(transport as usize));
+        }
         self.set_timeline_playhead(widget_id, 0.0);
         self.playing = Some(Monitor {
             widget: widget_id,
@@ -266,7 +264,8 @@ impl Host {
         {
             self.transport_rolled(*transport, *playing != 0);
         }
-        if args.get(12) != Some(&OscType::Int(MONITOR_TRANSPORT)) {
+        let monitor = self.monitor.transport().map(OscType::Int);
+        if monitor.is_none() || args.get(12) != monitor.as_ref() {
             return;
         }
         let Some(OscType::Int(playing)) = args.get(3) else {

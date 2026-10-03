@@ -2,11 +2,12 @@
 //! for the clients sharing it -- the policy every endpoint used to restate.
 //!
 //! [`crate::registry::Registry`] is the occupancy map; this is what
-//! stands on it. A client needs four spaces -- node ids, audio buses, control
-//! buses, buffers -- and each has a shape the *server* decides: the node table's
-//! client range, the output buses at the bottom of the audio space, the private
-//! GraphDef windows at the top of both bus spaces. Two clients on one server
-//! each take a share of what is left.
+//! stands on it. A client needs five spaces -- node ids, audio buses, control
+//! buses, buffers, transports -- and each has a shape the *server* decides: the
+//! node table's client range, the output buses at the bottom of the audio
+//! space, the private GraphDef windows at the top of both bus spaces, the
+//! transport that is addressed by number ([`FIXED_TRANSPORTS`]). Two clients
+//! on one server each take a share of what is left.
 //!
 //! It was written three times: the Python client's four allocator classes, the
 //! web client's four and a second scheme of fixed bases for the page, and the
@@ -73,7 +74,15 @@ pub fn share_of(base: i64, span: usize, share: IdShare) -> (i64, usize) {
     }
 }
 
-/// Which of the four spaces an id belongs to.
+/// **How many transports are addressed by number**, at the bottom of the
+/// space: transport 0 alone, the one a transport command with no playback
+/// behind it addresses -- a server's own transport verbs, the beat grid
+/// clients phase on -- and the one a multitrack plays on. Everything else
+/// that plays is allocated one above it ([`Space::Transports`]): a sequence
+/// on its own, an audio editor, the GUI host's take monitor.
+pub const FIXED_TRANSPORTS: usize = 1;
+
+/// Which of the five spaces an id belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Space {
     /// Node ids.
@@ -84,17 +93,20 @@ pub enum Space {
     ControlBuses,
     /// Buffer numbers.
     Buffers,
+    /// Transports: what a sequence played on its own takes one of.
+    Transports,
 }
 
 impl Space {
     /// The space a wire name spells: `"nodes"`, `"audio"`, `"control"`,
-    /// `"buffers"`.
+    /// `"buffers"`, `"transports"`.
     pub fn parse(name: &str) -> Option<Space> {
         Some(match name {
             "nodes" => Space::Nodes,
             "audio" => Space::AudioBuses,
             "control" => Space::ControlBuses,
             "buffers" => Space::Buffers,
+            "transports" => Space::Transports,
             _ => return None,
         })
     }
@@ -106,6 +118,7 @@ impl Space {
             Space::AudioBuses => "audio buses",
             Space::ControlBuses => "control buses",
             Space::Buffers => "buffer slots",
+            Space::Transports => "transports",
         }
     }
 }
@@ -124,6 +137,11 @@ pub enum IdError {
 impl std::fmt::Display for IdError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            IdError::Exhausted(Space::Transports) => write!(
+                f,
+                "out of transports: every one this client may allocate is in use; free \
+                 one, or boot the server with more (`--transports`)"
+            ),
             IdError::Exhausted(space) => write!(f, "out of {}", space.noun()),
             IdError::NotAllocated(space) => write!(
                 f,
@@ -154,6 +172,8 @@ pub struct ServerShape {
     pub control_buses: usize,
     /// How many buffer slots it has.
     pub buffers: usize,
+    /// How many transports it has (`--transports`), the fixed ones included.
+    pub transports: usize,
 }
 
 impl ServerShape {
@@ -166,6 +186,7 @@ impl ServerShape {
         outputs: 2,
         control_buses: 16384,
         buffers: 4096,
+        transports: 8,
     };
 }
 
@@ -175,7 +196,7 @@ impl Default for ServerShape {
     }
 }
 
-/// **The four spaces one client allocates from.**
+/// **The five spaces one client allocates from.**
 #[derive(Clone, Debug)]
 pub struct IdSpaces {
     shape: ServerShape,
@@ -185,6 +206,7 @@ pub struct IdSpaces {
     audio: Option<Registry>,
     control: Option<Registry>,
     buffers: Registry,
+    transports: Option<Registry>,
 }
 
 impl IdSpaces {
@@ -214,12 +236,13 @@ impl IdSpaces {
                 let (base, span) = share_of(0, shape.buffers, share);
                 Registry::new(base, span)
             },
+            transports: bus_space(shape.transports, FIXED_TRANSPORTS, 0, share),
         }
     }
 
     /// The spaces of an **offline score**: node ids ascend from the client base
     /// and never run out, because a score has no `/node_end` stream to recycle
-    /// from and one author by construction. The other three are the live ones.
+    /// from and one author by construction. The other four are the live ones.
     pub fn score(shape: ServerShape) -> IdSpaces {
         let mut spaces = IdSpaces::new(shape, IdShare::WHOLE);
         spaces.score = true;
@@ -234,6 +257,7 @@ impl IdSpaces {
             Space::AudioBuses => self.audio.as_mut(),
             Space::ControlBuses => self.control.as_mut(),
             Space::Buffers => Some(&mut self.buffers),
+            Space::Transports => self.transports.as_mut(),
         }
     }
 
@@ -243,6 +267,7 @@ impl IdSpaces {
             Space::AudioBuses => self.audio.as_ref(),
             Space::ControlBuses => self.control.as_ref(),
             Space::Buffers => Some(&self.buffers),
+            Space::Transports => self.transports.as_ref(),
         }
     }
 
@@ -305,13 +330,19 @@ impl IdSpaces {
         let mut next = IdSpaces::new(shape, share);
         next.score = self.score;
         let bounded: &[Space] = if self.score {
-            &[Space::AudioBuses, Space::ControlBuses, Space::Buffers]
+            &[
+                Space::AudioBuses,
+                Space::ControlBuses,
+                Space::Buffers,
+                Space::Transports,
+            ]
         } else {
             &[
                 Space::Nodes,
                 Space::AudioBuses,
                 Space::ControlBuses,
                 Space::Buffers,
+                Space::Transports,
             ]
         };
         for &space in bounded {
@@ -364,6 +395,7 @@ impl IdSpaces {
 /// A bus space: the reserved buses at the bottom, the GraphDef window at the
 /// top, and this client's share of what is left -- `None` when the
 /// reservations swallow it whole, which reports exhaustion from the first call.
+/// The transports are sliced the same way, with no window at the top.
 fn bus_space(size: usize, reserved: usize, graph: usize, share: IdShare) -> Option<Registry> {
     let top = size - graph.min(size);
     let span = top.saturating_sub(reserved);
@@ -382,6 +414,7 @@ mod tests {
             outputs: 2,
             control_buses: 16384,
             buffers: 1024,
+            transports: 8,
         }
     }
 
@@ -508,6 +541,41 @@ mod tests {
             "buffer 2 is in the upper half"
         );
         assert_eq!(spaces.in_use(Space::Buffers), 3, "untouched");
+    }
+
+    /// **A transport is taken above the fixed one**, two clients never take
+    /// the same one, and running out says what to do about it.
+    #[test]
+    fn transports_are_taken_above_the_fixed_ones_and_run_out_loudly() {
+        let mut spaces = IdSpaces::new(shape(), IdShare::WHOLE);
+        let first = spaces.alloc(Space::Transports, 1).unwrap();
+        assert_eq!(first, FIXED_TRANSPORTS as i64);
+        for _ in 1..8 - FIXED_TRANSPORTS {
+            spaces.alloc(Space::Transports, 1).unwrap();
+        }
+        let out = spaces.alloc(Space::Transports, 1).unwrap_err();
+        assert_eq!(out, IdError::Exhausted(Space::Transports));
+        assert!(out.to_string().contains("--transports"), "{out}");
+        spaces.release(Space::Transports, first, 1).unwrap();
+        assert_eq!(spaces.alloc(Space::Transports, 1), Ok(first), "recycled");
+
+        let mut a = IdSpaces::new(shape(), IdShare::new(0, 2).unwrap());
+        let mut b = IdSpaces::new(shape(), IdShare::new(1, 2).unwrap());
+        assert_eq!(a.alloc(Space::Transports, 1), Ok(1));
+        assert_eq!(b.alloc(Space::Transports, 1), Ok(4), "7 left: 3 and 4");
+
+        // A server with no more than the fixed one has none to hand out.
+        let mut none = IdSpaces::new(
+            ServerShape {
+                transports: FIXED_TRANSPORTS,
+                ..shape()
+            },
+            IdShare::WHOLE,
+        );
+        assert_eq!(
+            none.alloc(Space::Transports, 1),
+            Err(IdError::Exhausted(Space::Transports))
+        );
     }
 
     /// A score's node space never runs out; the rest are the live spaces.

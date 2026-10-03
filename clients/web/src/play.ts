@@ -18,10 +18,11 @@
 //   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
 // - a `Timeline` -> played on its own clock (`Timeline.play`), on the ambient
 //   server;
-// - an `EventSequence` -> loaded as an event lane on the server's notes
-//   transport and played there, its pass ending where its contents do; a
-//   promise of that `Transport`, whose verbs speak the sequence's beats. With
-//   no server anywhere, the default session boots one;
+// - an `EventSequence` -> loaded as an event lane on a transport of its own
+//   and played there, its pass ending where its contents do; a promise of
+//   that `Transport`, whose verbs speak the sequence's beats and whose `free`
+//   gives the transport back. With no server anywhere, the default session
+//   boots one;
 //   (`await auto.prepare(server)` first -- see below);
 // - a `Buffer` -> sounded through the stock playbuf instrument (a buffer
 //   sounds through an instrument; here the verb provides the default one --

@@ -31,6 +31,8 @@ DEFAULT_SAMPLE_RATE = 48000
 DEFAULT_MAX_NODES = 8192
 DEFAULT_MAX_BUFFERS = 4096
 DEFAULT_MAX_GRAPH_CHILDREN = 512
+# The transports a server boots with when no ``--transports`` says otherwise.
+DEFAULT_TRANSPORTS = 8
 DEFAULT_MAX_UGEN_INPUTS = 256
 # The audio-tap region (`--taps`/`--tap-frames`): pre-allocated sample rings
 # an audio bus can be routed into with `Server.tap`, read by a GUI host out of
@@ -137,7 +139,11 @@ class ServerOptions:
     max_clients: "int | None" = None
     #: Independent transports, each with its own play, pause, locate, loop
     #: and governed group (``--transports``); the server boots 8 by default.
-    #: `ServerInfo.transports` reads back what it has.
+    #: Transport 0 is the one addressed by number, and a multitrack's; an
+    #: audio editor and every sequence playing on its own each take one of
+    #: the rest, which a GUI host shares when there is one: raise it to play
+    #: more sequences at once. `ServerInfo.transports` reads
+    #: back what it has.
     transports: "int | None" = None
     #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
     #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` -- whatever the build

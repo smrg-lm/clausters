@@ -19,8 +19,12 @@
 //!
 //! # The transport is the editor's own
 //!
-//! [`AUDIO_EDITOR_TRANSPORT`], not the multitrack's: playing a take never moves
-//! a multitrack's position. It is given a ramp ([`FADE_SECS`]), so a stop rolls
+//! One allocated from the caller's id spaces (`Space::Transports`) the first
+//! time it needs it, not the multitrack's: playing a take never moves a
+//! multitrack's position, and an endpoint's playback never plays on another's
+//! -- a client's audio editor and the GUI host's take monitor are two of
+//! these on one server, each on its own. [`AudioEditorPlayback::close`]
+//! releases it. It is given a ramp ([`FADE_SECS`]), so a stop rolls
 //! out while the output's declick falls to zero and a play rises from it, and
 //! neither edge clicks.
 //!
@@ -36,17 +40,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use clausters_core::audio_editor as ae;
-use clausters_core::ids::{IdError, IdSpaces};
+use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_core::osc::OscType;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::apply::{Applier, Endpoint, Step};
 use crate::instance::{Op, Port, Ports};
-
-/// The transport the audio editor plays on: its own, so a take played never
-/// moves a multitrack (which plays on transport 0).
-pub const AUDIO_EDITOR_TRANSPORT: i32 = 1;
 
 /// How long a stop and a play ramp, in seconds: short enough that nobody hears
 /// it as a fade, long enough that nobody hears an edge as a click.
@@ -129,7 +129,11 @@ struct File {
 #[derive(Debug, Clone)]
 pub struct AudioEditorPlayback {
     applier: Applier,
-    transport: i32,
+    /// The transport it plays on, once it has one.
+    transport: Option<i32>,
+    /// Whether the transport was allocated from the id spaces, and so is
+    /// released by [`Self::close`]; one handed in is the caller's.
+    owned: bool,
     /// The engine's rate, as last synced.
     rate: f64,
     /// The editor bus's width, `0` while nothing is built.
@@ -144,12 +148,14 @@ pub struct AudioEditorPlayback {
 }
 
 impl AudioEditorPlayback {
-    /// A playback that has made nothing yet, on transport `transport`,
-    /// carrying out its steps for `endpoint`.
-    pub fn new(endpoint: Endpoint, transport: i32) -> AudioEditorPlayback {
+    /// A playback that has made nothing yet and holds no transport, carrying
+    /// out its steps for `endpoint`: it allocates a transport of its own the
+    /// first time it needs one ([`Self::alloc_transport`]).
+    pub fn new(endpoint: Endpoint) -> AudioEditorPlayback {
         AudioEditorPlayback {
             applier: Applier::new(endpoint),
-            transport,
+            transport: None,
+            owned: true,
             rate: 48_000.0,
             width: 0,
             sent: BTreeSet::new(),
@@ -159,10 +165,43 @@ impl AudioEditorPlayback {
         }
     }
 
+    /// A playback on transport `transport`, which is the caller's to name and
+    /// is not given back.
+    pub fn on(endpoint: Endpoint, transport: i32) -> AudioEditorPlayback {
+        AudioEditorPlayback {
+            transport: Some(transport),
+            owned: false,
+            ..AudioEditorPlayback::new(endpoint)
+        }
+    }
+
     /// The transport it plays on -- what its commands name, and what a view
-    /// drawing its play cursor reads.
-    pub fn transport(&self) -> i32 {
+    /// drawing its play cursor reads -- or `None` before it has one.
+    pub fn transport(&self) -> Option<i32> {
         self.transport
+    }
+
+    /// **The transport it plays on, allocated from `ids` the first time**: one no
+    /// other playback of this endpoint holds, nor any other client of the
+    /// server. [`IdError::Exhausted`] when every one is in use -- the server
+    /// has a fixed number of them (`--transports`).
+    pub fn alloc_transport(&mut self, ids: &mut IdSpaces) -> Result<i32, IdError> {
+        if let Some(transport) = self.transport {
+            return Ok(transport);
+        }
+        let transport = ids.alloc(Space::Transports, 1)? as i32;
+        self.transport = Some(transport);
+        Ok(transport)
+    }
+
+    /// Releases the transport it allocated, when it holds one.
+    fn give_back(&mut self, ids: &mut IdSpaces) -> Result<(), IdError> {
+        if self.owned
+            && let Some(transport) = self.transport.take()
+        {
+            ids.release(Space::Transports, i64::from(transport), 1)?;
+        }
+        Ok(())
     }
 
     /// **Makes file `file` sound as it now is**: `buffer`, holding `frames`
@@ -370,9 +409,11 @@ impl AudioEditorPlayback {
         self.command("/transport_loop", args)
     }
 
-    /// Frees everything the editor made, and the transport's marks with it.
+    /// Frees everything the editor made, and the transport's marks with it,
+    /// and releases the transport it allocated.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         if self.width == 0 {
+            self.give_back(ids)?;
             return Ok(Vec::new());
         }
         let mut steps = Vec::new();
@@ -402,6 +443,7 @@ impl AudioEditorPlayback {
         self.files.clear();
         self.focus = None;
         self.width = 0;
+        self.give_back(ids)?;
         Ok(steps)
     }
 
@@ -488,16 +530,17 @@ impl AudioEditorPlayback {
         }
         let mut steps = Vec::new();
         if self.width == 0 {
+            let transport = self.alloc_transport(ids)?;
             steps.extend(self.applier.apply(
                 vec![
                     Op::Follow {
                         handle: EDITOR.into(),
-                        transport: self.transport,
+                        transport,
                     },
                     Op::Governed {
                         handle: GOVERNED.into(),
                         parent: EDITOR.into(),
-                        transport: self.transport,
+                        transport,
                     },
                 ],
                 ids,
@@ -608,9 +651,13 @@ impl AudioEditorPlayback {
         self.apply_plain(ops)
     }
 
-    /// A transport command on this playback's transport, awaited.
+    /// A transport command on this playback's transport, awaited; nothing
+    /// before it has one, since nothing of it is on the server yet.
     fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
-        crate::apply::transport_command(self.transport, addr, args)
+        match self.transport {
+            Some(transport) => crate::apply::transport_command(transport, addr, args),
+            None => Vec::new(),
+        }
     }
 }
 
@@ -647,8 +694,11 @@ fn out_ports(outs: usize) -> Ports {
 /// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `cue`
 ///   (`frame`: a locate while stopped, nothing while rolling), `close`
 /// - `setRolling` -- `rolling`
+/// - `open` -- allocates the transport it plays on, when it has none, and
+///   answers `{"transport"}`; refused when the server has none left
 /// - `state` -- answers `{"transport", "rolling", "focus", "meters", "nodes"}`,
-///   `meters` being `{"bus", "channels"}` or `null`
+///   `meters` being `{"bus", "channels"}` or `null`, and `transport` `null`
+///   before it has one
 /// - `space` -- `looping`, `selection` (`[from, to]` or `null`), `cursor`,
 ///   `frames`: answers `{"start", "pass"}`
 pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut IdSpaces) -> String {
@@ -699,6 +749,10 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
             );
             answer(Ok(Vec::new()))
         }
+        "open" => match playback.alloc_transport(ids) {
+            Ok(transport) => json!({"transport": transport}).to_string(),
+            Err(e) => json!({"error": e.to_string()}).to_string(),
+        },
         "state" => json!({
             "transport": playback.transport(),
             "rolling": playback.rolling(),
@@ -761,7 +815,7 @@ mod tests {
     /// output, the play graph and one reader per channel.
     #[test]
     fn the_first_file_builds_the_editors_structure() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), AUDIO_EDITOR_TRANSPORT);
+        let mut playback = AudioEditorPlayback::new(Endpoint::default());
         let mut ids = spaces();
         let steps = playback
             .sync(7, 12, 2, 48_000, 48_000.0, 48_000.0, &mut ids)
@@ -803,7 +857,7 @@ mod tests {
     /// buffer and a new length, set, and nothing is rebuilt.
     #[test]
     fn an_edit_sets_the_readers_and_rebuilds_nothing() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(7, 12, 1, 100, 48_000.0, 48_000.0, &mut ids)
@@ -824,7 +878,7 @@ mod tests {
     /// the one in focus pauses and this one runs.
     #[test]
     fn one_file_plays_and_the_rest_are_paused() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 100, 48_000.0, 48_000.0, &mut ids)
@@ -854,7 +908,7 @@ mod tests {
     /// 48 kHz engine ends where it ends.
     #[test]
     fn a_take_at_another_rate_is_located_at_the_engines_sample() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 44_100, 44_100.0, 48_000.0, &mut ids)
@@ -882,7 +936,7 @@ mod tests {
     /// mark it asks, from where the transport stands; stopped, nothing.
     #[test]
     fn the_loop_switch_changes_the_pass_in_progress() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 48_000, 48_000.0, 48_000.0, &mut ids)
@@ -918,7 +972,7 @@ mod tests {
     /// `None` clears it.
     #[test]
     fn a_loop_set_while_playing_is_in_the_engines_samples() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 44_100, 44_100.0, 48_000.0, &mut ids)
@@ -951,7 +1005,7 @@ mod tests {
     /// **Closing the last file frees everything**, and nothing is held after.
     #[test]
     fn closing_the_last_file_frees_the_structure() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 100, 48_000.0, 48_000.0, &mut ids)
@@ -970,7 +1024,7 @@ mod tests {
     /// **A cue moves a stopped transport and leaves a rolling one alone.**
     #[test]
     fn a_cue_locates_only_a_stopped_transport() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
             .sync(1, 10, 1, 100, 48_000.0, 48_000.0, &mut ids)
@@ -1008,7 +1062,7 @@ mod tests {
     /// verb.
     #[test]
     fn the_json_door_answers() {
-        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         let synced: Value = serde_json::from_str(&call_json(
             &mut playback,

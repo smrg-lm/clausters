@@ -265,15 +265,20 @@ class EventSequence:
 
     def play(self, at: float = 0.0, server=None):
         """**Play the sequence on the server**, from beat ``at``: its events
-        become an event lane's data on the server's notes transport, which
-        plays them by its position, and the pass ends where the last note
-        does. Answers that `clausters.defs.Transport` -- its ``pause``,
-        ``locate``, ``loop`` and ``stop`` speak this sequence's beats, and
-        ``wait()`` returns when the pass ends. A change made through the
-        sequence's objects while it plays is heard from where the position is.
+        become an event lane's data on a transport of its own, which plays
+        them by its position, and the pass ends where the last note does.
+        Answers that `clausters.defs.Transport` -- its ``pause``, ``locate``,
+        ``loop`` and ``stop`` speak this sequence's beats, and ``wait()``
+        returns when the pass ends. A change made through the sequence's
+        objects while it plays is heard from where the position is.
 
-        One transport per server: what was playing on it gives way. With no
-        ``server`` and none anywhere, the default session boots one."""
+        **One transport per sequence**: two sequences played are two
+        transports and sound together, and playing this one again answers the
+        transport it already has. It is the sequence's until it is freed
+        (``free()`` on what this answers), and a server has a fixed number of
+        them -- with none left this raises, saying to free one or boot the
+        server with more (``--transports``). With no ``server`` and none
+        anywhere, the default session boots one."""
         from .playback import play_sequence
 
         return play_sequence(self, at, server)

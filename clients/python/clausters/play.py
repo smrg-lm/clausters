@@ -21,11 +21,12 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   stereo. Returns the node handle -- it plays until you free it;
 - a `clausters.seq.timeline.Timeline` -> played on its own clock
   (`Timeline.play`), on the ambient server;
-- a `clausters.seq.EventSequence` -> loaded as an event lane on the server's
-  notes transport and played there, its pass ending where its contents do;
+- a `clausters.seq.EventSequence` -> loaded as an event lane on a transport
+  of its own and played there, its pass ending where its contents do;
   answers that `clausters.defs.Transport`, whose verbs (``play``, ``pause``,
-  ``stop``, ``locate``, ``loop``, ``wait``) speak the sequence's beats. With
-  no server anywhere, the default session boots one;
+  ``stop``, ``locate``, ``loop``, ``wait``) speak the sequence's beats and
+  whose ``free`` gives the transport back. With no server anywhere, the
+  default session boots one;
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
   (a buffer sounds through an instrument; here the verb provides the default
   one -- ``rate``/``amp`` controls, freed when the take ends);

@@ -54,6 +54,9 @@ export const DEFAULT_TAPS = 8;
  */
 export const DEFAULT_TAP_FRAMES = 16384;
 
+/** The transports a server boots with when no `--transports` says otherwise. */
+export const DEFAULT_TRANSPORTS = 8;
+
 /**
  * The sizes a client's allocators need. They are a property of the *server*,
  * so `Server.attach`/`Server.boot` read them from `/server_query` rather than
@@ -72,6 +75,13 @@ export interface ServerSizing {
     channels: number;
     /** Audio-tap rings (`--taps`); 0 on a server with no tap region. */
     taps: number;
+    /**
+     * Independent transports (`--transports`). Transport 0 is the one
+     * addressed by number, and a multitrack's; an audio editor and every
+     * sequence playing on its own each take one of the rest, which a GUI host
+     * shares when there is one.
+     */
+    transports: number;
 }
 
 /** The static configuration a running server reports over `/server_query`. */

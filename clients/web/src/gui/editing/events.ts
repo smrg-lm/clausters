@@ -15,17 +15,19 @@
  * answers with. What is here is what a language owns -- the socket, and handing
  * the crate the window it is open in.
  *
- * **It sounds through a playback of its own** (the crate's `NotesPlayback`):
- * the sequence is the data of an event lane on the notes editor's own
- * transport, so playing it never moves a multitrack, and the server plays it
- * by the transport's position -- a pause, a stop and a locate are the
- * transport's. An edit sends the lane its new data, so a note moved ahead of
+ * **It sounds through its sequence's playback** (the crate's `NotesPlayback`):
+ * the sequence is the data of an event lane on a transport of its own, so
+ * playing it never moves a multitrack nor another sequence, and the server
+ * plays it by the transport's position -- a pause, a stop and a locate are the
+ * transport's. Every roll over one sequence shares that transport, and its
+ * play cursor is that sequence's. An edit sends the lane its new data, so a note moved ahead of
  * the line is heard where it lands, and what is sounding keeps its release.
  * The space bar over the window plays and pauses.
  *
  * @module
  */
 
+import { area } from "../../base/log.ts";
 import { EVENTS } from "../../document.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { resolveServer } from "../../defs/wire.ts";
@@ -46,6 +48,8 @@ import type { GenericEditorOptions } from "./editor.ts";
 import type { End, Pass } from "./playback.ts";
 import { plain } from "./samples.ts";
 import { View } from "./view.ts";
+
+const log = area("gui.editing");
 
 /** What one turn of the core came to. */
 interface Outcome {
@@ -183,19 +187,28 @@ export class NotesEditor extends Editor<EventSequence> {
      * Opens the window, with its play cursor drawn from the transport.
      *
      * The roll anchors the play cursor at 0, and the counter that makes that
-     * the sequence's own sample is the position of the transport the notes
-     * editor plays on -- stopped or rolling, the line is where the lane is.
-     * With no server to play on there is no position, and no line.
+     * the sequence's own sample is the position of the transport its sequence
+     * plays on -- stopped or rolling, the line is where the lane is. With no
+     * server to play on there is no position, and no line; nor with a server
+     * that has no transport left, which is logged, and the roll opens to be
+     * edited.
      */
     override async open(
         host?: Parameters<Editor<EventSequence>["open"]>[0],
         options: Parameters<Editor<EventSequence>["open"]>[1] = {},
     ): ReturnType<Editor<EventSequence>["open"]> {
         const handle = await super.open(host, options);
+        let server: Server;
+        try {
+            server = this.#resolveServer();
+        } catch {
+            return handle;
+        }
         let transport: number;
         try {
-            transport = this.#playback.transportId;
-        } catch {
+            transport = NotesPlayback.of(server, this.structure).transportId;
+        } catch (refused) {
+            log.warning("the roll has no play cursor and cannot be played: %s", String(refused));
             return handle;
         }
         this.host?.headClock(handle, "transport", transport);
@@ -208,17 +221,34 @@ export class NotesEditor extends Editor<EventSequence> {
      * from the mark; a rolling pass is left alone.
      */
     override locate(at: number): void {
-        if (this.#server === null || this.#elsewhere !== null) return;
-        const playback = this.#playback;
-        this.#work = this.#work.then(() => playback.call("cue", this.structure, { at }));
+        if (this.#elsewhere !== null) return;
+        const playback = this.#held;
+        if (playback === null) return;
+        this.#work = this.#work.then(() => playback.cue(at));
         this.#work.catch(() => {});
     }
 
     // ---- playing it ----
 
-    get #playback(): NotesPlayback {
+    #resolveServer(): Server {
         this.#server ??= resolveServer(null) as unknown as Server;
-        return NotesPlayback.of(this.#server);
+        return this.#server;
+    }
+
+    /**
+     * The sequence's playback on the server, made when it has none -- which
+     * throws when the server has no transport left.
+     */
+    get #playback(): NotesPlayback {
+        return NotesPlayback.of(this.#resolveServer(), this.structure);
+    }
+
+    /**
+     * The sequence's playback when it has one: what a change or a cursor is
+     * told to, which is no reason to take a transport.
+     */
+    get #held(): NotesPlayback | null {
+        return NotesPlayback.held(this.#server, this.structure);
     }
 
     /**
@@ -227,12 +257,13 @@ export class NotesEditor extends Editor<EventSequence> {
      * `stop`, `locate`, `loop`, `wait`) and `span` about this editor's
      * sequence and in its beats -- the span is the band an Alt+drag sweeps on
      * the roll, the loop switch is `L`, and each side reads what the other set.
-     * Every sequence on a server shares it: asking for it makes this one the
-     * sequence it plays, from the position cursor.
+     * It is the sequence's own, shared by every roll over it; once a page has
+     * asked for it, it is the page's to free (`free()`), and otherwise it goes
+     * back to the server when the last roll over the sequence closes.
      */
     get transport(): Transport {
         const playback = this.#playback;
-        playback.hold(this.structure, this.cursor ?? 0, this.#end);
+        playback.kept = true;
         return playback.transport;
     }
 
@@ -250,15 +281,15 @@ export class NotesEditor extends Editor<EventSequence> {
 
     set end(end: End) {
         this.#end = end;
-        if (this.#server === null) return;
-        const playback = this.#playback;
-        this.#work = this.#work.then(() => playback.call("end", this.structure, { end }));
+        const playback = this.#held;
+        if (playback === null) return;
+        this.#work = this.#work.then(() => playback.setEnd(end));
         this.#work.catch(() => {});
     }
 
     /**
      * **Plays the sequence** from `beat` -- or from the position cursor, or the
-     * start -- on the notes editor's own transport.
+     * start -- on its own transport.
      *
      * It is the audio editor's pass: `range` -- `[start, end]` in beats, a time
      * range a sweep left -- plays from its start to its end, going back to
@@ -285,7 +316,7 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#elsewhere = played;
             return this;
         }
-        await this.#playback.load(this.structure, start, {
+        await this.#playback.load(start, {
             range: pass.range ?? null,
             looping: pass.looping ?? false,
             end: this.#end,
@@ -299,7 +330,7 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#elsewhere.pause();
             return this;
         }
-        await this.#playback.call("pause", this.structure);
+        await this.#playback.call("pause");
         return this;
     }
 
@@ -309,7 +340,7 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#elsewhere.play();
             return this;
         }
-        await this.#playback.call("resume", this.structure);
+        await this.#playback.call("resume");
         return this;
     }
 
@@ -320,8 +351,7 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#elsewhere = null;
             return this;
         }
-        const playback = this.#playback;
-        await playback.call("stop", this.structure, { back: this.cursor ?? 0 });
+        await this.#playback.call("stop", { back: this.cursor ?? 0 });
         return this;
     }
 
@@ -331,10 +361,8 @@ export class NotesEditor extends Editor<EventSequence> {
      * page awaits one.
      */
     async playing(): Promise<boolean> {
-        if (this.#server === null) return false;
-        const playing = (await this.#playback.state()).playing;
-        await this.#playback.call("setRolling", this.structure, { rolling: playing });
-        return playing;
+        const playback = this.#held;
+        return playback !== null && await playback.playing();
     }
 
     /**
@@ -342,10 +370,42 @@ export class NotesEditor extends Editor<EventSequence> {
      * again, and the server plays it on from where the position is.
      */
     #update(): void {
-        if (this.#server === null) return;
-        const playback = this.#playback;
+        const playback = this.#held;
+        if (playback === null) return;
         const version = this.editing.version;
-        this.#work = this.#work.then(() => playback.update(this.structure, version));
+        this.#work = this.#work.then(() => playback.update(version));
+        this.#work.catch(() => {});
+    }
+
+    // ---- giving the transport back ----
+
+    protected override closedWindow(): boolean {
+        const closed = super.closedWindow();
+        this.#release();
+        return closed;
+    }
+
+    /**
+     * Closes this editor's window. **The sequence's transport goes back to the
+     * server with the last roll over it**, and what was sounding is released
+     * -- unless a page holds the transport ({@link NotesEditor.transport},
+     * `play(sequence)`), whose it then is to free.
+     */
+    override close(): this {
+        super.close();
+        this.#release();
+        return this;
+    }
+
+    /**
+     * This roll closed: with no other roll over the sequence and no page
+     * holding its transport, the playback is freed.
+     */
+    #release(): void {
+        const playback = this.#held;
+        if (playback === null || playback.kept) return;
+        if (playback.rolls().some((roll) => roll !== (this as unknown) && roll.closed !== true)) return;
+        this.#work = this.#work.then(() => playback.free());
         this.#work.catch(() => {});
     }
 
@@ -485,27 +545,22 @@ export class NotesEditor extends Editor<EventSequence> {
             });
             this.#work.catch(() => {});
         }
+        const playback = this.#held;
         const span = outcome.span;
-        if (span !== undefined && this.#server !== null && this.#playback.planned === this.structure) {
+        if (span !== undefined && playback !== null) {
             // A sweep moved the time range: it is the playback's span, so a
             // page reads it, and the other rolls over the sequence draw it.
-            const playback = this.#playback;
             this.#work = this.#work.then(() => playback.setSpan(span));
             this.#work.catch(() => {});
         }
         const relooped = outcome.loop;
-        if (relooped !== undefined && this.#server !== null) {
+        if (relooped !== undefined && playback !== null) {
             // `L`: the loop switch -- followed at once by a pass in progress,
             // read by a stopped playback on its next play.
-            const playback = this.#playback;
             const range = relooped.range ?? null;
             this.#work = this.#work.then(async () => {
-                if (playback.planned === this.structure) {
-                    await playback.setSpan(range, { show: false });
-                    await playback.setLooping(relooped.looping);
-                } else {
-                    await playback.call("loop", this.structure, { range, loop: relooped.looping });
-                }
+                await playback.setSpan(range, { show: false });
+                await playback.setLooping(relooped.looping);
             });
             this.#work.catch(() => {});
         }

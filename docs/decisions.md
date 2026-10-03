@@ -9268,3 +9268,30 @@ What the attempt surfaced is kept on its own merits: an event played from the
 client had no way to carry automation. That is solved in the events, so that
 whatever plays them -- a pattern, a routine, a timeline -- plays their curves,
 not by putting a sequence back in a timeline.
+
+## A transport above 0 is taken, not named
+
+A server has a fixed number of transports (`--transports`, 8 by default), and
+for a while each application had one by number: 0 the multitrack, 1 the audio
+editor, 2 the GUI host's take monitor, 3 the notes editor and every
+`play(sequence)`. The numbers were there because nothing allocated. Two of
+them, 1 and 2, were the same crate playback held by two endpoints, told apart
+by a constant each; and the fourth was shared by every sequence on a server,
+so the sequence played last displaced the one before it, and a roll drew a
+play cursor that was another sequence's.
+
+Transports are now a space of the ids every client allocates from
+(`clausters_core::ids`, `Space::Transports`), sliced by the client's share
+like node ids, buses and buffers. Whatever plays on its own takes one and
+gives it back: a sequence (one playback per sequence, so two sound together),
+the audio editors of a server, the host's monitor. Only **transport 0 stays
+addressed by number**: it is what a server's own transport commands address
+when no playback is behind them, the grid clients phase on, and a multitrack
+plays there.
+
+The cost is that the count is finite and visible. Seven are above 0, a GUI
+host sharing the server takes four of them, and a client that finds none left
+is refused with a message naming `--transports` rather than being handed one
+in use. A number above 0 picked by hand may be somebody's, so a script takes
+one too (`transport_new`), and `transport_at(n)` addresses one it already
+knows.

@@ -1,5 +1,6 @@
-//! **The host's ids**: the node ids, buses and buffers it allocates on the
-//! server it plays through, and the replies that give them back.
+//! **The host's ids**: the node ids, buses, buffers and transports it
+//! allocates on the server it plays through, and the replies that give them
+//! back.
 //!
 //! A host is a client of its audio server like any script, so it allocates by
 //! the one policy every client does ([`clausters_core::ids`]): the node table's
@@ -112,8 +113,9 @@ impl Host {
 }
 
 /// The shape a `/server_query.reply` states: audio buses, control buses and
-/// outputs first, the node table and the buffer slots at 7 and 8. `None` for
-/// a reply too short to carry them.
+/// outputs first, the node table and the buffer slots at 7 and 8, the
+/// transports at 15 -- the default count for a reply that stops short of
+/// them. `None` for a reply too short to carry the rest.
 fn shape_of(args: &[OscType]) -> Option<ServerShape> {
     let int = |i: usize| match args.get(i) {
         Some(OscType::Int(v)) if *v >= 0 => Some(*v as usize),
@@ -125,6 +127,7 @@ fn shape_of(args: &[OscType]) -> Option<ServerShape> {
         outputs: int(2)?,
         max_nodes: int(7)?,
         buffers: int(8)?,
+        transports: int(15).unwrap_or(ServerShape::DEFAULT.transports),
     })
 }
 

@@ -110,7 +110,11 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-None is open now.
+- ⬜ **A bundle mounted by the standalone host is given ids by an allocator
+  of its own** *(`clients/gui/PLAN.md`, "Found by use")*. The mount counts
+  node ids, buses and buffers by hand beside the host's own id spaces, which
+  now hand out the same node ids; the roll windows' ids are counted by
+  formula too.
 
 
 ## 2. Fixes that need a decision first
@@ -118,13 +122,7 @@ None is open now.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **Two rolls on the shared transport: one roll's line follows the other's
-  sequence, and two sequences cannot sound together from a script**
-  *(`clients/python/PLAN.md`, "Found by use")*. A fix that waits on a
-  decision: keep the shared transport and have a roll follow it only while
-  the lane holds its sequence, or give `play(sequence)` a transport of its
-  own, which also fixes the line. **Related:** `C58`, which chose the shared
-  transport.
+None is open now.
 
 ## 3. Tests and reviews pending
 

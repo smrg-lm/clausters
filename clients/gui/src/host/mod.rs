@@ -704,12 +704,13 @@ pub struct Host {
     /// and its id comes back on the `/node_end` that says so.
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// **The ids this host allocates on the server it plays through** -- every
-    /// node, control bus and buffer it makes, by the one policy every client
-    /// allocates by ([`ids`]).
+    /// node, control bus, buffer and transport it takes, by the one policy
+    /// every client allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
     /// **The take monitor's nodes** -- the audio editor's playback, the one
     /// every endpoint holds ([`clausters_editing::audio_playback`]), on the
-    /// monitor's own transport ([`play::MONITOR_TRANSPORT`]).
+    /// monitor's own transport, allocated from [`Host::ids`] when it first
+    /// plays.
     monitor: clausters_editing::audio_playback::AudioEditorPlayback,
     /// The engine's sample rate, from `/server_query.reply`; `0.0` until it
     /// answers.
@@ -855,7 +856,6 @@ impl Host {
             ),
             monitor: clausters_editing::audio_playback::AudioEditorPlayback::new(
                 clausters_editing::apply::Endpoint::default(),
-                play::MONITOR_TRANSPORT,
             ),
             server_rate: 0.0,
             playing: None,

@@ -57,6 +57,7 @@ from .options import (
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TAPS,
     DEFAULT_TAP_FRAMES,
+    DEFAULT_TRANSPORTS,
     Load,
     ServerInfo,
     ServerStatus,
@@ -93,6 +94,7 @@ __all__ = [
     "DEFAULT_MAX_UGEN_INPUTS",
     "DEFAULT_TAPS",
     "DEFAULT_TAP_FRAMES",
+    "DEFAULT_TRANSPORTS",
 ]
 
 
@@ -373,6 +375,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
             tap_frames=info.tap_frames,
             outputs=info.channels,
             inputs=info.input_channels,
+            transports=info.transports,
         )
         self._build_allocators(False)
         return self
@@ -632,7 +635,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
 
         The shape is the core's (`_native.IdSpaces`): the node table's client
         range, the audio buses above the server's own outputs, both bus spaces
-        clear of their GraphDef windows, the buffers -- each sliced by this
+        clear of their GraphDef windows, the buffers, and the transports a
+        sequence played on its own takes one of -- each sliced by this
         handle's share. The outputs are the server's; until the server has
         said (a booted server with no ``outputs`` flag follows its device), two
         is assumed, which is the page client's same assumption before its own
@@ -643,8 +647,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         self.ids = _native.IdSpaces(
             max_nodes=opts.max_nodes, audio_buses=opts.audio_buses,
             outputs=outputs, control_buses=opts.control_buses,
-            buffers=opts.max_buffers, index=self.share.index, of=self.share.of,
-            score=score)
+            buffers=opts.max_buffers,
+            transports=(opts.transports if opts.transports is not None
+                        else DEFAULT_TRANSPORTS),
+            index=self.share.index, of=self.share.of, score=score)
         self.nodes = NodeIdAllocator(self.ids)
         self.audio_buses = AudioBusAllocator(self.ids)
         self.control_buses = ControlBusAllocator(self.ids)
@@ -883,6 +889,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         fresh connection. Nothing to call by hand, and `boot` on this same
         handle just works.
         """
+        from ...seq.playback import NotesPlayback
+
+        NotesPlayback.forget_all(self)
         self.send_msg("/server_quit")
         if self._process is not None:
             # A process this handle launched: wait for it to be gone before
@@ -997,7 +1006,11 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
     def close(self):
         """Close the communication interface (and the ``/node_end`` recycling
         listener), release the shared sample-clock reader every locked clock was
-        using, and, if this handle `boot`-ed a server process, stop it too."""
+        using, and, if this handle `boot`-ed a server process, stop it too. The
+        transports its sequences took go with the handle."""
+        from ...seq.playback import NotesPlayback
+
+        NotesPlayback.forget_all(self)
         self.release_sample_clock()
         if self._recycler is not None:
             self._recycler.close()

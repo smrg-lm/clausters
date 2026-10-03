@@ -367,6 +367,10 @@ class _Driver:
     def set_end(self, end) -> None:
         self._playback.end = end
 
+    def free(self) -> None:
+        """Nothing: a multitrack plays on the transport addressed by number,
+        which is nobody's to give back."""
+
     def set_span(self, span, *, show: bool = True) -> None:
         self.span = None if span is None else (float(span[0]), float(span[1]))
         editor = self.editor

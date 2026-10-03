@@ -61,6 +61,7 @@ export {
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
+    DEFAULT_TRANSPORTS,
 } from "./server/index.ts";
 
 export { EmbedSampleClock, WsSampleClock, sampleClockFor } from "./clocksync.ts";

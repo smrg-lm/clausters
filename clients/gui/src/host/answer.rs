@@ -473,15 +473,18 @@ impl Host {
             origin,
         );
         self.pending_effects.extend(effects);
-        // **The play cursor is the notes transport's position**, as a
-        // client's notes editor asks for it when it opens.
+        // **The play cursor is the position of the transport its sequence
+        // plays on**, as a client's notes editor asks for it when it opens.
+        let Some(transport) = self.notes_transport(id) else {
+            return;
+        };
         let effects = self.handle_packet(
             OscPacket::Message(OscMessage {
                 addr: GUI_CLOCK.into(),
                 args: vec![
                     OscType::Int(def_id),
                     OscType::String("transport".into()),
-                    OscType::Int(clausters_editing::notes_playback::NOTES_EDITOR_TRANSPORT),
+                    OscType::Int(transport),
                 ],
             }),
             origin,
@@ -520,6 +523,7 @@ impl Host {
         };
         if outcome.turn == Kind::Closed {
             owner.rolls.remove(&def_id);
+            self.close_notes(source);
             return true;
         }
         if outcome.turn == Kind::Step {

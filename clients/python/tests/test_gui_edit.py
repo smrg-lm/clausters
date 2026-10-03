@@ -760,9 +760,9 @@ def test_play_answers_the_transport_the_sequence_plays_on():
 
 
 def test_a_roll_hands_out_the_transport_play_answers():
-    """The notes editor's transport is the server's notes transport -- the
-    object `play(sequence)` answers -- and asking a roll for it makes that
-    roll's sequence the one its verbs are about, without playing it."""
+    """A roll's transport is its sequence's -- the object `play(sequence)`
+    answers -- and asking a roll for it plays nothing. Two sequences are two
+    transports: each one's verbs are about its own."""
     server = _PlayingServer()
     first = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     second = EventSequence([(0.0, Event(midinote=64, dur=1.0)),
@@ -771,13 +771,90 @@ def test_a_roll_hands_out_the_transport_play_answers():
     b = NotesEditor(second, sample_rate=SR, server=server)
     transport = first.play(server=server)
     server.sent.clear()
-    assert b.transport is transport, "one transport, one object"
+    other = b.transport
     assert not server.sent, "asking for it plays nothing"
+    assert other is not transport and other.id != transport.id, "a transport each"
+    assert a.transport is transport and first.play(server=server) is transport
+    server.sent.clear()
+    other.loop(0.0, 2.0)
     assert transport.span is None, "the other sequence's span is not this one's"
-    transport.loop(0.0, 2.0)
-    transport.play()
+    other.play()
     assert server.lane() == [0, 100], "the second sequence is what plays"
-    assert a.transport is transport
+    assert {args[0] for addr, args in server.sent if addr.startswith("/transport_")} \
+        == {other.id}, "on its own transport, and nothing on the first's"
+
+
+def test_two_sequences_play_together_and_a_free_gives_the_transport_back():
+    """Each `play(sequence)` takes a transport, so two sound at once; with none
+    left the play fails saying so, and a `free` gives one back."""
+    from clausters import _native, play
+
+    server = _PlayingServer()
+    seqs = [EventSequence([(0.0, Event(midinote=60 + i, dur=1.0))], tempo_map=TempoMap(TEMPO))
+            for i in range(8)]
+    transports = [play(seq, server=server) for seq in seqs[:7]]
+    assert len({t.id for t in transports}) == 7 and min(t.id for t in transports) == 1, \
+        "eight transports, above the one addressed by number"
+    with pytest.raises(RuntimeError, match="--transports"):
+        play(seqs[7], server=server)
+
+    server.sent.clear()
+    freed = transports[0].free()
+    addrs = [addr for addr, _ in server.sent]
+    assert "/lane_free" in addrs and "/node_free" in addrs
+    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 6
+    assert freed.span is None and freed._driver is None, "nothing loaded on it now"
+    assert play(seqs[7], server=server).id == freed.id, "the one given back"
+
+
+def test_a_script_takes_a_transport_of_its_own_and_gives_it_back():
+    """`transport_new` takes a free transport, never one that something
+    played holds, and `free` gives it back."""
+    from clausters import _native, play
+
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    played = play(seq, server=server)
+    own = server.transport_new()
+    assert own.id not in (0, played.id) and own is server.transport_at(own.id)
+    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 2
+    own.free()
+    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 1
+    own.free()                              # twice is nothing
+    assert server.transport_at(0).free().id == 0, "nothing to free by number"
+    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 1
+
+
+def test_a_transport_goes_back_with_the_last_roll_unless_a_script_holds_it():
+    """A roll takes its sequence's transport when it opens; the last roll over
+    the sequence gives it back by closing -- unless a script asked for it,
+    whose it then is to free."""
+    from clausters import _native
+
+    def taken(server):
+        return server.ids.in_use(_native.IdSpaces.TRANSPORTS)
+
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    host = FakeHost()
+    one = NotesEditor(seq, sample_rate=SR, server=server)
+    two = NotesEditor(seq, sample_rate=SR, server=server, y_axis="hz")
+    one.open(host, 901)
+    two.open(host, 951)
+    assert taken(server) == 1, "two rolls over one sequence, one transport"
+    assert host.clocks[0][2] == host.clocks[1][2]
+    one.close()
+    assert taken(server) == 1, "the other roll is still open"
+    two.close()
+    assert taken(server) == 0
+
+    kept = NotesEditor(seq, sample_rate=SR, server=server)
+    kept.open(host, 901)
+    transport = kept.transport
+    kept.close()
+    assert taken(server) == 1, "the script's to free"
+    transport.free()
+    assert taken(server) == 0
 
 
 def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():

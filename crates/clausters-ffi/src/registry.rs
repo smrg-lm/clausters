@@ -157,7 +157,7 @@ pub extern "C" fn clausters_registry_graph_control_reserved(control_buses: usize
 
 // --- The id spaces a client allocates from ---------------------------------
 //
-// `clausters_core::ids::IdSpaces`: the four spaces sized from the server and
+// `clausters_core::ids::IdSpaces`: the five spaces sized from the server and
 // sliced by a share, the policy every endpoint used to restate over its own
 // registries. Internally locked for the same reason a registry is: a client
 // allocates on one thread and takes a node back on its reply thread.
@@ -168,13 +168,14 @@ use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 pub struct FfiIdSpaces(pub(crate) Mutex<IdSpaces>);
 
 /// The space a small integer names across the ABI: 0 nodes, 1 audio buses, 2
-/// control buses, 3 buffers.
+/// control buses, 3 buffers, 4 transports.
 fn space_of(code: i32) -> Option<Space> {
     Some(match code {
         0 => Space::Nodes,
         1 => Space::AudioBuses,
         2 => Space::ControlBuses,
         3 => Space::Buffers,
+        4 => Space::Transports,
         _ => return None,
     })
 }
@@ -190,6 +191,7 @@ pub extern "C" fn clausters_ids_new(
     outputs: u64,
     control_buses: u64,
     buffers: u64,
+    transports: u64,
     index: u32,
     of: u32,
     score: i32,
@@ -200,6 +202,7 @@ pub extern "C" fn clausters_ids_new(
         outputs: outputs as usize,
         control_buses: control_buses as usize,
         buffers: buffers as usize,
+        transports: transports as usize,
     };
     let Ok(share) = IdShare::new(index, of) else {
         return std::ptr::null_mut();

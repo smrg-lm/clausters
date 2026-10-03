@@ -1855,6 +1855,18 @@ mod window_verb_tests {
             asked.contains(&serde_json::json!(["notes play"])),
             "{asked:?}"
         );
+
+        // The roll's play cursor is the position of a transport of its own,
+        // taken from the host's ids when the roll opened -- not the
+        // multitrack's -- and closing the roll gives it back.
+        use clausters_core::ids::{FIXED_TRANSPORTS, Space};
+        let crate::host::HeadClock::Transport(transport) = host.head_clock_of(roll, None) else {
+            panic!("the roll draws its play cursor from a transport");
+        };
+        assert!(transport >= FIXED_TRANSPORTS, "transport {transport}");
+        assert_eq!(host.ids().in_use(Space::Transports), 1);
+        host.close_notes(source);
+        assert_eq!(host.ids().in_use(Space::Transports), 0);
     }
 
     /// **The transport row and the space bar are the editor's**: a click on a

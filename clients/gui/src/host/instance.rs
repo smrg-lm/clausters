@@ -44,7 +44,7 @@ use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::SourceId;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_editing::apply::{Endpoint, Step};
-use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
+use clausters_editing::notes_playback::NotesPlayback;
 use clausters_editing::playback::MultitrackPlayback;
 use clausters_editing::run::{Reply, Runner, Server};
 
@@ -86,11 +86,10 @@ pub struct Playing {
     /// endpoint holds it. Made on the first sync, and it makes the transport's
     /// group itself.
     multitrack: Option<MultitrackPlayback>,
-    /// What plays a roll's window on the notes editor's own transport, made
-    /// the first time one is played -- as a client's notes editor has it.
-    notes: Option<NotesPlayback>,
-    /// The source whose sequence the notes' event lane holds: the roll played last.
-    notes_played: Option<SourceId>,
+    /// What plays each roll's window, by the source whose sequence it is: a
+    /// playback on a transport of its own, made when its window opens -- as a
+    /// client's notes editor has it -- and closed with it.
+    notes: HashMap<SourceId, NotesPlayback>,
     /// Each roll's position cursor, as a beat of its sequence.
     notes_cursor: HashMap<SourceId, f64>,
     /// The steps not carried out yet, across both servers -- the crate's walk.
@@ -573,7 +572,7 @@ impl Host {
         };
         let (Some(shared), Some(playback)) = (
             owner.sequences.get(&source).cloned(),
-            self.instance.notes.as_mut(),
+            self.instance.notes.get_mut(&source),
         ) else {
             return;
         };
@@ -595,11 +594,39 @@ impl Host {
         {
             multitrack.set_rolling(rolling);
         }
-        if let Some(notes) = self.instance.notes.as_mut()
-            && notes.transport() == transport
-        {
-            notes.set_rolling(rolling);
+        for notes in self.instance.notes.values_mut() {
+            if notes.transport() == Some(transport) {
+                notes.set_rolling(rolling);
+            }
         }
+    }
+
+    /// **The transport the roll of `source` plays on**, taken the first time:
+    /// what its window draws its play cursor from. `None`, said out loud, when
+    /// the server has none left.
+    pub(crate) fn notes_transport(&mut self, source: SourceId) -> Option<i32> {
+        let playback = self.instance.notes.entry(source).or_default();
+        match playback.alloc_transport(&mut self.ids) {
+            Ok(transport) => Some(transport),
+            Err(e) => {
+                diag::warn!("the roll has no play cursor and cannot be played: {e}");
+                None
+            }
+        }
+    }
+
+    /// **The roll of `source` closed**: what its playback made is freed and
+    /// its transport given back.
+    pub(crate) fn close_notes(&mut self, source: SourceId) {
+        self.instance.notes_cursor.remove(&source);
+        let Some(mut playback) = self.instance.notes.remove(&source) else {
+            return;
+        };
+        match playback.close(&mut self.ids) {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the roll's playback cannot be closed: {e}"),
+        }
+        self.send_multitrack();
     }
 
     /// Whether the multitrack is rolling.
@@ -629,17 +656,13 @@ impl Host {
             .get(&source)
             .copied()
             .unwrap_or(0.0);
-        let playback = self
-            .instance
-            .notes
-            .get_or_insert_with(|| NotesPlayback::new(NOTES_EDITOR_TRANSPORT));
+        let playback = self.instance.notes.entry(source).or_default();
         let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
         // Play/stop, as a client's notes editor does with the same key: a stop
         // goes back to the roll's position cursor.
         let steps = if playback.rolling() {
             Ok(playback.stop(&sequence, from, rate))
         } else {
-            self.instance.notes_played = Some(source);
             playback.play_pass(&sequence, from, range, looping, rate, &mut self.ids)
         };
         drop(sequence);
@@ -663,7 +686,7 @@ impl Host {
         };
         let (Some(shared), Some(playback)) = (
             owner.sequences.get(&source).cloned(),
-            self.instance.notes.as_mut(),
+            self.instance.notes.get_mut(&source),
         ) else {
             return;
         };
@@ -677,26 +700,26 @@ impl Host {
         self.send_multitrack();
     }
 
-    /// **A sequence changed**: when it is the one the notes' event lane holds, the
-    /// event lane takes it again and the server plays it on from where it is.
+    /// **A sequence changed**: every roll's event lane takes its sequence
+    /// again and the server plays it on from where it is. Nothing for a roll
+    /// that has not played, which has no lane yet.
     pub fn update_notes(&mut self) {
-        let (Some(owner), Some(source)) = (self.owner.as_ref(), self.instance.notes_played) else {
-            return;
-        };
-        let (Some(shared), Some(playback)) = (
-            owner.sequences.get(&source).cloned(),
-            self.instance.notes.as_mut(),
-        ) else {
+        let Some(owner) = self.owner.as_ref() else {
             return;
         };
         let rate = owner.multitrack_look().rate;
-        match playback.update(
-            &shared.lock().unwrap_or_else(|e| e.into_inner()),
-            rate,
-            &mut self.ids,
-        ) {
-            Ok(steps) => self.instance.run.push(Server::Sound, steps),
-            Err(e) => diag::warn!("the roll cannot be played: {e}"),
+        for (source, playback) in &mut self.instance.notes {
+            let Some(shared) = owner.sequences.get(source) else {
+                continue;
+            };
+            match playback.update(
+                &shared.lock().unwrap_or_else(|e| e.into_inner()),
+                rate,
+                &mut self.ids,
+            ) {
+                Ok(steps) => self.instance.run.push(Server::Sound, steps),
+                Err(e) => diag::warn!("the roll cannot be played: {e}"),
+            }
         }
         self.send_multitrack();
     }

@@ -75,6 +75,12 @@ class _AudioPlayback:
         # client hears.
         server._ensure_recycler()
         self._rate = None
+        try:
+            taken = self._native.call("open", server.ids)
+        except ValueError as refused:
+            raise RuntimeError(str(refused)) from None
+        #: The transport it plays on: one of the server's, allocated for it.
+        self.transport_id = int(taken["transport"])
 
     @property
     def rate(self) -> float:
@@ -101,8 +107,7 @@ class _AudioPlayback:
     def rolling(self) -> bool:
         """Whether the transport rolls, as the engine answers -- a pass that
         ended on its mark stopped without anybody here saying so."""
-        transport = int(self.state()["transport"])
-        playing = bool(self.server.transport_at(transport).state()["playing"])
+        playing = bool(self.server.transport_at(self.transport_id).state()["playing"])
         self._native.call("setRolling", self.server.ids, rolling=playing)
         return playing
 
@@ -174,6 +179,10 @@ class _AudioDriver:
         if end != "contents":
             raise ValueError("an audio editor's pass ends where the take or "
                              "the span does")
+
+    def free(self) -> None:
+        """Nothing: the transport is the audio editors' of this server, and a
+        take is freed by closing its editor."""
 
     def set_span(self, span, *, show: bool = True) -> None:
         ed = self.editor
@@ -316,8 +325,9 @@ class AudioEditor(Editor):
         ``stop``, ``locate``, ``loop``, ``wait``) and ``span`` speak the
         take's seconds -- the span is the band a drag sweeps, the loop switch
         is `L`, and each side reads what the other set. The audio editors of
-        a server share it: the take played last is the one it plays."""
-        transport = self._server.transport_at(int(self._playback.state()["transport"]))
+        a server share it -- one of the server's, allocated for them -- and
+        the take played last is the one it plays."""
+        transport = self._server.transport_at(self._playback.transport_id)
         transport._driver = self._driver
         return transport
 
@@ -395,8 +405,7 @@ class AudioEditor(Editor):
         """
         window = super().open(host, id)
         if self._host is not None and window is not None:
-            self._host.head_clock(window, "transport",
-                                  int(self._playback.state()["transport"]))
+            self._host.head_clock(window, "transport", self._playback.transport_id)
         return window
 
     def _closed(self) -> bool:

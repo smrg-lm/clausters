@@ -66,6 +66,7 @@ class FakeHost {
     headClock(id: { id: number }, which: string, transport = 0): void {
         this.clocks.push([id.id, which, transport]);
     }
+    close(): void {}
     onMessage(): () => void {
         return () => {};
     }
@@ -827,9 +828,9 @@ test("play answers the transport the sequence plays on", async () => {
 });
 
 test("a roll hands out the transport play answers", async () => {
-    // The notes editor's transport is the server's notes transport -- the
-    // object `play(sequence)` answers -- and asking a roll for it makes that
-    // roll's sequence the one its verbs are about, without playing it.
+    // A roll's transport is its sequence's -- the object `play(sequence)`
+    // answers -- and asking a roll for it plays nothing. Two sequences are two
+    // transports: each one's verbs are about its own.
     const server = new PlayingServer();
     const first = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) });
     const second = new EventSequence([
@@ -840,13 +841,94 @@ test("a roll hands out the transport play answers", async () => {
     const b = new NotesEditor(second, { sampleRate: SR, server: server as never });
     const transport = await first.play({ server: server as never });
     server.sent.length = 0;
-    assert.equal(b.transport, transport, "one transport, one object");
+    const other = b.transport;
     assert.equal(server.sent.length, 0, "asking for it plays nothing");
-    assert.equal(transport.span, null, "the other sequence's span is not this one's");
-    await transport.loop(0.0, 2.0);
-    await transport.play();
-    assert.deepEqual(server.lane(), [0, 100], "the second sequence is what plays");
+    assert.ok(other !== transport && other.id !== transport.id, "a transport each");
     assert.equal(a.transport, transport);
+    assert.equal(await first.play({ server: server as never }), transport);
+    server.sent.length = 0;
+    await other.loop(0.0, 2.0);
+    assert.equal(transport.span, null, "the other sequence's span is not this one's");
+    await other.play();
+    assert.deepEqual(server.lane(), [0, 100], "the second sequence is what plays");
+    const named = new Set(server.sent
+        .filter(([addr]) => addr.startsWith("/transport_"))
+        .map(([, args]) => transportOf(args)));
+    assert.deepEqual([...named], [other.id], "on its own transport, and nothing on the first's");
+});
+
+/** The transport a recorded `/transport_*` command names: its first argument. */
+function transportOf(args: unknown[]): number {
+    const first = args[0];
+    return Number(Array.isArray(first) ? first[1] : first);
+}
+
+test("two sequences play together and a free gives the transport back", async () => {
+    // Each `play(sequence)` takes a transport, so two sound at once; with none
+    // left the play fails saying so, and a `free` gives one back.
+    const server = new PlayingServer();
+    const seqs = Array.from({ length: 8 }, (_, i) =>
+        new EventSequence([[0.0, new Event({ midinote: 60 + i, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) }));
+    const transports = [];
+    for (const seq of seqs.slice(0, 7)) transports.push(await seq.play({ server: server as never }));
+    const ids = transports.map((t) => t.id);
+    assert.equal(new Set(ids).size, 7);
+    assert.equal(Math.min(...ids), 1, "eight transports, above the one addressed by number");
+    await assert.rejects(seqs[7]!.play({ server: server as never }), /--transports/);
+
+    server.sent.length = 0;
+    const freed = await transports[0]!.free();
+    const addrs = server.sent.map(([addr]) => addr);
+    assert.ok(addrs.includes("/lane_free") && addrs.includes("/node_free"));
+    assert.equal(server.ids.inUse("transports"), 6);
+    assert.ok(freed.span === null && freed.driver === null, "nothing loaded on it now");
+    assert.equal((await seqs[7]!.play({ server: server as never })).id, freed.id, "the one given back");
+});
+
+test("a page takes a transport of its own and gives it back", async () => {
+    // `transportNew` takes a free transport, never one that something played
+    // holds, and `free` gives it back.
+    const server = new PlayingServer();
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) });
+    const played = await seq.play({ server: server as never });
+    const own = server.transportNew();
+    assert.ok(own.id !== 0 && own.id !== played.id && own === server.transportAt(own.id));
+    assert.equal(server.ids.inUse("transports"), 2);
+    await own.free();
+    assert.equal(server.ids.inUse("transports"), 1);
+    await own.free(); // twice is nothing
+    assert.equal((await server.transportAt(0).free()).id, 0, "nothing to free by number");
+    assert.equal(server.ids.inUse("transports"), 1);
+});
+
+test("a transport goes back with the last roll unless a page holds it", async () => {
+    // A roll takes its sequence's transport when it opens; the last roll over
+    // the sequence gives it back by closing -- unless a page asked for it,
+    // whose it then is to free.
+    const server = new PlayingServer();
+    const taken = () => server.ids.inUse("transports");
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) });
+    const one = new NotesEditor(seq, { sampleRate: SR, server });
+    const two = new NotesEditor(seq, { sampleRate: SR, server, yAxis: "hz" });
+    const first = await opened(one);
+    const second = await opened(two);
+    assert.equal(taken(), 1, "two rolls over one sequence, one transport");
+    assert.equal(first.host.clocks[0]![2], second.host.clocks[0]![2]);
+    one.close();
+    await one.settled();
+    assert.equal(taken(), 1, "the other roll is still open");
+    two.close();
+    await two.settled();
+    assert.equal(taken(), 0);
+
+    const kept = new NotesEditor(seq, { sampleRate: SR, server });
+    await opened(kept);
+    const transport = kept.transport;
+    kept.close();
+    await kept.settled();
+    assert.equal(taken(), 1, "the page's to free");
+    await transport.free();
+    assert.equal(taken(), 0);
 });
 
 test("a loop asked while stopped is kept for the next play", async () => {
@@ -997,7 +1079,8 @@ test("the space bar plays and stops the roll, and its end is the transport's", a
     // its beat (the default legato), so it ends on beat 2.8 -- sample 140.
     const ends = server.sent.filter(([addr]) => addr === "/transport_end");
     const args = ends.at(-1)![1] as [string, number | bigint][];
-    assert.deepEqual(args.map(([, v]) => Number(v)), [3, 140, 0], "its transport, the end, the return");
+    assert.deepEqual(args.map(([, v]) => Number(v)), [host.clocks[0]![2], 140, 0],
+        "its transport, the end, the return");
     server.sent = [];
     editor.apply("/gui_event", [window, 2, 0, "play", 0]);
     await editor.settled();

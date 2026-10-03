@@ -10,8 +10,12 @@
 //! # The transport plays it
 //!
 //! A roll holds concrete data, as a clip of audio does, so it plays the way a
-//! take does: on the server's transport, by its position. The editor's
-//! structure is a group that follows [`NOTES_EDITOR_TRANSPORT`], a group
+//! take does: on a transport of the server, by its position. **Each playback
+//! takes a transport of its own** from the caller's id spaces
+//! (`Space::Transports`, above the one addressed by number), so two
+//! sequences sound together and a roll's play cursor is its own sequence's;
+//! [`NotesPlayback::close`] gives it back. The editor's
+//! structure is a group that follows that transport, a group
 //! inside it that the transport governs, and an **event lane** on that
 //! transport whose notes are made in the group that follows (`/lane_new`) --
 //! not in the governed one, since a note is a voice and not a reader: a stop
@@ -45,7 +49,7 @@ use clausters_core::event::render::{self, Arg, Type};
 use clausters_core::event_lane::{
     EventLaneData, EventLaneMessage, EventLaneMidi, EventLaneNote, EventLaneVoice, Release,
 };
-use clausters_core::ids::{IdError, IdSpaces};
+use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::{EventSequence, Point};
@@ -56,10 +60,6 @@ use crate::apply::{Applier, Endpoint, Step};
 use crate::instance::Op;
 use crate::note_curves::{self, NoteCurves};
 use crate::playback::End;
-
-/// The transport the notes editor plays on: its own, so playing a sequence
-/// never moves a multitrack (0), an audio editor (1) or the host's monitor (2).
-pub const NOTES_EDITOR_TRANSPORT: i32 = 3;
 
 const EDITOR: &str = "notes";
 const GOVERNED: &str = "notes/transport";
@@ -346,7 +346,11 @@ fn map(sequence: &EventSequence) -> TempoMap {
 #[derive(Clone, Debug)]
 pub struct NotesPlayback {
     applier: Applier,
-    transport: i32,
+    /// The transport it plays on, once it has one.
+    transport: Option<i32>,
+    /// Whether the transport was taken from the id spaces, and so is given
+    /// back by [`Self::close`]; one handed in is the caller's.
+    owned: bool,
     rolling: bool,
     /// The lane, once it is made: the governed group's id.
     lane: Option<i32>,
@@ -362,11 +366,13 @@ pub struct NotesPlayback {
 }
 
 impl NotesPlayback {
-    /// A playback that has made nothing yet, on transport `transport`.
-    pub fn new(transport: i32) -> Self {
+    /// A playback that has made nothing yet and holds no transport: it takes
+    /// one of its own the first time it needs it ([`Self::alloc_transport`]).
+    pub fn new() -> Self {
         Self {
             applier: Applier::new(Endpoint::default()),
-            transport,
+            transport: None,
+            owned: true,
             rolling: false,
             lane: None,
             back: 0,
@@ -374,6 +380,29 @@ impl NotesPlayback {
             end_sent: None,
             curves: NoteCurves::new(CURVES),
         }
+    }
+
+    /// A playback on transport `transport`, which is the caller's to name and
+    /// is not given back.
+    pub fn on(transport: i32) -> Self {
+        Self {
+            transport: Some(transport),
+            owned: false,
+            ..Self::new()
+        }
+    }
+
+    /// **The transport it plays on, taken from `ids` the first time**: one no
+    /// other playback of this client holds, nor any other client of the
+    /// server. [`IdError::Exhausted`] when every one is taken -- the server
+    /// has a fixed number of them (`--transports`).
+    pub fn alloc_transport(&mut self, ids: &mut IdSpaces) -> Result<i32, IdError> {
+        if let Some(transport) = self.transport {
+            return Ok(transport);
+        }
+        let transport = ids.alloc(Space::Transports, 1)? as i32;
+        self.transport = Some(transport);
+        Ok(transport)
     }
 
     /// Where a pass ends.
@@ -390,8 +419,8 @@ impl NotesPlayback {
         self.end_steps(sequence, rate)
     }
 
-    /// The transport it plays on.
-    pub fn transport(&self) -> i32 {
+    /// The transport it plays on, or `None` before it has taken one.
+    pub fn transport(&self) -> Option<i32> {
         self.transport
     }
 
@@ -406,8 +435,13 @@ impl NotesPlayback {
         self.rolling = rolling;
     }
 
+    /// A command of its transport; nothing before it has one, since there is
+    /// nothing of this playback's on the server yet.
     fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
-        crate::apply::transport_command(self.transport, addr, args)
+        match self.transport {
+            Some(transport) => crate::apply::transport_command(transport, addr, args),
+            None => Vec::new(),
+        }
     }
 
     /// The editor's structure and its lane, the first time: the group that
@@ -418,16 +452,17 @@ impl NotesPlayback {
         if self.lane.is_some() {
             return Ok(Vec::new());
         }
+        let transport = self.alloc_transport(ids)?;
         let mut steps = self.applier.apply(
             vec![
                 Op::Follow {
                     handle: EDITOR.into(),
-                    transport: self.transport,
+                    transport,
                 },
                 Op::Governed {
                     handle: GOVERNED.into(),
                     parent: EDITOR.into(),
-                    transport: self.transport,
+                    transport,
                 },
             ],
             ids,
@@ -496,7 +531,7 @@ impl NotesPlayback {
             End::At(beat) => Some(map(sequence).secs_at(beat.max(0.0))),
         };
         let want = secs.map(|secs| (((secs * rate).round() as i64).max(self.back), self.back));
-        if want == self.end_sent {
+        if want == self.end_sent || self.transport.is_none() {
             return Vec::new();
         }
         self.end_sent = want;
@@ -706,26 +741,40 @@ impl NotesPlayback {
         steps
     }
 
-    /// Frees what the playback made: the lane (its notes released), the
-    /// transport's end mark and the groups.
+    /// Frees what the playback made -- the lane (its notes released), the
+    /// transport's end mark and the groups -- and gives back the transport it
+    /// took, which another playback may then take.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
-        let Some(lane) = self.lane.take() else {
-            return Ok(Vec::new());
-        };
-        let mut steps = self.pause();
-        steps.push(crate::apply::send("/lane_free", vec![OscType::Int(lane)]));
-        steps.push(Step::AwaitDone {
-            command: "/lane_free".into(),
-            index: None,
-        });
-        steps.extend(self.command("/transport_end", vec![]));
-        let mut ops = self.curves.teardown();
-        ops.push(Op::Free {
-            handle: EDITOR.into(),
-            forget: vec![GOVERNED.into()],
-        });
-        steps.extend(self.applier.apply(ops, ids)?);
+        let mut steps = Vec::new();
+        if let Some(lane) = self.lane.take() {
+            steps.extend(self.pause());
+            steps.push(crate::apply::send("/lane_free", vec![OscType::Int(lane)]));
+            steps.push(Step::AwaitDone {
+                command: "/lane_free".into(),
+                index: None,
+            });
+            steps.extend(self.command("/transport_loop", vec![]));
+            steps.extend(self.command("/transport_end", vec![]));
+            let mut ops = self.curves.teardown();
+            ops.push(Op::Free {
+                handle: EDITOR.into(),
+                forget: vec![GOVERNED.into()],
+            });
+            steps.extend(self.applier.apply(ops, ids)?);
+        }
+        self.end_sent = None;
+        if self.owned
+            && let Some(transport) = self.transport.take()
+        {
+            ids.release(Space::Transports, i64::from(transport), 1)?;
+        }
         Ok(steps)
+    }
+}
+
+impl Default for NotesPlayback {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -743,7 +792,10 @@ impl NotesPlayback {
 /// - `end` -- `end` (`null`, `"contents"` or a beat), `rate`: where a pass
 ///   ends ([`End`])
 /// - `setRolling` -- `rolling`
-/// - `state` -- `{"transport", "rolling", "end"}`
+/// - `open` -- takes the transport it plays on, when it has none, and answers
+///   `{"transport"}`; refused when the server has none left
+/// - `state` -- `{"transport", "rolling", "end"}`, `transport` `null` before
+///   it has taken one
 pub fn call_json(
     playback: &mut NotesPlayback,
     sequence: &EventSequence,
@@ -799,6 +851,10 @@ pub fn call_json(
             );
             answer(Ok(Vec::new()))
         }
+        "open" => match playback.alloc_transport(ids) {
+            Ok(transport) => json!({"transport": transport}).to_string(),
+            Err(e) => json!({"error": e.to_string()}).to_string(),
+        },
         "state" => json!({
             "transport": playback.transport(),
             "rolling": playback.rolling(),

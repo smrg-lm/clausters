@@ -438,28 +438,25 @@ pub struct FfiAudioPlayback(
 );
 
 /// A new audio editor playback: `chunk` is how many samples one fill carries,
-/// and `transport` the transport it plays on -- negative for the crate's own,
-/// `AUDIO_EDITOR_TRANSPORT`.
+/// and `transport` the transport it plays on -- negative for one of its own,
+/// which it takes from the id spaces with its `open` verb or its first sync
+/// and its `close` verb gives back.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_audio_playback_new(
     chunk: usize,
     transport: i32,
 ) -> *mut FfiAudioPlayback {
     use clausters_editing::apply::Endpoint;
-    use clausters_editing::audio_playback::{AUDIO_EDITOR_TRANSPORT, AudioEditorPlayback};
-    let transport = if transport < 0 {
-        AUDIO_EDITOR_TRANSPORT
-    } else {
-        transport
+    use clausters_editing::audio_playback::AudioEditorPlayback;
+    let endpoint = Endpoint {
+        chunk: chunk.max(1),
     };
-    Box::into_raw(Box::new(FfiAudioPlayback(std::sync::Mutex::new(
-        AudioEditorPlayback::new(
-            Endpoint {
-                chunk: chunk.max(1),
-            },
-            transport,
-        ),
-    ))))
+    let playback = if transport < 0 {
+        AudioEditorPlayback::new(endpoint)
+    } else {
+        AudioEditorPlayback::on(endpoint, transport)
+    };
+    Box::into_raw(Box::new(FfiAudioPlayback(std::sync::Mutex::new(playback))))
 }
 
 /// Frees a playback created by [`clausters_editing_audio_playback_new`] (null
@@ -523,19 +520,18 @@ pub unsafe extern "C" fn clausters_editing_audio_playback_call(
 /// [`clausters_editing_notes_playback_free`].
 pub struct FfiNotesPlayback(std::sync::Mutex<clausters_editing::notes_playback::NotesPlayback>);
 
-/// A new notes playback on `transport` -- negative for the crate's own,
-/// `NOTES_EDITOR_TRANSPORT`.
+/// A new notes playback on `transport` -- negative for one of its own, which
+/// it takes from the id spaces with its `open` verb or its first play and its
+/// `close` verb gives back.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_notes_playback_new(transport: i32) -> *mut FfiNotesPlayback {
-    use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
-    let transport = if transport < 0 {
-        NOTES_EDITOR_TRANSPORT
+    use clausters_editing::notes_playback::NotesPlayback;
+    let playback = if transport < 0 {
+        NotesPlayback::new()
     } else {
-        transport
+        NotesPlayback::on(transport)
     };
-    Box::into_raw(Box::new(FfiNotesPlayback(std::sync::Mutex::new(
-        NotesPlayback::new(transport),
-    ))))
+    Box::into_raw(Box::new(FfiNotesPlayback(std::sync::Mutex::new(playback))))
 }
 
 /// Frees a playback created by [`clausters_editing_notes_playback_new`] (null

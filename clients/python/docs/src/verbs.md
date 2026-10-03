@@ -44,7 +44,7 @@ function is the uniform entry that picks the right one.
 | a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline — `.stop()` (and `pause`/`locate`/`loop`) |
-| an `EventSequence` | loads it as an event lane on the server's notes transport, its pass ending where its contents do; boots a server for the default session when there is none | the `Transport` it plays on — `.stop()`, `.wait()` (and `pause`/`locate`/`loop`), in the sequence's beats |
+| an `EventSequence` | loads it as an event lane on a transport of its own, its pass ending where its contents do; boots a server for the default session when there is none | the `Transport` it plays on — `.stop()`, `.wait()` (and `pause`/`locate`/`loop`), in the sequence's beats, and `.free()` to give the transport back |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
 

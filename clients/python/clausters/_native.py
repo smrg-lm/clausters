@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 79
+CORE_ABI_VERSION = 80
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -825,7 +825,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ids_new.restype = ctypes.c_void_p
     lib.clausters_ids_new.argtypes = [
         ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64,
-        ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32,
+        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
+        ctypes.c_int32,
     ]
     lib.clausters_ids_free.restype = None
     lib.clausters_ids_free.argtypes = [ctypes.c_void_p]
@@ -1783,14 +1784,16 @@ class AudioEditorPlayback:
     its structure, its open files and its own transport, answering every verb
     as steps -- the same object the GUI host holds.
 
-    One door, `call`, for every verb the crate names: ``sync``, ``closeFile``,
-    ``play``, ``resume``, ``pause``, ``stop``, ``locate``, ``cue``, ``close``,
-    ``setRolling``, and the two queries ``state`` and ``space``. A verb that
-    changes the server answers ``{"steps": [...]}``; a query its own object.
+    One door, `call`, for every verb the crate names: ``open``, ``sync``,
+    ``closeFile``, ``play``, ``resume``, ``pause``, ``stop``, ``locate``,
+    ``cue``, ``close``, ``setRolling``, and the two queries ``state`` and
+    ``space``. A verb that changes the server answers ``{"steps": [...]}``; a
+    query its own object.
 
     Args:
         chunk: how many samples one ``/buffer_setRange`` carries.
-        transport: the transport it plays on; ``None`` for the crate's own.
+        transport: the transport it plays on; ``None`` for one of its own,
+            which ``open`` takes from the id spaces and ``close`` gives back.
     """
 
     def __init__(self, *, chunk: int = 8192, transport: "int | None" = None):
@@ -1830,11 +1833,12 @@ class NotesPlayback:
     """**The notes editor, as it is playing**
     (`clausters_editing_notes_playback_*`): a sequence's events as the data of
     an event lane on a transport of its own, every verb answering steps --
-    ``play``, ``update``, ``resume``, ``pause``, ``stop``, ``cue``,
+    ``open``, ``play``, ``update``, ``resume``, ``pause``, ``stop``, ``cue``,
     ``close``, ``setRolling`` and the query ``state``.
 
     Args:
-        transport: the transport it plays on; ``None`` for the crate's own.
+        transport: the transport it plays on; ``None`` for one of its own,
+            which ``open`` takes from the id spaces and ``close`` gives back.
     """
 
     def __init__(self, *, transport: "int | None" = None):
@@ -3688,26 +3692,27 @@ class TempoMap:
 
 class IdSpaces:
     """**A client's id spaces** -- node ids, audio buses, control buses,
-    buffers -- sized from the server and sliced by a share
+    buffers, transports -- sized from the server and sliced by a share
     (`clausters_ids_new`).
 
     The policy is the core's: the node table's client range, the audio buses
     above the server's own outputs, both bus spaces clear of their GraphDef
-    windows, the last share taking the remainder. Every allocator a `Server`
+    windows, the transports above the one addressed by number, the last share
+    taking the remainder. Every allocator a `Server`
     has is a view of one of these, so the numbers a script, a page and the GUI
     host hand out follow one rule. Internally locked: the clock thread
     allocates while the reply thread takes ended nodes back.
     """
 
-    NODES, AUDIO, CONTROL, BUFFERS = 0, 1, 2, 3
+    NODES, AUDIO, CONTROL, BUFFERS, TRANSPORTS = 0, 1, 2, 3, 4
 
     def __init__(self, *, max_nodes: int, audio_buses: int, outputs: int,
-                 control_buses: int, buffers: int, index: int = 0, of: int = 1,
-                 score: bool = False):
+                 control_buses: int, buffers: int, transports: int = 8,
+                 index: int = 0, of: int = 1, score: bool = False):
         self._lib = lib()
         self._handle = self._lib.clausters_ids_new(
             int(max_nodes), int(audio_buses), int(outputs), int(control_buses),
-            int(buffers), int(index), int(of), 1 if score else 0)
+            int(buffers), int(transports), int(index), int(of), 1 if score else 0)
         if not self._handle:
             raise ValueError(f"id share {index} is outside a split of {of}")
 

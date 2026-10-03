@@ -7762,3 +7762,29 @@ module of its own.
   at its `sample_rate` rather than in its own seconds, since the group
   rounds a selection to whole samples and a three-second curve would be
   swept in whole seconds.
+
+- ⬜ **A bundle mounted by the standalone host is given ids by an allocator
+  of its own** *(audit 2026-10-03, asked for by the user while transports
+  became a space of the ids: "check whether there are several
+  implementations for assigning ids")*. Every endpoint allocates server ids
+  through one policy, `clausters_core::ids::IdSpaces` over the core's
+  `Registry`, and widget ids through `clausters_core::widgetids`; the
+  clients' allocator classes are views of those and state no range. Two
+  places in the host still count by hand.
+  - **`bundle::MountAllocator`** (`src/host/bundle.rs`), which
+    `--standalone` mounts a bundle's manifest with: a bump from fixed bases
+    -- widgets and nodes from 1000, buses from 64, buffers from 32 -- that
+    releases nothing. Its comment says the standalone front is the only
+    client of its embedded server, which was true before the host allocated
+    for itself. It does now (`Host::ids`, an `IdSpaces` with the whole
+    share): its voices, its take monitor and a multitrack's nodes come from
+    the client range, which also starts at 1000, and its buffers from 0. So
+    a bundle that declares a node and a host that then plays a voice or a
+    take are handed the same node id by two allocators. The fix is the
+    mount allocating from the host's `IdSpaces` -- the browser leg already
+    does, from the page's (`base/pool.ts`).
+  - **The rolls' windows** (`open_roll`, `src/host/answer.rs`): a def id of
+    `1000 + 10 * source`, ten ids apiece by formula, in the widget-id window
+    a client's `WidgetIds` leases from at the same base. A session owned by
+    the host has no client defining widgets beside it, so nothing collides
+    today; the ids would come from the host's own widget-id table.

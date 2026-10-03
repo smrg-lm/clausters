@@ -622,6 +622,7 @@ mod tests {
                 outputs: 2,
                 control_buses: 16384,
                 buffers: 1024,
+                transports: 8,
             },
             IdShare::WHOLE,
         )

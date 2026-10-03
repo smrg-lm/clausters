@@ -14,6 +14,7 @@ fn ids() -> IdSpaces {
             outputs: 2,
             control_buses: 16384,
             buffers: 1024,
+            transports: 8,
         },
         IdShare::WHOLE,
     )
@@ -113,7 +114,7 @@ fn a_midi_event_becomes_a_lane_midi_message() {
 /// no clock and no stamped bundle.
 #[test]
 fn a_play_is_the_lanes_data_and_the_transports_verbs() {
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     let mut ids = ids();
     let steps = playback.play(&sequence(), 1.0, SR, &mut ids).unwrap();
     let sent = addrs(&steps);
@@ -129,7 +130,7 @@ fn a_play_is_the_lanes_data_and_the_transports_verbs() {
     assert_eq!(
         lane_new,
         vec![
-            OscType::Int(NOTES_EDITOR_TRANSPORT),
+            OscType::Int(playback.transport().expect("a play takes one")),
             OscType::Int(group),
             OscType::Int(follows)
         ],
@@ -155,7 +156,7 @@ fn a_play_is_the_lanes_data_and_the_transports_verbs() {
 /// **An edit is the lane's new data**, and nothing before a play.
 #[test]
 fn an_update_sends_the_lane_its_data() {
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     let mut ids = ids();
     assert!(
         playback
@@ -192,7 +193,7 @@ fn a_pass_ends_where_it_is_asked_to() {
             _ => None,
         })
     };
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     playback.play(&sequence(), 0.0, SR, &mut ids()).unwrap();
     assert_eq!(playback.end(), End::Open);
     // Two beats a second at 100 samples a second: the last note, at beat 2
@@ -224,7 +225,7 @@ fn a_pass_ends_where_it_is_asked_to() {
 /// **A stop goes back, and a close frees the lane and the groups.**
 #[test]
 fn a_stop_goes_back_and_a_close_frees_the_lane() {
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     let mut ids = ids();
     playback.play(&sequence(), 0.0, SR, &mut ids).unwrap();
     assert_eq!(
@@ -238,11 +239,88 @@ fn a_stop_goes_back_and_a_close_frees_the_lane() {
     assert!(playback.close(&mut ids).unwrap().is_empty(), "once");
 }
 
+/// **Each playback takes a transport of its own**, above the one addressed by
+/// number, so two sequences play together; a close gives it
+/// back, and with none left the refusal says what to do.
+#[test]
+fn each_playback_takes_a_transport_and_a_close_gives_it_back() {
+    use clausters_core::ids::{FIXED_TRANSPORTS, Space};
+
+    let mut ids = ids();
+    let mut a = NotesPlayback::new();
+    let mut b = NotesPlayback::new();
+    assert_eq!(a.transport(), None, "none before it plays");
+    a.play(&sequence(), 0.0, SR, &mut ids).unwrap();
+    b.play(&sequence(), 0.0, SR, &mut ids).unwrap();
+    let (ta, tb) = (a.transport().unwrap(), b.transport().unwrap());
+    assert_eq!(ta, FIXED_TRANSPORTS as i32);
+    assert_ne!(ta, tb);
+    let on = |steps: &[Step], transport: i32| {
+        steps.iter().all(|step| match step {
+            Step::Send(m) if m.addr.starts_with("/transport_") || m.addr == "/lane_new" => {
+                m.args.first() == Some(&OscType::Int(transport))
+            }
+            _ => true,
+        })
+    };
+    assert!(on(&a.stop(&sequence(), 0.0, SR), ta));
+    assert!(on(&b.stop(&sequence(), 0.0, SR), tb));
+
+    a.close(&mut ids).unwrap();
+    assert_eq!(a.transport(), None);
+    assert_eq!(ids.in_use(Space::Transports), 1);
+    let mut c = NotesPlayback::new();
+    assert_ne!(
+        c.alloc_transport(&mut ids),
+        Ok(tb),
+        "never one that is held"
+    );
+
+    // Eight transports, one of them fixed: seven to take, and two are held.
+    let mut held: Vec<NotesPlayback> = (0..5).map(|_| NotesPlayback::new()).collect();
+    for playback in &mut held {
+        playback.alloc_transport(&mut ids).unwrap();
+    }
+    let mut over = NotesPlayback::new();
+    let refused: Value = serde_json::from_str(&call_json(
+        &mut over,
+        &sequence(),
+        r#"{"verb": "open"}"#,
+        &mut ids,
+    ))
+    .unwrap();
+    assert!(
+        refused["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("--transports")),
+        "{refused}"
+    );
+    let played: Value = serde_json::from_str(&call_json(
+        &mut over,
+        &sequence(),
+        r#"{"verb": "play", "from": 0, "rate": 100}"#,
+        &mut ids,
+    ))
+    .unwrap();
+    assert!(played["error"].is_string(), "and so is a play: {played}");
+
+    // One handed in is the caller's: it is not taken and not given back.
+    let mut fixed = NotesPlayback::on(1);
+    assert_eq!(fixed.alloc_transport(&mut ids), Ok(1));
+    fixed.close(&mut ids).unwrap();
+    assert_eq!(fixed.transport(), Some(1));
+}
+
 /// **A cue locates a stopped transport on the beat's sample** and leaves a
 /// rolling one alone.
 #[test]
 fn a_cue_locates_a_stopped_transport_and_leaves_a_rolling_one() {
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
+    assert!(
+        playback.cue(&sequence(), 3.0, SR).is_empty(),
+        "nothing of it is on the server before it has a transport"
+    );
+    playback.alloc_transport(&mut ids()).unwrap();
     let cued = playback.cue(&sequence(), 3.0, SR);
     assert_eq!(addrs(&cued), ["/transport_locateSample"]);
     // Two beats a second at 100 samples a second: beat 3 is sample 150.
@@ -257,7 +335,7 @@ fn a_cue_locates_a_stopped_transport_and_leaves_a_rolling_one() {
 /// The door answers steps, and names the verbs it has.
 #[test]
 fn the_door_answers_steps() {
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     let mut ids = ids();
     let answer: Value = serde_json::from_str(&call_json(
         &mut playback,
@@ -292,7 +370,7 @@ fn a_pass_over_a_range_ends_there_and_the_loop_switch_loops_it() {
             _ => None,
         })
     };
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     // Two beats a second at 100 samples a second.
     let steps = playback
         .play_pass(&sequence(), 1.0, Some((2.0, 3.0)), false, SR, &mut ids())
@@ -336,7 +414,7 @@ fn the_loop_switch_changes_the_pass_in_progress() {
             _ => None,
         })
     };
-    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let mut playback = NotesPlayback::new();
     assert!(
         playback
             .set_loop(&sequence(), Some((2.0, 3.0)), true, SR)

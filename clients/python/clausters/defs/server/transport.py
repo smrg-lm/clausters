@@ -38,15 +38,43 @@ class ServerTransport:
         `Transport`, the same one every time it is asked for. Its verbs --
         `Transport.play`, `Transport.pause`, `Transport.locate`, ... -- are
         that transport's, and it goes wherever a transport is taken:
-        ``timeline.transport = server.transport_at(1)``. The methods on the
-        server itself address transport 0. An id past the server's
-        ``--transports`` fails when a command is sent, not here."""
+        ``timeline.transport = server.transport_at(n)``. The methods on the
+        server itself address transport 0, and that is the one transport a
+        script names by number on its own: every other is taken by what plays
+        -- a sequence, an audio editor, a GUI host's monitor -- so a number
+        picked by hand may be somebody's. `transport_new` takes a free one;
+        this addresses one already known, an editor's ``transport.id`` say.
+        An id past the server's ``--transports`` fails when a command is
+        sent, not here."""
         server = getattr(self, "_server", self)
         held = server.__dict__.setdefault("_transports", {})
         found = held.get(int(transport))
         if found is None:
             found = held[int(transport)] = Transport(server, int(transport))
         return found
+
+    def transport_new(self) -> "Transport":
+        """**A transport nobody holds, taken from this server's**, as a
+        `Transport`: for a timeline of its own, a group to govern apart from
+        everything else that plays. It is the caller's until `Transport.free`
+        gives it back.
+
+        Raises:
+            RuntimeError: when every transport is taken -- a server has a
+                fixed number of them (``--transports``), and a GUI host
+                sharing the server takes half.
+        """
+        from ... import _native
+
+        server = getattr(self, "_server", self)
+        taken = server.ids.alloc(_native.IdSpaces.TRANSPORTS)
+        if taken is None:
+            raise RuntimeError(
+                "out of transports: every one this client may allocate is in "
+                "use; free one, or boot the server with more (--transports)")
+        transport = server.transport_at(taken)
+        transport._taken = True
+        return transport
 
     def _transport_query(self, timeout):
         """``/transport_query`` for this handle's transport, answered by the
@@ -396,7 +424,8 @@ class _Addressed(ServerTransport):
 class Transport:
     """**One of a server's transports, as an object**: what
     `ServerTransport.transport_at` answers, and what ``play(sequence)``
-    answers for the transport the sequence's lane was loaded on.
+    answers for the transport the sequence took -- one of its own, so two
+    sequences play together, each driven by the object its ``play`` answered.
 
     It is played the way a routine or a timeline is: `play`, `pause`, `stop`,
     `locate`, `loop` and `unloop`, `playing`, and `wait`, which a script calls
@@ -404,6 +433,11 @@ class Transport:
     waits. Its positions are those of **what is loaded on it**: the beats of
     the sequence a ``play(sequence)`` put there, and with nothing loaded, the
     transport's own seconds.
+
+    A sequence keeps its transport until it is freed: `free` releases what
+    sounds, frees its lane and gives the transport back to the server's, which
+    has a fixed number of them (``--transports``). They go with the server's
+    handle when it is closed.
 
     The transport's other commands are here by their own names too: `group`
     and `follow` bind the groups it governs and leads, `fade` sets how a stop
@@ -421,6 +455,9 @@ class Transport:
         #: What is loaded on it and plays through it, when something is: the
         #: playback of a sequence, which speaks its beats.
         self._driver = None
+        #: Whether `ServerTransport.transport_new` took it for a script, whose
+        #: `free` then gives it back.
+        self._taken = False
         self._rate = None
         #: The span and the loop switch with nothing loaded, in seconds.
         self._span = None
@@ -571,6 +608,22 @@ class Transport:
         if end == "contents":
             raise ValueError("a transport with nothing loaded has no contents")
         self._view.transport_end(None if end is None else self._seconds(end))
+
+    def free(self) -> "Transport":
+        """**Free what is loaded on it, and give it back**: the sequence a
+        ``play(sequence)`` put there stops, its notes released, its lane is
+        freed, and the transport goes back to the server's for something else
+        to take -- this object is then a transport with nothing loaded. One
+        `ServerTransport.transport_new` answered goes back the same way. A
+        transport addressed by number has nothing to free."""
+        from ... import _native
+
+        if self._driver is not None:
+            self._driver.free()
+        elif self._taken:
+            self._taken = False
+            self._server.ids.release(_native.IdSpaces.TRANSPORTS, self._id)
+        return self
 
     def wait(self, timeout: "float | None" = None) -> bool:
         """Block until the transport stops -- a pass that ends where its

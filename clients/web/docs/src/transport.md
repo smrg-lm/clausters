@@ -134,14 +134,15 @@ Every position is a sample of the transport; a note is a synth of the def it nam
 
 A server has several transports — 8 unless it was booted with another count (`--transports`, read back as `(await server.queryInfo()).transports`) — and each is independent: its own grid, rolling state, position, loop, end mark, governed group and clock. Two applications on one server, a multitrack and an audio editor say, each play, pause and locate their own nodes without moving the other's.
 
-Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is transport `n` as an object of its own, a `Transport` — the same one every time it is asked for — played the way a routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and `unloop`, `end()` and `setEnd()` (where a pass stops), `playing()`, and a `wait()` a page awaits or not. Its other commands are there by their own names — `group`, `follow`, `fade`, `locateSample`, `laneNew`, `state` — and it goes wherever a transport is taken.
+Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is transport `n` as an object of its own, a `Transport` — the same one every time it is asked for, and the way to address one already known, such as an editor's `transport.id` — played the way a routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and `unloop`, `end()` and `setEnd()` (where a pass stops), `playing()`, and a `wait()` a page awaits or not. Its other commands are there by their own names — `group`, `follow`, `fade`, `locateSample`, `laneNew`, `state` — and it goes wherever a transport is taken.
 
 ```js
 const left = server;                        // transport 0, through the server's own methods
-const right = server.transportAt(1);        // transport 1, as an object
+const right = server.transportNew();        // a free one, taken for this page
 await right.group(otherGroup);              // a group has one transport
-await right.play();                         // rolls transport 1 alone
-timeline.transport = right;                 // a timeline on transport 1
+await right.play();                         // rolls it alone
+timeline.transport = right;                 // a timeline on it
+await right.free();                         // and it goes back to the server's
 ```
 
 Its positions are those of what is loaded on it: with nothing loaded, the transport's own seconds; once `play(sequence)` has put a sequence's lane there, that sequence's beats — `play` answers the `Transport` it loaded, so `transport.locate(4)` is beat 4 of the sequence and `await transport.wait()` resolves when its last note ends.
@@ -154,7 +155,7 @@ await transport.unloop();         // the loop off; the span stays
 await transport.setSpan(null);    // no span: play plays from the cursor
 ```
 
-The applications' transports are the same object. A multitrack editor's `editor.transport` is the one it plays on, in the multitrack's seconds: its `span` is the band an Alt+drag sweeps over the tracks, its loop switch is that window's `L`, and `play`, `pause`, `stop` and `locate` are the transport row's. An audio editor's is the take's, in its seconds, its `span` the range a drag marks. A notes editor's is the notes transport `play(sequence)` answers — the same object — about that editor's sequence and in its beats: asking a roll for it makes its sequence the one the verbs are about, without playing it.
+The applications' transports are the same object. A multitrack editor's `editor.transport` is the one it plays on, in the multitrack's seconds: its `span` is the band an Alt+drag sweeps over the tracks, its loop switch is that window's `L`, and `play`, `pause`, `stop` and `locate` are the transport row's. An audio editor's is the take's, in its seconds, its `span` the range a drag marks. A notes editor's is its sequence's — the same object `play(sequence)` answers for that sequence, in its beats — and asking a roll for it plays nothing.
 
 A node reads the transport that governs it — the nearest governed group above it — so a reader following `transportPos` needs no id of its own: it follows whichever transport its group is bound to, and transport 0 when none is. `transportState()` says which transport it read in its `transport` field.
 
@@ -162,7 +163,9 @@ What must go on running while a transport is stopped and still has to know it �
 
 **A stop can fade.** A declick cannot run after the freeze — on that sample the readers stop producing anything — so `transportFade(samples)` gives a transport a ramp: a stop then rolls on while the ramp falls to zero and freezes when it gets there, so the position rests where the readers stopped reading, and a play rises from zero. What reads the ramp is `transportFade()`, the UGen, in the following group: an output multiplies what the readers wrote by it, and neither edge clicks. With no ramp set — the default — a stop freezes on its own sample.
 
-The applications take transports of their own: a multitrack plays on transport 0, the audio editor on transport 1, and the GUI host's monitor, for a window that draws samples with no application behind it, on transport 2.
+**A transport above 0 is taken, not named.** A multitrack plays on transport 0. Everything else that plays on its own takes one of the rest from the server's: each sequence (`play(sequence)`, a roll), the audio editors of a server, and the GUI host's monitor, for a window that draws samples with no application behind it. So two sequences are two transports and sound together, and a roll's play cursor is its own sequence's. `server.transportNew()` takes one for a page — a timeline of its own, a group to govern apart — and `await transport.free()` gives any of them back: for a sequence it also stops it and frees its lane. A roll gives its sequence's back when the last roll over it closes, unless a page asked for the transport, whose it then is to free.
+
+A server has a fixed number of them, and a GUI host sharing the server takes half of what is above 0: with the default 8, a page alone has seven and a page with a host three. With none left, playing fails and says so; boot the server with more (`--transports 16`).
 
 ## See also
 

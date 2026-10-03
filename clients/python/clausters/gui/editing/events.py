@@ -13,10 +13,12 @@ gesture does to the sequence, the entry it leaves and the corrections it
 answers with. What is here is what a language owns -- the socket, and handing
 the crate the window it is open in.
 
-**It sounds through a playback of its own** (the crate's ``NotesPlayback``): the
-sequence is the data of an event lane on the notes editor's own transport, so
-playing it never moves a multitrack, and the server plays it by the
-transport's position -- a pause, a stop and a locate are the transport's. An
+**It sounds through its sequence's playback** (the crate's ``NotesPlayback``):
+the sequence is the data of an event lane on a transport of its own, so
+playing it never moves a multitrack nor another sequence, and the server plays
+it by the transport's position -- a pause, a stop and a locate are the
+transport's. Every roll over one sequence shares that transport, and its play
+cursor is that sequence's. An
 edit sends the lane its new data, so a note moved ahead of the line is heard
 where it lands, and what is sounding keeps its release. The space bar over the
 window plays and pauses.
@@ -125,14 +127,23 @@ class NotesEditor(Editor):
         """Open the window, with its play cursor drawn from the transport.
 
         The roll anchors the play cursor at 0, and the counter that makes that
-        the sequence's own sample is the position of the transport the notes
-        editor plays on -- stopped or rolling, the line is where the lane is.
-        With no server to play on there is no position, and no line."""
+        the sequence's own sample is the position of the transport its
+        sequence plays on -- stopped or rolling, the line is where the lane is.
+        With no server to play on there is no position, and no line; nor with
+        a server that has no transport left, which is logged, and the roll
+        opens to be edited."""
         window = super().open(host, id)
         if self._host is not None and window is not None:
             try:
-                transport = self._playback.transport_id
+                server = self._resolve_server()
             except RuntimeError:
+                return window
+            try:
+                transport = NotesPlayback.of(server, self.structure).transport_id
+            except RuntimeError as refused:
+                from ...log import log
+
+                log.warning("the roll has no play cursor and cannot be played: %s", refused)
                 return window
             self._host.head_clock(window, "transport", transport)
         return window
@@ -141,19 +152,32 @@ class NotesEditor(Editor):
         """The position cursor was placed at beat ``at``: a stopped transport
         is cued there, so the play cursor goes with it and the next play starts
         from the mark; a rolling pass is left alone."""
-        if self._server is None or self._elsewhere is not None:
+        if self._elsewhere is not None:
             return
-        self._playback.call("cue", self.structure, at=float(at))
+        playback = self._held
+        if playback is not None:
+            playback.cue(float(at))
 
     # ---- playing it ----
 
-    @property
-    def _playback(self) -> NotesPlayback:
+    def _resolve_server(self):
         if self._server is None:
             from ...base.main import main
 
             self._server = main.resolve_server()
-        return NotesPlayback.of(self._server)
+        return self._server
+
+    @property
+    def _playback(self) -> NotesPlayback:
+        """The sequence's playback on the server, made when it has none --
+        which raises when the server has no transport left."""
+        return NotesPlayback.of(self._resolve_server(), self.structure)
+
+    @property
+    def _held(self) -> "NotesPlayback | None":
+        """The sequence's playback when it has one: what a change or a cursor
+        is told to, which is no reason to take a transport."""
+        return NotesPlayback.held(self._server, self.structure)
 
     @property
     def transport(self):
@@ -162,11 +186,12 @@ class NotesEditor(Editor):
         answers, its verbs (``play``, ``pause``, ``stop``, ``locate``,
         ``loop``, ``wait``) and ``span`` about this editor's sequence and in
         its beats -- the span is the band an Alt+drag sweeps on the roll, the
-        loop switch is `L`, and each side reads what the other set. Every
-        sequence on a server shares it: asking for it makes this one the
-        sequence it plays, from the position cursor."""
+        loop switch is `L`, and each side reads what the other set. It is the
+        sequence's own, shared by every roll over it; once a script has asked
+        for it, it is the script's to free (``free()``), and otherwise it goes
+        back to the server when the last roll over the sequence closes."""
         playback = self._playback
-        playback.hold(self.structure, at=float(self.cursor or 0.0), end=self._end)
+        playback.kept = True
         return playback.transport
 
     @property
@@ -182,13 +207,14 @@ class NotesEditor(Editor):
     @end.setter
     def end(self, end) -> None:
         self._end = end
-        if self._server is not None:
-            self._playback.call("end", self.structure, end=end)
+        playback = self._held
+        if playback is not None:
+            playback.set_end(end)
 
     def play(self, beat: "float | None" = None, destination=None, *,
              range=None, looping: bool = False) -> "NotesEditor":
         """**Play the sequence** from ``beat`` -- or from the position cursor,
-        or the start -- on the notes editor's own transport. Returns ``self``.
+        or the start -- on its own transport. Returns ``self``.
 
         It is the audio editor's pass: ``range`` -- ``(start, end)`` in beats,
         a time range a sweep left -- plays from its start to its end, going
@@ -215,8 +241,7 @@ class NotesEditor(Editor):
             played.play(at=start, destination=destination)
             self._elsewhere = played
             return self
-        self._playback.load(self.structure, start, range=range, looping=looping,
-                            end=self._end)
+        self._playback.load(start, range=range, looping=looping, end=self._end)
         return self
 
     def pause(self) -> "NotesEditor":
@@ -224,7 +249,7 @@ class NotesEditor(Editor):
         if self._elsewhere is not None:
             self._elsewhere.pause()
             return self
-        self._playback.call("pause", self.structure)
+        self._playback.call("pause")
         return self
 
     def resume(self) -> "NotesEditor":
@@ -232,7 +257,7 @@ class NotesEditor(Editor):
         if self._elsewhere is not None:
             self._elsewhere.play()
             return self
-        self._playback.call("resume", self.structure)
+        self._playback.call("resume")
         return self
 
     def stop(self) -> "NotesEditor":
@@ -241,19 +266,15 @@ class NotesEditor(Editor):
             self._elsewhere.stop()
             self._elsewhere = None
             return self
-        playback = self._playback
-        playback.call("stop", self.structure, back=float(self.cursor or 0.0))
+        self._playback.call("stop", back=float(self.cursor or 0.0))
         return self
 
     @property
     def playing(self) -> bool:
         """Whether the sequence is sounding, as the engine answers -- a pass
         that ended on its mark stopped without anybody here saying so."""
-        if self._server is None:
-            return False
-        playing = bool(self._playback.state().get("playing"))
-        self._playback.call("setRolling", self.structure, rolling=playing)
-        return playing
+        playback = self._held
+        return playback is not None and playback.playing()
 
     def reflect_step(self) -> None:
         """A history step landed: the window is corrected, and the lane takes
@@ -318,9 +339,35 @@ class NotesEditor(Editor):
     def _update(self) -> None:
         """The sequence changed: when it is what the lane holds, the lane takes
         it again, and the server plays it on from where the position is."""
-        if self._server is None:
+        playback = self._held
+        if playback is not None:
+            playback.update(self._editing.version)
+
+    # ---- giving the transport back ----
+
+    def _closed(self) -> bool:
+        closed = super()._closed()
+        self._release()
+        return closed
+
+    def close(self):
+        """Close this editor's window. **The sequence's transport goes back
+        to the server with the last roll over it**, and what was sounding is
+        released -- unless a script holds the transport (`transport`,
+        ``play(sequence)``), whose it then is to free."""
+        closed = super().close()
+        self._release()
+        return closed
+
+    def _release(self) -> None:
+        """This roll closed: with no other roll over the sequence and no
+        script holding its transport, the playback is freed."""
+        playback = self._held
+        if playback is None or playback.kept:
             return
-        self._playback.update(self.structure, self._editing.version)
+        if any(not roll.closed for roll in playback.rolls() if roll is not self):
+            return
+        playback.free()
 
     # ---- the crate's turns ----
 
@@ -369,22 +416,17 @@ class NotesEditor(Editor):
             else:
                 pass_ = outcome["play"]
                 self.play(range=pass_.get("range"), looping=bool(pass_.get("looping")))
-        if "span" in outcome and self._server is not None \
-                and self._playback.planned is self.structure:
+        playback = self._held
+        if "span" in outcome and playback is not None:
             # A sweep moved the time range: it is the playback's span, so a
             # script reads it, and the other rolls over the sequence draw it.
-            self._playback.set_span(outcome["span"])
-        if outcome.get("loop") is not None and self._server is not None:
+            playback.set_span(outcome["span"])
+        if outcome.get("loop") is not None and playback is not None:
             # `L`: the loop switch -- followed at once by a pass in progress,
             # read by a stopped playback on its next play.
             pass_ = outcome["loop"]
-            playback = self._playback
-            if playback.planned is self.structure:
-                playback.set_span(pass_.get("range"), show=False)
-                playback.set_looping(bool(pass_.get("looping")))
-            else:
-                playback.call("loop", self.structure, range=pass_.get("range"),
-                              loop=bool(pass_.get("looping")))
+            playback.set_span(pass_.get("range"), show=False)
+            playback.set_looping(bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
         return changed
 

@@ -17,6 +17,11 @@ use clausters_document::{Body, Document, Lifetime, Node, NodeId, Opaque, SourceR
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
 
+/// The transport the monitor plays on in these tests: the first one a host
+/// with the whole of the default space takes, above the one addressed by
+/// number.
+const MONITOR: i32 = clausters_core::ids::FIXED_TRANSPORTS as i32;
+
 /// The session's own picture, in miniature: a take drawn **twice** -- as a
 /// clip in a lane, and as the navigable editor under it -- both naming the
 /// one buffer.
@@ -240,17 +245,13 @@ fn the_monitor_plays_a_takes_buffer_and_stops_it() {
     ] {
         assert_eq!(
             one(&sent, addr).args[0],
-            OscType::Int(play::MONITOR_TRANSPORT),
+            OscType::Int(MONITOR),
             "{addr} names the monitor's transport"
         );
     }
     assert_eq!(
         one(&sent, "/transport_end").args,
-        vec![
-            OscType::Int(play::MONITOR_TRANSPORT),
-            OscType::Long(16),
-            OscType::Long(0)
-        ],
+        vec![OscType::Int(MONITOR), OscType::Long(16), OscType::Long(0)],
         "the take's end, and back to the start"
     );
     // A mono take is one reader, of the buffer the widget draws; its pass
@@ -290,7 +291,7 @@ fn the_monitor_draws_the_play_cursor_from_the_transport() {
     assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
     assert_eq!(
         host.head_clock_of(1, Some(50)),
-        HeadClock::Transport(play::MONITOR_TRANSPORT as usize),
+        HeadClock::Transport(MONITOR as usize),
         "the take's view, and nothing else in the host"
     );
     assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
@@ -325,11 +326,7 @@ fn space_plays_from_the_position_cursor_and_stops_back_at_it() {
     let sent = exchange(&mut host, &server);
     assert_eq!(
         one(&sent, "/transport_end").args,
-        vec![
-            OscType::Int(play::MONITOR_TRANSPORT),
-            OscType::Long(16),
-            OscType::Long(4)
-        ],
+        vec![OscType::Int(MONITOR), OscType::Long(16), OscType::Long(4)],
         "the take's end, and back to the mark"
     );
     let locate = one(&sent, "/transport_locateSample");
@@ -363,7 +360,7 @@ fn an_end_the_engine_reached_ends_the_pass_and_a_hosts_stop_does_not() {
             OscType::Long(0),
             OscType::Long(-1),
             OscType::Long(-1),
-            OscType::Int(play::MONITOR_TRANSPORT),
+            OscType::Int(MONITOR),
         ]);
         OscMessage {
             addr: "/transport_query.reply".into(),
@@ -408,16 +405,12 @@ fn l_switches_the_monitors_loop() {
     let sent = exchange(&mut host, &server);
     assert_eq!(
         one(&sent, "/transport_loop").args,
-        vec![
-            OscType::Int(play::MONITOR_TRANSPORT),
-            OscType::Long(0),
-            OscType::Long(16)
-        ],
+        vec![OscType::Int(MONITOR), OscType::Long(0), OscType::Long(16)],
         "the whole take"
     );
     assert_eq!(
         one(&sent, "/transport_end").args,
-        [OscType::Int(play::MONITOR_TRANSPORT)],
+        [OscType::Int(MONITOR)],
         "and no end while it loops"
     );
 
@@ -425,10 +418,7 @@ fn l_switches_the_monitors_loop() {
     // and the pass ends at the take's end, from where it stands.
     g.loop_key(&mut host, &ctx);
     let sent = exchange(&mut host, &server);
-    assert_eq!(
-        one(&sent, "/transport_loop").args,
-        [OscType::Int(play::MONITOR_TRANSPORT)]
-    );
+    assert_eq!(one(&sent, "/transport_loop").args, [OscType::Int(MONITOR)]);
     assert_eq!(
         one(&sent, "/transport_end").args[1],
         OscType::Long(16),
@@ -525,16 +515,12 @@ fn a_span_plays_by_the_transports_loop_and_locate() {
     let sent = exchange(&mut host, &server);
     assert_eq!(
         one(&sent, "/transport_loop").args,
-        vec![
-            OscType::Int(play::MONITOR_TRANSPORT),
-            OscType::Long(4),
-            OscType::Long(12)
-        ],
+        vec![OscType::Int(MONITOR), OscType::Long(4), OscType::Long(12)],
         "half-open, so the span is the selection's own bounds"
     );
     assert_eq!(
         one(&sent, "/transport_end").args,
-        [OscType::Int(play::MONITOR_TRANSPORT)],
+        [OscType::Int(MONITOR)],
         "a loop has no end"
     );
     assert_eq!(

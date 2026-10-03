@@ -13,7 +13,7 @@ use clausters::rosc::OscType;
 use clausters::server::nrtsession::{NrtSession, SessionConfig};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_editing::apply::{Endpoint, Step};
-use clausters_editing::audio_playback::{AUDIO_EDITOR_TRANSPORT, AudioEditorPlayback, Pass};
+use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
 
 const SR: f64 = 48_000.0;
 const BLOCK: usize = 64;
@@ -134,7 +134,7 @@ fn a_pass_is_declicked_and_ends_where_the_take_does() {
     let frames = 40 * BLOCK;
     take(&mut s, frames, 0.5);
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-    let mut playback = AudioEditorPlayback::new(Endpoint::default(), AUDIO_EDITOR_TRANSPORT);
+    let mut playback = AudioEditorPlayback::new(Endpoint::default());
     let steps = playback
         .sync(1, 0, 1, frames as u64, SR, SR, &mut ids)
         .unwrap();
@@ -182,7 +182,7 @@ fn a_stop_is_declicked_and_the_meter_falls() {
     let frames = 400 * BLOCK;
     take(&mut s, frames, 0.5);
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-    let mut playback = AudioEditorPlayback::new(Endpoint::default(), AUDIO_EDITOR_TRANSPORT);
+    let mut playback = AudioEditorPlayback::new(Endpoint::default());
     let steps = playback
         .sync(1, 0, 1, frames as u64, SR, SR, &mut ids)
         .unwrap();

@@ -5442,7 +5442,7 @@ work, where a pending item reads as done.)*
   have the section, with the same tree and `bassLane` names, so what was
   stale was one section in two books.)*
 
-- ⬜ **Two rolls on the shared transport: one roll's line follows the other's
+- ✅ **Two rolls on the shared transport: one roll's line follows the other's
   sequence, and two sequences cannot sound together from a script**
   *(found 2026-10-02 by the user, trying `C58` by hand with two rolls, `a`
   and `b`)*. Every `play(sequence)` and every notes editor plays on one
@@ -5483,6 +5483,49 @@ work, where a pending item reads as done.)*
     unless more than 64 were wanted.
   - Open: whether the shared transport stays with the first fix, or
     `play(sequence)` takes a transport of its own.
+  *(Fixed 2026-10-03, by the second: the user asked for "a transport per
+  play, and ids; with no transports left it fails, saying to raise
+  `--transports`".)*
+  - **Transports are a space of the ids.** `clausters_core::ids::IdSpaces`
+    has a fifth space, `Space::Transports`, sized from the server's
+    `--transports` (`ServerShape::transports`, entry 15 of
+    `/server_query.reply`) and sliced by a client's share like the other
+    four, so a script and a GUI host on one server never take the same one.
+    Running out is `IdError::Exhausted(Space::Transports)`, whose message
+    names the flag.
+  - **A playback takes its transport, and gives it back.** The crate's
+    `NotesPlayback` holds none until its `open` verb or its first play, and
+    its `close` releases it; `NOTES_EDITOR_TRANSPORT` is gone. Each client
+    keeps one playback **per sequence** on a server rather than one per
+    server, so `play(a)` and `play(b)` answer two `Transport` objects and
+    sound together, playing a sequence again answers the transport it has,
+    and a roll's play cursor is its own sequence's -- every roll over one
+    sequence shares that one. The host does the same for the rolls it opens
+    over a session's sequences.
+  - **Who gives it back.** `Transport.free` (new, both clients): the sequence
+    stops, its lane and groups are freed, and the transport returns to the
+    space. A roll gives its sequence's back when the last roll over it
+    closes, unless a script was handed the transport (`play(sequence)`, a
+    roll's `transport`), whose it then is. Closing the server's handle
+    forgets them and tells the server nothing, as for any node it made.
+  - **No number is reserved for an application.** The user then asked
+    whether, with the ids in place, each application still needed a
+    transport of its own by number, as they had (0 the multitrack, 1 the
+    audio editor, 2 the host's monitor, 3 the notes editor). It does not:
+    those numbers existed because nothing allocated, and 1 and 2 were two
+    numbers for one crate playback held by two endpoints. The audio editor's
+    playback and the host's monitor now take theirs as a sequence does, and
+    `AUDIO_EDITOR_TRANSPORT` and `MONITOR_TRANSPORT` are gone. **Transport 0
+    alone stays addressed by number** (`FIXED_TRANSPORTS` is 1): it is what a
+    server's own transport methods and a command with no playback behind it
+    address, and a multitrack plays on it.
+  - **So a script takes one too**: with nothing reserved, a number above 0
+    picked by hand may be somebody's, and `server.transport_new()`
+    (`transportNew`) takes a free one for a timeline or a group of the
+    script's own; `transport_at(n)` addresses one already known.
+  - **Left as it was: the default of 8.** Seven are above 0, so a script
+    alone plays seven things at once and a script with a GUI host three (the
+    host takes four). Raising the server's default is a decision of its own.
 
 - ✅ **A loop asked while stopped was lost, and a script's loop was not the
   roll's** *(found 2026-10-02 by the user, trying `C58` by hand:

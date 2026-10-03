@@ -235,7 +235,8 @@ moving the other's.
 
 Every transport method on a `Server` addresses **transport 0**, the one there
 always was. `server.transport_at(n)` is transport `n` as an object of its own,
-a `Transport` — the same one every time it is asked for — played the way a
+a `Transport` — the same one every time it is asked for, and the way to
+address one already known, such as an editor's `transport.id` — played the way a
 routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and
 `unloop`, `end` (where a pass stops), `playing`, and a `wait()` a script calls
 or not. Its other commands
@@ -244,10 +245,11 @@ are there by their own names — `group`, `follow`, `fade`, `locate_sample`,
 
 ```python
 left = server                          # transport 0, through the server's own methods
-right = server.transport_at(1)         # transport 1, as an object
+right = server.transport_new()         # a free one, taken for this script
 right.group(other_group)               # a group has one transport
-right.play()                           # rolls transport 1 alone
-timeline.transport = right             # a timeline on transport 1
+right.play()                           # rolls it alone
+timeline.transport = right             # a timeline on it
+right.free()                           # and it goes back to the server's
 ```
 
 Its positions are those of what is loaded on it: with nothing loaded, the
@@ -274,9 +276,9 @@ The applications' transports are the same object. A multitrack editor's
 `span` is the band an Alt+drag sweeps over the tracks, its loop switch is that
 window's `L`, and `play`, `pause`, `stop` and `locate` are the transport row's.
 An audio editor's is the take's, in its seconds, its `span` the range a drag
-marks. A notes editor's is the notes transport `play(sequence)` answers — the
-same object — about that editor's sequence and in its beats: asking a roll for
-it makes its sequence the one the verbs are about, without playing it.
+marks. A notes editor's is its sequence's — the same object `play(sequence)`
+answers for that sequence, in its beats — and asking a roll for it plays
+nothing.
 
 A node reads the transport that governs it — the nearest governed group above
 it — so a reader following `transport_pos` needs no id of its own: it follows
@@ -298,9 +300,21 @@ the UGen, in the following group: an output multiplies what the readers wrote
 by it, and neither edge clicks. With no ramp set — the default — a stop freezes
 on its own sample.
 
-The applications take transports of their own: a multitrack plays on
-transport 0, the audio editor on transport 1, and the GUI host's monitor, for
-a window that draws samples with no application behind it, on transport 2.
+**A transport above 0 is taken, not named.** A multitrack plays on transport
+0. Everything else that plays on its own takes one of the rest from the
+server's: each sequence (`play(sequence)`, a roll), the audio editors of a
+server, and the GUI host's monitor, for a window that draws samples with no
+application behind it. So two sequences are two transports and sound together,
+and a roll's play cursor is its own sequence's. `server.transport_new()` takes
+one for a script — a timeline of its own, a group to govern apart — and
+`transport.free()` gives any of them back: for a sequence it also stops it and
+frees its lane. A roll gives its sequence's back when the last roll over it
+closes, unless a script asked for the transport, whose it then is to free.
+
+A server has a fixed number of them, and a GUI host sharing the server takes
+half of what is above 0: with the default 8, a script alone has seven and a
+script with a host three. With none left, playing fails and says so; boot the
+server with more (`ServerOptions(transports=16)`).
 
 ## See also
 

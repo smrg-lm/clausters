@@ -319,7 +319,7 @@ impl JsRegistry {
 
 // ---- the id spaces a client allocates from ----
 //
-// `clausters_core::ids::IdSpaces`: the four spaces sized from the server and
+// `clausters_core::ids::IdSpaces`: the five spaces sized from the server and
 // sliced by a share. The page's allocators and its component pools all stand on
 // this, so the policy -- the outputs at the bottom of the audio space, the
 // GraphDef windows at the top of both bus spaces, the slice a share takes -- is
@@ -348,13 +348,21 @@ impl JsIdSpaces {
         outputs: u32,
         control_buses: u32,
         buffers: u32,
+        transports: u32,
         index: u32,
         of: u32,
     ) -> Result<JsIdSpaces, JsError> {
         let share = clausters_core::ids::IdShare::new(index, of)
             .map_err(|e| JsError::new(&e.to_string()))?;
         Ok(JsIdSpaces(clausters_core::ids::IdSpaces::new(
-            js_shape(max_nodes, audio_buses, outputs, control_buses, buffers),
+            js_shape(
+                max_nodes,
+                audio_buses,
+                outputs,
+                control_buses,
+                buffers,
+                transports,
+            ),
             share,
         )))
     }
@@ -366,6 +374,7 @@ impl JsIdSpaces {
         outputs: u32,
         control_buses: u32,
         buffers: u32,
+        transports: u32,
     ) -> JsIdSpaces {
         JsIdSpaces(clausters_core::ids::IdSpaces::score(js_shape(
             max_nodes,
@@ -373,11 +382,12 @@ impl JsIdSpaces {
             outputs,
             control_buses,
             buffers,
+            transports,
         )))
     }
 
     /// A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
-    /// `"buffers"`); throws when the space is exhausted.
+    /// `"buffers"`, `"transports"`); throws when the space is exhausted.
     pub fn alloc(&mut self, space: &str, width: u32) -> Result<f64, JsError> {
         let space = js_space(space)?;
         self.0
@@ -429,6 +439,7 @@ fn js_shape(
     outputs: u32,
     control_buses: u32,
     buffers: u32,
+    transports: u32,
 ) -> clausters_core::ids::ServerShape {
     clausters_core::ids::ServerShape {
         max_nodes: max_nodes as usize,
@@ -436,6 +447,7 @@ fn js_shape(
         outputs: outputs as usize,
         control_buses: control_buses as usize,
         buffers: buffers as usize,
+        transports: transports as usize,
     }
 }
 
@@ -1726,21 +1738,20 @@ pub struct JsAudioEditorPlayback(clausters_editing::audio_playback::AudioEditorP
 #[wasm_bindgen(js_class = AudioEditorPlayback)]
 impl JsAudioEditorPlayback {
     /// A playback; `chunk` is how many samples one fill carries, and
-    /// `transport` the transport it plays on -- negative for the crate's own.
+    /// `transport` the transport it plays on -- negative for one of its own,
+    /// which it takes from the id spaces with its `open` verb or its first
+    /// sync.
     #[wasm_bindgen(constructor)]
     pub fn new(chunk: usize, transport: i32) -> JsAudioEditorPlayback {
-        use clausters_editing::audio_playback::{AUDIO_EDITOR_TRANSPORT, AudioEditorPlayback};
-        let transport = if transport < 0 {
-            AUDIO_EDITOR_TRANSPORT
-        } else {
-            transport
+        use clausters_editing::audio_playback::AudioEditorPlayback;
+        let endpoint = clausters_editing::apply::Endpoint {
+            chunk: chunk.max(1),
         };
-        JsAudioEditorPlayback(AudioEditorPlayback::new(
-            clausters_editing::apply::Endpoint {
-                chunk: chunk.max(1),
-            },
-            transport,
-        ))
+        JsAudioEditorPlayback(if transport < 0 {
+            AudioEditorPlayback::new(endpoint)
+        } else {
+            AudioEditorPlayback::on(endpoint, transport)
+        })
     }
 
     /// One verb, as JSON: `{"verb": ...}` in, steps or a query's answer out.
@@ -1758,15 +1769,16 @@ pub struct JsNotesPlayback(clausters_editing::notes_playback::NotesPlayback);
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = NotesPlayback)]
 impl JsNotesPlayback {
-    /// A playback on `transport`; negative for the crate's own.
+    /// A playback on `transport`; negative for one of its own, which it takes
+    /// from the id spaces with its `open` verb or its first play.
     #[wasm_bindgen(constructor)]
     pub fn new(transport: i32) -> JsNotesPlayback {
-        use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
-        JsNotesPlayback(NotesPlayback::new(if transport < 0 {
-            NOTES_EDITOR_TRANSPORT
+        use clausters_editing::notes_playback::NotesPlayback;
+        JsNotesPlayback(if transport < 0 {
+            NotesPlayback::new()
         } else {
-            transport
-        }))
+            NotesPlayback::on(transport)
+        })
     }
 
     /// One verb over `sequence`, allocating from `ids`.

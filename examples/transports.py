@@ -7,9 +7,11 @@ two takes at once, one per transport, and moves them separately:
 
 - the **left** channel is a take on transport 0 -- `server.transport_at(0)`,
   the one every transport method on a `Server` addresses;
-- the **right** channel is the same four tones an octave up, on transport 1 --
-  `server.transport_at(1)`. Each is a `Transport`, played as a timeline is:
-  `play`, `pause`, `locate`, `loop`, in its own seconds.
+- the **right** channel is the same four tones an octave up, on a transport
+  taken for it -- `server.transport_new()`, since every transport above 0 is
+  taken by what plays rather than picked by number. Each is a `Transport`,
+  played as a timeline is: `play`, `pause`, `locate`, `loop`, in its own
+  seconds.
 
 Each reader follows its own transport's position (`TransportPos` -> `BufRd`)
 without being told which one: a node reads the transport that governs its
@@ -81,7 +83,7 @@ def main():
 
         # One transport per side, each an object whose verbs are its own.
         left = server.transport_at(0)
-        right = server.transport_at(1)
+        right = server.transport_new()
         print(f"the server has {server.query_info().transports} transports")
 
         # A group per transport, each holding one reader, each bound to its
@@ -120,6 +122,7 @@ def main():
         left.unloop()
         left.pause()
         right.pause()
+        right.free()
         print("done")
 
 
