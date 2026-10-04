@@ -140,6 +140,11 @@ impl Element for Number {
         control::key(&mut self.range, key, input.mods)
     }
 
+    /// The wheel turns it, a notch a step, wherever the pointer is on it.
+    fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+        Some(control::wheel(&mut self.range, delta.1, input.mods))
+    }
+
     fn clone_box(&self) -> Box<dyn Element> {
         Box::new(self.clone())
     }

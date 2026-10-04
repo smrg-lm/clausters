@@ -179,6 +179,28 @@ pub(super) fn key(r: &mut Range, key: &Key, mods: Mods) -> Option<Events> {
     Some(Events::value(OscType::Float(r.value)))
 }
 
+/// **The wheel over a ranged control**: a notch is one step of the arrow keys
+/// (`key`), up for up; Shift takes ten. A touchpad's fraction of a notch moves
+/// it by that fraction, so a slow swipe is fine and a fast one is fast.
+pub(super) fn wheel(r: &mut Range, steps: f64, mods: Mods) -> Events {
+    let span = (r.max - r.min).abs();
+    let unit = if r.step > 0.0 && span > 0.0 {
+        (r.step / span).min(1.0)
+    } else {
+        0.01
+    };
+    let unit = if mods.shift { unit * 10.0 } else { unit };
+    let before = r.value;
+    r.set_fraction((r.fraction() + unit * steps as f32).clamp(0.0, 1.0));
+    // A stepped control rounds a fraction of a notch back to where it was;
+    // a whole notch always moves it.
+    if r.value == before && r.step > 0.0 && steps.abs() >= 1.0 {
+        let dir = if steps > 0.0 { Key::Up } else { Key::Down };
+        return key(r, &dir, Mods::default()).unwrap_or_default();
+    }
+    Events::value(OscType::Float(r.value))
+}
+
 /// The control body of a placement, at the size table and text size the
 /// renderer drew it with -- the geometry every one of these presses measures
 /// against.
@@ -291,6 +313,21 @@ mod tests {
         key(&mut free, &Key::Right, shift);
         assert!((free.value - 0.11).abs() < 1e-6);
         assert_eq!(key(&mut free, &Key::Enter, Mods::default()), None);
+    }
+
+    #[test]
+    fn a_notch_of_the_wheel_is_a_step_of_the_arrows() {
+        let mut r = range(0.0, 127.0, 0.0, 1.0);
+        r.set_fraction(0.5);
+        wheel(&mut r, 1.0, Mods::default());
+        assert_eq!(r.value, 65.0);
+        wheel(&mut r, -2.0, Mods::default());
+        assert_eq!(r.value, 63.0);
+        let mut free = range(0.0, 1.0, 0.0, 0.0);
+        wheel(&mut free, 3.0, Mods::default());
+        assert!((free.value - 0.03).abs() < 1e-6);
+        wheel(&mut free, 1000.0, Mods::default());
+        assert_eq!(free.value, 1.0, "it stops at the end");
     }
 
     #[test]
