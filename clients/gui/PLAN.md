@@ -8023,12 +8023,14 @@ module of its own.
   - **Left:** the session window a standalone host opens is still def 1 with
     its chrome at 2 to 8, in the hand-picked range below every allocated
     id, which is what that range is for.
-- ⬜ **A texture view inside a dialog is drawn under it** *(found 2026-10-04,
-  closing `G40`)*. A dialog's flat drawing goes into the overlay batch, over
+- ✅ **A texture view inside a dialog is drawn under it** *(found 2026-10-04,
+  closing `G40`; fixed the same day)*. A dialog's flat drawing goes into the overlay batch, over
   the window; the heavy views' texture passes run between the two batches, so a
   spectrogram or a shader `canvas` placed in a dialog is drawn under the dialog
   that holds it. A dialog of controls is unaffected. The fix is a pass order
-  for what stands over the window, not a dialog's own.
+  for what stands over the window, not a dialog's own. *(A window now draws
+  three flat batches, with the window's textures after the first and the
+  dialog's after the second; the host's bands and lists are in the third.)*
 - ⬜ **Rows past what a def should carry** *(left open by `G41.1`)*. A
   `table`'s rows ride the def and every `set` of them; a list of tens of
   thousands of rows wants the bulk path, and which size is the line is not

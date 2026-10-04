@@ -22,11 +22,11 @@ use winit::window::WindowId;
 use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
+use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
-use crate::host::paint::Painter;
 // Only the MIDI painting reaches a roll by its navigation group.
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
@@ -53,10 +53,8 @@ pub(super) struct WindowState {
     /// The heavy views' shared pipelines -- one set per window, drawing every
     /// waveform and spectrogram slot above.
     pub(super) renderers: Renderers,
-    pub(super) painter: Painter,
-    /// The second mesh pass: editor chrome drawn over the heavy views
-    /// (selection, playhead, rulers' overlay parts, cursor readout).
-    pub(super) overlay: Painter,
+    /// The flat geometry, in the three batches the heavy views go between.
+    pub(super) batches: Batches,
     pub(super) origin: ClientId,
     /// **Where the pointer is in this window, or `None` when it is not over
     /// it** -- and an `Option` rather than a pair for exactly that reason.
@@ -513,8 +511,7 @@ impl App {
         frame::render(
             &mut ws.gpu,
             &mut ws.renderers,
-            &mut ws.painter,
-            &mut ws.overlay,
+            &mut ws.batches,
             &mut ws.waveforms,
             &mut ws.spectrograms,
             &mut ws.canvases,

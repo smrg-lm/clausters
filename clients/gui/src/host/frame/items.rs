@@ -125,17 +125,6 @@ pub(super) struct Collected {
     pub(super) canvas_frames: Vec<CanvasFrame>,
 }
 
-impl Collected {
-    /// Takes in what another pass collected -- a dialog's, drawn apart from the
-    /// window and still handing its heavy views to the same GPU passes.
-    pub(super) fn absorb(&mut self, other: Collected) {
-        self.timeline_items.extend(other.timeline_items);
-        self.spectral_bodies.extend(other.spectral_bodies);
-        self.ruler_items.extend(other.ruler_items);
-        self.canvas_frames.extend(other.canvas_frames);
-    }
-}
-
 /// One immutable pass over the placed widgets: the flat widgets (labels,
 /// controls, panels, the patcher, the score, the piano) draw straight into
 /// `mesh`; every data-driven widget is copied out of the host tree into the

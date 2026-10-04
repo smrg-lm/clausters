@@ -18,9 +18,8 @@ pub(super) struct WindowRender {
     /// The heavy views' shared pipelines, one set per canvas -- the browser twin
     /// of the native front's per-window set.
     pub(super) renderers: Renderers,
-    pub(super) painter: Painter,
-    /// The editor-chrome overlay pass (selection, playhead, rulers, readout).
-    pub(super) overlay: Painter,
+    /// The flat geometry, in the three batches the heavy views go between.
+    pub(super) batches: Batches,
     pub(super) waveforms: HashMap<SlotAt, WaveformSlot>,
     pub(super) spectrograms: HashMap<SlotAt, SpectrogramSlot>,
     /// One compiled view per `canvas` widget -- the script's own shader, and
@@ -470,8 +469,7 @@ impl WebApp {
         frame::render(
             &mut render.gpu,
             &mut render.renderers,
-            &mut render.painter,
-            &mut render.overlay,
+            &mut render.batches,
             &mut render.waveforms,
             &mut render.spectrograms,
             &mut render.canvases,

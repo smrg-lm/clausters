@@ -12,7 +12,8 @@
 //! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
 //! and draws the whole frame in one pass -- the editor chrome (rulers,
 //! selection, playhead, cursor readout) as a second, *overlay* mesh drawn
-//! after the heavy views so it reads on top of them.
+//! after the heavy views so it reads on top of them, and a third over a
+//! dialog's own heavy views and under nothing ([`Batches`]).
 //!
 //! **Module layout.** This file is the frame's spine: the GPU slots a heavy
 //! view hangs on, the [`FrameInputs`] a front fills, and [`render`] itself --
@@ -757,17 +758,46 @@ pub(crate) fn channel_at(body: Rect, channels: usize, cy: f64) -> usize {
     ((rel * channels as f64) as usize).min(channels.saturating_sub(1))
 }
 
-/// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
-/// (chrome under and over the heavy views), the `waveforms`/`spectrograms`/
-/// `canvases` GPU resources and (read-only) `scopes` histories, plus `inputs`
-/// for the live values. One immutable mesh-building pass over the placed
-/// widgets, then the GPU uploads and the single render pass.
+/// **A window's three flat batches**, in the order the pass draws them, with
+/// the heavy views' texture passes between them.
+///
+/// - `base`: the window's widgets. The window's own textures go over it.
+/// - `over`: what the window's elements draw over their own textures (the
+///   selection, the playhead, the readout) and, with a dialog up, the scrim
+///   and the dialog's flat widgets. The dialog's textures go over it.
+/// - `top`: what the dialog's elements draw over their textures, then the
+///   host's bands and lists, which cover everything.
+///
+/// Two batches were enough while nothing with a texture could stand over the
+/// window: a spectrogram or a shader `canvas` inside a dialog was drawn with
+/// the window's, and so under the dialog that held it.
+pub(crate) struct Batches {
+    pub(crate) base: Painter,
+    pub(crate) over: Painter,
+    pub(crate) top: Painter,
+}
+
+impl Batches {
+    /// The three batches of a surface drawing into `target`.
+    pub(crate) fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
+        Self {
+            base: Painter::new(device, target),
+            over: Painter::new(device, target),
+            top: Painter::new(device, target),
+        }
+    }
+}
+
+/// Renders `tree` into `gpu`'s surface, using the window's `batches` (flat
+/// geometry under, between and over the heavy views), the `waveforms`/
+/// `spectrograms`/`canvases` GPU resources, plus `inputs` for the live values.
+/// One immutable mesh-building pass over the placed widgets, then the GPU
+/// uploads and the single render pass.
 #[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
 pub(crate) fn render(
     gpu: &mut Gpu,
     renderers: &mut Renderers,
-    painter: &mut Painter,
-    overlay: &mut Painter,
+    batches: &mut Batches,
     waveforms: &mut HashMap<SlotAt, WaveformSlot>,
     spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
@@ -795,11 +825,12 @@ pub(crate) fn render(
     let placed = layout::layout_on(area, tree, inputs.metrics);
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
+    let mut top = Mesh::new();
     // **A dialog is the tail of the placements** (`layout` places it last), and
     // it is drawn apart: everything before it is the window as it always was,
     // and the dialog goes over all of that, in the overlay.
     let (base, dialog) = placed.split_at(chrome::modal_start(&placed).unwrap_or(placed.len()));
-    let mut collected = collect_widgets(base, &mut mesh, inputs, theme);
+    let collected = collect_widgets(base, &mut mesh, inputs, theme);
     draw_dividers(&mut mesh, &placed, 0..base.len(), inputs, theme);
 
     draw_timeline_meshes(
@@ -815,11 +846,13 @@ pub(crate) fn render(
     draw_element_overlays(&mut over, base, inputs, theme);
     draw_bars(&mut over, base, inputs, theme);
 
-    if !dialog.is_empty() {
+    let inside = if dialog.is_empty() {
+        None
+    } else {
         // The window behind a dialog is out of reach, and looks it: a scrim
         // over the work area, then the dialog's own picture built on the side
-        // and laid over it -- its flat widgets, its chrome, what its elements
-        // draw over themselves, in that order.
+        // and laid over it -- its flat widgets, then its textures, then what
+        // its elements draw over themselves.
         let mut under = Mesh::new();
         let mut above = Mesh::new();
         let inside = collect_widgets(dialog, &mut under, inputs, theme);
@@ -840,35 +873,135 @@ pub(crate) fn render(
         over.set_ink(Ink::default());
         over.rect(area, with_alpha(theme.background, 0.6));
         over.append(&under);
-        over.append(&above);
-        // What the dialog's elements hand the GPU passes -- a texture view, a
-        // shader canvas -- is drawn with the window's, between the two meshes.
-        collected.absorb(inside);
-    }
+        top.append(&above);
+        Some(inside)
+    };
 
-    // Into the overlay after the tree, so the bar reads over whatever ran up
-    // to its edge.
+    // Into the top batch after the tree, so the bar reads over whatever ran
+    // up to its edge.
     if let Some(band) = bar {
-        draw_status(&mut over, band, inputs, theme);
+        draw_status(&mut top, band, inputs, theme);
     }
     // **The popup layer, last of all**: a list covers what it opened over. It
     // is placed inside `area` -- the window minus the host's bands -- by the
     // function the press hit-tests with, so it never runs under the bar and a
     // row is hit where it is drawn.
     if let Some(band) = menu_bar {
-        draw_menu_bar(&mut over, tree, band, inputs, theme);
+        draw_menu_bar(&mut top, tree, band, inputs, theme);
     }
     if let Some(popups) = inputs.popups {
-        draw_popups(
-            &mut over, popups, tree, &placed, window, area, inputs, theme,
+        draw_popups(&mut top, popups, tree, &placed, window, area, inputs, theme);
+    }
+    for (batch, mesh) in [
+        (&mut batches.base, &mut mesh),
+        (&mut batches.over, &mut over),
+        (&mut batches.top, &mut top),
+    ] {
+        mesh.set_clip(None);
+        mesh.set_ink(Ink::default());
+        batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
+    }
+    for heavy in std::iter::once(&collected).chain(inside.as_ref()) {
+        upload_heavy(
+            gpu,
+            renderers,
+            spectrograms,
+            canvases,
+            heavy,
+            inputs,
+            (fb_w, fb_h),
         );
     }
-    mesh.set_clip(None);
-    over.set_clip(None);
-    mesh.set_ink(Ink::default());
-    over.set_ink(Ink::default());
-    painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
-    overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
+
+    let frame = match gpu.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+        _ => {
+            // No drawable this turn (outdated/timed-out surface -- e.g. the
+            // compositor stopped consuming a covered window's frames):
+            // reconfigure and ask for another redraw, so the frame that was
+            // requested is not silently dropped and the window never shows
+            // stale state once it is presentable again.
+            gpu.surface.configure(&gpu.device, &gpu.config);
+            gpu.window.request_redraw();
+            return;
+        }
+    };
+    let target = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gui frame"),
+        });
+    // Antialiasing is a property of the **attachment**, so it is the whole of
+    // what MSAA changes here: with it on, every pipeline draws into the
+    // multisampled texture and the GPU resolves that into the surface as the
+    // pass ends. One flag, one texture per window, nothing per widget.
+    let (attachment, resolve_target) = match gpu.msaa_view() {
+        Some(ms) => (ms, Some(&target)),
+        None => (&target, None),
+    };
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("gui pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: attachment,
+                resolve_target,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear_color(theme)),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        batches.base.draw(&mut pass);
+        draw_heavy(
+            &mut pass,
+            renderers,
+            spectrograms,
+            canvases,
+            &collected,
+            (fb_w, fb_h),
+        );
+        batches.over.draw(&mut pass);
+        if let Some(inside) = &inside {
+            draw_heavy(
+                &mut pass,
+                renderers,
+                spectrograms,
+                canvases,
+                inside,
+                (fb_w, fb_h),
+            );
+        }
+        batches.top.draw(&mut pass);
+    }
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    // The winit present contract: lets winit attach the compositor frame
+    // callback to this commit, so later `request_redraw`s are delivered (and
+    // throttled) correctly -- without it, Wayland redraw delivery can stall on
+    // an unfocused or covered window until the compositor repaints it anyway.
+    gpu.window.pre_present_notify();
+    frame.present();
+}
+
+/// Pushes this frame's textures and uniforms to the heavy views in
+/// `collected`: the spectrograms framed on their bodies, and the shader canvases
+/// recompiled where their source changed.
+fn upload_heavy(
+    gpu: &Gpu,
+    renderers: &mut Renderers,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &mut HashMap<i32, CanvasView>,
+    collected: &Collected,
+    inputs: &FrameInputs,
+    (fb_w, fb_h): (u32, u32),
+) {
     for item in &collected.timeline_items {
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
@@ -951,126 +1084,77 @@ pub(crate) fn render(
             view.upload(&gpu.queue, res, time, frame.params, framing);
         }
     }
+}
 
-    let frame = match gpu.surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-        _ => {
-            // No drawable this turn (outdated/timed-out surface -- e.g. the
-            // compositor stopped consuming a covered window's frames):
-            // reconfigure and ask for another redraw, so the frame that was
-            // requested is not silently dropped and the window never shows
-            // stale state once it is presentable again.
-            gpu.surface.configure(&gpu.device, &gpu.config);
-            gpu.window.request_redraw();
-            return;
+/// Draws the heavy views in `collected` into `pass`, each through its own
+/// viewport and scissor, and gives the pass back with the whole framebuffer as
+/// both: the flat batch drawn next is in window space, already clipped by its
+/// geometry where it needed to be.
+fn draw_heavy(
+    pass: &mut wgpu::RenderPass<'_>,
+    renderers: &Renderers,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &HashMap<i32, CanvasView>,
+    collected: &Collected,
+    (fb_w, fb_h): (u32, u32),
+) {
+    for item in &collected.timeline_items {
+        // The body the element stated when it described its frame: one
+        // rectangle, so the picture and the chrome around it agree.
+        let body = item.body;
+        if body.w < 1.0 || body.h < 1.0 {
+            continue;
         }
-    };
-    let target = frame
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("gui frame"),
-        });
-    // Antialiasing is a property of the **attachment**, so it is the whole of
-    // what MSAA changes here: with it on, every pipeline draws into the
-    // multisampled texture and the GPU resolves that into the surface as the
-    // pass ends. One flag, one texture per window, nothing per widget.
-    let (attachment, resolve_target) = match gpu.msaa_view() {
-        Some(ms) => (ms, Some(&target)),
-        None => (&target, None),
-    };
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("gui pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: attachment,
-                resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear_color(theme)),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        painter.draw(&mut pass);
-        for item in &collected.timeline_items {
-            // The body the element stated when it described its frame: one
-            // rectangle, so the picture and the chrome around it agree.
-            let body = item.body;
-            if body.w < 1.0 || body.h < 1.0 {
-                continue;
-            }
-            if !apply_scissor(&mut pass, item.clip, fb_w, fb_h) {
-                continue;
-            }
-            if !item.look.layers.has(Paint::Spectrogram) {
-                continue;
-            }
-            let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
-                continue;
-            };
-            let channels = slot.views.len();
-            let rows = if item.look.overlay { 1 } else { channels };
-            for (ch, view) in slot.views.iter().enumerate() {
-                let row = channel_rect(body, rows, ch.min(rows - 1));
-                let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
-                if w >= 1.0 && h >= 1.0 {
-                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                    view.draw(&mut pass, renderers);
-                }
-            }
+        if !apply_scissor(pass, item.clip, fb_w, fb_h) {
+            continue;
         }
-        for item in &collected.spectral_bodies {
-            let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
-                continue;
-            };
-            if item.rect.w < 1.0
-                || item.rect.h < 1.0
-                || !apply_scissor(&mut pass, item.clip, fb_w, fb_h)
-            {
-                continue;
-            }
-            let channels = slot.views.len();
-            for (ch, view) in slot.views.iter().enumerate() {
-                let row = channel_rect(item.rect, channels, ch);
-                let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
-                if w >= 1.0 && h >= 1.0 {
-                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                    view.draw(&mut pass, renderers);
-                }
-            }
+        if !item.look.layers.has(Paint::Spectrogram) {
+            continue;
         }
-        for frame in &collected.canvas_frames {
-            if frame.body.w >= 1.0
-                && frame.body.h >= 1.0
-                && let Some(view) = canvases.get(&frame.id)
-                && apply_scissor(&mut pass, frame.clip, fb_w, fb_h)
-            {
-                let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
+        let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
+            continue;
+        };
+        let channels = slot.views.len();
+        let rows = if item.look.overlay { 1 } else { channels };
+        for (ch, view) in slot.views.iter().enumerate() {
+            let row = channel_rect(body, rows, ch.min(rows - 1));
+            let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
+            if w >= 1.0 && h >= 1.0 {
                 pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                view.draw(&mut pass);
+                view.draw(pass, renderers);
             }
         }
-        // The editor chrome reads over the heavy views: reset the viewport
-        // (and the scissor) to the full framebuffer first (the overlay mesh is
-        // in window space, already geometry-clipped where it needed to be).
-        pass.set_viewport(0.0, 0.0, fb_w as f32, fb_h as f32, 0.0, 1.0);
-        pass.set_scissor_rect(0, 0, fb_w, fb_h);
-        overlay.draw(&mut pass);
     }
-    gpu.queue.submit(std::iter::once(encoder.finish()));
-    // The winit present contract: lets winit attach the compositor frame
-    // callback to this commit, so later `request_redraw`s are delivered (and
-    // throttled) correctly -- without it, Wayland redraw delivery can stall on
-    // an unfocused or covered window until the compositor repaints it anyway.
-    gpu.window.pre_present_notify();
-    frame.present();
+    for item in &collected.spectral_bodies {
+        let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
+            continue;
+        };
+        if item.rect.w < 1.0 || item.rect.h < 1.0 || !apply_scissor(pass, item.clip, fb_w, fb_h) {
+            continue;
+        }
+        let channels = slot.views.len();
+        for (ch, view) in slot.views.iter().enumerate() {
+            let row = channel_rect(item.rect, channels, ch);
+            let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
+            if w >= 1.0 && h >= 1.0 {
+                pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                view.draw(pass, renderers);
+            }
+        }
+    }
+    for frame in &collected.canvas_frames {
+        if frame.body.w >= 1.0
+            && frame.body.h >= 1.0
+            && let Some(view) = canvases.get(&frame.id)
+            && apply_scissor(pass, frame.clip, fb_w, fb_h)
+        {
+            let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
+            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+            view.draw(pass);
+        }
+    }
+    pass.set_viewport(0.0, 0.0, fb_w as f32, fb_h as f32, 0.0, 1.0);
+    pass.set_scissor_rect(0, 0, fb_w, fb_h);
 }
 
 /// Applies a placed widget's clip as the pass scissor (the full framebuffer

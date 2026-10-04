@@ -45,10 +45,10 @@ use crate::view::Renderers;
 use crate::waveform::WaveformData;
 
 use super::fetch::BufferFetches;
-use super::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
+use super::frame::{self, Batches, SlotAt, SpectrogramSlot, WaveformSlot};
 use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
-use super::paint::Painter;
+
 use super::widget::Widget;
 use super::widget::element::{Live, Loaded, SlotKind};
 use super::{BusSource, ClientId, Host, HostEffect, ServerLink};
@@ -690,8 +690,7 @@ impl WebApp {
                 };
                 gpu.resize(w, h);
                 let renderers = Renderers::new(&gpu.device, gpu.target());
-                let painter = Painter::new(&gpu.device, gpu.target());
-                let overlay = Painter::new(&gpu.device, gpu.target());
+                let batches = Batches::new(&gpu.device, gpu.target());
                 log(&format!(
                     "def {def_id}: GPU device ready; surface {}x{}",
                     gpu.config.width, gpu.config.height
@@ -699,8 +698,7 @@ impl WebApp {
                 slot.render = Some(WindowRender {
                     gpu: *gpu,
                     renderers,
-                    painter,
-                    overlay,
+                    batches,
                     waveforms: HashMap::new(),
                     spectrograms: HashMap::new(),
                     canvases: HashMap::new(),

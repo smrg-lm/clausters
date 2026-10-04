@@ -16,8 +16,8 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::bulk::MmapLoader;
 use crate::host::elements::signal;
+use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
-use crate::host::paint::Painter;
 use crate::host::widget::element::SlotKey;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};
 use crate::host::widget::{Widget, WidgetKind};
@@ -87,7 +87,7 @@ impl App {
 
         let held = self.windows.remove(&id);
         let opened = held.is_some();
-        let (gpu, renderers, painter, overlay, mut state) = match held {
+        let (gpu, renderers, batches, mut state) = match held {
             Some(ws) => {
                 ws.gpu.window.set_title(&title);
                 ws.gpu.window.request_redraw();
@@ -101,7 +101,7 @@ impl App {
                     ws.gestures,
                     ws.histories,
                 );
-                (ws.gpu, ws.renderers, ws.painter, ws.overlay, Some(carried))
+                (ws.gpu, ws.renderers, ws.batches, Some(carried))
             }
             None => {
                 let attrs = Window::default_attributes()
@@ -133,15 +133,14 @@ impl App {
                 // The window's shared pipelines come first: a spectrogram slot
                 // binds its textures against their layout.
                 let renderers = Renderers::new(&gpu.device, gpu.target());
-                let painter = Painter::new(&gpu.device, gpu.target());
-                let overlay = Painter::new(&gpu.device, gpu.target());
+                let batches = Batches::new(&gpu.device, gpu.target());
                 self.by_winit.insert(winit_id, id);
                 // The scale is in the line because it is the one thing about a
                 // window nobody can read off a screenshot: a desktop that
                 // ignores what was asked of it (an X11-only override under
                 // Wayland, say) looks exactly like a host that ignored it.
                 info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
-                (gpu, renderers, painter, overlay, None)
+                (gpu, renderers, batches, None)
             }
         };
 
@@ -172,8 +171,7 @@ impl App {
                 spectrograms,
                 canvases,
                 renderers,
-                painter,
-                overlay,
+                batches,
                 origin,
                 cursor,
                 shift,
