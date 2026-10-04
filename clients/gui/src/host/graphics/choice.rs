@@ -281,11 +281,17 @@ pub fn draw(
             mesh.rect(body, theme.field);
             for (part, r) in &parts {
                 let Part::Option(i) = *part else { continue };
-                if i == index {
-                    mesh.rect(*r, theme.accent_dim);
+                let fill = if i == index {
+                    Some(theme.accent_dim)
                 } else if hover == Some(*part) {
-                    mesh.rect(*r, theme.hover);
+                    Some(theme.hover)
+                } else {
+                    None
+                };
+                if let Some(fill) = fill {
+                    mesh.rect(*r, fill);
                 }
+                let ink = fill.map_or(theme.text, |f| theme.text_on(f));
                 font::text_ellipsis(
                     mesh,
                     &options[i],
@@ -293,7 +299,7 @@ pub fn draw(
                     ty(*r),
                     (r.w - 2.0 * m.pad).max(0.0),
                     size,
-                    theme.text,
+                    ink,
                 );
             }
         }
@@ -301,11 +307,17 @@ pub fn draw(
             mesh.rect(body, theme.field);
             for (part, r) in &parts {
                 let Part::Option(i) = *part else { continue };
-                if i == index {
-                    mesh.rect(*r, theme.accent_dim);
+                let fill = if i == index {
+                    Some(theme.accent_dim)
                 } else if hover == Some(*part) {
-                    mesh.rect(*r, theme.hover);
+                    Some(theme.hover)
+                } else {
+                    None
+                };
+                if let Some(fill) = fill {
+                    mesh.rect(*r, fill);
                 }
+                let ink = fill.map_or(theme.text, |f| theme.text_on(f));
                 if i > 0 {
                     mesh.rect(Rect::new(r.x, r.y, m.divider_w, r.h), theme.separator);
                 }
@@ -316,7 +328,7 @@ pub fn draw(
                     ty(*r),
                     (r.w - 2.0 * m.pad).max(0.0),
                     size,
-                    theme.text,
+                    ink,
                 );
             }
             mesh.border(body, m.divider_w, theme.separator);

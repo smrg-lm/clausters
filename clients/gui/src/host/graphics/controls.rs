@@ -387,19 +387,21 @@ pub fn button(
     // the full cell is also its hit area, so drawing and click now agree. Without
     // this the box shrank to the text height inside a control bar and floated in
     // dead space.
-    match (look.flat, look.active, look.hovered) {
-        (_, true, _) => mesh.rect(rect, theme.hilite),
+    let fill = match (look.flat, look.active, look.hovered) {
+        (_, true, _) => Some(theme.hilite),
         // Flat and at rest it draws no box at all: only what it says.
-        (true, false, true) => mesh.rect(rect, theme.hover),
-        (true, false, false) => {}
-        (false, false, hovered) => {
-            mesh.rect(rect, theme.accent_dim);
-            if hovered {
-                border(mesh, rect, m.divider_w, theme.hilite);
-            }
-        }
+        (true, false, true) => Some(theme.hover),
+        (true, false, false) => None,
+        (false, false, _) => Some(theme.accent_dim),
+    };
+    if let Some(fill) = fill {
+        mesh.rect(rect, fill);
     }
-    font::text_centered(mesh, &button_text(label, icon), rect, size, theme.text);
+    if !look.flat && !look.active && look.hovered {
+        border(mesh, rect, m.divider_w, theme.hilite);
+    }
+    let ink = fill.map_or(theme.text, |f| theme.text_on(f));
+    font::text_centered(mesh, &button_text(label, icon), rect, size, ink);
 }
 
 /// How a toggle is drawn.

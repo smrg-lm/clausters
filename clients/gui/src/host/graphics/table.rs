@@ -315,11 +315,17 @@ pub fn draw(d: &mut Draw, g: &Geometry, look: &Look) {
         let i = look.shown[k];
         let row = &look.rows[i];
         let r = g.row(k, look.scroll);
-        if look.selected.contains(&i) {
-            mesh.rect(r, theme.accent_dim);
+        let fill = if look.selected.contains(&i) {
+            Some(theme.accent_dim)
         } else if look.hover == Some(i) {
-            mesh.rect(r, theme.hover);
+            Some(theme.hover)
+        } else {
+            None
+        };
+        if let Some(fill) = fill {
+            mesh.rect(r, fill);
         }
+        let ink = fill.map_or(theme.text, |f| theme.text_on(f));
         for (c, (x, w)) in g.columns.iter().enumerate() {
             let mut left = *x + m.pad;
             // The first cell carries the tree: the depth, and a branch's mark.
@@ -350,7 +356,7 @@ pub fn draw(d: &mut Draw, g: &Geometry, look: &Look) {
                 ty(r),
                 (*x + *w - m.pad - left).max(0.0),
                 size,
-                theme.text,
+                ink,
             );
         }
     }

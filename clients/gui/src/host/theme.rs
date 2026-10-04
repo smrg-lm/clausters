@@ -405,6 +405,44 @@ impl Theme {
     }
 }
 
+impl Theme {
+    /// **The text color that reads on `fill`**: the theme's `text`, unless it
+    /// is too close to the fill to read (a contrast under 3:1, the floor for
+    /// large text) and the `background` reads better there.
+    ///
+    /// A fill that carries a state (a pressed button, a chosen option, a
+    /// selected row) is an accent role, and a theme is free to make it light:
+    /// light text on a light accent is a label nobody can read. So text over a
+    /// fill asks here instead of naming `text`.
+    pub fn text_on(&self, fill: Color) -> Color {
+        let on_text = contrast(self.text, fill);
+        let on_back = contrast(self.background, fill);
+        if on_text >= 3.0 || on_text >= on_back {
+            self.text
+        } else {
+            self.background
+        }
+    }
+}
+
+/// The relative luminance of an sRGB colour (alpha ignored).
+fn luminance(c: Color) -> f32 {
+    let lin = |v: f32| {
+        if v <= 0.040_45 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+}
+
+/// The contrast ratio of two colours, from 1 (the same) to 21.
+fn contrast(a: Color, b: Color) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
 /// `a` taken `k` of the way toward `b`, alpha included.
 fn mix(a: Color, b: Color, k: f32) -> Color {
     [
@@ -466,6 +504,18 @@ pub fn to_hex(c: Color) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_on_a_light_fill_turns_dark_and_on_a_dark_one_stays_light() {
+        let t = Theme::default();
+        assert_eq!(t.text_on(t.background), t.text);
+        assert_eq!(
+            t.text_on([1.0, 0.85, 0.55, 1.0]),
+            t.background,
+            "light amber"
+        );
+        assert_eq!(t.text_on(t.accent_dim), t.text);
+    }
 
     #[test]
     fn hex_round_trips() {
