@@ -242,16 +242,23 @@ impl Element for Text {
                     }
                 }
                 'a' => textedit::select_all(&self.value, &mut self.caret),
-                // Another Ctrl combo: consumed by the field but inert, so it
-                // cannot fall through and run a view's shortcut behind it.
-                _ => {}
+                // **Undo and redo are the field's while it is typed in**, as
+                // in every text field -- this one keeps no history, so they
+                // are consumed and inert rather than undoing the document
+                // behind it in the middle of a word.
+                'z' | 'y' => {}
+                // Any other chord is not editing, so it is the window's: a
+                // field holding the focus does not take Ctrl+S or Ctrl+O away
+                // from the program, as no platform's field does.
+                _ => return None,
             },
-            // A plain (or Alt-less) printable char inserts; Alt combos are inert.
+            // A plain printable char inserts; an Alt chord is a command, the
+            // key table's.
             Key::Char(c) if !mods.alt => {
                 changed =
                     textedit::insert(&mut self.value, &mut self.caret, c.encode_utf8(&mut [0; 4]));
             }
-            Key::Char(_) => {}
+            Key::Char(_) => return None,
             Key::Backspace if mods.ctrl => {
                 changed = textedit::backspace_word(&mut self.value, &mut self.caret)
             }

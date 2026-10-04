@@ -140,19 +140,32 @@ impl Gestures {
         pointer: Option<(f64, f64)>,
         clipboard: &mut Clip,
     ) -> Option<Vec<GestureEffect>> {
-        if let Some(out) = self.key(host, ctx, key.clone(), clipboard) {
-            return Some(out);
-        }
         let mods = Mods {
             shift: ctx.shift,
             ctrl: ctx.ctrl,
             alt: ctx.alt,
         };
+        // **A command chord goes through an open menu**: the menu closes and
+        // the command runs, as a key equivalent does during a platform's menu
+        // tracking. Only a chord is -- Ctrl or Alt held, or a function key --
+        // since a bare letter, the arrows, Enter and Escape are the open
+        // list's to walk, pick and dismiss with.
+        let mut out = Vec::new();
+        let command = mods.ctrl || mods.alt || matches!(key, Key::F(_));
+        if command && host.popup(ctx.def_id).is_some() && host.keys.lookup(&key, mods).is_some() {
+            host.close_popup(ctx.def_id);
+            out.push(GestureEffect::Redraw(ctx.def_id));
+        }
+        if let Some(more) = self.key(host, ctx, key.clone(), clipboard) {
+            out.extend(more);
+            return Some(out);
+        }
         let Some(verb) = host.keys.lookup(&key, mods).map(str::to_string) else {
             diag::note!(host, ctx.def_id, "key", "key {key:?}: bound to nothing");
             return None;
         };
-        Some(self.perform(host, ctx, &verb, pointer, clipboard))
+        out.extend(self.perform(host, ctx, &verb, pointer, clipboard));
+        Some(out)
     }
 
     /// **Performs the verb `name`**, offered in the order a key reaches the

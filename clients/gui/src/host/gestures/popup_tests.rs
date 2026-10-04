@@ -347,6 +347,78 @@ fn a_key_bound_to_a_bar_entry_reports_its_pick() {
     );
 }
 
+/// **A command chord goes through an open menu**: the list closes and the
+/// command runs, as a key equivalent does during a platform's menu tracking --
+/// while a bare letter stays the open list's.
+#[test]
+fn a_command_chord_closes_an_open_menu_and_runs() {
+    let mut host = host_from(BAR);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let mut clip = crate::host::clipboard::Clip::default();
+    host.keys.bind("open", &["Ctrl+O"]);
+    host.keys.bind("help", &["H"]);
+    let at = bar_title(&host, &ctx, 1);
+    click(&mut g, &mut host, &ctx, at);
+    assert!(host.popup(1).is_some(), "View is open");
+    // A bare letter bound to a verb is still the list's, and does nothing.
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('h'), None, &mut clip)
+        .expect("the open list takes it");
+    assert!(emitted(&effects, 1).is_empty());
+    assert!(host.popup(1).is_some());
+    ctx.ctrl = true;
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .expect("consumed");
+    assert!(host.popup(1).is_none(), "the list closed");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![
+            OscType::String("menu".into()),
+            OscType::String("open".into())
+        ]],
+        "and File > Open ran, from another menu"
+    );
+}
+
+/// **A field keeps its editing chords and lets the program's through**, as
+/// every platform's text field does: Ctrl+V pastes into it, Ctrl+O is the
+/// window's.
+#[test]
+fn a_focused_field_lets_a_command_chord_through() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col",
+        "menu":[{"label":"File","menu":[{"label":"Open","verb":"open"}]}],
+        "children":[{"id":5,"type":"text","h":32}]}"#,
+    );
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let mut clip = crate::host::clipboard::Clip::default();
+    host.keys.bind("open", &["Ctrl+O"]);
+    g.press_key(&mut host, &ctx, Key::Tab, None, &mut clip);
+    assert_eq!(host.focused(), Some((1, 5)));
+    ctx.ctrl = true;
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .expect("consumed");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![
+            OscType::String("menu".into()),
+            OscType::String("open".into())
+        ]]
+    );
+    // Ctrl+Z is the field's while it is typed in, even with nothing to undo.
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('z'), None, &mut clip)
+        .expect("the field took it");
+    assert!(
+        emitted(&effects, 1).is_empty(),
+        "no document undo: {effects:?}"
+    );
+}
+
 /// **A window with no chrome still has commands**: a verb the host does not
 /// perform and no menu names is reported bare, from the window.
 #[test]
