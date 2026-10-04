@@ -99,6 +99,7 @@ pub mod structures;
 // primitive, one face, and the two role tables (no paint site names an RGBA, no
 // layout site names a number).
 pub mod font;
+pub mod keymap;
 pub mod metrics;
 pub mod paint;
 pub mod theme;
@@ -596,6 +597,15 @@ pub const GUI_THEME: &str = "/gui_theme";
 /// the reserved `scale` key regenerating the whole set at a density. Same
 /// reasoning, same shape, same absence before this verb.
 pub const GUI_METRICS: &str = "/gui_metrics";
+/// `/gui_keys <json>` -- which chord performs which verb in this **host**,
+/// handed over after launch.
+///
+/// The key table's third level, after the config's `[gui.keys]` and a
+/// `--keys <file>`: a partial `{"verb": "chord" | ["chord", ...]}` object
+/// overlaying the table, `[]` unbinding a verb. A page has no file, so this is
+/// how a tab sets its keys -- and how a script gives its application's verbs
+/// a key without the user editing anything.
+pub const GUI_KEYS: &str = "/gui_keys";
 /// `/gui_headClock <"device"|"transport">` -- which of the engine's counters every
 /// playhead in this **host** is drawn from.
 ///
@@ -789,6 +799,10 @@ pub struct Host {
     /// changing this table once windows exist means calling
     /// [`refresh_metrics`](Self::refresh_metrics) after it.
     pub metrics: metrics::Metrics,
+    /// The host's key table -- which chord performs which verb, one per host
+    /// like the theme (see [`keymap`]). Read by the one key dispatch both
+    /// fronts call, and by a menu showing an entry's chord.
+    pub keys: keymap::Keymap,
     /// The antialiasing every window this host opens is drawn with: the MSAA
     /// sample count of its render pass (`1` = none, the default). Like
     /// [`theme`](Self::theme) and [`metrics`](Self::metrics) it is one setting
@@ -828,7 +842,7 @@ pub struct Host {
     /// (or freeing the widget) clears it, and Tab walks the window's ring. While
     /// set, a key goes to that widget's
     /// [`Element::key`](widget::Element::key) and only falls through to the
-    /// front's own shortcuts when the element does not answer it.
+    /// key table when the element does not answer it.
     focused: Option<(i32, i32)>,
     /// The counter a playhead is drawn from where nothing names one: the
     /// launch-time `--clock`. See [`HeadClock`].
@@ -896,6 +910,7 @@ impl Host {
             exchange: instance::Exchange::default(),
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
+            keys: keymap::Keymap::default(),
             msaa: 1,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),

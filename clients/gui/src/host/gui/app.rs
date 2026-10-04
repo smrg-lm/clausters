@@ -23,7 +23,7 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::{ClipVerb, Gestures, Wheel, WheelDelta};
+use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::paint::Painter;
@@ -32,7 +32,7 @@ use crate::host::paint::Painter;
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
-use crate::host::winit_keys::{is_space, to_key};
+use crate::host::winit_keys::to_key;
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, Host, HostEffect};
 use crate::view::Renderers;
@@ -892,97 +892,13 @@ impl ApplicationHandler<UserEvent> for App {
                 );
                 // A key takes a tip down, whoever ends up answering it.
                 self.key_began(def_id);
-                // The focus consumes the key first -- Tab walks the ring, and a
-                // focused element edits (typing, caret motion, cut/copy/paste).
-                // Only what nothing there answered reaches the global shortcuts
-                // below, which are addressed to what is under the cursor.
-                if let Some(k) = to_key(&pressed)
-                    && self.key_input(def_id, k)
-                {
-                    tracing::debug!("key: consumed by the focus");
-                    return;
-                }
-                // ...then the element **under the cursor**, which is where a
-                // block operation is addressed: a selection is already where
-                // the pointer has been. Only what nothing there answered
-                // reaches the window's own shortcuts.
-                if let Some(k) = to_key(&pressed)
-                    && self.key_at_cursor(def_id, k)
-                {
-                    tracing::debug!("key: consumed by the element under the cursor");
-                    return;
-                }
-                tracing::debug!("key: reached the window's own shortcuts");
-                match pressed {
-                    Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
-                    // Undo and redo are the window's, not a widget's: they are
-                    // addressed to the document behind it rather than to
-                    // whatever is under the cursor. Ctrl+Shift+Z redoes, which
-                    // is the spelling that works on a keyboard with no Y where
-                    // an English one has one.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("z") && self.ctrl(def_id) => {
-                        self.history(def_id, self.shift(def_id))
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("y") && self.ctrl(def_id) => {
-                        self.history(def_id, true)
-                    }
-                    // Saving is the window's too, and for the same reason:
-                    // what is saved is the document behind it, not whatever is
-                    // under the cursor. A host that owns nothing emits it and a
-                    // script may answer; one that owns a session writes it.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("s") && self.ctrl(def_id) => {
-                        self.window_verb(def_id, "save")
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
-                        self.reset_timelines(def_id)
-                    }
-                    // The transport: the space bar rolls the multitrack, or plays
-                    // what the cursor is over and stops what is playing. Last
-                    // among the window's own keys for the usual reason -- a
-                    // focused field types a space, and a widget that wanted it
-                    // answered already.
-                    //
-                    // **Both spellings, because a space is a typed character.**
-                    // `key_pressed` hands back what the key *produced* when no
-                    // chord is held, and a space produces `" "` -- so an arm
-                    // matching only `NamedKey::Space` never fired at all, on
-                    // any keyboard, and the take monitor had no key.
-                    ref key if is_space(key) => {
-                        self.play_key(def_id);
-                    }
-                    // `L` switches the take monitor's loop.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("l") && !self.ctrl(def_id) => {
-                        self.loop_key(def_id);
-                    }
-                    // Home and End put the position cursor at the start or the
-                    // end of what is under the pointer: a take's samples, a
-                    // roll's notes, a multitrack's regions.
-                    Key::Named(NamedKey::Home) => {
-                        self.ends_key(def_id, false);
-                    }
-                    Key::Named(NamedKey::End) => {
-                        self.ends_key(def_id, true);
-                    }
-                    // The clipboard verbs over the view under the cursor. They
-                    // are last, so a focused field and a roll's own block keys
-                    // both answer first: this is what nothing else wanted.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("c") && self.ctrl(def_id) => {
-                        self.clipboard_key(def_id, ClipVerb::Copy);
-                    }
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("x") && self.ctrl(def_id) => {
-                        self.clipboard_key(def_id, ClipVerb::Cut);
-                    }
-                    // Ctrl+Shift+V pastes by adding: the block is mixed onto
-                    // what is under it rather than put in.
-                    Key::Character(ref c) if c.eq_ignore_ascii_case("v") && self.ctrl(def_id) => {
-                        let verb = if self.shift(def_id) {
-                            ClipVerb::Mix
-                        } else {
-                            ClipVerb::Paste
-                        };
-                        self.clipboard_key(def_id, verb);
-                    }
-                    _ => {}
+                // **One dispatch, both fronts**: the focus, the key table and
+                // the verbs it names are the gesture machine's. What is left
+                // here is what only a desktop window has -- Escape with nothing
+                // open closes it.
+                let consumed = to_key(&pressed).is_some_and(|k| self.press_key(def_id, k));
+                if !consumed && matches!(pressed, Key::Named(NamedKey::Escape)) {
+                    self.user_close(def_id, event_loop);
                 }
             }
             WindowEvent::RedrawRequested => self.render(def_id),

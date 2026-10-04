@@ -278,8 +278,9 @@ impl Element for Text {
             // A single-line field ignores Enter: the value has already been
             // delivered, so there is no send for it to trigger.
             Key::Enter => {}
-            // The ring's, never the field's.
-            Key::Tab | Key::Escape => return None,
+            // The ring's, never the field's -- and a function key edits
+            // nothing, so it goes on to the key table.
+            Key::Tab | Key::Escape | Key::F(_) => return None,
         }
         // Consumed either way -- the caret moved, which is a repaint -- and a
         // content change also delivers the new value, ungated.

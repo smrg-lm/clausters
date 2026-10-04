@@ -11,7 +11,7 @@
 use super::*;
 use crate::host::gestures::{Wheel, WheelDelta};
 use crate::host::widget::element::SlotKey;
-use crate::host::winit_keys::{is_space, to_key};
+use crate::host::winit_keys::to_key;
 
 impl WebApp {
     /// **Hands the loop what the host did on its own** -- a window it opened
@@ -265,215 +265,38 @@ impl WebApp {
         self.apply_gesture_effects(effects);
     }
 
-    /// Keyboard: the same two addressees the desktop front has -- the window's
-    /// focus, then the element under the cursor -- and the same window shortcuts
-    /// after them (`r` resets every axis, `e` and `j` split and join the clip
-    /// under the cursor). Escape is missing on purpose: it closes an OS window
-    /// there and has no window to close here.
+    /// Keyboard: the **one dispatch** the desktop front calls too
+    /// ([`Gestures::press_key`](crate::host::gestures::Gestures::press_key)) --
+    /// the focus, the key table and the verb it names. Escape with nothing open
+    /// is the one key that does less here: it closes an OS window there and has
+    /// no window to close in a page.
     pub(super) fn on_key(&mut self, def: i32, key: &Key) {
-        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
-            // No pointer has been over the canvas yet, so nothing is focused and
-            // nothing is under it: the window's own keys are all that is left.
-            if is_space(key) {
-                self.play_key(def);
-            } else if let Some(ctx) = self.window_ctx(def) {
-                self.take_keys(def, key, &ctx, -1.0, -1.0);
-            }
+        let Some(k) = to_key(key) else {
             return;
         };
-        // A key takes a tip down, whoever ends up answering it.
-        if let Some(slot) = self.canvases.get_mut(&def) {
-            let effects = slot.gestures.key_began(&mut self.host, &ctx);
-            self.apply_gesture_effects(effects);
-        }
-        // The focus consumes the key first -- Tab walks the ring, a focused
-        // element edits -- and only what nothing there answered runs the global
-        // shortcuts, which are addressed to what is under the cursor.
-        if let Some(k) = to_key(key) {
-            let Some(slot) = self.canvases.get_mut(&def) else {
-                return;
-            };
-            if let Some(effects) =
-                slot.gestures
-                    .key(&mut self.host, &ctx, k, &mut self.text_clipboard)
-            {
-                self.apply_gesture_effects(effects);
-                // Tab walks the ring and Escape leaves it, so a key moves the
-                // focus as readily as a press does (`compose`).
-                self.aim_keyboard(def);
-                return;
-            }
-        }
-        // ...then the element under the cursor, which is where a block
-        // operation is addressed.
-        if let Some(k) = to_key(key) {
-            let Some(slot) = self.canvases.get_mut(&def) else {
-                return;
-            };
-            if let Some(effects) = slot.gestures.key_at_cursor(
-                &mut self.host,
-                &ctx,
-                k,
-                cx,
-                cy,
-                &mut self.text_clipboard,
-            ) {
-                self.apply_gesture_effects(effects);
-                return;
-            }
-        }
-        // The transport and the save, which the native front answers among its
-        // window keys: a focused field and a widget under the cursor have had
-        // the key, so what is left is the window's.
-        if is_space(key) {
-            self.play_key(def);
+        // With no pointer over the canvas yet the context still holds: the
+        // pointer is unknown, and a verb addressed by it means the window.
+        let Some(ctx) = self.window_ctx(def) else {
             return;
-        }
-        if self.take_keys(def, key, &ctx, cx, cy) {
-            return;
-        }
-        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("s")) && ctx.ctrl {
-            self.window_verb(def, "save");
-            return;
-        }
+        };
+        let pointer = self.canvases.get(&def).and_then(|slot| slot.cursor);
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
-        let effects = match key {
-            // The window's own shortcuts, addressed to the document behind it
-            // rather than to whatever is under the cursor.
-            Key::Character(c) if c.eq_ignore_ascii_case("z") && ctx.ctrl => {
-                slot.gestures.history(&mut self.host, &ctx, ctx.shift)
-            }
-            Key::Character(c) if c.eq_ignore_ascii_case("y") && ctx.ctrl => {
-                slot.gestures.history(&mut self.host, &ctx, true)
-            }
-            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                slot.gestures.reset_timelines(&mut self.host, &ctx)
-            }
-            // The clipboard verbs over the view under the cursor, last, so a
-            // focused field and a roll's own block keys answer first.
-            Key::Character(c) if c.eq_ignore_ascii_case("c") && ctx.ctrl => {
-                match slot.gestures.clipboard_key(
-                    &mut self.host,
-                    &ctx,
-                    ClipVerb::Copy,
-                    cx,
-                    cy,
-                    &mut self.text_clipboard,
-                ) {
-                    Some(effects) => effects,
-                    None => return,
-                }
-            }
-            Key::Character(c) if c.eq_ignore_ascii_case("x") && ctx.ctrl => {
-                match slot.gestures.clipboard_key(
-                    &mut self.host,
-                    &ctx,
-                    ClipVerb::Cut,
-                    cx,
-                    cy,
-                    &mut self.text_clipboard,
-                ) {
-                    Some(effects) => effects,
-                    None => return,
-                }
-            }
-            // Ctrl+Shift+V pastes by adding, as the native host's does.
-            Key::Character(c) if c.eq_ignore_ascii_case("v") && ctx.ctrl => {
-                let verb = if ctx.shift {
-                    ClipVerb::Mix
-                } else {
-                    ClipVerb::Paste
-                };
-                match slot.gestures.clipboard_key(
-                    &mut self.host,
-                    &ctx,
-                    verb,
-                    cx,
-                    cy,
-                    &mut self.text_clipboard,
-                ) {
-                    Some(effects) => effects,
-                    None => return,
-                }
-            }
-            _ => return,
-        };
+        // A key takes a tip down, whoever ends up answering it.
+        let effects = slot.gestures.key_began(&mut self.host, &ctx);
         self.apply_gesture_effects(effects);
-    }
-
-    /// The take monitor's keys, as on the desktop: `L` switches its loop, and
-    /// Home and End put the position cursor at the start or the end of the
-    /// samples under the pointer -- or of the window's one take, with no
-    /// pointer. Returns whether the key was one of them.
-    fn take_keys(&mut self, def: i32, key: &Key, ctx: &GestureCtx, cx: f64, cy: f64) -> bool {
-        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("l")) && !ctx.ctrl {
-            if let Some(slot) = self.canvases.get_mut(&def) {
-                let effects = slot.gestures.loop_key(&mut self.host, ctx);
-                self.apply_gesture_effects(effects);
-            }
-            // The window is told, as the space bar tells it, so whoever plays
-            // the window changes the pass in progress.
-            let verb = self.host.loop_verb();
-            self.window_event(def, verb);
-            return true;
-        }
-        if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {
-            if let Some(slot) = self.canvases.get_mut(&def)
-                && let Some(effects) =
-                    slot.gestures
-                        .ends_key(&mut self.host, ctx, *named == NamedKey::End, cx, cy)
-            {
-                self.apply_gesture_effects(effects);
-            }
-            return true;
-        }
-        false
-    }
-
-    /// The space bar: play the take the cursor is over and stop what is
-    /// playing, or -- over nothing a take answers for, or with no pointer over
-    /// the canvas yet -- the window's own `play`, which a multitrack editor reads
-    /// as play/pause. The browser twin of the native front's `play_key`.
-    fn play_key(&mut self, def: i32) {
-        // An unknown pointer is off the canvas: the gesture then addresses the
-        // window's one take, if it has exactly one.
-        let (cx, cy) = self
-            .canvases
-            .get(&def)
-            .and_then(|slot| slot.cursor)
-            .unwrap_or((-1.0, -1.0));
-        if let Some(ctx) = self.window_ctx(def)
-            && let Some(slot) = self.canvases.get_mut(&def)
-            && let Some(effects) = slot.gestures.play_key(&mut self.host, &ctx, cx, cy)
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        if let Some(effects) =
+            slot.gestures
+                .press_key(&mut self.host, &ctx, k, pointer, &mut self.text_clipboard)
         {
             self.apply_gesture_effects(effects);
-            return;
-        }
-        // **A multitrack is the window's, not the pointer's**, as on the desktop: its
-        // readers follow the transport, so the window is told and whoever edits
-        // the multitrack answers.
-        let verb = self.host.play_verb();
-        self.window_event(def, verb);
-    }
-
-    /// A verb addressed to the **window** rather than to anything under the
-    /// cursor, built and delivered as the native front does: a host that owns
-    /// the document answers it, and every other one queues it for the page.
-    fn window_verb(&mut self, def: i32, verb: &str) {
-        self.window_event(def, vec![clausters_core::osc::OscType::String(verb.into())]);
-    }
-
-    /// A window verb with the arguments that ride beside it.
-    fn window_event(&mut self, def: i32, args: Vec<clausters_core::osc::OscType>) {
-        let seq = self.host.outbox.borrow_mut().stamp(def, def);
-        let message = self.host.event_message(def, seq, args);
-        if self.host.deliver(def, &message) {
-            self.request_redraw(def);
-            self.post_host_effects();
-        } else {
-            self.queue(message);
+            // Tab walks the ring and Escape leaves it, so a key moves the focus
+            // as readily as a press does (`compose`).
+            self.aim_keyboard(def);
         }
     }
 

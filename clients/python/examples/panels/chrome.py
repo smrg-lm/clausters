@@ -21,7 +21,9 @@ This window holds one of each, laid out the way an application lays them out:
   every tool (rest the pointer on one);
 - a **dialog**, opened by ``Info > About`` and closed by freeing it, and a **file
   chooser** in another, opened by ``File > Open``: the host lists the
-  directory itself -- the disk here, the page's own storage in the twin page.
+  directory itself -- the disk here, the page's own storage in the twin page;
+- **keys** for the bar's verbs, shown beside its entries: F1 is ``About``,
+  Ctrl+O is ``Open``, and M is a verb no menu names.
 
 It also shows what they share. Every control takes the focus: Tab walks them,
 Space or Enter presses, the arrows step. A press on a title of the bar opens
@@ -97,6 +99,20 @@ bar = menu(
 #: What the secondary button opens over the pages.
 on_pages = menu(entry("Copy", "copy"), entry("Paste", "paste"), "-",
                 entry("Reset the page", "reset"))
+
+# %% [markdown]
+# ## The keys
+# A key performs a **verb**, and which key is the host's key table, not the
+# window's: a user sets it in `[gui.keys]`, and a script sets the same table
+# with `keys`. A key bound to a verb an entry of the bar reports *is* that
+# entry -- it reports the entry's pick, and a disabled entry's key does
+# nothing -- and the bar shows the key beside the label (the defaults have put
+# Ctrl+Z beside Undo already). A verb no menu names is reported bare, from the
+# window: that is how a window with no menu at all has commands. A field that
+# holds the focus types the letter instead.
+
+# %%
+gui.keys({"open": "Ctrl+O", "about": "F1", "mark": "M"})
 
 # %% [markdown]
 # ## The toolbar

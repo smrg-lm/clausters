@@ -101,6 +101,7 @@ use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
 use super::super::graphics::shape;
+pub use super::super::keymap::Verb;
 use super::super::layout::Rect;
 use super::super::metrics::Metrics;
 use super::super::paint::Draw;
@@ -985,7 +986,7 @@ pub struct Input<'a> {
 }
 
 /// The modifier keys a gesture was made with.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Mods {
     pub shift: bool,
     pub ctrl: bool,
@@ -996,15 +997,15 @@ pub struct Mods {
 /// in a page) translate their key events into, so a keyboard behaves identically
 /// on a desktop and in a tab.
 ///
-/// It is the editing alphabet and nothing more -- a printable character and the
-/// motions every field answers to -- because a shortcut over a *view* (`q`
-/// quantize, `r` reset) is not addressed to a focused element at all: it belongs
-/// to whatever is under the cursor, and the front runs it when nothing consumed
-/// the key.
+/// It is the editing alphabet -- a printable character and the motions every
+/// field answers to -- and the function keys a binding may name. A shortcut over
+/// a *view* (`q` quantize, `r` reset) is not a key an element reads at all: it
+/// is a row of the host's key table ([`crate::host::keymap`]), and what reaches
+/// the element is the verb it names ([`Element::verb`]).
 ///
 /// The modifiers ride beside it in [`KeyInput`], not in the variants, so an
 /// element writes one arm per key rather than one per combination.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
     /// A printable character to insert (already resolved from the layout).
     Char(char),
@@ -1026,6 +1027,9 @@ pub enum Key {
     /// [`Gestures::key`](super::super::gestures::Gestures::key)), which is what
     /// makes a window keyboard-navigable without every element agreeing to it.
     Tab,
+    /// A function key, `F1` to `F12`: nothing edits with one, so it reaches an
+    /// element only as the verb a binding gave it.
+    F(u8),
 }
 
 /// A **platform-neutral MIDI note event**: what a front's live input port
@@ -1843,13 +1847,27 @@ pub trait Element: fmt::Debug {
     /// A key while this element holds the focus, with the modifiers and the
     /// host-wide clipboard in [`KeyInput`]. `Some` is **consumed** -- the window
     /// repaints and whatever came back is reported -- and `None` hands the key
-    /// on to the front's own shortcuts, which is what a key an element has no
-    /// arm for must do.
+    /// on to the host's key table, which is what a key an element has no arm
+    /// for must do.
     ///
     /// It is the whole keyboard an element gets, and it never sees
     /// [`Key::Tab`]: moving the focus is the window's, not the focused
     /// element's.
     fn key(&mut self, _key: &Key, _input: &mut KeyInput) -> Option<Events> {
+        None
+    }
+
+    /// A **verb** of the host's key table, offered to this element because it
+    /// holds the focus or is under the pointer: `Some` is consumed, exactly as
+    /// for [`key`](Element::key), and `None` declines, so the verb goes on to
+    /// the element under the pointer, the window, and finally the window's
+    /// owner.
+    ///
+    /// An element performs verbs and never names the key that asks for one --
+    /// which key that is, is the table's (`crate::host::keymap`). A verb that
+    /// finds nothing to act on and is the element's to refuse says so with
+    /// [`Events::refused`].
+    fn verb(&mut self, _verb: Verb, _input: &mut KeyInput) -> Option<Events> {
         None
     }
 
@@ -2733,7 +2751,7 @@ mod tests {
 
         fn key(&mut self, key: &Key, _input: &mut KeyInput) -> Option<Events> {
             // Up counts, down counts back; anything else is not this element's
-            // and falls through to the front's own shortcuts.
+            // and falls through to the key table.
             self.count += match key {
                 Key::Up => 1,
                 Key::Down => -1,
@@ -2888,7 +2906,7 @@ mod tests {
         assert_eq!(
             el.key(&Key::Char('q'), &mut input),
             None,
-            "a key it has no arm for falls through to the front's shortcuts"
+            "a key it has no arm for falls through to the key table"
         );
 
         unregister("test_counter");

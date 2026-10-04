@@ -624,6 +624,28 @@ class GuiHost:
         """
         self._send("/gui_metrics", json.dumps(dict(table)))
 
+    def keys(self, table: dict):
+        """``/gui_keys <json>`` -- perform these verbs on these keys from now on.
+
+        ``table`` is a partial ``{"verb": "chord"}`` mapping, a value being one
+        chord (``"Ctrl+Shift+Z"``, ``"Space"``, ``"F1"``) or a list of them, and
+        ``[]`` unbinding the verb. It overlays the host's key table, and a chord
+        means one verb: binding it here takes it from whatever had it.
+
+        A verb the host performs (``split``, ``copy``, ``play``, ...) moves to the
+        new key. **Any other name is the application's**: pressing its chord
+        reports ``<verb>`` from the window, or -- when the window's menu bar has
+        an entry for that verb -- exactly the ``"menu" <verb>`` its pick reports,
+        so a window with no chrome at all still has commands. A menu shows the
+        chord beside every entry whose verb is bound.
+
+        Chords that cannot be read are logged by the host and skipped. The
+        launch-time spelling is the host's own ``--keys <file.toml>``
+        (``[gui.keys]`` in the shared config), which is where a user changes
+        them.
+        """
+        self._send("/gui_keys", json.dumps(dict(table)))
+
     def head_clock(self, id, which: str, transport: int = 0):
         """``/gui_headClock <id> <which> [transport]`` -- which counter the
         playheads of ``id`` are drawn from: a window, or a widget and every view

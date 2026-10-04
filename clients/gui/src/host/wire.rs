@@ -2,7 +2,7 @@
 //! dispatched to its handler, and the arguments read the one way every handler
 //! reads them. What a handler *does* lives with its concern -- a definition in
 //! [`super::define`], a set in [`super::set`] -- and the handlers here are the
-//! ones that are only that: a load, a face, a theme, a size table, an
+//! ones that are only that: a load, a face, a theme, a size table, a key table, an
 //! acknowledgement, a query.
 
 use super::*;
@@ -51,6 +51,7 @@ impl Host {
             GUI_FONT => self.on_font(&msg.args, from, effects),
             GUI_THEME => self.on_theme(&msg.args, from, effects),
             GUI_METRICS => self.on_metrics(&msg.args, from, effects),
+            GUI_KEYS => self.on_keys(&msg.args, from, effects),
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
@@ -193,6 +194,29 @@ impl Host {
             effects.push(HostEffect::Redraw(id));
         }
         diag::info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
+    }
+
+    /// `/gui_keys <json>` -- bind these verbs to these chords from now on.
+    ///
+    /// The theme's rules again: partial, overlaying the host's table, and
+    /// every chord that cannot be read is reported and skipped. Every window
+    /// redraws, since an open menu shows the chords its entries are bound to.
+    pub(super) fn on_keys(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let Some(table) = json_table(args, 0) else {
+            return diag::warn!("{from}: {GUI_KEYS} needs a JSON object of verb -> chord(s)");
+        };
+        for w in self.keys.overlay_json(&table) {
+            diag::warn!("{from}: {GUI_KEYS}: {w}");
+        }
+        for id in self.window_def_ids() {
+            effects.push(HostEffect::Redraw(id));
+        }
+        diag::info!("{from}: {GUI_KEYS}: {} verb(s) bound", table.len());
     }
 
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the

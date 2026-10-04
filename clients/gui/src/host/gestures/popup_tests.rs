@@ -314,6 +314,87 @@ fn a_press_on_a_title_opens_its_menu_and_a_pick_reports_the_verb() {
     );
 }
 
+/// **A key bound to a verb the bar names is that entry's pick**: it reports
+/// what a click on the entry reports, and a disabled entry's key does nothing
+/// -- but is still consumed, as the click on it is.
+#[test]
+fn a_key_bound_to_a_bar_entry_reports_its_pick() {
+    let mut host = host_from(BAR);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let mut clip = crate::host::clipboard::Clip::default();
+    assert!(host.keys.bind("open", &["Ctrl+O"]).is_empty());
+    assert!(host.keys.bind("export", &["F2"]).is_empty());
+    ctx.ctrl = true;
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .expect("consumed");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![
+            OscType::String("menu".into()),
+            OscType::String("open".into())
+        ]],
+        "the same message a pick sends"
+    );
+    ctx.ctrl = false;
+    let effects = g
+        .press_key(&mut host, &ctx, Key::F(2), None, &mut clip)
+        .expect("consumed");
+    assert!(
+        emitted(&effects, 1).is_empty(),
+        "a disabled entry: {effects:?}"
+    );
+}
+
+/// **A window with no chrome still has commands**: a verb the host does not
+/// perform and no menu names is reported bare, from the window.
+#[test]
+fn a_verb_no_menu_names_reaches_the_window_owner_bare() {
+    let mut host = host_from(PANEL);
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let mut clip = crate::host::clipboard::Clip::default();
+    assert!(host.keys.bind("about", &["F1"]).is_empty());
+    let effects = g
+        .press_key(&mut host, &ctx, Key::F(1), None, &mut clip)
+        .expect("consumed");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![OscType::String("about".into())]]
+    );
+    // A key bound to nothing is nobody's.
+    assert!(
+        g.press_key(&mut host, &ctx, Key::F(3), None, &mut clip)
+            .is_none()
+    );
+}
+
+/// **An open list shows the chord bound to each entry's verb**, at every
+/// depth, and is as wide as that needs.
+#[test]
+fn an_open_menu_shows_the_chord_beside_an_entry_bound_to_one() {
+    let mut host = host_from(BAR);
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let at = bar_title(&host, &ctx, 0);
+    click(&mut g, &mut host, &ctx, at);
+    let bare = host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap()[0].rect.w;
+    host.close_popup(1);
+    host.keys.bind("open", &["Ctrl+Shift+O"]);
+    click(&mut g, &mut host, &ctx, at);
+    let stack = host.popup(1).unwrap();
+    let entries = &stack.levels[0].entries;
+    assert_eq!(entries[0].key.as_deref(), Some("Ctrl+Shift+O"));
+    assert_eq!(entries[2].key.as_deref(), Some("L"), "loop's default");
+    assert_eq!(entries[4].key, None, "export is bound to nothing");
+    let wide = host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap()[0].rect.w;
+    assert!(
+        wide > bare,
+        "the list widened for the chords: {bare} -> {wide}"
+    );
+}
+
 #[test]
 fn a_check_flips_and_reports_its_state_and_reads_back_as_a_prop() {
     let mut host = host_from(BAR);

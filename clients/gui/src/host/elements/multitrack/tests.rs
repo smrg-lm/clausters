@@ -1065,9 +1065,9 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
                        "y", "t4", 400, 100, 0, "", 0,
                        "z", "t1", 100, 100, 0, "", 0]}}"#
     )));
-    let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
-        mt.key(
-            &key,
+    let mut keys = |mt: &mut Multitrack, verb: Verb, cursor: Option<f64>| {
+        mt.verb(
+            verb,
             &mut KeyInput {
                 mods: ctrl,
                 clipboard: &mut clipboard,
@@ -1076,10 +1076,10 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
         )
     };
     mt.selected = vec![0, 1, 2];
-    keys(&mut mt, Key::Char('c'), None).expect("copied");
+    keys(&mut mt, Verb::Copy, None).expect("copied");
 
     mt.track = Some(3);
-    keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
+    keys(&mut mt, Verb::Paste, Some(0.0)).expect("pasted");
     assert_eq!(mt.clips.len(), 6);
     let landed: Vec<&str> = mt.clips[3..].iter().map(|c| c.track.as_str()).collect();
     assert_eq!(
@@ -1095,7 +1095,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
     // With no track selected the rows are the ones it came from: a paste
     // back into the same multitrack is the block where it was.
     mt.track = None;
-    keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
+    keys(&mut mt, Verb::Paste, Some(0.0)).expect("pasted");
     let landed: Vec<&str> = mt.clips[6..].iter().map(|c| c.track.as_str()).collect();
     assert_eq!(landed, ["t2", "t4", "t1"]);
 }
@@ -1115,9 +1115,9 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
         ..Mods::default()
     };
     let mut mt = multitrack();
-    let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
-        mt.key(
-            &key,
+    let mut keys = |mt: &mut Multitrack, verb: Verb, cursor: Option<f64>| {
+        mt.verb(
+            verb,
             &mut KeyInput {
                 mods: ctrl,
                 clipboard: &mut clipboard,
@@ -1128,9 +1128,9 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
     // Two tracks, a block two tracks tall, pasted onto the second: the
     // second half has nowhere to go.
     mt.selected = vec![0, 1];
-    keys(&mut mt, Key::Char('c'), None).expect("copied");
+    keys(&mut mt, Verb::Copy, None).expect("copied");
     mt.track = Some(1);
-    let said = refusal(keys(&mut mt, Key::Char('v'), Some(100.0)));
+    let said = refusal(keys(&mut mt, Verb::Paste, Some(100.0)));
     assert_eq!(
         said,
         Some("this block is 2 track(s) tall and needs 3 here; the multitrack has 2".to_string())
@@ -1139,7 +1139,7 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
 
     // Onto the first, the same block fits exactly.
     mt.track = Some(0);
-    keys(&mut mt, Key::Char('v'), Some(100.0)).expect("pasted");
+    keys(&mut mt, Verb::Paste, Some(100.0)).expect("pasted");
     assert_eq!(mt.clips.len(), 4);
     assert_eq!(mt.clips[2].track, "noise");
     assert_eq!(mt.clips[3].track, "tone");
@@ -1261,8 +1261,8 @@ fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
     mt.selected = vec![0, 1];
     let mut clipboard = crate::host::clipboard::Clip::default();
     assert_eq!(
-        joined(mt.key(
-            &Key::Char('j'),
+        joined(mt.verb(
+            Verb::Join,
             &mut KeyInput {
                 mods: Mods::default(),
                 clipboard: &mut clipboard,
@@ -1392,8 +1392,8 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     mt.track = Some(0);
     let mut clipboard = crate::host::clipboard::Clip::default();
     let events = mt
-        .key(
-            &Key::Delete,
+        .verb(
+            Verb::Delete,
             &mut KeyInput {
                 mods: Mods::default(),
                 clipboard: &mut clipboard,
@@ -1620,7 +1620,7 @@ fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
     }
 
     let quantized = mt
-        .key(&Key::Char('q'), &mut ki(&mut clipboard))
+        .verb(Verb::Quantize, &mut ki(&mut clipboard))
         .expect("something moved");
     assert_eq!(
         quantized.into_messages()[0][0],
@@ -1629,7 +1629,7 @@ fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
     assert_eq!(mt.clips[1].place.offset, 400.0, "500 onto a 400 grid");
 
     let removed = mt
-        .key(&Key::Delete, &mut ki(&mut clipboard))
+        .verb(Verb::Delete, &mut ki(&mut clipboard))
         .expect("they went");
     assert_eq!(
         removed.into_messages()[0][0],
@@ -1639,7 +1639,7 @@ fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
     assert!(mt.selected.is_empty());
 
     // With nothing held, the keys are not this widget's.
-    assert!(mt.key(&Key::Char('q'), &mut ki(&mut clipboard)).is_none());
+    assert!(mt.verb(Verb::Quantize, &mut ki(&mut clipboard)).is_none());
 }
 /// **`e` cuts at the window's cursor and `j` asks for the two back.** The
 /// window over the contents moves with the cut, so the second half reads on
@@ -1660,7 +1660,7 @@ fn a_clip_splits_at_the_cursor_and_joins_back() {
     mt.selected = vec![0];
 
     let cut = mt
-        .key(&Key::Char('e'), &mut ki(&mut clipboard, Some(200.0)))
+        .verb(Verb::Split, &mut ki(&mut clipboard, Some(200.0)))
         .expect("it cut");
     assert_eq!(cut.into_messages()[0][0], OscType::String("clips".into()));
     assert_eq!(mt.clips.len(), 3);
@@ -1680,7 +1680,7 @@ fn a_clip_splits_at_the_cursor_and_joins_back() {
     // Both halves are in the hand, so `j` names both -- the one the client
     // said and the one this minted.
     assert_eq!(
-        joined(mt.key(&Key::Char('j'), &mut ki(&mut clipboard, None))),
+        joined(mt.verb(Verb::Join, &mut ki(&mut clipboard, None))),
         vec!["a".to_string(), "a 2".to_string()]
     );
     assert_eq!(mt.clips.len(), 3, "and the picture waits for the answer");
@@ -1727,8 +1727,8 @@ fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
     let mut mt = multitrack();
     let mut clipboard = crate::host::clipboard::Clip::default();
     mt.selected = vec![0];
-    mt.key(
-        &Key::Char('e'),
+    mt.verb(
+        Verb::Split,
         &mut KeyInput {
             mods: Mods::default(),
             clipboard: &mut clipboard,
@@ -1756,8 +1756,8 @@ fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
     // So `j` names both -- the head under the name it kept and the half
     // under the one the multitrack gave it, which is the whole point: a hand
     // re-found by name alone would have asked for a join of one box.
-    let mut named = joined(mt.key(
-        &Key::Char('j'),
+    let mut named = joined(mt.verb(
+        Verb::Join,
         &mut KeyInput {
             mods: Mods::default(),
             clipboard: &mut clipboard,
@@ -1781,9 +1781,9 @@ fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
 #[test]
 fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
     let mut clipboard = crate::host::clipboard::Clip::default();
-    let mut press = |mt: &mut Multitrack, k: char| {
-        refusal(mt.key(
-            &Key::Char(k),
+    let mut press = |mt: &mut Multitrack, verb: Verb| {
+        refusal(mt.verb(
+            verb,
             &mut KeyInput {
                 mods: Mods::default(),
                 clipboard: &mut clipboard,
@@ -1795,16 +1795,16 @@ fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
     let mut mt = multitrack();
     mt.selected = vec![0];
     assert_eq!(
-        press(&mut mt, 'q'),
+        press(&mut mt, Verb::Quantize),
         Some("these boxes are already on the grid".to_string()),
     );
     assert_eq!(
-        press(&mut mt, 'e'),
+        press(&mut mt, Verb::Split),
         None,
         "the cursor is inside the held box, so this one cuts"
     );
     assert_eq!(
-        press(&mut mt, 'e'),
+        press(&mut mt, Verb::Split),
         Some("the cursor is not inside a held box".to_string()),
         "and cutting at the seam again has nothing to cut"
     );
@@ -1824,8 +1824,8 @@ fn a_half_left_by_a_split_still_changes_tracks() {
     let mut mt = multitrack();
     let mut clipboard = crate::host::clipboard::Clip::default();
     mt.selected = vec![0];
-    mt.key(
-        &Key::Char('e'),
+    mt.verb(
+        Verb::Split,
         &mut KeyInput {
             mods: Mods::default(),
             clipboard: &mut clipboard,
@@ -1892,8 +1892,8 @@ fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
     };
 
     let cut = mt
-        .key(
-            &Key::Char('x'),
+        .verb(
+            Verb::Cut,
             &mut KeyInput {
                 mods: ctrl,
                 clipboard: &mut clipboard,
@@ -1905,8 +1905,8 @@ fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
     assert!(mt.clips.is_empty());
 
     let pasted = mt
-        .key(
-            &Key::Char('v'),
+        .verb(
+            Verb::Paste,
             &mut KeyInput {
                 mods: ctrl,
                 clipboard: &mut clipboard,

@@ -153,7 +153,7 @@ impl Dial {
 
 /// **The keys a focused ranged control answers**: the arrows step it, Home and
 /// End take it to its ends. `None` for any other key, which then goes on to
-/// the front's own shortcuts.
+/// the host's key table.
 ///
 /// A step is the control's own `step` where it has one, and a hundredth of its
 /// travel where it does not -- measured along the travel rather than the range,

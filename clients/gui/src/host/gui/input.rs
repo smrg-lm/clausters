@@ -4,7 +4,7 @@
 //! and winit redraw requests. All gesture *logic* lives in the machine; this file only snapshots the per-call context (frame
 //! buffer size, modifiers, the GPU slots' lane counts) and applies effects.
 
-use crate::host::gestures::{ClipVerb, GestureCtx, GestureEffect};
+use crate::host::gestures::{GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
 use crate::host::widget::element::SlotKey;
 
@@ -230,178 +230,24 @@ impl App {
 
     // ---- keyboard operations (dispatched from `window_event`) ----
 
-    /// Routes a key to the window's focus -- the ring for Tab, the focused
-    /// element for everything else. Returns whether it was consumed (so the
-    /// caller skips the global editor shortcuts).
-    pub(super) fn key_input(&mut self, def_id: i32, key: HostKey) -> bool {
+    /// A key pressed over window `def_id`, through the one dispatch both fronts
+    /// share ([`Gestures::press_key`](crate::host::gestures::Gestures::press_key)):
+    /// the focus, the key table, and the verb it names. Returns whether it was
+    /// consumed.
+    pub(super) fn press_key(&mut self, def_id: i32, key: HostKey) -> bool {
+        let pointer = self.windows.get(&def_id).and_then(|w| w.cursor);
         let ctx = self.gesture_ctx(def_id);
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return false;
         };
-        let effects = match ws
-            .gestures
-            .key(&mut self.host, &ctx, key, &mut self.text_clipboard)
-        {
-            Some(effects) => effects,
-            None => return false,
-        };
-        self.apply_gesture_effects(effects);
-        true
-    }
-
-    /// Routes a key the focus did not answer to the element **under the
-    /// cursor** -- the block operations of a view, addressed where the pointer
-    /// already is. Returns whether it was consumed.
-    pub(super) fn key_at_cursor(&mut self, def_id: i32, key: HostKey) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return false;
-        };
-        let effects = match ws.gestures.key_at_cursor(
-            &mut self.host,
-            &ctx,
-            key,
-            cx,
-            cy,
-            &mut self.text_clipboard,
-        ) {
-            Some(effects) => effects,
-            None => return false,
-        };
-        self.apply_gesture_effects(effects);
-        true
-    }
-
-    /// Copy, cut or paste over the view under the cursor -- the window's own
-    /// shortcut, reached only by a key the focus and the element under the
-    /// cursor both declined. Returns whether it was consumed.
-    pub(super) fn clipboard_key(&mut self, def_id: i32, verb: ClipVerb) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return false;
-        };
-        let effects = match ws.gestures.clipboard_key(
-            &mut self.host,
-            &ctx,
-            verb,
-            cx,
-            cy,
-            &mut self.text_clipboard,
-        ) {
-            Some(effects) => effects,
-            None => return false,
-        };
-        self.apply_gesture_effects(effects);
-        true
-    }
-
-    /// The space bar: play the take the cursor is over and stop what is
-    /// playing, or -- over nothing a take answers for -- the window's own
-    /// `play`, which a multitrack editor reads as play/pause. Returns whether it
-    /// was consumed.
-    pub(super) fn play_key(&mut self, def_id: i32) -> bool {
-        // An unknown pointer is off the window: the gesture then addresses the
-        // window's one take, if it has exactly one.
-        let (cx, cy) = self
-            .windows
-            .get(&def_id)
-            .and_then(|w| w.cursor)
-            .unwrap_or((-1.0, -1.0));
-        let ctx = self.gesture_ctx(def_id);
-        if let Some(ws) = self.windows.get_mut(&def_id)
-            && let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy)
-        {
-            self.apply_gesture_effects(effects);
-            return true;
-        }
-        // **A multitrack is the window's, not the pointer's.** Its readers are
-        // resident and follow the transport, so there is nothing to point at --
-        // and requiring a pointer is what made the first press after opening a
-        // window do nothing at all, since the cursor is unknown until it moves.
-        // So the window is told, the way `Ctrl`+`Z` and `Ctrl`+`S` tell it, and
-        // whoever edits the multitrack answers: this host's own editor, or a
-        // script's.
-        let verb = self.host.play_verb();
-        self.window_event(def_id, verb);
-        true
-    }
-
-    /// `L`: the loop, switched, with a status line saying so -- the monitor's
-    /// pass follows it, and the window is told, as the space bar tells it, so
-    /// whoever plays the window changes the pass in progress.
-    pub(super) fn loop_key(&mut self, def_id: i32) {
-        let ctx = self.gesture_ctx(def_id);
-        let Some(effects) = self
-            .windows
-            .get_mut(&def_id)
-            .map(|ws| ws.gestures.loop_key(&mut self.host, &ctx))
-        else {
-            return;
-        };
-        self.apply_gesture_effects(effects);
-        let verb = self.host.loop_verb();
-        self.window_event(def_id, verb);
-    }
-
-    /// Home or End: the position cursor to the start or the end of the
-    /// samples under the pointer. Returns whether it was consumed.
-    pub(super) fn ends_key(&mut self, def_id: i32, to_end: bool) -> bool {
-        let (cx, cy) = self
-            .windows
-            .get(&def_id)
-            .and_then(|w| w.cursor)
-            .unwrap_or((-1.0, -1.0));
-        let ctx = self.gesture_ctx(def_id);
-        let Some(effects) = self
-            .windows
-            .get_mut(&def_id)
-            .and_then(|ws| ws.gestures.ends_key(&mut self.host, &ctx, to_end, cx, cy))
+        let Some(effects) =
+            ws.gestures
+                .press_key(&mut self.host, &ctx, key, pointer, &mut self.text_clipboard)
         else {
             return false;
         };
         self.apply_gesture_effects(effects);
         true
-    }
-
-    /// Undo or redo over a window: the route to whoever owns the document.
-    /// The host keeps no history, so this only reports (see
-    /// [`Gestures::history`](crate::host::gestures::Gestures::history)).
-    pub(super) fn history(&mut self, def_id: i32, redo: bool) {
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects = ws.gestures.history(&mut self.host, &ctx, redo);
-        self.apply_gesture_effects(effects);
-    }
-
-    /// A verb addressed to the **window** rather than to anything under the
-    /// cursor -- the shape undo and redo already take, and for the same reason:
-    /// what a save saves is the document behind the window. A host that **owns**
-    /// that document answers it here; every other one emits it, and a script
-    /// may answer.
-    pub(super) fn window_verb(&mut self, def_id: i32, verb: &str) {
-        self.window_event(
-            def_id,
-            vec![clausters_core::osc::OscType::String(verb.into())],
-        );
-    }
-
-    /// A window verb with the arguments that ride beside it.
-    pub(super) fn window_event(&mut self, def_id: i32, args: Vec<clausters_core::osc::OscType>) {
-        let seq = self.host.outbox.borrow_mut().stamp(def_id, def_id);
-        let message = self.host.event_message(def_id, seq, args);
-        if self.host.deliver(def_id, &message) {
-            self.redraw(def_id);
-        } else {
-            self.emit(def_id, message);
-        }
     }
 
     /// Whether a modifier is held on window `def_id`, for a shortcut the
@@ -419,14 +265,5 @@ impl App {
     /// command rather than a character (`key_pressed` reads the pair).
     pub(super) fn alt(&self, def_id: i32) -> bool {
         self.windows.get(&def_id).is_some_and(|ws| ws.alt)
-    }
-
-    pub(super) fn reset_timelines(&mut self, def_id: i32) {
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects = ws.gestures.reset_timelines(&mut self.host, &ctx);
-        self.apply_gesture_effects(effects);
     }
 }

@@ -9,7 +9,7 @@ key by key:
   section, its command-line flags and the offline renderer's own.
 - [The GUI host's configuration](configuration/gui.md) — the `[gui]` section
   plus the `[gui.theme]` and `[gui.metrics]` role tables (the host's whole look
-  and sizing) and `[standalone]`.
+  and sizing), the `[gui.keys]` key table and `[standalone]`.
 
 The file locations and the precedence rules are also stated in the server
 documentation's **Configuration** chapter, which covers the same file from the

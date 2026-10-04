@@ -9438,3 +9438,32 @@ the mark and asks, since the rows are the owner's -- the host holds no
 document. Which branches are open is a prop, written where it is drawn and
 reported, as a menu's check is.
 
+
+## A key names a verb, and a verb nobody performs is the application's
+
+*(2026-10-04, with the user.)* The keys were `match` arms inside the elements
+that perform them and inside each front's window handler, so the same key could
+not mean two things in two applications over one widget, a user could not
+change one, and the two fronts drifted (the browser's space bar once never
+reached the window's transport). They are now one table per host, `verb =
+chord(s)`, set like the theme: defaults, `[gui.keys]`, `--keys <file>`,
+`/gui_keys`. The user's reason for a **file** first is that an application here
+may have no chrome at all -- no bar, no menu -- so the keys are its only way in.
+
+Two calls in it are not obvious. **The table holds any name, not only the
+host's verbs**: a name the host does not perform is reported to the window's
+owner as the bare verb, which is the shape `undo` and `save` already had -- so
+those stopped being special cases and became the application verbs the table
+ships bound, and a program with no chrome gets a command by naming it. And **a
+key bound to a verb the window's bar names reports that entry's pick** rather
+than the bare verb -- the desktop rule that an accelerator and its entry are one
+command -- so a program with a bar answers one message whichever way the
+command came, and a disabled entry's key does nothing. The host's own verbs go
+first (focused element, element under the pointer, window), so an Edit > Copy
+entry does not take Ctrl+C away from a roll that performs it; only what nobody
+here performed reaches the owner.
+
+What stays outside the table: the focused element reads the raw key before the
+table is consulted, so a field's typing, a list's arrows and a control's Space
+are the platform's convention and cannot be rebound, and Tab and Escape are
+refused.

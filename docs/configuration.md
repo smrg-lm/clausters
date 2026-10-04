@@ -133,6 +133,15 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 #                        # ...); an unknown role or an unusable number warns and
 #                        # is skipped, never fatal
 
+[gui.keys]               # key bindings (optional): verb = chord or [chords]
+# split = "S"            # a verb the host performs, moved to another key
+# redo = ["Ctrl+Shift+Z", "Ctrl+Y"]
+# quantize = []          # [] unbinds; the table is partial — unlisted verbs
+# export = "Ctrl+E"      # keep their defaults. A name the host does not
+#                        # perform is the application's: its key reports it
+#                        # to the window's owner. An unreadable chord warns and
+#                        # is skipped, never fatal
+
 [standalone]             # the self-contained app (GUI + embedded server)
 gui = "drone"            # the saved GuiDef to open when --standalone has no name
 boot = true              # run the GuiDef's boot messages and boot.json preset
@@ -194,6 +203,13 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
   so there is nothing to set per widget and nothing on the wire. Its numbers are
   **logical** pixels, like the wire's own: each window resolves the table to its
   display's physical pixels once, when its scale changes.
+  The `[gui.keys]` table binds the host's keys the same way: `verb = "chord"`
+  or a list of chords, partial over the defaults (Ctrl+Z, Space, `q`, `e`, …),
+  and `--keys <path>` lays a free-standing file of the same table over it. A
+  verb the host does not perform is the application's, so a program with no
+  menu at all gives its commands keys by naming them here; the verbs, their
+  defaults and the order a key reaches them are in [the GUI
+  protocol](gui-protocol.md) ("The keys are a table").
   `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.

@@ -197,6 +197,32 @@ pub struct GuiConfig {
     /// table at that density before the explicit roles apply. Unknown names and
     /// unusable numbers are warned about and skipped by the host, never fatal.
     pub metrics: Option<BTreeMap<String, Number>>,
+    /// `[gui.keys]` -- the GUI host's key bindings, each entry
+    /// `verb = "chord"` or `verb = ["chord", ...]` (`"Ctrl+Shift+Z"`), and
+    /// `[]` to unbind. A partial table, like `[gui.theme]`: unlisted verbs keep
+    /// their default chords. A verb the host does not perform is the
+    /// application's, reported to the window's owner when its chord is
+    /// pressed; a chord that cannot be read is warned about and skipped by the
+    /// host, never fatal.
+    pub keys: Option<BTreeMap<String, Chords>>,
+}
+
+/// The chords a `[gui.keys]` entry binds: one, or a list of them.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Chords {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Chords {
+    /// The chords as a list, whichever way the entry spelled them.
+    pub fn as_strs(&self) -> Vec<&str> {
+        match self {
+            Chords::One(s) => vec![s.as_str()],
+            Chords::Many(v) => v.iter().map(String::as_str).collect(),
+        }
+    }
 }
 
 /// `[standalone]` -- the self-contained app launch (GUI + embedded server).
@@ -476,6 +502,7 @@ impl GuiConfig {
             // through.
             theme: merge_table(self.theme, h.theme),
             metrics: merge_table(self.metrics, h.metrics),
+            keys: merge_table(self.keys, h.keys),
         }
     }
 }
@@ -598,10 +625,21 @@ mod load {
             .map_err(|e| format!("cannot read theme {}: {e}", path.display()))?;
         toml::from_str(&text).map_err(|e| format!("invalid theme {}: {e}", path.display()))
     }
+
+    /// Reads a free-standing key file (`--keys <path>`): a flat TOML table of
+    /// `verb = "chord"` or `verb = ["chord", ...]` entries, the same shape as
+    /// `[gui.keys]`. The error is the file/parse failure verbatim.
+    pub fn read_keys_file(path: &Path) -> Result<super::BTreeMap<String, super::Chords>, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read keys {}: {e}", path.display()))?;
+        toml::from_str(&text).map_err(|e| format!("invalid keys {}: {e}", path.display()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use load::{find_project_config, read_config_file, read_theme_file, user_config_path};
+pub use load::{
+    find_project_config, read_config_file, read_keys_file, read_theme_file, user_config_path,
+};
 
 #[cfg(test)]
 mod tests {
@@ -669,6 +707,33 @@ mod tests {
         );
         // A config value that is not [addr:]port is reported, not ignored.
         assert!(pick(None, Some(PortSetting::Bind("nowhere".into()))).is_err());
+    }
+
+    #[test]
+    fn gui_keys_table_takes_a_chord_or_a_list_and_merges_per_verb() {
+        let user: Config = toml::from_str(
+            r#"
+            [gui.keys]
+            split = "S"
+            redo = ["Ctrl+Y", "Ctrl+Shift+Z"]
+            "#,
+        )
+        .unwrap();
+        let project: Config = toml::from_str(
+            r#"
+            [gui.keys]
+            split = "E"
+            export = []
+            "#,
+        )
+        .unwrap();
+        let merged = user.merge(project).gui.keys.unwrap();
+        assert_eq!(merged["split"].as_strs(), ["E"], "higher wins");
+        assert_eq!(merged["redo"].as_strs(), ["Ctrl+Y", "Ctrl+Shift+Z"]);
+        assert!(
+            merged["export"].as_strs().is_empty(),
+            "an unbinding is kept"
+        );
     }
 
     #[test]

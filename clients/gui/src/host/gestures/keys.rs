@@ -1,18 +1,22 @@
 //! The keyboard half of the machine: the focus ring, the key that goes to the
-//! focused element, and the block operations a timeline view answers to
-//! (quantize, cut/copy/paste over the multi-note selection, resetting every view
-//! to its full extent).
+//! focused element, the **verbs** the host's key table names, and the ones the
+//! window itself performs (play, the loop, the ends, the clipboard over a view,
+//! resetting every view to its full extent).
 //!
 //! Split from the pointer machine because it shares nothing with it but the
 //! `Gestures` state: no hit-test, no drag, no cursor -- a key arrives already
 //! addressed to whatever the window has focused or selected.
 //!
-//! **Two addressees, in this order.** Tab is the window's, always
-//! ([`super::focus`]). Everything else is the focused element's, and only
-//! what the element declines falls through to the front's own shortcuts, which
-//! are addressed to what is under the *cursor* rather than to what holds the
-//! focus. That order is what lets a field swallow `q` while a piano-roll behind
-//! it still quantizes on the same key when nothing is focused.
+//! **One dispatch, for both fronts**: [`Gestures::press_key`]. A front only
+//! translates its own event into a [`Key`] and calls it; what the key means is
+//! decided here, once, in this order -- an open popup (modal), Tab (the
+//! ring's), Escape (an open dialog's), the **focused element's raw key** (a
+//! field types, a list walks), and only then the key table
+//! ([`crate::host::keymap`]): the verb it names goes to the focused element,
+//! to the element under the pointer, to the window, and finally -- performed by
+//! nobody here -- to the window's owner. That order is what lets a field
+//! swallow `q` while a roll behind it still quantizes on the same key when
+//! nothing is focused.
 
 use super::super::Host;
 use super::super::interact::Hit;
@@ -21,8 +25,9 @@ use clausters_core::osc::OscType;
 use clausters_editing::audio_playback::space;
 
 use super::super::clipboard::Clip;
+use super::super::keymap::Verb;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock, refusal};
-use super::effects::{emit, emit_view, redraw_all};
+use super::effects::{emit, emit_view, redraw_all, tell};
 use super::nav::{cursor_of, freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
@@ -37,8 +42,8 @@ impl Gestures {
     /// (the native front's internal one; the browser front swaps the page's
     /// string in and out around this call).
     ///
-    /// Returns `Some(effects)` when the key was consumed -- the front then skips
-    /// its own shortcuts -- and `None` when nothing here answered it.
+    /// Returns `Some(effects)` when the key was consumed -- the key table is
+    /// then not read -- and `None` when nothing here answered it.
     pub fn key(
         &self,
         host: &mut Host,
@@ -116,22 +121,112 @@ impl Gestures {
         Some(out)
     }
 
-    /// A key the focus did not answer, offered to the **element under the
-    /// cursor** -- the other addressee, and the reason a field can swallow `q`
-    /// while a roll behind it keeps quantizing on the same key.
+    /// **A key, all the way**: what both fronts call with the key they read and
+    /// where the pointer is (`None` when it is unknown -- off the window, or
+    /// not yet moved over it).
     ///
-    /// It is the same call [`key`](Self::key) makes, at a different address:
-    /// what an element does with a key is the element's, and the machine only
-    /// decides *who* is asked. Returns `Some` when it was consumed, so the
-    /// front runs its own shortcuts only on what nothing wanted.
-    pub fn key_at_cursor(
-        &self,
+    /// First [`key`](Self::key) -- the popup layer, the ring, a dialog's
+    /// Escape and the focused element's raw key -- and then the **key table**:
+    /// a chord bound to a verb is [`perform`](Self::perform)ed, and is
+    /// consumed whether or not anything here acted on it, since the window's
+    /// owner is told what nobody performed. Returns `None` for a key that is
+    /// neither, which the front may still answer (a desktop window's Escape
+    /// closes it).
+    pub fn press_key(
+        &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
         key: Key,
+        pointer: Option<(f64, f64)>,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        if let Some(out) = self.key(host, ctx, key.clone(), clipboard) {
+            return Some(out);
+        }
+        let mods = Mods {
+            shift: ctx.shift,
+            ctrl: ctx.ctrl,
+            alt: ctx.alt,
+        };
+        let Some(verb) = host.keys.lookup(&key, mods).map(str::to_string) else {
+            diag::note!(host, ctx.def_id, "key", "key {key:?}: bound to nothing");
+            return None;
+        };
+        Some(self.perform(host, ctx, &verb, pointer, clipboard))
+    }
+
+    /// **Performs the verb `name`**, offered in the order a key reaches the
+    /// window: the focused element, the element under the pointer, the window
+    /// itself, and -- when the host performs no such verb, or nothing here
+    /// took it -- the window's owner, as `"menu" <verb>` when the window's bar
+    /// has an entry for it (the entry and its key are one command) and as the
+    /// bare `<verb>` otherwise.
+    pub fn perform(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        name: &str,
+        pointer: Option<(f64, f64)>,
+        clipboard: &mut Clip,
+    ) -> Vec<GestureEffect> {
+        if let Some(verb) = Verb::named(name) {
+            if let Some(out) = self.verb_focused(host, ctx, verb, clipboard) {
+                return out;
+            }
+            if let Some((cx, cy)) = pointer
+                && let Some(out) = self.verb_at(host, ctx, verb, cx, cy, clipboard)
+            {
+                return out;
+            }
+            if let Some(out) = self.window_verb(host, ctx, verb, pointer, clipboard) {
+                return out;
+            }
+        }
+        let mut out = Vec::new();
+        if super::popups::pick_verb(host, ctx, &mut out, name).is_none() {
+            emit(
+                host,
+                &mut out,
+                ctx.def_id,
+                ctx.def_id,
+                vec![OscType::String(name.to_string())],
+            );
+        }
+        out
+    }
+
+    /// The verb offered to the element holding this window's focus.
+    fn verb_focused(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: Verb,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        let (fdef, id) = host.focused()?;
+        if fdef != ctx.def_id {
+            return None;
+        }
+        let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
+        let (rect, scale, indent) = placed
+            .iter()
+            .find(|p| p.widget.id == Some(id))
+            .map(|p| (p.rect, p.scale, p.indent))?;
+        let at = element::At::widget(id, rect, scale, indent);
+        self.verb_to(host, ctx, verb, id, at, clipboard)
+    }
+
+    /// The verb offered to the **element under the pointer** -- the other
+    /// addressee, and the reason a block operation lands where the pointer
+    /// already is: a selection is made there.
+    fn verb_at(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: Verb,
         cx: f64,
         cy: f64,
-        clipboard: &mut super::super::clipboard::Clip,
+        clipboard: &mut Clip,
     ) -> Option<Vec<GestureEffect>> {
         let Hit {
             id,
@@ -140,6 +235,39 @@ impl Gestures {
             indent,
             ..
         } = hit(host, ctx, cx, cy)?;
+        let at = element::At::widget(id, rect, scale, indent);
+        let out = self.verb_to(host, ctx, verb, id, at, clipboard);
+        if out.is_none() {
+            // **A verb nothing claimed is the quietest failure there is**, and
+            // it is the shape of the defect reported twice on 2026-09-12: a
+            // verb refused correctly by an element that had nothing to act on
+            // and a key no element answers to are indistinguishable at the
+            // window. The element's own refusals are said out loud; this is
+            // the other case, and it is the machine's business rather than the
+            // hand's -- so it is a note, and only a debug build carries it.
+            diag::note!(
+                host,
+                ctx.def_id,
+                "key",
+                "{}: widget {id} did not take it",
+                verb.name()
+            );
+        }
+        out
+    }
+
+    /// Element `id`, placed at `at`, asked to perform `verb`; what it reports
+    /// is delivered as a drag's is, and the window repaints whether or not
+    /// anything was.
+    fn verb_to(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: Verb,
+        id: i32,
+        at: element::At,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
         let mut input = KeyInput {
             mods: Mods {
                 shift: ctx.shift,
@@ -149,57 +277,59 @@ impl Gestures {
             clipboard,
             cursor: cursor_of(host, ctx, id),
         };
-        let at = element::At::widget(id, rect, scale, indent);
-        let Some(events) = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()
-        else {
-            // **A key nothing claimed is the quietest failure there is**, and
-            // it is the shape of the defect reported twice on 2026-09-12: a
-            // verb refused correctly by an element that had nothing to act on
-            // and a letter no element answers to are indistinguishable at the
-            // window. The element's own refusals are said out loud now; this is
-            // the other case, and it is the machine's business rather than the
-            // hand's -- so it is a note, and only a debug build carries it.
-            diag::note!(
-                host,
-                ctx.def_id,
-                "key",
-                "key {key:?}: widget {id} did not take it"
-            );
-            return None;
-        };
+        let events = element::with(host, ctx, at, |el, _| el.verb(verb, &mut input)).flatten()?;
         let mut out = Vec::new();
         element::report(host, &mut out, ctx, id, events);
-        // A content edit moves the extent the shared axis spans, and the window
-        // repaints whether or not anything was reported.
+        // A content edit moves the extent the shared axis spans.
         host.sync_track_totals_keeping_view();
         out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)
     }
 
-    /// Undo or redo over a window: report it to whoever owns the document.
-    ///
-    /// **The host holds no history** -- the log lives with the document, in
-    /// `clausters-document`, because a log a view keeps sees only the gestures
-    /// *it* made. So this is a route and not an action: it emits
-    /// `/gui_event <window_id> <seq> <version> "undo"|"redo"` and the owner
-    /// answers with the state that now holds, exactly as it answers a drag.
-    ///
-    /// It is addressed to the **window** rather than to a widget because that
-    /// is what it is scoped to: undo is not addressed to a place under the
-    /// cursor, which is why it is not a step in the gesture plan -- a
-    /// `GesturePlan`'s steps each consume a press *somewhere*. `/gui_closed`
-    /// already names a window the same way.
-    pub fn history(&self, host: &mut Host, ctx: &GestureCtx, redo: bool) -> Vec<GestureEffect> {
-        let mut out = Vec::new();
-        let tag = if redo { "redo" } else { "undo" };
-        emit(
-            host,
-            &mut out,
-            ctx.def_id,
-            ctx.def_id,
-            vec![OscType::String(tag.into())],
-        );
-        out
+    /// The verbs the **window** performs, when no element took them: the
+    /// transport, the loop, the ends of what is under the pointer, the
+    /// clipboard over a view, and resetting every view.
+    fn window_verb(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: Verb,
+        pointer: Option<(f64, f64)>,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        // An unknown pointer is off the window: a verb addressed by it then
+        // means the window's one take, if it has exactly one.
+        let (cx, cy) = pointer.unwrap_or((-1.0, -1.0));
+        match verb {
+            Verb::ViewAll => Some(self.reset_timelines(host, ctx)),
+            // **A multitrack is the window's, not the pointer's.** Its readers
+            // are resident and follow the transport, so with no take to play
+            // the window is told, and whoever edits the multitrack answers:
+            // this host's own editor, or a script's.
+            Verb::Play => Some(self.play_key(host, ctx, cx, cy).unwrap_or_else(|| {
+                let mut out = Vec::new();
+                tell(host, &mut out, ctx.def_id, host.play_verb());
+                out
+            })),
+            // The window is told the loop changed too, so whoever plays it
+            // changes the pass in progress.
+            Verb::Loop => {
+                let mut out = self.loop_key(host, ctx);
+                tell(host, &mut out, ctx.def_id, host.loop_verb());
+                Some(out)
+            }
+            Verb::ToStart | Verb::ToEnd => self.ends_key(host, ctx, verb == Verb::ToEnd, cx, cy),
+            Verb::Copy | Verb::Cut | Verb::Paste | Verb::Mix => {
+                let clip = match verb {
+                    Verb::Copy => ClipVerb::Copy,
+                    Verb::Cut => ClipVerb::Cut,
+                    Verb::Mix => ClipVerb::Mix,
+                    _ => ClipVerb::Paste,
+                };
+                self.clipboard_key(host, ctx, clip, cx, cy, clipboard)
+            }
+            Verb::Quantize | Verb::Split | Verb::Join | Verb::Delete => None,
+        }
     }
 
     /// **Plays the contents under the cursor, or stops what is playing** -- the
@@ -355,8 +485,8 @@ impl Gestures {
     }
 
     /// **Copy, cut and paste over the selection**, addressed to the view under
-    /// the cursor -- the window's own shortcuts, reached only by a key nothing
-    /// focused and nothing under the cursor answered first (a field's Ctrl+C is
+    /// the cursor -- the window's own verbs, reached only when nothing focused
+    /// and nothing under the cursor performed them first (a field's Ctrl+C is
     /// still the field's).
     ///
     /// The three verbs split exactly where the host's authority does. A **copy**

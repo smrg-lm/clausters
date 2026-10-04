@@ -26,7 +26,7 @@
 
 use super::font;
 use super::layout::Rect;
-use super::menu::Entry;
+use super::menu::{self, Entry};
 use super::menubar::{self, Title};
 use super::metrics::Metrics;
 use super::widget::Widget;
@@ -384,7 +384,21 @@ pub fn natural(entries: &[Entry], text_size: f32, m: &Metrics) -> (f32, f32) {
         .map(|e| font::width(&e.label, text_size))
         .fold(0.0f32, f32::max);
     let h = entries.iter().map(|e| entry_h(e, text_size, m)).sum();
-    (left + label + right + 2.0 * m.pad, h)
+    (
+        left + label + key_column(entries, text_size, m) + right + 2.0 * m.pad,
+        h,
+    )
+}
+
+/// The column a list keeps at the right of its labels for the chords its
+/// entries are bound to: the widest chord and a gap before it, or nothing when
+/// no entry has one.
+pub fn key_column(entries: &[Entry], text_size: f32, m: &Metrics) -> f32 {
+    entries
+        .iter()
+        .filter_map(|e| e.key.as_deref())
+        .map(|k| font::width(k, text_size) + 4.0 * m.pad)
+        .fold(0.0f32, f32::max)
 }
 
 /// One list as it stands on screen.
@@ -607,7 +621,14 @@ impl super::Host {
 
     /// Opens `stack` over window `def_id`, in place of whatever was open: one
     /// stack per window, since a list is modal.
-    pub(crate) fn open_popup(&mut self, def_id: i32, stack: Stack) {
+    pub(crate) fn open_popup(&mut self, def_id: i32, mut stack: Stack) {
+        // **A list shows the keys** of the verbs its entries report, read from
+        // the table as it opens -- a submenu is opened out of these same
+        // entries, so it carries them too.
+        let keys = &self.keys;
+        for level in &mut stack.levels {
+            menu::show_keys(&mut level.entries, &|verb| keys.label(verb));
+        }
         let popups = self.popups.entry(def_id).or_default();
         popups.tip = None;
         popups.stack = Some(stack);

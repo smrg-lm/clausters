@@ -968,6 +968,7 @@ fn draw_list(
     } else {
         0.0
     };
+    let keys = popup::key_column(&level.entries, size, m);
     for (i, (entry, row)) in level.entries.iter().zip(&at.rows).enumerate() {
         if row.y + row.h < rect.y || row.y > rect.y + rect.h {
             continue; // scrolled out
@@ -1012,10 +1013,16 @@ fn draw_list(
             &entry.label,
             row.x + m.pad + left,
             ty,
-            (row.w - 2.0 * m.pad - left - right).max(0.0),
+            (row.w - 2.0 * m.pad - left - right - keys).max(0.0),
             size,
             ink,
         );
+        // The chord bound to the entry's verb, flush right before the arrow's
+        // gutter and quieter than the label: it is a hint, not the command.
+        if let Some(key) = &entry.key {
+            let x = row.x + row.w - m.pad - right - font::width(key, size);
+            font::text(over, key, x, ty, size, theme.text_disabled);
+        }
         if entry.submenu().is_some() {
             let s = (glyph * 0.3).max(2.0);
             let x = row.x + row.w - m.pad - s;

@@ -1305,7 +1305,8 @@ order.
 
 ## G36 — Key bindings are configuration, not code
 
-- ⬜ **G36 — A key names a verb, and which key is set outside the code.** *(Added
+- ✅ **G36 — A key names a verb, and which key is set outside the code.** *(Done
+  2026-10-04, as designed below.)* *(Added
   2026-09-14 by the user: the widgets' keyboard shortcuts should be definable as
   configuration, for instance from a config file and a GuiDef; configurable
   shortcuts will be very useful for complex applications such as the multitrack,
@@ -1341,40 +1342,19 @@ order.
   `[gui.metrics]`, `docs/configuration.md`) and a protocol message a client sends
   (`/gui_theme`, `/gui_metrics`), with a `theme` prop scoping it to a subtree.
 
-  **What the design has to answer, none of it decided:**
+  **Decided with the user, 2026-10-04.** The user asked for the table to come from a file handed to the host at launch or read from the configuration directory, because an application here may have **no chrome at all** — no bar and no menu where a key could be discovered or a command reached by hand — so the keys are the only way in, and a program with none of its own still has to let its user choose them.
 
-  - **The verbs.** Each element declares the verbs it performs by name, and what
-    the names are — per element, or one vocabulary shared by every view that edits
-    a time axis.
-  - **Who owns the table**: the host, an application, a client — and at which
-    levels it can be set: the config file, a GuiDef (a window or a subtree), a
-    protocol message at run time, an application's defaults. With them, which
-    level wins over which.
-  - **Context.** Which binding applies where: the focused widget, the widget under
-    the pointer, the window, the application — and, once an application can stand
-    inside another (`crates/clausters-document/PLAN.md`, Future directions), which
-    one answers a key both claim.
-  - **One reading for both fronts**, so the native and the browser host cannot
-    disagree about a key again.
-  - **What a binding may not take**: a text field typing, the keys a browser or a
-    platform reserves, and how a modifier is spelled across platforms.
-  - **Discovery**: how a user finds out which key does what — the documentation
-    (`docs/gui-protocol.md`'s catalog rows carry the letters today), a status line,
-    and the two places `G37` and `G38` give it: beside a menu entry and in a tip.
+  - **A binding names a verb, and the table is `verb = chord(s)`.** One TOML table, `[gui.keys]`, where each entry is a verb's name and the chord (`"Ctrl+Shift+Z"`) or the list of chords that perform it; `[]` or `""` unbinds the verb. A chord means one verb: binding it to a second takes it from the first. It is keyed by the verb rather than by the key because that is what a reader changes ("undo should be this"), and because a verb with two keys (`redo`: Ctrl+Shift+Z and Ctrl+Y) is one line.
+  - **One vocabulary, shared by every view.** A verb names the act, not the element: `split` is a clip's and a note's, `copy` is a block of clips', a block of notes' and a span of samples'. Each element performs the verbs it can (`Element::verb`), and declines the rest — exactly as it declined a key it had no arm for.
+  - **The host's verbs and the application's.** The host performs `view_all` (R), `play` (Space), `loop` (L), `to_start` (Home), `to_end` (End), `copy`/`cut`/`paste`/`mix` (Ctrl+C/X/V, Ctrl+Shift+V), `quantize` (Q), `split` (E), `join` (J) and `delete` (Delete, Backspace). **Every other name is the application's**: the host performs nothing and reports it to the window's owner, `/gui_event <window> <seq> <version> <verb>` — the shape `undo` (Ctrl+Z), `redo` and `save` (Ctrl+S) already had, which are now simply the application verbs the table ships bound. So a program with no chrome gets a command by naming it in the table and answering the event, with nothing in the GuiDef. A host verb nothing took (a `copy` over no view) is reported the same way, so an application can answer it itself.
+  - **A key bound to a verb the window's menu bar names is that entry's pick.** The desktop rule: the accelerator and the entry are one command, so the key reports `"menu" <verb> [<state>]` exactly as a pick would (a check entry toggles), and a disabled entry's key does nothing. A program that has a bar answers one message whichever way the command came; one that has none answers the bare verb.
+  - **Levels, each overlaying the one before**: the host's defaults; `[gui.keys]` in the user's `config.toml` (`$XDG_CONFIG_HOME/clausters/`), then in a project `clausters.toml`, merged per verb; a free-standing file named by `--keys <path>` (the same flat table); and `/gui_keys <json>` at run time, which is how a page sets it (a page has no file) and how a script sets its application's keys after launch. This is the theme's ladder (`[gui.theme]`, `--theme`, `/gui_theme`), and the table is the **host's**, like the theme: a GuiDef carries none yet (see "Future directions", "Key bindings per window").
+  - **Context is the order the key was already offered in**, unchanged: an open popup takes every key (it is modal); Tab is the focus ring's; Escape is an open dialog's; then the **focused element** reads the raw key — so a field types the letter, a list walks on the arrows and a focused control's Space presses it. Only what that declined is looked up in the table, and the verb is offered to the focused element, then to the element **under the pointer**, then performed by the window, and finally reported to the owner.
+  - **What a binding cannot take**: Tab and Escape are refused (the ring and the dismissal are the platform's), and what the focus reads — a field's typing and editing keys, a focused control's arrows and Space — is the platform's convention and stays fixed, because it is the focused element's before the table is read. A chord is spelled with `Ctrl`, `Shift` and `Alt` and a key name (a character, `Space`, `Delete`, `Backspace`, `Enter`, `Home`, `End`, `Up`/`Down`/`Left`/`Right`, `F1`–`F12`), case-insensitive. A letter's Shift is part of the chord (`Q` is not `Shift+Q`); a punctuation character already says its Shift (`?`).
+  - **One reading for both fronts**: the dispatch is one function of the gesture machine (`Gestures::press_key`), and the native window and the page each only translate their event and call it — the two match blocks they each kept are gone.
+  - **Discovery**: an entry of any menu whose verb is bound shows its chord at the right of the row, in the disabled-text role, and the list is as wide as that needs. A tip does not show one yet: a tip belongs to a widget, and a widget's report is its value, not a verb.
 
-  **What the chrome set takes from it** *(2026-10-04, with `G37`–`G40`
-  reformulated)*: the **verb's name**, and nothing else yet. A menu entry, a
-  tool's button and a key name the same verb, so `G37.2`'s entries report one by
-  name without waiting for this table; what waits is showing the bound key
-  beside the entry and in the tip. The keys that walk an open menu and the keys
-  that operate a focused control (`G38.1`) are the standard ones; whether they
-  are rows of the table or fixed is decided here.
-
-  **What stays true until it lands**: the letters are documented where they are
-  performed (the element's `key` doc comment and `docs/gui-protocol.md`), and the
-  interaction vocabulary itself stays provisional ("The whole interaction
-  vocabulary is provisional…", Future directions). **Acceptance** is decided with
-  the design.
+  **Acceptance**: the multitrack, the roll and the take keep every key they had, now as rows of the default table; a `[gui.keys]` entry rebinds one, an application verb bound in a file reaches the owner of a window with no chrome, a key bound to a bar entry's verb reports the entry's pick, and the bar's lists show the chords. Both fronts go through the one dispatch; both clients send `/gui_keys`; `examples/panels/chrome` binds one application verb and shows the chords in its bar.
 
 
 ## G37 — Menus: the popup layer, the chooser put right, and a tree of entries
@@ -1417,9 +1397,9 @@ part of the design.
   the Python and the web client, its row in `docs/gui-protocol.md`, and an
   existing example extended to show it.
 
-**Order:** `G37.1`, `G37.2`, `G38`, `G39`, `G40`. None of them waits for `G36`:
-an entry and a tip name a verb, and the key beside it appears when `G36`'s table
-exists.
+**Order:** `G37.1`, `G37.2`, `G38`, `G39`, `G40`. None of them waited for `G36`:
+an entry and a tip name a verb, and the key beside an entry appeared when
+`G36`'s table landed.
 
 - ✅ **G37.1 — The popup layer, and the chooser on it.** *(Done 2026-10-04.
   `overlay_rect`/`overlay` were replaced: an element asks for a list through
@@ -1536,7 +1516,8 @@ exists.
   move. Of the light controls only `text` accepts the focus today; all of them
   do after this, operated by the standard keys — Space or Enter on a `button`
   and a `toggle`, the arrows on a `slider`, a `knob`, a `number` and a `choice`.
-  Whether those keys sit in `G36`'s table is `G36`'s question.
+  `G36` kept them out of its table: they are the focused element's, read before
+  the table is.
 
 - ✅ **G38.2 — `tip`: a widget says what it is when the pointer rests on it.** *(Done 2026-10-04.)*
   A prop, not a widget. The tip shows in the popup layer once the pointer has
@@ -1544,7 +1525,8 @@ exists.
   the work area; it goes when the pointer leaves, on a press and on a key; and
   moving onto another widget with a tip while one is up shows the next at once.
   On touch a long press shows it where no `context` answers. It says its text
-  and, once `G36` lands, the key of the widget's verb. It is not a line of the
+  and not yet a key: `G36` landed without one there, since a widget's report is
+  its value and not a verb. It is not a line of the
   status bar, which reports what a hand did. **Open:** a tip per part of a
   heavy view, the same question `G37.2` leaves.
 
@@ -4760,6 +4742,10 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   evidence: both are closed, both were correct, and the editor is still not
   what a hand expects, which is what says the missing piece is not another
   geometric tie-break.
+
+- ⬜ **Key bindings per window** *(left open by `G36`, 2026-10-04)*. The key table is the host's, like its theme, so two windows of one host cannot give one chord two verbs. A `keys` prop on a `window` -- or on a subtree, as `theme` scopes a look -- is the next level, and the question it waits on is the one an application inside another asks: which of two applications that both claim a chord answers it.
+
+- ⬜ **A key in a tip** *(left open by `G36`)*. A menu entry shows its chord because it names a verb; a tip belongs to a widget, whose report is its value. A tool button that *is* a verb (`verb` beside its `tip`) would let the tip show the key and the key press the button.
 
 ## Found by use: the running list of fixes
 
@@ -8097,3 +8083,5 @@ module of its own.
   `G37.2` and `G38.2`)*. Today one menu and one tip answer for the whole
   widget; a clip, a note or a box answering with its own is a question for the
   editors that hold them.
+
+- ⬜ **The host reads no Command key** *(found 2026-10-04, writing `G36`)*. Both fronts read Ctrl, Shift and Alt, and the native one reads a Mac's Command as nothing, so `Ctrl+Z` is Ctrl+Z on a Mac too where every other program there undoes on Cmd+Z. The key table can spell only what the fronts read. **The decision:** whether a chord's `Ctrl` means the platform's command key (Cmd on a Mac, Ctrl elsewhere -- the usual reading of a portable binding) or a fourth modifier `Cmd`/`Meta` is added and the defaults name it per platform.

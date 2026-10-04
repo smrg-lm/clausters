@@ -33,7 +33,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::Key;
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
 use winit::window::{Window, WindowId};
 
@@ -46,7 +46,7 @@ use crate::waveform::WaveformData;
 
 use super::fetch::BufferFetches;
 use super::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
-use super::gestures::{ClipVerb, GestureCtx, GestureEffect, Gestures};
+use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::widget::Widget;

@@ -36,8 +36,8 @@ use crate::host::structures::boxes::{self, Bounds};
 use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
-    BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, OnAxis, Swept,
-    Take, TimeSpace,
+    BodyRole, Claim, Ctx, Element, Events, Input, KeyInput, MidiNote, Needs, OnAxis, Swept, Take,
+    TimeSpace, Verb,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
@@ -950,18 +950,19 @@ impl Element for Notes {
         }
     }
 
-    /// The block operations, addressed to whatever the pointer is over: `q`
-    /// quantizes, `e` splits and `j` joins, Delete removes the selection,
-    /// Ctrl+C/X/V move a block through the host-wide clipboard.
+    /// The block operations, addressed to whatever the pointer is over:
+    /// quantize, split and join, delete the selection, and copy, cut and paste
+    /// a block through the host-wide clipboard. Which keys ask for them is the
+    /// host's key table (by default `q`, `e`, `j`, Delete and Ctrl+C/X/V).
     ///
-    /// They are keys rather than gestures because they act on the *selection*,
-    /// which is already where the pointer has been. A key this element has no
-    /// arm for falls through to the front's own shortcuts.
-    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        match key {
+    /// They are verbs rather than gestures because they act on the
+    /// *selection*, which is already where the pointer has been. A verb this
+    /// element has no arm for goes on to the window.
+    fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
+        match verb {
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid -- the same grid a drag snaps to.
-            Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => Some(
+            Verb::Quantize => Some(
                 if notes::quantize_notes(&mut self.notes, &self.selected, self.snap) {
                     self.notes_event()
                 } else {
@@ -969,7 +970,7 @@ impl Element for Notes {
                 },
             ),
             // **Split and join**, the clip's own two verbs over notes -- same
-            // keys, same reading. A clip asks its owner to cut, because the
+            // verbs, same reading. A clip asks its owner to cut, because the
             // owner holds the element; a roll holds its notes and cuts them
             // itself, which is the whole of the difference.
             //
@@ -979,13 +980,13 @@ impl Element for Notes {
             // stands in where the roll is on no axis (a bare roll nothing has
             // located yet).
             // **Only over a selection.** A roll drawn as a *clip's body* shares
-            // these two letters with the clip they belong to, and the clip is
-            // what a lane's hand is on: with nothing selected the key falls
-            // through and cuts the clip, which is what `e` has always meant
+            // these two verbs with the clip they belong to, and the clip is
+            // what a lane's hand is on: with nothing selected the verb falls
+            // through and cuts the clip, which is what a split has always meant
             // there. Selecting notes first is how you say you meant the notes.
             // It is also the sane reading on its own -- splitting every note in
-            // the roll is not something anyone asks for by leaning on a letter.
-            Key::Char('e') | Key::Char('E') if !input.mods.ctrl && !self.selected.is_empty() => {
+            // the roll is not something anyone asks for by leaning on a key.
+            Verb::Split if !self.selected.is_empty() => {
                 let at = snap_to(self.anchor(input), self.snap).max(0.0);
                 let cut = notes::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
@@ -997,7 +998,7 @@ impl Element for Notes {
                 self.selected = cut;
                 Some(self.notes_event())
             }
-            Key::Char('j') | Key::Char('J') if !input.mods.ctrl && !self.selected.is_empty() => {
+            Verb::Join if !self.selected.is_empty() => {
                 let before = self.notes.len();
                 self.selected = notes::join_notes(&mut self.notes, &self.selected);
                 Some(if self.notes.len() == before {
@@ -1011,7 +1012,7 @@ impl Element for Notes {
                     self.notes_event()
                 })
             }
-            Key::Delete | Key::Backspace if !self.selected.is_empty() => {
+            Verb::Delete if !self.selected.is_empty() => {
                 let held = std::mem::take(&mut self.selected);
                 boxes::discard(&mut self.notes, &held).then(|| self.notes_event())
             }
@@ -1019,9 +1020,7 @@ impl Element for Notes {
             // between rolls and windows -- and rides it in the same JSON form a
             // `/gui_set notes` accepts, which is the carrier every non-scalar
             // already uses.
-            Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
-                if input.mods.ctrl =>
-            {
+            Verb::Copy | Verb::Cut => {
                 let block = notes::copy_notes(&self.notes, &self.selected);
                 if block.is_empty() {
                     return None;
@@ -1029,7 +1028,7 @@ impl Element for Notes {
                 input
                     .clipboard
                     .set_text(&notes::notes_json(&block).to_string());
-                let cut = matches!(key, Key::Char('x') | Key::Char('X'));
+                let cut = verb == Verb::Cut;
                 if !cut {
                     // A copy changed nothing, so it reports nothing -- but it
                     // consumed the key.
@@ -1039,7 +1038,9 @@ impl Element for Notes {
                 self.selected.clear();
                 Some(self.notes_event())
             }
-            Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
+            // A paste that adds is a paste here: pasted notes are laid over
+            // what is there either way.
+            Verb::Paste | Verb::Mix => {
                 let block = clipboard_notes(&input.clipboard.text())?;
                 // **At the cursor**: what is pasted starts where the window's
                 // cursor is, playing or not -- a paste has no pointer, and the
@@ -2157,7 +2158,7 @@ mod tests {
             }
         }
         assert!(
-            r.key(&Key::Char('q'), &mut ki(&mut clipboard, false))
+            r.verb(Verb::Quantize, &mut ki(&mut clipboard, false))
                 .is_some()
         );
         assert_eq!(r.notes[0].start, 100.0);
@@ -2165,10 +2166,7 @@ mod tests {
 
         // Cut: the block lands on the clipboard and leaves the roll.
         r.selected = vec![0];
-        assert!(
-            r.key(&Key::Char('x'), &mut ki(&mut clipboard, true))
-                .is_some()
-        );
+        assert!(r.verb(Verb::Cut, &mut ki(&mut clipboard, true)).is_some());
         assert_eq!(r.notes.len(), 1);
         let block = clipboard.text();
         assert!(block.starts_with('['), "{block}");
@@ -2176,8 +2174,8 @@ mod tests {
         // ...and pastes back at the window's cursor, keeping its pitch: the
         // block starts where the cursor is and not where it was copied from.
         assert!(
-            r.key(
-                &Key::Char('v'),
+            r.verb(
+                Verb::Paste,
                 &mut at_cursor(&mut clipboard, true, Some(400.0))
             )
             .is_some()
@@ -2193,27 +2191,21 @@ mod tests {
         // which is where this one still stands.
         notes::remove_notes(&mut r.notes, &[1]);
         r.selected.clear();
-        assert!(
-            r.key(&Key::Char('v'), &mut ki(&mut clipboard, true))
-                .is_some()
-        );
+        assert!(r.verb(Verb::Paste, &mut ki(&mut clipboard, true)).is_some());
         assert_eq!(r.notes[1].start, r.step, "no cursor: the step position");
 
-        // Delete takes the selection away; a key it has no arm for falls
-        // through to the front's own shortcuts.
+        // Delete takes the selection away; a verb it has no arm for falls
+        // through to the window.
         assert!(
-            r.key(&Key::Delete, &mut ki(&mut clipboard, false))
+            r.verb(Verb::Delete, &mut ki(&mut clipboard, false))
                 .is_some()
         );
         assert_eq!(r.notes.len(), 1);
-        assert!(
-            r.key(&Key::Char('z'), &mut ki(&mut clipboard, false))
-                .is_none()
-        );
+        assert!(r.verb(Verb::Play, &mut ki(&mut clipboard, false)).is_none());
         // Text on the clipboard is not a note block, so a paste declines it.
         let mut text = crate::host::clipboard::Clip::default();
         text.set_text("hola");
-        assert!(r.key(&Key::Char('v'), &mut ki(&mut text, true)).is_none());
+        assert!(r.verb(Verb::Paste, &mut ki(&mut text, true)).is_none());
     }
 
     /// Live MIDI: a note-on paints a held note, the matching note-off closes it
@@ -2518,16 +2510,16 @@ mod tests {
 
     /// **A roll's verbs say why they did nothing**, exactly as a lane's do.
     ///
-    /// The drift this holds: the two implement one table of letters over one
+    /// The drift this holds: the two implement one set of verbs over one
     /// reading, and a multitrack that could not quantize said so while a roll
     /// that could not returned silence -- which is the thing two reports in one
     /// day settled as a defect rather than as a quiet success.
     #[test]
     fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
         let mut clipboard = crate::host::clipboard::Clip::default();
-        let mut press = |roll: &mut Notes, k: char| {
-            refusal(roll.key(
-                &Key::Char(k),
+        let mut press = |roll: &mut Notes, verb: Verb| {
+            refusal(roll.verb(
+                verb,
                 &mut KeyInput {
                     mods: Mods::default(),
                     clipboard: &mut clipboard,
@@ -2542,16 +2534,16 @@ mod tests {
             roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0, 200.0,50.0,60.0,100.0,0.0],"snap":100.0}"#);
         r.selected = vec![0, 1];
         assert_eq!(
-            press(&mut r, 'q'),
+            press(&mut r, Verb::Quantize),
             Some("these notes are already on the grid".to_string())
         );
         assert_eq!(
-            press(&mut r, 'e'),
+            press(&mut r, Verb::Split),
             Some("the cursor is not inside a held note".to_string()),
             "the cursor falls in the gap between them"
         );
         assert_eq!(
-            press(&mut r, 'j'),
+            press(&mut r, Verb::Join),
             Some("a join is one pitch's, and these notes do not touch on one".to_string())
         );
     }
@@ -2560,7 +2552,7 @@ mod tests {
     ///
     /// A note's second half keeps the pitch, the velocity and the channel of
     /// the one it came from, which is what `Holder::duplicate` answers for here;
-    /// everything else about the cut is what a clip's `e` does, through the
+    /// everything else about the cut is what a clip's split does, through the
     /// same function.
     #[test]
     fn a_cut_note_leaves_two_halves_that_are_still_the_same_note() {

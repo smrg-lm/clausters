@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use clausters_core::config::{Config, PortChoice, WS_PORT_OFFSET};
 use clausters_core::ids::IdShare;
+use clausters_gui::host::keymap::Keymap;
 use clausters_gui::host::metrics::Metrics;
 use clausters_gui::host::store::{self, GuiStore};
 use clausters_gui::host::theme::Theme;
@@ -47,7 +48,7 @@ usage:
                 [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
-                [--theme <path>] [--font <path>] [--msaa <n>]
+                [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
@@ -121,6 +122,12 @@ usage:
                             flat table of role = \"#rrggbb[aa]\" entries, laid
                             over [gui.theme] from the config. A partial table
                             is fine -- unlisted roles keep the default look.
+      --keys <path>         read the host's key bindings from this TOML file: a
+                            flat table of verb = \"chord\" (or a list of
+                            chords, [] to unbind) entries, laid over [gui.keys]
+                            from the config. A verb the host does not perform
+                            is the application's: its chord reports it to the
+                            window's owner.
       --font <path>         draw text with this typeface (TrueType/OpenType)
                             instead of the embedded bitmap face. Only a host
                             built with `--features font-atlas` reads it; any
@@ -160,6 +167,8 @@ audio server uses. A window-rooted /gui_def opens an actual window; /gui_set,
 struct Look {
     theme: Theme,
     metrics: Metrics,
+    /// The key table. Not a look either, and here for `follow_block`'s reason.
+    keys: Keymap,
     msaa: u32,
     /// Seconds of recorded audio a picture waits for before re-reading its
     /// summary (`--follow-block`). Not a *look*, strictly -- it is here because
@@ -171,6 +180,7 @@ impl Look {
     fn apply(self, host: &mut Host) {
         host.theme = self.theme;
         host.metrics = self.metrics;
+        host.keys = self.keys;
         host.msaa = self.msaa;
         host.follow_block = self.follow_block;
     }
@@ -244,6 +254,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut save_to: Option<String> = None;
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
+    let mut keys_path: Option<String> = None;
     let mut font_path: Option<String> = None;
     let mut cli_msaa: Option<u32> = None;
     let mut cli_follow_block: Option<f64> = None;
@@ -319,6 +330,13 @@ fn run(args: &[String]) -> Result<(), String> {
                 theme_path = Some(
                     it.next()
                         .ok_or_else(|| format!("--theme needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
+            "--keys" => {
+                keys_path = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--keys needs a path\n{USAGE}"))?
                         .clone(),
                 );
             }
@@ -439,6 +457,21 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} (config [gui.metrics])");
         }
     }
+    // The key table: the defaults, overlaid by [gui.keys] from the config,
+    // then by a --keys file. A chord that cannot be read warns and is skipped,
+    // so a stale file loses one binding rather than the program's keys.
+    let mut keys = Keymap::default();
+    if let Some(table) = &cfg.gui.keys {
+        for w in keys.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_strs()))) {
+            tracing::warn!("{w} (config [gui.keys])");
+        }
+    }
+    if let Some(path) = &keys_path {
+        let table = clausters_core::config::read_keys_file(Path::new(path))?;
+        for w in keys.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_strs()))) {
+            tracing::warn!("{w} ({path})");
+        }
+    }
     // How much recorded audio a picture waits for before it re-reads its
     // summary. Zero or less means every tick, which is what it did before the
     // block existed and what a measurement wants.
@@ -446,6 +479,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let look = Look {
         theme,
         metrics,
+        keys,
         msaa,
         follow_block,
     };

@@ -606,9 +606,9 @@ impl Multitrack {
     ///   closely while the rest stay where they are.
     ///
     /// **A facility, and it says so.** These are here because the example needs
-    /// to reach a stack taller than its window, and which keys they are is not
-    /// settled -- see `clients/gui/PLAN.md`, "The whole interaction vocabulary is
-    /// provisional" and "A shortcut is the application's, not the widget's".
+    /// to reach a stack taller than its window, and which modifiers they are is
+    /// not settled -- see `clients/gui/PLAN.md`, "The whole interaction
+    /// vocabulary is provisional".
     pub(super) fn wheeled(
         &mut self,
         at: (f64, f64),
@@ -657,11 +657,10 @@ impl Multitrack {
 impl Multitrack {
     /// The verbs a hand has over what it is holding.
     ///
-    /// `q` quantizes onto the track's own `snap` grid -- the grid a drag already
-    /// lands on -- `e` splits at the window's cursor and `j` joins a touching
-    /// run, Delete removes (the **selected track**, with everything on it, when
-    /// no box is held), and `Ctrl`+`C`/`X`/`V` move a block through the
-    /// host-wide clipboard. All of them act on **the held set**, across the
+    /// Quantize onto the track's own `snap` grid -- the grid a drag already
+    /// lands on -- split at the window's cursor and join a touching run, delete
+    /// (the **selected track**, with everything on it, when no box is held),
+    /// and copy, cut and paste a block through the host-wide clipboard. All of them act on **the held set**, across the
     /// stack, and all of them report the clips as they now stand: there is one
     /// payload here and a verb does not get to invent a second.
     ///
@@ -672,26 +671,23 @@ impl Multitrack {
     /// a correct refusal nobody is told about is indistinguishable from a key
     /// that does not work.
     ///
-    /// **The letters are the ones a clip already answered to on a track.** Which
-    /// keys they are is not settled -- see `clients/gui/PLAN.md`, "A shortcut is
-    /// the application's, not the widget's".
-    pub(super) fn keyed(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+    /// **Which keys ask for them is the host's key table**, not this element's:
+    /// by default the letters a clip already answered to on a track (`q`, `e`,
+    /// `j`, Delete, Ctrl+C/X/V).
+    pub(super) fn verbed(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
         // **Delete acts on what is in hand, and a track can be in hand.** The
         // header is what puts one there, so with a track selected Delete is the
         // track's -- it and everything on it -- and with none it is the held
         // boxes', which is what it has always been. The ordinary rule, and the
         // reason the selected track is not merely decoration.
-        if matches!(key, Key::Delete | Key::Backspace)
-            && self.selected.is_empty()
-            && self.track.is_some()
-        {
+        if verb == Verb::Delete && self.selected.is_empty() && self.track.is_some() {
             return self.remove_track();
         }
-        if self.selected.is_empty() && !matches!(key, Key::Char('v') | Key::Char('V')) {
+        if self.selected.is_empty() && !matches!(verb, Verb::Paste | Verb::Mix) {
             return None;
         }
-        match key {
-            Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => {
+        match verb {
+            Verb::Quantize => {
                 let held = self.selected.clone();
                 Some(if boxes::quantize(self, &held, self.snap) {
                     self.clips_event()
@@ -701,7 +697,7 @@ impl Multitrack {
             }
             // **At the window's cursor**: a key gesture has no pointer to read a
             // position from, and the window has one cursor for exactly that.
-            Key::Char('e') | Key::Char('E') if !input.mods.ctrl => {
+            Verb::Split => {
                 let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
                 Some(if self.split_held(at) {
                     self.clips_event()
@@ -709,8 +705,8 @@ impl Multitrack {
                     Events::refused("split", "the cursor is not inside a held box")
                 })
             }
-            Key::Char('j') | Key::Char('J') if !input.mods.ctrl => Some(self.join_event()),
-            Key::Delete | Key::Backspace => {
+            Verb::Join => Some(self.join_event()),
+            Verb::Delete => {
                 let held = std::mem::take(&mut self.selected);
                 boxes::discard(self, &held).then(|| self.clips_event())
             }
@@ -718,9 +714,7 @@ impl Multitrack {
             // multitracks and windows -- and rides it in the same JSON form a
             // `/gui_set clips` accepts, which is the carrier every non-scalar
             // here uses.
-            Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
-                if input.mods.ctrl =>
-            {
+            Verb::Copy | Verb::Cut => {
                 let block: Vec<Clip> = self
                     .selected
                     .iter()
@@ -732,7 +726,7 @@ impl Multitrack {
                 input
                     .clipboard
                     .set_text(&model::clips_json(&block).to_string());
-                if !matches!(key, Key::Char('x') | Key::Char('X')) {
+                if verb != Verb::Cut {
                     // A copy changed nothing, so it reports nothing -- but it
                     // consumed the key.
                     return Some(Events::none());
@@ -741,7 +735,7 @@ impl Multitrack {
                 boxes::discard(self, &held);
                 Some(self.clips_event())
             }
-            Key::Char('v') | Key::Char('V') if input.mods.ctrl => {
+            Verb::Paste | Verb::Mix => {
                 let mut props = Map::new();
                 props.insert(
                     "clips".into(),

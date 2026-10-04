@@ -45,6 +45,19 @@ pub(super) fn emit(
     });
 }
 
+/// [`emit`] without the status line: for a report the window already said in
+/// its own words (the loop's "loop on"), or one that is not an edit at all
+/// (the transport's play, which the multitrack's playhead shows).
+pub(super) fn tell(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, args: Vec<OscType>) {
+    let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+    out.push(GestureEffect::Emit {
+        def_id,
+        widget_id: def_id,
+        seq,
+        args,
+    });
+}
+
 /// **Refuses the gesture this arm resolved to**, out loud, and consumes the
 /// press.
 ///

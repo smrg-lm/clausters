@@ -37,8 +37,8 @@ use crate::host::paint::Draw;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
-    SlotKey, Slotted, Swept, Take, TextureBody, TimeSpace,
+    Claim, Ctx, Element, Events, Input, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
+    SlotKey, Slotted, Swept, Take, TextureBody, TimeSpace, Verb,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -438,8 +438,8 @@ impl Element for Multitrack {
     fn accepts_focus(&self) -> bool {
         true
     }
-    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        self.keyed(key, input)
+    fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
+        self.verbed(verb, input)
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

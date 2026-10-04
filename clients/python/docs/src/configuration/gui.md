@@ -2,8 +2,8 @@
 
 Every key the **`clausters-gui`** host reads: the `[gui]` section (its ports and
 its two legs), the `[gui.theme]` and `[gui.metrics]` role tables (its whole
-look and its whole sizing) and the `[standalone]` section (the self-contained
-app). The reader is the host binary — including the one `Session.gui()` or
+look and its whole sizing), the `[gui.keys]` table (which key performs which
+verb) and the `[standalone]` section (the self-contained app). The reader is the host binary — including the one `Session.gui()` or
 `GuiHost().boot()` launches — so a look you set here is the look your script's
 windows open with, with nothing to say in the script.
 
@@ -73,8 +73,8 @@ file. The same table also cascades **over the wire**: a container's `theme` prop
 scopes an overlay to its subtree and any widget's `color` prop re-seeds the
 roles that carry its function — see the widget protocol in the
 [Clausters server book](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
-A host running in a browser tab has no config file, so the page passes the same
-table as JSON to `GuiBridge.theme` (and its sizing sibling `GuiBridge.metrics`)
+A host running in a browser tab has no config file, so the page sends the same
+table over the wire, `GuiHost.theme` (and its sizing sibling `GuiHost.metrics`)
 — see the [web client book](https://clausters-web.readthedocs.io/).
 
 The 70 roles, named by **function** rather than by widget, so one entry restyles
@@ -241,6 +241,46 @@ than how it looks: `control_h` and the text scales feed every widget's **natural
 size** — how tall a control asks to be when a `row`/`col` gives it no explicit
 `h` — so a density change re-flows the layout, it does not just recolor it.
 
+## `[gui.keys]`
+
+**Which key performs which verb.** No widget names a key: a multitrack splits,
+a roll quantizes, a window plays — those are **verbs**, and this table says
+which chord asks for each. An entry is a verb's name and one chord, or a list
+of them; `[]` unbinds the verb. The table is **partial**: unlisted verbs keep
+their defaults (Ctrl+Z undoes, Space plays, `q` quantizes, `e` splits, `j`
+joins, …), and a chord means one verb, so binding it takes it from whatever had
+it. An unreadable chord warns and is skipped.
+
+```toml
+[gui.keys]
+split = "S"                     # a verb the host performs, on another key
+redo = ["Ctrl+Shift+Z", "Ctrl+Y"]
+quantize = []                   # no key at all
+export = "Ctrl+E"               # the application's own verb
+```
+
+A chord is `Ctrl`, `Shift` and `Alt` joined by `+` to a key: a character,
+`Space`, `Delete`, `Backspace`, `Enter`, `Home`, `End`, `Up`, `Down`, `Left`,
+`Right` or `F1` to `F12`, case-insensitive. A letter's Shift is part of the
+chord (`Q` is not `Shift+Q`); a punctuation character already says its own.
+Tab and Escape cannot be bound — they walk the focus and dismiss.
+
+**A name the host does not perform is the application's**, and that is what
+makes a window with no menu at all usable from the keyboard: pressing `export`'s
+chord reports `"export"` from the window, which the script answers in the
+window's `on_event` like any other event. When the window *has* a menu bar with
+an entry for that verb, the key reports exactly that entry's pick
+(`"menu", "export"`), so one handler covers both; and a menu shows the chord
+beside every entry whose verb is bound.
+
+`--keys <path>` reads the same flat table from a free-standing file, laid over
+the section, so a user's keys travel as one file. A script can also bind keys
+after launch with `GuiHost.keys`, the same table as a dict — which is how an
+application gives its own verbs default keys. The verbs the host performs, their
+defaults and the order a key reaches them are in the widget protocol, "The keys
+are a table", in the
+[Clausters server book](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
+
 ## `[standalone]`
 
 The self-contained app: a saved GuiDef plus its defs, booted against an embedded
@@ -276,6 +316,9 @@ playhead = "#4cc7f2"
 [gui.metrics]
 scale = 1.15                   # a comfortable host on a large screen
 knob_d = 64                    # ...with bigger dials than the density gives
+
+[gui.keys]
+split = "S"
 
 [standalone]
 gui = "drone"

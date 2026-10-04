@@ -39,7 +39,9 @@ page's and a <b>tree</b>; a <b>context menu</b> on the pages (the secondary
 button) and a <b>tip</b> on every tool; and a <b>dialog</b>, opened by
 <code>Info &gt; About</code> and closed by freeing it, and a <b>file chooser</b> in
 another, opened by <code>File &gt; Open</code>: the host lists the directory
-itself -- the page's own storage here, the disk in the script.
+itself -- the page's own storage here, the disk in the script; and <b>keys</b>
+for the bar's verbs, shown beside its entries: F1 is <code>About</code>, Ctrl+O
+is <code>Open</code>, and M is a verb no menu names.
 
 It also shows what they share. Every control takes the focus: Tab walks them,
 Space or Enter presses, the arrows step. A press on a title of the bar opens
@@ -125,6 +127,18 @@ the host reports when a hand changes them -- the lines this prints.</div>
         // What the secondary button opens over the pages.
         const onPages = gui.menu(gui.entry("Copy", "copy"), gui.entry("Paste", "paste"),
                                  "-", gui.entry("Reset the page", "reset"));
+
+        // ---- the keys ----
+        // A key performs a **verb**, and which key is the host's key table,
+        // not the window's: a user sets it in `[gui.keys]`, and a page sets
+        // the same table with `keys`. A key bound to a verb an entry of the bar
+        // reports *is* that entry -- it reports the entry's pick, and a
+        // disabled entry's key does nothing -- and the bar shows the key
+        // beside the label (the defaults have put Ctrl+Z beside Undo already).
+        // A verb no menu names is reported bare, from the window: that is how
+        // a window with no menu at all has commands. A field that holds the
+        // focus types the letter instead.
+        host.keys({ open: "Ctrl+O", about: "F1", mark: "M" });
 
         // ---- the toolbar ----
         // A row as tall as its tools. The buttons are `flat` -- no box until

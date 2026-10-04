@@ -2304,8 +2304,8 @@ fn keys_are_ignored_when_nothing_is_focused() {
     let mut host = text_host();
     let g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    // Nothing focused: the machine declines the key (the front runs its
-    // global shortcuts instead).
+    // Nothing focused: the focus declines the key (the key table reads it
+    // instead).
     assert!(key(&g, &mut host, &ctx, Key::Char('x')).is_none());
     assert_eq!(text_value(&host, 5), "");
 }
@@ -3309,32 +3309,36 @@ mod status_bar {
         );
     }
 
-    /// **A key nothing claimed says so**, on the bar and as the machine's own
-    /// note rather than as something the hand did.
+    /// **A verb nothing claimed says so**, on the bar and as the machine's own
+    /// note rather than as something the hand did -- and then goes on to the
+    /// window's owner, since a verb the host did not perform is the
+    /// application's to answer.
     ///
     /// The defect this holds is the one reported twice on 2026-09-12: a verb
     /// that refused correctly and a letter no element answers to were the same
     /// silence at the window. The element's refusals were given words that day;
     /// this is the other case.
     #[test]
-    fn a_key_no_element_took_leaves_a_note_and_not_a_line() {
+    fn a_key_no_element_took_leaves_a_note_and_reaches_the_owner() {
         let mut host = barred_host();
-        let g = Gestures::default();
+        let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 800, 400);
         let toggle = placed_rect(&host, &ctx, 9);
         let mut clip = crate::host::clipboard::Clip::default();
-        let taken = g.key_at_cursor(
-            &mut host,
-            &ctx,
-            Key::Char('q'),
-            (toggle.x + 4.0) as f64,
-            (toggle.y + toggle.h * 0.5) as f64,
-            &mut clip,
+        let pointer = ((toggle.x + 4.0) as f64, (toggle.y + toggle.h * 0.5) as f64);
+        let effects = g
+            .press_key(&mut host, &ctx, Key::Char('q'), Some(pointer), &mut clip)
+            .expect("a bound key is consumed");
+        assert_eq!(
+            emitted_args(&effects, 1),
+            Some(vec![OscType::String("quantize".into())]),
+            "a toggle has no quantize, so the window's owner is told"
         );
-        assert!(taken.is_none(), "a toggle has no `q`");
         let statuses = host.statuses();
-        let line = statuses.get(&1).and_then(|s| s.last()).expect("a line");
-        assert_eq!(line.kind, Kind::Note, "the machine's, not the hand's");
+        let line = statuses
+            .get(&1)
+            .and_then(|s| s.lines().find(|l| l.kind == Kind::Note))
+            .expect("a note");
         assert_eq!(line.widget, None, "a note is the window's");
         assert!(
             line.text.contains("did not take it"),
@@ -3582,7 +3586,7 @@ fn the_rolls_paste_lands_on_the_windows_cursor() {
     // ...and paste over the roll.
     ctx.ctrl = true;
     let effects = g
-        .key_at_cursor(&mut host, &ctx, Key::Char('v'), x, y, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('v'), Some((x, y)), &mut clip)
         .expect("the roll took the paste");
     let args = emitted_args(&effects, 90).expect("the paste reports the notes");
     let starts: Vec<f32> = args[1..]

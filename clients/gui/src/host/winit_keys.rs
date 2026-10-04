@@ -14,7 +14,7 @@ use winit::keyboard::{Key, NamedKey};
 use super::widget::element::Key as HostKey;
 
 /// Translates a winit key into the platform-neutral [`HostKey`] the focus reads,
-/// or `None` for one nothing focusable answers (the global shortcuts then run).
+/// or `None` for one the host has no name for (it then does nothing).
 /// A printable character (including Space) inserts; the named editing keys and
 /// Tab map one-to-one.
 pub(crate) fn to_key(key: &Key) -> Option<HostKey> {
@@ -31,6 +31,7 @@ pub(crate) fn to_key(key: &Key) -> Option<HostKey> {
         Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
         Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
         Key::Named(NamedKey::Escape) => Some(HostKey::Escape),
+        Key::Named(named) => function_key(*named).map(HostKey::F),
         Key::Character(s) => s
             .chars()
             .next()
@@ -40,17 +41,25 @@ pub(crate) fn to_key(key: &Key) -> Option<HostKey> {
     }
 }
 
-/// Whether this is the space bar, however the shell spelled it.
-///
-/// It arrives as `Named(Space)` under a chord and as the character it typed
-/// otherwise, and a match on one of the two is a key that works only with a
-/// modifier held -- which is to say not at all.
-pub(crate) fn is_space(key: &Key) -> bool {
-    match key {
-        Key::Named(NamedKey::Space) => true,
-        Key::Character(c) => c == " ",
-        _ => false,
-    }
+/// The number of a function key, `F1` to `F12` -- the ones a binding may name.
+fn function_key(key: NamedKey) -> Option<u8> {
+    use NamedKey::*;
+    let n = match key {
+        F1 => 1,
+        F2 => 2,
+        F3 => 3,
+        F4 => 4,
+        F5 => 5,
+        F6 => 6,
+        F7 => 7,
+        F8 => 8,
+        F9 => 9,
+        F10 => 10,
+        F11 => 11,
+        F12 => 12,
+        _ => return None,
+    };
+    Some(n)
 }
 
 #[cfg(test)]
@@ -64,15 +73,18 @@ mod tests {
     /// The window's arm matched only the named spelling, so the key did
     /// nothing at all: no monitor, no transport, and nothing in the log to say
     /// a key had been declined. Found 2026-09-08 by the user, pressing space at
-    /// a session that had just been given readers.
+    /// a session that had just been given readers. Both spellings are one key
+    /// here, which is the only place either is read.
     #[test]
     fn the_space_bar_is_recognized_by_both_spellings() {
-        assert!(is_space(&Key::Named(NamedKey::Space)));
-        assert!(
-            is_space(&Key::Character(" ".into())),
+        let space = Some(HostKey::Char(' '));
+        assert_eq!(to_key(&Key::Named(NamedKey::Space)), space);
+        assert_eq!(
+            to_key(&Key::Character(" ".into())),
+            space,
             "what a press produces"
         );
-        assert!(!is_space(&Key::Character("s".into())));
-        assert!(!is_space(&Key::Named(NamedKey::Enter)));
+        assert_eq!(to_key(&Key::Named(NamedKey::F5)), Some(HostKey::F(5)));
+        assert_eq!(to_key(&Key::Named(NamedKey::F13)), None);
     }
 }

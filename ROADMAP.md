@@ -180,12 +180,10 @@ its plan; the plan is where its acceptance is read.
   development resumes and waiting on `O21`(a). **Related:** an application
   inside another, under "The larger questions" below.
 
-- ⬜ **`G36` — key bindings are configuration, a design first**
-  *(`clients/gui/PLAN.md`, section "G36")*. **The decision is the design**, and
-  it follows the conventions common to desktop and mobile interfaces: key
-  bindings set outside the code (a config file, a GuiDef) instead of spelled in
-  each element. The menus and tips name a verb and will show the bound key
-  once this table exists.
+- ⬜ **The host reads no Command key**
+  *(`clients/gui/PLAN.md`, "Found by use")*. **The decision:** whether a key
+  table's `Ctrl` is the platform's command key or a fourth modifier is added.
+  Small, and it decides how every default chord reads on a Mac.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
@@ -336,13 +334,15 @@ Named, not enumerated: each is written where it belongs and is read there.
   let the notes editor (`X3`) stand inside a multitrack or a script's window, as a
   composed widget. Nothing about it is designed: a subtree rather than a window,
   ids a parent hands a child, events routed to the application that owns each
-  widget, and who answers a key when applications nest, which meets `G36`.
+  widget, and who answers a key when applications nest, which meets the GUI's
+  "Key bindings per window" (`clients/gui/PLAN.md`, Future directions).
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (the
   double click and the long press, and a pass over the gesture vocabulary; a
   steady goniometer; the heavy families as features; composed text (IME); a Tauri
-  wrapper; the three heavy-view rendering questions), the web client's (a node
+  wrapper; the three heavy-view rendering questions; key bindings per window and
+  a key in a tip), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, and the document crate's interpreter
   inside a standalone host. Every one of them carries its own checkbox in its own

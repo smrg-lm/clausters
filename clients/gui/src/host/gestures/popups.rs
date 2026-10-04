@@ -160,6 +160,27 @@ fn report_pick(
     emit(host, out, def_id, widget_id, args);
 }
 
+/// **A key bound to a verb the window's bar names is that entry's pick**: it
+/// reports exactly what a pick would, a check flipping included. `Some(true)`
+/// when it picked, `Some(false)` for an entry that cannot be picked (the key
+/// then does nothing, as a disabled entry does), and `None` when the bar names
+/// no such verb.
+pub(super) fn pick_verb(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    out: &mut Vec<GestureEffect>,
+    verb: &str,
+) -> Option<bool> {
+    let entries = host.window_def(ctx.def_id).and_then(menubar::entries)?;
+    let (path, live) = menu::find_verb(entries, verb)?;
+    if live {
+        let owner = Owner::Bar(Title::Entry(path[0]));
+        report_pick(host, ctx, out, owner, &path);
+        out.push(GestureEffect::Redraw(ctx.def_id));
+    }
+    Some(live)
+}
+
 /// A row was picked: the stack closes and whoever owns it answers -- the
 /// element that opened the list, or the host for a menu.
 fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: Vec<usize>) {

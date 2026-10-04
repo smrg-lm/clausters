@@ -44,6 +44,10 @@ pub struct Entry {
     pub enabled: bool,
     /// A glyph of the font drawn before the label (see `host::font`).
     pub icon: Option<char>,
+    /// The chord bound to this entry's verb, drawn at the right of its row.
+    /// Not a prop: the host writes it from its key table when the list opens
+    /// ([`show_keys`]), so a list shows the keys of the moment it opened.
+    pub key: Option<String>,
 }
 
 impl Entry {
@@ -59,6 +63,7 @@ impl Entry {
             },
             enabled: true,
             icon: None,
+            key: None,
         }
     }
 
@@ -69,6 +74,7 @@ impl Entry {
             kind: EntryKind::Separator,
             enabled: false,
             icon: None,
+            key: None,
         }
     }
 
@@ -114,6 +120,7 @@ impl Entry {
                 kind: EntryKind::Action,
                 enabled: true,
                 icon: None,
+                key: None,
             }),
             Value::Object(o) => Entry::from_object(o),
             _ => None,
@@ -148,6 +155,7 @@ impl Entry {
             kind,
             enabled: o.get("enabled").and_then(truthy).unwrap_or(true),
             icon: o.get("icon").and_then(icon_of),
+            key: None,
         })
     }
 
@@ -237,6 +245,41 @@ fn list_at_mut<'a>(entries: &'a mut Vec<Entry>, path: &[usize]) -> Option<&'a mu
     }
 }
 
+/// **Writes the chord bound to each entry's verb** beside it, at every depth --
+/// what a list shows at the right of a row, so a reader finds the key by
+/// opening the menu. `chord` answers a verb's chord, or `None` for one no key
+/// performs.
+pub fn show_keys(entries: &mut [Entry], chord: &dyn Fn(&str) -> Option<String>) {
+    for e in entries {
+        match &mut e.kind {
+            EntryKind::Submenu(sub) => show_keys(sub, chord),
+            EntryKind::Separator => {}
+            _ => e.key = e.verb.as_deref().and_then(chord),
+        }
+    }
+}
+
+/// **Where the entry reporting `verb` is**, as the path a pick takes, and
+/// whether it can be picked -- an entry inside a disabled submenu cannot,
+/// whatever it says itself. The first one in reading order, when several
+/// report the same verb.
+///
+/// What a key bound to that verb asks for: the desktop rule, where the
+/// accelerator and the entry are one command.
+pub fn find_verb(entries: &[Entry], verb: &str) -> Option<(Vec<usize>, bool)> {
+    for (i, e) in entries.iter().enumerate() {
+        if let Some(sub) = e.submenu() {
+            if let Some((mut path, live)) = find_verb(sub, verb) {
+                path.insert(0, i);
+                return Some((path, live && e.enabled));
+            }
+        } else if e.verb.as_deref() == Some(verb) && !e.is_separator() {
+            return Some((vec![i], e.enabled));
+        }
+    }
+    None
+}
+
 /// **What a pick was**: the verb to report, and the state that goes with it
 /// when the entry holds one.
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +330,19 @@ pub fn pick(entries: &mut Vec<Entry>, path: &[usize]) -> Option<Pick> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A verb is found at any depth, and a disabled list makes everything in
+    /// it unpickable.
+    #[test]
+    fn a_verb_is_found_where_a_pick_would_reach_it() {
+        let menu = parse(&json!([
+            {"label": "File", "menu": [{"label": "Save", "verb": "save"}]},
+            {"label": "Old", "enabled": false, "menu": [{"label": "Undo", "verb": "undo"}]},
+        ]));
+        assert_eq!(find_verb(&menu, "save"), Some((vec![0, 0], true)));
+        assert_eq!(find_verb(&menu, "undo"), Some((vec![1, 0], false)));
+        assert_eq!(find_verb(&menu, "redo"), None);
+    }
 
     fn file_menu() -> Vec<Entry> {
         parse(&json!([
