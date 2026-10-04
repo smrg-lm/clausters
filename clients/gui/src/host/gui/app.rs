@@ -208,9 +208,29 @@ impl App {
     /// keeps of its own -- a rolling trace, a triggered window, an analysis, a
     /// waterfall's transform -- reading a history where it needs one. Without a
     /// segment there is nothing to read and the live views stay empty, drawing
-    /// their framed field.
+    /// their framed field; the tick still reaches what moves on its own.
     fn advance_live(&mut self) {
         let Some(shm) = self.shm.clone() else {
+            // **No segment still ticks what moves on its own.** Nothing can be
+            // read off a bus, but an element that animates by itself -- an
+            // indeterminate progress bar -- asked for the tick and has to get
+            // it; it used to stand still in a window with no server behind it.
+            let dt = self.tick_clock.delta();
+            for (def_id, ws) in &mut self.windows {
+                let Some(tree) = self.host.window_def_mut(*def_id) else {
+                    continue;
+                };
+                live::tick_tree(
+                    tree,
+                    &Live {
+                        bus: None,
+                        sample_rate: 0.0,
+                        dt,
+                        histories: &ws.histories,
+                    },
+                );
+            }
+            self.refresh_slots();
             return;
         };
         let sample_rate = shm.sample_rate();

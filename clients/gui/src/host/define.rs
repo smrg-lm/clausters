@@ -158,6 +158,13 @@ impl Host {
                         && let Some(held) = tree.find_mut(id)
                     {
                         *held = subtree;
+                        // The subtree was resolved on its own, against the
+                        // host's theme; inside the window it inherits its
+                        // ancestors' -- a theme group, an opacity, a disabled
+                        // container -- so the window is resolved again. A
+                        // dialog defined into a window with a theme of its
+                        // own drew in the host's.
+                        widget::resolve_style(tree, &Arc::new(self.theme.clone()));
                         // **The window is brought up to the tree, not merely
                         // repainted** ([`Self::tree_changed`]): a subtree that
                         // changed shape has not been measured at all.

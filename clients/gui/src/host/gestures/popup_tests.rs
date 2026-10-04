@@ -890,3 +890,28 @@ fn a_dialogs_close_mark_asks_it_to_go() {
     let e = click(&mut g, &mut host, &ctx, mid(mark));
     assert_eq!(emitted(&e, 5), vec![vec![OscType::String("cancel".into())]]);
 }
+
+/// A widget defined into an open window inherits the window's theme group --
+/// the dialog an application opens draws in the window's colors.
+#[test]
+fn a_subtree_defined_into_a_window_takes_the_windows_theme() {
+    let mut host = host_from(
+        r##"{"type":"window","theme":{"popup":"#ff0000"},"status":false,"children":[
+            {"id":3,"type":"layout","h":0}]}"##,
+    );
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![
+                OscType::Int(3),
+                OscType::String(
+                    r#"{"type":"layout","children":[{"id":4,"type":"layout","modal":1}]}"#.into(),
+                ),
+            ],
+        }),
+        from(),
+    );
+    let dialog = host.window_def(1).unwrap().find(4).unwrap();
+    let theme = dialog.theme.as_deref().expect("resolved");
+    assert_eq!(theme.popup, [1.0, 0.0, 0.0, 1.0]);
+}

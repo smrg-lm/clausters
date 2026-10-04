@@ -776,6 +776,11 @@ pub(crate) fn render(
     theme: &Theme,
 ) {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    // **The host's own chrome draws in the window's theme**: the status bar,
+    // the menu bar, the lists and the tip that open over the tree, the scrim
+    // behind a dialog. They belong to no widget, so they used to take the
+    // host's theme and ignore a window that set one of its own.
+    let theme = tree.theme.as_deref().unwrap_or(theme);
     let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     // The status band comes off the top of the frame, before anything is
     // placed: the same call the hit test makes (`Host::content_area`), so the
