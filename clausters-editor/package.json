@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "notices": "node scripts/notices.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

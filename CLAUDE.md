@@ -85,7 +85,10 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   (`clausters-editor/src-tauri`) and its own npm package, keeps its own version, and
   is built and checked only by `.github/workflows/clausters-editor.yml`. Nothing below
   about the packages moving together, the clients or the books applies to it;
-  the language conventions and the commit workflow do.
+  the language conventions and the commit workflow do. **Adding, removing or
+  updating one of its libraries regenerates its third-party licenses** (`npm run
+  notices`, in the same commit; CI checks it) after checking the new license
+  against its GPL -- the rule is in its README, "Third-party licenses".
 
 ## Cross-client build strategy
 

@@ -2,9 +2,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-// The only font bundled with the app (OFL license); the rest are chosen from the system's.
-import "@fontsource/jetbrains-mono/latin-500.css";
-import "@fontsource/jetbrains-mono/latin-ext-500.css";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -14,6 +11,8 @@ export const THEMES: [ThemePref, string][] = [
   ["system", "System"],
 ];
 
+/** The monospaced font bundled with the app (declared in `src/fonts.css`, beside
+ *  the interface's Inter); the other choices are the system's. */
 export const BUNDLED_FONT = "JetBrains Mono";
 
 /** Font options: the bundled one and the monospaced ones installed on the system. */

@@ -52,6 +52,13 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      # The third-party notices follow the dependencies: a lockfile change that
+      # adds or bumps a package without `npm run notices` fails here. Pinned,
+      # since another cargo-about may word the same licenses differently.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.2
+      - run: npm run notices -- --check
       - run: cargo fmt --check
         working-directory: clausters-editor/src-tauri
       - run: cargo clippy --all-targets -- -D warnings

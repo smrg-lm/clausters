@@ -25,6 +25,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": { "../docs/": "docs/" }
+    "resources": { "../docs/": "docs/", "../licenses/": "licenses/" }
   }
 }

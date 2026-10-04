@@ -10,6 +10,9 @@ version = "0.1.0"
 description = "A lightweight Python editor with an interactive session"
 edition = "2021"
 license = "GPL-3.0-or-later"
+# An application, not a library: never published to a registry, which is also
+# what keeps it out of its own third-party notices (`about.toml`).
+publish = false
 
 [lib]
 name = "clausters_editor_lib"
