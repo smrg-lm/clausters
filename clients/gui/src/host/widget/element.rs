@@ -1896,6 +1896,25 @@ pub trait Element: fmt::Debug {
     /// ([`Events::and_popup`]).
     fn draw_over(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
+    /// **A directory this element wants listed**, asked once: the element
+    /// clears its ask as it answers. `None` (the default) for one that shows
+    /// no directory. The front lists it and hands the answer back through
+    /// [`listed`](Element::listed) ([`crate::host::files`]).
+    fn wants_listing(&mut self) -> Option<String> {
+        None
+    }
+
+    /// The listing of `asked` -- or why it could not be read. Answers whether
+    /// the element took it; one that has moved on to another directory since it
+    /// asked does not.
+    fn listed(
+        &mut self,
+        _asked: &str,
+        _listing: Result<crate::host::files::Listing, String>,
+    ) -> bool {
+        false
+    }
+
     /// **A row of the list this element opened was picked**: `path` is the
     /// row's position, from the first list down ([`Events::and_popup`]).
     ///

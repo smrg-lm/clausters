@@ -38,6 +38,7 @@ pub mod score;
 pub mod selection;
 pub mod shape;
 pub mod signal;
+pub mod table;
 pub mod textedit;
 pub mod track;
 

@@ -117,6 +117,7 @@ pub mod status;
 pub mod world;
 // What opens over a window's tree, and the tree of entries a menu is.
 pub mod chrome;
+pub mod files;
 pub mod menu;
 pub mod menubar;
 pub mod popup;

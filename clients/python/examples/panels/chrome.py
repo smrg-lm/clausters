@@ -14,11 +14,14 @@ This window holds one of each, laid out the way an application lays them out:
   and a button that opens a menu of its own;
 - a **split** row: drag the divider between the sidebar and the pages;
 - a sidebar of **sections** that fold on their title strips;
-- **tabs** over four pages: one choice in each of its six views, the controls
-  with their other looks, a plane with **scroll bars**, and a **pager**;
+- **tabs** over five pages: one choice in each of its six views, the controls
+  with their other looks, a plane with **scroll bars**, a **pager**, and rows
+  of data -- a **table** whose order is the script's and a **tree**;
 - a **context menu** on the pages (the secondary button), and a **tip** on
   every tool (rest the pointer on one);
-- a **dialog**, opened by ``About`` and closed by freeing it.
+- a **dialog**, opened by ``About`` and closed by freeing it, and a **file
+  chooser** in another, opened by ``File > Open``: the host lists the
+  directory itself -- the disk here, the page's own storage in the twin page.
 
 It also shows what they share. Every control takes the focus: Tab walks them,
 Space or Enter presses, the arrows step. A press on a title of the bar opens
@@ -43,12 +46,16 @@ a display and a GPU adapter.
 # %%
 import sys
 
-from clausters.gui import (ICON, GuiHost, button, choice, dialog, entry, knob, label, layout,
-                           menu, number, pager, panel, progress, scroll, separator, slider,
-                           tabs, text, toggle, toolbar, view)
+from clausters.gui import (ICON, GuiHost, button, choice, dialog, entry, file_dialog, knob,
+                           label, layout, menu, number, pager, panel, progress, row, scroll,
+                           separator, slider, table, tabs, text, toggle, toolbar, view)
 
 #: The options every view of the one choice is drawn over.
 WAVES = ["sine", "saw", "square", "noise"]
+
+#: The rows of the data page's table: a take's name, its length, its rate.
+TAKES = [["kick", "0.4 s", "48 kHz"], ["snare", "0.3 s", "48 kHz"],
+         ["pad", "8.0 s", "44.1 kHz"], ["voice", "2.1 s", "48 kHz"]]
 
 # %% [markdown]
 # ## Launch the GUI host
@@ -191,8 +198,25 @@ book = pager(label("the first page", align="center"),
              label("the second page", align="center"),
              label("the third page", align="center"))
 
-pages = tabs(choices, controls, long_list, book,
-             titles=["choices", "controls", "scroll bars", "pager"],
+# %% [markdown]
+# ## Rows of data
+# A `table` is also a list and a tree: rows of cells under named columns, and a
+# row with a `depth` sits under the less deep one above it -- a branch, with
+# `open`, folds what is under it. Only the rows on screen are drawn. Ordering the
+# rows is the script's: a press on a header moves the mark and asks, and the
+# script sends the rows back in that order (below).
+
+# %%
+data = panel(
+    table(rows=TAKES, sort=[0, "up"], multiple=True, name="takes",
+          columns=["take", {"title": "length", "w": 90.0}, {"title": "rate", "w": 90.0}]),
+    table(rows=[row("drums", depth=0, open=True), row("kick", depth=1),
+                row("snare", depth=1), row("pads", depth=0, open=False),
+                row("warm", depth=1), row("voice", depth=0)], name="tree"),
+    flow="row", split=True)
+
+pages = tabs(choices, controls, long_list, book, data,
+             titles=["choices", "controls", "scroll bars", "pager", "data"],
              weight=1.0, context=on_pages, name="pages")
 
 # %% [markdown]
@@ -225,17 +249,31 @@ def say(who):
 
 
 for name in ("pages", "more", "filter", "output", "work", "loop", "combo", "radio",
-             "segmented", "strip", "steps", "rows", "switch", "held", "steps_n"):
+             "segmented", "strip", "steps", "rows", "switch", "held", "steps_n", "tree"):
     win[name].on_event(say(name))
+
+
+def on_takes(tag, *payload):
+    """The table asks to be ordered by a column: order the rows and send them."""
+    print(f"takes: {(tag, *payload)}")
+    if tag == "sort":
+        column, direction = payload
+        ordered = sorted(TAKES, key=lambda r: r[column], reverse=direction == "down")
+        win["takes"].set(rows=ordered)
+
+
+win["takes"].on_event(on_takes)
 for name in ("play", "stop", "record"):
     win[name].on_click(lambda name=name: print(f"{name}: clicked"))
 
 # %% [markdown]
-# ## The dialog
+# ## The dialogs
 # A dialog is a `layout` that stands over the window: it is **defined** to open
 # and **freed** to close, and while it exists nothing behind it can be reached
 # -- not by the pointer and not by Tab. Here the bar's `About` defines one into
-# the holder, and its button frees it.
+# the holder, and its button frees it. `File > Open` defines a `file_dialog`
+# there instead: a chooser the host lists, a field that follows its selection,
+# and the two buttons; a double click on a file picks it.
 
 
 # %%
@@ -252,11 +290,35 @@ def about():
     box["ok"].on_click(lambda: box["box"].free())
 
 
+def open_file():
+    """Define the file dialog into the holder; a pick, or OK, closes it."""
+    box = gui.define(win["dialogs"].id,
+                     layout(file_dialog(".", title="Open a file", name="chooser"), h=0.0))
+    chosen = {"path": None}
+
+    def done(path):
+        print(f"open: {path}")
+        box["chooser"].free()
+
+    def on_files(tag, *payload):
+        if not payload:
+            chosen["path"] = tag            # the value: the file selected
+        elif tag == "pick":
+            done(payload[0])
+
+    box["files"].on_event(on_files)
+    box["file"].on_event(lambda value: chosen.update(path=value))
+    box["ok"].on_click(lambda: done(chosen["path"]))
+    box["cancel"].on_click(lambda: box["chooser"].free())
+
+
 def on_bar(tag, *payload):
     """The window's own events: a pick in the menu bar is one of them."""
     print(f"window: {(tag, *payload)}")
     if tag == "menu" and payload[0] == "about":
         about()
+    elif tag == "menu" and payload[0] == "open":
+        open_file()
     elif tag == "menu" and payload[0] == "quit":
         win.close()
 

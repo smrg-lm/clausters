@@ -13,7 +13,7 @@
 // `./ids.ts`), which is why the handle addresses by name and the host resolves
 // the current id underneath it.
 
-import type { GuiHost, WidgetInfo } from "./host.ts";
+import type { GuiHost, PropValue, WidgetInfo } from "./host.ts";
 
 /**
  * What a widget's `/gui_event` carries after its id: a control's value, or a
@@ -38,8 +38,11 @@ export class WidgetHandle {
         this.id = id;
     }
 
-    /** `/gui_set` this widget's properties. */
-    set(props: Record<string, number | string | boolean>): this {
+    /**
+     * `/gui_set` this widget's properties. A structural value -- a list of
+     * rows, a menu, a theme table -- rides as its JSON string, as Python's does.
+     */
+    set(props: Record<string, PropValue>): this {
         this.host.set(this.id, props);
         return this;
     }
@@ -332,7 +335,7 @@ export class WindowHandle extends WidgetHandle {
      * this is how those change after it is open, where `widget(name).set(...)`
      * reaches the ones inside it.
      */
-    set(props: Record<string, number | string | boolean>): this {
+    set(props: Record<string, PropValue>): this {
         this.host.set(this.id, props);
         return this;
     }

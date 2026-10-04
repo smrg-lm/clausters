@@ -223,9 +223,11 @@ const win = await gui.view({ menu: bar }, tools, work).open();
 win.handle().onEvent((tag, ...payload) => console.log(tag, payload));
 ```
 
-`gui.toolbar`, `gui.tabs`, `gui.pager` and `gui.dialog` build the same
-compositions as in Python, and `gui.ICON` names the glyphs the host's own face
-draws. `examples/panels/chrome.html` holds one of each.
+`gui.toolbar`, `gui.tabs`, `gui.pager`, `gui.dialog` and `gui.fileDialog` build
+the same compositions as in Python, `gui.table` the same rows of data, and `gui.ICON` names the glyphs the host's own face
+draws. A `files` chooser lists the page's own storage (OPFS) -- a path in a tab
+is a path there, and `/` its root -- where the same chooser lists the disk in a
+window. `examples/panels/chrome.html` holds one of each.
 
 **The keyboard is shared with the page.** A canvas is focusable, and while it
 holds the focus the host reads the keys: click a `text` field to type into it,

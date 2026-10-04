@@ -57,6 +57,7 @@ mod bridge;
 mod bulk;
 mod canvas;
 mod compose;
+mod files;
 mod input;
 mod serverleg;
 
@@ -176,6 +177,13 @@ enum WebEvent {
         def_id: i32,
         widget_id: i32,
         data: Loaded,
+    },
+    /// A directory an element asked for has been listed (`files`).
+    Listed {
+        def_id: i32,
+        widget_id: i32,
+        asked: String,
+        result: Result<crate::host::files::Listing, String>,
     },
     /// The MSAA sample count canvases attached from here on are drawn with
     /// (the browser form of the native `[gui] msaa`).
@@ -400,6 +408,8 @@ impl WebApp {
         let demand = self.demand();
         self.ensure_tick(demand.animated);
         self.schedule_stream_sync();
+        // ...and a directory a newly defined chooser shows.
+        self.start_listings();
     }
 
     /// Queues one subscription re-derivation for the end of this JavaScript
@@ -734,6 +744,12 @@ impl WebApp {
                 widget_id,
                 data,
             } => self.on_bulk_ready(def_id, widget_id, data),
+            WebEvent::Listed {
+                def_id,
+                widget_id,
+                asked,
+                result,
+            } => self.on_listed(def_id, widget_id, &asked, result),
             WebEvent::Typed { def_id, text } => self.on_typed(def_id, &text),
             WebEvent::ComposedKey { def_id, key, mods } => self.on_composed_key(def_id, &key, mods),
             WebEvent::Msaa(samples) => {

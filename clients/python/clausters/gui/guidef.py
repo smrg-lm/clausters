@@ -229,6 +229,10 @@ __all__ = [
     "pager",
     "toolbar",
     "dialog",
+    "row",
+    "table",
+    "files",
+    "file_dialog",
     "waveform",
     "spectrogram",
     "piano",
@@ -1527,6 +1531,90 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
     if multiline is not None:
         extra["multiline"] = bool(multiline)
     return node("text", id=id, **extra, **props)
+
+
+def row(*cells, depth: int | None = None, open: bool | None = None) -> dict:
+    """One row of a `table`: its cells, and -- in a tree -- how deep it is and,
+    for a **branch**, whether the rows under it are shown.
+
+    A row with no ``depth`` and no ``open`` is a plain row, and a plain list of
+    its cells says the same thing; this is the form for a tree."""
+    out: dict = {"cells": [str(c) for c in cells]}
+    if depth is not None:
+        out["depth"] = int(depth)
+    if open is not None:
+        out["open"] = bool(open)
+    return out
+
+
+def table(*, rows=None, columns=None, selected=None, multiple: bool | None = None,
+          sort=None, label: str | None = None, text_size: float | None = None,
+          color: str | None = None, id: int | None = None, **props) -> View:
+    """Rows of data: a ``table``, which is also a list and a tree.
+
+    ``rows`` is a list of rows, each a list of its cells or a `row`; ``columns``
+    names the columns (a title, or ``{"title": ..., "w": ...}`` for one of a
+    fixed width -- the others share what is left), and a list with none is one
+    column with no header. A row with a ``depth`` sits under the row above it
+    that is less deep, and one with ``open`` is a **branch** that folds the rows
+    under it. Only the rows on screen are drawn, and the wheel scrolls the rest.
+
+    It reports what a hand did, in the owner's terms: ``("select", i, ...)``
+    with the indices now selected (Ctrl adds, Shift ranges, when ``multiple``);
+    ``("activate", i)`` on a double click or Enter; ``("open", i, 1|0)`` when a
+    branch folds or unfolds, which it draws at once; and ``("sort", column,
+    "up"|"down")`` when a header is pressed. **Ordering the rows is yours** --
+    the host moves the mark and asks; send the rows back in the new order.
+    ``selected`` and ``sort`` (``[column, "up"|"down"]``) set what is selected
+    and which column carries the mark. With the focus, the arrows walk the
+    rows, Left and Right fold and unfold, Enter activates."""
+    extra = _drop_none(rows=None if rows is None else list(rows),
+                       columns=None if columns is None else list(columns),
+                       selected=None if selected is None else list(selected),
+                       sort=None if sort is None else list(sort),
+                       label=label, text_size=text_size, color=color)
+    if multiple is not None:
+        extra["multiple"] = 1 if multiple else 0
+    return node("table", id=id, **extra, **props)
+
+
+def files(path: str = ".", *, filter=None, text_size: float | None = None,
+          color: str | None = None, id: int | None = None, **props) -> View:
+    """A **file chooser**: the entries of directory ``path``, drawn by the host.
+
+    The host lists the directory itself -- the disk when it is a window, the
+    page's own storage when it is a tab, where a path is a path in that storage
+    and ``/`` its root -- so the same tree chooses a file in both. ``filter``
+    is the extensions a file must have to be listed (``["wav", "f32"]``).
+
+    Its **value** is the path of the file selected, so a `text` field bound to
+    it follows the selection. A double click or Enter on a file reports
+    ``("pick", path)``, and on a directory goes into it, reported as
+    ``("path", directory)``; the ``..`` row goes up."""
+    extra = _drop_none(path=path, filter=None if filter is None else list(filter),
+                       text_size=text_size, color=color)
+    return node("files", id=id, **extra, **props)
+
+
+def file_dialog(path: str = ".", *, title: str = "Open", action: str = "Open",
+                filter=None, w: float = 520.0, h: float = 360.0,
+                id: int | None = None, **props) -> View:
+    """A **dialog** to choose a file in: a `files` chooser over a field that
+    follows its selection, and the two buttons.
+
+    The parts are named so a handle reaches them: ``files``, ``file`` (the
+    field, bound to the chooser's value), ``cancel`` and ``ok``. What happens
+    on a pick is yours -- listen for ``("pick", path)`` on ``files`` and for a
+    click on ``ok``, read ``file``, and free the dialog to close it."""
+    chooser = files(path, filter=filter, weight=1.0, name="files")
+    field = text(label="file", name="file")
+    chooser["bind"] = ["widget", field, "value"]
+    return dialog(chooser, field,
+                  panel(separator(weight=1.0, line=False),
+                        button(label="Cancel", w=90.0, name="cancel"),
+                        button(label=action, w=90.0, name="ok"),
+                        flow="row", hug=True),
+                  title=title, flow="col", w=w, h=h, id=id, **props)
 
 
 #: The presentations of a `choice`.

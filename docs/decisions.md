@@ -9412,3 +9412,27 @@ an argument nobody wrote for. And a binding may name its target **by the node**
 resolved at the nearest container holding both ends, so a composition nested
 twice wires each copy to its own target.
 
+## A file chooser is the host's, and the host lists the directory
+
+Choosing a file was first left out of the chrome as "the platform's". It is
+not: a native dialog in a window and something else in a page is a behaviour
+that differs between the two builds of one host, and a page has a filesystem
+(OPFS). So the chooser is an element the host draws (`files`), and **the host
+lists the directory**, not a client: an element asks for a listing
+(`Element::wants_listing`) and is handed it (`Element::listed`); the native
+front reads the disk at once, the page awaits OPFS and hands the answer back
+through its event proxy, the way a bulk fetch already returns. The agnostic
+core touches no filesystem, and neither client implements a listing.
+
+It is an element a def composes, not a request a client makes of the host: a
+request would have been a new `/gui_*` address, and a chooser placed in a
+`dialog` beside a `text` bound to its value is a file dialog with nothing new
+on the wire (`file_dialog`). A file on the user's own disk reaching a page's
+storage, and leaving it, is the port's question and not the chooser's.
+
+The rows it shows are a `table`'s, which is a list, a table and a tree as one
+element. It reports what a hand did and never reorders: a header press moves
+the mark and asks, since the rows are the owner's -- the host holds no
+document. Which branches are open is a prop, written where it is drawn and
+reported, as a menu's check is.
+

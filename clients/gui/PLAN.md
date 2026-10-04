@@ -156,6 +156,7 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `text` | control | Text entry field. |
 | `choice` | control | One of several, in six presentations over the same options and index: combo (a field and the list it opens), radio, segmented, tabs, pager, list (G37.1, G39). It was `menu`. |
 | `separator`, `progress` | element | A line between groups of a strip (a spring with a `weight`); a bar over a value in `0..1`, or indeterminate (G39). |
+| `table`, `files` | element | Rows of data -- a list, a table and a tree as one element -- and a file chooser over them whose directory the host lists, the disk natively and OPFS in a page (G41). |
 | `waveform` | heavy GPU view | Editor-grade min/max peak waveform of a buffer/file/blob: multichannel lanes (stacked or overlaid), LOD-crossfaded zoom, adaptive rulers, selection, playhead, amplitude zoom/pan, linked navigation groups via `link` (G20-G20d); the measured layers — RMS, true peak, loudness — planned in the A track. |
 | `spectrogram` | heavy GPU view | Editor-grade STFT time-frequency view, same sources and chrome as `waveform` plus a Hz ruler and frequency zoom/pan, linked groups via `link` (G20-G20d); a constant-Q analysis mode experimental (G20f). |
 | `scope` | heavy GPU view | Time-domain scope over `channels` adjacent buses from `bus`, at `rate` (audio by default, control for a bus history): the audio-rate form is a triggered oscilloscope — lanes or `overlay` traces, ms/value rulers, a trigger-level mark and a lock/free read-out (G28, G33). |
@@ -1642,7 +1643,13 @@ the record of why, because neither reason survived being asked about.)*
 The two are chained: a file chooser is composed from rows, `G40`'s modal
 `layout` and a `text` field.
 
-- ⬜ **G41.1 — One element over rows: a list, a table and a tree.** One
+- ✅ **G41.1 — One element over rows: a list, a table and a tree.** *(Done
+  2026-10-04. Decided with the code: the element is `table`; the rows ride the
+  def; a cell is not edited in place; a column's width is named or shared, not
+  dragged; `G39`'s `list` view stays a presentation of `choice`, the small case
+  a chooser wants; `nodes` is not rebuilt on it. Which branches are open is a
+  prop written where it is drawn and reported, as a menu's check is; ordering
+  the rows is an intent.)* One
   element, configured by what it holds: rows of cells, `columns` where there is
   more than one, and a depth per row where the rows nest — so a list is the
   one-column case and a tree is rows with a depth, not three types. It draws
@@ -1658,7 +1665,13 @@ The two are chained: a file chooser is composed from rows, `G40`'s modal
   `G39`'s `list` view is this element's one-column case rather than a
   presentation of `choice`; whether `nodes` is rebuilt on it.
 
-- ⬜ **G41.2 — Choosing a file, drawn by the host.** The same chooser in a
+- ✅ **G41.2 — Choosing a file, drawn by the host.** *(Done 2026-10-04. It
+  is an element a def composes, `files`, and `file_dialog` puts it in a dialog
+  -- a request to the host would have been a new address. The listing is asked
+  by the element and answered by the front: the disk at once natively, OPFS
+  awaited in a page. A path is the platform's, as for every verb that takes
+  one; a file reaching a page's storage from the user's disk stays the port's
+  question.)* The same chooser in a
   window and in a page: the rows of a directory, a `text` field for the name
   and the buttons, in a modal `layout`. The listing is the host's, behind one
   more small I/O trait beside `Transport`, `DefStore`, `BulkLoader` and
@@ -8077,6 +8090,10 @@ module of its own.
   spectrogram or a shader `canvas` placed in a dialog is drawn under the dialog
   that holds it. A dialog of controls is unaffected. The fix is a pass order
   for what stands over the window, not a dialog's own.
+- ⬜ **Rows past what a def should carry** *(left open by `G41.1`)*. A
+  `table`'s rows ride the def and every `set` of them; a list of tens of
+  thousands of rows wants the bulk path, and which size is the line is not
+  decided.
 - ⬜ **A context menu and a tip per part of a heavy view** *(left open by
   `G37.2` and `G38.2`)*. Today one menu and one tip answer for the whole
   widget; a clip, a note or a box answering with its own is a question for the

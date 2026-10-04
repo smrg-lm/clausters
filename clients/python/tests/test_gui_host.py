@@ -556,3 +556,26 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
     assert bar["children"][2] == {"type": "separator", "line": 0, "weight": 1}
     assert guidef.progress(0.25)["value"] == 0.25
     assert "value" not in guidef.progress(), "no value is the indeterminate bar"
+
+
+def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
+    import json
+
+    from clausters.gui import guidef
+
+    t = guidef.table(rows=[["kick.wav", "12"], guidef.row("loops", depth=0, open=False),
+                           guidef.row("a.wav", depth=1)],
+                     columns=["name", {"title": "size", "w": 80.0}], multiple=True,
+                     sort=[1, "down"])
+    assert t["rows"][1] == {"cells": ["loops"], "depth": 0, "open": False}
+    assert (t["multiple"], t["sort"]) == (1, [1, "down"])
+    assert guidef.files("/takes", filter=["wav"]) == {
+        "type": "files", "path": "/takes", "filter": ["wav"]}
+    # The dialog binds its field to the chooser by the node, resolved at open.
+    host = GuiHost("127.0.0.1", 57991)
+    host._osc = _Recorder()
+    host.open(guidef.window(guidef.file_dialog("/takes", title="Load")))
+    box = json.loads(host._osc.sent[0][2])["children"][0]
+    chooser, field = box["children"][0], box["children"][1]
+    assert (box["modal"], box["title"]) == (1, "Load")
+    assert chooser["bind"] == ["widget", field["id"], "value"]

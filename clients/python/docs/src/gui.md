@@ -502,6 +502,14 @@ that stands over the window, centred, with everything behind it dimmed and out
 of reach — of the pointer and of Tab alike. `enabled=False` does the same to
 one widget, or to a container and everything in it.
 
+**Rows of data and files.** `table` is a list, a table and a tree as one
+element: rows of cells under `columns`, and a `row(..., depth=, open=)` is a
+row of a tree. It reports `("select", ...)`, `("activate", i)`, `("open", i,
+1|0)` and `("sort", column, direction)` -- and ordering the rows is yours: the
+host moves the mark and asks. `files(path)` is a file chooser the host lists
+itself, from the disk in a window and from the page's storage in a tab, and
+`file_dialog` puts one in a dialog with a field and two buttons.
+
 `examples/panels/chrome.py` holds one of each in a single window.
 
 ## Values that never come back to the script

@@ -32,11 +32,14 @@ with actions, a check, a group where one of several is on, a submenu and a
 disabled entry); a <b>toolbar</b> of flat buttons whose faces are glyphs, split
 into groups, with a spring and a button that opens a menu of its own; a
 <b>split</b> row whose divider you drag; a sidebar of <b>sections</b> that fold
-on their title strips; <b>tabs</b> over four pages -- one choice in each of its
+on their title strips; <b>tabs</b> over five pages -- one choice in each of its
 six views, the controls with their other looks, a plane with <b>scroll
-bars</b>, and a <b>pager</b>; a <b>context menu</b> on the pages (the secondary
+bars</b>, a <b>pager</b>, and rows of data: a <b>table</b> whose order is the
+page's and a <b>tree</b>; a <b>context menu</b> on the pages (the secondary
 button) and a <b>tip</b> on every tool; and a <b>dialog</b>, opened by
-<code>About</code> and closed by freeing it.
+<code>About</code> and closed by freeing it, and a <b>file chooser</b> in
+another, opened by <code>File &gt; Open</code>: the host lists the directory
+itself -- the page's own storage here, the disk in the script.
 
 It also shows what they share. Every control takes the focus: Tab walks them,
 Space or Enter presses, the arrows step. A press on a title of the bar opens
@@ -81,6 +84,10 @@ the host reports when a hand changes them -- the lines this prints.</div>
 
       // The options every view of the one choice is drawn over.
       const WAVES = ["sine", "saw", "square", "noise"];
+
+      // The rows of the data page's table: a take's name, its length, its rate.
+      const TAKES = [["kick", "0.4 s", "48 kHz"], ["snare", "0.3 s", "48 kHz"],
+                     ["pad", "8.0 s", "44.1 kHz"], ["voice", "2.1 s", "48 kHz"]];
 
       async function run() {
         $("run").disabled = true;
@@ -224,10 +231,30 @@ the host reports when a hand changes them -- the lines this prints.</div>
           gui.label("the second page", { align: "center" }),
           gui.label("the third page", { align: "center" }));
 
+        // ---- rows of data ----
+        // A `table` is also a list and a tree: rows of cells under named
+        // columns, and a row with a `depth` sits under the less deep one
+        // above it -- a branch, with `open`, folds what is under it. Only the
+        // rows on screen are drawn. Ordering the rows is the page's: a press
+        // on a header moves the mark and asks, and the page sends the rows
+        // back in that order (below).
+        const data = gui.panel(
+          { flow: "row", split: true },
+          gui.table({ rows: TAKES, sort: [0, "up"], multiple: true, name: "takes",
+                      columns: ["take", { title: "length", w: 90.0 },
+                                { title: "rate", w: 90.0 }] }),
+          gui.table({ rows: [gui.row(["drums"], { depth: 0, open: true }),
+                             gui.row(["kick"], { depth: 1 }),
+                             gui.row(["snare"], { depth: 1 }),
+                             gui.row(["pads"], { depth: 0, open: false }),
+                             gui.row(["warm"], { depth: 1 }),
+                             gui.row(["voice"], { depth: 0 })],
+                      name: "tree" }));
+
         const pages = gui.tabs(
-          { titles: ["choices", "controls", "scroll bars", "pager"],
+          { titles: ["choices", "controls", "scroll bars", "pager", "data"],
             weight: 1.0, context: onPages, name: "pages" },
-          choices, controls, longList, book);
+          choices, controls, longList, book, data);
 
         // ---- the window ----
         // The bar is the window's `menu`. Under it, a `col`: the toolbar, then
@@ -253,19 +280,34 @@ the host reports when a hand changes them -- the lines this prints.</div>
 
         for (const name of ["pages", "more", "filter", "output", "work", "loop",
                             "combo", "radio", "segmented", "strip", "steps", "rows",
-                            "switch", "held", "steps_n"]) {
+                            "switch", "held", "steps_n", "tree"]) {
           win.widget(name).onEvent(say(name));
         }
+
+        // The table asks to be ordered by a column: order the rows and send them.
+        const onTakes = (tag, ...payload) => {
+          log(`takes: ${[tag, ...payload]}`);
+          if (tag === "sort") {
+            const [column, direction] = payload;
+            const ordered = [...TAKES].sort((a, b) => a[column].localeCompare(b[column]));
+            if (direction === "down") ordered.reverse();
+            win.widget("takes").set({ rows: ordered });
+          }
+        };
+
+        win.widget("takes").onEvent(onTakes);
         for (const name of ["play", "stop", "record"]) {
           win.widget(name).onClick(() => log(`${name}: clicked`));
         }
 
-        // ---- the dialog ----
+        // ---- the dialogs ----
         // A dialog is a `layout` that stands over the window: it is
         // **defined** to open and **freed** to close, and while it exists
         // nothing behind it can be reached -- not by the pointer and not by
         // Tab. Here the bar's `About` defines one into the holder, and its
-        // button frees it.
+        // button frees it. `File > Open` defines a `fileDialog` there instead:
+        // a chooser the host lists, a field that follows its selection, and
+        // the two buttons; a double click on a file picks it.
         const about = () => {
           const box = host.define(win.widget("dialogs").id, gui.layout(
             { h: 0.0 },
@@ -280,10 +322,33 @@ the host reports when a hand changes them -- the lines this prints.</div>
           box.widget("ok").onClick(() => box.widget("box").free());
         };
 
+        const openFile = () => {
+          const box = host.define(win.widget("dialogs").id, gui.layout(
+            { h: 0.0 },
+            gui.fileDialog(".", { title: "Open a file", name: "chooser" })));
+          let chosen = null;
+
+          const done = (path) => {
+            log(`open: ${path}`);
+            box.widget("chooser").free();
+          };
+
+          const onFiles = (tag, ...payload) => {
+            if (payload.length === 0) chosen = tag;   // the value: the file selected
+            else if (tag === "pick") done(payload[0]);
+          };
+
+          box.widget("files").onEvent(onFiles);
+          box.widget("file").onEvent((value) => { chosen = value; });
+          box.widget("ok").onClick(() => done(chosen));
+          box.widget("cancel").onClick(() => box.widget("chooser").free());
+        };
+
         // The window's own events: a pick in the menu bar is one of them.
         const onBar = (tag, ...payload) => {
           log(`window: ${[tag, ...payload]}`);
           if (tag === "menu" && payload[0] === "about") about();
+          else if (tag === "menu" && payload[0] === "open") openFile();
           else if (tag === "menu" && payload[0] === "quit") win.close();
         };
 

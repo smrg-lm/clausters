@@ -479,6 +479,51 @@
   }
  },
  {
+  "builder": "files",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "files",
+   "path": "q"
+  }
+ },
+ {
+  "builder": "files",
+  "option": "filter",
+  "value": [
+   "wav",
+   "f32"
+  ],
+  "tree": {
+   "type": "files",
+   "path": ".",
+   "filter": [
+    "wav",
+    "f32"
+   ]
+  }
+ },
+ {
+  "builder": "files",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "files",
+   "path": ".",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "files",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "files",
+   "path": ".",
+   "color": "q"
+  }
+ },
+ {
   "builder": "keys",
   "option": "min",
   "value": 7,
@@ -3321,10 +3366,16 @@
  {
   "builder": "score",
   "option": "selected",
-  "value": "q",
+  "value": [
+   0,
+   1
+  ],
   "tree": {
    "type": "score",
-   "selected": "q"
+   "selected": [
+    0,
+    1
+   ]
   }
  },
  {
@@ -4568,6 +4619,126 @@
   "tree": {
    "type": "layout",
    "flow": "stack",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "table",
+  "option": "rows",
+  "value": [
+   [
+    "kick.wav",
+    "12"
+   ],
+   {
+    "cells": [
+     "loops"
+    ],
+    "depth": 0,
+    "open": false
+   }
+  ],
+  "tree": {
+   "type": "table",
+   "rows": [
+    [
+     "kick.wav",
+     "12"
+    ],
+    {
+     "cells": [
+      "loops"
+     ],
+     "depth": 0,
+     "open": false
+    }
+   ]
+  }
+ },
+ {
+  "builder": "table",
+  "option": "columns",
+  "value": [
+   "name",
+   {
+    "title": "size",
+    "w": 80.0
+   }
+  ],
+  "tree": {
+   "type": "table",
+   "columns": [
+    "name",
+    {
+     "title": "size",
+     "w": 80.0
+    }
+   ]
+  }
+ },
+ {
+  "builder": "table",
+  "option": "selected",
+  "value": [
+   0,
+   1
+  ],
+  "tree": {
+   "type": "table",
+   "selected": [
+    0,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "table",
+  "option": "multiple",
+  "value": true,
+  "tree": {
+   "type": "table",
+   "multiple": 1
+  }
+ },
+ {
+  "builder": "table",
+  "option": "sort",
+  "value": [
+   1,
+   "down"
+  ],
+  "tree": {
+   "type": "table",
+   "sort": [
+    1,
+    "down"
+   ]
+  }
+ },
+ {
+  "builder": "table",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "table",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "table",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "table",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "table",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "table",
    "color": "q"
   }
  },

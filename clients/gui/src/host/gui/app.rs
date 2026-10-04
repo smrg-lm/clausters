@@ -648,6 +648,15 @@ impl ApplicationHandler<UserEvent> for App {
             next_wake = Some(next_wake.map_or(self.next_follow, |t| t.min(self.next_follow)));
         }
 
+        // **A directory a chooser waits on is listed**, off the disk and at
+        // once: the element asked, and the answer goes back to it.
+        for (def_id, widget, path) in self.host.pending_listings() {
+            let listing = crate::host::files::list_dir(&path);
+            if self.host.deliver_listing(def_id, widget, &path, listing) {
+                self.redraw(def_id);
+            }
+        }
+
         // **A timer of the gesture machine keeps the loop awake**: a tip
         // waiting for the pointer to have rested, a press being held. Neither
         // sends an event when its time comes, so the loop has to come back and

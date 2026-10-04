@@ -82,6 +82,8 @@ impl WebApp {
     /// mutation can name a *different* def than the one gestured on, and with a
     /// canvas each that now lands where it belongs.
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
+        // A gesture may have sent a chooser into another directory.
+        self.start_listings();
         for effect in effects {
             match effect {
                 GestureEffect::Emit {

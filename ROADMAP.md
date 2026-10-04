@@ -236,13 +236,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`G41` — rows of data, and choosing a file** *(`clients/gui/PLAN.md`,
-  section "G41")*. Written as an option after the chrome set: one element over
-  rows (a list, a table, a tree) and a file chooser the host draws over the
-  disk natively and OPFS in a page. **Related:** the applications' window
-  chrome in standalone (`crates/clausters-apps/PLAN.md`, Future directions),
-  whose elements the chrome set built.
-
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
   layer only: the sub-two-sample columns and the joined segments take the same

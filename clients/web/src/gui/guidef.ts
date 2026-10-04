@@ -2073,6 +2073,130 @@ export function text(
     });
 }
 
+/**
+ * One row of a {@link table}: its cells, and -- in a tree -- how deep it is
+ * and, for a **branch**, whether the rows under it are shown. A plain list of
+ * its cells says the same thing for a row of a flat list.
+ */
+export function row(
+    cells: readonly (string | number)[],
+    options: { depth?: number; open?: boolean } = {},
+): Record<string, unknown> {
+    const out: Record<string, unknown> = { cells: cells.map(String) };
+    if (options.depth !== undefined) out.depth = options.depth;
+    if (options.open !== undefined) out.open = options.open;
+    return out;
+}
+
+/** A column of a {@link table}: its title, or a title and a fixed width. */
+export type ColumnSpec = string | { title: string; w?: number };
+
+/**
+ * Rows of data: a `table`, which is also a list and a tree.
+ *
+ * `rows` is a list of rows, each a list of its cells or a {@link row};
+ * `columns` names the columns (a title, or `{ title, w }` for one of a fixed
+ * width -- the others share what is left), and a list with none is one column
+ * with no header. A row with a `depth` sits under the row above it that is
+ * less deep, and one with `open` is a **branch** that folds the rows under it.
+ * Only the rows on screen are drawn, and the wheel scrolls the rest.
+ *
+ * It reports what a hand did, in the owner's terms: `"select" i ...` with the
+ * indices now selected (Ctrl adds, Shift ranges, when `multiple`);
+ * `"activate" i` on a double click or Enter; `"open" i 1|0` when a branch
+ * folds or unfolds, which it draws at once; and `"sort" column "up"|"down"`
+ * when a header is pressed. **Ordering the rows is yours** -- the host moves the
+ * mark and asks; send the rows back in the new order.
+ */
+export function table(
+    options: WidgetOptions & {
+        rows?: readonly unknown[];
+        columns?: readonly ColumnSpec[];
+        selected?: readonly number[];
+        multiple?: boolean;
+        sort?: readonly [number, "up" | "down"];
+        label?: string;
+        textSize?: number;
+    } = {},
+): GuiNode {
+    const { rows, columns, selected, multiple, sort, label: text, textSize, ...rest } = options;
+    return node("table", {
+        ...rest,
+        ...drop([
+            ["rows", rows === undefined ? undefined : [...rows]],
+            ["columns", columns === undefined ? undefined : [...columns]],
+            ["selected", selected === undefined ? undefined : [...selected]],
+            ["sort", sort === undefined ? undefined : [...sort]],
+            ["label", text],
+            ["text_size", textSize],
+            ["multiple", flag(multiple)],
+        ]),
+    });
+}
+
+/**
+ * A **file chooser**: the entries of directory `path`, drawn by the host.
+ *
+ * The host lists the directory itself -- the disk when it is a window, the
+ * page's own storage when it is a tab, where a path is a path in that storage
+ * and `/` its root -- so the same tree chooses a file in both. `filter` is the
+ * extensions a file must have to be listed (`["wav", "f32"]`).
+ *
+ * Its **value** is the path of the file selected, so a `text` field bound to it
+ * follows the selection. A double click or Enter on a file reports
+ * `"pick" path`, and on a directory goes into it, reported as
+ * `"path" directory`; the `..` row goes up.
+ */
+export function files(
+    path = ".",
+    options: WidgetOptions & { filter?: readonly string[]; textSize?: number } = {},
+): GuiNode {
+    const { filter, textSize, ...rest } = options;
+    return node("files", {
+        ...rest,
+        ...drop([
+            ["path", path],
+            ["filter", filter === undefined ? undefined : [...filter]],
+            ["text_size", textSize],
+        ]),
+    });
+}
+
+/**
+ * A **dialog** to choose a file in: a {@link files} chooser over a field that
+ * follows its selection, and the two buttons.
+ *
+ * The parts are named so a handle reaches them: `files`, `file` (the field,
+ * bound to the chooser's value), `cancel` and `ok`. What happens on a pick is
+ * yours -- listen for `"pick" path` on `files` and for a click on `ok`, read
+ * `file`, and free the dialog to close it.
+ */
+export function fileDialog(
+    path = ".",
+    options: WidgetOptions & {
+        title?: string;
+        action?: string;
+        filter?: readonly string[];
+    } = {},
+): GuiNode {
+    const { title = "Open", action = "Open", filter, w = 520.0, h = 360.0, ...rest } = options;
+    const field = text({ label: "file", name: "file" });
+    const chooser = files(path, {
+        filter, weight: 1.0, name: "files", bind: ["widget", field, "value"],
+    });
+    return dialog(
+        { ...rest, title, flow: "col", w, h },
+        chooser,
+        field,
+        panel(
+            { flow: "row", hug: true },
+            separator({ weight: 1.0, line: false }),
+            button({ label: "Cancel", w: 90.0, name: "cancel" }),
+            button({ label: action, w: 90.0, name: "ok" }),
+        ),
+    );
+}
+
 /** The presentations of a {@link choice}. */
 export const CHOICE_VIEWS = ["combo", "radio", "segmented", "tabs", "pager", "list"] as const;
 

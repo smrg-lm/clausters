@@ -203,6 +203,9 @@ impl Gestures {
             .flatten();
             if let Some(events) = reported {
                 element::report(host, &mut out, ctx, id, events);
+                // An element that took the wheel moved something of its own --
+                // a list scrolled -- whether or not it had anything to report.
+                out.push(GestureEffect::Redraw(def_id));
                 return out;
             }
         }

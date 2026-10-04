@@ -48,6 +48,7 @@ mod canvas;
 mod choice;
 mod control;
 pub(crate) mod curve;
+mod files;
 pub(crate) mod keys;
 mod knob;
 mod label;
@@ -64,6 +65,7 @@ mod score;
 mod separator;
 pub mod signal;
 mod slider;
+mod table;
 mod text;
 mod toggle;
 
@@ -90,10 +92,12 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         // Every view of a signal is one element: the props say which point of
         // the product it is (`elements::signal`), so one name answers for six.
         "signal" => signal::build,
+        "files" => files::build,
         "number" => number::build,
         "progress" => progress::build,
         "separator" => separator::build,
         "slider" => slider::build,
+        "table" => table::build,
         "text" => text::build,
         "toggle" => toggle::build,
         // Note what is **not** here: the patcher, whose wire type is `plane`
