@@ -111,6 +111,16 @@ export interface EventDestination {
  * key is forwarded as a control. The set is the shared core's, which renders
  * the note's messages for every client.
  *
+ * **An event carries its curves**: `automation` is a list of `Automation`,
+ * each over one control of the note (`{ control: "cutoff" }`, or
+ * `{ bend: true }` for its pitch, in semitones), its points in beats from the
+ * note's start. Whatever plays the event -- a pattern, a routine, a timeline
+ * -- plays them: the control follows the curve from the note's start to its
+ * off, and keeps the last value through the release. A control with no curve
+ * is the plain value it always was. A **channel's** curve is not the event's:
+ * it is a playable of its own (`Automation.play`), read by the notes whose
+ * `channel` it names.
+ *
  * **What an event is** is its `type`: `"note"` (the default), `"rest"`,
  * `"osc"` (a raw message, {@link OscItem}) or `"midi"` (a MIDI message,
  * {@link MidiItem}). Each destination renders the types it can say and refuses
@@ -309,11 +319,14 @@ export class Event {
      * The event's keys as plain JSON-able data, in the reference client's
      * spelling (`add_action`, `has_gate`) -- what the core renders it from, and
      * what a document stores. A value that is not data (the `server` a played
-     * event holds) is left out.
+     * event holds) is left out, and so are its curves (`automation`), which
+     * travel beside the keys.
      */
     keysData(): Record<string, unknown> {
         const out: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(this.props)) {
+            // Its curves travel beside the keys.
+            if (key === "automation") continue;
             const plain = typeof value === "number" || typeof value === "string"
                 || typeof value === "boolean" || Array.isArray(value);
             if (plain) out[SPELLED[key] ?? key] = value;
@@ -361,6 +374,7 @@ export class Event {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node === "number" && server) {
+            forget(server, node);
             server.sendMsg("/node_free", ["i", node]);
         }
     }
@@ -375,8 +389,14 @@ export class Event {
         if (typeof node !== "number" || !server) return;
         // The gesture is the one the note's own render ends it with.
         const [addr, ...args] = taggedMessage(synthRender(this.keysData(), node).release);
+        forget(server, node);
         server.sendMsg(addr, ...(args as OscArg[]));
     }
+}
+
+/** The note on `node` is ended by hand: its curves stop being sent. */
+function forget(server: EventDestination, node: number): void {
+    (server as { curves?: { forget(node: number): void } }).curves?.forget(node);
 }
 
 /**

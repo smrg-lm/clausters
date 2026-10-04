@@ -23,8 +23,8 @@
 for one) a GUI host into the handle a session is written against. Adopt one as
 the page's default and the <b>ambient verbs</b> work with nothing wired:
 <code>play</code> sounds whatever you hand it -- an event, a plain object of
-event keys, a generator, a pattern, a def, a timeline, a sequence, a buffer --
-and a bare
+event keys, a generator, a pattern, a def, an event that carries its curves, a
+channel's curve, a timeline, a sequence, a buffer -- and a bare
 <code>new Synth(...)</code> reaches the session's server without naming it.
 
 The carrier is the one line that knows about one. This page opens the session
@@ -51,7 +51,7 @@ change. The tour ends on all three.
     -->
     <script type="module">
       import {
-        Buffer, Event, Session, SynthDef, play, render, seq,
+        Automation, Buffer, Event, Session, SynthDef, play, render, seq,
       } from "../../dist/index.js";
       import { Env, boxes as box, control, envGen, out, sine } from "../../dist/defs/index.js";
 
@@ -122,6 +122,32 @@ change. The tour ends on all three.
         await wait(1500);
         node.free();           // cut at the top of the sweep
         await wait(500);
+
+        // A curve on an event: `automation` is a list of curves, each over
+        // one control of the note, its points in beats from the note's start.
+        // Nothing is built for it on the server -- the note is the synth it
+        // always was, and the client sets the control, one value a block, from
+        // the note's start to its off. A control with no curve is the plain
+        // value it always was.
+        log("an event that carries its curves: a swell, and a bend up a tone");
+        play(new Event({ degree: 0, dur: 2.0, legato: 1.0, automation: [
+          new Automation({ target: { control: "amp" }, points: [[0.0, 0.0], [1.0, 0.3], [2.0, 0.0]] }),
+          new Automation({ target: { bend: true }, points: [[0.0, 0.0], [2.0, 2.0]] }),
+        ] }));
+        await wait(2000 + PAUSE);
+
+        // A channel's curve is a playable of its own: it sets its control on
+        // every note of its channel -- those sounding and those to come -- on
+        // the clock it is played on, and holds its last value past its end.
+        // The phrase's notes say nothing about their level; the curve fades
+        // the channel in across them.
+        log("a channel's curve over a phrase: a fade in across four notes");
+        const fade = play(new Automation({
+          target: { control: "amp", channel: 0 }, points: [[0.0, 0.02], [1.6, 0.3]],
+        }));
+        play(new seq.Pbind({ instrument: "default", degree: new seq.Pseq([0, 2, 4, 7]), dur: 0.4 }));
+        await wait(PAUSE + 1000);
+        fade.stop();
 
         log("a timeline, two placed notes");
         const tl = new seq.Timeline();

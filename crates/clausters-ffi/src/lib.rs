@@ -517,7 +517,10 @@ pub use time::*;
 /// the lanes over their channels (a bare list of events is still read).
 /// New: `clausters_editing_playback_set_loop`, the loop switch while the
 /// multitrack plays. **Not additive** -- a signature moved.
-pub const CORE_ABI_VERSION: u32 = 80;
+/// **v81 an event's curves are sent by the client.**
+/// `clausters_editing_event_curves`: the `/node_set`s a played event's curves
+/// come to, one window at a time. Additive.
+pub const CORE_ABI_VERSION: u32 = 81;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

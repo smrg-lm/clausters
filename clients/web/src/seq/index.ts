@@ -12,7 +12,10 @@
 // - `sequence` -- `EventSequence`: events as concrete data, each with an id, in
 //   beats with their tempo map -- what a notes editor edits and what a timeline
 //   renders into. A handle to the document's own structure.
+// - `curves` -- `CurveEmitter`: what sends the curves of the events a server
+//   plays, a stretch at a time.
 
+export { CurveEmitter } from "./curves.ts";
 export { DEFAULTS, Event, MidiItem, NOTATION_KEYS, OscItem, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
 export { EventStreamPlayer } from "./eventstream.ts";

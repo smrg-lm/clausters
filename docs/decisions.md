@@ -9321,3 +9321,48 @@ The same audit found the page keeping two occupancy maps over the clients'
 window -- a mounted component's block and the page host's client each started
 at 1000 -- and those are one table now (`pageWidgetIds`).
 
+## A played event's curves are values the client sends
+
+An event a client plays -- from a pattern, a routine, a timeline -- carries its
+curves (`automation`), and a channel's curve is a playable. A sequence's curves
+sound on the server: the lane samples each into a table and a reader beside the
+voice follows it, in graphs made per combination of curved controls, which the
+lane can make because it reads every event beforehand. A client's event knows
+which controls have a curve only when it is played.
+
+The first design kept the server's shape: an event graph per instrument, sent
+with its def, a reader added as a slot for each control a note's curves drive,
+a private bus per control and a `/graph_map` naming it. Writing the reader
+showed what it was. The engine runs in blocks of 64 samples, a curve is
+sampled every 64 (`CURVE_STEP`), and a control mapped to a bus reads one value
+a block; so a reader that ramps to each value it is set is that value arriving
+one block later, and the node, the bus, the map and the sub-group around it
+compute nothing a `/node_set` on the voice's own control does not. (The ramp
+could not have been built from the catalogue either: `VarLag` is a one-pole.)
+
+So nothing is built. The note is the plain synth it always was, and the client
+sets the controls: one emitter per server, which wakes every 50 ms and sends
+the instants up to two wakes ahead, one bundle per instant holding every curve
+that sounds. What each value is -- a note's curve over its channel's, a bend
+adding the two, a channel's curve glided by the lane's own one-pole -- is
+`clausters_editing::event_curves::window`, bound by both clients.
+
+Three limits come with it, and each was measured rather than assumed.
+
+- **The engine keeps 1024 timed bundles and drops what does not fit**
+  (`SCHED_CAPACITY`). A curve is 750 values a second at 48 kHz, so a whole
+  curve sent as it is played fills the queue in 1.4 s; a bundle per value and
+  per curve leaves room for about thirteen. One bundle per instant for every
+  curve is 75 pending at a 0.1 s lead, however many curves there are.
+- **A curve reaches a note from its start to its off.** The lane's reader is
+  freed with the voice, so a note's own curve runs through its release there.
+  A client is not told when a voice ends, a `/node_set` to a node that is gone
+  is a `/fail`, and offline it ends the render; the off is the last instant a
+  client knows the node is there.
+- **In real time the values are as punctual as the client.** The lane reads
+  the transport's position on the server. A client stalled for longer than its
+  lead sends its values late, and the engine runs them at once.
+
+The lane is not touched: both paths sample a curve by the same function at the
+same step, and differ in where the reading happens.
+

@@ -1244,6 +1244,16 @@ export function domainEdit(domain: string, state: string, payload: string): stri
 export function editingDefaultTempo(): number;
 
 /**
+ * JS face: **a played event's curves, as the values a client sends** -- the
+ * `/node_set`s of every instant of one window.
+ *
+ * `request` is the step, the stretch of time, the notes that sound with
+ * their own curves and the channels' curves, as JSON; the answer is
+ * `{"bundles", "states", "over", "idle"}`.
+ */
+export function editingEventCurves(request: string): string;
+
+/**
  * JS face: **what a gesture means, in a structure's own vocabulary** -- the
  * edit ingestion, as a JSON string.
  *
@@ -1865,6 +1875,7 @@ export interface InitOutput {
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingDefaultTempo: () => number;
+    readonly editingEventCurves: (a: number, b: number) => [number, number];
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];

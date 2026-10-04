@@ -333,6 +333,12 @@ const CURVE_FIELDS = ["id", "target", "name", "points", "visible", "enabled", "e
  * {@link Automation.held} is `false` and reading it throws, until an undo
  * brings it back.
  */
+/** What plays a channel's curve: a `Server`, or what stands where one would. */
+interface CurveDestination {
+    playAutomation(curve: Automation): number | null;
+    curves?: { stop(curve: number): void };
+}
+
 export class Automation {
     #holder: [CurveHolder, unknown] | null = null;
     #id: number;
@@ -553,6 +559,50 @@ export class Automation {
     setPoints(points: PointsLike, curve?: CurveSpec | readonly CurveSpec[]): this {
         this.points = cratePoints(points, curve);
         return this;
+    }
+
+    // ---- as a channel's curve ----
+
+    #playing: [CurveDestination, number] | null = null;
+
+    /**
+     * **Plays it as a channel's curve** on `destination` (the ambient server
+     * when omitted): from now on it sets the control its `target` names on
+     * the notes of its channel -- `{ control: "amp", channel: 0 }`, or every
+     * channel without one -- those sounding and those to come, its points
+     * counted in beats from this moment, and it holds its last value past its
+     * end (`Server.playAutomation`).
+     *
+     * The timeline-item protocol, so a curve is placed on a `Timeline` like
+     * an event. A note's own curve is not played: it is the event's
+     * (`new Event({ automation: [curve] })`). Returns the curve, whose `stop`
+     * ends it.
+     */
+    play(destination?: unknown): this {
+        const target = (destination ?? resolveServer()) as Partial<CurveDestination>;
+        if (typeof target?.playAutomation !== "function") {
+            throw new TypeError(
+                "a curve plays on a server, where it sets a control of the notes of its "
+                    + `channel; ${(target as object | null)?.constructor?.name ?? typeof target} `
+                    + "does not play one",
+            );
+        }
+        if (this.enabled) {
+            this.stop();
+            const made = target.playAutomation(this);
+            this.#playing = made === null ? null : [target as CurveDestination, made];
+        }
+        return this;
+    }
+
+    /**
+     * Stops it as a channel's curve: the notes it reached keep the last value
+     * it set. Nothing when it is not playing.
+     */
+    stop(): void {
+        const playing = this.#playing;
+        this.#playing = null;
+        playing?.[0].curves?.stop(playing[1]);
     }
 
     // ---- as data ----

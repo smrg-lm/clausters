@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 80
+CORE_ABI_VERSION = 81
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -268,6 +268,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_load.restype = ctypes.c_size_t
+    lib.clausters_editing_event_curves.argtypes = [
+        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_event_curves.restype = ctypes.c_size_t
     lib.clausters_editing_instance_new.restype = ctypes.c_void_p
     lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_instance_reconcile.argtypes = [
@@ -1551,6 +1555,33 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
     raw = size_then_fill(_lib.clausters_editing_stitch, as_u8(body), len(body),
                          as_u8(table), len(table))
     return json.loads(raw) if raw else None
+
+
+def editing_event_curves(request: dict) -> dict:
+    """**A played event's curves, as the values a client sends** -- the
+    ``/node_set``s of every instant of one window
+    (`clausters_editing_event_curves`).
+
+    What each value is -- a note's own curve over a channel's, a bend adding
+    the two onto the note's frequency, a channel's curve glided as the
+    server's lane glides it -- is the crate's, so every client sends the same
+    numbers.
+
+    Args:
+        request: ``{"step", "from", "to", "start", "notes", "channels"}``: the
+            grid step and the stretch of time in seconds, the notes that sound
+            (``node``, ``start``, ``off``, ``at``, ``rate``, ``channel``,
+            ``freq``, ``curves``) and the channels' curves (``id``,
+            ``start``, ``at``, ``rate``, ``target``, ``points``, ``state``).
+            With ``start`` true, each note at the instant it starts instead.
+
+    Returns:
+        ``{"bundles": [[t, [[node, control, value], ...]], ...], "states":
+        [[id, glide], ...], "over": [node, ...], "idle": bool}``.
+    """
+    body = json.dumps(request).encode("utf-8")
+    raw = size_then_fill(lib().clausters_editing_event_curves, as_u8(body), len(body))
+    return json.loads(raw) if raw else {}
 
 
 def editing_load(session: dict, beside: str, buffers: list) -> dict:

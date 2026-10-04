@@ -1995,77 +1995,54 @@ existing examples rewritten rather than new ones:
   under "Found by use". `examples/editors/span_selected` (and its page) is
   the manual check: the three editors' transports, spans and selections,
   step by step.
-- ⬜ **C62 — An event carries its curves** *(opened 2026-10-03 by the user,
-  from `C59`'s review: there is no way to play an event with automation from
-  the client; the direction below is the user's, still open to whatever
-  comes up)*. A sequence's curves -- a channel's automation (a level, a CC)
-  and a note's own (a bend, its expression) -- sound only on the sequence's
-  own playback: the event lane on a transport, where
-  `clausters_editing::note_curves` samples each curve into a table and plays
-  the notes inside event graphs (`clausters_core::event_graph`). An `Event`,
-  a pattern or a routine has no curve at all, and `render_events` has none to
-  keep.
+- ✅ **C62 — An event carries its curves** *(opened 2026-10-03 by the user,
+  from `C59`'s review: there was no way to play an event with automation from
+  the client; closed 2026-10-04)*. A sequence's curves — a channel's
+  automation and a note's own — sounded only on the sequence's own playback,
+  the event lane on a transport. An `Event`, a pattern or a routine had no
+  curve at all, and `render_events` had none to keep. It is only about playing
+  events with automation **from the client**; the server's lane is not touched
+  (the user, 2026-10-03).
   - **A curve is part of the event**: `Event(..., automation=[curve])`, so
-    whatever plays events -- a pattern, a routine, a timeline -- plays its
-    curves, and `render_events` keeps them because they travel in the
-    events. A **channel's** curve is a playable of its own
-    (`Automation({"control": "amp", "channel": 0}, points)`), read by the
-    notes on that channel.
-  - **No def is loaded while anything plays.** A def is sent asynchronously
-    and a Faust one may take long to compile, so nothing that sounds may wait
-    on one. Everything a note with curves is made of is loaded beforehand,
-    and playing it is instantiating only -- commands a timed bundle takes.
-  - **One event graph per instrument, sent with its def.** A SynthDef or
-    FaustDef that is to be played with automation (a flag on the def) has its
-    event graph made by `event_graph` and sent with it, under the `tmp_ev`
-    prefix the server never persists. It holds the def as its voice (marked
-    `ends`), a private control bus per control, and **one slot per control's
-    reader** -- and the pitch node's slot, for a def with `freq` -- none of
-    them built until a note asks. Not one graph per combination of curved
-    controls, which a pattern only reveals as it plays: then a new
-    combination would be a def to load mid-play. Not a reader on every
-    control either, which would cost a node per control on every note.
-  - **Playing a note**: an `Event` with no automation is a `/synth_new`, as
-    today. One with automation is a `/graph_new` of its def's event graph,
-    then a `/graph_addSlot` per control its curves drive, and a `/graph_map`
-    of that port onto the slot's bus -- so a control with no curve keeps the
-    value it was started with, and a reader runs only where there is a curve,
-    as on the lane.
-  - **The one server change: `/graph_map` names a private bus.** It takes a
-    bus number today (`src/osc/translate/graph.rs`), and an instance's private
-    buses have numbers no client is told. Mapping a port onto one of its own
-    graph's buses by name is the same operation aimed inside the graph, not a
-    feature for notes. The mapping cannot be fixed in the def's `maps`
-    instead: a control mapped to a bus no reader writes would read that bus,
-    not its value.
-  - **From the client, a curve is control events** (`set`) the client
-    schedules on its clock, onto the port of the reader's slot. One rule for
-    the graphs and for the sampling (`value_at` every `CURVE_STEP`), both in
-    `clausters-core`, so the two paths cannot sound different.
-  - **The reader ramps linearly over one step**, not a `Lag`: a table read
-    interpolates linearly between its samples, and `set` plus a 10 ms `Lag`
-    would be steps smoothed exponentially and late -- a different sound. The
-    client sends each value one step early, timetagged on the same grid,
-    which gives the table's linear reading with the same sampling. The 10 ms
-    lag stays only where it is today, on a channel's curves.
-  - **A channel is a graph instance**: a group holding a reader per channel
-    curve, each writing a private control bus, and its notes as slots -- so
-    they read the channel's buses, which an `external` bus is bound to only
-    by a parent. It is made by the first thing that sounds on that channel
-    and destination, curve or note, and freed when nothing sounds in it.
+    whatever plays events — a pattern, a routine, a timeline — plays its
+    curves, and `render_events` keeps them as the notes' own. A **channel's**
+    curve is a playable of its own (`Automation({"control": "amp",
+    "channel": 0}, points).play()`, `stop()`), read by the notes on that
+    channel.
+  - **Nothing is built on the server.** The note is the plain `/synth_new` it
+    always was, and the client sets the controls its curves drive with
+    `/node_set`, one value every block, in timed bundles. A control with no
+    curve costs nothing, which is what the user asked of the design.
+  - **One emitter per server** (`clausters.seq.curves.CurveEmitter`, web
+    `seq/curves.ts`, reached as `server.curves`): it keeps what sounds by the
+    clock it sounds on, wakes every 50 ms on that clock — a thread outside
+    any clock, at once into a score — and sends the instants up to two wakes
+    ahead, one bundle per instant holding every curve.
+  - **What each value is is the crate's**:
+    `clausters_editing::event_curves::window`, bound by both clients
+    (`editing_event_curves`). A note's curve wins over its channel's, a bend
+    adds the two onto the frequency the note started with, and a channel's
+    curve is glided by the lane's own one-pole over `CURVE_LAG`.
+  - **A curve reaches a note from its start to its off**, and the note keeps
+    the last value through its release: a client is not told when a voice
+    ends, and a `/node_set` to a node that is gone ends an offline render.
+  - **A channel's curve reaches the notes played on the clock it is played
+    on**: each clock is an axis of its own in the emitter.
 
-  **Open:**
-  - **Which notes a channel holds.** A channel's graph declares its slots
-    beforehand, a note's event graph each, and a channel belongs to no def:
-    a note of an instrument it did not declare can come after it is made.
-  - **A FaustDef written as source.** The client knows a def's controls only
-    from its `signals` or `box` form (`control_names`); a source def's are
-    known once the server has compiled it, so its event graph waits on a
-    query of them.
-  - **The lane on the same graph.** The lane builds a graph per combination
-    of curved controls today, its readers reading tables. Whether it moves to
-    the per-instrument graph, with table readers in the slots, is what keeps
-    one shape of graph for a note whichever path plays it.
+  **The direction it was opened with was dropped**: an event graph per
+  instrument sent with its def, a reader per control added as a slot, a
+  private bus each, `/graph_map` naming it, a channel as a graph. A control
+  mapped to a bus reads one value a block and a curve is sampled once a
+  block, so the reader computed nothing a `/node_set` on the voice does not,
+  and its three open points (the channel's slots, a FaustDef written as
+  source, the lane on the same graph) went with it. The record, with the
+  numbers that sized the emitter, is `docs/decisions.md`, "A played event's
+  curves are values the client sends".
+
+  `tests/test_event_curves.py` and the web `tests/event-curves.test.ts` read
+  the bundles off an offline score; `examples/basics/verbs` (and its page)
+  is the manual check: an event with a swell and a bend, and a channel's fade
+  over a phrase.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 

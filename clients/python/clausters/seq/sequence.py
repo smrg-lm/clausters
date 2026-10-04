@@ -622,7 +622,10 @@ class _Recorder:
     as the event it is, with no node, no latency and no server behind it."""
 
     def __init__(self):
+        #: ``(beat, keys, the event's own curves as written)``.
         self.events = []
+        #: The channels' curves that played, as the sequence's own.
+        self.curves = []
 
     @staticmethod
     def _now(delay: float = 0.0):
@@ -642,20 +645,42 @@ class _Recorder:
         if keys.get("type", "note") == "note":
             # How long it sounds, in the root's beats as well.
             keys["sustain"] = to_root(local + event.sustain()) - at
-        self.events.append((at, keys))
+        # **Its curves travel with it**: each as the note's own curve in the
+        # sequence, its beats counted from the note's start in the root's.
+        curves = event.get("automation") or ()
+        if not isinstance(curves, (list, tuple)):
+            curves = (curves,)
+        self.events.append((at, keys, [_moved(c, local, to_root, at) for c in curves]))
+        return None
+
+    def play_automation(self, curve):
+        """A channel's curve, played: one of the sequence's curves, its beats
+        the root's."""
+        at, local, to_root = self._now()
+        self.curves.append(_moved(curve, local, to_root, 0.0))
         return None
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None, at=None):
         beat = self._now(delay_beats)[0]
         for message in messages:
             self.events.append((beat, {"type": "osc", "addr": str(message[0]),
-                                       "args": list(message[1:])}))
+                                       "args": list(message[1:])}, []))
 
     def send_msg(self, addr, *args):
         self.send_bundle((addr, *args))
 
     def send_message(self, message):
-        self.events.append((self._now()[0], _native.event_of_midi(bytes(message))))
+        self.events.append((self._now()[0], _native.event_of_midi(bytes(message)), []))
+
+
+def _moved(curve, local: float, to_root, zero: float) -> dict:
+    """A played curve as a sequence writes it: its points, counted from the
+    beat ``local`` it was played at on its own clock, carried to the root's
+    beats and counted from ``zero`` there."""
+    written = {**curve.write(), "id": 0}
+    written["points"] = [{**point, "at": to_root(local + float(point["at"])) - zero}
+                         for point in written.get("points") or ()]
+    return written
 
 
 def _rendered(start, until, tempo_map) -> EventSequence:
@@ -680,7 +705,14 @@ def _rendered(start, until, tempo_map) -> EventSequence:
         finally:
             if stop is not None:
                 stop()
-    data = {"events": [{"at": float(at), "data": keys} for at, keys in recorder.events]}
+    data: dict = {"events": []}
+    for at, keys, curves in recorder.events:
+        entry = {"at": float(at), "data": keys}
+        if curves:
+            entry["automation"] = curves
+        data["events"].append(entry)
+    if recorder.curves:
+        data["automation"] = recorder.curves
     if tempo_map is not None:
         data["tempo_map"] = json.loads(tempo_map.dump())
     return EventSequence.from_data(data)

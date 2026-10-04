@@ -775,7 +775,10 @@ export class SeqAutomation {
  * node, no latency and no server behind it.
  */
 class Recorder {
-    readonly events: [number, Record<string, unknown>][] = [];
+    /** `[beat, keys, the event's own curves as written]`. */
+    readonly events: [number, Record<string, unknown>, Record<string, unknown>[]][] = [];
+    /** The channels' curves that played, as the sequence's own. */
+    readonly curves: Record<string, unknown>[] = [];
 
     /**
      * The beat it is, in the rendered structure's beats, and the function that
@@ -801,14 +804,27 @@ class Recorder {
             // How long it sounds, in the root's beats as well.
             keys.sustain = toRoot(local + event.sustain()) - at;
         }
-        this.events.push([at, keys]);
+        // **Its curves travel with it**: each as the note's own curve in the
+        // sequence, its beats counted from the note's start in the root's.
+        const given = event.get("automation") as Played | Played[] | undefined;
+        const curves = given === undefined || given === null
+            ? []
+            : Array.isArray(given) ? given : [given];
+        this.events.push([at, keys, curves.map((c) => moved(c, local, toRoot, at))]);
+        return null;
+    }
+
+    /** A channel's curve, played: one of the sequence's curves, its beats the root's. */
+    playAutomation(curve: Played): null {
+        const [, local, toRoot] = this.now();
+        this.curves.push(moved(curve, local, toRoot, 0));
         return null;
     }
 
     sendBundle(messages: readonly TimedMessage[], { delayBeats = 0 }: { delayBeats?: number } = {}): void {
         const [at] = this.now(delayBeats);
         for (const [addr, ...args] of messages) {
-            this.events.push([at, { type: "osc", addr: String(addr), args }]);
+            this.events.push([at, { type: "osc", addr: String(addr), args }, []]);
         }
     }
 
@@ -817,8 +833,32 @@ class Recorder {
     }
 
     sendMessage(message: ArrayLike<number>): void {
-        this.events.push([this.now()[0], JSON.parse(coreEventOfMidi(Uint8Array.from(message)))]);
+        this.events.push([this.now()[0], JSON.parse(coreEventOfMidi(Uint8Array.from(message))), []]);
     }
+}
+
+/** A curve that was played: what writes itself. */
+interface Played {
+    write(): Record<string, unknown>;
+}
+
+/**
+ * A played curve as a sequence writes it: its points, counted from the beat
+ * `local` it was played at on its own clock, carried to the root's beats and
+ * counted from `zero` there.
+ */
+function moved(
+    curve: Played,
+    local: number,
+    toRoot: (beat: number) => number,
+    zero: number,
+): Record<string, unknown> {
+    const written = { ...curve.write(), id: 0 };
+    const points = (written as { points?: { at: number }[] }).points ?? [];
+    return {
+        ...written,
+        points: points.map((point) => ({ ...point, at: toRoot(local + Number(point.at)) - zero })),
+    };
 }
 
 /**
@@ -853,8 +893,10 @@ async function rendered(
         }
     });
     const data: Record<string, unknown> = {
-        events: recorder.events.map(([at, keys]) => ({ at, data: keys })),
+        events: recorder.events.map(([at, keys, curves]) =>
+            curves.length > 0 ? { at, data: keys, automation: curves } : { at, data: keys }),
     };
+    if (recorder.curves.length > 0) data.automation = recorder.curves;
     if (tempoMap) data.tempo_map = JSON.parse(tempoMap.dump());
     return EventSequence.fromData(data);
 }

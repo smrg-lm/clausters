@@ -212,6 +212,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         #: the `/node_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/server_notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
+        #: what sends the curves of the events this server plays (`curves`),
+        #: made on first use.
+        self._curves = None
         #: the one sample-clock reader every clock locked to this server shares
         #: (`sample_clock`), built on first use and released by `close`. There
         #: is a single counter to model, so there is a single model of it.
@@ -420,7 +423,17 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         when = (at if at is not None else Moment.current(clock)).at(delay_beats)
         log.debug("-> bundle at beat %s: %s", getattr(when, "beat", when),
                   [m[0] if m else m for m in messages])
+        self._send_at(when, messages)
 
+    def _send_at(self, when, messages, *, keep: bool = True, pin=None):
+        """`send_bundle` at the moment ``when``, already resolved. ``keep``
+        is whether a transport's player is told what was queued: it keeps the
+        bundles of a pass to send back the releases of what sounds on a
+        re-cue, and the values of a curve are none of those. ``pin`` is the
+        wall-clock instant a clockless moment counts from, read once by a
+        caller that sends several bundles about one thing -- a note, its
+        release and its curves -- so they keep their distances to the sample
+        rather than to however long the code between them took."""
         axis = getattr(when.clock, "sched_axis", None)
         if axis is not None:
             # The moment's clock names the **transport** axis: a timeline
@@ -433,15 +446,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
                                        getattr(when.clock, "sched_transport", 0))
             # The player keeps what it queued: a re-cue clears the queue and
             # sends back the releases of the nodes already sounding.
-            keep = getattr(when.clock, "sched_keep", None)
-            if keep is not None:
-                keep(sample, messages)
+            kept = getattr(when.clock, "sched_keep", None) if keep else None
+            if kept is not None:
+                kept(sample, messages)
             return
 
         if getattr(self.interface, "time_mode", "unix") == "score":
             # NRT: seconds of the run's logical time -- the moment's beat put
             # through its clock, from that clock's origin on that time.
-            self.interface.send_bundle(self.target, _score_secs(when), *messages)
+            secs = _score_secs(when) if pin is None else float(pin) + when.secs()
+            self.interface.send_bundle(self.target, secs, *messages)
             return
 
         timebase = getattr(when.clock, "timebase", None)
@@ -454,9 +468,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
             self._send_sched(sample, messages)
         else:
             # Wall clock: an NTP-timetagged bundle.
-            self.interface.send_bundle(
-                self.target, when.instant() + self.latency, *messages
-            )
+            instant = when.instant() if pin is None else float(pin) + when.secs()
+            self.interface.send_bundle(self.target, instant + self.latency, *messages)
 
     def play_event(self, event):
         """Play an `Event` as OSC: a note as `/synth_new` then `/node_free` (or
@@ -488,10 +501,57 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         # The messages are the core's render of the event, so every client
         # starts and ends a note with the same ones.
         synth = _native.event_synth(event.keys_data(), node_id)
-        self.send_bundle(_native.tagged_message(synth["start"]))
-        self.send_bundle(_native.tagged_message(synth["release"]),
-                         delay_beats=synth["sustain"])
+        when = Moment.current()
+        # Outside any clock the wall is read once, for the note, its release
+        # and its curves alike.
+        pin = self.curves.wall() if when.clock is None else None
+        # **Its curves' first values go in the bundle that makes it**, so a
+        # control a curve drives never sounds the value the event was written
+        # with; the rest follow from the emitter, a stretch at a time.
+        first = self.curves.note(node_id, when, event, synth["sustain"], pin)
+        start = _native.tagged_message(synth["start"])
+        log.debug("-> note at beat %s: %s", when.beat, start[:3])
+        self._send_at(when, (start, *first), pin=pin)
+        self._send_at(when.at(synth["sustain"]),
+                      (_native.tagged_message(synth["release"]),), pin=pin)
+        self.curves.follow(node_id)
         return node_id
+
+    @property
+    def curves(self):
+        """**What sends the curves of the events this server plays** -- a
+        `clausters.seq.curves.CurveEmitter`, made on first use. `play_event`
+        hands it every note and `play_automation` a channel's curve; a script
+        reads nothing off it."""
+        if self._curves is None:
+            from ...seq.curves import CurveEmitter
+
+            self._curves = CurveEmitter(self)
+        return self._curves
+
+    def play_automation(self, curve):
+        """Play a `clausters.multitrack.Automation` as **a channel's curve**:
+        from now on it sets the control it names (``{"control": "amp"}``, or
+        ``{"bend": True}`` for the pitch) on the notes of its channel
+        (``"channel"`` in its target, counted from 0; without it, every
+        channel) -- those sounding and those to come -- and holds its last
+        value past its end. Its points are in beats from the moment it is
+        played.
+
+        A note's own curve over the same control wins, and a bend adds to the
+        note's own. It reaches the notes played on **the clock it is played
+        on**: inside a routine that is the routine's clock, and outside any
+        the default one, the clock a pattern plays on.
+
+        Returns what `clausters.seq.curves.CurveEmitter.stop` takes;
+        `clausters.multitrack.Automation.stop` is the door a script uses."""
+        when = Moment.current()
+        if when.clock is None:
+            clock = main.play_clock()
+            when = Moment(clock, clock.beats())
+        written = curve.write()
+        return self.curves.play(written.get("target"),
+                                written.get("points") or (), when)
 
     def send_bundle_after(self, delay_secs: float, *messages):
         """Emit a timetagged bundle of ``(addr, *args)`` messages at wall-clock
@@ -690,6 +750,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         """
         if addr == "/node_end" and args:
             self.nodes.free(int(args[0]))
+            if self._curves is not None:
+                self._curves.forget(int(args[0]))
         elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
             self.nodes.free(int(args[2]))
         elif addr == "/node_fault" and len(args) >= 4:

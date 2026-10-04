@@ -100,6 +100,17 @@ class Event(dict):
     is one too). SuperCollider's fraction (``degree=1.1`` for degree 1 sharp)
     and a pair (``degree=(1, 1)``) are both read as the two keys.
 
+    **An event carries its curves**: ``automation`` is a list of
+    `clausters.multitrack.Automation`, each over one control of the note
+    (``{"control": "cutoff"}``, or ``{"bend": True}`` for its pitch, in
+    semitones), its points in beats from the note's start. Whatever plays the
+    event -- a pattern, a routine, a timeline -- plays them: the control
+    follows the curve from the note's start to its off, and keeps the last
+    value through the release. A control with no curve is the plain value it
+    always was. A **channel's** curve is not the event's: it is a playable of
+    its own (`clausters.multitrack.Automation.play`), read by the notes whose
+    ``channel`` it names.
+
     An event may also carry what the note is **on a page** (`NOTATION_KEYS`):
     ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``,
     ``spelling``, ``accidental`` and ``tie``. They change nothing about how the
@@ -219,9 +230,12 @@ class Event(dict):
     def keys_data(self) -> dict:
         """The event's keys as plain JSON-able data -- what the core renders it
         from, and what a document stores. A value that is not data (the
-        ``server`` a played event holds) is left out."""
+        ``server`` a played event holds) is left out, and so are its curves
+        (``automation``), which travel beside the keys."""
         out = {}
         for key, value in self.items():
+            if key == "automation":
+                continue
             if isinstance(value, tuple):
                 value = list(value)
             if value is None or isinstance(value, (bool, int, float, str, list, dict)):
@@ -269,6 +283,7 @@ class Event(dict):
         already scheduled at play time still arrives and is harmless."""
         node, server = self.get("node"), self.get("server")
         if node is not None and server is not None:
+            _forget(server, node)
             Node(node, server).free()
 
     def release(self):
@@ -281,7 +296,15 @@ class Event(dict):
             return
         # The gesture is the one the note's own render ends it with.
         release = _native.event_synth(self.keys_data(), node)["release"]
+        _forget(server, node)
         server.send_msg(*_native.tagged_message(release))
+
+
+def _forget(server, node) -> None:
+    """The note on ``node`` is ended by hand: its curves stop being sent."""
+    curves = getattr(server, "_curves", None)
+    if curves is not None:
+        curves.forget(node)
 
 
 def OscItem(addr: str, *args) -> Event:  # noqa: N802 -- named as what it makes

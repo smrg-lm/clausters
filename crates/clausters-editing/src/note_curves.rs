@@ -53,7 +53,7 @@ pub fn curve_control(target: &Value) -> Option<String> {
 }
 
 /// The channel a sequence curve's target names, or `None` for every channel.
-fn curve_channel(target: &Value) -> Option<i64> {
+pub fn curve_channel(target: &Value) -> Option<i64> {
     target
         .get("channel")
         .and_then(Value::as_f64)

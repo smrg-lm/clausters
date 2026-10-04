@@ -465,6 +465,41 @@ class Automation:
         self.points = crate_points(points, curve)
         return self
 
+    # ---- as a channel's curve ----
+
+    def play(self, destination=None) -> "Automation":
+        """**Play it as a channel's curve** on ``destination`` (the ambient
+        server when ``None``): from now on it sets the control its `target`
+        names on the notes of its channel -- ``{"control": "amp", "channel":
+        0}``, or every channel without one -- those sounding and those to
+        come, its points counted in beats from this moment, and it holds its
+        last value past its end (`clausters.defs.Server.play_automation`).
+
+        The timeline-item protocol, so a curve is placed on a
+        `clausters.seq.Timeline` like an event. A note's own curve is not
+        played: it is the event's (``Event(automation=[curve])``). Returns the
+        curve, whose `stop` ends it."""
+        if destination is None:
+            from .base.main import main
+
+            destination = main.resolve_server()
+        handler = getattr(destination, "play_automation", None)
+        if handler is None:
+            raise TypeError(
+                f"a curve plays on a server, where it sets a control of the notes "
+                f"of its channel; {type(destination).__name__} does not play one")
+        if self.enabled:
+            self.stop()
+            self._playing = (destination, handler(self))
+        return self
+
+    def stop(self) -> None:
+        """Stop it as a channel's curve: the notes it reached keep the last
+        value it set. Nothing when it is not playing."""
+        playing, self._playing = getattr(self, "_playing", None), None
+        if playing is not None and playing[1] is not None:
+            playing[0].curves.stop(playing[1])
+
     # ---- as data ----
 
     def write(self) -> dict:

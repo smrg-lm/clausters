@@ -58,6 +58,8 @@ pub const RESERVED: &[&str] = &[
     "bytes",
     "addr",
     "args",
+    // The curves a played event carries.
+    "automation",
 ];
 
 /// What an event is, from its `type` key.

@@ -4701,3 +4701,14 @@ sound.
   2026-09-30** with Python's, in the same commit: `ServerMidi`'s `midiBind`,
   `midiBindZone`, `midiUnbind`, `midiMap`, `midiUmp` and `midiQuery`.
 
+- ⬜ **A played event's curves are stepped at 48 kHz off the sample clock**
+  *(found 2026-10-04, porting `C62`'s emitter)*. The grid a curve's values
+  are sent on is the engine's block at the server's sample rate
+  (`seq/curves.ts`, `CurveEmitter.sampleRate`). The Python client reads the
+  rate off the clock when it is on the server's samples and off the server's
+  options otherwise; this client's `Server` keeps no rate, so off the sample
+  clock it assumes 48000. Against a server at another rate the step is not
+  the engine's block: the values still land, a block apart on average, but
+  not on its boundaries. The port's gap: the handle would keep the rate
+  `/server_query` already answers and the emitter would read it.
+

@@ -4,7 +4,8 @@ everything.
 
 ``play`` sounds whatever you hand it against the ambient context -- an event or
 a plain dict, a generator, a bare signal expression (a UGen graph or a Faust
-box), a named def, a timeline, a sequence, a buffer -- and ``render``
+box), a named def, an event that carries its curves, a channel's curve, a
+timeline, a sequence, a buffer -- and ``render``
 performs the change of state offline: an expression or a pattern in, samples
 (and here a WAV) out. This tour visits every playable kind audibly, and closes
 the circle by rendering a phrase to a file, loading it back as a buffer and
@@ -38,6 +39,7 @@ from clausters.seq.timeline import Timeline
 
 from clausters import Session
 from clausters.defs import Buffer
+from clausters.multitrack import Automation
 
 session = Session.embed().activate()
 # The session's clock is *this* session's, and an ambient `play` resolves it --
@@ -107,6 +109,28 @@ node = play(sine(env_gen(Env([440.0, 1760.0, 440.0], [1.5, 1.5]))) * 0.15)
 time.sleep(1.5)
 node.free()                 # cut at the top of the sweep
 time.sleep(0.5)
+
+# %% A curve on an event: `automation` is a list of curves, each over one
+# control of the note, its points in beats from the note's start. Nothing is
+# built for it on the server -- the note is the synth it always was, and the
+# client sets the control, one value a block, from the note's start to its
+# off. A control with no curve is the plain value it always was.
+print("an event that carries its curves: a swell, and a bend up a tone")
+play(Event(degree=0, dur=2.0, legato=1.0, automation=[
+    Automation({"control": "amp"}, [(0.0, 0.0), (1.0, 0.3), (2.0, 0.0)]),
+    Automation({"bend": True}, [(0.0, 0.0), (2.0, 2.0)]),
+]))
+time.sleep(2.0 + PAUSE)
+
+# %% A channel's curve is a playable of its own: it sets its control on every
+# note of its channel -- those sounding and those to come -- on the clock it is
+# played on, and holds its last value past its end. The phrase's notes say
+# nothing about their level; the curve fades the channel in across them.
+print("a channel's curve over a phrase: a fade in across four notes")
+fade = play(Automation({"control": "amp", "channel": 0}, [(0.0, 0.02), (1.6, 0.3)]))
+play(Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.4))
+time.sleep(PAUSE + 1.0)
+fade.stop()
 
 # %% A timeline: already-generated placement, playing itself on a clock of its
 # own.

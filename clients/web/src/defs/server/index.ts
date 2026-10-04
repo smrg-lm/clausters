@@ -65,6 +65,7 @@ import type { Timebase } from "../../base/timebase.ts";
 import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
+import { CurveEmitter } from "../../seq/curves.ts";
 import { synthRender, taggedMessage } from "../../seq/event.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
@@ -878,6 +879,26 @@ export class Server {
     ): void {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
         log.debug("-> bundle at beat %s: %s", when.beat ?? when, messages);
+        this.sendAt(when, messages);
+    }
+
+    /**
+     * `sendBundle` at the moment `when`, already resolved. `keep` is whether a
+     * transport's player is told what was queued: it keeps the bundles of a
+     * pass to send back the releases of what sounds on a re-cue, and the
+     * values of a curve are none of those. `pin` is the wall-clock instant a
+     * clockless moment counts from, read once by a caller that sends several
+     * bundles about one thing -- a note, its release and its curves -- so
+     * they keep their distances to the sample rather than to however long the
+     * code between them took.
+     *
+     * @internal
+     */
+    sendAt(
+        when: Moment,
+        messages: readonly TimedMessage[],
+        { keep = true, pin = null }: { keep?: boolean; pin?: number | null } = {},
+    ): void {
         const scheduler = when.clock as {
             schedAxis?: ((secs: number) => number) | null;
             schedTransport?: number;
@@ -894,13 +915,14 @@ export class Server {
             this.sendSchedTransport(sample, messages, scheduler?.schedTransport ?? 0);
             // The player keeps what it queued: a re-cue clears the queue and
             // sends back the releases of the nodes already sounding.
-            scheduler?.schedKeep?.(sample, messages);
+            if (keep) scheduler?.schedKeep?.(sample, messages);
             return;
         }
         if (this.scoring) {
             // NRT: seconds of the run's logical time -- the moment's beat put
             // through its clock, from that clock's origin on that time.
-            this.connection.addBundle!(scoreSecs(when), toBundle(messages));
+            const secs = pin === null ? scoreSecs(when) : pin + when.secs();
+            this.connection.addBundle!(secs, toBundle(messages));
             return;
         }
         const timebase = when.clock?.timebase;
@@ -915,7 +937,8 @@ export class Server {
             );
             return;
         }
-        this.sendTimetagged(when.instant() + this.latency, messages);
+        const instant = pin === null ? when.instant() : pin + when.secs();
+        this.sendTimetagged(instant + this.latency, messages);
     }
 
     /**
@@ -1012,9 +1035,58 @@ export class Server {
         // The messages are the core's render of the event, so every client
         // starts and ends a note with the same ones.
         const synth = synthRender(event.keysData(), node);
-        this.sendBundle([taggedMessage(synth.start)]);
-        this.sendBundle([taggedMessage(synth.release)], { delayBeats: synth.sustain });
+        const when = Moment.current();
+        // Outside any clock the wall is read once, for the note, its release
+        // and its curves alike.
+        const pin = when.clock === null ? this.curves.wall() : null;
+        // **Its curves' first values go in the bundle that makes it**, so a
+        // control a curve drives never sounds the value the event was written
+        // with; the rest follow from the emitter, a stretch at a time.
+        const first = this.curves.note(node, when, event, synth.sustain, pin);
+        const start = taggedMessage(synth.start);
+        log.debug("-> note at beat %s: %s", when.beat, start.slice(0, 3));
+        this.sendAt(when, [start, ...first], { pin });
+        this.sendAt(when.at(synth.sustain), [taggedMessage(synth.release)], { pin });
+        this.curves.follow(node);
         return node;
+    }
+
+    #curves: CurveEmitter | null = null;
+
+    /**
+     * **What sends the curves of the events this server plays** -- a
+     * `CurveEmitter`, made on first use. `playEvent` hands it every note and
+     * `playAutomation` a channel's curve; a page reads nothing off it.
+     */
+    get curves(): CurveEmitter {
+        this.#curves ??= new CurveEmitter(this);
+        return this.#curves;
+    }
+
+    /**
+     * Plays an `Automation` as **a channel's curve**: from now on it sets the
+     * control it names (`{ control: "amp" }`, or `{ bend: true }` for the
+     * pitch) on the notes of its channel (`channel` in its target, counted
+     * from 0; without it, every channel) -- those sounding and those to come
+     * -- and holds its last value past its end. Its points are in beats from
+     * the moment it is played.
+     *
+     * A note's own curve over the same control wins, and a bend adds to the
+     * note's own. It reaches the notes played on **the clock it is played
+     * on**: inside a routine that is the routine's clock, and outside any the
+     * default one, the clock a pattern plays on.
+     *
+     * Returns what `CurveEmitter.stop` takes; `Automation.stop` is the door a
+     * page uses.
+     */
+    playAutomation(curve: { write(): { target?: unknown; points?: unknown[] } }): number {
+        let when = Moment.current();
+        if (when.clock === null) {
+            const clock = main.playClock();
+            when = new Moment(clock, clock.beats());
+        }
+        const written = curve.write();
+        return this.curves.play(written.target, written.points ?? [], when);
     }
 
     /**
@@ -1376,7 +1448,10 @@ export class Server {
     private recycleNodeIds(): void {
         if (this.recycling) return;
         this.recycling = new OscFunc(
-            (msg) => this.nodes.free(Number(msg[1])),
+            (msg) => {
+                this.nodes.free(Number(msg[1]));
+                this.#curves?.forget(Number(msg[1]));
+            },
             "/node_end",
             { recv: this.receiver },
         );

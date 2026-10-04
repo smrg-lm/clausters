@@ -1694,6 +1694,18 @@ pub fn editing_load(request: &str) -> String {
     clausters_editing::load::plan_json(request)
 }
 
+/// JS face: **a played event's curves, as the values a client sends** -- the
+/// `/node_set`s of every instant of one window.
+///
+/// `request` is the step, the stretch of time, the notes that sound with
+/// their own curves and the channels' curves, as JSON; the answer is
+/// `{"bundles", "states", "over", "idle"}`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = editingEventCurves)]
+pub fn editing_event_curves(request: &str) -> String {
+    clausters_editing::event_curves::window_json(request)
+}
+
 /// JS face: **what is sounding of a multitrack**, held across edits.
 ///
 /// The instance projection's state. The other two projections are functions of

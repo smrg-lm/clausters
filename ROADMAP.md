@@ -239,14 +239,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`C62` - an event carries its curves** *(`clients/python/PLAN.md`,
-  "A script plays and holds what the editors do")*. Opened 2026-10-03 by the
-  user: no event with automation can be played from the client except through
-  a sequence's lane, so a pattern, a routine and a timeline have no curves.
-  The direction is written and still open: an event graph per instrument,
-  sent with its def, its readers as slots added only for the controls a
-  note's curves drive; it needs `/graph_map` to name a private bus.
-
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
   layer only: the sub-two-sample columns and the joined segments take the same

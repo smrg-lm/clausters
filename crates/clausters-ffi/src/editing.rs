@@ -190,6 +190,36 @@ pub unsafe extern "C" fn clausters_editing_load(
     unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
+/// **A played event's curves, as the values a client sends**: the
+/// `/node_set`s of every instant of one window.
+///
+/// `request` is `clausters_editing::event_curves::Request` as JSON -- the
+/// step, the stretch of time, the notes that sound with their own curves and
+/// the channels' curves -- and the answer is
+/// `clausters_editing::event_curves::window_json`'s: `{"bundles", "states",
+/// "over", "idle"}`.
+///
+/// Sizes with a null `out` and fills with a second call.
+///
+/// # Safety
+/// `request` must be null or readable for `request_len` bytes, and `out` null
+/// or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_event_curves(
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let answer = clausters_editing::event_curves::window_json(&request);
+    // SAFETY: forwarded from this function's own contract. A pure read.
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
+}
+
 /// **What is sounding of a multitrack**, held across edits.
 ///
 /// The instance projection's state: an opaque handle, because it is the one

@@ -16,11 +16,14 @@ This layer ships:
 - `sequence` -- `EventSequence`: events as concrete data, each with an id, in
   beats with their tempo map -- what a notes editor edits and what a timeline
   renders into. A handle to the document's own structure.
+- `curves` -- `CurveEmitter`: what sends the curves of the events a server
+  plays, a stretch at a time.
 
 A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 ``server.render()`` purely by which interface the Server holds -- the seam.
 """
 
+from .curves import CurveEmitter
 from .event import Event, rest
 from .eventstream import EventStreamPlayer
 from .timeline import (MidiItem, OscItem, Timeline, item_data,
@@ -43,6 +46,7 @@ from .pattern import (
 )
 
 __all__ = [
+    "CurveEmitter",
     "EventPattern",
     "Event",
     "rest",

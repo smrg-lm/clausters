@@ -126,6 +126,7 @@
       - [sheet](api/clausters.gui.notation.sheet.md)
       - [view](api/clausters.gui.notation.view.md)
   - [seq](api/clausters.seq.md)
+    - [curves](api/clausters.seq.curves.md)
     - [event](api/clausters.seq.event.md)
     - [eventstream](api/clausters.seq.eventstream.md)
     - [pattern](api/clausters.seq.pattern.md)

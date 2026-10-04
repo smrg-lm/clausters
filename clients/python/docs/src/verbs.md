@@ -43,6 +43,7 @@ function is the uniform entry that picks the right one.
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
 | a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
+| an `Automation` | plays it as a **channel's curve**: it sets its control on the notes of its channel, on the clock it is played on | the curve — `.stop()` |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline — `.stop()` (and `pause`/`locate`/`loop`) |
 | an `EventSequence` | loads it as an event lane on a transport of its own, its pass ending where its contents do; boots a server for the default session when there is none | the `Transport` it plays on — `.stop()`, `.wait()` (and `pause`/`locate`/`loop`), in the sequence's beats, and `.free()` to give the transport back |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
@@ -58,6 +59,49 @@ after its sustain, but the completed event's `.free()` cuts it *now*; a take
 ends on its own, but the handle's `.free()` interrupts it. (The release already
 scheduled at play time still arrives; it lands on a node that is gone and is
 harmless.)
+
+### An event carries its curves
+
+An `Event` takes `automation`: a list of `Automation`, each over one control of
+the note — `{"control": "cutoff"}`, or `{"bend": True}` for its pitch, in
+semitones — with its points in beats from the note's start. Whatever plays the
+event plays them, so a pattern, a routine and a timeline all do, and
+`render_events` keeps them as the notes' own curves:
+
+```python
+from clausters.multitrack import Automation
+
+play(Event(degree=0, dur=2.0, legato=1.0, automation=[
+    Automation({"control": "amp"}, [(0.0, 0.0), (1.0, 0.3), (2.0, 0.0)]),
+    Automation({"bend": True}, [(0.0, 0.0), (2.0, 2.0)]),
+]))
+```
+
+A **channel's** curve is a playable of its own:
+`play(Automation({"control": "amp", "channel": 0}, points))` sets that control
+on every note of the channel (an event's `channel` key, counted from 0; a
+target with no `channel` reaches every one), sounding and to come. It holds its
+last value past its end, and `.stop()` ends it. A note's own curve over the
+same control wins, and a bend adds to the note's own.
+
+**Nothing is built on the server for either.** The note is the plain synth it
+always was, and the client sets the controls its curves drive, one value every
+block, in timed bundles a little ahead of the clock; a control with no curve is
+the plain value it always was. Three things follow from that:
+
+- a curve reaches a note **from its start to its off**, and the note keeps the
+  last value through its release. The off is the last instant the client knows
+  the node is there, and a `/node_set` to a node that is gone fails an offline
+  render;
+- a channel's curve reaches the notes played on **the clock it is played on** —
+  outside a routine, the default one, which is the clock a pattern plays on;
+- in real time the values arrive on time only while the client stays ahead of
+  its clock: a process stalled for longer than its lead sends them late.
+  Offline they are exact.
+
+A curve in an `EventSequence` is read by the server instead, on the transport's
+own position (see [Event sequences](timelines.md#event-sequences-events-as-data)),
+and one inside a def (`env_gen`) by the node itself.
 
 **Plottables** — `plot(x)` (each call opens its own window; see the
 [`plot` API](api/clausters.plot.md) for the display options — `view="spectrum"`, rulers,

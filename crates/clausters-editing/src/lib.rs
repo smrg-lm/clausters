@@ -36,6 +36,7 @@
 pub mod apply;
 pub mod audio_playback;
 pub mod conversation;
+pub mod event_curves;
 pub mod events;
 pub mod instance;
 pub mod intake;
