@@ -199,18 +199,17 @@ fn the_keys_walk_the_list_enter_picks_and_escape_closes() {
     let mut g = Gestures::default();
     let ctx = ctx();
     let at = mid(rect_of(&host, &ctx, 7));
-    let mut clip = crate::host::clipboard::Clip::default();
     click(&mut g, &mut host, &ctx, (at.0, at.1 + 10.0));
-    assert!(g.key(&mut host, &ctx, Key::Down, &mut clip).is_some());
-    g.key(&mut host, &ctx, Key::Down, &mut clip);
+    assert!(g.key(&mut host, &ctx, Key::Down).is_some());
+    g.key(&mut host, &ctx, Key::Down);
     assert_eq!(host.popup(1).unwrap().levels[0].hover, Some(1));
-    let effects = g.key(&mut host, &ctx, Key::Enter, &mut clip).unwrap();
+    let effects = g.key(&mut host, &ctx, Key::Enter).unwrap();
     assert!(host.popup(1).is_none());
     assert_eq!(emitted(&effects, 7), vec![vec![OscType::Int(1)]]);
 
     click(&mut g, &mut host, &ctx, (at.0, at.1 + 10.0));
     assert!(host.popup(1).is_some());
-    assert!(g.key(&mut host, &ctx, Key::Escape, &mut clip).is_some());
+    assert!(g.key(&mut host, &ctx, Key::Escape).is_some());
     assert!(host.popup(1).is_none());
     assert_eq!(
         value_of(&host, 7),
@@ -218,7 +217,7 @@ fn the_keys_walk_the_list_enter_picks_and_escape_closes() {
         "Escape picks nothing"
     );
     // With nothing open Escape is not the machine's: the front keeps it.
-    assert!(g.key(&mut host, &ctx, Key::Escape, &mut clip).is_none());
+    assert!(g.key(&mut host, &ctx, Key::Escape).is_none());
 }
 
 /// A list longer than the window scrolls under the wheel, and the wheel stops
@@ -322,12 +321,11 @@ fn a_key_bound_to_a_bar_entry_reports_its_pick() {
     let mut host = host_from(BAR);
     let mut g = Gestures::default();
     let mut ctx = ctx();
-    let mut clip = crate::host::clipboard::Clip::default();
     assert!(host.keys.bind("open", &["Ctrl+O"]).is_empty());
     assert!(host.keys.bind("export", &["F2"]).is_empty());
     ctx.ctrl = true;
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('o'), None)
         .expect("consumed");
     assert_eq!(
         emitted(&effects, 1),
@@ -339,7 +337,7 @@ fn a_key_bound_to_a_bar_entry_reports_its_pick() {
     );
     ctx.ctrl = false;
     let effects = g
-        .press_key(&mut host, &ctx, Key::F(2), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::F(2), None)
         .expect("consumed");
     assert!(
         emitted(&effects, 1).is_empty(),
@@ -355,7 +353,6 @@ fn a_command_chord_closes_an_open_menu_and_runs() {
     let mut host = host_from(BAR);
     let mut g = Gestures::default();
     let mut ctx = ctx();
-    let mut clip = crate::host::clipboard::Clip::default();
     host.keys.bind("open", &["Ctrl+O"]);
     host.keys.bind("help", &["H"]);
     let at = bar_title(&host, &ctx, 1);
@@ -363,13 +360,13 @@ fn a_command_chord_closes_an_open_menu_and_runs() {
     assert!(host.popup(1).is_some(), "View is open");
     // A bare letter bound to a verb is still the list's, and does nothing.
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('h'), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('h'), None)
         .expect("the open list takes it");
     assert!(emitted(&effects, 1).is_empty());
     assert!(host.popup(1).is_some());
     ctx.ctrl = true;
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('o'), None)
         .expect("consumed");
     assert!(host.popup(1).is_none(), "the list closed");
     assert_eq!(
@@ -394,13 +391,12 @@ fn a_focused_field_lets_a_command_chord_through() {
     );
     let mut g = Gestures::default();
     let mut ctx = ctx();
-    let mut clip = crate::host::clipboard::Clip::default();
     host.keys.bind("open", &["Ctrl+O"]);
-    g.press_key(&mut host, &ctx, Key::Tab, None, &mut clip);
+    g.press_key(&mut host, &ctx, Key::Tab, None);
     assert_eq!(host.focused(), Some((1, 5)));
     ctx.ctrl = true;
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('o'), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('o'), None)
         .expect("consumed");
     assert_eq!(
         emitted(&effects, 1),
@@ -411,7 +407,7 @@ fn a_focused_field_lets_a_command_chord_through() {
     );
     // Ctrl+Z is the field's while it is typed in, even with nothing to undo.
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('z'), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('z'), None)
         .expect("the field took it");
     assert!(
         emitted(&effects, 1).is_empty(),
@@ -426,20 +422,16 @@ fn a_verb_no_menu_names_reaches_the_window_owner_bare() {
     let mut host = host_from(PANEL);
     let mut g = Gestures::default();
     let ctx = ctx();
-    let mut clip = crate::host::clipboard::Clip::default();
     assert!(host.keys.bind("about", &["F1"]).is_empty());
     let effects = g
-        .press_key(&mut host, &ctx, Key::F(1), None, &mut clip)
+        .press_key(&mut host, &ctx, Key::F(1), None)
         .expect("consumed");
     assert_eq!(
         emitted(&effects, 1),
         vec![vec![OscType::String("about".into())]]
     );
     // A key bound to nothing is nobody's.
-    assert!(
-        g.press_key(&mut host, &ctx, Key::F(3), None, &mut clip)
-            .is_none()
-    );
+    assert!(g.press_key(&mut host, &ctx, Key::F(3), None).is_none());
 }
 
 /// **An open list shows the chord bound to each entry's verb**, at every
@@ -548,8 +540,7 @@ fn with_a_menu_open_the_pointer_crossing_another_title_moves_it_there() {
     let stack = host.popup(1).unwrap();
     assert_eq!(stack.levels[0].entries[0].label, "Waveform");
     // And the arrows walk the titles from the keyboard.
-    let mut clip = crate::host::clipboard::Clip::default();
-    g.key(&mut host, &ctx, Key::Left, &mut clip);
+    g.key(&mut host, &ctx, Key::Left);
     assert_eq!(host.popup(1).unwrap().levels[0].entries[0].label, "Open");
 }
 
@@ -760,8 +751,7 @@ const PANEL: &str = r#"{"type":"window","margin":0,"flow":"col","children":[
     {"id":8,"type":"choice","h":32,"options":["a","b","c"]}]}"#;
 
 fn press_key(g: &mut Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Vec<GestureEffect> {
-    let mut clip = crate::host::clipboard::Clip::default();
-    g.key(host, ctx, k, &mut clip).unwrap_or_default()
+    g.key(host, ctx, k).unwrap_or_default()
 }
 
 /// Every control is a stop on the ring and is worked from the keyboard, by the
@@ -1080,4 +1070,85 @@ fn a_subtree_defined_into_a_window_takes_the_windows_theme() {
     let dialog = host.window_def(1).unwrap().find(4).unwrap();
     let theme = dialog.theme.as_deref().expect("resolved");
     assert_eq!(theme.popup, [1.0, 0.0, 0.0, 1.0]);
+}
+
+const FIELD: &str = r#"{"type":"window","margin":0,"flow":"col","children":[
+    {"id":5,"type":"text","h":32,"value":"hello world"},
+    {"id":6,"type":"text","h":32,"context":[{"label":"Mine","verb":"mine"}]}]}"#;
+
+/// **A field's secondary button opens the standard edit menu** -- the host's,
+/// where the field carries no `context` of its own -- and a pick is the edit
+/// itself: Cut puts the selection on the clipboard and takes it out.
+#[test]
+fn a_field_has_the_standard_edit_menu_and_a_pick_edits() {
+    let mut host = host_from(FIELD);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let at = mid(rect_of(&host, &ctx, 5));
+    // A triple click selects the line, which turns Cut, Copy and Delete on.
+    for t in [1_000.0, 1_100.0, 1_200.0] {
+        ctx.now_ms = t;
+        click(&mut g, &mut host, &ctx, at);
+    }
+    g.context(&mut host, &ctx, at.0, at.1)
+        .expect("a menu opened");
+    let stack = host.popup(1).expect("open");
+    assert_eq!(stack.owner, Owner::Edit(5));
+    let labels: Vec<(&str, bool)> = stack.levels[0]
+        .entries
+        .iter()
+        .filter(|e| !e.is_separator())
+        .map(|e| (e.label.as_str(), e.enabled))
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            ("Cut", true),
+            ("Copy", true),
+            ("Paste", true),
+            ("Delete", true),
+            ("Select all", true)
+        ]
+    );
+    let placed = host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap();
+    ctx.now_ms = 5_000.0;
+    let effects = click(&mut g, &mut host, &ctx, mid(placed[0].rows[0]));
+    assert!(host.popup(1).is_none());
+    assert_eq!(
+        host.clipboard.text(),
+        "hello world",
+        "cut onto the clipboard"
+    );
+    assert_eq!(
+        emitted(&effects, 5),
+        vec![vec![OscType::String(String::new())]],
+        "and out of the field"
+    );
+    // A field with a `context` of its own opens that one instead.
+    let other = mid(rect_of(&host, &ctx, 6));
+    g.context(&mut host, &ctx, other.0, other.1);
+    assert_eq!(host.popup(1).unwrap().owner, Owner::Context(6));
+}
+
+/// **The middle button pastes the primary selection at the pointer**: a word
+/// selected in one field goes into the other where the button was pressed.
+#[test]
+fn the_middle_button_pastes_the_selection_where_it_is_pressed() {
+    let mut host = host_from(FIELD);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let from = rect_of(&host, &ctx, 5);
+    let word = (from.x as f64 + 8.0, mid(from).1);
+    for t in [1_000.0, 1_100.0] {
+        ctx.now_ms = t;
+        click(&mut g, &mut host, &ctx, word);
+    }
+    assert_eq!(host.clipboard.primary().as_deref(), Some("hello"));
+    let into = rect_of(&host, &ctx, 6);
+    let effects = g.middle(&mut host, &ctx, mid(into).0, mid(into).1);
+    assert_eq!(host.focused(), Some((1, 6)), "the field takes the focus");
+    assert!(
+        emitted(&effects, 6).contains(&vec![OscType::String("hello".into())]),
+        "{effects:?}"
+    );
 }

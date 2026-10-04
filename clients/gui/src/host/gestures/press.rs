@@ -704,3 +704,72 @@ impl Gestures {
         self.drag.is_some() || out.len() > effects_before
     }
 }
+
+/// Makes the text the focused element of this window has selected, if any,
+/// the primary selection -- what a middle click pastes.
+pub(super) fn note_primary(host: &mut Host, ctx: &GestureCtx) {
+    let Some((def, id)) = host.focused() else {
+        return;
+    };
+    if def != ctx.def_id {
+        return;
+    }
+    let selected = host
+        .widget_kind(def, id)
+        .and_then(|k| k.as_element())
+        .and_then(|el| el.selected_text());
+    if let Some(text) = selected {
+        host.clipboard.set_primary(&text);
+    }
+}
+
+impl Gestures {
+    /// **The middle button: the primary selection pasted where the pointer
+    /// is**, into an element that takes text ([`Element::paste_at`]) -- the
+    /// selection another program made, on a desktop that has one, or the last
+    /// one made inside this host. The element takes the focus, as a press
+    /// would give it. Anywhere else the button does nothing.
+    ///
+    /// [`Element::paste_at`]: crate::host::widget::Element::paste_at
+    pub fn middle(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
+        let mut out = Vec::new();
+        // One pointer, one gesture; and a press over an open list dismisses it.
+        if self.dragging() {
+            return out;
+        }
+        if host.close_popup(ctx.def_id) {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return out;
+        }
+        let Some(Hit {
+            id,
+            rect,
+            scale,
+            indent,
+            ..
+        }) = hit(host, ctx, cx, cy)
+        else {
+            return out;
+        };
+        let Some(text) = host.clipboard.primary() else {
+            return out;
+        };
+        let at = element::At::widget(id, rect, scale, indent);
+        let Some(events) = element::with(host, ctx, at, |el, input| {
+            el.paste_at((cx, cy), input, &text)
+        })
+        .flatten() else {
+            return out;
+        };
+        super::focus::set(host, &mut out, ctx, Some(id));
+        element::report(host, &mut out, ctx, id, events);
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        out
+    }
+}

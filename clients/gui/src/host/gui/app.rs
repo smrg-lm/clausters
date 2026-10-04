@@ -154,17 +154,21 @@ pub(super) struct App {
     /// warning every frame is not).
     #[cfg(feature = "midi")]
     pub(super) midi_warned: bool,
-    /// The host-wide clipboard (Ctrl+C/X/V) -- the native front's internal one,
-    /// no OS-clipboard dependency -- so what is cut in one window pastes into
-    /// another. A block of notes rides it in the same JSON a `/gui_set notes`
-    /// takes, which is the carrier every non-scalar already uses.
-    pub(super) text_clipboard: crate::host::clipboard::Clip,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: crate::host::live::TickClock,
 }
 
 impl App {
-    pub(super) fn new(host: Host, socket: Arc<UdpSocket>, shm: Option<Arc<dyn BusSource>>) -> Self {
+    pub(super) fn new(
+        mut host: Host,
+        socket: Arc<UdpSocket>,
+        shm: Option<Arc<dyn BusSource>>,
+    ) -> Self {
+        // The host's clipboard reaches the desktop's: text copied in a window
+        // pastes in any other program, and the reverse.
+        if let Some(system) = super::clipboard::Desktop::open() {
+            host.clipboard.attach(system);
+        }
         Self {
             host,
             socket,
@@ -198,7 +202,6 @@ impl App {
             mpe_notes: std::collections::HashMap::new(),
             #[cfg(feature = "midi")]
             midi_warned: false,
-            text_clipboard: crate::host::clipboard::Clip::default(),
             tick_clock: Default::default(),
         }
     }
@@ -871,6 +874,14 @@ impl ApplicationHandler<UserEvent> for App {
                 button: MouseButton::Right,
                 ..
             } => self.on_context(def_id),
+            // **The middle button pastes the primary selection** into a field
+            // under the pointer -- the desktop's, which another program may
+            // have made. Only its press, as on every desktop.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Middle,
+                ..
+            } => self.on_middle(def_id),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,

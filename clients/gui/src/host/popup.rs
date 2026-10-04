@@ -43,6 +43,11 @@ pub enum Owner {
     Context(i32),
     /// The `menu` of this button, opened under it.
     Button(i32),
+    /// The **edit menu** of an element that takes text -- Cut, Copy, Paste,
+    /// Delete, Select all -- the host's own, opened at the pointer where the
+    /// element carries no `context` of its own. A pick is an edit of that
+    /// element, not a report.
+    Edit(i32),
 }
 
 /// Where the first list of a stack hangs.
@@ -115,7 +120,9 @@ impl Stack {
     /// The widget the stack hangs off, when it hangs off one.
     pub fn owner_widget(&self) -> Option<i32> {
         match self.owner {
-            Owner::Element(id) | Owner::Context(id) | Owner::Button(id) => Some(id),
+            Owner::Element(id) | Owner::Context(id) | Owner::Button(id) | Owner::Edit(id) => {
+                Some(id)
+            }
             Owner::Bar(_) => None,
         }
     }
@@ -332,7 +339,7 @@ pub fn owner_rect(
                 .find(|(t, _)| *t == title)
                 .map(|(_, r)| r)
         }
-        Owner::Element(id) | Owner::Context(id) | Owner::Button(id) => placed
+        Owner::Element(id) | Owner::Context(id) | Owner::Button(id) | Owner::Edit(id) => placed
             .iter()
             .find(|p| p.widget.id == Some(id))
             .map(|p| p.rect),
@@ -703,7 +710,7 @@ impl super::Host {
         fb_h: u32,
         x: f64,
         y: f64,
-    ) -> Option<(i32, Vec<Entry>)> {
+    ) -> Option<(Owner, Vec<Entry>)> {
         let placed = self.layout_window(def_id, fb_w, fb_h)?;
         let from = super::chrome::modal_start(&placed).unwrap_or(0);
         placed[from..]
@@ -712,8 +719,19 @@ impl super::Host {
             .filter(|p| p.widget.live)
             .rev()
             .find_map(|p| {
-                let menu = p.widget.context.as_ref().filter(|m| !m.is_empty())?;
-                Some((p.widget.id?, menu.clone()))
+                let id = p.widget.id?;
+                if let Some(menu) = p.widget.context.as_ref().filter(|m| !m.is_empty()) {
+                    return Some((Owner::Context(id), menu.clone()));
+                }
+                // **A field's own edit menu**, where it carries no `context`:
+                // the innermost answer, so it is the field's and not the page's
+                // around it -- the standard menu of every text field.
+                let el = p.widget.kind.as_element().filter(|el| el.takes_text())?;
+                let has_text = matches!(el.value(), Some(clausters_core::osc::OscType::String(ref s)) if !s.is_empty());
+                Some((
+                    Owner::Edit(id),
+                    menu::edit_entries(el.selected_text().is_some(), has_text),
+                ))
             })
     }
 

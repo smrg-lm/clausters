@@ -38,18 +38,23 @@ impl Gestures {
     /// whatever it reports exactly as a drag would, bound -> straight to the
     /// audio server, else a `/gui_event`.
     ///
-    /// `clipboard` is the host-wide clipboard a cut/copy/paste reads and writes
-    /// (the native front's internal one; the browser front swaps the page's
-    /// string in and out around this call).
+    /// A cut, a copy and a paste read and write the host's clipboard
+    /// ([`Host::clipboard`]).
     ///
     /// Returns `Some(effects)` when the key was consumed -- the key table is
     /// then not read -- and `None` when nothing here answered it.
-    pub fn key(
+    pub fn key(&self, host: &mut Host, ctx: &GestureCtx, key: Key) -> Option<Vec<GestureEffect>> {
+        with_clipboard(host, |host, clip| self.key_with(host, ctx, key, clip))
+    }
+
+    /// [`key`](Self::key), with the clipboard taken off the host for the
+    /// length of the call (an element borrows the host while it edits).
+    fn key_with(
         &self,
         host: &mut Host,
         ctx: &GestureCtx,
         key: Key,
-        clipboard: &mut super::super::clipboard::Clip,
+        clipboard: &mut Clip,
     ) -> Option<Vec<GestureEffect>> {
         // **An open list is modal**: it takes every key, the walking ones to
         // walk it and the rest to swallow -- Tab included, since the focus
@@ -108,11 +113,18 @@ impl Gestures {
         // The element's own arm first; then, for Space and Enter, the
         // keyboard's press -- do what a click on this control does.
         let pressed = matches!(key, Key::Enter | Key::Char(' '));
-        let events = element::with(host, ctx, at, |el, placed| {
-            el.key(&key, &mut input)
-                .or_else(|| pressed.then(|| el.activate(placed)).flatten())
-        })
-        .flatten()?;
+        let (events, selected) = element::with(host, ctx, at, |el, placed| {
+            let events = el
+                .key(&key, &mut input)
+                .or_else(|| pressed.then(|| el.activate(placed)).flatten());
+            (events, el.selected_text())
+        })?;
+        let events = events?;
+        // **What a field has selected is the primary selection**, whichever
+        // way it was selected -- Shift and an arrow as much as a drag.
+        if let Some(text) = selected {
+            input.clipboard.set_primary(&text);
+        }
         let mut out = Vec::new();
         // The element consumed it, so the window repaints whether or not
         // anything was reported: a caret that moved is a picture that changed.
@@ -127,12 +139,24 @@ impl Gestures {
     ///
     /// First [`key`](Self::key) -- the popup layer, the ring, a dialog's
     /// Escape and the focused element's raw key -- and then the **key table**:
-    /// a chord bound to a verb is [`perform`](Self::perform)ed, and is
+    /// a chord bound to a verb is performed, and is
     /// consumed whether or not anything here acted on it, since the window's
     /// owner is told what nobody performed. Returns `None` for a key that is
     /// neither, which the front may still answer (a desktop window's Escape
     /// closes it).
     pub fn press_key(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        key: Key,
+        pointer: Option<(f64, f64)>,
+    ) -> Option<Vec<GestureEffect>> {
+        with_clipboard(host, |host, clip| {
+            self.press_key_with(host, ctx, key, pointer, clip)
+        })
+    }
+
+    fn press_key_with(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
@@ -156,7 +180,7 @@ impl Gestures {
             host.close_popup(ctx.def_id);
             out.push(GestureEffect::Redraw(ctx.def_id));
         }
-        if let Some(more) = self.key(host, ctx, key.clone(), clipboard) {
+        if let Some(more) = self.key_with(host, ctx, key.clone(), clipboard) {
             out.extend(more);
             return Some(out);
         }
@@ -174,7 +198,7 @@ impl Gestures {
     /// took it -- the window's owner, as `"menu" <verb>` when the window's bar
     /// has an entry for it (the entry and its key are one command) and as the
     /// bare `<verb>` otherwise.
-    pub fn perform(
+    fn perform(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
@@ -183,6 +207,12 @@ impl Gestures {
         clipboard: &mut Clip,
     ) -> Vec<GestureEffect> {
         if let Some(verb) = Verb::named(name) {
+            // **A paste reads the platform's clipboard first**: what another
+            // program copied since is what is pasted. Here, once, and never
+            // per key.
+            if matches!(verb, Verb::Paste | Verb::Mix) {
+                clipboard.refresh();
+            }
             if let Some(out) = self.verb_focused(host, ctx, verb, clipboard) {
                 return out;
             }
@@ -743,4 +773,14 @@ fn start_of(host: &Host, id: i32) -> (u64, Option<(u64, u64)>) {
         None => state.and_then(|s| s.cursor()).unwrap_or(0.0).max(0.0) as u64,
     };
     (start, span)
+}
+
+/// Runs `f` with the host's clipboard taken off it for the length of the call
+/// and put back after -- an element edits while it borrows the host, and it
+/// is handed the clipboard beside it.
+pub(super) fn with_clipboard<R>(host: &mut Host, f: impl FnOnce(&mut Host, &mut Clip) -> R) -> R {
+    let mut clip = std::mem::take(&mut host.clipboard);
+    let out = f(host, &mut clip);
+    host.clipboard = clip;
+    out
 }

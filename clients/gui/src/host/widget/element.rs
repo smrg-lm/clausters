@@ -1871,6 +1871,21 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **The text this element has selected**, when it holds text and a hand
+    /// selected some: what becomes the primary selection a middle click pastes,
+    /// and what its edit menu's Cut, Copy and Delete act on. `None` by default.
+    fn selected_text(&self) -> Option<String> {
+        None
+    }
+
+    /// **The middle button pasting `text` at `at`** -- the primary selection,
+    /// put where the pointer is rather than where a caret was. `Some` is
+    /// consumed and reported like a key; `None` declines, which is what an
+    /// element that takes no text does.
+    fn paste_at(&mut self, _at: (f64, f64), _input: &Input, _text: &str) -> Option<Events> {
+        None
+    }
+
     /// A **live MIDI note** for an element that declared [`Needs::midi`].
     ///
     /// `playhead` is where the axis' transport stands, in the element's own

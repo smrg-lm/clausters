@@ -19,13 +19,14 @@
 //!
 //! The module is split by role, all methods on the one [`app::App`]:
 //! [`app`] owns the state and the winit handler, [`windows`] the window
-//! lifecycle, [`serverleg`] the audio-server client leg, [`input`] the thin
+//! lifecycle, [`clipboard`] the desktop's clipboard, [`serverleg`] the audio-server client leg, [`input`] the thin
 //! adapters onto the shared gesture machine ([`crate::host::gestures`], which
 //! owns all interaction logic), and `midi` the live MIDI note painting -- in
 //! backticks because that one is behind a feature, and a link into a module a
 //! configuration compiles out resolves in one build and not the next.
 
 mod app;
+mod clipboard;
 mod input;
 #[cfg(feature = "midi")]
 mod midi;

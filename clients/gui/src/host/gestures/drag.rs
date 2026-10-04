@@ -341,6 +341,20 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Vec<GestureEffect> {
+        let out = self.release_inner(host, ctx, cx, cy);
+        // **What a hand selected in a field is the primary selection** -- a
+        // drag, a double or a triple click -- which a middle click pastes.
+        super::press::note_primary(host, ctx);
+        out
+    }
+
+    fn release_inner(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
         self.press_ended();
         // Taken either way: a gesture that swept is no longer a click, and the
         // press it came from is spent.

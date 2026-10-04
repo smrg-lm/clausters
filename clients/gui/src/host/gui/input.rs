@@ -163,6 +163,20 @@ impl App {
         }
     }
 
+    /// The middle button: the primary selection pasted at the pointer, by the
+    /// machine ([`Gestures::middle`](crate::host::gestures::Gestures::middle)).
+    pub(super) fn on_middle(&mut self, def_id: i32) {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
+            return;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let effects = ws.gestures.middle(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
+    }
+
     /// A key is about to be routed: a tip goes, the way it goes on a press.
     pub(super) fn key_began(&mut self, def_id: i32) {
         let ctx = self.gesture_ctx(def_id);
@@ -240,10 +254,7 @@ impl App {
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return false;
         };
-        let Some(effects) =
-            ws.gestures
-                .press_key(&mut self.host, &ctx, key, pointer, &mut self.text_clipboard)
-        else {
+        let Some(effects) = ws.gestures.press_key(&mut self.host, &ctx, key, pointer) else {
             return false;
         };
         self.apply_gesture_effects(effects);

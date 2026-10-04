@@ -26,7 +26,11 @@ This window holds one of each, laid out the way an application lays them out:
   Ctrl+O is ``Open``, and M is a verb no menu names.
 
 It also shows what they share. Every control takes the focus: Tab walks them,
-Space or Enter presses, the arrows step. A press on a title of the bar opens
+Space or Enter presses, the arrows step. A text field edits like every text
+field: a double click selects a word, a triple its line, the secondary button
+opens Cut, Copy, Paste, Delete and Select all, and the middle button pastes the
+last selection at the pointer -- and what is copied there pastes in any other
+program. A press on a title of the bar opens
 its list and the arrows walk it; Escape closes it. And nothing here keeps state
 for the script: a folded section, a moved divider and a checked entry are props
 the host reports when a hand changes them -- the lines this prints.

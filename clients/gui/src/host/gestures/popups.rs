@@ -21,7 +21,7 @@ use super::super::layout::Rect;
 use super::super::menu::{self, Entry};
 use super::super::menubar::{self, Title};
 use super::super::popup::{self, Anchor, Keyed, Owner, Stack, Walk};
-use super::super::widget::element::Key;
+use super::super::widget::element::{Key, KeyInput, Mods};
 use super::effects::emit;
 use super::{GestureCtx, GestureEffect, Gestures, element};
 
@@ -148,7 +148,7 @@ fn report_pick(
                 .and_then(|w| w.context.as_mut())
                 .and_then(|m| menu::pick(m, path)),
         ),
-        Owner::Element(_) => return,
+        Owner::Element(_) | Owner::Edit(_) => return,
     };
     let Some(picked) = picked else {
         return;
@@ -187,6 +187,15 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
     let Some(owner) = host.popup(ctx.def_id).map(|s| s.owner.clone()) else {
         return;
     };
+    // The verb, read before the list closes: an edit menu's pick is performed
+    // by its name.
+    let verb = host.popup(ctx.def_id).and_then(|s| {
+        let (last, parents) = path.split_last()?;
+        menu::list_at(&s.levels[0].entries, parents)?
+            .get(*last)?
+            .verb
+            .clone()
+    });
     host.close_popup(ctx.def_id);
     out.push(GestureEffect::Redraw(ctx.def_id));
     match owner {
@@ -204,7 +213,51 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
             report_pick(host, ctx, out, owner, &full);
         }
         Owner::Button(_) | Owner::Context(_) => report_pick(host, ctx, out, owner, &path),
+        Owner::Edit(id) => {
+            if let Some(verb) = verb {
+                edit_pick(host, ctx, out, id, &verb);
+            }
+        }
     }
+}
+
+/// **A pick in a field's edit menu is the edit itself**, done the way its key
+/// does it -- Cut is Ctrl+X on the field, Delete is Delete -- so the menu and
+/// the keyboard cannot disagree about what a cut is.
+fn edit_pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, id: i32, verb: &str) {
+    let (key, ctrl) = match verb {
+        "cut" => (Key::Char('x'), true),
+        "copy" => (Key::Char('c'), true),
+        "paste" => (Key::Char('v'), true),
+        "delete" => (Key::Delete, false),
+        "select_all" => (Key::Char('a'), true),
+        _ => return,
+    };
+    let Some(at) = at_widget(host, ctx, id) else {
+        return;
+    };
+    super::keys::with_clipboard(host, |host, clipboard| {
+        let mut input = KeyInput {
+            mods: Mods {
+                ctrl,
+                ..Mods::default()
+            },
+            clipboard,
+            cursor: None,
+        };
+        let Some((events, selected)) = element::with(host, ctx, at, |el, _| {
+            (el.key(&key, &mut input), el.selected_text())
+        }) else {
+            return;
+        };
+        if let Some(text) = selected {
+            input.clipboard.set_primary(&text);
+        }
+        if let Some(events) = events {
+            element::report(host, out, ctx, id, events);
+        }
+    });
+    out.push(GestureEffect::Redraw(ctx.def_id));
 }
 
 impl Gestures {
@@ -449,20 +502,22 @@ impl Gestures {
         // A list already open is dismissed by any press, this one included.
         let closed = host.close_popup(def_id);
         let found = host.context_at(def_id, ctx.fb_w, ctx.fb_h, cx, cy);
-        let Some((id, entries)) = found else {
+        let Some((owner, entries)) = found else {
             return closed.then(|| vec![GestureEffect::Redraw(def_id)]);
         };
+        let mut out = Vec::new();
+        // A field's edit menu edits that field, so the field takes the focus
+        // its menu acts on -- the caret and the selection show while it is up.
+        if let Owner::Edit(id) = owner {
+            super::focus::set(host, &mut out, ctx, Some(id));
+        }
         let size = host.metrics_for(def_id).text_scale;
         host.open_popup(
             def_id,
-            Stack::new(
-                Owner::Context(id),
-                entries,
-                Anchor::At(cx as f32, cy as f32),
-                size,
-            ),
+            Stack::new(owner, entries, Anchor::At(cx as f32, cy as f32), size),
         );
-        Some(vec![GestureEffect::Redraw(def_id)])
+        out.push(GestureEffect::Redraw(def_id));
+        Some(out)
     }
 
     /// Opens the `menu` of button `id` under `rect`, when it carries one.

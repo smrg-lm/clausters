@@ -184,6 +184,20 @@ impl WebApp {
         }
     }
 
+    /// The middle button: the primary selection pasted at the pointer, as on
+    /// the desktop (`Gestures::middle`).
+    fn on_middle(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.middle(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
+        self.aim_keyboard(def);
+    }
+
     /// Keeps the tick running while this canvas' gesture machine has a timer
     /// armed -- a tip waiting, a finger held. The tick itself turns back off
     /// when the timers have run out ([`Self::advance_timers`]).
@@ -294,10 +308,7 @@ impl WebApp {
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
-        if let Some(effects) =
-            slot.gestures
-                .press_key(&mut self.host, &ctx, k, pointer, &mut self.text_clipboard)
-        {
+        if let Some(effects) = slot.gestures.press_key(&mut self.host, &ctx, k, pointer) {
             self.apply_gesture_effects(effects);
             // Tab walks the ring and Escape leaves it, so a key moves the focus
             // as readily as a press does (`compose`).
@@ -397,6 +408,13 @@ impl WebApp {
                 button: MouseButton::Right,
                 ..
             } => self.on_context(def),
+            // The middle button pastes the last selection made in this host: a
+            // page has no primary selection of the platform's to read.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Middle,
+                ..
+            } => self.on_middle(def),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,

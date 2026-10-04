@@ -803,6 +803,11 @@ pub struct Host {
     /// like the theme (see [`keymap`]). Read by the one key dispatch both
     /// fronts call, and by a menu showing an entry's chord.
     pub keys: keymap::Keymap,
+    /// The host-wide clipboard: one per host, shared by every window, typed
+    /// (text, notes, clips, samples) and reaching the platform's own where a
+    /// front attaches one ([`clipboard`]). On the host rather than in a front
+    /// so every gesture reaches it -- a key, a menu's pick, the middle button.
+    pub clipboard: clipboard::Clip,
     /// The antialiasing every window this host opens is drawn with: the MSAA
     /// sample count of its render pass (`1` = none, the default). Like
     /// [`theme`](Self::theme) and [`metrics`](Self::metrics) it is one setting
@@ -911,6 +916,7 @@ impl Host {
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             keys: keymap::Keymap::default(),
+            clipboard: clipboard::Clip::default(),
             msaa: 1,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),

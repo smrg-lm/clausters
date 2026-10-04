@@ -143,6 +143,11 @@ clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], op
 # browser's carrier into a native host -- and the hub the headless loop
 # drains: the audio server's own, so the two fronts have one implementation.
 clausters-net = { path = "../../crates/clausters-net" }
+# The platform's clipboard for the windowed front (`host::gui::clipboard`):
+# text in and out, and the primary selection a middle click pastes on X11 and
+# Wayland. Text only -- the images feature is off, since the host's typed
+# clipboard keeps everything that is not text to itself.
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 
 # The browser host (`host::web`, G12/G13): wasm-bindgen for the JS entry point
 # and the binding surface, wasm-bindgen-futures to await the async WebGPU

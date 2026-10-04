@@ -245,6 +245,28 @@ fn list_at_mut<'a>(entries: &'a mut Vec<Entry>, path: &[usize]) -> Option<&'a mu
     }
 }
 
+/// **The edit menu of a text field** -- the standard one: Cut, Copy, Paste,
+/// Delete, and Select all after a separator. What acts on a selection is
+/// disabled without one, and Select all with nothing to select.
+pub fn edit_entries(selected: bool, has_text: bool) -> Vec<Entry> {
+    let entry = |label: &str, verb: &str, enabled: bool| Entry {
+        label: label.to_string(),
+        verb: Some(verb.to_string()),
+        kind: EntryKind::Action,
+        enabled,
+        icon: None,
+        key: None,
+    };
+    vec![
+        entry("Cut", "cut", selected),
+        entry("Copy", "copy", selected),
+        entry("Paste", "paste", true),
+        entry("Delete", "delete", selected),
+        Entry::separator(),
+        entry("Select all", "select_all", has_text),
+    ]
+}
+
 /// **Writes the chord bound to each entry's verb** beside it, at every depth --
 /// what a list shows at the right of a row, so a reader finds the key by
 /// opening the menu. `chord` answers a verb's chord, or `None` for one no key

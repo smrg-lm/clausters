@@ -9474,3 +9474,26 @@ What stays outside the table: the focused element reads the raw key before the
 table is consulted, so a field's typing, a list's arrows and a control's Space
 are the platform's convention and cannot be rebound, and Tab and Escape are
 refused.
+
+## The clipboard is the platform's, and text is all that crosses
+
+*(2026-10-04, with the user.)* The host had one typed clipboard of its own --
+text, notes, clips, samples -- which reached no other program. Natively it now
+reaches the desktop's through one small seam (`SystemClipboard`, beside
+`FontSource`), and two rules keep the typed half intact. **Text crosses, the
+rest stays**: a string put on the clipboard (a field's selection, and a notes or
+clips block, which already ride as JSON text) is written to the desktop's, while
+a range of samples, which no other program reads, stays the host's. **A paste
+reads the platform first, and only at a paste**: text another program copied
+after the host's last write is what is pasted, and otherwise the host's own --
+so a block of samples still pastes after a copy elsewhere left the desktop's
+text untouched. Reading per key would be a round trip to the clipboard's owner
+on every keystroke.
+
+The clipboard moved onto the `Host` because a field's edit menu and the middle
+button paste from places a front never hands one (a menu's pick, a press), and
+an element edits while it borrows the host, so it is taken off for the length
+of the call. The primary selection -- what a middle click pastes -- rides the
+same seam, with the host's own beside it. A page keeps the host's own
+clipboard: the host draws inside a canvas, and reaching the browser's takes
+code on the page's side, left as a future direction.

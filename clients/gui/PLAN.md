@@ -1666,6 +1666,24 @@ The two are chained: a file chooser is composed from rows, `G40`'s modal
   and leaves it, which is the port's question rather than the chooser's.
 
 
+## G42 — The clipboard is the platform's, and a field edits like every field
+
+- ✅ **G42 — The host's clipboard reaches the system's, and a text field has the standard edit gestures.** *(Done 2026-10-04, as decided below; the desktop's clipboard through `arboard`, text only.)* *(Added 2026-10-04 by the user, after a text field learned the double and triple click: cut, copy, paste and delete from a right-click menu, and the middle button pasting, for text fields -- which first needs a clipboard other programs see.)*
+
+  **What is there**: one typed clipboard per host (`host::clipboard::Clip`, the document crate's format), shared by every window of the host and holding text, notes, clips or samples. It reaches **nothing outside**: text copied in the host does not paste in another program, natively or in a page, and the reverse.
+
+  **Decided with the user, 2026-10-04:**
+
+  - **The clipboard is the platform's**, behind one more small I/O trait beside `FontSource` (`SystemClipboard`: read and write text, and the primary selection where there is one), implemented by the native front. The core keeps the typed `Clip`; the trait only moves text across. The `Clip` lives on the `Host`, like the theme and the keys, so every gesture reaches it.
+  - **Text crosses, the rest stays.** A copy of text (a field's selection, a notes or clips block, which ride as JSON text) is written to the system's clipboard too. A paste reads the system's first: text another program put there after the host's last copy is what is pasted; otherwise the host's own, so a range of samples -- which no other program reads -- still pastes. The read happens at a paste, never per key.
+  - **A text field has the standard edit menu** -- Cut, Copy, Paste, Delete, Select all -- on the secondary button (or a held finger), the host's own when the field carries no `context` of its own; an entry with nothing to act on is disabled.
+  - **The middle button pastes the primary selection** where the platform has one (X11 and Wayland): selecting text in a field writes it, and a middle click in a field puts it at the pointer.
+
+  - **A page keeps the host's own clipboard** *(the user, 2026-10-04)*: the host draws inside a canvas, so reaching the browser's clipboard needs code on the page's side, and it waits under "Future directions" ("The page's clipboard reaches the browser's"). Everything else is the same in both fronts -- the edit menu, and the middle button pasting the last selection made inside the same host, which is the primary selection a page has.
+
+  **Acceptance**: natively, text copied in a field pastes in another program and back, and the middle button pastes what another program selected; a block of samples copied and pasted inside the host is unchanged; the edit menu and the middle button work on a field in `examples/panels/chrome`, in a window and in a page.
+
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Five design rules bound it, all in the direction of keeping the host light:
@@ -4746,6 +4764,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 - ⬜ **Key bindings per window** *(left open by `G36`, 2026-10-04)*. The key table is the host's, like its theme, so two windows of one host cannot give one chord two verbs. A `keys` prop on a `window` -- or on a subtree, as `theme` scopes a look -- is the next level, and the question it waits on is the one an application inside another asks: which of two applications that both claim a chord answers it.
 
 - ⬜ **A key in a tip** *(left open by `G36`)*. A menu entry shows its chord because it names a verb; a tip belongs to a widget, whose report is its value. A tool button that *is* a verb (`verb` beside its `tip`) would let the tip show the key and the key press the button.
+
+- ⬜ **The page's clipboard reaches the browser's** *(left by `G42`, 2026-10-04)*. A page keeps the host's own clipboard, so text copied in a canvas does not paste in another tab or program. Reaching it takes code on the page's side: a copy writes `navigator.clipboard` in the gesture that made it, Ctrl+V takes the text the browser's `paste` event carries before it pastes, and the menu's Paste reads it asynchronously (a browser may ask the reader's permission). A page has no primary selection at all, so the middle button stays the host's own there.
 
 ## Found by use: the running list of fixes
 

@@ -2115,7 +2115,7 @@ fn focus_events(effects: &[GestureEffect]) -> Vec<(i32, bool)> {
 }
 
 fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<GestureEffect>> {
-    g.key(host, ctx, k, &mut crate::host::clipboard::Clip::default())
+    g.key(host, ctx, k)
 }
 
 /// **A press on the axis' own ruler leaves the focus alone.** The position
@@ -2259,17 +2259,16 @@ fn a_double_click_in_a_field_selects_a_word_and_a_triple_the_line() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let mut ctx = GestureCtx::new(1, 600, 400);
-    let mut clip = crate::host::clipboard::Clip::default();
     g.press(&mut host, &ctx, 30.0, 15.0);
     g.release(&mut host, &ctx, 30.0, 15.0);
     for ch in "hello world".chars() {
         key(&g, &mut host, &ctx, Key::Char(ch));
     }
-    let mut copied = |g: &mut Gestures, host: &mut Host, ctx: &mut GestureCtx| {
+    let copied = |g: &mut Gestures, host: &mut Host, ctx: &mut GestureCtx| {
         ctx.ctrl = true;
-        g.press_key(host, ctx, Key::Char('c'), None, &mut clip);
+        g.press_key(host, ctx, Key::Char('c'), None);
         ctx.ctrl = false;
-        clip.text()
+        host.clipboard.text()
     };
     for (t, _) in [(1_000.0, 1), (1_150.0, 2)] {
         ctx.now_ms = t;
@@ -2323,10 +2322,9 @@ fn dragging_a_selection_repaints_even_though_it_reports_nothing() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    let mut clip = crate::host::clipboard::Clip::default();
     g.press(&mut host, &ctx, 10.0, 15.0);
     for ch in "hello".chars() {
-        g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
+        g.key(&mut host, &ctx, Key::Char(ch));
     }
     let out = g.drag_to(&mut host, &ctx, 200.0, 15.0);
     assert!(
@@ -2510,20 +2508,19 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let mut ctx = GestureCtx::new(1, 600, 400);
-    let mut clip = crate::host::clipboard::Clip::default();
     g.press(&mut host, &ctx, 30.0, 15.0);
     for ch in "abc".chars() {
-        g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
+        g.key(&mut host, &ctx, Key::Char(ch));
     }
     // Select all, then cut to the clipboard.
     ctx.ctrl = true;
-    g.key(&mut host, &ctx, Key::Char('a'), &mut clip);
-    g.key(&mut host, &ctx, Key::Char('x'), &mut clip);
-    assert_eq!(clip.text(), "abc");
+    g.key(&mut host, &ctx, Key::Char('a'));
+    g.key(&mut host, &ctx, Key::Char('x'));
+    assert_eq!(host.clipboard.text(), "abc");
     assert_eq!(text_value(&host, 5), "");
     // Paste it back twice.
-    g.key(&mut host, &ctx, Key::Char('v'), &mut clip);
-    g.key(&mut host, &ctx, Key::Char('v'), &mut clip);
+    g.key(&mut host, &ctx, Key::Char('v'));
+    g.key(&mut host, &ctx, Key::Char('v'));
     assert_eq!(text_value(&host, 5), "abcabc");
 }
 
@@ -3364,10 +3361,9 @@ mod status_bar {
         let mut g = Gestures::default();
         let ctx = GestureCtx::new(1, 800, 400);
         let toggle = placed_rect(&host, &ctx, 9);
-        let mut clip = crate::host::clipboard::Clip::default();
         let pointer = ((toggle.x + 4.0) as f64, (toggle.y + toggle.h * 0.5) as f64);
         let effects = g
-            .press_key(&mut host, &ctx, Key::Char('q'), Some(pointer), &mut clip)
+            .press_key(&mut host, &ctx, Key::Char('q'), Some(pointer))
             .expect("a bound key is consumed");
         assert_eq!(
             emitted_args(&effects, 1),
@@ -3611,8 +3607,7 @@ fn the_rolls_paste_lands_on_the_windows_cursor() {
         let h = interact::hit(&host, 1, 800, 400, 400.0, 100.0, &|_, _| 1).unwrap();
         interact::time_of(&h.chain).unwrap().1.body
     };
-    let mut clip = crate::host::clipboard::Clip::default();
-    clip.set_text(r#"[0.0,400.0,60.0,100,0]"#);
+    host.clipboard.set_text(r#"[0.0,400.0,60.0,100,0]"#);
     // Put the cursor at a fifth of the axis with a click...
     let x = grid.x as f64 + grid.w as f64 * 0.2;
     let y = grid.y as f64 + grid.h as f64 * 0.5;
@@ -3626,7 +3621,7 @@ fn the_rolls_paste_lands_on_the_windows_cursor() {
     // ...and paste over the roll.
     ctx.ctrl = true;
     let effects = g
-        .press_key(&mut host, &ctx, Key::Char('v'), Some((x, y)), &mut clip)
+        .press_key(&mut host, &ctx, Key::Char('v'), Some((x, y)))
         .expect("the roll took the paste");
     let args = emitted_args(&effects, 90).expect("the paste reports the notes");
     let starts: Vec<f32> = args[1..]

@@ -214,6 +214,30 @@ impl Element for Text {
         Claim::take()
     }
 
+    fn selected_text(&self) -> Option<String> {
+        textedit::selected(&self.value, &self.caret).map(str::to_string)
+    }
+
+    /// The middle button: the caret goes where the pointer is and the text is
+    /// put there -- one line of it in a single-line field, as a paste is.
+    fn paste_at(&mut self, at: (f64, f64), input: &Input, text: &str) -> Option<Events> {
+        textedit::clamp(&self.value, &mut self.caret);
+        let pos = self.caret_at(at, input);
+        self.caret = Caret { pos, anchor: None };
+        let text = if self.multiline {
+            text.to_string()
+        } else {
+            text.replace('\n', " ")
+        };
+        Some(
+            if textedit::insert(&mut self.value, &mut self.caret, &text) {
+                self.events()
+            } else {
+                Events::none()
+            },
+        )
+    }
+
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let Some((span, unit)) = self.held else {
             return Events::none();
@@ -244,6 +268,8 @@ impl Element for Text {
                     }
                 }
                 'v' => {
+                    // What another program copied since is what is pasted.
+                    input.clipboard.refresh();
                     if !input.clipboard.is_empty() {
                         // A single-line field takes a pasted block as one line.
                         let pasted = input.clipboard.text();

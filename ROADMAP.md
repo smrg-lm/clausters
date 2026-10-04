@@ -337,7 +337,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   double click and the long press, and a pass over the gesture vocabulary; a
   steady goniometer; the heavy families as features; composed text (IME); a Tauri
   wrapper; the three heavy-view rendering questions; key bindings per window and
-  a key in a tip), the web client's (a node
+  a key in a tip; the page's clipboard reaching the browser's), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, and the document crate's interpreter
   inside a standalone host. Every one of them carries its own checkbox in its own
