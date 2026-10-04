@@ -241,8 +241,8 @@ the host reports when a hand changes them -- the lines this prints.</div>
         const data = gui.panel(
           { flow: "row", split: true },
           gui.table({ rows: TAKES, sort: [0, "up"], multiple: true, name: "takes",
-                      columns: ["take", { title: "length", w: 90.0 },
-                                { title: "rate", w: 90.0 }] }),
+                      columns: ["take", { title: "length", w: 100.0 },
+                                { title: "rate", w: 120.0 }] }),
           gui.table({ rows: [gui.row(["drums"], { depth: 0, open: true }),
                              gui.row(["kick"], { depth: 1 }),
                              gui.row(["snare"], { depth: 1 }),

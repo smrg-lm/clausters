@@ -209,7 +209,7 @@ book = pager(label("the first page", align="center"),
 # %%
 data = panel(
     table(rows=TAKES, sort=[0, "up"], multiple=True, name="takes",
-          columns=["take", {"title": "length", "w": 90.0}, {"title": "rate", "w": 90.0}]),
+          columns=["take", {"title": "length", "w": 100.0}, {"title": "rate", "w": 120.0}]),
     table(rows=[row("drums", depth=0, open=True), row("kick", depth=1),
                 row("snare", depth=1), row("pads", depth=0, open=False),
                 row("warm", depth=1), row("voice", depth=0)], name="tree"),

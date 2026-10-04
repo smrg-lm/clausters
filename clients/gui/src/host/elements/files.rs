@@ -26,6 +26,10 @@ use crate::host::widget::size::Natural;
 
 use super::table::{Hit, Rows};
 
+/// The room around the size column's text, in logical pixels: the pad on
+/// either side of a cell and the hairline between columns.
+const SIZE_PAD: f32 = 16.0;
+
 /// A file chooser.
 #[derive(Debug, Clone)]
 pub struct Files {
@@ -59,9 +63,11 @@ fn from_props(props: &Map<String, Value>) -> Files {
             title: "name".into(),
             w: None,
         },
+        // As wide as the widest size it writes, at the text size it is drawn
+        // at -- a fixed number cut "70.2 kB" short at the default size.
         Column {
             title: "size".into(),
-            w: Some(80.0),
+            w: Some(crate::host::font::width("000.0 kB", rows.text_size) + SIZE_PAD),
         },
     ];
     let mut files = Files {
@@ -448,5 +454,12 @@ mod tests {
         assert!(f.listed("/nowhere", Err("/nowhere: not found".into())));
         assert_eq!(f.error.as_deref(), Some("/nowhere: not found"));
         assert_eq!(f.rows.rows[0].cells[0], "..", "the way up is still there");
+    }
+
+    #[test]
+    fn the_size_column_holds_the_widest_size_it_writes() {
+        let f = chooser(r#"{"path":"takes"}"#);
+        let w = f.rows.columns[1].w.unwrap();
+        assert!(w > crate::host::font::width(&size_text(999 << 10), f.rows.text_size));
     }
 }
