@@ -9,8 +9,7 @@ envelope is made: an `clausters.defs.ugens.Env` and a
 **The editor is the crate's** (the ``openPoints`` member of
 `clausters._native.EditingCore`): the window, the value axis and the time span
 it keeps while open, what a gesture does to the curve, the entry it leaves and
-the corrections it answers with, the time range a sweep leaves and the points
-inside it. The crate edits a curve of its own, the document's; what is here is
+the corrections it answers with. The crate edits a curve of its own, the document's; what is here is
 what a language owns -- the socket, handing the crate the curve as the script
 holds it, and writing back onto that object the points each edit and each step
 leave.
@@ -151,34 +150,6 @@ class PointsEditor(Editor):
         return {key: None if rules.get(key) is None
                 else (float(rules[key][0]), float(rules[key][1]))
                 for key in ("values", "time")}
-
-    # ---- the time range, and the points in it ----
-
-    @property
-    def span(self) -> "tuple | None":
-        """**The time range** -- ``(start, end)`` in the curve's seconds, or
-        ``None`` -- whose points `selected` reads: what a sweep over the curve
-        leaves, with no value band when it is set here. A curve has no
-        transport, so the range is the editor's own: screen state, never part
-        of what is edited."""
-        span = self._call("span").get("span")
-        return None if span is None else (float(span[0]), float(span[1]))
-
-    @span.setter
-    def span(self, span) -> None:
-        self._call("span", span=None if span is None else [float(span[0]), float(span[1])])
-        self.adopt()
-
-    @property
-    def selected(self) -> list:
-        """**The break points the sweep covers** -- inside its time range and,
-        for a sweep with height, inside its value band -- as the ``(t, v,
-        shape, curve)`` quads `to_points` speaks, in order. Empty with no
-        range."""
-        self._sync_core()
-        indices = self._call("selected").get("points") or []
-        flat = list(self.structure.to_points())
-        return [tuple(flat[4 * i:4 * i + 4]) for i in indices]
 
     # ---- the crate's turns ----
 

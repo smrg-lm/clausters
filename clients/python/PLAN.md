@@ -1958,7 +1958,10 @@ existing examples rewritten rather than new ones:
   are the multitrack, the roll and the audio editor, whose operations act on
   what the hand marks -- not every editor. The points editor took the two
   words as well, with nothing to act on them ("The points editor carries a
-  range and a selection it has no use for", `clients/gui/PLAN.md`). A view has
+  range and a selection it has no use for", `clients/gui/PLAN.md`), and
+  lost them the same day: the three editors' `selected`, `select` and
+  `unselect` are the `Marking` mixin's, which the points editor does not
+  take. A view has
   two selections, and they are told apart by what they are, not by which
   editor holds them:
   - **`selected`** — with `select(...)` and `unselect()` — is **what the hand

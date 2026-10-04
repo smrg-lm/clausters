@@ -418,10 +418,10 @@ test("the take's transport plays its span and keeps the switch", async () => {
     await transport.play();
     const loops = server.sent.filter(([addr]) => addr === "/transport_loop");
     assert.deepEqual(loops.at(-1)![1].slice(-2).map(Number), [10, 30], "the span, looped");
-    assert.equal(editor.selected!.start, 10, "what is marked is the range");
+    assert.equal((await editor.selected())!.start, 10, "what is marked is the range");
     await editor.unselect();
     assert.equal(transport.span, null);
-    assert.equal(editor.selected, null);
+    assert.equal(await editor.selected(), null);
     editor.apply("/gui_event", [wid, 9, 0, "selection", 20, 40]);
     assert.deepEqual(transport.span, [20 / SR, 60 / SR], "a sweep is the transport's span");
 });

@@ -1,7 +1,7 @@
 """Editing: the subdomain of the GUI where a picture writes back.
 
 Everything that turns a gesture into a change of the data, and the change back
-into a picture. It is a subpackage rather than a module because it is six
+into a picture. It is a subpackage rather than a module because it is seven
 collaborators and four editors, and because the boundaries between them are the
 whole design:
 
@@ -21,6 +21,9 @@ whole design:
 - `Echo` -- the acknowledgement protocol: the stamp, the version, the floor, the
   corrections and the reason. Entirely generic, and testable with no structure
   at all.
+- `Marking` -- what the hand marked: `selected`, `select` and `unselect`, for
+  the editors whose operations act on it. A capability an editor takes, not a
+  level of the hierarchy, so the points editor has none of it.
 - `Editing` -- the editing context: the history, the version, and the views to
   tell. An editor **asks for it and never builds one**, which is what makes two
   windows over one thing walk one undo order.
@@ -54,6 +57,7 @@ from .echo import Echo
 from .edit import edit
 from .editor import Editor, not_an_edit
 from .events import NotesDomain, NotesEditor, NotesView
+from .marking import Marking
 from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
                          Sources)
 from .playback import Playback
@@ -74,6 +78,7 @@ __all__ = [
     "Editor",
     "FIRST_VERSION",
     "MEASURES",
+    "Marking",
     "NotesDomain",
     "NotesEditor",
     "NotesView",

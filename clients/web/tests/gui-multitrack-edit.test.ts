@@ -990,9 +990,9 @@ test("what the multitrack holds is its regions", async () => {
     wired(ed);
     const regions = regionsOf(held);
     assert.deepEqual(await ed.selected(), []);
-    ed.select(regions.slice(1));
+    await ed.select(regions.slice(1));
     assert.deepEqual(await ed.selected(), regions.slice(1));
-    ed.unselect();
+    await ed.unselect();
     assert.deepEqual(await ed.selected(), []);
 });
 

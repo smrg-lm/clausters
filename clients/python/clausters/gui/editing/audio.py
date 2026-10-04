@@ -41,6 +41,7 @@ from ...errors import CommandError
 from ...defs._wire import resolve as _resolve
 from .domain import Domain
 from .editor import Editor
+from .marking import Marking
 from .samples import MEASURES, SamplesView, _plain, measures
 
 #: How many buffers the crate holds for new takes before a turn: a stroke or a
@@ -253,12 +254,18 @@ class AudioDomain(Domain):
             editor._call("kept", buffer=int(buffer))
 
 
-class AudioEditor(Editor):
+class AudioEditor(Marking, Editor):
     """A take on screen, edited as a list of parts over immutable takes.
 
     The window draws `buffer`, a join the editor owns: the take as the edits
     have left it. Play that buffer to hear the edited take, and read `parts`
     for what it is made of.
+
+    **What is marked** (`selected`, `select`, `unselect`) is the samples a
+    drag over the take covers, as a `clausters.segments.Segment` over
+    `buffer` -- its ``start`` a frame and its ``duration`` seconds -- or
+    ``None`` when nothing is marked. In an audio editor what is marked and
+    the transport's `span` are one range, so setting either sets both.
 
     Args:
         take: the `clausters.defs.Buffer` to edit. It is never written.
@@ -333,13 +340,9 @@ class AudioEditor(Editor):
 
     # ---- what the hand marked ----
 
-    @property
-    def selected(self):
-        """**The samples the hand marked** -- a drag over the take -- as a
-        `clausters.segments.Segment` over `buffer`: from the frame the range
-        starts on, for its seconds. ``None`` when nothing is marked. In an
-        audio editor what is marked and the transport's `span` are one range,
-        so setting either sets both."""
+    def _marked(self):
+        """The marked samples: the transport's span, from the frame it starts
+        on, for its seconds."""
         from ...segments import Segment
 
         span = self._driver.span
@@ -347,15 +350,13 @@ class AudioEditor(Editor):
             return None
         return Segment(self.buffer, round(span[0] * self.sample_rate), span[1] - span[0])
 
-    def select(self, segment) -> None:
-        """Mark ``segment`` -- a `clausters.segments.Segment` over `buffer`,
-        its ``start`` a frame and its ``duration`` seconds."""
+    def _mark(self, segment) -> None:
+        """Mark ``segment``, which sets the transport's span."""
+        if segment is None:
+            self._driver.set_span(None)
+            return
         start = float(segment.start) / self.sample_rate
         self._driver.set_span((start, start + float(segment.duration)))
-
-    def unselect(self) -> None:
-        """Mark nothing."""
-        self._driver.set_span(None)
 
     def _show_band(self, band: dict) -> None:
         """The band a sweep leaves, drawn where the take is."""

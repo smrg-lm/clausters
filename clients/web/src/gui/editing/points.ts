@@ -9,11 +9,11 @@
  *
  * **The editor is the crate's** (the `openPoints` member of `EditingCore`): the
  * window, the value axis and the time span it keeps while open, what a gesture
- * does to the curve, the entry it leaves and the corrections it answers with,
- * the time range a sweep leaves and the points inside it. The crate edits a
- * curve of its own, the document's; what is here is what a language owns --
- * the socket, handing the crate the curve as the page holds it, and writing
- * back onto that object the points each edit and each step leave.
+ * does to the curve, the entry it leaves and the corrections it answers with.
+ * The crate edits a curve of its own, the document's; what is here is what a
+ * language owns -- the socket, handing the crate the curve as the page holds
+ * it, and writing back onto that object the points each edit and each step
+ * leave.
  *
  * **What a shape is stays the client's.** The crate carries a point's `data` and
  * never reads it, so the segment shapes an `Env` needs travel in it -- without
@@ -55,7 +55,6 @@ interface Outcome {
     answer?: Answer;
     points?: number[];
     locate?: number;
-    span?: [number, number] | null;
 }
 
 /**
@@ -236,37 +235,6 @@ export class PointsEditor extends Editor<EditableCurve> {
         const pair = (r: unknown): [number, number] | null =>
             Array.isArray(r) ? [Number(r[0]), Number(r[1])] : null;
         return { values: pair(rules.values), time: pair(rules.time) };
-    }
-
-    // ---- the time range, and the points in it ----
-
-    /**
-     * **The time range** -- `[start, end]` in the curve's seconds, or `null` --
-     * whose points {@link PointsEditor.selected} reads: what a sweep over the
-     * curve leaves, with no value band when it is set here. A curve has no
-     * transport, so the range is the editor's own: screen state, never part of
-     * what is edited.
-     */
-    get span(): [number, number] | null {
-        const span = this.coreCall("span").span as [number, number] | null | undefined;
-        return span === null || span === undefined ? null : [Number(span[0]), Number(span[1])];
-    }
-
-    set span(span: readonly [number, number] | null) {
-        this.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
-        this.adopt();
-    }
-
-    /**
-     * **The break points the sweep covers** -- inside its time range and, for
-     * a sweep with height, inside its value band -- as the `[t, v, shape,
-     * curve]` quads `toPoints` speaks, in order. Empty with no range.
-     */
-    get selected(): [number, number, number, number][] {
-        this.syncCore();
-        const indices = (this.coreCall("selected").points ?? []) as number[];
-        const flat = this.structure.toPoints();
-        return indices.map((i) => flat.slice(4 * i, 4 * i + 4) as [number, number, number, number]);
     }
 
     // ---- the crate's turns ----

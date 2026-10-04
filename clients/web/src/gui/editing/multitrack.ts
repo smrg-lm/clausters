@@ -46,6 +46,7 @@ import { Editor } from "./editor.ts";
 import { keyOf } from "../../history.ts";
 import { NotesEditor } from "./events.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { Marking, marking, marks, setMarks } from "./marking.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
 
@@ -603,6 +604,19 @@ class Driver implements TransportDriver {
     }
 }
 
+/** The marking surface, merged so `editor.selected()` types as its own. */
+export interface MultitrackEditor extends Marking<Region[], Iterable<Region>> {}
+
+/**
+ * A multitrack on screen, editable back into the `Multitrack` the caller
+ * already holds.
+ *
+ * **What is marked** (`selected`, `select`, `unselect`) is the regions the
+ * hand holds -- a click, Alt+click or a marquee over the boxes -- as the
+ * `Region` objects of this multitrack, in the order the boxes are drawn. The
+ * picture's, not the multitrack's: it enters no history, and it is empty with
+ * no window open. (The time range a sweep leaves is the transport's `span`.)
+ */
 export class MultitrackEditor extends Editor<Multitrack> {
     /**
      * The axis and the buffer table this window crosses to -- the two things
@@ -678,36 +692,20 @@ export class MultitrackEditor extends Editor<Multitrack> {
 
     // ---- what the hand marked ----
 
-    /**
-     * **The regions the hand holds** -- a click, Alt+click or a marquee over the
-     * boxes -- as the `Region` objects of this multitrack, in the order the
-     * boxes are drawn. The picture's, not the multitrack's: it enters no
-     * history. Empty with no window open. A method here, the reference
-     * client's property: asking the host is a round trip. (The time range a
-     * sweep leaves is the transport's `span`.)
-     */
-    async selected(): Promise<Region[]> {
-        const host = this.app.host;
-        const widget = this.multitrackWidget;
-        if (host === null || widget === null || this.windowId === null) return [];
-        const held = (await host.query(widget)).props.selected;
-        const names = JSON.parse(typeof held === "string" ? held : "[]") as string[];
+    /** The regions the hand holds, by the names the host holds. @internal */
+    async marked(): Promise<Region[]> {
+        const widget = this.windowId === null ? null : this.multitrackWidget;
+        const names = await marks<string>(this.app.host, widget);
+        if (names.length === 0) return [];
         const regions = new Map<string, Region>();
         for (const r of this.structure.regions()) regions.set(String(r.ident), r);
         return names.flatMap((name) => regions.get(name) ?? []);
     }
 
-    /** Holds `regions` -- `Region` objects of this multitrack -- in the window, in place of what was held. */
-    select(regions: Iterable<Region>): void {
-        const host = this.app.host;
-        const widget = this.multitrackWidget;
-        if (host === null || widget === null || this.windowId === null) return;
-        host.set(widget, { selected: JSON.stringify([...regions].map((r) => String(r.ident))) });
-    }
-
-    /** Holds nothing. */
-    unselect(): void {
-        this.select([]);
+    /** Holds `regions` in the window. @internal */
+    mark(regions: Iterable<Region> | null): void {
+        const widget = this.windowId === null ? null : this.multitrackWidget;
+        setMarks(this.app.host, widget, [...(regions ?? [])].map((r) => String(r.ident)));
     }
 
     /** The window's loop switch, as `L` leaves it. @internal */
@@ -1082,6 +1080,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
         return super.close();
     }
 }
+
+marking(MultitrackEditor);
 
 /** Whether {@link edit} should open this as a multitrack. */
 export function isMultitrack(structure: unknown): structure is Multitrack {

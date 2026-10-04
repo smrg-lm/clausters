@@ -45,6 +45,7 @@ import type { Answer } from "./echo.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { Marking, marking, marks, setMarks } from "./marking.ts";
 import type { End, Pass } from "./playback.ts";
 import { plain } from "./samples.ts";
 import { View } from "./view.ts";
@@ -106,7 +107,18 @@ export class NotesView extends View<EventSequence> {
     }
 }
 
-/** An event sequence on a roll, edited note by note, in place. */
+/** The marking surface, merged so `roll.selected()` types as its own. */
+export interface NotesEditor extends Marking<SeqEvent[], Iterable<SeqEvent>> {}
+
+/**
+ * An event sequence on a roll, edited note by note, in place.
+ *
+ * **What is marked** (`selected`, `select`, `unselect`) is the events on the
+ * roll -- by a click, Shift+click or a marquee -- as the `SeqEvent` objects
+ * they are, in beat order. The picture's, not the sequence's: it enters no
+ * history and each window has its own, and it is empty with no window open.
+ * (The time range a sweep leaves is the transport's `span`.)
+ */
 export class NotesEditor extends Editor<EventSequence> {
     /** This editor's member in its editing context. */
     private readonly member: number;
@@ -460,34 +472,18 @@ export class NotesEditor extends Editor<EventSequence> {
         }
     }
 
-    /**
-     * **The events marked on the roll** -- by a click, Shift+click or a
-     * marquee -- as the `SeqEvent` objects they are, in beat order. The
-     * picture's, not the sequence's: it enters no history and each window has
-     * its own. Empty with no window open. A method here, the reference
-     * client's property: asking the host is a round trip. (The time range a
-     * sweep leaves is the transport's `span`.)
-     */
-    async selected(): Promise<SeqEvent[]> {
-        const host = this.app.host;
-        if (host === null || this.rollId === null || this.window === null) return [];
-        const marked = (await host.query(this.rollId)).props.selected;
-        const ids = JSON.parse(typeof marked === "string" ? marked : "[]") as number[];
+    /** The events marked on the roll, by the ids the host holds. @internal */
+    async marked(): Promise<SeqEvent[]> {
+        const ids = await marks<number>(this.app.host, this.window === null ? null : this.rollId);
+        if (ids.length === 0) return [];
         const held = new Map([...this.structure.events].map((e) => [e.id, e]));
         return ids.flatMap((id) => held.get(id) ?? []);
     }
 
-    /** Marks `events` -- `SeqEvent` objects of this sequence -- on the roll, in place of what was marked. */
-    select(events: Iterable<SeqEvent>): void {
-        const host = this.app.host;
-        if (host === null || this.rollId === null || this.window === null) return;
-        const ids = [...events].filter((e) => e.sequence === this.structure).map((e) => e.id);
-        host.set(this.rollId, { selected: JSON.stringify(ids) });
-    }
-
-    /** Marks nothing on the roll. */
-    unselect(): void {
-        this.select([]);
+    /** Marks `events` -- those of this sequence -- on the roll. @internal */
+    mark(events: Iterable<SeqEvent> | null): void {
+        const ids = [...(events ?? [])].filter((e) => e.sequence === this.structure).map((e) => e.id);
+        setMarks(this.app.host, this.window === null ? null : this.rollId, ids);
     }
 
     // ---- the crate's turns ----
@@ -568,6 +564,8 @@ export class NotesEditor extends Editor<EventSequence> {
         return changed;
     }
 }
+
+marking(NotesEditor);
 
 /** {@link NotesEditor}'s options: the generic ones plus whether it writes. */
 export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> {

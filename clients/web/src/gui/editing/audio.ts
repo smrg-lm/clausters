@@ -47,6 +47,7 @@ import { runSteps } from "../../steps.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
+import { Marking, marking } from "./marking.ts";
 import { MEASURES, SamplesView, plain } from "./samples.ts";
 import type { Measure } from "./samples.ts";
 
@@ -359,12 +360,21 @@ export class AudioDomain extends Domain<Buffer> {
     }
 }
 
+/** The marking surface, merged so `editor.selected()` types as its own. */
+export interface AudioEditor extends Marking<Segment<Buffer> | null, Segment<Buffer>> {}
+
 /**
  * A take on screen, edited as a list of parts over immutable takes.
  *
  * The window draws {@link AudioEditor.buffer}, a join the editor owns: the take
  * as the edits have left it. Play that buffer to hear the edited take, and read
  * {@link AudioEditor.parts} for what it is made of.
+ *
+ * **What is marked** (`selected`, `select`, `unselect`) is the samples a drag
+ * over the take covers, as a `Segment` over {@link AudioEditor.buffer} -- its
+ * `start` a frame and its `duration` seconds -- or `null` when nothing is
+ * marked. In an audio editor what is marked and the transport's `span` are one
+ * range, so setting either sets both.
  */
 export class AudioEditor extends Editor<Buffer> {
     /** This editor's member in its editing context. */
@@ -463,27 +473,25 @@ export class AudioEditor extends Editor<Buffer> {
     // ---- what the hand marked ----
 
     /**
-     * **The samples the hand marked** -- a drag over the take -- as a `Segment`
-     * over {@link AudioEditor.buffer}: from the frame the range starts on, for
-     * its seconds. `null` when nothing is marked. In an audio editor what is
-     * marked and the transport's `span` are one range, so setting either sets
-     * both.
+     * The marked samples: the transport's span, from the frame it starts on,
+     * for its seconds.
+     *
+     * @internal
      */
-    get selected(): Segment<Buffer> | null {
+    marked(): Segment<Buffer> | null {
         const span = this.#driver.span;
         if (span === null) return null;
         return new Segment(this.buffer, Math.round(span[0] * this.sampleRate), span[1] - span[0]);
     }
 
-    /** Marks `segment` -- a `Segment` over {@link AudioEditor.buffer}, its `start` a frame and its `duration` seconds. */
-    async select(segment: Segment<Buffer>): Promise<void> {
+    /** Marks `segment`, which sets the transport's span. @internal */
+    async mark(segment: Segment<Buffer> | null): Promise<void> {
+        if (segment === null) {
+            await this.#driver.setSpan(null);
+            return;
+        }
         const start = segment.start / this.sampleRate;
         await this.#driver.setSpan([start, start + segment.duration]);
-    }
-
-    /** Marks nothing. */
-    async unselect(): Promise<void> {
-        await this.#driver.setSpan(null);
     }
 
     /** The band a sweep leaves, drawn where the take is. @internal */
@@ -814,6 +822,8 @@ export class AudioEditor extends Editor<Buffer> {
         }
     }
 }
+
+marking(AudioEditor);
 
 /** {@link AudioEditor}'s options: the generic ones, the measures and the limit. */
 export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {

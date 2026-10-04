@@ -113,6 +113,7 @@
       - [edit](api/clausters.gui.editing.edit.md)
       - [editor](api/clausters.gui.editing.editor.md)
       - [events](api/clausters.gui.editing.events.md)
+      - [marking](api/clausters.gui.editing.marking.md)
       - [multitrack](api/clausters.gui.editing.multitrack.md)
       - [playback](api/clausters.gui.editing.playback.md)
       - [points](api/clausters.gui.editing.points.md)

@@ -79,44 +79,6 @@ fn a_report_of_the_curve_as_it_is_records_nothing() {
     assert!(!out.changed && out.record.is_none() && out.points.is_none());
 }
 
-/// A sweep leaves a time range in the curve's seconds and, with height, a
-/// value band; the points inside both are what is selected.
-#[test]
-fn a_sweep_selects_the_points_inside_it() {
-    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
-    let out = e.event(&gesture("selection", quads(&[50.0, 150.0])), 1);
-    assert_eq!(out.span, Some(json!([0.5, 2.0])));
-    assert_eq!(e.selected(), vec![1, 2]);
-
-    e.event(&gesture("selection", quads(&[0.0, 200.0, 0.5, 1.0])), 1);
-    assert_eq!(e.selected(), vec![1], "only the peak is in the band");
-
-    let out = e.event(&gesture("selection", quads(&[0.0, 0.0])), 1);
-    assert_eq!(out.span, Some(Value::Null));
-    assert!(e.selected().is_empty());
-}
-
-/// A span set by a caller is drawn as the band a sweep leaves, in samples.
-#[test]
-fn a_span_set_from_the_door_is_drawn_and_selects() {
-    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
-    let answer = call_json(&mut e, r#"{"verb": "span", "span": [0.0, 1.0]}"#);
-    assert_eq!(answer, r#"{"span":[0.0,1.0]}"#);
-    let props: Value =
-        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
-    assert_eq!(
-        (props["sel_start"].clone(), props["sel_len"].clone()),
-        (json!(0.0), json!(100.0))
-    );
-    let selected = call_json(&mut e, r#"{"verb": "selected"}"#);
-    assert_eq!(selected, r#"{"points":[0,1]}"#);
-    call_json(&mut e, r#"{"verb": "span", "span": null}"#);
-    assert_eq!(
-        call_json(&mut e, r#"{"verb": "selected"}"#),
-        r#"{"points":[]}"#
-    );
-}
-
 /// The holder's curve, changed by a script between turns, is what the next
 /// turn reads.
 #[test]

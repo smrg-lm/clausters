@@ -628,11 +628,14 @@ Python property that reads becomes a method, a property that writes becomes a
   `t.span = (0, 2)`; TypeScript `await t.playing()`, `await t.end()`,
   `await t.setEnd(4)`, `await t.setSpan([0, 2])`. `t.span` and `t.looping`
   read local state and stay properties in both;
-- what the hand marked (`NotesEditor`, `MultitrackEditor`): Python
-  `roll.selected`, `editor.selected`; TypeScript `await roll.selected()`,
-  `await editor.selected()`. An `AudioEditor`'s is its own state and stays a
-  property in both, and marking it moves the transport's span, so Python
-  `editor.select(segment)` is TypeScript `await editor.select(segment)`;
+- what the hand marked (`Marking`, the mixin `NotesEditor`,
+  `MultitrackEditor` and `AudioEditor` take): Python `editor.selected`,
+  `editor.select(marked)`, `editor.unselect()`; TypeScript
+  `await editor.selected()`, `await editor.select(marked)`,
+  `await editor.unselect()`. One shape for the three, since the words are
+  written once: a roll's and a multitrack's marks are the host's to answer,
+  and an `AudioEditor`'s, though its own state, are awaited as the others
+  are — marking there moves the transport's span, which sends;
 - playing a sequence: Python `play(seq)` and `seq.play()` answer the
   `Transport`; TypeScript answers a promise of it;
 - the default session's server: Python `main.server_or_boot()`; TypeScript

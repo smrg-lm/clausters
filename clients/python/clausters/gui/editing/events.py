@@ -31,6 +31,7 @@ from ...seq.sequence import EventSequence
 from ...seq.timeline import Timeline
 from .domain import Domain
 from .editor import Editor
+from .marking import Marking
 from .samples import _plain
 from .view import View
 
@@ -63,8 +64,15 @@ class NotesView(View):
         return editor._call("props", widget=int(widget_id))
 
 
-class NotesEditor(Editor):
+class NotesEditor(Marking, Editor):
     """An event sequence on a roll, edited note by note, in place.
+
+    **What is marked** (`selected`, `select`, `unselect`) is the events on
+    the roll -- by a click, Shift+click or a marquee -- as the
+    `clausters.seq.SeqEvent` objects they are, in beat order. The picture's,
+    not the sequence's: it enters no history and each window has its own, and
+    it is empty with no window open. (The time range a sweep leaves is the
+    transport's `clausters.defs.Transport.span`.)
 
     Args:
         sequence: the `clausters.seq.EventSequence` to edit. It is the edited
@@ -299,35 +307,19 @@ class NotesEditor(Editor):
         if self._host is not None and self._window is not None and self._roll is not None:
             self._host.set(self._roll, looping=1 if on else 0)
 
-    @property
-    def selected(self) -> list:
-        """**The events marked on the roll** -- by a click, Shift+click or a
-        marquee -- as the `clausters.seq.SeqEvent` objects they are, in beat
-        order. The picture's, not the sequence's: it enters no history and
-        each window has its own. Empty with no window open. (The time range a
-        sweep leaves is the transport's `clausters.defs.Transport.span`.)"""
-        import json
-
-        if self._host is None or self._window is None:
+    def _marked(self) -> list:
+        """The events marked on the roll, by the ids the host holds."""
+        marked = self._marks(self._roll)
+        if not marked:
             return []
-        marked = self._host.query(self._roll).props.get("selected") or "[]"
-        events = self.structure.events
-        held = {e._id: e for e in events}
-        return [held[i] for i in json.loads(marked) if i in held]
+        held = {e._id: e for e in self.structure.events}
+        return [held[i] for i in marked if i in held]
 
-    def select(self, events) -> None:
-        """Mark ``events`` -- `clausters.seq.SeqEvent` objects of this sequence
-        -- on the roll, in place of what was marked."""
-        import json
-
-        if self._host is None or self._window is None:
-            return
-        ids = [e._id for e in events if getattr(e, "_sequence", None) is self.structure]
-        self._host.set(self._roll, selected=json.dumps(ids))
-
-    def unselect(self) -> None:
-        """Mark nothing on the roll."""
-        self.select([])
+    def _mark(self, events) -> None:
+        """Mark ``events`` -- those of this sequence -- on the roll."""
+        self._set_marks(self._roll, [
+            e._id for e in events or ()
+            if getattr(e, "_sequence", None) is self.structure])
 
     def adopt(self) -> None:
         """The sequence changed by another route -- another window, a script's

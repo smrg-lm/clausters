@@ -7724,7 +7724,7 @@ module of its own.
   and its clip envelopes. Both read a value through the curve element's own
   `hover_value`, and format it by one rule (`graphics::bpf::readout_value`).
 
-- ⬜ **The points editor carries a range and a selection it has no use for**
+- ✅ **The points editor carries a range and a selection it has no use for**
   *(found 2026-10-02 closing `X4` in `crates/clausters-apps/PLAN.md`, as "A
   curve standing on its own cannot be swept"; rewritten 2026-10-03 with the
   user, who placed the defect in the rule rather than in the gesture)*.
@@ -7762,6 +7762,28 @@ module of its own.
   at its `sample_rate` rather than in its own seconds, since the group
   rounds a selection to whole samples and a three-second curve would be
   swept in whole seconds.
+
+  *(Fixed 2026-10-03.)* **The points editor marks nothing.** Its `span` and
+  `selected` are gone from both clients, and from the crate's points editor
+  the range and the value band it kept, the `selection` gesture it read, the
+  `span` and `selected` verbs of its door, the `span` of its outcome and the
+  `sel_*` props it corrected the curve with. **Marking is a mixin**:
+  `Marking` (`clients/python/clausters/gui/editing/marking.py`,
+  `clients/web/src/gui/editing/marking.ts`) holds `selected`, `select` and
+  `unselect` once, and `NotesEditor`, `MultitrackEditor` and `AudioEditor`
+  take it — in Python as a base class beside `Editor`, in the web client
+  by the prototype copy `Server` composes its own mixins with. An editor
+  answers two hooks, what is marked now and marking in its place, and where
+  the host keeps the marks (the roll and the multitrack, a widget's
+  `selected` prop) the read and the write of that prop are the mixin's too.
+  **One shape in the web client, which moved the audio editor's**: its
+  `selected` was a getter, the roll's and the multitrack's a method that
+  awaits the host, and one mixin states one member — so it is
+  `await editor.selected()` in the three, and `select` and `unselect` answer
+  a promise in the three (`docs/bindings.md`, the asynchronous idiom). The
+  Python surface did not move. The crate has no trait: its three
+  applications keep no marks — the host's widget does — so there was
+  nothing there to share.
 
 - ✅ **A bundle mounted by the standalone host is given ids by an allocator
   of its own** *(audit 2026-10-03, asked for by the user while transports

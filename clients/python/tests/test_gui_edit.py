@@ -14,7 +14,8 @@ import pytest
 from clausters import TempoMap
 
 from clausters.gui import edit
-from clausters.gui.editing import Editing, NotesEditor, PointsEditor
+from clausters.gui.editing import (AudioEditor, Editing, Marking,
+                                   MultitrackEditor, NotesEditor, PointsEditor)
 from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf, Env
 from clausters.defs import Server
@@ -187,27 +188,18 @@ def test_a_curve_is_drawn_edited_and_read_back_with_no_multitrack():
     assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0])
 
 
-def test_a_sweep_over_a_curve_is_its_span_and_selects_its_points():
-    """A curve has no transport, so the time range a sweep leaves is the
-    points editor's own `span`, in the curve's seconds; the points inside it
-    -- and inside its value band, for a sweep with height -- are `selected`.
-    Neither is an edit."""
-    curve = a_curve()
-    editor = edit(curve, sample_rate=SR, open=False)
-    host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR]) is False
-    assert editor.span == pytest.approx((1.0, 2.0))
-    flat = curve.to_points()
-    assert editor.selected == [tuple(flat[4:8])]
-    assert not editor.can_undo
-
-    editor.span = (0.0, 1.0)
-    assert editor.selected == [tuple(flat[0:4])]
-    # A sweep with height keeps the points inside its value band too.
-    editor.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * SR, 500.0, 1000.0])
-    assert editor.selected == [tuple(flat[4:8])]
-    editor.span = None
-    assert editor.span is None and editor.selected == []
+def test_marking_is_taken_by_the_editors_that_act_on_what_is_marked():
+    """`selected`, `select` and `unselect` are a capability an editor takes:
+    the roll, the multitrack and the audio editor have it, and the points
+    editor, where no operation acts on a group of points, has none of it --
+    nor a time range of its own."""
+    for marks in (NotesEditor, MultitrackEditor, AudioEditor):
+        assert issubclass(marks, Marking)
+        assert not {"selected", "select", "unselect"} & set(vars(marks))
+    assert not issubclass(PointsEditor, Marking)
+    editor = edit(a_curve(), sample_rate=SR, open=False)
+    for word in ("selected", "select", "unselect", "span"):
+        assert not hasattr(editor, word)
 
 
 def test_a_normalized_envelope_is_kept_inside_its_ranges():

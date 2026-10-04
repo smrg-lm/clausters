@@ -26,6 +26,7 @@ from ...defs import Buffer, Part
 from ...multitrack import Multitrack
 from .domain import Domain
 from .editor import Editor
+from .marking import Marking
 from .view import View
 
 __all__ = ["MultitrackDomain", "MultitrackEditor", "MultitrackView", "Sources",
@@ -387,7 +388,7 @@ class _Driver:
         self.editor._show_looping(self.looping)
 
 
-class MultitrackEditor(Editor):
+class MultitrackEditor(Marking, Editor):
     """A multitrack on screen, editable back into the `clausters.multitrack.Multitrack`
     the caller already holds.
 
@@ -396,6 +397,13 @@ class MultitrackEditor(Editor):
     did. Being an `clausters.gui.editing.Editor`, it has the history every other
     editor has -- `undo` and `redo` walk it, and a second window over the same
     multitrack walks the same one.
+
+    **What is marked** (`selected`, `select`, `unselect`) is the regions the
+    hand holds -- a click, Alt+click or a marquee over the boxes -- as the
+    `clausters.multitrack.Region` objects of this multitrack, in the order the
+    boxes are drawn. The picture's, not the multitrack's: it enters no
+    history, and it is empty with no window open. (The time range a sweep
+    leaves is the transport's `span`.)
     """
 
     def __init__(self, multitrack: Multitrack, *, sample_rate: float,
@@ -460,34 +468,17 @@ class MultitrackEditor(Editor):
 
     # ---- what the hand marked ----
 
-    @property
-    def selected(self) -> list:
-        """**The regions the hand holds** -- a click, Alt+click or a marquee
-        over the boxes -- as the `clausters.multitrack.Region` objects of this
-        multitrack, in the order the boxes are drawn. The picture's, not the
-        multitrack's: it enters no history. Empty with no window open. (The
-        time range a sweep leaves is the transport's `span`.)"""
-        import json
-
-        if self._host is None or self._window is None or self.multitrack_widget is None:
+    def _marked(self) -> list:
+        """The regions the hand holds, by the names the host holds."""
+        held = self._marks(self.multitrack_widget)
+        if not held:
             return []
-        held = self._host.query(self.multitrack_widget).props.get("selected") or "[]"
         regions = {str(r._id): r for r in self.structure.regions()}
-        return [regions[name] for name in json.loads(held) if name in regions]
+        return [regions[name] for name in held if name in regions]
 
-    def select(self, regions) -> None:
-        """Hold ``regions`` -- `clausters.multitrack.Region` objects of this
-        multitrack -- in the window, in place of what was held."""
-        import json
-
-        if self._host is None or self._window is None or self.multitrack_widget is None:
-            return
-        names = [str(r._id) for r in regions]
-        self._host.set(self.multitrack_widget, selected=json.dumps(names))
-
-    def unselect(self) -> None:
-        """Hold nothing."""
-        self.select([])
+    def _mark(self, regions) -> None:
+        """Hold ``regions`` in the window."""
+        self._set_marks(self.multitrack_widget, [str(r._id) for r in regions or ()])
 
     def _show_looping(self, on: bool) -> None:
         """The window's loop switch, as `L` leaves it."""

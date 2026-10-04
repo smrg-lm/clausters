@@ -2,7 +2,7 @@
  * Editing: the subdomain of the GUI where a picture writes back.
  *
  * Everything that turns a gesture into a change of the data, and the change back
- * into a picture. It is a subpackage rather than a module because it is five
+ * into a picture. It is a subpackage rather than a module because it is six
  * collaborators and four editors, and because the boundaries between them are
  * the whole design:
  *
@@ -23,6 +23,10 @@
  * - {@link Echo} -- the acknowledgement protocol: the stamp, the version, the
  *   floor, the corrections and the reason. Entirely generic, and testable with no
  *   structure at all.
+ * - {@link Marking} -- what the hand marked: `selected`, `select` and
+ *   `unselect`, for the editors whose operations act on it. A capability an
+ *   editor takes, not a level of the hierarchy, so the points editor has none
+ *   of it.
  * - {@link Editing} -- the editing context: the history, the version, and the
  *   views to tell. An editor **asks for it and never builds one**, which is what
  *   makes two windows over one thing walk one undo order.
@@ -70,6 +74,8 @@ export {
 // so the reference has to resolve, but a page builds one no more than the Python
 // client's does -- `MultitrackEditor` makes it.
 export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
+export { Marking } from "./marking.ts";
+export type { Marks } from "./marking.ts";
 export { Playback } from "./playback.ts";
 // The plan's own shapes are the crate's and were only ever restated here to
 // read it; what a page sees now is the reconciler's answer.

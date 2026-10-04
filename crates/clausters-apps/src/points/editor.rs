@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
+use clausters_core::tempoclock::samples_to_secs;
 use clausters_document::history::Editable;
 use clausters_document::multitrack::Automation;
 use clausters_document::points::{self as vocabulary, POINTS, Points};
@@ -45,16 +45,12 @@ pub struct Outcome {
     /// on its ruler. Not an edit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
-    /// **The time range a sweep left**, when the hand moved it: `[start, end]`
-    /// in the curve's seconds, or `null` once it was cleared. Not an edit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub span: Option<Value>,
 }
 
 turn::turned!(Outcome);
 
-/// **A points editor**: a shared curve, the axes its window holds, the time
-/// range and the value band a sweep left, and its end of the conversation.
+/// **A points editor**: a shared curve, the axes its window holds, and its
+/// end of the conversation.
 #[derive(Clone, Debug)]
 pub struct PointsEditor {
     curve: Shared,
@@ -73,10 +69,6 @@ pub struct PointsEditor {
     /// The ranges the caller declared; the curve's own parameter fills in the
     /// value range where it declared none ([`Rules::of`]).
     declared: Rules,
-    /// The time range a sweep left, `[start, end]` in the curve's seconds.
-    span: Option<(f64, f64)>,
-    /// The value band the same sweep covered, when it had height.
-    band: Option<(f64, f64)>,
 }
 
 /// What a points editor is opened with, as the context's door reads it.
@@ -137,8 +129,6 @@ impl PointsEditor {
             size: (1000, 520),
             held: Held::default(),
             declared: Rules::default(),
-            span: None,
-            band: None,
         }
     }
 
@@ -182,11 +172,6 @@ impl PointsEditor {
         Some(points::quad(point.at, point)[2] as i64)
     }
 
-    /// A position in seconds as the timeline samples the widget counts.
-    fn units(&self, secs: f64) -> f64 {
-        secs_to_samples(secs, self.rate) as f64
-    }
-
     /// Timeline samples as the curve's seconds.
     fn secs(&self, units: f64) -> f64 {
         samples_to_secs(units.max(0.0).round() as i64, self.rate)
@@ -204,17 +189,6 @@ impl PointsEditor {
         let curve = self.held().clone();
         let rules = self.rules();
         let mut props = props(&curve, &mut self.held, &rules);
-        // The time range is drawn where the hand sweeps one, so a span set
-        // from the client shows as the band a sweep leaves.
-        let (start, len) = self.span.map_or((0.0, 0.0), |(a, b)| {
-            let start = self.units(a);
-            (start, self.units(b) - start)
-        });
-        let (min, max) = self.band.unwrap_or((0.0, 0.0));
-        props.insert("sel_start".into(), json!(start));
-        props.insert("sel_len".into(), json!(len));
-        props.insert("sel_min".into(), json!(min));
-        props.insert("sel_max".into(), json!(max));
         // The selected segment, which a step that took points away may have
         // taken with it.
         self.segment = self.segment();
@@ -325,24 +299,6 @@ impl PointsEditor {
             .then(|| points::quads(&curve.points))
     }
 
-    /// **The points a sweep covers**, by index: those inside its time range
-    /// and, where it had height, inside its value band. None without a range.
-    pub fn selected(&self) -> Vec<usize> {
-        let Some((start, end)) = self.span else {
-            return Vec::new();
-        };
-        let inside = |v: f64, (lo, hi): (f64, f64)| v >= lo && v <= hi;
-        self.held()
-            .points
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| {
-                inside(p.at, (start, end)) && self.band.is_none_or(|band| inside(p.value, band))
-            })
-            .map(|(i, _)| i)
-            .collect()
-    }
-
     fn gesture(
         &mut self,
         widget: i64,
@@ -364,17 +320,6 @@ impl PointsEditor {
                 // the menu shows the shape of the one chosen.
                 self.segment = usize::try_from(at(0) as i64).ok();
                 (None, self.menu_correction().into_iter().collect())
-            }
-            "selection" => {
-                // A sweep's time range, on the axis's samples, kept in the
-                // curve's seconds; a sweep with height covered a value band
-                // too, in the curve's own values. A range of no length is none.
-                let (start, len) = (at(0).max(0.0), at(1));
-                self.span = (len > 0.0).then(|| (self.secs(start), self.secs(start + len)));
-                self.band = (self.span.is_some() && values.len() >= 4)
-                    .then(|| (at(2).min(at(3)), at(2).max(at(3))));
-                out.span = Some(self.span.map_or(Value::Null, |(a, b)| json!([a, b])));
-                (None, Vec::new())
             }
             "locate" => {
                 // A click on the ruler: the reader put the position cursor
@@ -462,10 +407,6 @@ pub fn new_json(curve: Shared, request: &str) -> PointsEditor {
 /// - `rules` -- `{"values", "time"}`: the ranges the curve is edited inside,
 ///   each `[low, high]` or `null`.
 /// - `state` -- `{"points"}`: the curve as flat quads.
-/// - `span` -- `span`, when given: `[start, end]` in the curve's seconds, or
-///   `null` -- the time range drawn as the band a sweep leaves, with no value
-///   band. Answers `{"span"}`, as it now is.
-/// - `selected` -- `{"points"}`: the indices of the points the sweep covers.
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
@@ -527,17 +468,6 @@ pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
             "{}".into()
         }
         "state" => json!({ "points": points::quads(&editor.held().points) }).to_string(),
-        "span" => {
-            if let Some(span) = request.get("span") {
-                editor.span = span
-                    .as_array()
-                    .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)))
-                    .filter(|(a, b)| b > a);
-                editor.band = None;
-            }
-            json!({ "span": editor.span.map(|(a, b)| json!([a, b])) }).to_string()
-        }
-        "selected" => json!({ "points": editor.selected() }).to_string(),
         "rules" => {
             let rules = editor.rules();
             let pair = |r: Option<(f64, f64)>| r.map(|(a, b)| json!([a, b]));

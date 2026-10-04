@@ -131,13 +131,13 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       // NOTES 5: selected from the page and by hand
       step("notes5", ["notes5b"], async () => {
-        n.select([...notes.events].slice(0, 2)); // the first two notes are marked
+        await n.select([...notes.events].slice(0, 2)); // the first two notes are marked
         log(String(await n.selected()));
       });
       // now click/marquee other notes by hand and press:
       step("notes5b", ["multitrack1"], async () => {
         log(String(await n.selected()));
-        n.unselect();             // nothing marked
+        await n.unselect();       // nothing marked
       });
 
       // MULTITRACK 1: two takes in two tracks
@@ -178,13 +178,13 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       // MULTITRACK 4: selected
       step("multitrack4", ["multitrack4b"], async () => {
-        m.select([b]);            // the 990 box is held
+        await m.select([b]);      // the 990 box is held
         log(JSON.stringify((await m.selected()).map((r) => r.name)));
       });
       // click the other box by hand and press:
       step("multitrack4b", ["audio1"], async () => {
         log(JSON.stringify((await m.selected()).map((r) => r.name)));
-        m.unselect();
+        await m.unselect();
       });
 
       // AUDIO 1: a take, its transport
@@ -202,7 +202,8 @@ editors. Press the buttons in order; each step says what to look at.</div>
       step("audio2", ["audio3"], async () => {
         await at.stop();
         await at.setSpan([0.5, 1.0]); // the band appears over 0.5..1.0 s
-        log(`${e.selected.start} ${e.selected.duration}`); // frame 0.5*rate, 0.5 s
+        const marked = await e.selected();
+        log(`${marked.start} ${marked.duration}`); // frame 0.5*rate, 0.5 s
         await at.play();          // only that half second
       });
 
@@ -218,7 +219,8 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       // AUDIO 4: drag a range by hand, then press this
       step("audio4", ["close"], async () => {
-        log(`${JSON.stringify(at.span)} ${e.selected?.start} ${e.selected?.duration}`);
+        const marked = await e.selected();
+        log(`${JSON.stringify(at.span)} ${marked?.start} ${marked?.duration}`);
         await e.unselect();       // the band goes away
         log(JSON.stringify(at.span)); // null
       });

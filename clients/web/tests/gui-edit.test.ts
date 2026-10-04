@@ -15,8 +15,10 @@ import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Domain, Editing, Editor, NotesEditor, PointsEditor, View, edit, watch }
-    from "../src/gui/editing/index.ts";
+import {
+    AudioEditor, Domain, Editing, Editor, Marking, MultitrackEditor, NotesEditor, PointsEditor,
+    View, edit, watch,
+} from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { POINTS } from "../src/document.ts";
 import { Bpf, Env } from "../src/defs/ugens/index.ts";
@@ -154,28 +156,21 @@ test("a curve is drawn, edited and read back with no multitrack", async () => {
     assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0]);
 });
 
-test("a sweep over a curve is its span and selects its points", async () => {
-    // A curve has no transport, so the time range a sweep leaves is the
-    // points editor's own `span`, in the curve's seconds; the points inside it
-    // -- and inside its value band, for a sweep with height -- are `selected`.
-    // Neither is an edit.
-    const curve = aCurve();
-    const editor = (await edit(curve, { sampleRate: SR, open: false })) as unknown as PointsEditor;
-    const { wid } = await opened(editor);
-    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "selection", SR, SR]), false);
-    assert.deepEqual(editor.span, [1.0, 2.0]);
-    const flat = curve.toPoints();
-    assert.deepEqual(editor.selected, [flat.slice(4, 8)]);
-    assert.equal(editor.canUndo, false);
-
-    editor.span = [0.0, 1.0];
-    assert.deepEqual(editor.selected, [flat.slice(0, 4)]);
-    // A sweep with height keeps the points inside its value band too.
-    editor.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * SR, 500.0, 1000.0]);
-    assert.deepEqual(editor.selected, [flat.slice(4, 8)]);
-    editor.span = null;
-    assert.equal(editor.span, null);
-    assert.deepEqual(editor.selected, []);
+test("marking is taken by the editors that act on what is marked", async () => {
+    // `selected`, `select` and `unselect` are a capability an editor takes: the
+    // roll, the multitrack and the audio editor have it, and the points editor,
+    // where no operation acts on a group of points, has none of it -- nor a
+    // time range of its own.
+    for (const marks of [NotesEditor, MultitrackEditor, AudioEditor]) {
+        for (const word of ["selected", "select", "unselect"] as const) {
+            assert.equal(marks.prototype[word], Marking.prototype[word]);
+        }
+    }
+    const editor = await edit(aCurve(), { sampleRate: SR, open: false });
+    assert.ok(editor instanceof PointsEditor);
+    for (const word of ["selected", "select", "unselect", "span"]) {
+        assert.equal(word in editor, false);
+    }
 });
 
 test("a normalized envelope is kept inside its ranges", async () => {
@@ -982,11 +977,11 @@ test("what the roll marks is the events themselves", async () => {
     await opened(roll);
     const [first, second, third] = seq.events;
     assert.deepEqual(await roll.selected(), []);
-    roll.select(seq.events.range(1.0, 3.0));
+    await roll.select(seq.events.range(1.0, 3.0));
     assert.deepEqual(await roll.selected(), [second, third]);
     for (const event of await roll.selected()) event.set("velocity", 90);
     assert.ok(second.get("velocity") === 90 && first.get("velocity") === undefined);
-    roll.unselect();
+    await roll.unselect();
     assert.deepEqual(await roll.selected(), []);
 });
 
