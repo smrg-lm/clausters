@@ -180,15 +180,12 @@ its plan; the plan is where its acceptance is read.
   development resumes and waiting on `O21`(a). **Related:** an application
   inside another, under "The larger questions" below.
 
-- ⬜ **`G36` - `G38` — key bindings, menus and a tooltip, each a design first**
-  *(`clients/gui/PLAN.md`, sections "G36", "G37", "G38")*. **The decision is the
-  design**, and it follows the conventions common to desktop and mobile
-  interfaces. **`G36`** — key bindings set outside the code (a config file, a
-  GuiDef) instead of spelled in each element. **`G37`** — a drop-down menu over a
-  tree of options and a menu bar, separable, and the existing combobox's list
-  that opens out of line and shows the chosen name twice put right. **`G38`** — a
-  tooltip. `G37`'s keyboard and `G38`'s text both read `G36`'s table, so the three
-  are designed together.
+- ⬜ **`G36` — key bindings are configuration, a design first**
+  *(`clients/gui/PLAN.md`, section "G36")*. **The decision is the design**, and
+  it follows the conventions common to desktop and mobile interfaces: key
+  bindings set outside the code (a config file, a GuiDef) instead of spelled in
+  each element. `G37`–`G40` no longer wait on it — they take the verb's name
+  and show the bound key once this table exists.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
@@ -238,6 +235,18 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
+
+- ⬜ **`G37` - `G40` — the chrome set: menus, what every widget carries, the
+  choice's presentations, container chrome** *(`clients/gui/PLAN.md`, sections
+  "G37" to "G40")*. Designed with the user 2026-10-04 and taken in the plan's
+  own order: `G37.1` the popup layer and the chooser put right on it, `G37.2`
+  the menu tree with its bar and its context menu, `G38` `enabled`, focus, the
+  tip and the icon, `G39` tabs, pager and the small elements, `G40` groups,
+  split panes, scroll bars and a dialog. `G37.1` comes first because every
+  later part draws on the popup layer. `G41` (rows of data, choosing a file)
+  is written as an option after them and is not in this sequence. **Related:**
+  `G36` above, and the applications' window chrome in standalone
+  (`crates/clausters-apps/PLAN.md`, Future directions), which waits on `G37.2`.
 
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample

@@ -1358,7 +1358,15 @@ order.
     platform reserves, and how a modifier is spelled across platforms.
   - **Discovery**: how a user finds out which key does what — the documentation
     (`docs/gui-protocol.md`'s catalog rows carry the letters today), a status line,
-    a menu.
+    and the two places `G37` and `G38` give it: beside a menu entry and in a tip.
+
+  **What the chrome set takes from it** *(2026-10-04, with `G37`–`G40`
+  reformulated)*: the **verb's name**, and nothing else yet. A menu entry, a
+  tool's button and a key name the same verb, so `G37.2`'s entries report one by
+  name without waiting for this table; what waits is showing the bound key
+  beside the entry and in the tip. The keys that walk an open menu and the keys
+  that operate a focused control (`G38.1`) are the standard ones; whether they
+  are rows of the table or fixed is decided here.
 
   **What stays true until it lands**: the letters are documented where they are
   performed (the element's `key` doc comment and `docs/gui-protocol.md`), and the
@@ -1367,84 +1375,280 @@ order.
   the design.
 
 
-## G37 — Menus: a tree of options, a menu bar, and the chooser put right
+## G37 — Menus: the popup layer, the chooser put right, and a tree of entries
 
-- ⬜ **G37 — A menu is a tree of options, and the chooser stops misplacing its
-  list.** *(Added 2026-09-14 by the user — **a milestone that needs design**
-  before anything is built.)* Two widgets that are complementary and separable,
-  and a fix to the one that exists:
+*(Added 2026-09-14 by the user as a milestone that needed design; reformulated
+2026-10-04 with the user, out of a review of the host's chrome. `G37`–`G40` are
+one set — the basic elements an application's face is composed from — and
+`G38` is the tooltip milestone widened to hold the other things every widget
+carries.)*
 
-  - **A drop-down menu over a tree of options**: the familiar menu a press opens,
-    whose entries can open submenus of their own.
-  - **A menu bar**: a row of those menus along a window. It uses the drop-down
-    menu and the drop-down menu does not need it — a menu can be opened from a
-    button, a header or anywhere else a composition puts one.
-  - **The existing `menu` put right**, which is a combobox (a field showing the
-    chosen option, with a list that opens under it — `E11`): as the user sees it
-    today, **the list opens out of line with the button**, and **the chosen
-    option's name is shown twice**, in the button and again in the list. Where
-    the list is placed is one function, `controls::menu_popup`, from the field
-    `Menu::body` answers, resolved once at the press; the cause of the offset is
-    not diagnosed here.
+**The design is the standard one** *(the user, 2026-09-14)*: it follows the
+conventions common to desktop and mobile interfaces rather than inventing its
+own, and where desktop and mobile conventions differ, choosing between them is
+part of the design.
 
-  **The design is the standard one** *(the user, 2026-09-14)*: it follows the
-  conventions common to desktop and mobile interfaces rather than inventing its
-  own, and where desktop and mobile conventions differ, choosing between them is
-  part of the design.
+**Decided with the user, 2026-10-04:**
 
-  **What exists to build on:** the combobox's popup is already the host's one
-  **overlay** mechanism — an element declares `overlay_rect` and draws `overlay`
-  last, over everything, and the list is modal at the door (a press anywhere is
-  the list's) — so a tree of lists is that mechanism more than once, not a second
-  one.
+- **The chooser's wire type becomes `choice`, and `menu` names the tree of
+  entries.** What `menu` is today is a combobox with no typing: a field showing
+  the chosen option and a list that opens under it (`E11`). Its builder is
+  renamed with it in both clients.
+- **The menu bar is a `window` prop, drawn by the host** as a band along the top
+  edge, the way `status` is one along the bottom: chrome, not a node of the tree.
+- **An icon is a glyph of the font** (`G38.3`), with a small symbol set in the
+  embedded bitmap face so the floor draws them too.
 
-  **What the design has to answer, none of it decided:**
+**What holds across `G37`–`G40`:**
 
-  - **The tree on the wire**: how a GuiDef states entries, submenus, separators,
-    a disabled entry, a checkable or one-of-several entry, and what a pick reports
-    (a path, a name, an id).
-  - **Where the combobox's list goes**: under the field, or placed so the chosen
-    option sits over the field the way some platforms do it; and whether the list
-    leaves the chosen option out, marks it, or shows it as the others.
-  - **How the menu bar belongs to a window**: a widget in the tree, or a window
-    prop; what it does when the window is too narrow.
-  - **The keyboard**: opening, walking and closing menus from keys, and showing
-    beside an entry the key bound to it — which is `G36`'s table, so the two are
-    designed together.
-  - **Both fronts alike**, native and browser, as every widget is.
+- **No new `/gui_*` address and no new container kind.** What is added is
+  elements, props on the containers there are, and event payloads. A `tabs`, a
+  `toolbar` or a `pager` is a builder shortcut onto the model, as `panel` is.
+- **Parametric, never structural** (the L track's rule): a look is a prop and a
+  theme role, and there is no styling language.
+- **A value never sizes anything.** A choice is as wide as its widest option and
+  a menu as its widest entry, because both are props.
+- **A widget keeps no state the work produced.** A collapsed group, a divider's
+  position and a checked entry are props: set live, reported as events, kept by
+  whoever owns the session.
+- **One host, both fronts, both clients.** Each part closes with its builders in
+  the Python and the web client, its row in `docs/gui-protocol.md`, and an
+  existing example extended to show it.
 
-## G38 — A tooltip
+**Order:** `G37.1`, `G37.2`, `G38`, `G39`, `G40`. None of them waits for `G36`:
+an entry and a tip name a verb, and the key beside it appears when `G36`'s table
+exists.
 
-- ⬜ **G38 — A widget can say what it is when the pointer rests on it.** *(Added
-  2026-09-14 by the user — **a milestone that needs design** before anything is
-  built.)* A tooltip widget: a short text that appears near the pointer after it
-  rests over a widget, and goes when it leaves.
+- ⬜ **G37.1 — The popup layer, and the chooser on it.**
 
-  **The design is the standard one** *(the user, 2026-09-14)*: it follows the
-  conventions common to desktop and mobile interfaces rather than inventing its
-  own, and where desktop and mobile conventions differ, choosing between them is
-  part of the design.
+  **What exists:** one overlay per element. An element declares `overlay_rect`
+  and draws `overlay`; `frame::draw_element_overlays` draws it last and
+  `gestures::element::overlay_owner` hands it the press. It is one level deep and
+  it routes the press only.
 
-  **What exists to build on:** the same overlay the combobox's list draws into;
-  the frame already reads the pointer for hovering (`ctx.world.cursor`, which the
-  open list highlights its row from, and which is not a gesture); and a window
-  has a **status bar** (`status`), which already carries a sentence about what
-  the hand did.
+  **What is wrong with the list today**, read out of the code on 2026-10-04:
 
-  **What the design has to answer, none of it decided:**
+  - It is placed against the whole window (`controls::menu_popup` takes the
+    framebuffer's height), and the status bar is drawn after it, so the bar
+    covers its last rows.
+  - A list taller than the window runs off it: there is no scroll.
+  - It is as wide as the field, not as its widest option, and nothing keeps it
+    inside the window's right edge.
+  - The row under the pointer does not light up in a static window: pointer
+    motion repaints only a window that holds a hover readout.
+  - Its rectangle is resolved once, at the press, so a resize or a `plane`
+    panning under it leaves the list where it was.
+  - It has no keyboard, Escape does not close it, and the wheel reaches the
+    tree under it.
+  - *(the user, 2026-09-14)* The chosen option's name is shown twice, and the
+    list opens out of line with the field. The second was not found by reading —
+    the field and the list come out of one rectangle (`Menu::body`) — so it is
+    reproduced before it is fixed.
 
-  - **Whether it is a widget or a prop**: a `tooltip` any widget carries (as it
-    carries a `label` or a `theme`), a widget of its own placed over another, or
-    both.
-  - **When**: the delay before it shows, whether moving between two widgets with
-    tooltips shows the second at once, and what hides it (leaving, a press, a key).
-  - **Where**: beside the pointer or beside the widget, and kept inside the window.
-  - **What it says**: plain text, or text with the key bound to the widget's verb
-    (`G36`); and whether a heavy view can answer a tooltip per part (a box, a
-    grip, a note) rather than one for the whole widget.
-  - **Its relation to the status bar**: one of them, both, or the status bar as
-    the tooltip's place when there is no room.
-  - **Touch and the browser**, where there is no resting pointer.
+  **What it builds:** a **stack of popups the host owns**, one per window, each
+  anchored to a rectangle or a point and filled by the element that opened it.
+  **One function places every popup**: it measures the content, places it inside
+  the work area (the window minus the host's bands), flips it to the side that
+  has room, and scrolls it when it is taller than the area. A popup is placed
+  again at every layout, so it follows its anchor. While one is up it takes the
+  press (outside closes the stack), the wheel, the walking keys — arrows, Home,
+  End, Enter, Escape — and pointer motion repaints the window. Popups draw
+  through a `popup` theme role. Whether `overlay_rect`/`overlay` grow or are
+  replaced is settled with the code; what is fixed is one placement function and
+  a stack that is the host's.
+
+  **The chooser on it:** `choice`, with the props it has (`options`, `index`,
+  `label`, `text_size`) and the value it has, the index. A node of the old
+  spelling is an unknown type, as every retired name is (`docs/gui-protocol.md`,
+  "The builders keep their names; the wire does not"). **Open:** whether the
+  list marks the chosen option or leaves it out, settled by eye.
+
+  **Acceptance:** the placement function tested without a GPU — below, flipped,
+  held at the right edge, scrolled, clear of the status band — and the wheel,
+  the keys and the motion repaint tested through the gesture machine.
+
+- ⬜ **G37.2 — A menu is a tree of entries, shown in three places.**
+
+  **The tree** is a prop value, `menu`, not a node type: a list of entries, each
+  an **action**, a **check**, **one of several**, a **separator** or a
+  **submenu** holding entries of its own. An entry carries a label, the **verb**
+  it reports, `enabled`, an `icon`, and its state where it has one. A pick
+  reports the verb as a `/gui_event` payload of the widget holding the menu, and
+  a check reports its new state with it.
+
+  **The three places:**
+
+  - **`menu` on a `window`** — the menu bar: a row of titles in a band along the
+    top. The tree is laid out in the window minus both bands. Titles that do not
+    fit gather under a last one.
+  - **`context` on any widget or container** — the context menu, opened at the
+    pointer by the secondary button, and answered by the nearest ancestor that
+    carries one.
+  - **`menu` on a `button`** — a button that opens its menu under itself.
+
+  **The secondary button and the long press.** Both fronts read the primary
+  button only (`host/gui/app.rs`, `host/web/input.rs`). The gesture machine
+  learns one request, *context at this point*, with two spellings: the secondary
+  press, and a press held still — the timer "The double click and the long
+  press" (Future directions) says the machine lacks. The browser's own context
+  menu is suppressed where the host answers.
+
+  **Submenus** are the popup stack more than once. The keys that walk an open
+  menu are the standard ones and are not bindings; the keys that *open* a menu,
+  and the key shown beside an entry, are `G36`'s.
+
+  **What waits on it:** the applications' window chrome in standalone
+  (`crates/clausters-apps/PLAN.md`, Future directions).
+
+  **Open:** a context menu per *part* of a heavy view — a clip, a note, a box —
+  rather than one for the whole widget.
+
+  **Acceptance:** the tree parsed and walked in tests; a pick, a check and a
+  disabled entry through the gesture machine on both fronts; the bar's band
+  taken out of the layout as the status band is.
+
+
+## G38 — What every widget carries: `enabled`, focus, a tip and an icon
+
+*(Added 2026-09-14 by the user as the tooltip milestone; widened 2026-10-04.)*
+
+- ⬜ **G38.1 — `enabled`, and every control takes the focus.** `enabled` is a
+  prop of every widget: a disabled one draws through a `text_disabled` role,
+  declines the press and leaves the tab ring, and a disabled container disables
+  its subtree. A control under the pointer draws through a `hover` role, and the
+  window repaints when the widget under the pointer *changes*, not at every
+  move. Of the light controls only `text` accepts the focus today; all of them
+  do after this, operated by the standard keys — Space or Enter on a `button`
+  and a `toggle`, the arrows on a `slider`, a `knob`, a `number` and a `choice`.
+  Whether those keys sit in `G36`'s table is `G36`'s question.
+
+- ⬜ **G38.2 — `tip`: a widget says what it is when the pointer rests on it.**
+  A prop, not a widget. The tip shows in the popup layer once the pointer has
+  rested — the timer `G37.2` gave the machine — beside the pointer and inside
+  the work area; it goes when the pointer leaves, on a press and on a key; and
+  moving onto another widget with a tip while one is up shows the next at once.
+  On touch a long press shows it where no `context` answers. It says its text
+  and, once `G36` lands, the key of the widget's verb. It is not a line of the
+  status bar, which reports what a hand did. **Open:** a tip per part of a
+  heavy view, the same question `G37.2` leaves.
+
+- ⬜ **G38.3 — `icon`: a glyph of the font.** There are no icons in the host
+  and there are fonts, so an icon is a character. `icon` is a prop of a
+  `button`, a `toggle` and a menu entry, drawn beside the label or in its place.
+  The embedded bitmap face gains a **small symbol set** — arrows, check, close,
+  plus, minus, menu, play, stop, record, loop — each at the Unicode codepoint
+  that means it, so the floor draws them; with `font-atlas` any codepoint of the
+  face draws, and a codepoint the face lacks falls back to the bitmap's glyph,
+  **per glyph** — today the choice between the two faces is all or nothing
+  (`atlas::has_face`). The chooser's marker and a check entry's mark are drawn
+  from the same set. A source file writes the character as an escape.
+
+
+## G39 — One choice, several presentations, and the small elements beside it
+
+- ⬜ **G39 — Tabs, a pager, a radio group and a segmented control are one
+  element.** *(Added 2026-10-04 with the user: tabs and a pager already exist as
+  composition — a `stack` whose `index` is bound to a chooser — and what is
+  missing is the look.)*
+
+  - **`choice` gains `view`**: `combo` (the default, `G37.1`), `radio`,
+    `segmented`, `tabs`, `pager`, `list`. The data, the value and the event are
+    the same in all of them — `options` and `index` — so a `bind` onto a
+    `stack`'s `index` is tabs or a pager with nothing new on the wire. A row of
+    tabs that does not fit gathers the remainder in a list on the popup layer.
+  - **`toggle` gains `view`**: `check` (today's), `switch`, `button` (a button
+    that stays pressed).
+  - **`button` gains `flat`**: no fill until the pointer is over it, the look a
+    row of tools wants.
+  - **`number` gains `stepper`**: a pair of arrows that move it one `step`.
+  - **`separator`**: a line between groups; with a `weight` it is the spring
+    that pushes what follows to the far edge.
+  - **`progress`**: a bar over `value` in 0..1, and with no value the
+    indeterminate form — which is the only time it asks for the window's tick.
+  - **Builder shortcuts in both clients**: `tabs`, `pager`, `toolbar`.
+
+  **Acceptance:** each presentation's hit test reads what it draws (`E22`'s
+  rule); the natural size of each is a function of the options and the metrics;
+  an existing example shows a toolbar and a tabbed `stack`.
+
+
+## G40 — Container chrome: groups, split panes, scroll bars and a dialog
+
+- ⬜ **G40 — What a container shows of itself.** *(Added 2026-10-04 with the
+  user.)* Four props on the containers there are:
+
+  - **`title`, `frame` and `collapsed` on a `layout`**: a titled group, and a
+    section that folds to its title strip. A press on the strip reports the
+    change.
+  - **`split` on a `row` or a `col`**: a divider between children that a drag
+    moves, changing the `weight` of its two neighbours — or the fixed `w`/`h` of
+    one that has it — and reporting the result.
+  - **`bars` on a `plane`**: scroll bars along the axes it pans, shown when the
+    content is larger than the view, with a thumb a drag moves.
+  - **`modal` on a `layout`**: a dialog. It is placed by the popup layer rather
+    than by its parent's flow, over a dimmed window, and it takes every press
+    while it exists — it is up from the moment it is defined until it is freed,
+    in a window and in a page alike.
+
+  **Left for `G41`:** a table, a tree and choosing a file.
+
+  **Acceptance:** each gesture through the machine on both fronts; a collapsed
+  group and a moved divider read back by `/gui_query` as the props they are.
+
+
+## G41 — An option: rows of data, and choosing a file
+
+*(Added 2026-10-04 with the user, as an **option**: it is not in the sequence
+`G37`–`G40` and nothing there waits on it. It holds what that set left out, and
+the record of why, because neither reason survived being asked about.)*
+
+**Why they were left out, and why that did not hold:**
+
+- **A table and a tree** were left out as "views of data, not chrome": they
+  need a data shape of their own — rows, columns, a hierarchy, a selection of
+  several, an order, drawing only the rows on screen — where everything in
+  `G37`–`G40` is a prop on a control there already is. That is a reason for a
+  milestone of their own, not for leaving them out. The host has `nodes`, which
+  is the server's node tree and nothing else, and `G39`'s one-column `list`.
+- **Choosing a file** was left out as "the platform's". A native dialog in a
+  window and something else in a page is the divergence the project calls a
+  defect, since the host is one; and a page has a filesystem (OPFS), so the
+  platform lacking one is not a constraint. Nothing in any plan names a file
+  chooser, and the host has no way to list a directory — `DefStore::list` lists
+  the saved GuiDefs only. A standalone host needs one to open and save a
+  session.
+
+The two are chained: a file chooser is composed from rows, `G40`'s modal
+`layout` and a `text` field.
+
+- ⬜ **G41.1 — One element over rows: a list, a table and a tree.** One
+  element, configured by what it holds: rows of cells, `columns` where there is
+  more than one, and a depth per row where the rows nest — so a list is the
+  one-column case and a tree is rows with a depth, not three types. It draws
+  only the rows on screen and scrolls the others, and its natural size never
+  follows the row count. It selects one row or several and reports the
+  selection; opening or folding a branch, and a press on a column's header, are
+  reported as **intents** — the owner orders the rows and sends them back,
+  since the host holds no document.
+
+  **Open, none of it decided:** the element's name; how many rows ride the def
+  before they need the bulk path; whether a cell is edited in place, and how
+  that edit travels back; whether a column's width is `G40`'s divider; whether
+  `G39`'s `list` view is this element's one-column case rather than a
+  presentation of `choice`; whether `nodes` is rebuilt on it.
+
+- ⬜ **G41.2 — Choosing a file, drawn by the host.** The same chooser in a
+  window and in a page: the rows of a directory, a `text` field for the name
+  and the buttons, in a modal `layout`. The listing is the host's, behind one
+  more small I/O trait beside `Transport`, `DefStore`, `BulkLoader` and
+  `BusSource` — the disk natively, OPFS in the page — so neither client
+  implements it. A pick reports the path as an event payload.
+
+  **Open, none of it decided:** whether it is an element a def composes or a
+  request a client makes of the host; what a path means across the two fronts
+  when a session moves between them; OPFS being asynchronous where the host's
+  frame is not; and how a file on the user's own disk reaches a page's storage
+  and leaves it, which is the port's question rather than the chooser's.
 
 
 ## L track — the look: layout, sizing and themes for the light widgets
@@ -6997,6 +7201,9 @@ finished work, where a pending item reads as done.
   has to choose. Nothing is waiting on them — no widget wants one — which is why
   this is a review of what a GUI's gesture vocabulary should be rather than two
   items to implement. Worth doing before a widget invents one for itself.
+  *(2026-10-04: the long press now has something waiting on it — `G37.2` takes
+  it, with the secondary button, as the request that opens a context menu, and
+  `G38.2` reuses its timer for a tip. The review of the rest stands.)*
 
 - ⬜ **A def can name a widget that does not exist, and nothing says so**
   *(found 2026-08-27, in the manual review, on the demo bundle — the stale name
