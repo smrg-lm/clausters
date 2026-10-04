@@ -32,7 +32,7 @@ use crate::host::paint::Painter;
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
-use crate::host::winit_keys::to_key;
+use crate::host::winit_keys::{command, to_key};
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, Host, HostEffect};
 use crate::view::Renderers;
@@ -72,8 +72,12 @@ pub(super) struct WindowState {
     /// Whether Shift is held (Shift+drag pans a timeline view; plain drag
     /// selects).
     pub(super) shift: bool,
-    /// Whether Ctrl is held (Ctrl+click adds/removes a `bpf` breakpoint).
+    /// Whether Ctrl is held (Ctrl+click adds/removes a `bpf` breakpoint) --
+    /// **Command on a Mac** (`winit_keys::command`).
     pub(super) ctrl: bool,
+    /// Whether the modifier the host has no name for is held -- Control on a
+    /// Mac, the logo key elsewhere. A key pressed with it reaches nothing.
+    pub(super) unnamed: bool,
     /// Whether Alt is held (Alt+click toggles a piano-roll note in/out of the
     /// multi-note selection).
     pub(super) alt: bool,
@@ -802,8 +806,13 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::ModifiersChanged(mods) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.shift = mods.state().shift_key();
-                    ws.ctrl = mods.state().control_key();
-                    ws.alt = mods.state().alt_key();
+                    let state = mods.state();
+                    (ws.ctrl, ws.unnamed) = command(
+                        state.control_key(),
+                        state.super_key(),
+                        cfg!(target_os = "macos"),
+                    );
+                    ws.alt = state.alt_key();
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -890,6 +899,11 @@ impl ApplicationHandler<UserEvent> for App {
                     self.ctrl(def_id),
                     self.shift(def_id)
                 );
+                // A chord with the modifier the host has no name for is none of
+                // the host's: Control+E on a Mac is not a bare `e`.
+                if self.windows.get(&def_id).is_some_and(|ws| ws.unnamed) {
+                    return;
+                }
                 // A key takes a tip down, whoever ends up answering it.
                 self.key_began(def_id);
                 // **One dispatch, both fronts**: the focus, the key table and

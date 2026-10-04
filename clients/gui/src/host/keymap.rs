@@ -145,7 +145,9 @@ impl Chord {
         let mut mods = Mods::default();
         for m in head.split('+').filter(|m| !m.is_empty()) {
             match m.trim().to_ascii_lowercase().as_str() {
-                "ctrl" | "control" => mods.ctrl = true,
+                // The platform's command key: Control, or Command on a Mac,
+                // so a file written on either reads the same on both.
+                "ctrl" | "control" | "cmd" | "command" => mods.ctrl = true,
                 "shift" => mods.shift = true,
                 "alt" | "option" => mods.alt = true,
                 other => return Err(format!("unknown modifier '{other}' in '{text}'")),
@@ -187,11 +189,12 @@ impl Chord {
         Ok(Chord::of(&key, mods))
     }
 
-    /// The chord as a reader sees it beside a menu entry: `Ctrl+Shift+Z`.
-    pub fn label(&self) -> String {
+    /// The chord as a reader sees it beside a menu entry: `Ctrl+Shift+Z`, or
+    /// `Cmd+Shift+Z` on a Mac, where the host's Ctrl is Command.
+    pub fn label(&self, mac: bool) -> String {
         let mut out = String::new();
         for (on, name) in [
-            (self.mods.ctrl, "Ctrl+"),
+            (self.mods.ctrl, if mac { "Cmd+" } else { "Ctrl+" }),
             (self.mods.alt, "Alt+"),
             (self.mods.shift, "Shift+"),
         ] {
@@ -220,12 +223,17 @@ struct Binding {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Keymap {
     bindings: Vec<Binding>,
+    /// Whether the chords are shown as a Mac shows them: the host's Ctrl is
+    /// Command there, so a menu says `Cmd+Z`. The front says which platform
+    /// it is on ([`Keymap::on_mac`]); a native build knows at compile time.
+    mac: bool,
 }
 
 impl Default for Keymap {
     fn default() -> Self {
         let mut map = Keymap {
             bindings: Vec::new(),
+            mac: cfg!(target_os = "macos"),
         };
         for (verb, chords) in DEFAULTS {
             let warnings = map.bind(verb, chords);
@@ -252,7 +260,13 @@ impl Keymap {
             .iter()
             .find(|b| b.verb == verb)
             .and_then(|b| b.chords.first())
-            .map(Chord::label)
+            .map(|c| c.label(self.mac))
+    }
+
+    /// Says the host runs on a Mac -- what a page learns from its browser,
+    /// since the same wasm runs everywhere.
+    pub fn on_mac(&mut self, mac: bool) {
+        self.mac = mac;
     }
 
     /// Binds `verb` to exactly `chords`, replacing what it had: an empty list
@@ -422,12 +436,16 @@ mod tests {
             "Alt+Left",
             "Ctrl++",
         ] {
-            assert_eq!(Chord::parse(text).unwrap().label(), text);
+            assert_eq!(Chord::parse(text).unwrap().label(false), text);
         }
         assert_eq!(
-            Chord::parse("ctrl+shift+z").unwrap().label(),
+            Chord::parse("ctrl+shift+z").unwrap().label(false),
             "Ctrl+Shift+Z"
         );
+        // Ctrl is the command key, so a Mac spells it and shows it as Cmd.
+        let undo = Chord::parse("Cmd+Z").unwrap();
+        assert_eq!(undo, Chord::parse("Ctrl+Z").unwrap());
+        assert_eq!(undo.label(true), "Cmd+Z");
     }
 
     #[test]

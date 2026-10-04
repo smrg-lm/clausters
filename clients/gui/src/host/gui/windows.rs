@@ -97,6 +97,7 @@ impl App {
                     ws.shift,
                     ws.ctrl,
                     ws.alt,
+                    ws.unnamed,
                     ws.gestures,
                     ws.histories,
                 );
@@ -150,17 +151,19 @@ impl App {
             info!("gui_def {id}: redefined window \"{title}\" in place");
         }
 
-        let (origin, cursor, shift, ctrl, alt, gestures, histories) = state.take().unwrap_or((
-            origin,
-            // A window that has just opened has not been pointed at yet, which
-            // is *no cursor* rather than a cursor at the origin.
-            None,
-            false,
-            false,
-            false,
-            Default::default(),
-            HashMap::new(),
-        ));
+        let (origin, cursor, shift, ctrl, alt, unnamed, gestures, histories) =
+            state.take().unwrap_or((
+                origin,
+                // A window that has just opened has not been pointed at yet, which
+                // is *no cursor* rather than a cursor at the origin.
+                None,
+                false,
+                false,
+                false,
+                false,
+                Default::default(),
+                HashMap::new(),
+            ));
         self.windows.insert(
             id,
             WindowState {
@@ -176,6 +179,7 @@ impl App {
                 shift,
                 ctrl,
                 alt,
+                unnamed,
                 gestures,
                 histories,
             },

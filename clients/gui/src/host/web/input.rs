@@ -279,6 +279,11 @@ impl WebApp {
         let Some(ctx) = self.window_ctx(def) else {
             return;
         };
+        // A chord with the modifier the host has no name for is none of the
+        // host's: Control+E on a Mac is not a bare `e`.
+        if self.canvases.get(&def).is_some_and(|slot| slot.unnamed()) {
+            return;
+        }
         let pointer = self.canvases.get(&def).and_then(|slot| slot.cursor);
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
@@ -333,11 +338,12 @@ impl WebApp {
             WindowEvent::ModifiersChanged(mods) => {
                 if let Some(slot) = self.canvases.get_mut(&def) {
                     let state = mods.state();
-                    slot.mods.set(
-                        u8::from(state.shift_key())
-                            | u8::from(state.control_key()) << 1
-                            | u8::from(state.alt_key()) << 2,
-                    );
+                    slot.mods.set(super::canvas::mod_bits(
+                        state.shift_key(),
+                        state.control_key(),
+                        state.alt_key(),
+                        state.super_key(),
+                    ));
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

@@ -205,6 +205,7 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
   display's physical pixels once, when its scale changes.
   The `[gui.keys]` table binds the host's keys the same way: `verb = "chord"`
   or a list of chords, partial over the defaults (Ctrl+Z, Space, `q`, `e`, …),
+  where `Ctrl` is the platform's command key (Command on a Mac),
   and `--keys <path>` lays a free-standing file of the same table over it. A
   verb the host does not perform is the application's, so a program with no
   menu at all gives its commands keys by naming them here; the verbs, their

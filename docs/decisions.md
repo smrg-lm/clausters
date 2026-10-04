@@ -9463,6 +9463,13 @@ first (focused element, element under the pointer, window), so an Edit > Copy
 entry does not take Ctrl+C away from a roll that performs it; only what nobody
 here performed reaches the owner.
 
+**`Ctrl` is the platform's command key**: Command on a Mac, natively and in a
+page, for every gesture the host qualifies with Ctrl and not only the keys --
+the reading a desktop toolkit gives a portable chord there -- so one table is
+right on both platforms instead of each user rewriting it. The key left over
+(Control on a Mac, the logo key elsewhere) has no name in the host, and a key
+pressed with it reaches nothing rather than arriving as a bare letter.
+
 What stays outside the table: the focused element reads the raw key before the
 table is consulted, so a field's typing, a list's arrows and a control's Space
 are the platform's convention and cannot be rebound, and Tab and Escape are

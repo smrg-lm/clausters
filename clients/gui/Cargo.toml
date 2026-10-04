@@ -179,4 +179,6 @@ web-sys = { version = "0.3", features = [
     "HtmlInputElement",
     "InputEvent",
     "CompositionEvent",
+    # Which platform the page runs on: on a Mac the host's Ctrl is Command.
+    "Navigator",
 ] }

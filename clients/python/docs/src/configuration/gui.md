@@ -263,7 +263,11 @@ A chord is `Ctrl`, `Shift` and `Alt` joined by `+` to a key: a character,
 `Space`, `Delete`, `Backspace`, `Enter`, `Home`, `End`, `Up`, `Down`, `Left`,
 `Right` or `F1` to `F12`, case-insensitive. A letter's Shift is part of the
 chord (`Q` is not `Shift+Q`); a punctuation character already says its own.
-Tab and Escape cannot be bound — they walk the focus and dismiss.
+Tab and Escape cannot be bound — they walk the focus and dismiss. **`Ctrl` is
+the platform's command key**: on a Mac it is Command (a file may write `Cmd`,
+and a menu shows it so), so one table reads the way each platform expects;
+Control on a Mac, and the logo key elsewhere, is a modifier the host has no
+name for, and a key pressed with it reaches nothing.
 
 **A name the host does not perform is the application's**, and that is what
 makes a window with no menu at all usable from the keyboard: pressing `export`'s

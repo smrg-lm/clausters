@@ -281,9 +281,13 @@ struct WebApp {
 
 impl WebApp {
     fn new(id: HostId, outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
+        let mut host = Host::new();
+        // The same wasm runs everywhere, so the platform is the browser's to
+        // say: on a Mac the menus show Cmd where the table says Ctrl.
+        host.keys.on_mac(canvas::on_mac());
         Self {
             id,
-            host: Host::new(),
+            host,
             outbox,
             canvases: HashMap::new(),
             by_winit: HashMap::new(),

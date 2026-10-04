@@ -125,7 +125,8 @@ usage:
       --keys <path>         read the host's key bindings from this TOML file: a
                             flat table of verb = \"chord\" (or a list of
                             chords, [] to unbind) entries, laid over [gui.keys]
-                            from the config. A verb the host does not perform
+                            from the config. Ctrl is Command on a Mac.
+                            A verb the host does not perform
                             is the application's: its chord reports it to the
                             window's owner.
       --font <path>         draw text with this typeface (TrueType/OpenType)

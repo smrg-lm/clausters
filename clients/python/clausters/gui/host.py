@@ -630,7 +630,9 @@ class GuiHost:
         ``table`` is a partial ``{"verb": "chord"}`` mapping, a value being one
         chord (``"Ctrl+Shift+Z"``, ``"Space"``, ``"F1"``) or a list of them, and
         ``[]`` unbinding the verb. It overlays the host's key table, and a chord
-        means one verb: binding it here takes it from whatever had it.
+        means one verb: binding it here takes it from whatever had it. ``Ctrl``
+        is the platform's command key -- Command on a Mac, where ``Cmd`` spells
+        it too.
 
         A verb the host performs (``split``, ``copy``, ``play``, ...) moves to the
         new key. **Any other name is the application's**: pressing its chord

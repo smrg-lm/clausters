@@ -173,9 +173,12 @@ impl Composer {
                 // page, Ctrl+S must not save it: while this field holds the
                 // keyboard it is a widget's, not the browser's.
                 event.prevent_default();
-                let mods = u8::from(event.shift_key())
-                    | u8::from(event.ctrl_key()) << 1
-                    | u8::from(event.alt_key()) << 2;
+                let mods = super::canvas::mod_bits(
+                    event.shift_key(),
+                    event.ctrl_key(),
+                    event.alt_key(),
+                    event.meta_key(),
+                );
                 send(host, WebEvent::ComposedKey { def_id, key, mods });
             },
         );

@@ -139,12 +139,38 @@ impl Drop for PointerListener {
     }
 }
 
+/// **The modifier bits a page keeps** (see [`CanvasSlot::mods`]): Shift,
+/// the host's Ctrl, Alt, and the modifier it has no name for -- with Ctrl read
+/// as the platform's command key, Command when the page runs on a Mac
+/// (`winit_keys::command`), as the native front reads it on one.
+pub(super) fn mod_bits(shift: bool, control: bool, alt: bool, logo: bool) -> u8 {
+    let (ctrl, unnamed) = crate::host::winit_keys::command(control, logo, on_mac());
+    u8::from(shift) | u8::from(ctrl) << 1 | u8::from(alt) << 2 | u8::from(unnamed) << 3
+}
+
+/// Whether the page runs on a Mac (an iPad or an iPhone with a keyboard reads
+/// Command the same way), asked of the browser once.
+pub(super) fn on_mac() -> bool {
+    thread_local! {
+        static MAC: bool = web_sys::window()
+            .and_then(|w| w.navigator().platform().ok())
+            .is_some_and(|p| p.starts_with("Mac") || p.starts_with("iP"));
+    }
+    MAC.with(|m| *m)
+}
+
 impl CanvasSlot {
     /// Shift, ctrl, alt as of the last pointer or wheel event (see
     /// [`CanvasSlot::mods`]).
     pub(super) fn modifiers(&self) -> (bool, bool, bool) {
         let m = self.mods.get();
         (m & 1 != 0, m & 2 != 0, m & 4 != 0)
+    }
+
+    /// Whether the modifier the host has no name for is held -- Control on a
+    /// Mac, the logo key elsewhere: a key pressed with it reaches nothing.
+    pub(super) fn unnamed(&self) -> bool {
+        self.mods.get() & 8 != 0
     }
 
     pub(super) fn new(window: Arc<Window>) -> Self {
@@ -204,11 +230,12 @@ impl CanvasSlot {
                     if let Some(pointer) = event.dyn_ref::<web_sys::PointerEvent>() {
                         buttons.set(pointer.buttons());
                     }
-                    mods.set(
-                        u8::from(event.shift_key())
-                            | u8::from(event.ctrl_key()) << 1
-                            | u8::from(event.alt_key()) << 2,
-                    );
+                    mods.set(mod_bits(
+                        event.shift_key(),
+                        event.ctrl_key(),
+                        event.alt_key(),
+                        event.meta_key(),
+                    ));
                 }
             });
         let mut attached = false;

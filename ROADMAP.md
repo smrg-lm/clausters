@@ -180,11 +180,6 @@ its plan; the plan is where its acceptance is read.
   development resumes and waiting on `O21`(a). **Related:** an application
   inside another, under "The larger questions" below.
 
-- ⬜ **The host reads no Command key**
-  *(`clients/gui/PLAN.md`, "Found by use")*. **The decision:** whether a key
-  table's `Ctrl` is the platform's command key or a fourth modifier is added.
-  Small, and it decides how every default chord reads on a Mac.
-
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
   device axis, so the grid slides by the frozen total across a pause. No test
