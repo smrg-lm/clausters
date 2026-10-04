@@ -24,6 +24,29 @@ pub fn title_strip(p: &Placed) -> Option<Rect> {
     (h > 0.0).then(|| Rect::new(p.rect.x, p.rect.y, p.rect.w, h))
 }
 
+/// The **close mark** of a dialog: a square at the right end of its title
+/// strip. `None` for anything that is not a titled dialog.
+pub fn close_mark(p: &Placed) -> Option<Rect> {
+    let WidgetKind::Panel { group, .. } = &p.widget.kind else {
+        return None;
+    };
+    if !group.modal {
+        return None;
+    }
+    let strip = title_strip(p)?;
+    let side = strip.h.min(strip.w);
+    Some(Rect::new(strip.x + strip.w - side, strip.y, side, side))
+}
+
+/// The dialog whose close mark is under `(x, y)`.
+pub fn close_at(placed: &[Placed], x: f64, y: f64) -> Option<i32> {
+    placed
+        .iter()
+        .rev()
+        .find(|p| close_mark(p).is_some_and(|r| r.contains(x, y)))
+        .and_then(|p| p.widget.id)
+}
+
 /// The group whose title strip is under `(x, y)` and **folds**: its id, and
 /// whether it is folded now. A plain titled group has a strip and no fold.
 pub fn fold_at(placed: &[Placed], x: f64, y: f64) -> Option<(i32, bool)> {

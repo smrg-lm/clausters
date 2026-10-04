@@ -817,3 +817,76 @@ fn nothing_behind_a_dialog_can_be_reached() {
     );
     assert_eq!(value_of(&host, 2), Some(OscType::Int(1)));
 }
+
+/// A dialog defined into a holder, the way an application opens one, is freed
+/// by its own id -- and the holder takes another the next time. Both went
+/// nowhere when a redefined widget was cut off from its window.
+#[test]
+fn a_dialog_defined_into_a_holder_closes_when_freed_and_opens_again() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","status":false,"children":[
+            {"id":2,"type":"toggle","label":"behind","h":32},
+            {"id":3,"type":"layout","h":0}]}"#,
+    );
+    let ctx = ctx();
+    let open = |host: &mut Host, n: i32| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![
+                    OscType::Int(3),
+                    OscType::String(format!(
+                        r#"{{"type":"layout","h":0,"children":[
+                            {{"id":{n},"type":"layout","modal":1,"w":200,"h":100,"children":[
+                                {{"id":{},"type":"button","label":"OK"}}]}}]}}"#,
+                        n + 1
+                    )),
+                ],
+            }),
+            from(),
+        );
+    };
+    let up = |host: &Host| {
+        let placed = host.layout_window(1, ctx.fb_w, ctx.fb_h).unwrap();
+        crate::host::chrome::modal_start(&placed).and_then(|i| placed[i].widget.id)
+    };
+    open(&mut host, 10);
+    assert_eq!(up(&host), Some(10));
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_FREE.into(),
+            args: vec![OscType::Int(10)],
+        }),
+        from(),
+    );
+    assert_eq!(up(&host), None, "freed, it is gone from the window");
+    open(&mut host, 20);
+    assert_eq!(up(&host), Some(20), "and the holder takes the next one");
+    // Escape asks it to go, and closes nothing else.
+    let mut g = Gestures::default();
+    let e = press_key(&mut g, &mut host, &ctx, Key::Escape);
+    assert_eq!(
+        emitted(&e, 20),
+        vec![vec![OscType::String("cancel".into())]]
+    );
+}
+
+/// A titled dialog ends its strip in a close mark, which asks it to go the
+/// way Escape does.
+#[test]
+fn a_dialogs_close_mark_asks_it_to_go() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"title":"About","w":200,"h":100,"children":[
+                {"id":6,"type":"label","text":"x"}]}]}"#,
+    );
+    let ctx = ctx();
+    let mark = {
+        let placed = host.layout_window(1, ctx.fb_w, ctx.fb_h).unwrap();
+        let p = placed.iter().find(|p| p.widget.id == Some(5)).unwrap();
+        crate::host::chrome::close_mark(p).expect("a titled dialog has one")
+    };
+    let mut g = Gestures::default();
+    let e = click(&mut g, &mut host, &ctx, mid(mark));
+    assert_eq!(emitted(&e, 5), vec![vec![OscType::String("cancel".into())]]);
+}

@@ -271,7 +271,8 @@ for name in ("play", "stop", "record"):
 # A dialog is a `layout` that stands over the window: it is **defined** to open
 # and **freed** to close, and while it exists nothing behind it can be reached
 # -- not by the pointer and not by Tab. Here the bar's `About` defines one into
-# the holder, and its button frees it. `File > Open` defines a `file_dialog`
+# the holder, and its button frees it -- as do Escape and the close mark at the
+# end of its title strip, which ask the dialog to go as `("cancel",)`. `File > Open` defines a `file_dialog`
 # there instead: a chooser the host lists, a field that follows its selection,
 # and the two buttons; a double click on a file picks it.
 
@@ -288,6 +289,7 @@ def about():
                title="About", flow="col", w=360.0, name="box"),
         h=0.0))
     box["ok"].on_click(lambda: box["box"].free())
+    box["box"].on_event(lambda tag, *payload: box["box"].free() if tag == "cancel" else None)
 
 
 def open_file():
@@ -310,6 +312,8 @@ def open_file():
     box["file"].on_event(lambda value: chosen.update(path=value))
     box["ok"].on_click(lambda: done(chosen["path"]))
     box["cancel"].on_click(lambda: box["chooser"].free())
+    box["chooser"].on_event(
+        lambda tag, *payload: box["chooser"].free() if tag == "cancel" else None)
 
 
 def on_bar(tag, *payload):

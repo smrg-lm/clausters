@@ -95,8 +95,26 @@ impl Registry {
     /// is freed first (redefinition, like re-sending a `SynthDef`). Descendants
     /// without an id, or whose id is already taken, are skipped with a warning
     /// -- the tree is otherwise installed.
+    ///
+    /// **A redefined widget keeps its place.** A def of an id that is a child
+    /// of another -- a widget inside an open window, redefined in place -- stays
+    /// that child, at the same position among its siblings. It used to come back
+    /// as a root of its own, which cut it and everything under it off from the
+    /// window: a `/gui_free` of a dialog defined into a holder reached the
+    /// registry and never the drawn tree, and a second def of the holder found
+    /// no window to splice into.
     pub fn define(&mut self, root_id: i32, node: &GuiNode) -> DefineOutcome {
         let replaced = self.contains(root_id);
+        let place = self.widgets.get(&root_id).and_then(|w| {
+            let parent = w.parent?;
+            let at = self
+                .widgets
+                .get(&parent)?
+                .children
+                .iter()
+                .position(|&c| c == root_id)?;
+            Some((parent, at))
+        });
         if replaced {
             self.free(root_id);
         }
@@ -104,7 +122,14 @@ impl Registry {
             replaced,
             ..Default::default()
         };
-        self.insert(root_id, None, node, &mut outcome);
+        self.insert(root_id, place.map(|(parent, _)| parent), node, &mut outcome);
+        if let Some((parent, at)) = place
+            && self.widgets.contains_key(&root_id)
+            && let Some(p) = self.widgets.get_mut(&parent)
+        {
+            let at = at.min(p.children.len());
+            p.children.insert(at, root_id);
+        }
         outcome
     }
 
@@ -202,6 +227,38 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A widget redefined in place keeps its parent and its position, so
+    /// what is under it is still found under the window.
+    #[test]
+    fn a_redefined_child_keeps_its_place_in_the_window() {
+        let mut reg = Registry::default();
+        let node = |json: &str| -> GuiNode { serde_json::from_str(json).unwrap() };
+        reg.define(
+            1,
+            &node(
+                r#"{"type":"window","children":[{"id":2,"type":"label"},
+                {"id":3,"type":"layout"},{"id":4,"type":"label"}]}"#,
+            ),
+        );
+        reg.define(
+            3,
+            &node(r#"{"type":"layout","children":[{"id":5,"type":"button"}]}"#),
+        );
+        assert_eq!(
+            reg.root_of(5),
+            Some(1),
+            "what the redefined holder holds is the window's"
+        );
+        assert_eq!(
+            reg.get(1).unwrap().children,
+            vec![2, 3, 4],
+            "at the same place"
+        );
+        reg.define(3, &node(r#"{"type":"layout"}"#));
+        assert_eq!(reg.root_of(3), Some(1), "and again");
+        assert!(reg.get(5).is_none());
+    }
 
     fn tree() -> GuiNode {
         let json = r#"{

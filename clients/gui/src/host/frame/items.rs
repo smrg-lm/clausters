@@ -348,15 +348,22 @@ fn draw_group(
             font::text(mesh, &mark.to_string(), x, ty, size, th.accent);
             x += font::advance(size) + m.pad;
         }
+        // A dialog's strip ends in its close mark, and the title stops short
+        // of it.
+        let close = chrome::close_mark(p);
+        let end = close.map_or(strip.x + strip.w, |c| c.x);
         font::text_ellipsis(
             mesh,
             title,
             x,
             ty,
-            (strip.x + strip.w - m.pad - x).max(0.0),
+            (end - m.pad - x).max(0.0),
             size,
             th.text,
         );
+        if let Some(c) = close {
+            font::text_centered(mesh, &font::symbol::CLOSE.to_string(), c, size, th.text_dim);
+        }
     }
     if group.frame || group.modal {
         mesh.border(p.rect, m.divider_w, th.separator);

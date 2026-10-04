@@ -258,7 +258,9 @@ pub fn draw(
                 let Part::Option(i) = *part else { continue };
                 let side = m.box_side.min(r.h);
                 let (cx, cy) = (r.x + side * 0.5, r.y + r.h * 0.5);
-                mesh.disc(cx, cy, side * 0.5, theme.track);
+                // A ring, so an option that is not chosen is still a mark.
+                mesh.disc(cx, cy, side * 0.5, theme.separator);
+                mesh.disc(cx, cy, side * 0.5 - m.divider_w, theme.field);
                 if i == index {
                     mesh.disc(cx, cy, side * 0.26, theme.accent);
                 } else if hover == Some(*part) {

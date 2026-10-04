@@ -507,10 +507,19 @@ pub fn toggle(
             // The track takes the accent when it is on, and the knob crosses to
             // the far end: the two readings of one state, so it is legible
             // without color.
+            // The track is drawn on the separator's ring, so an off switch is
+            // a visible shape on any panel and not a dark hole in it.
+            mesh.round_rect(box_rect, side * 0.5, theme.separator);
+            let rim = m.divider_w;
             mesh.round_rect(
-                box_rect,
-                side * 0.5,
-                if on { theme.accent_dim } else { theme.track },
+                Rect::new(
+                    box_rect.x + rim,
+                    box_rect.y + rim,
+                    (box_rect.w - 2.0 * rim).max(0.0),
+                    (side - 2.0 * rim).max(0.0),
+                ),
+                (side * 0.5 - rim).max(0.0),
+                if on { theme.accent_dim } else { theme.field },
             );
             let r = side * 0.5 - (side * 0.14).max(1.0);
             let cx = if on {

@@ -20,6 +20,10 @@ use super::{Drag, GestureCtx, GestureEffect, Gestures};
 /// The tag a folded or unfolded section reports: `"collapsed" <1|0>`.
 pub const COLLAPSED: &str = "collapsed";
 
+/// The tag a dialog reports when it is asked to go -- its close mark, or
+/// Escape.
+pub const CANCEL: &str = "cancel";
+
 /// The tag a moved divider reports: `"split"` and the size of each child of
 /// the strip along it, in logical pixels.
 pub const SPLIT: &str = "split";
@@ -139,6 +143,7 @@ impl Gestures {
         // Read what is under the pointer while the placements are in hand, and
         // act once they are let go of: a gesture mutates the tree they borrow.
         enum Found {
+            Close(i32),
             Fold(i32, bool),
             Bar(i32, Rect, chrome::Bar, f64),
             Split(Split),
@@ -149,7 +154,9 @@ impl Gestures {
             };
             // With a dialog up, only the dialog's own chrome is in reach.
             let from = chrome::modal_start(&placed).unwrap_or(0);
-            if let Some((id, folded)) = chrome::fold_at(&placed[from..], cx, cy) {
+            if let Some(id) = chrome::close_at(&placed[from..], cx, cy) {
+                Some(Found::Close(id))
+            } else if let Some((id, folded)) = chrome::fold_at(&placed[from..], cx, cy) {
                 Some(Found::Fold(id, folded))
             } else if let Some((id, area, bar)) = chrome::bar_at(&placed[from..], &metrics, cx, cy)
             {
@@ -184,6 +191,13 @@ impl Gestures {
         };
         match found {
             None => false,
+            // The close mark asks the dialog to go, as Escape does: reported
+            // for whoever defined it to free.
+            Some(Found::Close(id)) => {
+                emit(host, out, def_id, id, vec![OscType::String(CANCEL.into())]);
+                out.push(GestureEffect::Redraw(def_id));
+                true
+            }
             Some(Found::Fold(id, folded)) => {
                 // The state is a prop, written where a `/gui_set` writes it, and
                 // reported so whoever keeps the session knows it moved.

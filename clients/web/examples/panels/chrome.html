@@ -305,7 +305,8 @@ the host reports when a hand changes them -- the lines this prints.</div>
         // **defined** to open and **freed** to close, and while it exists
         // nothing behind it can be reached -- not by the pointer and not by
         // Tab. Here the bar's `About` defines one into the holder, and its
-        // button frees it. `File > Open` defines a `fileDialog` there instead:
+        // button frees it -- as do Escape and the close mark at the end of its
+        // title strip, which ask the dialog to go as `"cancel"`. `File > Open` defines a `fileDialog` there instead:
         // a chooser the host lists, a field that follows its selection, and
         // the two buttons; a double click on a file picks it.
         const about = () => {
@@ -320,6 +321,7 @@ the host reports when a hand changes them -- the lines this prints.</div>
                 gui.separator({ weight: 1.0, line: false }),
                 gui.button({ name: "ok", label: "OK", w: 80.0 })))));
           box.widget("ok").onClick(() => box.widget("box").free());
+          box.widget("box").onEvent((tag) => { if (tag === "cancel") box.widget("box").free(); });
         };
 
         const openFile = () => {
@@ -342,6 +344,9 @@ the host reports when a hand changes them -- the lines this prints.</div>
           box.widget("file").onEvent((value) => { chosen = value; });
           box.widget("ok").onClick(() => done(chosen));
           box.widget("cancel").onClick(() => box.widget("chooser").free());
+          box.widget("chooser").onEvent((tag) => {
+            if (tag === "cancel") box.widget("chooser").free();
+          });
         };
 
         // The window's own events: a pick in the menu bar is one of them.

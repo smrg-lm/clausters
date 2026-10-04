@@ -55,10 +55,29 @@ impl Gestures {
         if key == Key::Tab {
             return Some(focus::step(host, ctx, ctx.shift));
         }
-        // Escape is the popup layer's and nobody else's: with nothing open it
-        // goes back to the front, which has its own use for it.
+        // **Escape asks a dialog to go**: with one up it is the dialog's,
+        // reported as `"cancel"` from the dialog for whoever defined it to free
+        // -- the host does not free a node a client made. It never reaches the
+        // front then, whose own Escape would close the whole window behind it.
         if key == Key::Escape {
-            return None;
+            let dialog = host
+                .layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)
+                .and_then(|placed| {
+                    let at = crate::host::chrome::modal_start(&placed)?;
+                    placed[at].widget.id
+                });
+            let Some(dialog) = dialog else {
+                return None; // nothing open: the front's own Escape
+            };
+            let mut out = Vec::new();
+            emit(
+                host,
+                &mut out,
+                ctx.def_id,
+                dialog,
+                vec![OscType::String(super::chrome::CANCEL.into())],
+            );
+            return Some(out);
         }
         // Only an element focused in *this* window: a key is delivered by the
         // window it was typed into.

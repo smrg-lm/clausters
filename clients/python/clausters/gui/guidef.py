@@ -1605,7 +1605,8 @@ def file_dialog(path: str = ".", *, title: str = "Open", action: str = "Open",
     The parts are named so a handle reaches them: ``files``, ``file`` (the
     field, bound to the chooser's value), ``cancel`` and ``ok``. What happens
     on a pick is yours -- listen for ``("pick", path)`` on ``files`` and for a
-    click on ``ok``, read ``file``, and free the dialog to close it."""
+    click on ``ok``, read ``file``, and free the dialog to close it -- on a
+    ``("cancel",)`` from the dialog too, which Escape and its close mark send."""
     chooser = files(path, filter=filter, weight=1.0, name="files")
     field = text(label="file", name="file")
     chooser["bind"] = ["widget", field, "value"]
@@ -1822,7 +1823,9 @@ def dialog(*children, title: str | None = None, flow: str | None = None,
     big as ``w``/``h`` say or as its content wants, with the window dimmed
     behind it; nothing behind it can be reached, by the pointer or by Tab. It
     is up from the moment it is defined until it is **freed** -- which is how it
-    is closed (`clausters.gui.handle.WidgetHandle.free`)."""
+    is closed (`clausters.gui.handle.WidgetHandle.free`). Escape, and the close
+    mark at the end of a titled dialog's strip, ask it to go: the dialog
+    reports ``("cancel",)``, and freeing it is yours."""
     return layout(*children, title=title, flow=flow, modal=True, frame=True, hug=True,
                   id=id, **props)
 
