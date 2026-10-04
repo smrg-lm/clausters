@@ -9399,9 +9399,11 @@ report different things -- a verb and a value -- and a chooser was never a menu;
 the event are the same in all of them and only the picture differs.
 
 An **icon is a glyph**: the host has fonts and no images, so a small symbol set
-is drawn by the embedded bitmap face at the codepoints that mean them, and a
-loaded typeface that lacks one falls back to the bitmap per character -- the
-chrome's own marks would otherwise turn into the face's missing-glyph box.
+is named by the codepoints that mean them and drawn by the host as shapes in a
+glyph's cell. Drawn from the bitmap face they were a staircase beside the
+smooth text of a loaded typeface, and most typefaces have no play triangle to
+draw them with instead; as shapes they are crisp at any size, with or without
+a face.
 
 Two choices made with the code. The light controls became stops on the tab
 ring and **do not report** the focus they take: their event stream is their

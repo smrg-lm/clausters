@@ -109,6 +109,7 @@ on_pages = menu(entry("Copy", "copy"), entry("Paste", "paste"), "-",
 # %%
 tools = toolbar(
     button(name="play", icon=ICON.play, flat=True, tip="Play from the cursor"),
+    button(name="pause", icon=ICON.pause, flat=True, tip="Pause"),
     button(name="stop", icon=ICON.stop, flat=True, tip="Stop"),
     button(name="record", icon=ICON.record, flat=True, tip="Record a take"),
     separator(),
@@ -263,7 +264,7 @@ def on_takes(tag, *payload):
 
 
 win["takes"].on_event(on_takes)
-for name in ("play", "stop", "record"):
+for name in ("play", "pause", "stop", "record"):
     win[name].on_click(lambda name=name: print(f"{name}: clicked"))
 
 # %% [markdown]

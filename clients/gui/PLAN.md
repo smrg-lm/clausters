@@ -1551,12 +1551,11 @@ exists.
 - ✅ **G38.3 — `icon`: a glyph of the font.** *(Done 2026-10-04; seventeen symbols.)* There are no icons in the host
   and there are fonts, so an icon is a character. `icon` is a prop of a
   `button`, a `toggle` and a menu entry, drawn beside the label or in its place.
-  The embedded bitmap face gains a **small symbol set** — arrows, check, close,
-  plus, minus, menu, play, stop, record, loop — each at the Unicode codepoint
-  that means it, so the floor draws them; with `font-atlas` any codepoint of the
-  face draws, and a codepoint the face lacks falls back to the bitmap's glyph,
-  **per glyph** — today the choice between the two faces is all or nothing
-  (`atlas::has_face`). The chooser's marker and a check entry's mark are drawn
+  The host gains a **small symbol set** — arrows, check, close, menu, play,
+  stop, record, pause, loop — each at the Unicode codepoint that means it,
+  drawn as **shapes** in a glyph's cell rather than from either face: seen with
+  a system typeface, a symbol scaled from the bitmap was a staircase beside
+  smooth text, and the typeface had no glyph of its own for it. The chooser's marker and a check entry's mark are drawn
   from the same set. A source file writes the character as an escape.
 
 

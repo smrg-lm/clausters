@@ -42,10 +42,11 @@ pub mod atlas;
 /// **The symbol set**: the characters the host draws as its own icons, each at
 /// the Unicode codepoint that means it.
 ///
-/// A widget's `icon` is any character; these are the ones the embedded bitmap
-/// face draws, so they are the ones that work with no typeface loaded. The
-/// chrome reads them from here rather than drawing its marks by hand -- a
-/// chooser's marker, a checked entry, a stepper's arrows.
+/// A widget's `icon` is any character; these are the ones the host draws
+/// itself, as shapes in a glyph's cell -- crisp at any size, and the same with
+/// or without a typeface loaded. The chrome reads them from here rather than
+/// drawing its marks by hand -- a chooser's marker, a checked entry, a
+/// stepper's arrows.
 pub mod symbol {
     pub const CHECK: char = '\u{2713}';
     pub const CLOSE: char = '\u{2715}';
@@ -374,28 +375,6 @@ fn base(c: char) -> Bitmap {
         '\u{b8}' => body([0, 0, 0, 0, 0, 0, 0x0C]),
         // The single-cell ellipsis clipped text ends in.
         '\u{2026}' => body([0, 0, 0, 0, 0, 0, 0x15]),
-        // **The symbol set** ([`symbol`]): what the host draws where another
-        // toolkit would reach for an icon. There are no icons here and there
-        // are fonts, so an icon is a character -- and the floor has to draw the
-        // ones the chrome itself uses.
-        symbol::CHECK => body([0, 0, 0x01, 0x02, 0x14, 0x08, 0]),
-        symbol::CLOSE => body([0, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0]),
-        symbol::LEFT => body([0, 0x04, 0x08, 0x1F, 0x08, 0x04, 0]),
-        symbol::RIGHT => body([0, 0x04, 0x02, 0x1F, 0x02, 0x04, 0]),
-        symbol::UP => body([0x04, 0x0E, 0x15, 0x04, 0x04, 0x04, 0x04]),
-        symbol::DOWN => body([0x04, 0x04, 0x04, 0x04, 0x15, 0x0E, 0x04]),
-        symbol::PLAY => body([0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10]),
-        symbol::POINT_RIGHT => body([0, 0x08, 0x0C, 0x0E, 0x0C, 0x08, 0]),
-        symbol::POINT_LEFT => body([0, 0x02, 0x06, 0x0E, 0x06, 0x02, 0]),
-        symbol::POINT_DOWN => body([0, 0, 0x1F, 0x0E, 0x04, 0, 0]),
-        symbol::POINT_UP => body([0, 0, 0x04, 0x0E, 0x1F, 0, 0]),
-        symbol::STOP => body([0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0]),
-        symbol::RECORD => body([0, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0]),
-        symbol::PAUSE => body([0, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0]),
-        // A ring open at the top right, its end an arrowhead.
-        symbol::LOOP => body([0x0D, 0x13, 0x17, 0x10, 0x11, 0x11, 0x0E]),
-        symbol::MENU => body([0, 0x1F, 0, 0x1F, 0, 0x1F, 0]),
-        symbol::BULLET => body([0, 0, 0x0E, 0x0E, 0x0E, 0, 0]),
         _ => body([0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F]), // fallback box
     }
 }
@@ -451,31 +430,111 @@ pub fn advance(scale: f32) -> f32 {
 /// This is the proportional seam, and it is what [`width`] is a sum of. Nothing
 /// in a layout pass calls it -- a measurement happens where a string changes.
 pub fn advance_of(c: char, scale: f32) -> f32 {
+    // A symbol takes the bitmap's cell whatever face is loaded: it is drawn
+    // as a shape in that cell ([`symbol_shape`]).
+    if symbol::ALL.contains(&c) {
+        return ADVANCE as f32 * scale;
+    }
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return atlas::with(|a| {
-            if falls_back(a, c) {
-                ADVANCE as f32 * scale
-            } else {
-                a.advance_of(c, scale)
-            }
-        });
+        return atlas::with(|a| a.advance_of(c, scale));
     }
-    let _ = c;
     advance(scale)
 }
 
-/// Whether `c` is drawn from the **bitmap** though a face is loaded: a symbol
-/// of the host's own set that the face has no glyph for.
+/// **Draws symbol `c` as a shape** in the cell whose body box's top-left is
+/// `(x, y)` -- triangles, discs, bars and strokes, not pixels -- and answers
+/// whether `c` is one of the set.
 ///
-/// The fallback is per character and only for the symbol set. A typeface is
-/// chosen for its letters, and most have no play triangle or check mark; the
-/// chrome draws those marks itself, so without this a loaded face would turn
-/// every one of them into its "no such glyph" box. Any other character the
-/// face lacks stays the face's to answer, as it was.
-#[cfg(feature = "font-atlas")]
-fn falls_back(a: &atlas::Atlas, c: char) -> bool {
-    symbol::ALL.contains(&c) && !a.has_glyph(c)
+/// A symbol is a mark the chrome draws (a transport's play, a check, an arrow),
+/// and a mark drawn as a scaled bitmap is a staircase beside the smooth text of
+/// a loaded face, while most faces have no play triangle at all. As a shape it
+/// is crisp at any size and the same with or without a face.
+fn symbol_shape(mesh: &mut Mesh, c: char, x: f32, y: f32, scale: f32, color: Color) -> bool {
+    if !symbol::ALL.contains(&c) {
+        return false;
+    }
+    let w = GLYPH_W as f32 * scale;
+    let h = GLYPH_H as f32 * scale;
+    let (cx, cy) = (x + w * 0.5, y + h * 0.5);
+    let stroke = scale.max(1.0);
+    let at = |fx: f32, fy: f32| [x + w * fx, y + h * fy];
+    // An arrow: its shaft and its head, pointing from `from` to `to`.
+    let arrow = |mesh: &mut Mesh, from: [f32; 2], to: [f32; 2]| {
+        let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+        let (ux, uy) = (dx / len, dy / len);
+        let head = w * 0.45;
+        let base = [to[0] - ux * head, to[1] - uy * head];
+        mesh.line(from, base, stroke, color);
+        mesh.tri(
+            to,
+            [base[0] - uy * head * 0.6, base[1] + ux * head * 0.6],
+            [base[0] + uy * head * 0.6, base[1] - ux * head * 0.6],
+            color,
+        );
+    };
+    match c {
+        symbol::PLAY => mesh.tri(at(0.12, 0.1), at(0.12, 0.9), at(0.98, 0.5), color),
+        symbol::STOP => {
+            let side = w * 0.82;
+            mesh.rect(
+                Rect::new(cx - side * 0.5, cy - side * 0.5, side, side),
+                color,
+            );
+        }
+        symbol::RECORD => mesh.disc(cx, cy, w * 0.45, color),
+        symbol::PAUSE => {
+            let (bw, bh) = (w * 0.3, h * 0.72);
+            mesh.rect(Rect::new(x + w * 0.08, cy - bh * 0.5, bw, bh), color);
+            mesh.rect(Rect::new(x + w * 0.62, cy - bh * 0.5, bw, bh), color);
+        }
+        symbol::POINT_RIGHT => mesh.tri(at(0.25, 0.25), at(0.25, 0.75), at(0.85, 0.5), color),
+        symbol::POINT_LEFT => mesh.tri(at(0.75, 0.25), at(0.75, 0.75), at(0.15, 0.5), color),
+        symbol::POINT_DOWN => mesh.tri(at(0.05, 0.35), at(0.95, 0.35), at(0.5, 0.72), color),
+        symbol::POINT_UP => mesh.tri(at(0.05, 0.65), at(0.95, 0.65), at(0.5, 0.28), color),
+        symbol::CHECK => {
+            mesh.line(at(0.05, 0.55), at(0.38, 0.85), stroke * 1.5, color);
+            mesh.line(at(0.38, 0.85), at(0.98, 0.18), stroke * 1.5, color);
+        }
+        symbol::CLOSE => {
+            mesh.line(at(0.1, 0.2), at(0.9, 0.8), stroke * 1.5, color);
+            mesh.line(at(0.1, 0.8), at(0.9, 0.2), stroke * 1.5, color);
+        }
+        symbol::MENU => {
+            for fy in [0.2, 0.5, 0.8] {
+                mesh.rect(Rect::new(x, y + h * fy - stroke * 0.5, w, stroke), color);
+            }
+        }
+        symbol::BULLET => mesh.disc(cx, cy, w * 0.25, color),
+        symbol::LEFT => arrow(mesh, at(0.95, 0.5), at(0.02, 0.5)),
+        symbol::RIGHT => arrow(mesh, at(0.05, 0.5), at(0.98, 0.5)),
+        symbol::UP => arrow(mesh, at(0.5, 0.95), at(0.5, 0.05)),
+        symbol::DOWN => arrow(mesh, at(0.5, 0.05), at(0.5, 0.95)),
+        symbol::LOOP => {
+            // Three quarters of a ring, clockwise from the top, and the head at
+            // its end pointing on round.
+            let r = w * 0.42;
+            let steps = 18;
+            let (from, to) = (-0.35 * std::f32::consts::PI, 1.25 * std::f32::consts::PI);
+            let point = |t: f32| [cx + r * t.cos(), cy + r * t.sin()];
+            for k in 0..steps {
+                let a0 = from + (to - from) * k as f32 / steps as f32;
+                let a1 = from + (to - from) * (k + 1) as f32 / steps as f32;
+                mesh.line(point(a0), point(a1), stroke * 1.2, color);
+            }
+            let end = point(from);
+            let head = w * 0.32;
+            mesh.tri(
+                [end[0] + head * 0.9, end[1] - head * 0.2],
+                [end[0] - head * 0.3, end[1] - head * 0.75],
+                [end[0] - head * 0.1, end[1] + head * 0.55],
+                color,
+            );
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// One glyph of the bitmap face, its body box's top-left at `(x, y)`.
@@ -596,9 +655,8 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
             let baseline = y + a.baseline(scale);
             let mut pen = x;
             for ch in s.chars() {
-                // A symbol the face has no glyph for is the bitmap's, in place.
-                if falls_back(a, ch) {
-                    bitmap_glyph(mesh, ch, pen.round(), y, scale, color);
+                // A symbol is a shape in the bitmap's cell, whatever the face.
+                if symbol_shape(mesh, ch, pen.round(), y, scale, color) {
                     pen += ADVANCE as f32 * scale;
                     continue;
                 }
@@ -616,7 +674,9 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
     }
     let mut pen_x = x;
     for ch in s.chars() {
-        bitmap_glyph(mesh, ch, pen_x, y, scale, color);
+        if !symbol_shape(mesh, ch, pen_x, y, scale, color) {
+            bitmap_glyph(mesh, ch, pen_x, y, scale, color);
+        }
         pen_x += advance(scale);
     }
 }
@@ -742,22 +802,22 @@ pub fn text_centered(mesh: &mut Mesh, s: &str, area: Rect, scale: f32, color: Co
 mod tests {
     use super::*;
 
-    /// Every symbol of the set has a drawing of its own in the bitmap face --
-    /// not the box an unknown character falls back to -- and no two share one.
+    /// Every symbol of the set is drawn as a shape -- none falls through to the
+    /// box an unknown character draws -- inside its own cell.
     #[test]
-    fn every_symbol_has_its_own_bitmap() {
-        let unknown = glyph('\u{1F600}');
-        let mut seen: Vec<Bitmap> = Vec::new();
+    fn every_symbol_is_a_shape_inside_its_cell() {
         for c in symbol::ALL {
-            let g = glyph(c);
-            assert_ne!(g, unknown, "U+{:04X} draws the fallback box", c as u32);
+            let mut m = Mesh::new();
             assert!(
-                !seen.contains(&g),
-                "U+{:04X} repeats another symbol",
+                symbol_shape(&mut m, c, 10.0, 20.0, 2.0, [1.0; 4]),
+                "U+{:04X}",
                 c as u32
             );
-            seen.push(g);
+            assert!(m.vertex_count() > 0, "U+{:04X} draws something", c as u32);
         }
+        let mut m = Mesh::new();
+        assert!(!symbol_shape(&mut m, 'a', 0.0, 0.0, 2.0, [1.0; 4]));
+        assert_eq!(advance_of(symbol::PLAY, 2.0), (ADVANCE * 2) as f32);
     }
 
     /// The body rows of `c`, as they were written before the glyph grew an

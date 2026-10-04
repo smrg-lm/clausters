@@ -137,6 +137,7 @@ the host reports when a hand changes them -- the lines this prints.</div>
           { margin: 2, gap: 2 },
           gui.button({ name: "play", icon: ICON.play, flat: true,
                        tip: "Play from the cursor" }),
+          gui.button({ name: "pause", icon: ICON.pause, flat: true, tip: "Pause" }),
           gui.button({ name: "stop", icon: ICON.stop, flat: true, tip: "Stop" }),
           gui.button({ name: "record", icon: ICON.record, flat: true,
                        tip: "Record a take" }),
@@ -296,7 +297,7 @@ the host reports when a hand changes them -- the lines this prints.</div>
         };
 
         win.widget("takes").onEvent(onTakes);
-        for (const name of ["play", "stop", "record"]) {
+        for (const name of ["play", "pause", "stop", "record"]) {
           win.widget(name).onClick(() => log(`${name}: clicked`));
         }
 
