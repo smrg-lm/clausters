@@ -339,7 +339,22 @@ fn compose(
     let pad = 2.0 * flow.margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
     let gap = flow.gap.map_or(m.gap, |v| snap_px(v, scale)).max(0.0);
     let gaps = gap * (children.len().max(1) - 1) as f32;
-    let sizes: Vec<Natural> = children.iter().map(|c| c.fitted(m, scale, want)).collect();
+    // **A size a child declares is the size it takes**, on either axis, so it
+    // is what it adds to the container. Asking only for what its content
+    // wants left a heavy view of `h: 160` elastic -- a spectrogram wants no
+    // height of its own -- and that made the whole content elastic: a dialog
+    // holding one fell back to half the window and left its last rows outside
+    // the frame, where a press on them was a press behind the dialog.
+    let sizes: Vec<Natural> = children
+        .iter()
+        .map(|c| {
+            let (w, h) = c.fitted(m, scale, want);
+            (
+                c.place.w.map(|v| snap_px(v, scale)).or(w),
+                c.place.h.map(|v| snap_px(v, scale)).or(h),
+            )
+        })
+        .collect();
     let (w, h) = match layout {
         // Along the axis the children are strung on, the container is their
         // sum plus the gaps between them; across it, the largest of them.

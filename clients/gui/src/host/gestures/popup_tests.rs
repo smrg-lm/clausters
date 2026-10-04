@@ -1152,3 +1152,35 @@ fn the_middle_button_pastes_the_selection_where_it_is_pressed() {
         "{effects:?}"
     );
 }
+
+/// **A dialog is as tall as the sizes its rows declare**, heavy views
+/// included. A spectrogram or a canvas wants no height of its own, so a dialog
+/// that measured only what its rows wanted took half the window instead, and
+/// the button under them was drawn outside its frame -- where a press is a
+/// press behind the dialog, and goes nowhere.
+#[test]
+fn a_dialog_holding_heavy_views_reaches_its_last_row() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","status":false,"children":[
+            {"id":2,"type":"spectrogram","data":[0.0,0.5,0.0,-0.5],"weight":1},
+            {"id":5,"type":"layout","modal":1,"title":"T","flow":"col","w":520,"hug":1,"frame":1,"children":[
+                {"id":6,"type":"label","text":"x"},
+                {"id":7,"type":"spectrogram","data":[0.0,0.5,0.0,-0.5],"h":160},
+                {"id":8,"type":"canvas","h":120},
+                {"id":9,"type":"button","label":"Close"}]}]}"#,
+    );
+    let ctx = ctx();
+    let dialog = rect_of(&host, &ctx, 5);
+    let close = rect_of(&host, &ctx, 9);
+    assert!(
+        close.y >= dialog.y && close.y + close.h <= dialog.y + dialog.h,
+        "the last row {close:?} is inside the dialog {dialog:?}"
+    );
+    let mut g = Gestures::default();
+    let e = click(&mut g, &mut host, &ctx, mid(close));
+    assert!(
+        emitted(&e, 9).contains(&vec![OscType::String("click".into())]),
+        "the press reached the button: {:?}",
+        emitted(&e, 9)
+    );
+}
