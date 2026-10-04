@@ -77,7 +77,8 @@ impl MappedFile {
     /// interleaved channels (no-op de-interleave when `channels <= 1`). A
     /// trailing partial frame is ignored. Copies into an owned buffer the
     /// waveform renderer can hold and read at fine zoom; the map can then be
-    /// released. (A zero-copy hold of the map itself is a later refinement.)
+    /// released -- on purpose, since a client's file can be rewritten in place
+    /// and a mapping held across that faults on the next read.
     pub fn channel0_f32(&self, channels: usize) -> Vec<f32> {
         let channels = channels.max(1);
         let frames = (self.len / 4) / channels;

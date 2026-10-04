@@ -52,8 +52,16 @@ impl BulkLoader for MmapLoader {
 /// (raw samples never loaded); `path` is a file of raw little-endian `f32`
 /// mapped and de-interleaved into all `channels`, whose per-channel pyramids
 /// are built once and cached as a sibling `<path>.<base_bucket>.peaks` so a
-/// re-open skips the rebuild. Unix-only; returns `None` (with a warning) on a
-/// non-Unix host or an I/O/format error.
+/// re-open skips the rebuild ([`sibling_summary`] says when one may be
+/// reused). Unix-only; returns `None` (with a warning) on a non-Unix host or
+/// an I/O/format error.
+///
+/// The samples are **copied** out of the mapping, unlike a server buffer's
+/// region, which a view reads where it lies. A `path` is the client's file,
+/// and nothing stops it from being rewritten in place: a mapping held across
+/// a truncation faults on the next read, which would take the whole host down
+/// in a draw. The server's regions are safe to hold because a take that
+/// changes shape gets a new file (the generation is in its name).
 #[cfg(unix)]
 fn mapped_waveform(
     cache: Option<&Path>,
@@ -90,17 +98,10 @@ fn mapped_waveform(
         .map(Into::into)
         .collect();
     let frames = split.first().map_or(0, |c| c.len());
-    // Reuse a sibling cache keyed by base_bucket if it matches, else build it.
     let sibling = path.with_extension(format!("{base_bucket}.peaks"));
-    let data = match MultiPyramid::read_cache(&sibling) {
-        Ok(Some(m))
-            if m.frames() == frames
-                && m.base_bucket() == base_bucket
-                && m.num_channels() == split.len() =>
-        {
-            WaveformData::from_parts(split.into_iter().zip(m.into_channels()).collect())
-        }
-        _ => {
+    let data = match sibling_summary(path, &sibling, frames, split.len(), base_bucket) {
+        Some(m) => WaveformData::from_parts(split.into_iter().zip(m.into_channels()).collect()),
+        None => {
             let flat: Vec<f32> = {
                 // Rebuild from the interleaved bytes so the sibling cache is
                 // written through the one core builder every client shares.
@@ -113,7 +114,7 @@ fn mapped_waveform(
                 flat
             };
             let multi = MultiPyramid::build_interleaved(&flat, split.len(), base_bucket);
-            let _ = multi.write_cache(&sibling);
+            write_sibling(&sibling, &multi);
             WaveformData::from_parts(split.into_iter().zip(multi.into_channels()).collect())
         }
     };
@@ -124,6 +125,52 @@ fn mapped_waveform(
         path.display()
     );
     Some(data)
+}
+
+/// **The summary beside `path`, when it still describes it** -- `None` sends
+/// the caller back to the samples.
+///
+/// The shape is checked (frames, channels, the bucket), and so is the age: a
+/// summary is reused only when it was written **after** the samples were.
+/// The shape alone cannot tell a file that was rewritten with new samples of
+/// the same length, which is exactly what an edit that does not move a frame
+/// produces, and it drew the old picture over the new audio. The comparison is
+/// strict, so a file system whose clock is too coarse to order the two writes
+/// rebuilds the summary rather than trusting it.
+#[cfg(unix)]
+fn sibling_summary(
+    path: &Path,
+    sibling: &Path,
+    frames: usize,
+    channels: usize,
+    base_bucket: usize,
+) -> Option<MultiPyramid> {
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    if modified(sibling)? <= modified(path)? {
+        return None;
+    }
+    MultiPyramid::read_cache(sibling)
+        .ok()
+        .flatten()
+        .filter(|m| {
+            m.frames() == frames && m.base_bucket() == base_bucket && m.num_channels() == channels
+        })
+}
+
+/// Writes the summary beside the samples **whole or not at all**: into a
+/// file of its own first, then renamed over the old one. Another host opening
+/// the same `path` meanwhile reads either summary complete, never a half
+/// written one that happens to parse. A directory that cannot be written to
+/// leaves no summary, which only costs the next open a rebuild.
+#[cfg(unix)]
+fn write_sibling(sibling: &Path, multi: &MultiPyramid) {
+    let mut part = sibling.as_os_str().to_owned();
+    part.push(format!(".{}.part", std::process::id()));
+    let part = std::path::PathBuf::from(part);
+    if std::fs::write(&part, multi.to_bytes()).is_err() || std::fs::rename(&part, sibling).is_err()
+    {
+        let _ = std::fs::remove_file(&part);
+    }
 }
 
 #[cfg(not(unix))]
@@ -196,4 +243,108 @@ fn map_file_bytes(path: &Path) -> Option<Vec<u8>> {
 fn map_file_bytes(_path: &Path) -> Option<Vec<u8>> {
     diag::warn!("cache (mapped local resource) is only supported on Unix");
     None
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// A scratch directory of its own per test, so two tests never share a
+    /// sibling.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("clausters_bulk_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_samples(path: &Path, samples: &[f32]) {
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn touch(path: &Path, at: SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    /// The loudest sample the summary reports over the whole take.
+    fn summary_peak(data: &WaveformData) -> f32 {
+        let pyramid = data.pyramid();
+        let level = pyramid.num_levels() - 1;
+        let (_, hi) = pyramid
+            .column(level, 0.0, pyramid.total_samples() as f64)
+            .unwrap();
+        hi
+    }
+
+    #[test]
+    fn a_fresh_sibling_is_reused_and_a_stale_one_rebuilt() {
+        let dir = scratch("sibling");
+        let path = dir.join("take.f32");
+        let sibling = path.with_extension("4.peaks");
+        let quiet = vec![0.25f32; 64];
+        let loud = vec![0.75f32; 64];
+
+        // First open: no summary yet, so one is built and written beside it.
+        write_samples(&path, &quiet);
+        let data = mapped_waveform(None, Some(&path), 1, 4).unwrap();
+        assert_eq!(summary_peak(&data), 0.25);
+        assert!(sibling.exists());
+        assert!(!dir.join("take.4.peaks.part").exists());
+
+        // A summary written after the samples is the one read back: here a
+        // planted one of the same shape, so reading it shows.
+        std::fs::write(
+            &sibling,
+            MultiPyramid::build_interleaved(&loud, 1, 4).to_bytes(),
+        )
+        .unwrap();
+        let now = SystemTime::now();
+        touch(&path, now - Duration::from_secs(10));
+        touch(&sibling, now);
+        let data = mapped_waveform(None, Some(&path), 1, 4).unwrap();
+        assert_eq!(summary_peak(&data), 0.75);
+
+        // The samples rewritten after it, same length: the shape still
+        // matches and the summary is not trusted.
+        write_samples(&path, &quiet);
+        touch(&path, now + Duration::from_secs(10));
+        let data = mapped_waveform(None, Some(&path), 1, 4).unwrap();
+        assert_eq!(summary_peak(&data), 0.25);
+        assert_eq!(
+            summary_peak(&WaveformData::with_multi_pyramid(
+                MultiPyramid::read_cache(&sibling).unwrap().unwrap()
+            )),
+            0.25,
+            "the rebuilt summary replaced the stale one"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_sibling_of_another_shape_is_not_reused() {
+        let dir = scratch("shape");
+        let path = dir.join("take.f32");
+        let sibling = path.with_extension("4.peaks");
+        write_samples(&path, &[0.5f32; 64]);
+        // Newer, but a summary of a different length.
+        std::fs::write(
+            &sibling,
+            MultiPyramid::build_interleaved(&[0.9f32; 32], 1, 4).to_bytes(),
+        )
+        .unwrap();
+        let now = SystemTime::now();
+        touch(&path, now - Duration::from_secs(10));
+        touch(&sibling, now);
+        let data = mapped_waveform(None, Some(&path), 1, 4).unwrap();
+        assert_eq!(summary_peak(&data), 0.5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

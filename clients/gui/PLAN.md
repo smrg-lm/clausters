@@ -4445,7 +4445,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   widget design rather than a shell fix — it is what would open this again.
 - ⬜ **Packaging: an optional Tauri desktop wrapper** reusing the web frontend. The rest of what this entry once listed has shipped — the GUI chapter of the client's book (`gui.md` and its pages) and the worked `gui_*` examples — so the wrapper alone is what remains, and it stays **last** by the ordering rule above: it changes how the system ships, not what it can show. **Only a possibility** *(the user, 2026-10-04)*: `clausters-editor` is already a Tauri application, so a wrapper could come from there later if it is wanted; nothing is planned.
 
-- ⬜ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
+- ✅ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM. *(Closed 2026-10-04.)* The one cache whose key was short was the summary the host writes beside a `path` (`<path>.<base_bucket>.peaks`): the path and the bucket are in its name, but it was checked only for its shape, so samples rewritten at the same length drew the old picture. It is now reused only when written after the samples, and written whole through a rename. The server's overviews already carry the buffer's generation in their name, and a `cache` the client names is the client's to keep current. The rest of the entry was decided against: a server buffer's region is already read where it lies, a summary is a small fraction of its samples, and a client's `path` is copied on purpose -- a file rewritten in place under a held mapping faults on the next read, in a draw.
 
 - ⬜ **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
 
@@ -7749,7 +7749,15 @@ finished work, where a pending item reads as done.
   repaint only those -- a change to the drawing pipeline rather than to the
   protocol, and a design of its own. *(Checked 2026-10-04: still so -- every
   pass begins with `LoadOp::Clear` and nothing tracks a changed region; the
-  user marked it important.)*
+  user marked it important.)* *(Measured 2026-10-04, a release host, the
+  edited multitrack example at 1000x560 on an integrated GPU: a whole frame
+  is about 1 ms of CPU -- 0.3-0.5 building ~26 000 vertices, 0.2-0.3
+  uploading, the rest encoding and presenting -- at 50 fps while it plays
+  and 30 fps stopped, which its meters keep drawing. The process stays at
+  5-7% of one core. A cached base picture would save about half of that
+  millisecond, so the entry waits until a heavier window measures worse. The
+  multitrack's playhead is in the base mesh, not the overlay, so splitting it
+  out is part of that design.)*
 
 The entries below are one audit of the host's orchestration layer
 *(2026-09-25, asked by the user once `host/mod.rs` reached 5748 lines)*:
