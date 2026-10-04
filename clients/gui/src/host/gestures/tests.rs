@@ -2251,6 +2251,46 @@ fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {
     }
 }
 
+/// **Two clicks select a word and three the line**, counted by the machine
+/// from the front's clock and handed to the field -- what Ctrl+C then copies
+/// says which.
+#[test]
+fn a_double_click_in_a_field_selects_a_word_and_a_triple_the_line() {
+    let mut host = text_host();
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    let mut clip = crate::host::clipboard::Clip::default();
+    g.press(&mut host, &ctx, 30.0, 15.0);
+    g.release(&mut host, &ctx, 30.0, 15.0);
+    for ch in "hello world".chars() {
+        key(&g, &mut host, &ctx, Key::Char(ch));
+    }
+    let mut copied = |g: &mut Gestures, host: &mut Host, ctx: &mut GestureCtx| {
+        ctx.ctrl = true;
+        g.press_key(host, ctx, Key::Char('c'), None, &mut clip);
+        ctx.ctrl = false;
+        clip.text()
+    };
+    for (t, _) in [(1_000.0, 1), (1_150.0, 2)] {
+        ctx.now_ms = t;
+        g.press(&mut host, &ctx, 30.0, 15.0);
+        g.release(&mut host, &ctx, 30.0, 15.0);
+    }
+    let word = copied(&mut g, &mut host, &mut ctx);
+    assert!(
+        word == "hello" || word == "world",
+        "a double click took a word: {word:?}"
+    );
+    ctx.now_ms = 1_300.0;
+    g.press(&mut host, &ctx, 30.0, 15.0);
+    g.release(&mut host, &ctx, 30.0, 15.0);
+    assert_eq!(
+        copied(&mut g, &mut host, &mut ctx),
+        "hello world",
+        "a triple, the line"
+    );
+}
+
 #[test]
 fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     let mut host = text_host();

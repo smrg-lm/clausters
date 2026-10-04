@@ -28,7 +28,7 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::graphics::controls;
-use crate::host::graphics::textedit::{self, Caret};
+use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
@@ -48,8 +48,10 @@ pub struct Text {
     /// **View state**, never parsed from or sent over the wire: the insertion
     /// point and the selection, meaningful only while the field is focused.
     caret: Caret,
-    /// The selection's fixed end while a drag is extending it, in bytes.
-    anchor: Option<usize>,
+    /// What the press selected and the unit it selected by, while a drag is
+    /// extending it: a caret's point for one click, a word for two, a line
+    /// for three -- and the drag grows the selection by the same unit.
+    held: Option<((usize, usize), Unit)>,
 }
 
 pub(super) fn build(
@@ -73,7 +75,7 @@ fn from_props(props: &Map<String, Value>) -> Text {
             .and_then(parse::truthy)
             .unwrap_or(false),
         caret: Caret::default(),
-        anchor: None,
+        held: None,
     }
 }
 
@@ -188,26 +190,38 @@ impl Element for Text {
         ))
     }
 
+    /// **One click places the caret, two select a word, three a line** --
+    /// the convention of every text field, counted by the machine
+    /// ([`Input::clicks`]). The press is held: a drag from here extends the
+    /// selection by the same unit.
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        // The caret lands where the press did (a stale caret is re-landed
-        // first), and the press is held: a drag from here extends a selection.
+        // A stale caret is re-landed first.
         textedit::clamp(&self.value, &mut self.caret);
         let pos = self.caret_at(at, input);
-        self.caret.pos = pos;
-        self.caret.anchor = None;
-        self.anchor = Some(pos);
+        // **Shift+click extends** what is selected to where it landed, from
+        // the end the selection was made from -- and a drag carries on from
+        // there.
+        if input.mods.shift && input.clicks == 1 {
+            let from = self.caret.anchor.unwrap_or(self.caret.pos);
+            self.caret = textedit::extend_by(&self.value, (from, from), pos, Unit::Char);
+            self.held = Some(((from, from), Unit::Char));
+            return Claim::take();
+        }
+        let unit = Unit::of_clicks(input.clicks);
+        let span = textedit::unit_at(&self.value, pos, unit);
+        self.caret = textedit::extend_by(&self.value, span, pos, Unit::Char);
+        self.held = Some((span, unit));
         Claim::take()
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
-        let Some(anchor) = self.anchor else {
+        let Some((span, unit)) = self.held else {
             return Events::none();
         };
         let pos = self.caret_at(at, input);
-        self.caret.pos = pos;
         // An empty selection keeps no anchor, so a click-and-return draws no
         // highlight.
-        self.caret.anchor = (pos != anchor).then_some(anchor);
+        self.caret = textedit::extend_by(&self.value, span, pos, unit);
         // Selecting changes nothing about the value, so there is nothing to
         // report -- the redraw a claim already asks for is the whole effect.
         Events::none()
@@ -477,5 +491,35 @@ mod tests {
         // Back to where it started: an empty selection is no selection.
         field.drag((0.0, 12.0), &input(&metrics));
         assert_eq!(field.caret.selection(), None);
+    }
+
+    /// **A double click selects the word under it, a triple the line**, and
+    /// the field's own selection is what Ctrl+C then copies.
+    #[test]
+    fn a_double_click_selects_a_word_and_a_triple_the_line() {
+        let metrics = Metrics::default();
+        let mut field = from_props(&props(r#"{"value":"hello world"}"#));
+        let mut twice = input(&metrics);
+        twice.clicks = 2;
+        // Somewhere over the second word.
+        field.press((150.0, 12.0), &twice);
+        assert_eq!(field.caret.selection(), Some((6, 11)), "world");
+        let mut thrice = input(&metrics);
+        thrice.clicks = 3;
+        field.press((150.0, 12.0), &thrice);
+        assert_eq!(field.caret.selection(), Some((0, 11)), "the whole line");
+    }
+
+    /// **Shift+click extends** the selection from where it was made.
+    #[test]
+    fn a_shift_click_extends_from_the_caret() {
+        let metrics = Metrics::default();
+        let mut field = from_props(&props(r#"{"value":"hello world"}"#));
+        field.press((0.0, 12.0), &input(&metrics));
+        let mut shift = input(&metrics);
+        shift.mods.shift = true;
+        field.press((200.0, 12.0), &shift);
+        assert_eq!(field.caret.selection(), Some((0, 11)));
+        assert_eq!(field.caret.pos, 11, "the caret is where the click landed");
     }
 }

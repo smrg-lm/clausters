@@ -305,6 +305,97 @@ fn line_end(value: &str, pos: usize) -> usize {
     value[pos..].find('\n').map_or(value.len(), |i| pos + i)
 }
 
+/// **What a run of clicks selects by**: one click places the caret, two
+/// select a word, three a line -- the convention of every text field -- and a
+/// drag that follows extends the selection by the same unit.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum Unit {
+    #[default]
+    Char,
+    Word,
+    Line,
+}
+
+impl Unit {
+    /// The unit the `n`th press of a run selects by: past the third a run
+    /// keeps selecting lines.
+    pub fn of_clicks(n: u32) -> Unit {
+        match n {
+            0 | 1 => Unit::Char,
+            2 => Unit::Word,
+            _ => Unit::Line,
+        }
+    }
+}
+
+/// The **word** a double click at `pos` selects: the run of word characters,
+/// of spaces or of punctuation the character there belongs to -- never across
+/// a line break. Past the end of a line it is the run before it, which is what
+/// a click in the empty space after the last word means.
+fn word_span(value: &str, pos: usize) -> (usize, usize) {
+    fn class(c: char) -> u8 {
+        if is_word(c) {
+            0
+        } else if c.is_whitespace() {
+            1
+        } else {
+            2
+        }
+    }
+    let at = if pos < value.len() && char_at(value, pos) != '\n' {
+        pos
+    } else if pos > 0 && char_before(value, pos) != '\n' {
+        prev_boundary(value, pos)
+    } else {
+        return (pos, pos);
+    };
+    let k = class(char_at(value, at));
+    let mut start = at;
+    while start > 0 {
+        let c = char_before(value, start);
+        if c == '\n' || class(c) != k {
+            break;
+        }
+        start = prev_boundary(value, start);
+    }
+    let mut end = at;
+    while end < value.len() {
+        let c = char_at(value, end);
+        if c == '\n' || class(c) != k {
+            break;
+        }
+        end = next_boundary(value, end);
+    }
+    (start, end)
+}
+
+/// The span the `unit` around `pos` covers, `[start, end)`: the point itself
+/// for a character, the word under it, or its whole line (without the break
+/// that ends it).
+pub fn unit_at(value: &str, pos: usize, unit: Unit) -> (usize, usize) {
+    match unit {
+        Unit::Char => (pos, pos),
+        Unit::Word => word_span(value, pos),
+        Unit::Line => (line_start(value, pos), line_end(value, pos)),
+    }
+}
+
+/// The caret a press made with `held` selected and a drag now at `pos`: the
+/// selection keeps the whole of what the press selected and grows by `unit`
+/// toward the pointer, on whichever side it is. An empty one is no selection.
+pub fn extend_by(value: &str, held: (usize, usize), pos: usize, unit: Unit) -> Caret {
+    let (start, end) = unit_at(value, pos, unit);
+    let (pos, anchor) = if start < held.0 {
+        (start, held.1)
+    } else {
+        (end.max(held.1), held.0)
+    };
+    Caret {
+        pos,
+        anchor: (pos != anchor).then_some(anchor),
+    }
+}
+
 /// Moves the caret to the start of its line -- Home.
 pub fn move_home(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
@@ -400,6 +491,41 @@ pub fn h_scroll(caret_col: usize, cols: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+
+    /// **Two clicks select a word, three a line**: a word is the run the
+    /// character under the pointer belongs to, spaces and punctuation being
+    /// runs of their own, and neither ever crosses a line break.
+    #[test]
+    fn a_double_click_takes_a_word_and_a_triple_a_line() {
+        let v = "say hello, world\nnext line";
+        let at = |s: &str| v.find(s).unwrap();
+        assert_eq!(unit_at(v, at("ello"), Unit::Word), (4, 9), "hello");
+        assert_eq!(unit_at(v, at(", "), Unit::Word), (9, 10), "the comma");
+        assert_eq!(unit_at(v, at(" world"), Unit::Word), (10, 11), "the space");
+        assert_eq!(
+            unit_at(v, at("\n"), Unit::Word),
+            (11, 16),
+            "past the end of a line: the word before it"
+        );
+        assert_eq!(unit_at(v, 2, Unit::Line), (0, 16), "the first line");
+        assert_eq!(unit_at(v, at("line"), Unit::Line), (17, v.len()));
+        assert_eq!(Unit::of_clicks(4), Unit::Line);
+    }
+
+    /// A drag after a double click grows the selection a word at a time, and
+    /// keeps the word it started on whichever way it goes.
+    #[test]
+    fn a_drag_after_a_double_click_extends_by_words() {
+        let v = "one two three";
+        let held = unit_at(v, 5, Unit::Word);
+        assert_eq!(held, (4, 7));
+        let right = extend_by(v, held, 9, Unit::Word);
+        assert_eq!(right.selection(), Some((4, v.len())));
+        let left = extend_by(v, held, 1, Unit::Word);
+        assert_eq!(left.selection(), Some((0, 7)));
+        assert_eq!(left.pos, 0, "the caret follows the pointer");
+    }
+
     use super::*;
 
     fn caret(pos: usize) -> Caret {
