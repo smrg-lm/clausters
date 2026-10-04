@@ -37,7 +37,7 @@ six views, the controls with their other looks, a plane with <b>scroll
 bars</b>, a <b>pager</b>, and rows of data: a <b>table</b> whose order is the
 page's and a <b>tree</b>; a <b>context menu</b> on the pages (the secondary
 button) and a <b>tip</b> on every tool; and a <b>dialog</b>, opened by
-<code>About</code> and closed by freeing it, and a <b>file chooser</b> in
+<code>Info &gt; About</code> and closed by freeing it, and a <b>file chooser</b> in
 another, opened by <code>File &gt; Open</code>: the host lists the directory
 itself -- the page's own storage here, the disk in the script.
 
@@ -120,7 +120,7 @@ the host reports when a hand changes them -- the lines this prints.</div>
             gui.entry("Spectrogram", "view spectrum", { group: "view" }),
             "-",
             gui.entry("Rulers", "rulers", { checked: true })) }),
-          gui.entry("About", "about"));
+          gui.entry("Info", undefined, { menu: gui.menu(gui.entry("About", "about")) }));
 
         // What the secondary button opens over the pages.
         const onPages = gui.menu(gui.entry("Copy", "copy"), gui.entry("Paste", "paste"),
@@ -305,11 +305,12 @@ the host reports when a hand changes them -- the lines this prints.</div>
         // A dialog is a `layout` that stands over the window: it is
         // **defined** to open and **freed** to close, and while it exists
         // nothing behind it can be reached -- not by the pointer and not by
-        // Tab. Here the bar's `About` defines one into the holder, and its
-        // button frees it -- as do Escape and the close mark at the end of its
-        // title strip, which ask the dialog to go as `"cancel"`. `File > Open` defines a `fileDialog` there instead:
-        // a chooser the host lists, a field that follows its selection, and
-        // the two buttons; a double click on a file picks it.
+        // Tab. Here `Info > About` defines one into the holder, and its button
+        // frees it -- as do Escape and the close mark at the end of its title
+        // strip, which ask the dialog to go as `"cancel"`. `File > Open`
+        // defines a `fileDialog` there instead: a chooser the host lists, a
+        // field that follows its selection, and the two buttons; a double
+        // click on a file picks it.
         const about = () => {
           const box = host.define(win.widget("dialogs").id, gui.layout(
             { h: 0.0 },

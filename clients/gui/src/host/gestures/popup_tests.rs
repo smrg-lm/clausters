@@ -401,6 +401,19 @@ fn with_a_menu_open_the_pointer_crossing_another_title_moves_it_there() {
 }
 
 #[test]
+fn with_a_menu_open_crossing_a_plain_title_closes_it_and_picks_nothing() {
+    let mut host = host_from(BAR);
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let at = bar_title(&host, &ctx, 0);
+    click(&mut g, &mut host, &ctx, at);
+    let (x, y) = bar_title(&host, &ctx, 2);
+    let effects = g.motion(&mut host, &ctx, x, y);
+    assert!(host.popup(1).is_none(), "the list closes");
+    assert!(emitted(&effects, 1).is_empty(), "and nothing is picked");
+}
+
+#[test]
 fn a_title_that_is_a_plain_entry_is_picked_by_the_press() {
     let mut host = host_from(BAR);
     let mut g = Gestures::default();

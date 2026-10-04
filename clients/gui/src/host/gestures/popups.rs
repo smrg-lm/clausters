@@ -112,6 +112,14 @@ fn open_title(
     out.push(GestureEffect::Redraw(ctx.def_id));
 }
 
+/// Whether bar title `title` opens a list of its own, as against being a plain
+/// entry a press picks.
+fn has_list(host: &Host, ctx: &GestureCtx, title: Title) -> bool {
+    host.window_def(ctx.def_id)
+        .and_then(menubar::entries)
+        .is_some_and(|entries| menubar::list(entries, title).is_some())
+}
+
 /// **Reports a pick in a menu**: writes the state the entry holds into the
 /// tree it came from, and emits `"menu" <verb> [<state>]` from the widget that
 /// carries the menu -- the window itself, for its bar.
@@ -284,7 +292,17 @@ impl Gestures {
                 if let (Owner::Bar(open), Some((title, rect))) = (owner, title)
                     && open != title
                 {
-                    open_title(host, ctx, &mut out, title, rect, false);
+                    // Crossing a title moves the open list there; a title that
+                    // is a plain entry has none, so the list closes and the
+                    // title only lights up. Passing over an action is never
+                    // taking it -- that is the press's.
+                    if has_list(host, ctx, title) {
+                        open_title(host, ctx, &mut out, title, rect, false);
+                    } else {
+                        host.close_popup(def_id);
+                        host.set_bar_hover(def_id, Some(title));
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
                 }
             }
         }

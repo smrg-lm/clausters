@@ -512,23 +512,28 @@ fn symbol_shape(mesh: &mut Mesh, c: char, x: f32, y: f32, scale: f32, color: Col
         symbol::UP => arrow(mesh, at(0.5, 0.95), at(0.5, 0.05)),
         symbol::DOWN => arrow(mesh, at(0.5, 0.05), at(0.5, 0.95)),
         symbol::LOOP => {
-            // Three quarters of a ring, clockwise from the top, and the head at
-            // its end pointing on round.
-            let r = w * 0.42;
-            let steps = 18;
-            let (from, to) = (-0.35 * std::f32::consts::PI, 1.25 * std::f32::consts::PI);
+            // A ring run clockwise from just right of the top round to just
+            // left of it, and at its end a head pointing on along the ring,
+            // across the gap -- the arrow of a thing that comes round again.
+            let r = w.min(h) * 0.42;
+            let pi = std::f32::consts::PI;
+            let (from, to) = (-0.5 * pi + 0.55, 1.5 * pi - 0.75);
             let point = |t: f32| [cx + r * t.cos(), cy + r * t.sin()];
+            let steps = 24;
             for k in 0..steps {
                 let a0 = from + (to - from) * k as f32 / steps as f32;
                 let a1 = from + (to - from) * (k + 1) as f32 / steps as f32;
-                mesh.line(point(a0), point(a1), stroke * 1.2, color);
+                mesh.line(point(a0), point(a1), stroke * 0.8, color);
             }
-            let end = point(from);
-            let head = w * 0.32;
+            // The head sits on the ring's end: its base across the ring, its
+            // tip on along the clockwise tangent.
+            let (end, head) = (point(to), w * 0.5);
+            let (tx, ty) = (-to.sin(), to.cos());
+            let (nx, ny) = (to.cos(), to.sin());
             mesh.tri(
-                [end[0] + head * 0.9, end[1] - head * 0.2],
-                [end[0] - head * 0.3, end[1] - head * 0.75],
-                [end[0] - head * 0.1, end[1] + head * 0.55],
+                [end[0] + tx * head * 0.75, end[1] + ty * head * 0.75],
+                [end[0] + nx * head * 0.5, end[1] + ny * head * 0.5],
+                [end[0] - nx * head * 0.5, end[1] - ny * head * 0.5],
                 color,
             );
         }

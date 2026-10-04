@@ -19,7 +19,7 @@ This window holds one of each, laid out the way an application lays them out:
   of data -- a **table** whose order is the script's and a **tree**;
 - a **context menu** on the pages (the secondary button), and a **tip** on
   every tool (rest the pointer on one);
-- a **dialog**, opened by ``About`` and closed by freeing it, and a **file
+- a **dialog**, opened by ``Info > About`` and closed by freeing it, and a **file
   chooser** in another, opened by ``File > Open``: the host lists the
   directory itself -- the disk here, the page's own storage in the twin page.
 
@@ -92,7 +92,7 @@ bar = menu(
         entry("Spectrogram", "view spectrum", group="view"),
         "-",
         entry("Rulers", "rulers", checked=True))),
-    entry("About", "about"))
+    entry("Info", menu=menu(entry("About", "about"))))
 
 #: What the secondary button opens over the pages.
 on_pages = menu(entry("Copy", "copy"), entry("Paste", "paste"), "-",
@@ -271,11 +271,12 @@ for name in ("play", "pause", "stop", "record"):
 # ## The dialogs
 # A dialog is a `layout` that stands over the window: it is **defined** to open
 # and **freed** to close, and while it exists nothing behind it can be reached
-# -- not by the pointer and not by Tab. Here the bar's `About` defines one into
+# -- not by the pointer and not by Tab. Here `Info > About` defines one into
 # the holder, and its button frees it -- as do Escape and the close mark at the
-# end of its title strip, which ask the dialog to go as `("cancel",)`. `File > Open` defines a `file_dialog`
-# there instead: a chooser the host lists, a field that follows its selection,
-# and the two buttons; a double click on a file picks it.
+# end of its title strip, which ask the dialog to go as `("cancel",)`.
+# `File > Open` defines a `file_dialog` there instead: a chooser the host
+# lists, a field that follows its selection, and the two buttons; a double
+# click on a file picks it.
 
 
 # %%
