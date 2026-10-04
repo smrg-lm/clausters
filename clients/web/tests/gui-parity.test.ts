@@ -32,7 +32,7 @@ import {
     label,
     knob,
     layout,
-    menu,
+    choice,
     meter,
     node,
     nodetree,
@@ -108,7 +108,7 @@ const trees: Record<string, () => GuiNode> = {
                 { id: 6, layout: "row", h: 40 },
                 button({ id: 7, label: "ping" }),
                 toggle({ id: 8, label: "gate", value: true }),
-                menu(["sine", "saw", "pulse"], { id: 9, index: 1, label: "wave" }),
+                choice(["sine", "saw", "pulse"], { id: 9, index: 1, label: "wave" }),
                 text({ id: 10, value: "/node_set 1000 freq 440", multiline: false }),
             ),
         ),
@@ -126,7 +126,7 @@ const trees: Record<string, () => GuiNode> = {
                     theme: { panel_fill: "#101018", accent: "#40c0a0" },
                 }),
             ),
-            menu(["one", "two"], { id: 3, index: 1, bind: ["widget", 4, "index"] }),
+            choice(["one", "two"], { id: 3, index: 1, bind: ["widget", 4, "index"] }),
             stack(
                 { id: 4, index: 1, margin: 4.0 },
                 panel({ id: 5 }),
@@ -325,7 +325,8 @@ const camel = (name: string): string =>
  */
 const SUBJECT: Record<string, { option: string; blank: unknown }> = {
     label: { option: "text", blank: "" },
-    menu: { option: "options", blank: [] },
+    choice: { option: "options", blank: [] },
+    progress: { option: "value", blank: undefined },
     meter: { option: "bus", blank: 0 },
     scope: { option: "bus", blank: 0 },
     phasescope: { option: "bus", blank: 0 },

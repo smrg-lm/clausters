@@ -23,7 +23,7 @@
 <code>wrap</code> and <code>align</code>.
 
 Every text-bearing light widget -- <code>label</code>, <code>button</code>,
-<code>toggle</code>, <code>text</code>, <code>number</code>, <code>menu</code>
+<code>toggle</code>, <code>text</code>, <code>number</code>, <code>choice</code>
 and the control labels on <code>slider</code>/<code>knob</code> -- takes a
 <code>textSize</code>: a glyph scale over the host's font, whose default 2.0 is
 exactly the size everything drew at before the prop existed.
@@ -132,7 +132,7 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         gui.knob({ label: "cutoff", min: 20.0, max: 20000.0, value: 800.0, textSize: 3.0 }),
         gui.button({ label: "a very wordy button face" }),
         gui.toggle({ label: "toggle at 3x", value: false, textSize: 3.0 }),
-        gui.menu(["sine", "sawtooth", "square"], { label: "wave", textSize: 3.0 }),
+        gui.choice(["sine", "sawtooth", "square"], { label: "wave", textSize: 3.0 }),
       );
 
       let win = null;

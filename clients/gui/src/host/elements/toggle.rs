@@ -14,10 +14,10 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::graphics::controls;
+use crate::host::graphics::controls::{self, ToggleView};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, HitArea, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box, text_box};
 
@@ -32,6 +32,15 @@ pub struct Toggle {
     /// The two values the state stands for on the wire.
     pub on: f32,
     pub off: f32,
+    /// The `view` prop: the picture -- a box by default, or a switch, or a
+    /// button that stays pressed. The state and the values are the same.
+    pub view: ToggleView,
+    /// The `icon` prop: a glyph of the font drawn with the label.
+    pub icon: Option<char>,
+}
+
+fn view_of(v: &Value) -> Option<ToggleView> {
+    v.as_str().and_then(ToggleView::from_str)
 }
 
 pub(super) fn build(
@@ -48,6 +57,8 @@ fn from_props(props: &Map<String, Value>) -> Toggle {
         text_size: parse::text_size(props),
         on: parse::number(props, "on", 1.0),
         off: parse::number(props, "off", 0.0),
+        view: props.get("view").and_then(view_of).unwrap_or_default(),
+        icon: props.get("icon").and_then(crate::host::menu::icon_of),
     }
 }
 
@@ -66,6 +77,11 @@ impl Element for Toggle {
             "text_size" => parse::set_size(&mut self.text_size, v),
             "on" => parse::set_f(&mut self.on, v),
             "off" => parse::set_f(&mut self.off, v),
+            "view" => view_of(v).map(|view| self.view = view).is_some(),
+            "icon" => {
+                self.icon = crate::host::menu::icon_of(v);
+                true
+            }
             _ => false,
         }
     }
@@ -75,7 +91,10 @@ impl Element for Toggle {
             d,
             self.value,
             self.label.as_deref(),
+            self.icon,
             ctx.rect,
+            self.view,
+            ctx.hovered,
             self.text_size * ctx.scale,
         );
     }
@@ -94,11 +113,25 @@ impl Element for Toggle {
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         let h = control_box(size, m).max(m.box_side);
+        let text = controls::button_text(self.label.as_deref().or(Some("")), self.icon);
+        let text = text.trim_end();
+        // Drawn as a button it is one: as wide as what it says.
+        if self.view == ToggleView::Button {
+            return (Some(text_box(text, size, m)), Some(h));
+        }
         let side = m.box_side.min(h);
+        let mark = match self.view {
+            ToggleView::Switch => side * 1.8,
+            _ => side,
+        };
         // The label starts one pad past the box and gets one more at the right
         // edge, so a hugged toggle never draws its own text into an ellipsis.
-        let label = self.label.as_deref().map_or(0.0, |t| text_box(t, size, m));
-        (Some(side + label), Some(h))
+        let label = if text.is_empty() {
+            0.0
+        } else {
+            text_box(text, size, m)
+        };
+        (Some(mark + label), Some(h))
     }
 
     fn value(&self) -> Option<OscType> {
@@ -116,6 +149,7 @@ impl Element for Toggle {
     fn hit_area(&self, input: &Input) -> HitArea {
         HitArea::Rect(controls::toggle_hit(
             input.rect,
+            self.view,
             self.label.as_deref(),
             self.text_size * input.scale,
             input.metrics,
@@ -125,6 +159,20 @@ impl Element for Toggle {
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.value = !self.value;
         Claim::value(switch_value(self.sent()))
+    }
+
+    fn accepts_focus(&self) -> bool {
+        true
+    }
+
+    fn reports_focus(&self) -> bool {
+        false
+    }
+
+    /// Space or Enter flips it, as a click does.
+    fn activate(&mut self, _input: &Input) -> Option<Events> {
+        self.value = !self.value;
+        Some(Events::value(switch_value(self.sent())))
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

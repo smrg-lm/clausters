@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: every element of chrome, one window</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #win { width: 900px; max-width: 100%; height: 620px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">An application's face: every element of chrome, in one
+window.
+
+A work surface is the middle of a window and the rest of it is <b>chrome</b>:
+the menus that name what can be done, the tools that do it, the tabs and
+dividers that say how the room is shared, the dialog that asks before something
+is lost. This window holds one of each, laid out the way an application lays
+them out: a <b>menu bar</b> along the top (the window's own <code>menu</code>,
+with actions, a check, a group where one of several is on, a submenu and a
+disabled entry); a <b>toolbar</b> of flat buttons whose faces are glyphs, split
+into groups, with a spring and a button that opens a menu of its own; a
+<b>split</b> row whose divider you drag; a sidebar of <b>sections</b> that fold
+on their title strips; <b>tabs</b> over four pages -- one choice in each of its
+six views, the controls with their other looks, a plane with <b>scroll
+bars</b>, and a <b>pager</b>; a <b>context menu</b> on the pages (the secondary
+button) and a <b>tip</b> on every tool; and a <b>dialog</b>, opened by
+<code>About</code> and closed by freeing it.
+
+It also shows what they share. Every control takes the focus: Tab walks them,
+Space or Enter presses, the arrows step. A press on a title of the bar opens
+its list and the arrows walk it; Escape closes it. And nothing here keeps state
+for the page: a folded section, a moved divider and a checked entry are props
+the host reports when a hand changes them -- the lines this prints.</div>
+
+      <button id="run">open the window</button>
+      <div id="win"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/chrome.py, call for
+      call: the same menus, the same toolbar, sidebar, pages and window, the
+      same handlers, and the same dialog defined into the same holder.
+
+      Two differences, both the platform's. The script boots a windowed
+      `clausters-gui` process and its window is an OS window; here the host is
+      the wasm one in this tab and the view draws into an element the document
+      places. And nothing is held open: the page already has an event loop, so
+      the script's `win.wait()` has no counterpart, and the handlers simply
+      fire.
+
+      Serve clients/web (the package root) and open /examples/panels/chrome.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadCore } from "../../dist/index.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand, so a page that boots a host of
+      // its own -- with no `Session` bringing the core along -- asks for it
+      // first. In Python the same code is already in the process.
+      await loadCore();
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      // The options every view of the one choice is drawn over.
+      const WAVES = ["sine", "saw", "square", "noise"];
+
+      async function run() {
+        $("run").disabled = true;
+        const host = await new GuiHost().boot();
+        const { ICON } = gui;
+
+        // ---- the menus ----
+        // A menu is a **tree of entries** and the value of a prop, not a
+        // widget: it opens over the window, so nothing lays it out.
+        // `entry(label, verb)` is an action; `checked` makes it a check,
+        // `group` one of several, `menu` a submenu, and "-" is a separator.
+        // What a pick reports is the **verb**.
+        const bar = gui.menu(
+          gui.entry("File", undefined, { menu: gui.menu(
+            gui.entry("New", "new"),
+            gui.entry("Open", "open"),
+            gui.entry("Recent", undefined,
+                      { menu: gui.menu("take 1.wav", "take 2.wav", "take 3.wav") }),
+            "-",
+            gui.entry("Export", "export", { enabled: false }),
+            "-",
+            gui.entry("Quit", "quit")) }),
+          gui.entry("Edit", undefined, { menu: gui.menu(
+            gui.entry("Undo", "undo", { icon: ICON.left }),
+            gui.entry("Redo", "redo", { icon: ICON.right, enabled: false }),
+            "-",
+            gui.entry("Loop", "loop", { checked: false })) }),
+          gui.entry("View", undefined, { menu: gui.menu(
+            gui.entry("Waveform", "view wave", { group: "view", checked: true }),
+            gui.entry("Spectrogram", "view spectrum", { group: "view" }),
+            "-",
+            gui.entry("Rulers", "rulers", { checked: true })) }),
+          gui.entry("About", "about"));
+
+        // What the secondary button opens over the pages.
+        const onPages = gui.menu(gui.entry("Copy", "copy"), gui.entry("Paste", "paste"),
+                                 "-", gui.entry("Reset the page", "reset"));
+
+        // ---- the toolbar ----
+        // A row as tall as its tools. The buttons are `flat` -- no box until
+        // the pointer is over one -- and their faces are **glyphs**: there are
+        // no icons in the host and there are fonts, so `icon` is a character,
+        // and `ICON` names the ones the host's own face draws. A `separator`
+        // splits the groups, and one with a `weight` is the spring that sends
+        // what follows to the far edge.
+        const tools = gui.toolbar(
+          { margin: 2, gap: 2 },
+          gui.button({ name: "play", icon: ICON.play, flat: true,
+                       tip: "Play from the cursor" }),
+          gui.button({ name: "stop", icon: ICON.stop, flat: true, tip: "Stop" }),
+          gui.button({ name: "record", icon: ICON.record, flat: true,
+                       tip: "Record a take" }),
+          gui.separator(),
+          gui.toggle({ name: "loop", label: "loop", icon: ICON.loop, view: "button",
+                       tip: "Loop the selection" }),
+          gui.separator({ weight: 1.0, line: false }),
+          gui.button({ name: "more", label: "tools", icon: ICON.menu, flat: true,
+                       menu: gui.menu("Split", "Join", "-",
+                                      gui.entry("Quantize", "quantize")),
+                       tip: "A button that opens a menu" }));
+
+        // ---- the sidebar: sections that fold ----
+        // A `panel` with a `title` is a group, and one that also says
+        // `collapsed` is a **section**: a press on its title strip folds it to
+        // the strip and unfolds it. The second one starts folded.
+        const sidebar = gui.panel(
+          { flow: "col", w: 220.0, name: "sidebar" },
+          gui.panel(
+            { title: "Filter", collapsed: false, frame: true, hug: true, name: "filter" },
+            gui.knob({ name: "cutoff", label: "cutoff", min: 20.0, max: 20000.0,
+                       value: 800.0, curve: 4.0 }),
+            gui.slider({ name: "res", label: "res", min: 0.0, max: 1.0, value: 0.3 })),
+          gui.panel(
+            { title: "Output", collapsed: true, frame: true, hug: true, name: "output" },
+            gui.number({ name: "gain", label: "gain", min: -24.0, max: 24.0, value: 0.0,
+                         step: 1.0, stepper: true }),
+            gui.toggle({ name: "mute", label: "mute", view: "switch" })),
+          gui.label("drag the divider ->", { weight: 1.0 }));
+
+        // ---- one choice, six views ----
+        // A combobox, a radio group, a segmented control, tabs, a pager and a
+        // list hold the same thing -- some options and which one is current --
+        // so they are **one element** and `view` is the picture. The value is
+        // the index in all of them.
+        const choices = gui.panel(
+          { flow: "row" },
+          gui.panel(
+            { flow: "col" },
+            gui.choice(WAVES, { name: "combo", label: "combo" }),
+            gui.choice(WAVES, { name: "segmented", label: "segmented",
+                                view: "segmented" }),
+            gui.choice(WAVES, { name: "strip", label: "tabs", view: "tabs" }),
+            gui.choice(WAVES, { name: "steps", label: "pager", view: "pager" })),
+          gui.choice(WAVES, { name: "radio", label: "radio", view: "radio" }),
+          gui.choice(WAVES, { name: "rows", label: "list", view: "list" }));
+
+        // ---- the controls, in their other looks ----
+        // A toggle is a box, a switch or a button that stays pressed. A number
+        // grows a **stepper**. A `progress` bar shows a fraction -- here the
+        // slider's, **bound** to it by naming the bar itself, with no id and no
+        // round trip through this page -- or, given no value, says "working"
+        // without claiming how far. And `enabled: false` takes a widget, or a
+        // whole container, out of the hand's reach.
+        const done = gui.progress(0.4, { name: "done",
+                                         label: "progress (bound to the slider)" });
+        const controls = gui.panel(
+          { flow: "col" },
+          gui.panel(
+            { flow: "row", hug: true },
+            gui.toggle({ name: "check", label: "check", value: true }),
+            gui.toggle({ name: "switch", label: "switch", view: "switch" }),
+            gui.toggle({ name: "held", label: "button", view: "button" })),
+          gui.number({ name: "steps_n", label: "stepper", min: 0.0, max: 16.0,
+                       value: 4.0, step: 1.0, stepper: true }),
+          gui.slider({ name: "amount", label: "amount", min: 0.0, max: 1.0, value: 0.4,
+                       bind: ["widget", done, "value"] }),
+          done,
+          gui.progress(undefined, { name: "working",
+                                    label: "progress (indeterminate)" }),
+          gui.panel(
+            { flow: "row", enabled: false, title: "A disabled group", frame: true,
+              hug: true },
+            gui.button({ label: "disabled" }), gui.knob({ label: "too" }),
+            gui.toggle({ label: "and this" })),
+          gui.text({ name: "note", label: "a field",
+                     value: "Tab walks every control" }));
+
+        // ---- a plane with scroll bars, and a pager ----
+        // `bars: true` on a `scroll` draws a bar along each axis whose content
+        // is larger than the view. `pager` is `tabs` with the other strip: the
+        // same composition, a choice bound to a stack.
+        const longList = gui.scroll(
+          { axis: "y", zoom: false, bars: true, name: "rows_plane" },
+          ...Array.from({ length: 40 }, (_, n) =>
+            gui.label(`row ${n + 1} of 40`,
+                      { x: 8.0, y: 8.0 + 28.0 * n, w: 240.0, h: 24.0 })));
+
+        const book = gui.pager(
+          {},
+          gui.label("the first page", { align: "center" }),
+          gui.label("the second page", { align: "center" }),
+          gui.label("the third page", { align: "center" }));
+
+        const pages = gui.tabs(
+          { titles: ["choices", "controls", "scroll bars", "pager"],
+            weight: 1.0, context: onPages, name: "pages" },
+          choices, controls, longList, book);
+
+        // ---- the window ----
+        // The bar is the window's `menu`. Under it, a `col`: the toolbar, then
+        // a `row` whose gap is a divider (`split: true`), then a holder of no
+        // height where a dialog is defined when it is wanted. The host adds
+        // its own status bar below.
+        const scene = gui.view(
+          { title: "Chrome: every element, one window", w: 900, h: 620, flow: "col",
+            margin: 0, gap: 0, menu: bar },
+          tools,
+          gui.panel({ flow: "row", split: true, weight: 1.0, name: "work" },
+                    sidebar, pages),
+          gui.layout({ h: 0.0, name: "dialogs" }));
+
+        const win = await scene.open($("win"));
+
+        // ---- what the window reports ----
+        // A menu's pick comes from the widget that carries the menu: the
+        // window for its bar, the tabs for their context menu, the tools
+        // button for its own. A folded section says `collapsed`, a divider let
+        // go of says `split` with the size it left each child.
+        const say = (who) => (...payload) => log(`${who}: ${payload}`);
+
+        for (const name of ["pages", "more", "filter", "output", "work", "loop",
+                            "combo", "radio", "segmented", "strip", "steps", "rows",
+                            "switch", "held", "steps_n"]) {
+          win.widget(name).onEvent(say(name));
+        }
+        for (const name of ["play", "stop", "record"]) {
+          win.widget(name).onClick(() => log(`${name}: clicked`));
+        }
+
+        // ---- the dialog ----
+        // A dialog is a `layout` that stands over the window: it is
+        // **defined** to open and **freed** to close, and while it exists
+        // nothing behind it can be reached -- not by the pointer and not by
+        // Tab. Here the bar's `About` defines one into the holder, and its
+        // button frees it.
+        const about = () => {
+          const box = host.define(win.widget("dialogs").id, gui.layout(
+            { h: 0.0 },
+            gui.dialog(
+              { title: "About", flow: "col", w: 360.0, name: "box" },
+              gui.label("Every element of chrome, one window.", { align: "center" }),
+              gui.label("Nothing behind this can be reached.", { align: "center" }),
+              gui.panel(
+                { flow: "row", hug: true },
+                gui.separator({ weight: 1.0, line: false }),
+                gui.button({ name: "ok", label: "OK", w: 80.0 })))));
+          box.widget("ok").onClick(() => box.widget("box").free());
+        };
+
+        // The window's own events: a pick in the menu bar is one of them.
+        const onBar = (tag, ...payload) => {
+          log(`window: ${[tag, ...payload]}`);
+          if (tag === "menu" && payload[0] === "about") about();
+          else if (tag === "menu" && payload[0] === "quit") win.close();
+        };
+
+        win.handle().onEvent(onBar);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

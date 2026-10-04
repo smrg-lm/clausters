@@ -68,7 +68,7 @@ import sys
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
-from clausters.gui import button, knob, label, menu, panel, scope, slider, view
+from clausters.gui import button, choice, knob, label, panel, scope, slider, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -115,7 +115,7 @@ voice().send(server)
 # under all of it the host draws its own status bar.
 
 # %%
-menu_bar = panel(menu(["sine"], w=120),
+menu_bar = panel(choice(["sine"], w=120),
                  button(name="play", label="play", w=80),
                  button(name="stop", label="stop", w=80),
                  label("shell - the application shell", weight=1.0),

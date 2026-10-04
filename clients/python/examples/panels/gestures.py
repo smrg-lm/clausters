@@ -25,7 +25,7 @@ value is an ordered plan of steps:
 This window shows the same views twice. The **left** column keeps the defaults
 (``"element marquee"`` / ``"pan"`` on a roll, ``"select"`` / ``"pan"`` on a
 waveform); the **right** one is told to pan on a plain drag and select with
-Shift -- the reversal, with no element's code involved. A menu switches the
+Shift -- the reversal, with no element's code involved. A chooser switches the
 right column live through ``set(gestures=...)``, which starts again from the
 kind's defaults each time, so a table names only the chords it changes.
 
@@ -51,7 +51,7 @@ import sys
 import tempfile
 
 from clausters import Session
-from clausters.gui import (label, menu, panel, pianoroll, samples_to_file,
+from clausters.gui import (choice, label, panel, pianoroll, samples_to_file,
                            timeruler, view, waveform)
 from clausters.seq import Pbind, Pseq, Pwhite
 
@@ -119,7 +119,7 @@ gui = session.gui()
 scene = view(
     panel(column("default", None), column("reversed", REVERSED), layout="row"),
     panel(label(text="right column:"),
-          menu(name="preset", options=PRESETS, label="gestures"),
+          choice(name="preset", options=PRESETS, label="gestures"),
           layout="row", h=44.0),
     title="Gestures: the container decides", w=1100, h=760, layout="col",
 )

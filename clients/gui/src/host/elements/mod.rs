@@ -45,12 +45,12 @@ pub(crate) fn switch_value(v: f32) -> clausters_core::osc::OscType {
 
 mod button;
 mod canvas;
+mod choice;
 mod control;
 pub(crate) mod curve;
 pub(crate) mod keys;
 mod knob;
 mod label;
-mod menu;
 mod meter;
 mod multitrack;
 mod nodes;
@@ -58,8 +58,10 @@ pub(crate) mod notes;
 mod number;
 #[cfg(feature = "patcher")]
 pub(crate) mod patch;
+mod progress;
 #[cfg(feature = "notation")]
 mod score;
+mod separator;
 pub mod signal;
 mod slider;
 mod text;
@@ -72,13 +74,15 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
         "button" => button::build,
         "canvas" => canvas::build,
+        // One of several. It was `menu`, which now names the tree of entries a
+        // window, a button or a context carries as a prop (`host::menu`).
+        "choice" => choice::build,
         "curve" => curve::build,
         "keys" => keys::build,
         "knob" => knob::build,
         "label" => label::build,
         "meter" => meter::build,
         "multitrack" => multitrack::build,
-        "menu" => menu::build,
         "nodes" => nodes::build,
         "notes" => notes::build,
         #[cfg(feature = "notation")]
@@ -87,6 +91,8 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         // the product it is (`elements::signal`), so one name answers for six.
         "signal" => signal::build,
         "number" => number::build,
+        "progress" => progress::build,
+        "separator" => separator::build,
         "slider" => slider::build,
         "text" => text::build,
         "toggle" => toggle::build,

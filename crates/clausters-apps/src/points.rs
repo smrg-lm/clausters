@@ -174,12 +174,12 @@ pub fn window(
 }
 
 /// **The window's widget ids**, which are the caller's: the curve's, and the
-/// shape menu's in the row under it.
+/// shape chooser's in the row under it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ids {
     /// The curve.
     pub curve: i32,
-    /// The menu that sets the selected segment's shape.
+    /// The chooser that sets the selected segment's shape.
     pub shape: Option<i32>,
 }
 
@@ -187,24 +187,24 @@ pub struct Ids {
 pub const CONTROLS_H: f64 = 40.0;
 
 /// **The shapes a segment can take**, in the order of their numbers, so a
-/// menu's index is the shape: what an envelope's segments are written with.
+/// chooser's index is the shape: what an envelope's segments are written with.
 pub fn shapes() -> Vec<&'static str> {
     (0..=clausters_core::envshape::SHAPE_HOLD)
         .map(clausters_core::envshape::shape_name)
         .collect()
 }
 
-/// **The row of controls under the curve**: the menu that sets the selected
+/// **The row of controls under the curve**: the chooser that sets the selected
 /// segment's shape, side by side with whatever the client appends to it, the
 /// lot in a quarter of the width and the rest left empty.
 fn controls(shape: Option<i32>) -> Value {
-    let mut menu = json!({
-        "type": "menu",
+    let mut chooser = json!({
+        "type": "choice",
         "name": "shape",
         "options": shapes(),
         "index": clausters_core::envshape::SHAPE_LINEAR,
     });
-    if let (Some(id), Some(map)) = (shape, menu.as_object_mut()) {
+    if let (Some(id), Some(map)) = (shape, chooser.as_object_mut()) {
         map.insert("id".into(), json!(id));
     }
     json!({
@@ -213,7 +213,7 @@ fn controls(shape: Option<i32>) -> Value {
         "h": CONTROLS_H,
         "gap": 6.0,
         "children": [
-            {"type": "layout", "flow": "row", "weight": 1.0, "gap": 6.0, "children": [menu]},
+            {"type": "layout", "flow": "row", "weight": 1.0, "gap": 6.0, "children": [chooser]},
             {"type": "layout", "weight": 3.0},
         ],
     })

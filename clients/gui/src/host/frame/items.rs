@@ -125,6 +125,17 @@ pub(super) struct Collected {
     pub(super) canvas_frames: Vec<CanvasFrame>,
 }
 
+impl Collected {
+    /// Takes in what another pass collected -- a dialog's, drawn apart from the
+    /// window and still handing its heavy views to the same GPU passes.
+    pub(super) fn absorb(&mut self, other: Collected) {
+        self.timeline_items.extend(other.timeline_items);
+        self.spectral_bodies.extend(other.spectral_bodies);
+        self.ruler_items.extend(other.ruler_items);
+        self.canvas_frames.extend(other.canvas_frames);
+    }
+}
+
 /// One immutable pass over the placed widgets: the flat widgets (labels,
 /// controls, panels, the patcher, the score, the piano) draw straight into
 /// `mesh`; every data-driven widget is copied out of the host tree into the
@@ -157,9 +168,8 @@ pub(super) fn collect_widgets(
         // accent), resolved at mutation points -- one reference per widget.
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
-            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => {
-                mesh.rect(p.rect, th.panel)
-            }
+            WidgetKind::Panel { group, .. } => draw_group(mesh, p, group, m, th),
+            WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => mesh.rect(p.rect, th.panel),
             WidgetKind::TimeRuler { editor, .. } => {
                 ruler_items.push(RulerItem {
                     id: p.widget.id.unwrap_or(-1),
@@ -195,6 +205,8 @@ pub(super) fn collect_widgets(
                         )
                     }),
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
+                    hovered: p.widget.id.is_some()
+                        && p.widget.id == inputs.popups.and_then(|o| o.hover),
                     clock: inputs.world.clocks.at(p.widget.id),
                 };
                 el.draw(&mut Draw::new(mesh, m, th), &ctx);
@@ -305,5 +317,48 @@ pub(super) fn collect_widgets(
         spectral_bodies,
         ruler_items,
         canvas_frames,
+    }
+}
+
+/// Draws a `layout`'s own picture: its ground, and what it shows of itself --
+/// a title strip with the mark that says whether it is folded, and a frame.
+///
+/// A dialog's ground is the popup layer's rather than a panel's translucent
+/// wash: it stands over the window, so it has to cover it.
+fn draw_group(
+    mesh: &mut Mesh,
+    p: &layout::Placed<'_>,
+    group: &crate::host::widget::Group,
+    m: &Metrics,
+    th: &Theme,
+) {
+    mesh.rect(p.rect, if group.modal { th.popup } else { th.panel });
+    if let (Some(title), Some(strip)) = (&group.title, chrome::title_strip(p)) {
+        let size = m.text_scale;
+        mesh.rect(strip, th.header);
+        let ty = strip.y + (strip.h - font::height(size)) * 0.5;
+        let mut x = strip.x + m.pad;
+        // A section says which way it stands; a plain group has nothing to say.
+        if let Some(folded) = group.collapsed {
+            let mark = if folded {
+                font::symbol::POINT_RIGHT
+            } else {
+                font::symbol::POINT_DOWN
+            };
+            font::text(mesh, &mark.to_string(), x, ty, size, th.accent);
+            x += font::advance(size) + m.pad;
+        }
+        font::text_ellipsis(
+            mesh,
+            title,
+            x,
+            ty,
+            (strip.x + strip.w - m.pad - x).max(0.0),
+            size,
+            th.text,
+        );
+    }
+    if group.frame || group.modal {
+        mesh.border(p.rect, m.divider_w, th.separator);
     }
 }

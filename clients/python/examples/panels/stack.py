@@ -5,7 +5,7 @@ Two things meet here. A `stack` shows **one child at a time** -- the one its
 ``index`` names -- and everything else it holds is neither laid out nor drawn
 while it is away. And a widget can be **bound to another widget**
 (`clausters.gui.host.GuiHost.bind_widget`), which applies its value to that
-widget's property with no round-trip through this process. Put together, a menu
+widget's property with no round-trip through this process. Put together, a choice
 bound to a stack's ``index`` *is* a tab bar: the pages flip inside the host, and
 nothing prints here while you click.
 
@@ -48,7 +48,7 @@ and a GPU adapter.
 import math
 import sys
 
-from clausters.gui import GuiHost, label, menu, panel, slider, spectrogram, stack, view, waveform
+from clausters.gui import GuiHost, choice, label, panel, slider, spectrogram, stack, view, waveform
 
 SR = 48_000
 
@@ -85,7 +85,7 @@ gui = GuiHost().boot()
 
 # %% [markdown]
 # ## The window: a picker over a stack, and a scroll slider under it
-# The `menu`'s options are the page names and its index *is* the stack's index,
+# The `choice`'s options are the page names and its index *is* the stack's index,
 # which is exactly why the binding is one line and no event handler.
 #
 # Both views name `link=1`: one navigation group, so the time window belongs to
@@ -98,7 +98,7 @@ gui = GuiHost().boot()
 # %%
 win = view(
 panel(label("view:", w=48.0),
- menu(["waveform", "spectrogram"], name="picker", index=0),
+ choice(["waveform", "spectrogram"], name="picker", index=0),
  layout="row", h=32.0),
 stack(waveform(name="wave", data=TAKE, sample_rate=float(SR), ruler="time",
           link=1),

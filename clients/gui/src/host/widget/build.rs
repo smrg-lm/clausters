@@ -56,6 +56,7 @@ pub(super) fn build_kind(
             layout: Layout::parse(props),
             flow: Flow::parse(props),
             hug: hug(props),
+            group: Group::parse(props),
         },
         // Two axes locked to one scale. What a patcher adds to a plane is its
         // boxes and the cords between them, so their presence is what tells

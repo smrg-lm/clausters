@@ -201,10 +201,10 @@ test("an automation is kept in the range of what it automates", async () => {
     assert.equal(cutoff.toPoints()[5], 127);
 });
 
-test("a selected segment takes its shape from the menu under the curve", async () => {
-    // A click on a segment selects it; the menu in the row under the curve sets
+test("a selected segment takes its shape from the chooser under the curve", async () => {
+    // A click on a segment selects it; the chooser in the row under the curve sets
     // its shape, as an edit the curve's history takes back. The page's own
-    // widgets go in that row, beside the menu.
+    // widgets go in that row, beside the chooser.
     const curve = aCurve();
     const editor = await edit(curve, {
         sampleRate: SR, open: false, extra: [button({ name: "play" })],

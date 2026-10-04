@@ -24,6 +24,7 @@
 //! still drawn here).
 
 pub mod bpf;
+pub mod choice;
 pub mod controls;
 pub mod meters;
 pub mod multitrack;

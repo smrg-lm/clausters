@@ -1170,7 +1170,7 @@ fn a_query_answers_with_the_chrome_an_axis_pair_carried() {
 #[test]
 fn an_inline_widget_bind_is_registered_at_define_time() {
     const TABS: &str = r#"{"type":"window","children":[
-        {"id":10,"type":"menu","items":["a","b"],"bind":["widget",20,"index"]},
+        {"id":10,"type":"choice","options":["a","b"],"bind":["widget",20,"index"]},
         {"id":20,"type":"layout","flow":"stack","children":[
             {"id":21,"type":"label","text":"one"},
             {"id":22,"type":"label","text":"two"}]}]}"#;

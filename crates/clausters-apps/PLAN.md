@@ -1456,10 +1456,11 @@ Every entry carries a checkbox.
   the window itself, and today the windows have no chrome for it. The audio
   editor's loop is a key and a status line precisely because there is none
   (X8). What the chrome is, and which of it is the application's rather than
-  the widget's, is the design. *(2026-10-04: the elements it would be composed
-  from are now milestones of the host — a window's menu bar and a context menu
-  in `G37.2`, the rest in `G38`–`G40`, `clients/gui/PLAN.md`. Which entries an
-  application puts in them is still this entry's.)*
+  the widget's, is the design. *(2026-10-04: the elements it is composed from
+  exist in the host — a window's menu bar, a context menu, tools, tips, tabs,
+  sections and a dialog (`G37`–`G40`, `clients/gui/PLAN.md`; the
+  `panels/chrome` example holds one of each). Which entries an application puts
+  in them is still this entry's.)*
 
 - ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists

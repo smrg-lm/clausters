@@ -43,6 +43,7 @@ use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
 use super::bands::Bands;
+use super::chrome;
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
 use crate::canvas::{self, CanvasView};
@@ -507,6 +508,10 @@ pub(crate) struct FrameInputs<'a> {
     /// -- the band is still carved, because a window that carries a bar carries
     /// it before it has anything to put in it.
     pub(crate) status: Option<&'a status::Status>,
+    /// **What is open over this window**: the lists and the tip of the popup
+    /// layer (see [`super::popup`]). The host's, like the status bar, and
+    /// drawn last so it covers whatever it opened over.
+    pub(crate) popups: Option<&'a super::popup::Popups>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -520,6 +525,7 @@ impl Default for FrameInputs<'_> {
             focused: None,
             grab: Grab::None,
             status: None,
+            popups: None,
         }
     }
 }
@@ -776,12 +782,20 @@ pub(crate) fn render(
     // pixels a press lands on are the pixels the tree was drawn on.
     let bar = status::bar(tree, inputs.status, window, inputs.metrics);
     let area = status::content(tree, inputs.status, window, inputs.metrics);
+    // ...and the menu bar's off the top, by the same rule.
+    let menu_bar = super::menubar::bar(tree, window, inputs.metrics);
+    let area = super::menubar::content(tree, area, inputs.metrics);
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
     let placed = layout::layout_on(area, tree, inputs.metrics);
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
-    let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
+    // **A dialog is the tail of the placements** (`layout` places it last), and
+    // it is drawn apart: everything before it is the window as it always was,
+    // and the dialog goes over all of that, in the overlay.
+    let (base, dialog) = placed.split_at(chrome::modal_start(&placed).unwrap_or(placed.len()));
+    let mut collected = collect_widgets(base, &mut mesh, inputs, theme);
+    draw_dividers(&mut mesh, &placed, 0..base.len(), inputs, theme);
 
     draw_timeline_meshes(
         &mut mesh,
@@ -793,11 +807,56 @@ pub(crate) fn render(
         theme,
     );
     draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
-    draw_element_overlays(&mut over, &placed, inputs, theme);
+    draw_element_overlays(&mut over, base, inputs, theme);
+    draw_bars(&mut over, base, inputs, theme);
 
-    // Last into the overlay, so the bar reads over whatever ran up to its edge.
+    if !dialog.is_empty() {
+        // The window behind a dialog is out of reach, and looks it: a scrim
+        // over the work area, then the dialog's own picture built on the side
+        // and laid over it -- its flat widgets, its chrome, what its elements
+        // draw over themselves, in that order.
+        let mut under = Mesh::new();
+        let mut above = Mesh::new();
+        let inside = collect_widgets(dialog, &mut under, inputs, theme);
+        draw_dividers(&mut under, &placed, base.len()..placed.len(), inputs, theme);
+        draw_timeline_meshes(
+            &mut under,
+            &mut above,
+            &inside,
+            waveforms,
+            spectrograms,
+            inputs,
+            theme,
+        );
+        draw_static_meshes(&mut under, &mut above, &inside, inputs, theme, tree);
+        draw_element_overlays(&mut above, dialog, inputs, theme);
+        draw_bars(&mut above, dialog, inputs, theme);
+        over.set_clip(None);
+        over.set_ink(Ink::default());
+        over.rect(area, with_alpha(theme.background, 0.6));
+        over.append(&under);
+        over.append(&above);
+        // What the dialog's elements hand the GPU passes -- a texture view, a
+        // shader canvas -- is drawn with the window's, between the two meshes.
+        collected.absorb(inside);
+    }
+
+    // Into the overlay after the tree, so the bar reads over whatever ran up
+    // to its edge.
     if let Some(band) = bar {
         draw_status(&mut over, band, inputs, theme);
+    }
+    // **The popup layer, last of all**: a list covers what it opened over. It
+    // is placed inside `area` -- the window minus the host's bands -- by the
+    // function the press hit-tests with, so it never runs under the bar and a
+    // row is hit where it is drawn.
+    if let Some(band) = menu_bar {
+        draw_menu_bar(&mut over, tree, band, inputs, theme);
+    }
+    if let Some(popups) = inputs.popups {
+        draw_popups(
+            &mut over, popups, tree, &placed, window, area, inputs, theme,
+        );
     }
     mesh.set_clip(None);
     over.set_clip(None);

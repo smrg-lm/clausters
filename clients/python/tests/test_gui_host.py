@@ -227,7 +227,7 @@ def test_the_id_is_never_positional():
     assert guidef.label("hello")["text"] == "hello"
     assert guidef.meter(4)["bus"] == 4
     assert guidef.knob(_control("freq", 220.0), min=110.0, max=880.0)["name"] == "freq"
-    assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]
+    assert guidef.choice(["sine", "saw"])["options"] == ["sine", "saw"]
     assert guidef.panel(guidef.button())["children"][0]["type"] == "button"
 
 
@@ -462,3 +462,97 @@ def test_a_reply_goes_to_whoever_asked_and_an_event_does_not():
     source.deliver(("/gui_event", [7, 1, 1, "points"]))
     assert events == ["/gui_event"]
     assert host._replies.get_nowait() == ("/gui_info", [7, "curve"])
+
+
+def test_a_menu_is_a_tree_of_entries_and_rides_as_a_prop():
+    """A menu is not a node: it is the value of the three props that show one
+    -- a window's bar, a button's list, any widget's context menu."""
+    from clausters.gui import guidef
+
+    file = guidef.menu(guidef.entry("Open", "open"), "-",
+                       guidef.entry("Loop", "loop", checked=False),
+                       guidef.entry("Recent", menu=guidef.menu("a.wav", "b.wav")),
+                       guidef.entry("Export", enabled=False))
+    assert file[0] == {"label": "Open", "verb": "open"}
+    assert file[1] == "-"
+    assert file[2]["checked"] is False
+    assert file[3]["menu"] == ["a.wav", "b.wav"]
+    assert file[4] == {"label": "Export", "enabled": False}
+    with pytest.raises(TypeError, match="a menu holds entries"):
+        guidef.menu(3)  # pyright: ignore[reportArgumentType] - the point of the test
+
+    bar = guidef.menu(guidef.entry("File", menu=file))
+    win = guidef.view(guidef.button(label="tools", menu=guidef.menu("Split")),
+                      guidef.knob(context=guidef.menu("Reset")), menu=bar)
+    assert win["menu"] == bar
+    assert win["children"][0]["menu"] == ["Split"]
+    assert win["children"][1]["context"] == ["Reset"]
+
+
+def test_a_choice_names_its_view_and_refuses_one_it_does_not_have():
+    from clausters.gui import guidef
+
+    assert guidef.choice(["a", "b"], view="tabs")["view"] == "tabs"
+    assert "view" not in guidef.choice(["a", "b"]), "a combo says nothing"
+    with pytest.raises(ValueError, match="unknown choice view"):
+        guidef.choice(["a"], view="carousel")
+    with pytest.raises(ValueError, match="unknown toggle view"):
+        guidef.toggle(view="lever")
+
+
+def test_tabs_bind_their_strip_to_their_pages_by_the_ids_the_open_assigns():
+    """`tabs` wires a chooser to a stack before either has an id: the binding
+    names the stack *node*, and opening the tree resolves it -- per copy, so the
+    same tabs nested twice wire each strip to its own pages."""
+    import json
+
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57993)
+    host._osc = _Recorder()
+    book = guidef.tabs(guidef.label("one"), guidef.label("two"), titles=["A", "B"])
+    host.open(guidef.window(book, book))
+
+    left, right = json.loads(host._osc.sent[0][2])["children"]
+    for copy in (left, right):
+        strip, pages = copy["children"]
+        assert strip["view"] == "tabs" and strip["options"] == ["A", "B"]
+        assert pages["flow"] == "stack"
+        assert strip["bind"] == ["widget", pages["id"], "index"]
+    assert left["children"][0]["bind"] != right["children"][0]["bind"]
+    # The tree the caller wrote still names the node: it opens again.
+    assert isinstance(book["children"][0]["bind"][1], dict)
+    with pytest.raises(ValueError, match="one title per page"):
+        guidef.tabs(guidef.label("one"), titles=["A", "B"])
+    # ...and it cannot be serialized before the ids exist.
+    with pytest.raises(ValueError, match="binds a widget by reference"):
+        guidef.to_json(book)
+
+
+def test_a_binding_by_reference_must_reach_a_widget_of_the_tree():
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57992)
+    host._osc = _Recorder()
+    elsewhere = guidef.stack(guidef.label("x"))
+    stray = guidef.choice(["a"], bind=["widget", elsewhere, "index"])
+    with pytest.raises(ValueError, match="not in the tree being opened"):
+        host.open(guidef.window(stray))
+
+
+def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
+    from clausters.gui import guidef
+
+    group = guidef.panel(guidef.knob(), title="Filter", frame=True, collapsed=False)
+    assert (group["title"], group["frame"], group["collapsed"]) == ("Filter", 1, 0)
+    assert guidef.panel(guidef.knob(), guidef.knob(), flow="row", split=True)["split"] == 1
+    assert guidef.scroll(bars=True)["bars"] == 1
+    box = guidef.dialog(guidef.label("Discard the take?"), title="Confirm")
+    assert (box["type"], box["modal"], box["title"]) == ("layout", 1, "Confirm")
+    bar = guidef.toolbar(guidef.button(icon=guidef.ICON.play, flat=True),
+                         guidef.separator(), guidef.separator(weight=1, line=False))
+    assert (bar["flow"], bar["hug"], bar["pack"]) == ("row", 1, 1)
+    assert bar["children"][0]["icon"] == "\u25b6" and bar["children"][0]["flat"] == 1
+    assert bar["children"][2] == {"type": "separator", "line": 0, "weight": 1}
+    assert guidef.progress(0.25)["value"] == 0.25
+    assert "value" not in guidef.progress(), "no value is the indeterminate bar"

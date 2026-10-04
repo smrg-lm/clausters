@@ -18,7 +18,7 @@ use crate::host::graphics::controls::knob_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::size::{Natural, body_inset, text_box};
 
 use super::control::{self, Dial};
@@ -127,6 +127,18 @@ impl Element for Knob {
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.drag.release();
         Events::none()
+    }
+
+    fn accepts_focus(&self) -> bool {
+        true
+    }
+
+    fn reports_focus(&self) -> bool {
+        false
+    }
+
+    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        control::key(&mut self.range, key, input.mods)
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

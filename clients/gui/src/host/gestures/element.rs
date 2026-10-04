@@ -11,6 +11,7 @@
 use super::super::Host;
 use super::super::layers::Layer;
 use super::super::layout::Rect;
+use super::super::popup;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args, emit};
@@ -253,7 +254,28 @@ pub(super) fn report(
     let selected = events.selection().inspect(|&((a, b), values)| {
         super::nav::set_selection(host, out, ctx.def_id, id, a, b, values);
     });
-    let voiced = !events.voices().is_empty() || selected.is_some();
+    // ...and the list, if it asked for one: it opens over the window, in the
+    // popup layer, hanging off the rectangle the element named.
+    let opened = events.take_popup().map(|request| {
+        let origin = host
+            .layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)
+            .and_then(|placed| {
+                placed
+                    .iter()
+                    .find(|p| p.widget.id == Some(id))
+                    .map(|p| (p.rect.x, p.rect.y))
+            });
+        let mut stack = popup::Stack::new(
+            popup::Owner::Element(id),
+            request.entries,
+            popup::Anchor::Below(request.anchor),
+            request.text_size,
+        );
+        stack.min_w = request.anchor.w;
+        stack.origin = origin;
+        host.open_popup(ctx.def_id, stack);
+    });
+    let voiced = !events.voices().is_empty() || selected.is_some() || opened.is_some();
     let messages = events.into_messages();
     if messages.is_empty() {
         if voiced || reported {
@@ -268,19 +290,4 @@ pub(super) fn report(
         }
     }
     out.push(GestureEffect::Redraw(ctx.def_id));
-}
-
-/// The element holding an **overlay** in this window -- an open list, a popup --
-/// with the placement it was drawn at.
-///
-/// Found by asking the tree rather than by remembering: an overlay is declared
-/// ([`Element::overlay_rect`]), so
-/// there is no machine state to keep in step with an element that opened or
-/// closed one, and a def that replaced the tree takes its overlays with it.
-pub(super) fn overlay_owner(host: &Host, ctx: &GestureCtx) -> Option<(i32, Rect, f32)> {
-    let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
-    placed
-        .iter()
-        .find(|p| p.widget.kind.overlay_rect().is_some())
-        .and_then(|p| Some((p.widget.id?, p.rect, p.scale)))
 }

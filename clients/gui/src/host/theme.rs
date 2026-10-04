@@ -91,6 +91,18 @@ theme_roles! {
     accent_dim = [0.22, 0.50, 0.40, 1.0];
     /// The accent's lit form (a pressed control, a window's edge marker).
     hilite = [0.40, 0.85, 0.62, 1.0];
+    /// What the pointer is over: a row of an open list, a flat button, a
+    /// tab. A quiet lift off the ground it sits on, so it reads as *under the
+    /// hand* without competing with what is chosen.
+    hover = [0.22, 0.25, 0.32, 1.0];
+    /// The text of something that cannot be acted on now: a disabled control,
+    /// a disabled entry of a menu.
+    text_disabled = [0.40, 0.43, 0.48, 1.0];
+    /// The ground of what opens over the window: a list, a menu, a tip.
+    /// Opaque, since it covers whatever it opened over.
+    popup = [0.12, 0.13, 0.17, 1.0];
+    /// A line between groups: a menu's separator, a toolbar's, a group's frame.
+    separator = [0.28, 0.31, 0.37, 1.0];
 
     // -- Data traces --
     /// A drawn signal or curve (scope trace, bpf curve, automation curve).
@@ -367,6 +379,40 @@ impl Theme {
         t.object_edge = color;
         t
     }
+}
+
+impl Theme {
+    /// **This theme as a widget out of the hand's reach draws through it**: the
+    /// text in the disabled role, and the roles that carry a control's function
+    /// taken halfway back to the field they sit on.
+    ///
+    /// Derived rather than declared part by part, for the reason a `color`
+    /// prop is: a disabled control is the same drawing in quieter roles, so no
+    /// element has a second picture of itself to keep in step.
+    pub fn disabled(&self) -> Theme {
+        let quiet = |c: Color| mix(c, self.field, 0.6);
+        Theme {
+            text: self.text_disabled,
+            text_dim: self.text_disabled,
+            label_dim: self.text_disabled,
+            accent: quiet(self.accent),
+            accent_dim: quiet(self.accent_dim),
+            hilite: quiet(self.hilite),
+            trace: quiet(self.trace),
+            point: quiet(self.point),
+            ..self.clone()
+        }
+    }
+}
+
+/// `a` taken `k` of the way toward `b`, alpha included.
+fn mix(a: Color, b: Color, k: f32) -> Color {
+    [
+        a[0] + (b[0] - a[0]) * k,
+        a[1] + (b[1] - a[1]) * k,
+        a[2] + (b[2] - a[2]) * k,
+        a[3] + (b[3] - a[3]) * k,
+    ]
 }
 
 /// `color` with its rgb scaled by `k` (alpha kept) -- the dim derivation.

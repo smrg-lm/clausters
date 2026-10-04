@@ -184,8 +184,8 @@ its plan; the plan is where its acceptance is read.
   *(`clients/gui/PLAN.md`, section "G36")*. **The decision is the design**, and
   it follows the conventions common to desktop and mobile interfaces: key
   bindings set outside the code (a config file, a GuiDef) instead of spelled in
-  each element. `G37`–`G40` no longer wait on it — they take the verb's name
-  and show the bound key once this table exists.
+  each element. The menus and tips name a verb and will show the bound key
+  once this table exists.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
@@ -236,17 +236,12 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`G37` - `G40` — the chrome set: menus, what every widget carries, the
-  choice's presentations, container chrome** *(`clients/gui/PLAN.md`, sections
-  "G37" to "G40")*. Designed with the user 2026-10-04 and taken in the plan's
-  own order: `G37.1` the popup layer and the chooser put right on it, `G37.2`
-  the menu tree with its bar and its context menu, `G38` `enabled`, focus, the
-  tip and the icon, `G39` tabs, pager and the small elements, `G40` groups,
-  split panes, scroll bars and a dialog. `G37.1` comes first because every
-  later part draws on the popup layer. `G41` (rows of data, choosing a file)
-  is written as an option after them and is not in this sequence. **Related:**
-  `G36` above, and the applications' window chrome in standalone
-  (`crates/clausters-apps/PLAN.md`, Future directions), which waits on `G37.2`.
+- ⬜ **`G41` — rows of data, and choosing a file** *(`clients/gui/PLAN.md`,
+  section "G41")*. Written as an option after the chrome set: one element over
+  rows (a list, a table, a tree) and a file chooser the host draws over the
+  disk natively and OPFS in a page. **Related:** the applications' window
+  chrome in standalone (`crates/clausters-apps/PLAN.md`, Future directions),
+  whose elements the chrome set built.
 
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample

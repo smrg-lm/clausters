@@ -9,8 +9,11 @@
 //! tree.
 
 use super::*;
+use crate::host::chrome;
 use crate::host::graphics::selection;
 use crate::host::graphics::signal::layers::{Domain, Paint};
+use crate::host::menubar;
+use crate::host::popup;
 use crate::host::widget::{Marker, RulerDir};
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
@@ -727,15 +730,12 @@ pub(super) fn draw_static_meshes(
     }
 }
 
-/// The **overlays**: what an element draws outside its own rect, into the
-/// overlay mesh after everything else in it.
+/// **What is drawn over the tree's pictures**, into the overlay mesh: the
+/// marquee a hand is sweeping, and what each element draws over its own
+/// placement.
 ///
-/// Last on purpose, and in a walk of its own rather than in the collect pass:
-/// an overlay covers whatever it opened over -- the widgets in the base mesh,
-/// the heavy views the GPU pass paints between the two meshes, and the editor
-/// chrome already in this one. Which elements have one is declared
-/// ([`Element::overlay_rect`](super::super::widget::Element::overlay_rect)), so
-/// this asks the tree instead of being told.
+/// What used to share this walk -- an element's own open list -- is the popup
+/// layer's now ([`draw_popups`]).
 pub(super) fn draw_element_overlays(
     over: &mut Mesh,
     placed: &[layout::Placed],
@@ -756,15 +756,20 @@ pub(super) fn draw_element_overlays(
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         selection::draw_rect(&mut Draw::new(over, m, th), rect);
     }
+    // **What each element draws over the pictures**
+    // ([`Element::draw_over`](super::super::widget::Element::draw_over)): a
+    // stored plot's hover readout. Every element is asked, and the default
+    // draws nothing -- this walk used to ask only an element that had declared
+    // a rectangle outside its placement, so a readout that stayed inside one
+    // was never drawn at all.
     for p in placed {
-        let (WidgetKind::Custom(el), Some(_)) = (&p.widget.kind, p.widget.kind.overlay_rect())
-        else {
+        let WidgetKind::Custom(el) = &p.widget.kind else {
             continue;
         };
-        over.set_clip(None);
+        over.set_clip(p.clip);
         over.set_ink(super::ink_of(p));
         let th = p.widget.theme.as_deref().unwrap_or(theme);
-        el.overlay(
+        el.draw_over(
             &mut Draw::new(over, m, th),
             &Ctx {
                 world: &inputs.world,
@@ -775,10 +780,262 @@ pub(super) fn draw_element_overlays(
                 scale: p.scale,
                 time: None,
                 focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
+                hovered: p.widget.id.is_some()
+                    && p.widget.id == inputs.popups.and_then(|o| o.hover),
                 clock: inputs.world.clocks.at(p.widget.id),
             },
         );
     }
+    over.set_clip(None);
+}
+
+/// Draws the **dividers** of every split strip whose container is one of the
+/// placements in `range`: a hairline in each gap a drag can move.
+pub(super) fn draw_dividers(
+    mesh: &mut Mesh,
+    placed: &[layout::Placed],
+    range: std::ops::Range<usize>,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    for d in chrome::dividers(placed) {
+        if !range.contains(&d.container) {
+            continue;
+        }
+        let p = &placed[d.container];
+        mesh.set_clip(p.clip);
+        mesh.set_ink(super::ink_of(p));
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        mesh.rect(chrome::divider_line(&d, inputs.metrics), th.separator);
+    }
+    mesh.set_clip(None);
+}
+
+/// Draws the **scroll bars** of every plane among `placed` that carries
+/// `bars`, into the overlay: over what the plane holds, which is what they
+/// measure.
+pub(super) fn draw_bars(
+    over: &mut Mesh,
+    placed: &[layout::Placed],
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    for p in placed {
+        let bars = chrome::bars(p, inputs.metrics);
+        if bars.is_empty() {
+            continue;
+        }
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        over.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
+        over.set_ink(super::ink_of(p));
+        for bar in bars {
+            over.rect(bar.track, with_alpha(th.track, 0.7));
+            over.rect(bar.thumb, th.accent_dim);
+        }
+    }
+    over.set_clip(None);
+}
+
+/// Draws the **popup layer**: every open list of the window's stack, first to
+/// last, and the tip.
+///
+/// The lists are placed here by [`popup::layout`], against the placements this
+/// frame just made -- the same call the gesture machine makes through
+/// `Host::popup_placed` -- so the picture and the hit test cannot disagree.
+#[allow(clippy::too_many_arguments)] // one frame: a tree, its placements, two areas
+pub(super) fn draw_popups(
+    over: &mut Mesh,
+    popups: &popup::Popups,
+    tree: &Widget,
+    placed: &[layout::Placed],
+    window: Rect,
+    work: Rect,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    over.set_ink(Ink::default());
+    if let Some(stack) = &popups.stack {
+        // A list reads as part of what opened it, so it draws in the owner's
+        // theme group where it has an owner.
+        let th = stack
+            .owner_widget()
+            .and_then(|id| placed.iter().find(|p| p.widget.id == Some(id)))
+            .and_then(|p| p.widget.theme.as_deref())
+            .unwrap_or(theme);
+        let owner = popup::owner_rect(stack, tree, placed, window, m);
+        let lists = popup::layout(stack, owner, work, m);
+        for (level, at) in stack.levels.iter().zip(&lists) {
+            draw_list(over, level, at, stack.text_size, m, th);
+        }
+    }
+    if let Some(tip) = &popups.tip {
+        let size = m.text_scale;
+        let rect = popup::place_tip(tip, size, work, m);
+        over.set_clip(None);
+        over.rect(rect, theme.popup);
+        over.border(rect, m.divider_w, theme.frame);
+        font::text(
+            over,
+            &tip.text,
+            rect.x + m.pad,
+            rect.y + m.pad,
+            size,
+            theme.text,
+        );
+    }
+    over.set_clip(None);
+}
+
+/// Draws the **menu bar** into `band`: the titles of the window's menu, the
+/// open one and the one under the pointer lifted off the band.
+pub(super) fn draw_menu_bar(
+    over: &mut Mesh,
+    tree: &Widget,
+    band: Rect,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let Some(entries) = menubar::entries(tree) else {
+        return;
+    };
+    let m = inputs.metrics;
+    let theme = tree.theme.as_deref().unwrap_or(theme);
+    let size = m.text_scale;
+    over.set_clip(None);
+    over.set_ink(Ink::default());
+    over.rect(band, theme.popup);
+    let open = inputs
+        .popups
+        .and_then(|p| p.stack.as_ref())
+        .and_then(|s| match s.owner {
+            popup::Owner::Bar(title) => Some(title),
+            _ => None,
+        });
+    let hover = inputs.popups.and_then(|p| p.bar_hover);
+    for (title, rect) in menubar::titles(entries, band, m) {
+        let live = menubar::live(entries, title);
+        if live && (open == Some(title) || hover == Some(title)) {
+            over.rect(rect, theme.hover);
+        }
+        font::text_centered(
+            over,
+            &menubar::label(entries, title),
+            rect,
+            size,
+            if live {
+                theme.text
+            } else {
+                theme.text_disabled
+            },
+        );
+    }
+    // A hairline under the band, so it reads as a strip and not as the top of
+    // whatever is laid out under it.
+    over.rect(
+        Rect::new(band.x, band.y + band.h - m.divider_w, band.w, m.divider_w),
+        theme.separator,
+    );
+}
+
+/// One list of the popup layer: its ground, its rows cut to it, and the marks
+/// that say there is more above or below.
+fn draw_list(
+    over: &mut Mesh,
+    level: &popup::Level,
+    at: &popup::Placed,
+    size: f32,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    let rect = at.rect;
+    over.set_clip(None);
+    over.rect(rect, theme.popup);
+    over.set_clip(Some(rect));
+    let glyph = font::height(size);
+    let gutter = popup::gutter(size, m);
+    let left = if level
+        .entries
+        .iter()
+        .any(|e| e.icon.is_some() || e.can_mark())
+    {
+        gutter
+    } else {
+        0.0
+    };
+    let right = if level.entries.iter().any(|e| e.submenu().is_some()) {
+        gutter
+    } else {
+        0.0
+    };
+    for (i, (entry, row)) in level.entries.iter().zip(&at.rows).enumerate() {
+        if row.y + row.h < rect.y || row.y > rect.y + rect.h {
+            continue; // scrolled out
+        }
+        if entry.is_separator() {
+            let y = row.y + (row.h - m.divider_w) * 0.5;
+            over.rect(
+                Rect::new(
+                    row.x + m.pad,
+                    y,
+                    (row.w - 2.0 * m.pad).max(0.0),
+                    m.divider_w,
+                ),
+                theme.separator,
+            );
+            continue;
+        }
+        if level.hover == Some(i) && entry.pickable() {
+            over.rect(*row, theme.hover);
+        }
+        let ink = if entry.enabled {
+            theme.text
+        } else {
+            theme.text_disabled
+        };
+        let cy = row.y + row.h * 0.5;
+        let ty = row.y + (row.h - glyph) * 0.5;
+        if let Some(icon) = entry.icon {
+            font::text(over, &icon.to_string(), row.x + m.pad, ty, size, ink);
+        } else if entry.marked() {
+            font::text(
+                over,
+                &font::symbol::CHECK.to_string(),
+                row.x + m.pad,
+                ty,
+                size,
+                if entry.enabled { theme.accent } else { ink },
+            );
+        }
+        font::text_ellipsis(
+            over,
+            &entry.label,
+            row.x + m.pad + left,
+            ty,
+            (row.w - 2.0 * m.pad - left - right).max(0.0),
+            size,
+            ink,
+        );
+        if entry.submenu().is_some() {
+            let s = (glyph * 0.3).max(2.0);
+            let x = row.x + row.w - m.pad - s;
+            over.tri([x - s, cy - s], [x - s, cy + s], [x + s * 0.5, cy], ink);
+        }
+    }
+    // More above, more below: a list cut to its place says so at the edge it
+    // was cut on.
+    let s = (glyph * 0.3).max(2.0);
+    let x = rect.x + rect.w * 0.5;
+    if at.scroll > 0.5 {
+        let y = rect.y + m.pad * 0.5;
+        over.tri([x - s, y + s], [x + s, y + s], [x, y], theme.accent);
+    }
+    if at.scroll < at.max_scroll - 0.5 {
+        let y = rect.y + rect.h - m.pad * 0.5;
+        over.tri([x - s, y - s], [x + s, y - s], [x, y], theme.accent);
+    }
+    over.set_clip(None);
+    over.border(rect, m.divider_w, theme.frame);
 }
 
 /// Draws the **status bar** into `band`: the window's newest line, or -- open --

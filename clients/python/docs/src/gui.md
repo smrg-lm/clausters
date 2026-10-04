@@ -33,7 +33,7 @@ Start the host and open a window. `GuiHost().boot()` launches a
 `clausters-gui` process and connects to it; no audio server is involved yet.
 
 ```python
-from clausters.gui import GuiHost, button, knob, label, menu, panel, slider, view
+from clausters.gui import GuiHost, button, choice, knob, label, panel, slider, view
 
 gui = GuiHost().boot()
 
@@ -44,7 +44,7 @@ v = view(
           layout="row"),
     panel(slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
           button(name="reset", label="reset"),
-          menu(name="wave", options=["sine", "saw", "square"], index=0),
+          choice(name="wave", options=["sine", "saw", "square"], index=0),
           layout="row", h=40),
     title="filter", w=520, h=260, layout="col")
 
@@ -97,7 +97,7 @@ a window is freed), a name is stable, which is what a live edit addresses
 against.
 
 **The children came first.** The positional slot of every builder belongs to
-what the widget is made of — a container's children, a label's text, a menu's
+what the widget is made of — a container's children, a label's text, a choice's
 options — so an ordinary tree mentions no ids at all.
 
 ### A control widget is built from the control it drives
@@ -302,8 +302,8 @@ things:
 | Kind | What it is | Types |
 |---|---|---|
 | **Container** | owns 0, 1 or 2 **axes**, and so a coordinate system its children are placed in | `window`, `layout`, `plane`, `field` |
-| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label` |
-| **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` |
+| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`, `separator`, `progress` |
+| **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `choice` |
 
 That is the whole vocabulary. The builders you just used — `panel`, and later
 `waveform`, `timeruler`, `scope` — are **shortcuts**: each builds one of those
@@ -331,6 +331,12 @@ focusable widgets in the order they are laid out, **Shift+Tab** back along
 them. The focused widget wears a ring in the theme's `focus` role, so where the
 keyboard is pointing is always visible.
 
+**Every control is a stop on that ring**, worked by the keys a reader already
+knows: Space or Enter is a click on a `button` and flips a `toggle`; the arrows
+step a `slider`, a `knob` and a `number` — by their own `step`, ten at a time
+with Shift — and Home and End take them to their ends; the arrows move a
+`choice`, and Enter opens its list.
+
 A script can point it too — for a field that should be ready to type into the
 moment its window opens:
 
@@ -342,6 +348,10 @@ win["name"].on_event(lambda *a: print(a))
 
 Both ends of every move **the user makes** are reported, so a script that mirrors
 the focus hears about the widget that lost it as well as the one that gained it.
+The light controls are the exception: a `button`, a `toggle`, a `slider`, a
+`knob`, a `number` and a `choice` take the focus without saying so, because what
+they report is their value — to a callback of one argument, which a `("focus", 1)`
+would not fit.
 Your own `focus()` is not echoed back — no `set` is, since you already know what
 you asked for. A widget that reads no keyboard refuses the focus rather than
 swallowing it.
@@ -404,7 +414,7 @@ of putting a strip at the top of an empty pane.
 
 What a size may read is fixed by **where the value is resolved**. A prop that
 settles when you build it or `set` it may size a hugging container — a label's
-text, a menu's options. A **value** never sizes anything: the option a menu is
+text, a choice's options. A **value** never sizes anything: the option a choice is
 on, what a field holds, what a number reads, a view's samples. So a stream of
 values cannot move a layout, and a control does not resize under the gesture
 writing it.
@@ -428,7 +438,71 @@ stack(waveform(name="wave", data=take),
 The hidden page stays in the tree, so a heavy view keeps its GPU slot and its
 bus reads across a switch and comes back without re-uploading anything. Flip it
 from the script with `win["pages"].set(index=1)` — or, better, let a control do
-it without the script at all.
+it without the script at all. `tabs` and `pager` are that composition, built
+for you: a `choice` in its `"tabs"` or `"pager"` view, bound to the `index` of
+a stack.
+
+```python
+from clausters.gui import tabs
+
+tabs(waveform(name="wave", data=take), spectrogram(data=take),
+     titles=["wave", "spectrum"])
+```
+
+## The window's chrome: menus, tools and a dialog
+
+A work surface is the middle of a window; the rest of it is **chrome**, and it
+is composed from the same elements — a few more props, no new kind of node.
+
+**A menu is a tree of entries, and a prop.** `menu` builds the tree, `entry`
+one entry of it, and `"-"` is a separator. An entry is an action unless it says
+more: `checked=` makes it a check, `group=` one of several, `menu=` a submenu.
+Three props carry a menu, and they are the three places one is shown:
+
+```python
+from clausters.gui import ICON, button, entry, menu, separator, toolbar, view
+
+bar = menu(entry("File", menu=menu(entry("Open", "open"), "-",
+                                   entry("Loop", "loop", checked=False))),
+           entry("About", "about"))
+
+tools = toolbar(button(name="play", icon=ICON.play, flat=True, tip="Play"),
+                separator(),
+                button(label="tools", menu=menu("Split", "Join")))
+
+win = view(tools, work, menu=bar, context=menu("Copy", "Paste")).open()
+win.handle().on_event(lambda tag, *payload: print(tag, payload))
+# ('menu', ('open',)) for an action, ('menu', ('loop', 1)) for a check
+```
+
+`menu=` on the `view` is the window's **menu bar**, a band the host draws along
+the top the way it draws the status bar along the bottom. `menu=` on a `button`
+is the list that opens under it, and `context=` on any widget is the menu the
+secondary button opens there — the nearest ancestor that carries one answers.
+What a pick reports is the entry's **verb**, from the widget that carries the
+menu.
+
+**A toolbar is a row of tools as wide as what they say.** `toolbar` is a
+hugging, packed `row`: a `flat` button draws no box until the pointer is over
+it, `icon=` is one character — there are no icons in the host and there are
+fonts, and `ICON` names the glyphs its own face draws — a `separator` splits
+the groups, and one with a `weight` is the spring that sends the rest to the
+far edge. `tip=` on any widget is the text that shows once the pointer has
+rested on it.
+
+**A container shows itself with props.** `title=` and `frame=` make a `panel`
+a group, and `collapsed=` a section that folds on its title strip. `split=True`
+on a `row` or a `col` turns the gaps into dividers a drag moves; `bars=True` on
+a `scroll` draws its scroll bars. Each reports what a hand changed —
+`("collapsed", 1)`, `("split", sizes...)` — and keeps nothing for you: these
+are props, set live and read back with `query`.
+
+**A dialog is defined to open and freed to close.** `dialog(...)` is a `layout`
+that stands over the window, centred, with everything behind it dimmed and out
+of reach — of the pointer and of Tab alike. `enabled=False` does the same to
+one widget, or to a container and everything in it.
+
+`examples/panels/chrome.py` holds one of each in a single window.
 
 ## Values that never come back to the script
 
@@ -464,7 +538,7 @@ To **another widget** — its value lands on that widget's prop:
 win["picker"].bind_widget(win["pages"], "index")
 ```
 
-A `menu` bound to a stack's `index` *is* a tab bar: the pages flip inside the
+A `choice` bound to a stack's `index` *is* a tab bar: the pages flip inside the
 host, and nothing prints here while you click. A binding fires an **apply,
 never another binding**, so two widgets wired to each other settle instead of
 cascading.

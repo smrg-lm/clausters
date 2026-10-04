@@ -156,6 +156,15 @@ impl Atlas {
     }
 
     /// How far the pen steps over `c` at `scale`, without rasterizing it.
+    /// Whether the loaded face draws `c` -- as against answering with its
+    /// "no such glyph" box. What decides, per character, whether a symbol the
+    /// bitmap face has is drawn from there instead ([`super::symbol`]).
+    pub fn has_glyph(&self, c: char) -> bool {
+        self.face
+            .as_ref()
+            .is_some_and(|f| f.font.lookup_glyph_index(c) != 0)
+    }
+
     pub fn advance_of(&self, c: char, scale: f32) -> f32 {
         self.face
             .as_ref()

@@ -9366,3 +9366,49 @@ Three limits come with it, and each was measured rather than assumed.
 The lane is not touched: both paths sample a curve by the same function at the
 same step, and differ in where the reading happens.
 
+## A menu is a prop, the chooser is `choice`, and what opens over a window is the host's
+
+A review of the host's chrome found one popup and seven defects in it. The
+chooser held its own open list as a rectangle resolved at the press, against
+the whole framebuffer: so the status bar, drawn after it, covered its last
+rows; a list taller than the window ran off it; a resize left it where the
+field had been; and only a press was routed to it -- the wheel reached the tree
+underneath, no key closed it, and a static window never repainted the row under
+the pointer. None of that was the chooser's to fix, because a menu bar and a
+context menu have no element at all.
+
+So what opens over a window is the **host's**: one stack of lists per window,
+placed by one function inside the work area (the window minus the host's
+bands), which the frame draws with and the press hit-tests with, run at every
+frame so a list follows what it hangs off. An element that wants a list asks
+for one and is told the pick; it holds the options, not the list.
+
+A **menu is a prop value**, not a node. It is shown in three places -- along a
+window as a bar, at the pointer as a context menu, under a button -- and in none
+of them is it laid out among the widgets, so it is a tree a prop carries (`menu`
+on a window or a button, `context` on anything), and what a pick reports is the
+entry's verb from the widget that carries it. The bar is a window prop drawn by
+the host, as the status bar is, rather than a widget in the tree: a widget
+would have to be placed, and a bar that a layout could put anywhere is a bar a
+reader has to look for.
+
+That took the name `menu` from the chooser, which is `choice` now. The two
+report different things -- a verb and a value -- and a chooser was never a menu;
+`choice` also names the one element the six presentations of one-of-several
+(combo, radio, segmented, tabs, pager, list) are, since the data, the value and
+the event are the same in all of them and only the picture differs.
+
+An **icon is a glyph**: the host has fonts and no images, so a small symbol set
+is drawn by the embedded bitmap face at the codepoints that mean them, and a
+loaded typeface that lacks one falls back to the bitmap per character -- the
+chrome's own marks would otherwise turn into the face's missing-glyph box.
+
+Two choices made with the code. The light controls became stops on the tab
+ring and **do not report** the focus they take: their event stream is their
+value, read by callbacks of one argument, and a `("focus", 1)` arriving there is
+an argument nobody wrote for. And a binding may name its target **by the node**
+(`bind=["widget", pages, "index"]`), resolved when the tree is opened, because
+`tabs` and `pager` wire a chooser to a stack before either has an id; it is
+resolved at the nearest container holding both ends, so a composition nested
+twice wires each copy to its own target.
+

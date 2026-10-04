@@ -30,6 +30,7 @@ pub(crate) fn to_key(key: &Key) -> Option<HostKey> {
         Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
         Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
         Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
+        Key::Named(NamedKey::Escape) => Some(HostKey::Escape),
         Key::Character(s) => s
             .chars()
             .next()

@@ -140,6 +140,11 @@ impl Gestures {
         cy: f64,
         steps: f64,
     ) -> Vec<GestureEffect> {
+        // **An open list takes the wheel**, as it takes the press: it scrolls,
+        // and what lies under it does not.
+        if let Some(out) = self.popup_wheel(host, ctx, cx, cy, steps) {
+            return out;
+        }
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         // **The open status log scrolls under the wheel**, and it is tested

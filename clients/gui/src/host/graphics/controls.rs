@@ -2,7 +2,7 @@
 //!
 //! Each control is built from the painter's flat primitives plus bitmap text, so
 //! it needs no GPU code of its own: a `slider` is a track with a handle, a `knob`
-//! a disc with a pointer, a `button`/`toggle`/`menu`/`number` a labelled box. The
+//! a disc with a pointer, a `button`/`toggle`/`choice`/`number` a labelled box. The
 //! drawing lives here; the *value* math a drag turns into (which fraction of a
 //! slider's track the cursor is at, how far a vertical drag moves a knob) is
 //! exposed as pure functions so it is unit-testable without a window. The
@@ -127,7 +127,7 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 
 /// Draws the label strip above a control body, if it has a label (clipped to
 /// the cell with an ellipsis).
-fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32) {
+pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32) {
     let (mesh, m, theme) = d.parts();
     if label_height(rect.h, label.is_some(), size, m) <= 0.0 {
         return; // no room for both: the body keeps the cell
@@ -250,9 +250,45 @@ pub fn knob_dial(d: &mut Draw, cx: f32, cy: f32, radius: f32, fraction: f32) {
     mesh.line([cx, cy], tip, 3.0, theme.accent);
 }
 
-pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
+/// The two cells of a number's **stepper**: the arrow that raises it, over the
+/// one that lowers it, at the right edge of its body. One function for the
+/// drawing and the press.
+pub fn stepper_cells(body: Rect, size: f32, m: &Metrics) -> (Rect, Rect) {
+    let w = (font::height(size) + m.pad).min(body.w * 0.5);
+    let x = body.x + body.w - w;
+    let half = body.h * 0.5;
+    (
+        Rect::new(x, body.y, w, half),
+        Rect::new(x, body.y + half, w, body.h - half),
+    )
+}
+
+pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32, stepper: bool) {
     label_strip(d, r.label.as_deref(), rect, size);
-    let body = body_rect_at(rect, r.label.is_some(), size, d.m);
+    let whole = body_rect_at(rect, r.label.is_some(), size, d.m);
+    // The arrows take their cells off the field, so the value is centred in
+    // what is left of it rather than under them.
+    let cells = stepper.then(|| stepper_cells(whole, size, d.m));
+    let body = match cells {
+        Some((up, _)) => Rect::new(whole.x, whole.y, (whole.w - up.w).max(0.0), whole.h),
+        None => whole,
+    };
+    if let Some((up, down)) = cells {
+        let (mesh, m, theme) = d.parts();
+        mesh.rect(Rect::new(up.x, up.y, up.w, up.h + down.h), theme.track);
+        // The arrows are half a field tall each, so they draw a size down.
+        let small = font::quantize_size(size * 0.5).max(1.0);
+        for (cell, glyph) in [
+            (up, font::symbol::POINT_UP),
+            (down, font::symbol::POINT_DOWN),
+        ] {
+            font::text_centered(mesh, &glyph.to_string(), cell, small, theme.accent);
+        }
+        mesh.rect(
+            Rect::new(up.x, up.y + up.h, up.w, m.divider_w),
+            theme.separator,
+        );
+    }
     let (mesh, m, theme) = d.parts();
     mesh.rect(body, theme.field);
     // A vertical fill rising from the bottom shows the value in range, so
@@ -313,30 +349,92 @@ fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
     mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
-pub fn button(d: &mut Draw, label: Option<&str>, rect: Rect, active: bool, size: f32) {
-    let (mesh, _m, theme) = d.parts();
+/// How a button stands right now, and which of its two looks it wears.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ButtonLook {
+    /// Held down (or, for a toggle drawn as a button, on).
+    pub active: bool,
+    /// The pointer is over it.
+    pub hovered: bool,
+    /// The `flat` look: no fill until the pointer is over it -- what a row of
+    /// tools wants, where a wall of filled boxes would outweigh the work.
+    pub flat: bool,
+}
+
+/// The text a button shows: its icon, its label, or the two with a space
+/// between them. A button given neither says `BUTTON`, as it always has.
+pub fn button_text(label: Option<&str>, icon: Option<char>) -> String {
+    match (icon, label) {
+        (Some(i), Some(l)) => format!("{i} {l}"),
+        (Some(i), None) => i.to_string(),
+        (None, Some(l)) => l.to_string(),
+        (None, None) => "BUTTON".to_string(),
+    }
+}
+
+pub fn button(
+    d: &mut Draw,
+    label: Option<&str>,
+    icon: Option<char>,
+    rect: Rect,
+    look: ButtonLook,
+    size: f32,
+) {
+    let (mesh, m, theme) = d.parts();
     // A button *is* its box, so it fills its whole cell rather than insetting a
     // `body_rect` the way a slider/field does (whose track must not touch the
     // cell edge). The layout `gap` already separates it from its neighbours, and
     // the full cell is also its hit area, so drawing and click now agree. Without
     // this the box shrank to the text height inside a control bar and floated in
     // dead space.
-    mesh.rect(
-        rect,
-        if active {
-            theme.hilite
-        } else {
-            theme.accent_dim
-        },
-    );
-    font::text_centered(mesh, label.unwrap_or("BUTTON"), rect, size, theme.text);
+    match (look.flat, look.active, look.hovered) {
+        (_, true, _) => mesh.rect(rect, theme.hilite),
+        // Flat and at rest it draws no box at all: only what it says.
+        (true, false, true) => mesh.rect(rect, theme.hover),
+        (true, false, false) => {}
+        (false, false, hovered) => {
+            mesh.rect(rect, theme.accent_dim);
+            if hovered {
+                border(mesh, rect, m.divider_w, theme.hilite);
+            }
+        }
+    }
+    font::text_centered(mesh, &button_text(label, icon), rect, size, theme.text);
+}
+
+/// How a toggle is drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ToggleView {
+    /// A box that is filled or empty, with a word beside it.
+    #[default]
+    Check,
+    /// A track with a knob that sits at one end or the other.
+    Switch,
+    /// A button that stays pressed.
+    Button,
+}
+
+impl ToggleView {
+    pub(crate) fn from_str(s: &str) -> Option<ToggleView> {
+        Some(match s {
+            "check" => ToggleView::Check,
+            "switch" => ToggleView::Switch,
+            "button" => ToggleView::Button,
+            _ => return None,
+        })
+    }
 }
 
 /// **The box a toggle is drawn as**, inside its cell: a square of at most
 /// `box_side`, centred vertically at the left of the rect.
-pub fn toggle_box(rect: Rect, m: &Metrics) -> Rect {
+pub fn toggle_box(rect: Rect, view: ToggleView, m: &Metrics) -> Rect {
     let side = rect.h.min(rect.w).min(m.box_side);
-    Rect::new(rect.x, rect.y + (rect.h - side) * 0.5, side, side)
+    // A switch is a track twice as long as it is tall; a check is square.
+    let w = match view {
+        ToggleView::Switch => (side * 1.8).min(rect.w),
+        _ => side,
+    };
+    Rect::new(rect.x, rect.y + (rect.h - side) * 0.5, w, side)
 }
 
 /// **What a toggle answers the pointer on**: the box, plus the label beside it
@@ -355,8 +453,18 @@ pub fn toggle_box(rect: Rect, m: &Metrics) -> Rect {
 /// word toggles, as everywhere else), and it counts for **what fits**: a label
 /// ellipsized to the cell is hit over the part that is on screen. Its line is
 /// centred on the box, so the band is the taller of the two.
-pub fn toggle_hit(rect: Rect, label: Option<&str>, size: f32, m: &Metrics) -> Rect {
-    let b = toggle_box(rect, m);
+pub fn toggle_hit(
+    rect: Rect,
+    view: ToggleView,
+    label: Option<&str>,
+    size: f32,
+    m: &Metrics,
+) -> Rect {
+    // Drawn as a button it *is* its cell, like a button.
+    if view == ToggleView::Button {
+        return rect;
+    }
+    let b = toggle_box(rect, view, m);
     let Some(text) = label else { return b };
     let tx = b.x + b.w + m.pad;
     let w = font::width(text, size).min((rect.x + rect.w - tx).max(0.0));
@@ -369,32 +477,114 @@ pub fn toggle_hit(rect: Rect, label: Option<&str>, size: f32, m: &Metrics) -> Re
     )
 }
 
-pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32) {
-    let box_rect = toggle_box(rect, d.m);
+#[allow(clippy::too_many_arguments)] // one control: its state, its place, its look
+pub fn toggle(
+    d: &mut Draw,
+    on: bool,
+    label: Option<&str>,
+    icon: Option<char>,
+    rect: Rect,
+    view: ToggleView,
+    hovered: bool,
+    size: f32,
+) {
+    if view == ToggleView::Button {
+        let look = ButtonLook {
+            active: on,
+            hovered,
+            flat: false,
+        };
+        return button(d, label, icon, rect, look, size);
+    }
+    let box_rect = toggle_box(rect, view, d.m);
     let (mesh, m, theme) = d.parts();
     // Like `button`, the toggle draws its box and its label at the left of the
     // cell; the layout gap does the separating.
     let body = rect;
-    let box_side = box_rect.w;
-    mesh.rect(box_rect, theme.track);
-    if on {
-        let inset = box_side * 0.22;
-        mesh.rect(
-            Rect::new(
-                box_rect.x + inset,
-                box_rect.y + inset,
-                box_side - 2.0 * inset,
-                box_side - 2.0 * inset,
-            ),
-            theme.accent,
-        );
+    let side = box_rect.h;
+    match view {
+        ToggleView::Switch => {
+            // The track takes the accent when it is on, and the knob crosses to
+            // the far end: the two readings of one state, so it is legible
+            // without color.
+            mesh.round_rect(
+                box_rect,
+                side * 0.5,
+                if on { theme.accent_dim } else { theme.track },
+            );
+            let r = side * 0.5 - (side * 0.14).max(1.0);
+            let cx = if on {
+                box_rect.x + box_rect.w - side * 0.5
+            } else {
+                box_rect.x + side * 0.5
+            };
+            mesh.disc(
+                cx,
+                box_rect.y + side * 0.5,
+                r,
+                if on { theme.accent } else { theme.text_dim },
+            );
+        }
+        _ => {
+            mesh.rect(box_rect, theme.track);
+            if on {
+                let inset = side * 0.22;
+                mesh.rect(
+                    Rect::new(
+                        box_rect.x + inset,
+                        box_rect.y + inset,
+                        side - 2.0 * inset,
+                        side - 2.0 * inset,
+                    ),
+                    theme.accent,
+                );
+            }
+        }
     }
-    if let Some(text) = label {
-        let tx = box_rect.x + box_side + m.pad;
-        let ty = body.y + (body.h - font::height(size)) * 0.5;
-        let avail = (body.x + body.w - tx).max(0.0);
-        font::text_ellipsis(mesh, text, tx, ty, avail, size, theme.text);
+    if hovered {
+        border(mesh, box_rect, m.divider_w, theme.hilite);
     }
+    let text = match (icon, label) {
+        (None, None) => return,
+        (icon, label) => button_text(label.or(Some("")), icon),
+    };
+    let tx = box_rect.x + box_rect.w + m.pad;
+    let ty = body.y + (body.h - font::height(size)) * 0.5;
+    let avail = (body.x + body.w - tx).max(0.0);
+    font::text_ellipsis(mesh, text.trim_end(), tx, ty, avail, size, theme.text);
+}
+
+/// Draws a `choice`: the chosen option in a field, with a **marker** in a
+/// gutter at its right edge.
+///
+/// The marker points **down**: a press opens the option list over the window,
+/// and a press on a row picks it. A chooser drawn as a bare field reads as a
+/// label, and then the click that changes the value comes as a surprise. The
+/// gutter is reserved out of the text's width, so a long option ellipsizes
+/// before it reaches the marker.
+pub fn choice(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
+    let gutter = font::height(size) + d.m.pad;
+    let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
+    field(d, current, label, text_cell, size, false, None);
+    // The marker rides the body's own row, not the cell's: a labelled chooser has
+    // a label strip over it, and the two must not overlap.
+    let body = body_rect_at(rect, label.is_some(), size, d.m);
+    let (mesh, m, theme) = d.parts();
+    mesh.rect(
+        Rect::new(text_cell.x + text_cell.w - m.pad, body.y, gutter, body.h),
+        theme.field,
+    );
+    // The marker is a glyph of the symbol set, like every mark the chrome
+    // draws: one drawing for the floor and for a loaded face.
+    let glyph = font::height(size);
+    font::text(
+        mesh,
+        &font::symbol::POINT_DOWN.to_string(),
+        rect.x + rect.w - m.pad - gutter + (gutter - font::advance(size)) * 0.5,
+        body.y + (body.h - glyph) * 0.5,
+        size,
+        theme.accent,
+    );
 }
 
 /// The editable text field. `caret` is `Some` only while the field is focused
@@ -404,104 +594,9 @@ pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32
 /// sits on one vertically-centered row -- an unfocused field uses a caret at the
 /// start (scroll offset 0), so the pre-written text reads exactly as it will
 /// once clicked into. A single-line field clips overflow with an ellipsis when
-/// unfocused, and scrolls to the caret when focused. (A `menu`'s read-out reuses
+/// unfocused, and scrolls to the caret when focused. (A `choice`'s read-out reuses
 /// this as an unfocused single-line field.)
-/// The height of one row of an open `menu`'s list.
-pub fn menu_row_h(text_size: f32, m: &Metrics) -> f32 {
-    (font::height(text_size) + 2.0 * m.pad).max(m.control_h)
-}
-
-/// The rectangle an open `menu`'s list occupies: the width of the menu's cell,
-/// one [`menu_row_h`] per option, hanging **below** the cell -- or above it when
-/// there is no room below, so a menu at the bottom of a window still opens.
 ///
-/// One function for the drawing and for the hit-test, so a click lands on the
-/// row it highlighted.
-pub fn menu_popup(cell: Rect, options: usize, text_size: f32, window_h: f32, m: &Metrics) -> Rect {
-    let h = menu_row_h(text_size, m) * options.max(1) as f32;
-    let below = cell.y + cell.h;
-    let y = if below + h <= window_h || cell.y - h < 0.0 {
-        below
-    } else {
-        cell.y - h
-    };
-    Rect::new(cell.x, y, cell.w, h)
-}
-
-/// The option index at `py` inside an open list (`None` outside it).
-pub fn menu_row_at(popup: Rect, options: usize, px: f64, py: f64) -> Option<usize> {
-    if options == 0 || !popup.contains(px, py) {
-        return None;
-    }
-    let row = ((py - popup.y as f64) / (popup.h as f64 / options as f64)) as usize;
-    Some(row.min(options - 1))
-}
-
-/// Draws an open `menu`'s list: every option, the chosen one marked and the one
-/// under the cursor highlighted. It is drawn into the **overlay**, over the
-/// whole window, because a list that opens has to cover whatever it opens over.
-pub fn draw_menu_popup(
-    d: &mut Draw,
-    popup: Rect,
-    options: &[String],
-    index: usize,
-    hover: Option<usize>,
-    size: f32,
-) {
-    let (mesh, m, theme) = d.parts();
-    mesh.rect(popup, theme.field);
-    border(mesh, popup, m.divider_w, theme.accent);
-    let row_h = popup.h / options.len().max(1) as f32;
-    for (i, option) in options.iter().enumerate() {
-        let row = Rect::new(popup.x, popup.y + i as f32 * row_h, popup.w, row_h);
-        if hover == Some(i) {
-            mesh.rect(row, theme.hilite);
-        } else if i == index {
-            mesh.rect(row, theme.accent_dim);
-        }
-        font::text_ellipsis(
-            mesh,
-            option,
-            row.x + m.pad,
-            row.y + (row.h - font::height(size)) * 0.5,
-            (row.w - 2.0 * m.pad).max(0.0),
-            size,
-            theme.text,
-        );
-    }
-}
-
-/// Draws a `menu`: the chosen option in a field, with a **marker** in a gutter
-/// at its right edge.
-///
-/// The marker points **down**: a press opens the option list over the window,
-/// and a press on a row picks it. A menu drawn as a bare field reads as a
-/// label, and then the click that changes the value comes as a surprise. The
-/// gutter is reserved out of the text's width, so a long option ellipsizes
-/// before it reaches the marker.
-pub fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
-    let gutter = font::height(size) + d.m.pad;
-    let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
-    field(d, current, label, text_cell, size, false, None);
-    // The marker rides the body's own row, not the cell's: a labelled menu has
-    // a label strip over it, and the two must not overlap.
-    let body = body_rect_at(rect, label.is_some(), size, d.m);
-    let (mesh, m, theme) = d.parts();
-    mesh.rect(
-        Rect::new(text_cell.x + text_cell.w - m.pad, body.y, gutter, body.h),
-        theme.field,
-    );
-    let side = (font::height(size) * 0.5).min(body.h * 0.4).max(2.0);
-    let cx = rect.x + rect.w - m.pad - side;
-    let cy = body.y + body.h * 0.5;
-    mesh.tri(
-        [cx - side, cy - side * 0.5],
-        [cx + side, cy - side * 0.5],
-        [cx, cy + side * 0.5],
-        theme.accent,
-    );
-}
-
 /// Draws an editable text field: its label strip, its body, the visible text --
 /// scrolled to the caret when `caret` is `Some` (the field is focused) -- and,
 /// then, the selection and the caret themselves.
@@ -531,7 +626,7 @@ pub fn field(
 
     if !multiline {
         // One row, vertically centered. Unfocused text that overflows clips with
-        // an ellipsis (the label/menu look); focused, it scrolls to the caret.
+        // an ellipsis (the label/choice look); focused, it scrolls to the caret.
         let ty = (body.y + (body.h - font::height(size)) * 0.5).max(body.y);
         let first = value.split('\n').next().unwrap_or("");
         if caret.is_none() {

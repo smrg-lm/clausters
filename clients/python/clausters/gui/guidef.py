@@ -13,7 +13,7 @@ node: a **container** owning 0, 1 or 2 axes (`layout`, `plane`, `field`, and
 the `window` root), an **element** drawn against those axes (`signal`, `notes`,
 `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`), and a
 **control**, which is an element with a value and no axis (`slider`, `knob`,
-`number`, `button`, `toggle`, `text`, `menu`). The chrome of an axis -- its
+`number`, `button`, `toggle`, `text`, `choice`). The chrome of an axis -- its
 ruler, its navigation window, the selection, the playhead, the value range --
 belongs to the **container's** ``axes``, not to each element drawn against it.
 
@@ -38,7 +38,7 @@ a live `set` addresses against.
 **The id is a keyword argument on every builder, and never the first one.** The
 positional slot belongs to what the widget is made of -- a container's children
 (``panel(knob(), slider())``), a label's text (``label("hello")``), a meter's
-bus (``meter(4)``), a menu's options -- so an ordinary tree mentions no ids at
+bus (``meter(4)``), a choice's options -- so an ordinary tree mentions no ids at
 all. `GuiHost.open` / `GuiHost.define` then assigns each widget a fresh
 host-unique id **in the document it sends**, leaving the tree you wrote as you
 wrote it. An id names a live widget, so it belongs to the instance `open` hands
@@ -80,13 +80,13 @@ carries ``hug``, and then it wants exactly what it holds: a ``row`` adds its
 children up along its axis and takes the tallest of them across it, a ``col``
 the other way round, a ``grid`` counts its cells. That is how a strip of
 controls under a work surface says how tall it is without anybody computing a
-number: ``panel(menu(...), toggle(...), layout="row", hug=True)``. The question
+number: ``panel(choice(...), toggle(...), layout="row", hug=True)``. The question
 reaches the whole subtree under it, so a plain panel nested inside a hugging one
 is measured too; an axis a child leaves elastic (a plane, a lane, a heavy view)
 is one the container hands back to the layout.
 
 What a size may read is fixed by **where the value is resolved**: a prop that
-settles when you build or ``set`` it (a label's text, a menu's options) may size
+settles when you build or ``set`` it (a label's text, a choice's options) may size
 a container that hugs, and a *value* -- a number being turned, a field being
 typed into, a scope's samples -- never sizes anything, so no stream of values
 ever moves a layout. Outside a ``hug`` nothing reads the content at all.
@@ -136,6 +136,30 @@ strip) are that same widget configured down.
   says nothing about the controls in it. Each box clamps it to half its shorter
   side, so a widget's own frame rounds while the hairlines inside it (a
   divider, a tick, a track edge) keep their shape. A negative number clears it.
+
+**Every widget also takes what a hand reads off it**, all live via ``set``:
+
+- ``enabled`` -- ``False`` takes the widget out of the hand's reach: it draws in
+  quieter roles, takes no press and is no stop on the tab ring. On a container
+  it disables the whole subtree.
+- ``tip`` -- a short text shown beside the pointer once it has rested on the
+  widget. It goes when the pointer leaves, on a press and on a key.
+- ``context`` -- a `menu` the secondary button (or a press held still) opens
+  at the pointer. The nearest ancestor that carries one answers, so a
+  container's context menu serves everything inside it that has none.
+
+**A menu is a tree of entries, and a prop.** `menu` builds the tree and three
+props carry it: ``menu=`` on a `view` is the window's **menu bar**, ``menu=`` on
+a `button` is the list that opens under it, and ``context=`` on any widget is
+its context menu. A pick reports the entry's **verb** from the widget that
+carries the menu, as the payload ``("menu", verb)`` -- with the new state after
+it for an entry that holds one::
+
+    bar = menu(entry("File", menu=menu(entry("Open", "open"), "-",
+                                       entry("Loop", "loop", checked=False))),
+               entry("Help", "help"))
+    win = view(work, menu=bar).open()
+    win.on_event(lambda tag, verb, *state: print(verb, state))
 
 **A container also declares its gestures.** Panning, sweeping a selection and
 locating the transport belong to the coordinate system a container gives its
@@ -195,7 +219,16 @@ __all__ = [
     "button",
     "toggle",
     "text",
+    "choice",
+    "entry",
     "menu",
+    "ICON",
+    "separator",
+    "progress",
+    "tabs",
+    "pager",
+    "toolbar",
+    "dialog",
     "waveform",
     "spectrogram",
     "piano",
@@ -790,9 +823,22 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
 # the same nodes with a familiar name and the props of one common case.
 
 
+def _group(title, frame, collapsed, modal, split, pack=None) -> dict:
+    """The props a container shows of itself, as the wire takes them."""
+    out = _drop_none(title=title)
+    for key, flag in (("frame", frame), ("collapsed", collapsed), ("modal", modal),
+                      ("split", split), ("pack", pack)):
+        if flag is not None:
+            out[key] = 1 if flag else 0
+    return out
+
+
 def layout(*children, flow: str | None = None, index: int | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
-           hug: bool | None = None, theme: dict | None = None, color: str | None = None,
+           hug: bool | None = None, title: str | None = None, frame: bool | None = None,
+           collapsed: bool | None = None, modal: bool | None = None,
+           split: bool | None = None, pack: bool | None = None,
+           theme: dict | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A container with **no axes**, arranging its children by ``flow``.
 
@@ -811,11 +857,27 @@ def layout(*children, flow: str | None = None, index: int | None = None,
     the container hands back. ``theme`` (a partial ``{"role": "#rrggbb[aa]"}``
     table) makes it a **theme group** over its whole subtree; ``color``
     re-seeds the accent family for itself.
+
+    What the container **shows of itself** is four more props. ``title`` puts a
+    strip along its top naming it, and ``frame`` a line around it. ``collapsed``
+    makes a titled group a **section**: a press on the strip folds it to the
+    strip and unfolds it, reported as ``("collapsed", 1|0)`` -- leave it out for
+    a group that does not fold. ``split``, on a ``row`` or a ``col``, makes the
+    gap between two children a **divider** a drag moves: the two trade room, and
+    on release the container reports ``("split", size, ...)``, one size per
+    child. ``modal`` makes it a **dialog** (see `dialog`).
+
+    ``pack``, on a ``row`` or a ``col``, makes each child take **what its
+    content wants** along the strip -- a button as wide as what it says -- so
+    only a child that names a ``weight`` shares what is left. Without it the
+    children with no size of their own share the strip evenly, which is right
+    for a row of work surfaces and wrong for a row of tools (see `toolbar`).
     """
     extra = _drop_none(flow=flow, index=index, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
+    extra.update(_group(title, frame, collapsed, modal, split, pack))
     return node("layout", id=id, children=children, **extra, **props)
 
 
@@ -823,6 +885,7 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
           zoom: bool | None = None, content_w: float | None = None,
           content_h: float | None = None, view_x: float | None = None,
           view_y: float | None = None, view_zoom: float | None = None,
+          bars: bool | None = None,
           boxes=None, cords=None, margin: float | None = None, gap: float | None = None,
           cols: int | None = None, theme: dict | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
@@ -846,6 +909,8 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
                        margin=margin, gap=gap, cols=cols, theme=theme, color=color)
     if zoom is not None:
         extra["zoom"] = 1 if zoom else 0
+    if bars is not None:
+        extra["bars"] = 1 if bars else 0
     return node("plane", id=id, children=children, **extra, **props)
 
 def signal(*, view: str | None = None, data=None, blob: int | None = None,
@@ -984,6 +1049,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
+         split: bool | None = None, menu: list | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
@@ -1030,9 +1096,18 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     same shape as the host's TOML style file) overlaying the host theme for
     the whole window -- a **theme group**. On the root it persists with a named
     def, so a standalone bundle ships its look.
+
+    ``menu`` is the window's **menu bar**: a `menu` tree whose first entries are
+    the titles of a band the host draws along the top edge, each opening its
+    list under it. It is chrome, like the status bar -- not a widget, and taken
+    out of the area the children are laid out in. A pick is reported by the
+    window itself, as ``("menu", verb)``. ``split`` makes the gaps between the
+    window's own children dividers a drag moves, as on `layout`.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
-                       cols=cols, theme=theme, color=color)
+                       cols=cols, theme=theme, color=color, menu=menu)
+    if split is not None:
+        extra["split"] = 1 if split else 0
     if hug is not None:
         extra["hug"] = 1 if hug else 0
     if status is not None:
@@ -1049,7 +1124,10 @@ window = view
 
 def panel(*children, flow: str | None = None, layout: str | None = None,
           margin: float | None = None, gap: float | None = None, cols: int | None = None,
-          hug: bool | None = None, theme: dict | None = None, color: str | None = None,
+          hug: bool | None = None, title: str | None = None, frame: bool | None = None,
+          collapsed: bool | None = None, modal: bool | None = None,
+          split: bool | None = None, pack: bool | None = None,
+          theme: dict | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
 
@@ -1065,11 +1143,17 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
     **theme group**: the overlay styles its whole subtree -- a transport bar
     dimmed, a recording strip warm -- recursively over the parent's theme.
     ``color`` re-seeds just the accent family for the panel itself.
+
+    ``title``, ``frame``, ``collapsed``, ``split`` and ``modal`` are what the
+    panel shows of itself -- a titled group, a section that folds, a strip whose
+    gaps are dividers, a dialog -- and ``pack`` sizes its children by their
+    content along the strip; see `layout`.
     """
     extra = _drop_none(flow=flow or layout, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
+    extra.update(_group(title, frame, collapsed, modal, split, pack))
     return node("layout", id=id, children=children, **extra, **props)
 
 
@@ -1084,13 +1168,13 @@ def stack(*children, index: int | None = None, margin: float | None = None,
     reads across a switch and comes back without re-uploading anything.
 
     ``index`` is live via ``set``, and it is the prop a control **binds** to:
-    a toggle or a menu bound to it (`GuiHost.bind_widget`, or an inline
+    a toggle or a choice bound to it (`GuiHost.bind_widget`, or an inline
     ``bind=["widget", stack_id, "index"]``) flips the page with no round-trip
     through this script -- which is what makes tabs, a pager and a
     waveform/spectrogram switch composition rather than widgets::
 
         pages = stack(waveform(data=take), spectrogram(data=take), name="views")
-        picker = menu(["wave", "spectrum"], name="picker")
+        picker = choice(["wave", "spectrum"], name="picker")
         ...
         host.bind_widget(win["picker"].id, win["views"].id, "index")
 
@@ -1110,7 +1194,8 @@ def stack(*children, index: int | None = None, margin: float | None = None,
 def scroll(*children, axis: str | None = None, zoom: bool | None = None,
            content_w: float | None = None, content_h: float | None = None,
            view_x: float | None = None, view_y: float | None = None,
-           view_zoom: float | None = None, flow: str | None = None, layout: str | None = None,
+           view_zoom: float | None = None, bars: bool | None = None,
+           flow: str | None = None, layout: str | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
            theme: dict | None = None, color: str | None = None, id: int | None = None,
            **props) -> View:
@@ -1140,6 +1225,10 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     number (or turn the wheel) and it is literal from then on; ``set(view_zoom=0)``
     clears it again, which is how a script says "back to the default" for a
     number it cannot name.
+
+    ``bars`` draws **scroll bars** along the axes the plane pans, each shown
+    only where the content is larger than the view: a thumb a drag moves, and a
+    groove a press on brings the thumb to.
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,
@@ -1147,6 +1236,8 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
                        theme=theme, color=color)
     if zoom is not None:
         extra["zoom"] = 1 if zoom else 0
+    if bars is not None:
+        extra["bars"] = 1 if bars else 0
     return node("plane", id=id, children=children, **extra, **props)
 
 
@@ -1291,16 +1382,21 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
 
 def number(control=None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, curve: float | None = None, step: float | None = None,
-           value: float | None = None,
+           value: float | None = None, stepper: bool | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
     label and value.
 
     Takes a def's control positionally, like `knob`. ``step=1.0`` is what makes
-    it a whole-number entry; ``curve`` bends its drag, as on `slider`."""
+    it a whole-number entry; ``curve`` bends its drag, as on `slider`.
+    ``stepper`` adds a pair of arrows at the field's right edge that move the
+    value one ``step`` each -- the same step the arrow keys take when the field
+    holds the focus."""
     extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
                        value=value, text_size=text_size, color=color)
+    if stepper is not None:
+        extra["stepper"] = 1 if stepper else 0
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     return _built_from(node("number", id=id, **extra, **props), control)
@@ -1308,6 +1404,7 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
 
 def button(control=None, *, label: str | None = None, mode: str | None = None,
            on: float | None = None, off: float | None = None,
+           icon: str | None = None, flat: bool | None = None, menu: list | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A push ``button``, whose **press is the event**. ``text_size`` scales its
@@ -1344,13 +1441,23 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
         button(amp, on=0.7, off=0.0, label="duck")
 
     Press and release are the primitives, and a **click** -- a press and a
-    release that landed inside -- is a composed gesture rather than a mode."""
+    release that landed inside -- is a composed gesture rather than a mode.
+
+    ``icon`` is one character drawn before the label, or in its place when
+    there is none: there are no icons in the host and there are fonts, so an
+    icon is a glyph (`clausters.gui.guidef.ICON` names the ones the host's own
+    face draws). ``flat`` draws no box until the pointer is over the button --
+    the look a row of tools wants. ``menu`` is a `menu` tree: the button then
+    opens it under itself instead of firing, and what it reports is the entry
+    picked, as ``("menu", verb)``."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
             "\"press\" (one message, the bang)")
-    extra = _drop_none(label=label, mode=mode, on=on, off=off,
+    extra = _drop_none(label=label, mode=mode, on=on, off=off, icon=icon, menu=menu,
                        text_size=text_size, color=color)
+    if flat is not None:
+        extra["flat"] = 1 if flat else 0
     if control is not None:
         if mode == "press" and getattr(control, "rate", None) not in ("tr", "trigger"):
             raise ValueError(
@@ -1369,6 +1476,7 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
 def toggle(control=None, *, label: str | None = None, value: bool | None = None,
            on: float | None = None, off: float | None = None,
+           view: str | None = None, icon: str | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A boolean ``toggle``. ``value`` is its state; what it *sends* is ``on``
@@ -1384,8 +1492,17 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
     span a widget could be drawn over -- which is why they are a pair and not a
     ``min``/``max``::
 
-        toggle(bypass, on=0.7, off=0.0, label="wet")"""
-    extra = _drop_none(label=label, on=on, off=off, text_size=text_size, color=color)
+        toggle(bypass, on=0.7, off=0.0, label="wet")
+
+    ``view`` is the picture, over the same state: ``"check"`` (the default, a
+    box that is filled or empty), ``"switch"`` (a track with a knob at one end
+    or the other) or ``"button"`` (a button that stays pressed). ``icon`` is one
+    character drawn with the label, as on `button`."""
+    if view is not None and view not in ("check", "switch", "button"):
+        raise ValueError(
+            f"unknown toggle view {view!r}; use \"check\", \"switch\" or \"button\"")
+    extra = _drop_none(label=label, on=on, off=off, view=view, icon=icon,
+                       text_size=text_size, color=color)
     if value is not None:
         extra["value"] = 1 if value else 0
     if control is not None:
@@ -1412,20 +1529,214 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
     return node("text", id=id, **extra, **props)
 
 
-def menu(options=(), *, index: int | None = None, label: str | None = None,
-         text_size: float | None = None, color: str | None = None, id: int | None = None, **props
-         ) -> View:
-    """A ``menu`` over ``options`` (a list of strings), emitting the chosen
-    ``index``.
+#: The presentations of a `choice`.
+CHOICE_VIEWS = ("combo", "radio", "segmented", "tabs", "pager", "list")
 
-    A press **opens the list** over the window -- the field grown downward by a
-    row per option, flipped above it near the bottom edge -- and a press on a row
-    picks it; a press anywhere else dismisses it and picks nothing. The list is
-    the host's, so a bound menu (`GuiHost.bind`/`bind_widget`) drives its target
-    with no round trip through this script. ``text_size`` scales the shown
-    choice and the label."""
-    extra = _drop_none(index=index, label=label, text_size=text_size, color=color)
-    return node("menu", id=id, options=list(options), **extra, **props)
+
+def choice(options=(), *, index: int | None = None, label: str | None = None,
+           view: str | None = None, text_size: float | None = None,
+           color: str | None = None, id: int | None = None, **props) -> View:
+    """One of several: a ``choice`` over ``options`` (a list of strings),
+    emitting the chosen ``index``.
+
+    ``view`` is how it is presented, and nothing else about it changes -- the
+    data, the value and the event are the same in all of them:
+
+    - ``"combo"`` (the default) -- a field showing the chosen option, with a
+      list that opens under it. A press opens the list over the window and a
+      press on a row picks it; a press anywhere else dismisses it.
+    - ``"radio"`` -- every option on a row of its own, a mark beside the chosen
+      one.
+    - ``"segmented"`` -- the options side by side in one bar.
+    - ``"tabs"`` -- the options as tabs, each as wide as its name; the ones
+      that do not fit gather under a last one, whose list holds them.
+    - ``"pager"`` -- two arrows and the position between them.
+    - ``"list"`` -- every option on a row of its own, the chosen one lit.
+
+    Because the value is the index in every view, a choice **bound** to a
+    `stack`'s ``index`` is tabs or a pager with nothing new on the wire -- which
+    is what `tabs` and `pager` build. The list is the host's, so a bound choice
+    drives its target with no round trip through this script. With the focus,
+    the arrows move the choice and Enter opens a combo's list. ``text_size``
+    scales the options and the label.
+
+    It was called ``menu``. That name is the tree of entries now (`menu`): a
+    menu reports verbs, and this reports a value, like every other control."""
+    if view is not None and view not in CHOICE_VIEWS:
+        raise ValueError(
+            f"unknown choice view {view!r}; use one of {', '.join(CHOICE_VIEWS)}")
+    extra = _drop_none(index=index, label=label, view=view, text_size=text_size, color=color)
+    return node("choice", id=id, options=list(options), **extra, **props)
+
+
+def entry(label: str, verb: str | None = None, *, checked: bool | None = None,
+          group: str | None = None, enabled: bool | None = None,
+          icon: str | None = None, menu: list | None = None) -> dict:
+    """One entry of a `menu`.
+
+    ``verb`` is what a pick reports -- the entry's ``label`` when it names none.
+    What the entry *is* follows from what else it carries:
+
+    - nothing more -- an **action**: a pick reports the verb.
+    - ``checked`` -- a **check**: a pick flips it and reports the verb with the
+      new state (``1`` or ``0``) after it.
+    - ``group`` -- **one of several**: the entries of one list that share a
+      group name. A pick turns this one on and the rest of its group off, and
+      reports the verb. ``checked`` says which one starts on.
+    - ``menu`` -- a **submenu**: a `menu` of its own, opened beside the entry.
+
+    ``enabled=False`` leaves the entry in its list and out of reach. ``icon`` is
+    one character drawn before the label.
+
+    The state an entry holds is a prop like any other: the host flips it where
+    it is drawn, reports it, and a query reads it back -- it is whoever owns the
+    window that keeps it."""
+    out: dict = {"label": str(label)}
+    if verb is not None:
+        out["verb"] = str(verb)
+    if checked is not None:
+        out["checked"] = bool(checked)
+    if group is not None:
+        out["group"] = str(group)
+    if enabled is not None:
+        out["enabled"] = bool(enabled)
+    if icon is not None:
+        out["icon"] = str(icon)
+    if menu is not None:
+        out["menu"] = list(menu)
+    return out
+
+
+def menu(*entries) -> list:
+    """A **menu**: a tree of entries, as the value of a ``menu`` or a
+    ``context`` prop.
+
+    Each argument is an `entry`, the string ``"-"`` for a separator, or a plain
+    string for the shortest action -- one whose label is its verb::
+
+        menu(entry("Open", "open"), "-", "Quit")
+
+    A menu is not a node: it opens over the tree, in the host's popup layer,
+    so it is the value of a prop and is shown in the three places a prop puts
+    it -- ``view(menu=...)`` is the window's menu bar, ``button(menu=...)`` the
+    list under a button, and ``context=...`` on any widget the menu the
+    secondary button opens there."""
+    out = []
+    for item in entries:
+        if isinstance(item, (str, dict)):
+            out.append(item)
+        else:
+            raise TypeError(
+                f"a menu holds entries, \"-\" or plain strings, got {item!r}")
+    return out
+
+
+class _Icons:
+    """The characters the host's own face draws as symbols -- what an ``icon``
+    prop names with no typeface loaded. Written as escapes: a source file is
+    ASCII, and these are not."""
+
+    check = "\u2713"
+    close = "\u2715"
+    left = "\u2190"
+    up = "\u2191"
+    right = "\u2192"
+    down = "\u2193"
+    play = "\u25b6"
+    stop = "\u25a0"
+    record = "\u25cf"
+    pause = "\u23f8"
+    loop = "\u21bb"
+    menu = "\u2261"
+    bullet = "\u2022"
+    point_up = "\u25b4"
+    point_right = "\u25b8"
+    point_down = "\u25be"
+    point_left = "\u25c2"
+
+
+#: The symbol set of the host's embedded face: ``ICON.play``, ``ICON.check``,
+#: ... Any other character is an icon too wherever a typeface that has it is
+#: loaded; these are the ones that draw with none.
+ICON = _Icons()
+
+
+def separator(*, line: bool | None = None, id: int | None = None, **props) -> View:
+    """A ``separator``: a line between two groups of a strip.
+
+    It has one thickness and no orientation of its own -- in a row it stands,
+    in a column it lies; the cell it is given says which. With a ``weight`` it
+    is the **spring** that takes the strip's leftover and pushes what follows
+    it to the far edge. ``line=False`` keeps the space and draws no line."""
+    extra = {}
+    if line is not None:
+        extra["line"] = 1 if line else 0
+    return node("separator", id=id, **extra, **props)
+
+
+def progress(value: float | None = None, *, label: str | None = None,
+             text_size: float | None = None, color: str | None = None,
+             id: int | None = None, **props) -> View:
+    """A ``progress`` bar over ``value`` in ``0..1``.
+
+    With no value it is **indeterminate**: a band sweeping the bar, which says
+    "working" without claiming how far. That is the only time it asks the
+    window to keep repainting; a bar that shows a fraction is a still picture
+    until the next ``set(value=...)``."""
+    extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
+    return node("progress", id=id, **extra, **props)
+
+
+def tabs(*pages, titles, index: int | None = None, id: int | None = None,
+         **props) -> View:
+    """**Tabs**: a row of ``titles`` over the ``pages`` they show, one at a time.
+
+    A shortcut onto the model -- a `choice` in its ``"tabs"`` view bound to the
+    ``index`` of a `stack` -- so it adds nothing to the wire: the hidden pages
+    keep their place in the tree, and flipping one costs no round trip through
+    this script. ``index`` is the page shown first."""
+    if len(titles) != len(pages):
+        raise ValueError(
+            f"tabs: {len(titles)} titles for {len(pages)} pages -- one title per page")
+    shown = stack(*pages, index=index)
+    strip = choice(list(titles), view="tabs", index=index,
+                   bind=["widget", shown, "index"])
+    return panel(strip, shown, flow="col", margin=0, gap=0, id=id, **props)
+
+
+def pager(*pages, index: int | None = None, id: int | None = None, **props) -> View:
+    """A **pager**: the ``pages`` one at a time, over two arrows and the
+    position between them.
+
+    The same composition as `tabs`, in the ``"pager"`` view of the `choice`."""
+    shown = stack(*pages, index=index)
+    strip = choice([str(n + 1) for n in range(len(pages))], view="pager", index=index,
+                   bind=["widget", shown, "index"])
+    return panel(shown, strip, flow="col", margin=0, gap=0, id=id, **props)
+
+
+def toolbar(*children, id: int | None = None, **props) -> View:
+    """A **toolbar**: a row of tools as tall as the tools are.
+
+    A shortcut onto a hugging, **packed** ``row`` -- each tool as wide as what
+    it says: put flat buttons in it (``flat=True``), a `separator` between the
+    groups, and a ``separator(weight=1)`` where the rest should go to the far
+    edge."""
+    return panel(*children, flow="row", hug=True, pack=True, id=id, **props)
+
+
+def dialog(*children, title: str | None = None, flow: str | None = None,
+           id: int | None = None, **props) -> View:
+    """A **dialog**: a `layout` that stands over the window and takes every
+    press while it exists.
+
+    It is placed centred over the window rather than by its parent's flow, as
+    big as ``w``/``h`` say or as its content wants, with the window dimmed
+    behind it; nothing behind it can be reached, by the pointer or by Tab. It
+    is up from the moment it is defined until it is **freed** -- which is how it
+    is closed (`clausters.gui.handle.WidgetHandle.free`)."""
+    return layout(*children, title=title, flow=flow, modal=True, frame=True, hug=True,
+                  id=id, **props)
 
 
 def waveform(*, autofit: bool | None = None,
@@ -2640,6 +2951,15 @@ def _strip_names(node: dict) -> dict:
     ``name`` key -- so serialization never leaks it to the host, whether or not
     the tree went through `clausters.gui.host.GuiHost`'s id/name walk."""
     out = {k: v for k, v in node.items() if k != "name"}
+    bind = out.get("bind")
+    if isinstance(bind, (list, tuple)) and any(isinstance(b, dict) for b in bind):
+        # A binding that names its target by the node is resolved against the
+        # ids `GuiHost.define` assigns; a document serialized before that has
+        # no id to put there.
+        raise ValueError(
+            "this tree binds a widget by reference (`tabs`, `pager`, or a "
+            "`bind` naming a node), which is resolved when the tree is opened "
+            "-- open or define it rather than serializing it directly")
     children = node.get("children")
     if children:
         out["children"] = [_strip_names(c) for c in children]

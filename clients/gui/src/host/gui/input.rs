@@ -127,6 +127,71 @@ impl App {
         self.apply_gesture_effects(effects);
     }
 
+    /// Pointer moved with no button held: the popup layer's hover, the hovered
+    /// control and a tip's wait.
+    pub(super) fn on_motion(&mut self, def_id: i32, cx: f64, cy: f64) {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let effects = ws.gestures.motion(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
+    }
+
+    /// The pointer left the window: nothing is hovered and no tip waits.
+    pub(super) fn on_leave(&mut self, def_id: i32) {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let effects = ws.gestures.hover(&mut self.host, &ctx, None);
+        self.apply_gesture_effects(effects);
+    }
+
+    /// The secondary button: the request for a context menu, where the pointer
+    /// is.
+    pub(super) fn on_context(&mut self, def_id: i32) {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
+            return;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        if let Some(effects) = ws.gestures.context(&mut self.host, &ctx, cx, cy) {
+            self.apply_gesture_effects(effects);
+        }
+    }
+
+    /// A key is about to be routed: a tip goes, the way it goes on a press.
+    pub(super) fn key_began(&mut self, def_id: i32) {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let effects = ws.gestures.key_began(&mut self.host, &ctx);
+        self.apply_gesture_effects(effects);
+    }
+
+    /// The frame step of the machine's timers: a rest that lasted shows its
+    /// tip, a press that was held asks for its context menu.
+    pub(super) fn advance_timers(&mut self) {
+        let waiting: Vec<i32> = self
+            .windows
+            .iter()
+            .filter(|(_, ws)| ws.gestures.pending())
+            .map(|(id, _)| *id)
+            .collect();
+        for def_id in waiting {
+            let ctx = self.gesture_ctx(def_id);
+            let Some(ws) = self.windows.get_mut(&def_id) else {
+                continue;
+            };
+            let effects = ws.gestures.elapsed(&mut self.host, &ctx);
+            self.apply_gesture_effects(effects);
+        }
+    }
+
     /// Pointer moved while a drag is active: the machine drives the target.
     pub(super) fn on_drag(&mut self, def_id: i32, cx: f64, cy: f64) {
         let ctx = self.gesture_ctx(def_id);

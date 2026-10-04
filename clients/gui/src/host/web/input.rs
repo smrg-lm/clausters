@@ -55,6 +55,9 @@ impl WebApp {
         // the same seam that made the browser's frame tick a `setInterval`.
         ctx.now_ms = js_sys::Date::now();
         (ctx.shift, ctx.ctrl, ctx.alt) = slot.modifiers();
+        // A finger owns the pointer while it is down: its held press is the
+        // context request a finger has no second button for.
+        ctx.touch = slot.touch.is_some();
         if let Some(render) = slot.render.as_ref() {
             // **The widget's own picture, not a body's**: the row count a
             // gesture divides by is the view's, and a box inside a view has
@@ -138,6 +141,89 @@ impl WebApp {
         }
     }
 
+    /// Pointer move with no button held: the popup layer's hover, the hovered
+    /// control and a tip's wait.
+    fn on_motion(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.motion(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
+        self.ensure_timers(def);
+    }
+
+    /// The pointer left the canvas: nothing is hovered and no tip waits.
+    fn on_leave(&mut self, def: i32) {
+        let Some(ctx) = self.window_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        slot.cursor = None;
+        let effects = slot.gestures.hover(&mut self.host, &ctx, None);
+        self.apply_gesture_effects(effects);
+        self.request_redraw(def);
+    }
+
+    /// The secondary button: the request for a context menu.
+    fn on_context(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        if let Some(effects) = slot.gestures.context(&mut self.host, &ctx, cx, cy) {
+            self.apply_gesture_effects(effects);
+        }
+    }
+
+    /// Keeps the tick running while this canvas' gesture machine has a timer
+    /// armed -- a tip waiting, a finger held. The tick itself turns back off
+    /// when the timers have run out ([`Self::advance_timers`]).
+    fn ensure_timers(&mut self, def: i32) {
+        if self
+            .canvases
+            .get(&def)
+            .is_some_and(|s| s.gestures.pending())
+        {
+            self.ensure_tick(true);
+        }
+    }
+
+    /// The tick's step of the machine's timers, as on the desktop: a rest that
+    /// lasted shows its tip, a held finger asks for its context menu.
+    pub(super) fn advance_timers(&mut self) {
+        let waiting: Vec<i32> = self
+            .canvases
+            .iter()
+            .filter(|(_, slot)| slot.gestures.pending())
+            .map(|(def, _)| *def)
+            .collect();
+        if waiting.is_empty() {
+            return;
+        }
+        for def in waiting {
+            let Some(mut ctx) = self.window_ctx(def) else {
+                continue;
+            };
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                continue;
+            };
+            ctx.touch = slot.touch.is_some();
+            let effects = slot.gestures.elapsed(&mut self.host, &ctx);
+            self.apply_gesture_effects(effects);
+        }
+        // The last timer ran out: the tick goes back to what the trees ask for.
+        if !self.canvases.values().any(|s| s.gestures.pending()) {
+            self.on_tree_changed();
+        }
+    }
+
     /// Pointer move while dragging: the machine drives the dragged target.
     fn on_move(&mut self, def: i32) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
@@ -193,6 +279,11 @@ impl WebApp {
             }
             return;
         };
+        // A key takes a tip down, whoever ends up answering it.
+        if let Some(slot) = self.canvases.get_mut(&def) {
+            let effects = slot.gestures.key_began(&mut self.host, &ctx);
+            self.apply_gesture_effects(effects);
+        }
         // The focus consumes the key first -- Tab walks the ring, a focused
         // element edits -- and only what nothing there answered runs the global
         // shortcuts, which are addressed to what is under the cursor.
@@ -446,15 +537,35 @@ impl WebApp {
                 slot.cursor = Some((position.x, position.y));
                 if slot.gestures.dragging() {
                     self.on_move(def);
-                } else if self
-                    .host
-                    .window_def(def)
-                    .is_some_and(Widget::has_hover_readout)
-                {
-                    // The hover readout follows the pointer (the native rule).
-                    self.request_redraw(def);
+                } else {
+                    // Motion with no button held is the machine's too (the
+                    // native rule): an open list's row, the bar's title, the
+                    // control under the pointer, a tip's wait.
+                    self.on_motion(def);
+                    if self
+                        .host
+                        .window_def(def)
+                        .is_some_and(Widget::has_hover_readout)
+                    {
+                        // The hover readout follows the pointer.
+                        self.request_redraw(def);
+                    }
                 }
             }
+            WindowEvent::CursorLeft { .. } => {
+                let Some(slot) = self.canvases.get_mut(&def) else {
+                    return;
+                };
+                if !slot.gestures.dragging() {
+                    self.on_leave(def);
+                }
+            }
+            // The secondary button asks for a context menu (the native rule).
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => self.on_context(def),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,
@@ -498,6 +609,9 @@ impl WebApp {
                         slot.touch = Some(touch.id);
                         slot.cursor = Some((touch.location.x, touch.location.y));
                         self.on_press(def);
+                        // A finger held still is its context request, which is
+                        // a timer: the tick has to run to see it expire.
+                        self.ensure_timers(def);
                     }
                     TouchPhase::Moved if owned => {
                         slot.cursor = Some((touch.location.x, touch.location.y));

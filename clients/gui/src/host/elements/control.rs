@@ -28,7 +28,7 @@ use serde_json::Value;
 
 use crate::host::graphics::controls;
 use crate::host::layout::Rect;
-use crate::host::widget::element::{Claim, Events, Input};
+use crate::host::widget::element::{Claim, Events, Input, Key, Mods};
 use crate::host::widget::{Range, parse};
 
 /// Applies one `/gui_set` key to a control's range -- the props all three share.
@@ -151,6 +151,34 @@ impl Dial {
     }
 }
 
+/// **The keys a focused ranged control answers**: the arrows step it, Home and
+/// End take it to its ends. `None` for any other key, which then goes on to
+/// the front's own shortcuts.
+///
+/// A step is the control's own `step` where it has one, and a hundredth of its
+/// travel where it does not -- measured along the travel rather than the range,
+/// so a curved control steps evenly on screen. Shift takes ten at a time.
+pub(super) fn key(r: &mut Range, key: &Key, mods: Mods) -> Option<Events> {
+    let span = (r.max - r.min).abs();
+    let unit = if r.step > 0.0 && span > 0.0 {
+        // One step of the grid, in travel: exact for a linear control.
+        (r.step / span).min(1.0)
+    } else {
+        0.01
+    };
+    let unit = if mods.shift { unit * 10.0 } else { unit };
+    let t = r.fraction();
+    let to = match key {
+        Key::Up | Key::Right => t + unit,
+        Key::Down | Key::Left => t - unit,
+        Key::Home => 0.0,
+        Key::End => 1.0,
+        _ => return None,
+    };
+    r.set_fraction(to.clamp(0.0, 1.0));
+    Some(Events::value(OscType::Float(r.value)))
+}
+
 /// The control body of a placement, at the size table and text size the
 /// renderer drew it with -- the geometry every one of these presses measures
 /// against.
@@ -234,6 +262,35 @@ mod tests {
         assert!(set(&mut r, "step", &serde_json::json!(2.0)));
         assert!(set(&mut r, "curve", &serde_json::json!(-2.0)));
         assert_eq!((r.curve, r.step), (-2.0, 2.0));
+    }
+
+    #[test]
+    fn the_arrows_step_a_focused_control_and_home_and_end_reach_its_ends() {
+        let mut r = range(0.0, 127.0, 0.0, 1.0);
+        r.set_fraction(0.5);
+        assert_eq!(r.value, 64.0);
+        key(&mut r, &Key::Up, Mods::default());
+        assert_eq!(r.value, 65.0, "one step of its own grid");
+        key(&mut r, &Key::Left, Mods::default());
+        key(&mut r, &Key::Down, Mods::default());
+        assert_eq!(r.value, 63.0);
+        assert_eq!(
+            key(&mut r, &Key::End, Mods::default()),
+            Some(Events::value(OscType::Float(127.0)))
+        );
+        key(&mut r, &Key::Home, Mods::default());
+        assert_eq!(r.value, 0.0);
+        // With no grid, a hundredth of the travel; Shift takes ten.
+        let mut free = range(0.0, 1.0, 0.0, 0.0);
+        key(&mut free, &Key::Right, Mods::default());
+        assert!((free.value - 0.01).abs() < 1e-6);
+        let shift = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        key(&mut free, &Key::Right, shift);
+        assert!((free.value - 0.11).abs() < 1e-6);
+        assert_eq!(key(&mut free, &Key::Enter, Mods::default()), None);
     }
 
     #[test]

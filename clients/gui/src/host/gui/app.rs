@@ -478,6 +478,7 @@ impl App {
                 .get(&def_id)
                 .map_or(frame::Grab::None, |w| w.gestures.grab()),
             status: statuses.get(&def_id),
+            popups: self.host.popups(def_id),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
@@ -647,6 +648,16 @@ impl ApplicationHandler<UserEvent> for App {
             next_wake = Some(next_wake.map_or(self.next_follow, |t| t.min(self.next_follow)));
         }
 
+        // **A timer of the gesture machine keeps the loop awake**: a tip
+        // waiting for the pointer to have rested, a press being held. Neither
+        // sends an event when its time comes, so the loop has to come back and
+        // ask.
+        self.advance_timers();
+        if self.windows.values().any(|ws| ws.gestures.pending()) {
+            let t = now + FRAME;
+            next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        }
+
         // Meter/scope animation, driven from the shared segment.
         let animated: Vec<i32> = self
             .windows
@@ -780,6 +791,9 @@ impl ApplicationHandler<UserEvent> for App {
                         // contains it).
                         ws.cursor = None;
                         ws.gpu.window.request_redraw();
+                        // ...and so does whatever the pointer was lighting up:
+                        // the hovered control, a tip, a title of the bar.
+                        self.on_leave(def_id);
                     }
                 }
             }
@@ -793,17 +807,32 @@ impl ApplicationHandler<UserEvent> for App {
                     .is_some_and(|w| w.gestures.dragging());
                 if dragging {
                     self.on_drag(def_id, position.x, position.y);
-                } else if self
-                    .host
-                    .window_def(def_id)
-                    .is_some_and(Widget::has_hover_readout)
-                {
-                    // The hover readout follows the pointer, so it needs a
-                    // frame per move -- a static window (a plot's) has no
-                    // other frame source.
-                    self.redraw(def_id);
+                } else {
+                    // **Motion with no button held is the machine's too**: it
+                    // lights the row of an open list, the title of the bar and
+                    // the control under the pointer, and starts a tip's wait.
+                    // It repaints only when one of those changes.
+                    self.on_motion(def_id, position.x, position.y);
+                    if self
+                        .host
+                        .window_def(def_id)
+                        .is_some_and(Widget::has_hover_readout)
+                    {
+                        // The hover readout follows the pointer, so it needs a
+                        // frame per move -- a static window (a plot's) has no
+                        // other frame source.
+                        self.redraw(def_id);
+                    }
                 }
             }
+            // **The secondary button asks for a context menu.** Only its press:
+            // the menu it opens is walked with the primary button, like every
+            // other list.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => self.on_context(def_id),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,
@@ -832,6 +861,8 @@ impl ApplicationHandler<UserEvent> for App {
                     self.ctrl(def_id),
                     self.shift(def_id)
                 );
+                // A key takes a tip down, whoever ends up answering it.
+                self.key_began(def_id);
                 // The focus consumes the key first -- Tab walks the ring, and a
                 // focused element edits (typing, caret motion, cut/copy/paste).
                 // Only what nothing there answered reaches the global shortcuts

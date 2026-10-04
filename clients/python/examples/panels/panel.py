@@ -2,7 +2,7 @@
 """A scripted instrument panel: controls that round-trip values and events.
 
 It builds a ``window`` of standard controls -- knobs, sliders, a number, a
-toggle, a button and a menu, two of them non-linear (a curved knob and a
+toggle, a button and a choice, two of them non-linear (a curved knob and a
 stepped number) -- opens it **twice**, then both *drives* a widget
 live with ``set`` and *listens* for the events your interactions emit (turn a
 knob, click the button) and the close the host sends when you close a window.
@@ -38,7 +38,7 @@ and a GPU adapter.
 import sys
 import time
 
-from clausters.gui import GuiHost, button, knob, menu, number, panel, slider, toggle, view
+from clausters.gui import GuiHost, button, choice, knob, number, panel, slider, toggle, view
 
 #: The named controls, so the script drives and listens to them by name.
 CONTROLS = ("cutoff", "res", "gain", "mix", "bypass", "reset", "wave")
@@ -69,7 +69,7 @@ v = view(
     panel(slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
           toggle(name="bypass", label="bypass", value=False),
           button(name="reset", label="reset"),
-          menu(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),
+          choice(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),
           layout="row"),
     title="Filter", w=560, h=300, layout="col")
 

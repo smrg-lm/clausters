@@ -657,7 +657,8 @@ class GuiHost:
         else:
             self._send("/gui_headClock", target, str(which))
 
-    def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
+    def _stamp(self, node: dict, node_id: int, names: dict, controls: dict,
+               _refs: "dict | None" = None, _waiting: "list | None" = None) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
         the document ``/gui_def`` is sent, plus ``name -> id`` collected into
         ``names`` and each id's children recorded (the subtree `free` recycles),
@@ -694,6 +695,16 @@ class GuiHost:
             held._live.append((self, node_id))
             self._sources.setdefault(node_id, []).append(held)
         out = dict(node)
+        # **A binding may name its target by the node itself** -- ``bind=
+        # ["widget", pages, "index"]`` -- since a tree is built before any id
+        # exists. It is resolved here, against the ids this pass assigns: at the
+        # nearest container that holds both ends, so a sub-view nested twice
+        # wires each copy to its own target rather than both to the last one.
+        mine = {id(node): node_id}
+        waiting = []
+        bind = out.get("bind")
+        if isinstance(bind, (list, tuple)) and any(isinstance(b, dict) for b in bind):
+            waiting.append(out)
         child_ids: list[int] = []
         children = node.get("children")
         if children:
@@ -701,11 +712,28 @@ class GuiHost:
             for child in children:
                 cid = int(child["id"]) if "id" in child else self.alloc_id()
                 child_ids.append(cid)
-                sub = self._stamp(child, cid, names, controls)
+                sub = self._stamp(child, cid, names, controls, _refs=mine,
+                                  _waiting=waiting)
                 sub["id"] = cid
                 stamped.append(sub)
             out["children"] = stamped
         self._children[node_id] = child_ids
+        still = []
+        for holder in waiting:
+            if all(id(b) in mine for b in holder["bind"] if isinstance(b, dict)):
+                holder["bind"] = [mine[id(b)] if isinstance(b, dict) else b
+                                  for b in holder["bind"]]
+            else:
+                still.append(holder)
+        if _refs is None:
+            if still:
+                raise ValueError(
+                    "a `bind` names a widget that is not in the tree being "
+                    "opened -- a binding by reference reaches a widget of the "
+                    "same tree")
+        else:
+            _refs.update(mine)
+            _waiting.extend(still)
         return out
 
     def _recycle_subtree(self, id: int, *, keep_root: bool):

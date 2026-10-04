@@ -25,8 +25,8 @@ things:
 | Kind | What it is | Types |
 |---|---|---|
 | **Container** | owns 0, 1 or 2 **axes**, and so a coordinate system its children are placed in | `window`, `layout`, `plane`, `field` |
-| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label` |
-| **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` |
+| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`, `separator`, `progress` |
+| **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `choice` |
 
 The builders named after the old catalog — `panel`, `stack`, `scroll`,
 `waveform`, `plot`, `scope`, `spectrum`, `spectrogram`, `phasescope`,
@@ -207,9 +207,30 @@ A def fed straight through the binding surface, with nobody having said where,
 draws on the page's **fallback** canvas — appended the first time that happens,
 so a document whose views all name their own place never carries an empty one.
 
+**The window's chrome is the host's, here as on the desktop.** A window's menu
+bar, a button's menu, a context menu, a tip, the list a `choice` opens and a
+dialog all open in the host's popup layer, over the canvas and inside it --
+never as DOM. The page answers the secondary button for a canvas whose tree has
+a `context` menu under the pointer, and a finger held still is the same
+request:
+
+```ts
+const bar = gui.menu(
+    gui.entry("File", undefined, { menu: gui.menu(gui.entry("Open", "open"), "-",
+                                                 gui.entry("Loop", "loop", { checked: false })) }),
+    gui.entry("About", "about"));
+const win = await gui.view({ menu: bar }, tools, work).open();
+win.handle().onEvent((tag, ...payload) => console.log(tag, payload));
+```
+
+`gui.toolbar`, `gui.tabs`, `gui.pager` and `gui.dialog` build the same
+compositions as in Python, and `gui.ICON` names the glyphs the host's own face
+draws. `examples/panels/chrome.html` holds one of each.
+
 **The keyboard is shared with the page.** A canvas is focusable, and while it
 holds the focus the host reads the keys: click a `text` field to type into it,
-Tab to walk the window's focusable widgets. **Tab past the last one gives the
+Tab to walk the window's focusable widgets -- every control is one, and the
+arrows, Space and Enter work it. **Tab past the last one gives the
 keyboard back to the document** — the canvas blurs and the browser's own tab
 order carries on — so a GuiDef mounted in the flow of a page is never a
 keyboard trap. A script points the focus itself with

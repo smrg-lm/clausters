@@ -28,7 +28,7 @@ non-colliding rungs in whatever unit is active.
 
 A stereo phrase is rendered offline at a known tempo, mapped as one raw file,
 and shown in both views; three menus and a toggle drive the units. The script
-drains ``/gui_event`` and translates each menu pick into the matching
+drains ``/gui_event`` and translates each choice into the matching
 ``gui.set`` -- the "wire a button to the display" path, no recompute anywhere
 (rulers are painter chrome; the frequency scale is a shader uniform).
 
@@ -44,7 +44,7 @@ import tempfile
 import time
 
 from clausters import Session
-from clausters.gui import menu, panel, samples_to_file, spectrogram, toggle, view, waveform
+from clausters.gui import choice, panel, samples_to_file, spectrogram, toggle, view, waveform
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -74,7 +74,7 @@ samples_to_file(list(inter), raw_path)
 # ## The window: both views plus the unit controls
 # The views start with the defaults -- time ruler in clock time, amplitude in
 # normalized units, frequency in log Hz -- and carry the beat grid so switching
-# to ``"beats"`` is just a unit change. Each menu's options are ordered so its
+# to ``"beats"`` is just a unit change. Each chooser's options are ordered so its
 # reported index maps straight to the prop value.
 
 # %%
@@ -91,9 +91,9 @@ def scene(path: str) -> dict:
                  tempo=TEMPO, quant=QUANT, bit_depth=16),
         spectrogram(name="spect", path=path, channels=2, sample_rate=SR,
                     window_size=1024, tempo=TEMPO, quant=QUANT),
-        panel(menu(name="time", options=TIME_UNITS, label="time axis"),
-              menu(name="amp", options=AMP_UNITS, label="amplitude axis"),
-              menu(name="freq", options=FREQ_SCALES, label="frequency scale"),
+        panel(choice(name="time", options=TIME_UNITS, label="time axis"),
+              choice(name="amp", options=AMP_UNITS, label="amplitude axis"),
+              choice(name="freq", options=FREQ_SCALES, label="frequency scale"),
               toggle(name="yaxis", label="vertical rulers", value=True),
               # `hug` is the strip saying "I am as tall as what I hold": the
               # menus know their own height and the panel composes them, so no
@@ -110,7 +110,7 @@ print(f"opened window {win} -- click the menus to cycle each axis' unit")
 
 # %% [markdown]
 # ## Wire the widgets to the rulers, by name
-# The host reports every menu pick as an index (and the toggle as 0|1); each
+# The host reports every choice as an index (and the toggle as 0|1); each
 # handle callback answers with the ``set`` that retunes the matching axis. This
 # is script glue by design: the same events could equally drive a synth, and the
 # same ``set`` calls could come from anywhere. The views themselves report their
@@ -207,7 +207,7 @@ win["spect"].set(y_len=0.0)
 # %% [markdown]
 # ## Plain-script run
 # Cell-by-cell keeps the window open under your hands; as a script this block
-# services the menu events for a while, then tears everything down.
+# services the chooser's events for a while, then tears everything down.
 
 # %%
 def teardown():

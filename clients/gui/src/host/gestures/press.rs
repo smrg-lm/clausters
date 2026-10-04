@@ -111,29 +111,19 @@ impl Gestures {
         // reaching an element.
         self.count_press(ctx, cx, cy);
         self.click = None;
-        // An element that **declared** an overlay is modal: it is over
-        // everything, so it is tested before the tree and it swallows the press
-        // either way -- on its own area it acts, anywhere else it closes, the
-        // way a menu everywhere else behaves. It is asked for the point and
-        // answers for both cases, since only it knows where its area is.
-        if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
-            out.push(GestureEffect::Redraw(ctx.def_id));
-            // An overlay stands over the window, on nobody's axis.
-            let at = element::At {
-                clicks: self.clicks(),
-                ..element::At::widget(id, rect, scale, 0.0)
-            };
-            // Not through `element::press`: that door filters the point against
-            // the element's declared shape, and an overlay is offered the press
-            // **because it is outside** as often as because it is inside -- a
-            // click on the window closes the list. The shape filter answers
-            // "is this widget's drawing under the pointer", which is the tree's
-            // question, not a modal's.
-            let claim = element::with(host, ctx, at, |el, input| el.press((cx, cy), input))
-                .unwrap_or(Claim::Decline);
-            if let Claim::Take(take) = claim {
-                element::report(host, &mut out, ctx, id, take.events);
-            }
+        // A press ends a rest: the tip that was up, or waiting, goes.
+        self.press_began(host, ctx, (cx, cy), &mut out);
+        // **The popup layer is modal**, so it is asked before the tree: an
+        // open list takes the press either way -- a row picks, anywhere else
+        // closes -- and a title of the menu bar opens its list. The bar is
+        // chrome, like the status bar below, and under no part of the tree.
+        // **Nothing behind a dialog can be reached.** With one up and no list
+        // open, a press off it is swallowed: not the bar, not the status log,
+        // not a widget.
+        if host.popup(ctx.def_id).is_none() && self.behind_dialog(host, ctx, cx, cy) {
+            return out;
+        }
+        if self.popup_press(host, ctx, cx, cy, &mut out) {
             return out;
         }
         // **The status bar**, which is chrome and not a widget: it is under no
@@ -146,6 +136,12 @@ impl Gestures {
             let open = !host.status_open(ctx.def_id);
             host.set_status_open(ctx.def_id, open);
             out.push(GestureEffect::Redraw(ctx.def_id));
+            return out;
+        }
+        // **A container's own chrome**: a title strip that folds, a scroll
+        // bar, a divider. None of them is a widget, so none is under the
+        // pointer for the hit test below.
+        if self.chrome_press(host, ctx, cx, cy, &mut out) {
             return out;
         }
         let Some(hit) = hit(host, ctx, cx, cy) else {
@@ -687,6 +683,11 @@ impl Gestures {
         // claim is taken before anything is delivered, so the element's borrow
         // of the tree is over by the time the event leaves.
         if matches!(hit.kind, WidgetKind::Custom(_)) {
+            // A button that carries a `menu` opens it instead of firing: the
+            // press is the menu's, and what is reported is the entry picked.
+            if self.button_menu(host, ctx, id, rect, out) {
+                return true;
+            }
             return self.element_at(
                 host,
                 ctx,

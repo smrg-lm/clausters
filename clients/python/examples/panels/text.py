@@ -2,7 +2,7 @@
 """Text on the light widgets: ``text_size``, ``wrap`` and ``align``.
 
 Every text-bearing light widget -- ``label``, ``button``, ``toggle``, ``text``,
-``number``, ``menu`` and the control labels on ``slider``/``knob`` -- takes a
+``number``, ``choice`` and the control labels on ``slider``/``knob`` -- takes a
 ``text_size``: a glyph scale over the host's font, whose default 2.0 is exactly
 the size everything drew at before the prop existed.
 
@@ -56,7 +56,7 @@ adapter.
 # %%
 import sys
 
-from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider, text, toggle, view)
+from clausters.gui import (GuiHost, button, choice, knob, label, panel, slider, text, toggle, view)
 
 LOREM = ("a wrapped label lays its words out on their own measured width, "
          "drops the lines that overflow its rect, and aligns each line "
@@ -108,7 +108,7 @@ def controls() -> dict:
                  knob(label="cutoff", min=20.0, max=20000.0, value=800.0, text_size=3.0),
                  button(label="a very wordy button face"),
                  toggle(label="toggle at 3x", text_size=3.0),
-                 menu(["sine", "sawtooth", "square"], label="wave", text_size=3.0),
+                 choice(["sine", "sawtooth", "square"], label="wave", text_size=3.0),
                  layout="row")
 
 

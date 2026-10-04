@@ -132,6 +132,8 @@ impl Host {
             match self.build_tree(id, &node, blobs, held, &was) {
                 Ok(tree) => {
                     self.window_defs.insert(id, tree);
+                    // A list that was open hung off the tree that just went.
+                    self.popups.remove(&id);
                     self.tree_changed(id, effects);
                 }
                 Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
@@ -247,8 +249,26 @@ impl Host {
         let Some(id) = int_arg(args, 0) else {
             return diag::warn!("{from}: {GUI_FREE} needs an integer id");
         };
+        // **Which window the widget is drawn in, read before it is freed** --
+        // afterwards the registry no longer knows it.
+        let inside = self.registry.root_of(id).filter(|root| *root != id);
         let removed = self.registry.free(id);
         self.def_json.remove(&id);
+        // **A widget inside an open window leaves the tree the front draws.**
+        // Freeing one used to take it out of the registry alone: it was gone
+        // for a `/gui_set` and a query, and still on screen and still under
+        // the pointer, since the typed tree is what is drawn and hit. A dialog
+        // is closed by freeing it, which is how that was found.
+        if let Some(root) = inside
+            && self
+                .window_defs
+                .get_mut(&root)
+                .is_some_and(|tree| tree.remove(id))
+        {
+            // A list that was open may have hung off what just went.
+            self.popups.remove(&root);
+            self.tree_changed(root, effects);
+        }
         if self.window_defs.remove(&id).is_some() {
             // The window goes, and with it the scale a shell reported for it.
             self.resolved_metrics.remove(&id);
@@ -259,6 +279,7 @@ impl Host {
             // The status bar is the window's own history and goes with it: a
             // window reopened on the same id starts with nothing to say.
             self.status.borrow_mut().remove(&id);
+            self.popups.remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_subscriptions();

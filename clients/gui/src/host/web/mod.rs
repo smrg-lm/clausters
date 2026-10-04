@@ -574,6 +574,7 @@ impl WebApp {
             }
         }
         self.advance_edge_scroll();
+        self.advance_timers();
     }
 
     /// The frame step of a clip drag held against a lane's edge: pans the view

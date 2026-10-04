@@ -95,6 +95,10 @@ the same color to within the 8 bits of the notation:
 | `accent` | `#4cc78c` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
 | `accent_dim` | `#388066` | The accent's quiet form (an unlit toggle, a knob's arc). |
 | `hilite` | `#66d99e` | The accent's lit form (a pressed control, a window's edge marker). |
+| `hover` | `#384052` | What the pointer is over: a row of an open list, a flat button, a tab. |
+| `text_disabled` | `#666e7a` | The text of something that cannot be acted on now: a disabled control, a disabled entry of a menu. |
+| `popup` | `#1f212b` | The ground of what opens over the window: a list, a menu, a tip. Opaque, since it covers what it opened over. |
+| `separator` | `#474f5e` | A line between groups: a menu's separator, a toolbar's, a group's frame. |
 | `trace` | `#66d99e` | A drawn signal or curve (scope trace, bpf curve, automation curve). |
 | `trace_bright` | `#73e6a8` | The brighter trace of the phase scope's beam. |
 | `trace_body` | `#d9f0b39e` | The measured body drawn inside a signal's envelope (an RMS layer). Translucent by role: a body is read *against* the peaks it sits in. |

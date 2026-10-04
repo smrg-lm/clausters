@@ -111,6 +111,10 @@ pub struct GestureCtx {
     /// `Date.now` in a page) and the **rule** -- how close is close -- stays
     /// here, where there is one of it.
     pub now_ms: f64,
+    /// Whether this call comes from a **finger** rather than a pointer. A
+    /// press held still is then the request for a context menu -- the touch
+    /// spelling of the secondary button, which a finger does not have.
+    pub touch: bool,
 }
 
 impl GestureCtx {
@@ -128,6 +132,7 @@ impl GestureCtx {
             sample_rate: 0.0,
             clocks: crate::host::world::HeadClocks::default(),
             now_ms: 0.0,
+            touch: false,
         }
     }
 
@@ -284,6 +289,12 @@ enum Drag {
         x0: f64,
         y0: f64,
     },
+    /// Moving a divider of a split strip: the two children beside it trade
+    /// room, absolutely from the press ([`chrome`]).
+    Split(chrome::Split),
+    /// Dragging a plane's scroll bar: the view follows the thumb, absolutely
+    /// from the press ([`chrome`]).
+    Bar(chrome::BarDrag),
 }
 
 /// **Where a press landed on a time axis**, kept until the button comes up.
@@ -339,6 +350,10 @@ pub struct Gestures {
     /// of what a double click is made of. See [`GestureCtx::now_ms`] for why
     /// the clock comes from the front.
     repeat: Option<(f64, f64, f64, u32)>,
+    /// A tip waiting for the pointer to have rested ([`hover`]).
+    rest: Option<hover::Rest>,
+    /// A press held still, waiting to become a context request ([`hover`]).
+    hold: Option<hover::Hold>,
 }
 
 impl Gestures {
@@ -434,14 +449,19 @@ impl Gestures {
     }
 }
 
+mod chrome;
 mod drag;
 mod effects;
 mod element;
 mod focus;
+mod hover;
 mod keys;
 mod nav;
+mod popups;
 
+pub use chrome::{COLLAPSED, SPLIT};
 pub use keys::ClipVerb;
+pub use popups::MENU;
 pub use wheel::{Lines, Wheel, WheelDelta};
 mod press;
 mod wheel;
@@ -452,5 +472,7 @@ use nav::*;
 #[cfg(feature = "patcher")]
 pub(crate) use nav::corner_rect;
 
+#[cfg(test)]
+mod popup_tests;
 #[cfg(test)]
 mod tests;

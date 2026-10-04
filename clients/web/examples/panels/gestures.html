@@ -39,7 +39,7 @@ selection of objects: the clips or boxes a rectangle covered -- two different
 selections, not one gesture), <code>locate</code>.
 
 Two columns, the same contents, two tables: the left one takes the defaults, the
-right one is switched live by the menu under it.</div>
+right one is switched live by the chooser under it.</div>
 
       <button id="run">open the window</button>
       <div id="stage"></div>
@@ -49,7 +49,7 @@ right one is switched live by the menu under it.</div>
     <!--
       The web sibling of clients/python/examples/panels/gestures.py, call for
       call: the offline take, the two columns (ruler over roll, and a
-      standalone waveform under them), the preset menu that rewrites the right
+      standalone waveform under them), the preset chooser that rewrites the right
       column's tables, and the report handler on every widget of both.
 
       One difference is the platform's and is the same one the plan already
@@ -133,7 +133,7 @@ right one is switched live by the menu under it.</div>
           gui.panel(
             { layout: "row", h: 44.0 },
             gui.label("right column:"),
-            gui.menu(PRESETS, { name: "preset", label: "gestures" }),
+            gui.choice(PRESETS, { name: "preset", label: "gestures" }),
           ),
         );
 

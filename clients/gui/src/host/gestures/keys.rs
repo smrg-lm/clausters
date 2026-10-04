@@ -46,8 +46,19 @@ impl Gestures {
         key: Key,
         clipboard: &mut super::super::clipboard::Clip,
     ) -> Option<Vec<GestureEffect>> {
+        // **An open list is modal**: it takes every key, the walking ones to
+        // walk it and the rest to swallow -- Tab included, since the focus
+        // cannot leave a list that is still open.
+        if let Some(out) = self.popup_key(host, ctx, &key) {
+            return Some(out);
+        }
         if key == Key::Tab {
             return Some(focus::step(host, ctx, ctx.shift));
+        }
+        // Escape is the popup layer's and nobody else's: with nothing open it
+        // goes back to the front, which has its own use for it.
+        if key == Key::Escape {
+            return None;
         }
         // Only an element focused in *this* window: a key is delivered by the
         // window it was typed into.
@@ -70,7 +81,14 @@ impl Gestures {
             cursor: cursor_of(host, ctx, id),
         };
         let at = element::At::widget(id, rect, scale, indent);
-        let events = element::with(host, ctx, at, |el, _| el.key(&key, &mut input)).flatten()?;
+        // The element's own arm first; then, for Space and Enter, the
+        // keyboard's press -- do what a click on this control does.
+        let pressed = matches!(key, Key::Enter | Key::Char(' '));
+        let events = element::with(host, ctx, at, |el, placed| {
+            el.key(&key, &mut input)
+                .or_else(|| pressed.then(|| el.activate(placed)).flatten())
+        })
+        .flatten()?;
         let mut out = Vec::new();
         // The element consumed it, so the window repaints whether or not
         // anything was reported: a caret that moved is a picture that changed.

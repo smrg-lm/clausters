@@ -416,6 +416,7 @@ impl WebApp {
             // grip and nothing else lights up, whichever front is driving.
             grab: slot.gestures.grab(),
             status: statuses.get(&def),
+            popups: self.host.popups(def),
         };
         let Some(render) = slot.render.as_mut() else {
             return;

@@ -63,7 +63,7 @@ def cases():
             g.panel(
                 g.button(id=7, label="ping"),
                 g.toggle(id=8, label="gate", value=True),
-                g.menu(["sine", "saw", "pulse"], id=9, index=1, label="wave"),
+                g.choice(["sine", "saw", "pulse"], id=9, index=1, label="wave"),
                 g.text(id=10, value="/node_set 1000 freq 440", multiline=False),
                 id=6, layout="row", h=40,
             ),
@@ -72,7 +72,7 @@ def cases():
     ))
 
     # Containers: a scroll workspace configured down to a vertical view, a
-    # theme group over a subtree, and a stack driven by an inline-bound menu.
+    # theme group over a subtree, and a stack driven by an inline-bound choice.
     out.append((
         "containers",
         g.window(
@@ -82,7 +82,7 @@ def cases():
                 id=1, axis="y", zoom=False, content_h=1200.0, view_y=40.0,
                 view_zoom=1.0, layout="free",
             ),
-            g.menu(["one", "two"], id=3, index=1, bind=["widget", 4, "index"]),
+            g.choice(["one", "two"], id=3, index=1, bind=["widget", 4, "index"]),
             g.stack(
                 g.panel(id=5),
                 g.panel(id=6),
@@ -282,6 +282,10 @@ PER_BUILDER = {
     ("notes", "points"): [["lane", 0.0, 1.0], ["bend", 1.0, 0.0, 5, 4.0]],
     ("meter", "zones"): [[-1.0, "#d04040"], [-0.5, "meter_low", "lin"],
                          [0.0, "meter_mid", -3.0]],
+    # `view` is a signal's presentation everywhere else; on these two it is
+    # the control's own picture, and each refuses a name that is not one.
+    ("choice", "view"): "tabs",
+    ("toggle", "view"): "switch",
 }
 
 #: The payload options, whose value is a shape rather than a scalar. Every one
@@ -302,6 +306,8 @@ SHAPES = {
     "axes": {"x": {"unit": "beats", "tempo": 2.0}, "y": {"bit_depth": 16}},
     "gestures": {"drag": "pan"},
     "theme": {"accent": "#ff8800"},
+    "menu": [{"label": "Open", "verb": "open"}, "-",
+             {"label": "More", "menu": ["Quit"]}],
     "display_list": None,
 }
 

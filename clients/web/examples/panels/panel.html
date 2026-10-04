@@ -25,7 +25,7 @@
 values and events.
 
 It builds a view of standard controls -- knobs, sliders, a number, a toggle, a
-button and a menu, two of them non-linear (a curved knob and a stepped number)
+button and a choice, two of them non-linear (a curved knob and a stepped number)
 -- opens it <b>twice</b>, then both <i>drives</i> a widget live with
 <code>set</code> and <i>listens</i> for the events your interactions emit. No
 audio server is involved.
@@ -107,7 +107,7 @@ names, two independent panels.</div>
             gui.slider({ name: "mix", label: "mix", min: 0.0, max: 1.0, value: 0.5 }),
             gui.toggle({ name: "bypass", label: "bypass", value: false }),
             gui.button({ name: "reset", label: "reset" }),
-            gui.menu(["sine", "saw", "square"],
+            gui.choice(["sine", "saw", "square"],
                      { name: "wave", index: 1, label: "wave" }),
           ),
         );

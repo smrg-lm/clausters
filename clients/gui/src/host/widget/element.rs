@@ -156,6 +156,9 @@ pub struct Ctx<'a> {
     /// this only for what the ring cannot say -- a field's caret and selection,
     /// which exist while it is being typed into and not otherwise.
     pub focused: bool,
+    /// Whether the pointer is over this element, with no button held -- what a
+    /// control that lifts under the hand (a flat button, a tab) draws from.
+    pub hovered: bool,
     /// The clock this element's playhead sweeps from this frame -- the counter
     /// named on it or on its nearest ancestor, else its window's, already read
     /// ([`HeadClocks::at`](crate::host::world::HeadClocks::at)).
@@ -1015,6 +1018,9 @@ pub enum Key {
     End,
     /// Enter: a newline in a multiline field, ignored in a single-line one.
     Enter,
+    /// Escape: closes whatever is open over the window -- a list, a tip. Only
+    /// the popup layer reads it; with nothing open it is the front's.
+    Escape,
     /// Tab: **the focus ring's**, never an element's. The machine consumes it
     /// before any element sees it (see
     /// [`Gestures::key`](super::super::gestures::Gestures::key)), which is what
@@ -1086,6 +1092,24 @@ pub struct Events {
     interface: Vec<Vec<OscType>>,
     voices: Vec<Voice>,
     select: Option<SelectRequest>,
+    popup: Option<PopupRequest>,
+}
+
+/// **A list an element asks the host to open for it**: the rows, and the
+/// rectangle (in window pixels) it hangs off.
+///
+/// The third thing an element cannot do for itself, beside a [`Voice`] and the
+/// container's selection: a list opens over the whole window, clear of the
+/// host's own bands and inside the far edges, and only the popup layer knows
+/// where those are.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopupRequest {
+    pub entries: Vec<crate::host::menu::Entry>,
+    /// What the list hangs off: under it, or over it where there is no room.
+    pub anchor: Rect,
+    /// The text size the rows are drawn at -- the element's own, so the list
+    /// reads as part of the control that opened it.
+    pub text_size: f32,
 }
 
 /// **What an element asks the container's selection to become**: the span in
@@ -1223,6 +1247,13 @@ impl Events {
         self
     }
 
+    /// Asks the host to open a list for this element. A pick comes back
+    /// through [`Element::picked`].
+    pub fn and_popup(mut self, request: PopupRequest) -> Self {
+        self.popup = Some(request);
+        self
+    }
+
     /// **What the hand did**, reported beside -- or instead of -- what the widget
     /// is worth: `"press"`, `"release"`, `"click"`.
     ///
@@ -1250,6 +1281,7 @@ impl Events {
         self.interface.extend(other.interface);
         self.voices.extend(other.voices);
         self.select = other.select.or(self.select);
+        self.popup = other.popup.or(self.popup);
         self
     }
 
@@ -1258,6 +1290,7 @@ impl Events {
             && self.interface.is_empty()
             && self.voices.is_empty()
             && self.select.is_none()
+            && self.popup.is_none()
     }
 
     /// The messages, for the gesture machine that delivers them.
@@ -1273,6 +1306,11 @@ impl Events {
     /// The voices asked for, for the machine that performs them.
     pub(crate) fn voices(&self) -> &[Voice] {
         &self.voices
+    }
+
+    /// The list asked for, for the machine that opens it.
+    pub(crate) fn take_popup(&mut self) -> Option<PopupRequest> {
+        self.popup.take()
     }
 
     /// The container-selection request, for the machine that performs it.
@@ -1760,6 +1798,30 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// Whether a move of the focus onto or off this element is **reported**
+    /// (`/gui_event <id> "focus" <1|0>`). `true` by default.
+    ///
+    /// A light control answers `false`. Its event stream is its value, read by
+    /// a callback of one argument, and it was not a stop on the ring before
+    /// every control became one: a notification of two arguments arriving in
+    /// that stream would be an argument no such callback was written for. The
+    /// control still takes the focus and still draws the ring -- it only says
+    /// nothing about it.
+    fn reports_focus(&self) -> bool {
+        true
+    }
+
+    /// **The keyboard's press**: Space or Enter while this element holds the
+    /// focus, when [`key`](Element::key) had no arm for it. `Some` is consumed.
+    ///
+    /// It is separate from `key` because it is the one key gesture that needs
+    /// the element's **placement** -- a chooser opens its list under itself --
+    /// and because what it means is one thing everywhere: do what a click on
+    /// this control does.
+    fn activate(&mut self, _input: &Input) -> Option<Events> {
+        None
+    }
+
     /// Whether this element, while focused, is **taking typed text** -- as
     /// against reading keys as commands (a roll's arrows, a list's letters).
     ///
@@ -1823,25 +1885,27 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// The area this element occupies **outside its own rect**, in window
-    /// pixels -- an open list, a popup -- or `None` (the default) for an element
-    /// that stays inside its placement.
+    /// What this element draws **over** the window's pictures: into the
+    /// overlay mesh, the second pass, after the heavy views. Nothing by
+    /// default.
     ///
-    /// Declaring it is what makes an overlay work, and it is declared rather
-    /// than flagged because two different passes need the same answer: the
-    /// frame draws [`overlay`](Element::overlay) over everything else, and the
-    /// press routes to this element **first**, before the tree, however the
-    /// layout places what happens to be under the point. An element with an
-    /// overlay open swallows the press either way -- on its own area it acts,
-    /// anywhere else it closes -- which is what a menu everywhere else does.
-    fn overlay_rect(&self) -> Option<Rect> {
-        None
-    }
+    /// It is for what reads over a picture rather than into it and still
+    /// belongs to the element -- a stored plot's hover readout. It stays inside
+    /// the element's own placement and is cut to its container's clip; what
+    /// opens *outside* a placement is the popup layer's
+    /// ([`Events::and_popup`]).
+    fn draw_over(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
-    /// Draws the [`overlay_rect`](Element::overlay_rect) area, into the
-    /// window's **overlay** mesh -- the second pass, over the heavy views and
-    /// over every other widget. A list that opens covers what it opens over.
-    fn overlay(&self, _d: &mut Draw, _ctx: &Ctx) {}
+    /// **A row of the list this element opened was picked**: `path` is the
+    /// row's position, from the first list down ([`Events::and_popup`]).
+    ///
+    /// An element that opens a list does not hold it. The list is the host's
+    /// -- placed, drawn, scrolled and walked by the popup layer
+    /// ([`crate::host::popup`]) -- and what comes back to the element is the
+    /// one thing only it can answer: what the pick means.
+    fn picked(&mut self, _path: &[usize], _input: &Input) -> Events {
+        Events::none()
+    }
 
     /// Clones this element into a fresh box (the tree is `Clone`).
     fn clone_box(&self) -> Box<dyn Element>;

@@ -26,7 +26,7 @@ Two things meet here. A <code>stack</code> shows <b>one child at a time</b> --
 the one its <code>index</code> names -- and everything else it holds is neither
 laid out nor drawn while it is away. And a widget can be <b>bound to another
 widget</b>, which applies its value to that widget's property with no round trip
-through this script. Put together, a menu bound to a stack's <code>index</code>
+through this script. Put together, a choice bound to a stack's <code>index</code>
 <i>is</i> a tab bar: the pages flip inside the host, and nothing appears in the
 log while you click.
 
@@ -101,7 +101,7 @@ view's.</div>
         await new GuiHost().boot();
 
         // ---- the window: a picker over a stack, a scroll slider under it ----
-        // The menu's options are the page names and its index *is* the stack's
+        // The choice's options are the page names and its index *is* the stack's
         // index, which is exactly why the binding is one line and no event
         // handler. Both views name `link: 1`: one navigation group, so the time
         // window belongs to the axis rather than to either page. The stack has
@@ -112,7 +112,7 @@ view's.</div>
           gui.panel(
             { layout: "row", h: 32.0 },
             gui.label("view:", { w: 48.0 }),
-            gui.menu(["waveform", "spectrogram"], { name: "picker", index: 0 }),
+            gui.choice(["waveform", "spectrogram"], { name: "picker", index: 0 }),
           ),
           gui.stack(
             { name: "pages", index: 0, weight: 1.0 },

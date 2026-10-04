@@ -136,7 +136,7 @@ impl Element for SignalElement {
     /// The hover readout of a **stored** view: a hairline and the value under
     /// the pointer. It rides the overlay mesh for the same reason a timeline
     /// view's chrome does -- it reads over the picture, not into it.
-    fn overlay(&self, d: &mut Draw, ctx: &Ctx) {
+    fn draw_over(&self, d: &mut Draw, ctx: &Ctx) {
         if self.caps.navigable || !matches!(self.source, Source::Data(_)) {
             return;
         }
@@ -647,6 +647,7 @@ mod tests {
             scale: 1.0,
             time,
             focused: false,
+            hovered: false,
             clock: 0.0,
         };
         let draw = |time| {

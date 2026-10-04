@@ -163,6 +163,12 @@ in the middle of an example.
 |---|---|---|
 | python | `stop` | the script's ending: it launched a headless `clausters-gui` process and stops it before exiting. The page's host is the tab |
 
+### `panels/chrome`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `stop` | the script's ending, as in `panels/skeleton` |
+
 ### `panels/stack`
 
 | Only in | Call | Why |

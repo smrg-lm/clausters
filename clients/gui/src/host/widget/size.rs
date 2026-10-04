@@ -97,13 +97,6 @@ pub(crate) fn text_box(text: &str, size: f32, m: &Metrics) -> f32 {
     font::width(text, size) + 2.0 * m.pad
 }
 
-/// The width a control's cell needs to show `text` inside its **body**: the
-/// body is inset from the cell and the text from the body
-/// ([`crate::host::graphics::controls::field`]), so a field pays the padding twice.
-pub(crate) fn field_w(text: &str, size: f32, m: &Metrics) -> f32 {
-    font::width(text, size) + 4.0 * m.pad
-}
-
 /// The vertical inset a control's body takes inside its cell (top and bottom).
 pub(crate) fn body_inset(m: &Metrics) -> f32 {
     2.0 * m.pad
@@ -119,6 +112,10 @@ impl WidgetKind {
             // -- Mixed: a thickness across the control's axis, elastic along it --
             // A ruler is a strip: it spans its axis and knows its thickness.
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
+
+            // A section folded to its title is exactly its title strip tall,
+            // and as wide as it is given.
+            WidgetKind::Panel { group, .. } if group.folded() => (None, Some(group.strip_h(m))),
 
             // A registered element declares its own, under the same rule the
             // arms above follow: pure over the metrics, its presentation props
@@ -144,6 +141,7 @@ impl WidgetKind {
     pub fn floor_size(&self, m: &Metrics, scale: f32) -> Natural {
         match self {
             WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
+            WidgetKind::Panel { group, .. } if group.folded() => (None, Some(group.strip_h(m))),
             WidgetKind::Custom(el) => el.floor(m, scale),
             _ => (None, None),
         }
@@ -195,6 +193,15 @@ impl Widget {
         (settle(floor.0, wanted.0), settle(floor.1, wanted.1))
     }
 
+    /// The children this container's flow arranges -- every one but its
+    /// dialogs, which stand over the window and take no room in it.
+    fn flow_children(&self) -> Vec<&Widget> {
+        self.children
+            .iter()
+            .filter(|c| !c.kind.is_modal())
+            .collect()
+    }
+
     /// Whether this container carries the `hug` prop.
     fn hugs(&self) -> bool {
         matches!(
@@ -235,8 +242,25 @@ impl Widget {
     /// keeps of it.
     fn fitted(&self, m: &Metrics, scale: f32, want: Want) -> Natural {
         match &self.kind {
-            WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow, .. } => {
-                compose(&self.children, *layout, *flow, m, scale, want)
+            WidgetKind::Window { layout, flow, .. } => {
+                compose(&self.flow_children(), *layout, *flow, m, scale, want)
+            }
+            // A group is its content under its title strip -- or, folded, the
+            // strip alone, as wide as the content still is: folding a section
+            // must not also narrow the column it stands in.
+            WidgetKind::Panel {
+                layout,
+                flow,
+                group,
+                ..
+            } => {
+                let (w, h) = compose(&self.flow_children(), *layout, *flow, m, scale, want);
+                let strip = group.strip_h(m);
+                if group.folded() {
+                    (w, Some(strip))
+                } else {
+                    (w, h.map(|h| h + strip))
+                }
             }
             // A stack arranges nothing: every page fills it, so its content is
             // the largest of them, inset by its own margin.
@@ -305,7 +329,7 @@ fn settle(floor: Option<f32>, wanted: Option<f32>) -> Option<f32> {
 /// whole of what a hugging container adds, and one bottom-up walk over
 /// functions that were already pure.
 fn compose(
-    children: &[Widget],
+    children: &[&Widget],
     layout: Layout,
     flow: Flow,
     m: &Metrics,
@@ -447,7 +471,7 @@ mod tests {
             r#"{"id":1,"type":"knob","label":"cutoff"}"#,
             r#"{"id":1,"type":"number","label":"gain"}"#,
             r#"{"id":1,"type":"slider","label":"mix"}"#,
-            r#"{"id":1,"type":"menu","label":"wave","options":["a","b"]}"#,
+            r#"{"id":1,"type":"choice","label":"wave","options":["a","b"]}"#,
             r#"{"id":1,"type":"text","label":"name"}"#,
         ] {
             let size = crate::host::widget::Range::parse(&Default::default()).text_size;
@@ -622,13 +646,13 @@ mod tests {
         };
 
         // The options are a prop: a longer one makes the menu wider.
-        let short = hug(r#"{"type":"menu","options":["a"]}"#);
-        let long = hug(r#"{"type":"menu","options":["a much longer option"]}"#);
+        let short = hug(r#"{"type":"choice","options":["a"]}"#);
+        let long = hug(r#"{"type":"choice","options":["a much longer option"]}"#);
         assert!(long > short, "{long:?} > {short:?}");
         // The choice among them is a value: picking one changes nothing.
         assert_eq!(
-            hug(r#"{"type":"menu","options":["a","bbbbbbbbbb"],"index":0}"#),
-            hug(r#"{"type":"menu","options":["a","bbbbbbbbbb"],"index":1}"#)
+            hug(r#"{"type":"choice","options":["a","bbbbbbbbbb"],"index":0}"#),
+            hug(r#"{"type":"choice","options":["a","bbbbbbbbbb"],"index":1}"#)
         );
         // And neither does what a field holds, or what a number reads.
         assert_eq!(
@@ -808,7 +832,7 @@ mod tests {
             r#"{"type":"button","label":"go"}"#,
             r#"{"type":"toggle"}"#,
             r#"{"type":"number"}"#,
-            r#"{"type":"menu","options":["a","b"]}"#,
+            r#"{"type":"choice","options":["a","b"]}"#,
             r#"{"type":"text","value":"x"}"#,
         ] {
             let (w, h) = kind(json).natural_size(&m, 1.0);
@@ -826,8 +850,8 @@ mod tests {
         let short = kind(r#"{"type":"label","text":"a"}"#).natural_size(&m, 1.0);
         let long = kind(r#"{"type":"label","text":"a much longer caption"}"#).natural_size(&m, 1.0);
         assert_eq!(short, long);
-        let one = kind(r#"{"type":"menu","options":["a"]}"#).natural_size(&m, 1.0);
-        let many = kind(r#"{"type":"menu","options":["a","b","c","d"]}"#).natural_size(&m, 1.0);
+        let one = kind(r#"{"type":"choice","options":["a"]}"#).natural_size(&m, 1.0);
+        let many = kind(r#"{"type":"choice","options":["a","b","c","d"]}"#).natural_size(&m, 1.0);
         assert_eq!(one, many);
     }
 

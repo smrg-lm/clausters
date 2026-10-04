@@ -99,126 +99,6 @@ fn emitted_args(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
     })
 }
 
-// ---- the menu: a list that opens, and the press that picks from it ----
-
-fn menu_host() -> Host {
-    host_from(
-        r#"{"type":"window","margin":0,"children":[
-            {"id":7,"type":"menu","label":"View","w":200,"h":48,
-             "options":["ruler: shown","ruler: hidden","ruler: locked"]}]}"#,
-    )
-}
-
-fn menu_index(host: &Host, id: i32) -> usize {
-    match host
-        .window_def(1)
-        .unwrap()
-        .find(id)
-        .unwrap()
-        .kind
-        .event_value()
-    {
-        Some(OscType::Int(n)) => n as usize,
-        other => panic!("not a menu: {other:?}"),
-    }
-}
-
-/// The open list of menu `id`, read off the widget -- which is where it lives:
-/// the machine keeps no note of who opened what.
-fn menu_popup(host: &Host, id: i32) -> Option<crate::host::layout::Rect> {
-    host.window_def(1)
-        .unwrap()
-        .find(id)
-        .unwrap()
-        .kind
-        .overlay_rect()
-}
-
-#[test]
-fn a_press_opens_the_menus_list_and_changes_nothing_yet() {
-    let mut host = menu_host();
-    let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 600, 400);
-    let effects = g.press(&mut host, &ctx, 40.0, 40.0);
-    let popup = menu_popup(&host, 7).expect("the list is open");
-    assert!(popup.h > 0.0 && popup.w > 0.0);
-    assert_eq!(menu_index(&host, 7), 0, "opening picks nothing");
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, GestureEffect::Emit { .. })),
-        "and emits nothing"
-    );
-}
-
-#[test]
-fn a_press_on_a_row_picks_that_option_and_closes() {
-    let mut host = menu_host();
-    let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 40.0, 40.0);
-    // A click is a press **and** a release: the machine now refuses a press
-    // arriving mid-drag, which is what a bare second press models.
-    g.release(&mut host, &ctx, 40.0, 40.0);
-    let popup = menu_popup(&host, 7).unwrap();
-    // The middle row: the option a click on it means, wherever the list
-    // was placed (it hangs below the field, or above it near an edge).
-    let row_h = popup.h as f64 / 3.0;
-    let effects = g.press(
-        &mut host,
-        &ctx,
-        popup.x as f64 + 5.0,
-        popup.y as f64 + row_h * 1.5,
-    );
-    assert!(menu_popup(&host, 7).is_none(), "the list closes");
-    assert_eq!(menu_index(&host, 7), 1);
-    assert!(
-        effects.iter().any(|e| matches!(
-            e,
-            GestureEffect::Emit { widget_id: 7, args, .. }
-                if args.first() == Some(&OscType::Int(1))
-        )),
-        "the pick is the widget's value, as a cycling press was"
-    );
-}
-
-#[test]
-fn a_press_outside_the_list_only_closes_it() {
-    let mut host = menu_host();
-    let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 40.0, 40.0);
-    // A click is a press **and** a release: the machine now refuses a press
-    // arriving mid-drag, which is what a bare second press models.
-    g.release(&mut host, &ctx, 40.0, 40.0);
-    let effects = g.press(&mut host, &ctx, 550.0, 380.0);
-    assert!(menu_popup(&host, 7).is_none());
-    assert_eq!(menu_index(&host, 7), 0, "nothing picked");
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, GestureEffect::Emit { .. })),
-        "an open list swallows the press that dismisses it"
-    );
-}
-
-#[test]
-fn a_list_with_no_room_below_opens_upwards() {
-    // The same menu at the bottom of a short window: the list has to go
-    // somewhere, and off the bottom edge is not somewhere.
-    let mut host = host_from(
-        r#"{"type":"window","margin":0,"flow":"col","children":[
-            {"id":6,"type":"label","text":"filler","weight":1},
-            {"id":7,"type":"menu","w":200,"h":48,
-             "options":["a","b","c","d","e","f"]}]}"#,
-    );
-    let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 600, 200);
-    g.press(&mut host, &ctx, 40.0, 180.0);
-    let popup = menu_popup(&host, 7).unwrap();
-    assert!(popup.y + popup.h <= 200.0, "the list fits in the window");
-}
-
 fn slider_value(host: &Host, id: i32) -> f32 {
     match host
         .window_def(1)
@@ -2454,7 +2334,7 @@ fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
 fn a_press_on_a_widget_that_takes_no_focus_clears_it() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"flow":"col","children":[
-            {"id":5,"type":"text"},{"id":7,"type":"button"}]}"#,
+            {"id":5,"type":"text"},{"id":7,"type":"label","text":"x"}]}"#,
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
@@ -2511,7 +2391,10 @@ fn tab_past_the_last_stop_hands_the_keyboard_back() {
 /// swallowing it -- the same exit, reached without ever entering.
 #[test]
 fn tab_in_a_window_with_no_ring_leaves_at_once() {
-    let mut host = host_from(r#"{"type":"window","children":[{"id":9,"type":"button"}]}"#);
+    // A label reads no keys; every control does, so a window holding one
+    // control has a ring.
+    let mut host =
+        host_from(r#"{"type":"window","children":[{"id":9,"type":"label","text":"x"}]}"#);
     let g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     let e = key(&g, &mut host, &ctx, Key::Tab).unwrap();
@@ -2526,7 +2409,7 @@ fn tab_in_a_window_with_no_ring_leaves_at_once() {
 fn a_script_can_set_the_focus_and_a_widget_that_reads_no_keys_refuses_it() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"flow":"col","children":[
-            {"id":5,"type":"text"},{"id":7,"type":"button"}]}"#,
+            {"id":5,"type":"text"},{"id":7,"type":"label","text":"x"}]}"#,
     );
     let mut effects = Vec::new();
     assert!(host.set_props(
@@ -2549,7 +2432,7 @@ fn a_script_can_set_the_focus_and_a_widget_that_reads_no_keys_refuses_it() {
         vec![("focus".into(), serde_json::json!(1))],
         &mut effects,
     );
-    assert_eq!(host.focused(), Some((1, 5)), "the button refused it");
+    assert_eq!(host.focused(), Some((1, 5)), "the label refused it");
     // `focus 0` gives it up.
     host.set_props(
         5,

@@ -93,9 +93,9 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
           // know their own height and the panel composes them, so no number
           // here has to be kept in step with the controls.
           { layout: "row", hug: true },
-          gui.menu(TIME_UNITS, { name: "time", label: "time axis" }),
-          gui.menu(AMP_UNITS, { name: "amp", label: "amplitude axis" }),
-          gui.menu(FREQ_SCALES, { name: "freq", label: "frequency scale" }),
+          gui.choice(TIME_UNITS, { name: "time", label: "time axis" }),
+          gui.choice(AMP_UNITS, { name: "amp", label: "amplitude axis" }),
+          gui.choice(FREQ_SCALES, { name: "freq", label: "frequency scale" }),
           gui.toggle({ name: "yaxis", label: "vertical rulers", value: true }),
         ),
       );

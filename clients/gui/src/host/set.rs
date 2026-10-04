@@ -187,7 +187,11 @@ impl Host {
                         // The generic place props (`w`/`h`/`weight`/`x`/`y`)
                         // and the style props (`theme`/`color`) apply to any
                         // widget; everything else is the kind's own.
-                        let style = widget.style_apply(k, v);
+                        // ...and so do the props every widget carries
+                        // (`menu`, `context`, `enabled`, `tip`). `enabled`
+                        // composes down the tree like a theme, so it takes the
+                        // same re-resolve.
+                        let style = widget.style_apply(k, v) || widget.common_apply(k, v);
                         styled |= style;
                         changed |= style
                             || (k == "gestures" && widget.gestures_apply(v))

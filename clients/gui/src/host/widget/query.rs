@@ -132,18 +132,19 @@ impl WidgetKind {
     /// ([`Element::takes_text`]) -- what the browser shell reads to decide
     /// where the keyboard goes, since composition needs an editable element
     /// and a canvas is not one.
-    pub fn takes_text(&self) -> bool {
-        self.as_element().is_some_and(Element::takes_text)
+    /// Whether this widget is a **dialog**: a `layout` carrying `modal`.
+    pub fn is_modal(&self) -> bool {
+        matches!(self, WidgetKind::Panel { group, .. } if group.modal)
     }
 
-    /// The area this widget occupies **outside its own rect** -- an open list, a
-    /// popup -- or `None` for one that stays inside its placement.
-    ///
-    /// Only an element can have one, and it *declares* it, which is what lets
-    /// the frame draw it last and the press route to it first without either
-    /// pass keeping state about who opened what.
-    pub fn overlay_rect(&self) -> Option<super::super::layout::Rect> {
-        self.as_element().and_then(Element::overlay_rect)
+    /// Whether the focus moving onto or off this widget is reported
+    /// ([`Element::reports_focus`]).
+    pub fn reports_focus(&self) -> bool {
+        self.as_element().is_none_or(Element::reports_focus)
+    }
+
+    pub fn takes_text(&self) -> bool {
+        self.as_element().is_some_and(Element::takes_text)
     }
 
     /// Whether this widget navigates a **measured x axis of its own** -- a
@@ -258,6 +259,8 @@ impl WidgetKind {
         let own = match self {
             WidgetKind::Custom(el) => el.info(),
             WidgetKind::Scroll { view, .. } => view.info(),
+            // Whether a section is folded is what a hand changes on it.
+            WidgetKind::Panel { group, .. } => group.info(),
             _ => Vec::new(),
         };
         own.into_iter().chain(markers).collect()
@@ -626,7 +629,32 @@ impl Widget {
     /// **What a gesture has changed on this widget**, from its own kind
     /// ([`WidgetKind::info`]).
     pub fn info(&self) -> Vec<(String, Value)> {
-        self.kind.info()
+        let mut info = self.kind.info();
+        // A menu's checks are flipped by the hand that picks them, so the tree
+        // reads back as it stands now rather than as it was sent.
+        // A non-scalar rides as the JSON string its `/gui_set` accepts.
+        let json =
+            |m: &[crate::host::menu::Entry]| Value::from(crate::host::menu::to_json(m).to_string());
+        if let Some(menu) = &self.menu {
+            info.push(("menu".into(), json(menu)));
+        }
+        if let Some(context) = &self.context {
+            info.push(("context".into(), json(context)));
+        }
+        // A divider a hand moved rewrites the size of what is beside it: the
+        // weight -- or the fixed size -- reads back as the prop it is.
+        if self.place.split_moved {
+            if let Some(weight) = self.place.weight {
+                info.push(("weight".into(), Value::from(weight)));
+            }
+            if let Some(w) = self.place.w {
+                info.push(("w".into(), Value::from(w)));
+            }
+            if let Some(h) = self.place.h {
+                info.push(("h".into(), Value::from(h)));
+            }
+        }
+        info
     }
 
     /// The body a **layer address** names among this container's layered

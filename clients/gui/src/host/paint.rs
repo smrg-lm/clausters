@@ -177,6 +177,16 @@ impl Mesh {
         self.glyphs.clear();
     }
 
+    /// Everything `other` holds, after what this batch already has -- so it
+    /// draws over it. The vertices are finished geometry (clipped and inked
+    /// where they were emitted), so a batch built on the side joins this one
+    /// with nothing to resolve.
+    pub fn append(&mut self, other: &Mesh) {
+        self.verts.extend_from_slice(&other.verts);
+        #[cfg(feature = "font-atlas")]
+        self.glyphs.extend_from_slice(&other.glyphs);
+    }
+
     pub fn is_empty(&self) -> bool {
         #[cfg(feature = "font-atlas")]
         if !self.glyphs.is_empty() {

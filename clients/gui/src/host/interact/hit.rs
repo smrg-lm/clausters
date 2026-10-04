@@ -40,10 +40,16 @@ pub(crate) fn hit(
 ) -> Option<Hit> {
     let placed = host.layout_window(def_id, fb_w, fb_h)?;
     let mut found = None;
-    for (i, p) in placed.iter().enumerate() {
+    // With a dialog up, only the dialog is in reach: it is the tail of the
+    // placements, so the walk starts where it does.
+    let from = crate::host::chrome::modal_start(&placed).unwrap_or(0);
+    for (i, p) in placed.iter().enumerate().skip(from) {
         if p.rect.contains(x, y)
             && p.clip.is_none_or(|c| c.contains(x, y))
             && p.widget.id.is_some()
+            // A disabled widget is out of the hand's reach: the press goes to
+            // what is around it, exactly as it would over empty space.
+            && p.widget.live
             && !matches!(
                 p.widget.kind,
                 WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Stack { .. }

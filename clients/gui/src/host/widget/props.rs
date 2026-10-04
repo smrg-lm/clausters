@@ -649,6 +649,89 @@ pub struct Flow {
     pub margin: Option<f32>,
     pub gap: Option<f32>,
     pub cols: Option<u32>,
+    /// The `split` prop of a `row` or a `col`: the gap between two children is
+    /// a **divider** a drag moves, trading room between the two
+    /// ([`crate::host::chrome`]).
+    pub split: bool,
+    /// The `pack` prop of a `row` or a `col`: each child takes **what its
+    /// content wants** along the strip -- a button as wide as what it says --
+    /// and only a child that names a `weight` shares what is left. Without it
+    /// the children with no size of their own share the strip evenly, which is
+    /// right for a row of work surfaces and wrong for a row of tools.
+    pub pack: bool,
+}
+
+/// What a `layout` shows of itself: a title strip, a frame, whether it is
+/// folded to its title, and whether it stands over the window as a dialog.
+///
+/// Props of the container, like its flow -- and like its flow they are state
+/// nobody keeps for it: a folded group is a prop set live and reported when a
+/// hand changes it, for whoever owns the session to keep.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Group {
+    /// The `title` prop: a strip along the top naming the group.
+    pub title: Option<String>,
+    /// The `frame` prop: a line around the group.
+    pub frame: bool,
+    /// The `collapsed` prop. `None` is a plain group; `Some` makes it a
+    /// **section** -- its title strip folds it and unfolds it -- and says which
+    /// it is now.
+    pub collapsed: Option<bool>,
+    /// The `modal` prop: a **dialog**. It is placed over the window instead of
+    /// in its parent's flow, and takes every press while it exists.
+    pub modal: bool,
+}
+
+impl Group {
+    pub(super) fn parse(props: &serde_json::Map<String, Value>) -> Group {
+        Group {
+            title: props
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            frame: props.get("frame").and_then(truthy).unwrap_or(false),
+            collapsed: props.get("collapsed").and_then(truthy),
+            modal: props.get("modal").and_then(truthy).unwrap_or(false),
+        }
+    }
+
+    /// Applies one `/gui_set` key. `true` if the key is a group prop.
+    pub fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "title" => {
+                self.title = v.as_str().map(str::to_string);
+                true
+            }
+            "frame" => truthy(v).map(|b| self.frame = b).is_some(),
+            "collapsed" => {
+                self.collapsed = truthy(v);
+                true
+            }
+            "modal" => truthy(v).map(|b| self.modal = b).is_some(),
+            _ => false,
+        }
+    }
+
+    /// The height of the title strip -- one line of control -- or zero for a
+    /// group with no title.
+    pub fn strip_h(&self, m: &super::super::metrics::Metrics) -> f32 {
+        if self.title.is_some() {
+            m.control_h
+        } else {
+            0.0
+        }
+    }
+
+    /// Whether the group is folded to its title strip.
+    pub fn folded(&self) -> bool {
+        self.title.is_some() && self.collapsed == Some(true)
+    }
+
+    pub fn info(&self) -> Vec<(String, serde_json::Value)> {
+        self.collapsed
+            .map(|c| vec![("collapsed".into(), serde_json::Value::from(c))])
+            .unwrap_or_default()
+    }
 }
 
 impl Flow {
@@ -661,6 +744,8 @@ impl Flow {
                 .get("cols")
                 .and_then(Value::as_u64)
                 .map(|n| (n as u32).max(1)),
+            split: props.get("split").and_then(truthy).unwrap_or(false),
+            pack: props.get("pack").and_then(truthy).unwrap_or(false),
         }
     }
 
@@ -679,6 +764,8 @@ impl Flow {
                 self.cols = v.as_u64().map(|n| (n as u32).max(1));
                 true
             }
+            "split" => truthy(v).map(|b| self.split = b).is_some(),
+            "pack" => truthy(v).map(|b| self.pack = b).is_some(),
             _ => false,
         }
     }
@@ -1052,6 +1139,9 @@ pub struct ScrollView {
     /// [`zoom`](Self::zoom). A `/gui_set view_zoom` of `0` (or of any
     /// non-number) puts it back to `None`.
     pub view_zoom: Option<f64>,
+    /// The `bars` prop: scroll bars along the axes the plane pans, shown where
+    /// the content is larger than the view ([`crate::host::chrome`]).
+    pub bars: bool,
 }
 
 impl ScrollView {
@@ -1107,6 +1197,7 @@ impl ScrollView {
                 .and_then(Value::as_f64)
                 .filter(|n| n.is_finite() && *n > 0.0)
                 .map(super::super::scroll::clamp_zoom),
+            bars: props.get("bars").and_then(truthy).unwrap_or(false),
         }
     }
 
@@ -1119,6 +1210,7 @@ impl ScrollView {
                 .map(|a| self.axis = a)
                 .is_some(),
             "zoom" => truthy(v).map(|b| self.zoom_enabled = b).is_some(),
+            "bars" => truthy(v).map(|b| self.bars = b).is_some(),
             "content_w" => {
                 self.content_w = v.as_f64().map(|n| n as f32);
                 true
@@ -1159,6 +1251,10 @@ pub struct Place {
     pub weight: Option<f32>,
     pub x: Option<f32>,
     pub y: Option<f32>,
+    /// Whether a hand moved a divider beside this widget, rewriting its
+    /// `weight` or its fixed size -- what makes a query answer them, since they
+    /// are then no longer what the def said.
+    pub split_moved: bool,
 }
 
 impl Place {
@@ -1170,6 +1266,7 @@ impl Place {
             weight: f("weight"),
             x: f("x"),
             y: f("y"),
+            split_moved: false,
         }
     }
 

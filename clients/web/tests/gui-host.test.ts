@@ -19,7 +19,10 @@ import type { Connection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage } from "../src/base/osc.ts";
 import { GuiHost } from "../src/gui/host.ts";
-import { button, knob, label, panel, slider, waveform, window } from "../src/gui/guidef.ts";
+import {
+    button, choice, knob, label, panel, slider, stack, tabs, toJson, waveform, window,
+} from "../src/gui/guidef.ts";
+import type { GuiNode } from "../src/gui/guidef.ts";
 import { BASE_ID } from "../src/gui/ids.ts";
 
 const here = new URL(".", import.meta.url);
@@ -435,4 +438,54 @@ test("GuiHost: an owner of data is handed a message before the widget handles", 
     deliver!(encodeMessage("/gui_event",
         [["i", win.widget("go").id], ["i", 1], ["i", 0], ["i", 1]]));
     assert.deepEqual(order, ["subscriber", "handle"]);
+});
+
+test("GuiHost: tabs bind their strip to their pages by the ids the open assigns", () => {
+    // `tabs` wires a chooser to a stack before either has an id: the binding
+    // names the stack *node*, and opening the tree resolves it -- per copy, so
+    // the same tabs nested twice wire each strip to its own pages.
+    const sent: GuiNode[] = [];
+    const gui = new GuiHost({
+        connection: {
+            send: (packet: Uint8Array) => {
+                for (const { addr, args } of decodePacket(packet)) {
+                    if (addr === "/gui_def") sent.push(JSON.parse(args[1] as string) as GuiNode);
+                }
+            },
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const book = tabs({ titles: ["A", "B"] }, label("one"), label("two"));
+    gui.open(window({}, book, book));
+
+    const [left, right] = sent[0]!.children as GuiNode[];
+    for (const copy of [left!, right!]) {
+        const [strip, pages] = copy.children as GuiNode[];
+        assert.equal(strip!.view, "tabs");
+        assert.deepEqual(strip!.options, ["A", "B"]);
+        assert.equal(pages!.flow, "stack");
+        assert.deepEqual(strip!.bind, ["widget", pages!.id, "index"]);
+    }
+    assert.notDeepEqual(left!.children![0]!.bind, right!.children![0]!.bind);
+    // The tree the caller wrote still names the node: it opens again, and it
+    // cannot be serialized before the ids exist.
+    assert.throws(() => toJson(book), /binds a widget by reference/);
+    assert.throws(
+        () => tabs({ titles: ["A", "B"] }, label("one")),
+        /one title per page/,
+    );
+});
+
+test("GuiHost: a binding by reference must reach a widget of the tree", () => {
+    const gui = new GuiHost({
+        connection: {
+            send: () => {},
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const elsewhere = stack({}, label("x"));
+    const stray = choice(["a"], { bind: ["widget", elsewhere, "index"] });
+    assert.throws(() => gui.open(window({}, stray)), /not in the tree being opened/);
 });

@@ -71,8 +71,8 @@ mod tests;
 pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
 pub use element::{Claim, Element, Needs};
 pub use props::{
-    Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Layout, Marker, Place,
-    Range, Rate, Ruler, RulerDir, RulerY, ScrollView, SourceWindow, markers_json,
+    Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Group, Layout, Marker,
+    Place, Range, Rate, Ruler, RulerDir, RulerY, ScrollView, SourceWindow, markers_json,
 };
 pub use size::Natural;
 
@@ -113,6 +113,9 @@ pub enum WidgetKind {
         /// its children's, instead of the elastic surface a container is by
         /// default (see [`size`]). Off by default, so no existing def moves.
         hug: bool,
+        /// What the container shows of itself: a title, a frame, whether it is
+        /// folded, whether it is a dialog ([`Group`]).
+        group: Group,
     },
     /// A container showing **one child at a time**: the one at `index`, filling
     /// the container's area (its `flow`'s margin inset). The others are hidden
@@ -296,6 +299,25 @@ pub struct Widget {
     /// on the wire sets or reports this, exactly as nothing reports which notes
     /// a roll has selected.
     pub selected: bool,
+    /// The `menu` prop: a tree of entries ([`crate::host::menu`]). On a
+    /// **window** it is the menu bar, drawn by the host as a band along the top
+    /// edge; on a **button** it is the list a press opens under it.
+    pub menu: Option<Vec<super::menu::Entry>>,
+    /// The `context` prop: the menu the secondary button (or a held press)
+    /// opens at the pointer. The nearest ancestor that carries one answers, so
+    /// a container's context menu serves everything inside it that has none.
+    pub context: Option<Vec<super::menu::Entry>>,
+    /// The `enabled` prop, as declared: `false` takes this widget and its
+    /// whole subtree out of the hand's reach. Resolved into
+    /// [`live`](Self::live).
+    pub enabled: bool,
+    /// Whether this widget can be acted on: its own `enabled` and every
+    /// ancestor's. Written at the mutation point that resolves the theme, like
+    /// [`alpha`](Self::alpha) -- never per frame.
+    pub live: bool,
+    /// The `tip` prop: a short text shown beside the pointer once it rests on
+    /// this widget.
+    pub tip: Option<String>,
     pub children: Vec<Widget>,
 }
 
@@ -352,10 +374,19 @@ fn set_style_number(
 /// frame. Recursive and cheap by construction: a widget with none of them
 /// shares its parent's `Arc` and its parent's alpha.
 pub fn resolve_style(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
-    resolve_style_under(widget, base, 1.0);
+    resolve_style_under(widget, base, 1.0, true);
 }
 
-fn resolve_style_under(widget: &mut Widget, base: &Arc<super::theme::Theme>, alpha: f32) {
+fn resolve_style_under(
+    widget: &mut Widget,
+    base: &Arc<super::theme::Theme>,
+    alpha: f32,
+    live: bool,
+) {
+    // `enabled` composes the way opacity does: a disabled group disables what
+    // is inside it, whatever each child says of itself.
+    let live = live && widget.enabled;
+    widget.live = live;
     // Opacity **composes**: a control at 0.5 inside a panel at 0.5 draws at
     // 0.25, which is what makes a fade a property of a group rather than of one
     // box. What it is not is layer compositing -- see [`super::paint::Ink`].
@@ -371,12 +402,14 @@ fn resolve_style_under(widget: &mut Widget, base: &Arc<super::theme::Theme>, alp
         }
         None => base.clone(),
     };
-    widget.theme = Some(match widget.color {
+    let own = match widget.color {
         Some(c) => Arc::new(super::theme::Theme::accent_seeded(&group, c)),
         None => group.clone(),
-    });
+    };
+    // Out of the hand's reach, it draws the same picture in quieter roles.
+    widget.theme = Some(if live { own } else { Arc::new(own.disabled()) });
     for child in &mut widget.children {
-        resolve_style_under(child, &group, alpha);
+        resolve_style_under(child, &group, alpha, live);
     }
 }
 
@@ -450,6 +483,15 @@ impl Widget {
             window: SourceWindow::declared(props),
             layer: super::layers::Layer::Placement,
             selected: false,
+            menu: props.get("menu").map(super::menu::parse),
+            context: props.get("context").map(super::menu::parse),
+            enabled: props.get("enabled").and_then(truthy).unwrap_or(true),
+            live: true,
+            tip: props
+                .get("tip")
+                .and_then(Value::as_str)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string),
             children,
         };
         // The active **edit layer**, last: it is named by what the container
@@ -524,6 +566,31 @@ impl Widget {
         }
     }
 
+    /// Applies a `/gui_set` of the props **every widget carries** beside its
+    /// style: `menu`, `context`, `enabled` and `tip`. Returns whether the key
+    /// was one of them and applied.
+    ///
+    /// `enabled` composes down the tree, so the caller re-resolves the window
+    /// after it -- the same mutation point a theme goes through.
+    pub fn common_apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "menu" => {
+                self.menu = (!v.is_null()).then(|| super::menu::parse(v));
+                true
+            }
+            "context" => {
+                self.context = (!v.is_null()).then(|| super::menu::parse(v));
+                true
+            }
+            "enabled" => truthy(v).map(|b| self.enabled = b).is_some(),
+            "tip" => {
+                self.tip = v.as_str().filter(|t| !t.is_empty()).map(str::to_string);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Applies a `/gui_set gestures` to this container: the same overlay the
     /// prop takes at build time, on top of the kind's defaults -- so a set names
     /// only the modifiers it changes and an empty table restores the defaults.
@@ -575,6 +642,15 @@ impl Widget {
             return Some(self);
         }
         self.children.iter_mut().find_map(|c| c.find_mut(id))
+    }
+
+    /// Takes the widget with id `id` -- and its subtree -- out of this tree,
+    /// answering whether it was there. The root itself is not this door's to
+    /// remove: a window goes by its own road.
+    pub fn remove(&mut self, id: i32) -> bool {
+        let before = self.children.len();
+        self.children.retain(|c| c.id != Some(id));
+        self.children.len() != before || self.children.iter_mut().any(|c| c.remove(id))
     }
 }
 

@@ -80,6 +80,12 @@ pub struct Button {
     /// `1`/`0` unless the def named another pair.
     pub on: f32,
     pub off: f32,
+    /// The `icon` prop: a glyph of the font drawn before the label, or in its
+    /// place when there is none.
+    pub icon: Option<char>,
+    /// The `flat` prop: no fill until the pointer is over it -- the look a row
+    /// of tools wants.
+    pub flat: bool,
     /// Whether it is being held right now -- drawn pressed.
     held: bool,
 }
@@ -98,6 +104,8 @@ fn from_props(props: &Map<String, Value>) -> Button {
         mode: props.get("mode").and_then(mode_from).unwrap_or_default(),
         on: parse::number(props, "on", 1.0),
         off: parse::number(props, "off", 0.0),
+        icon: props.get("icon").and_then(crate::host::menu::icon_of),
+        flat: props.get("flat").and_then(parse::truthy).unwrap_or(false),
         held: false,
     }
 }
@@ -110,6 +118,11 @@ impl Element for Button {
             "mode" => mode_from(v).map(|m| self.mode = m).is_some(),
             "on" => parse::set_f(&mut self.on, v),
             "off" => parse::set_f(&mut self.off, v),
+            "icon" => {
+                self.icon = crate::host::menu::icon_of(v);
+                true
+            }
+            "flat" => parse::truthy(v).map(|b| self.flat = b).is_some(),
             _ => false,
         }
     }
@@ -118,8 +131,13 @@ impl Element for Button {
         controls::button(
             d,
             self.label.as_deref(),
+            self.icon,
             ctx.rect,
-            self.held,
+            controls::ButtonLook {
+                active: self.held,
+                hovered: ctx.hovered,
+                flat: self.flat,
+            },
             self.text_size * ctx.scale,
         );
     }
@@ -133,7 +151,11 @@ impl Element for Button {
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         (
-            Some(text_box(self.label.as_deref().unwrap_or("BUTTON"), size, m)),
+            Some(text_box(
+                &controls::button_text(self.label.as_deref(), self.icon),
+                size,
+                m,
+            )),
             Some(control_box(size, m)),
         )
     }
@@ -168,6 +190,23 @@ impl Element for Button {
         } else {
             out
         }
+    }
+
+    fn accepts_focus(&self) -> bool {
+        true
+    }
+
+    fn reports_focus(&self) -> bool {
+        false
+    }
+
+    /// Space or Enter is a click: the press and the release it is made of, one
+    /// after the other, so a gate opens and closes and a command fires once.
+    fn activate(&mut self, input: &Input) -> Option<Events> {
+        let Claim::Take(take) = self.press((0.0, 0.0), input) else {
+            return None;
+        };
+        Some(take.events.chain(self.release((0.0, 0.0), true, input)))
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

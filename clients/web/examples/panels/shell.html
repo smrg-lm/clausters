@@ -96,7 +96,7 @@ screen.</div>
 
         const menuBar = gui.panel(
           { layout: "row", h: 40, gap: 4 },
-          gui.menu(["sine"], { w: 120 }),
+          gui.choice(["sine"], { w: 120 }),
           gui.button({ name: "play", label: "play", w: 80 }),
           gui.button({ name: "stop", label: "stop", w: 80 }),
           gui.label("shell -- the application shell", { weight: 1.0 }),

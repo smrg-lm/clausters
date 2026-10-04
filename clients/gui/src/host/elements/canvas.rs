@@ -234,6 +234,7 @@ mod tests {
             time: None,
             clip: None,
             focused: false,
+            hovered: false,
             clock: 0.0,
         };
         let [(_, SlotFrame::Shader { body, params, .. })] = &c.slots(&ctx)[..] else {

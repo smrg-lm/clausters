@@ -812,6 +812,8 @@ export class GuiHost {
         controls: Map<number, string>,
         blobs: Uint8Array[],
         blobBase: number,
+        refs?: Map<GuiNode, number>,
+        waiting?: GuiNode[],
     ): GuiNode {
         if (typeof node.name === "string" && node.name) {
             if (names.has(node.name)) {
@@ -847,17 +849,49 @@ export class GuiHost {
                 }
             }
         }
+        // **A binding may name its target by the node itself** -- `bind:
+        // ["widget", pages, "index"]` -- since a tree is built before any id
+        // exists. It is resolved here, against the ids this pass assigns: at
+        // the nearest container that holds both ends, so a sub-view nested
+        // twice wires each copy to its own target rather than both to the last.
+        const byNode = (value: unknown): value is GuiNode =>
+            typeof value === "object" && value !== null;
+        const mine = new Map<GuiNode, number>([[node, nodeId]]);
+        const pending: GuiNode[] = [];
+        if (Array.isArray(out.bind) && out.bind.some(byNode)) pending.push(out);
         const childIds: number[] = [];
         const stamped: GuiNode[] = [];
         for (const child of node.children ?? []) {
             const cid = child.id ?? this.allocId();
             childIds.push(cid);
-            const sub = this.stamp(child, cid, names, controls, blobs, blobBase);
+            const sub = this.stamp(
+                child, cid, names, controls, blobs, blobBase, mine, pending,
+            );
             sub.id = cid;
             stamped.push(sub);
         }
         if (stamped.length > 0) out.children = stamped;
         this.children.set(nodeId, childIds);
+        const still: GuiNode[] = [];
+        for (const holder of pending) {
+            const bind = holder.bind as unknown[];
+            if (bind.every((b) => !byNode(b) || mine.has(b))) {
+                holder.bind = bind.map((b) => (byNode(b) ? mine.get(b) : b));
+            } else {
+                still.push(holder);
+            }
+        }
+        if (refs === undefined || waiting === undefined) {
+            if (still.length > 0) {
+                throw new Error(
+                    "a `bind` names a widget that is not in the tree being opened " +
+                        "-- a binding by reference reaches a widget of the same tree",
+                );
+            }
+        } else {
+            for (const [key, value] of mine) refs.set(key, value);
+            waiting.push(...still);
+        }
         return out;
     }
 

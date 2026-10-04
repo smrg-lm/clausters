@@ -30,6 +30,14 @@ use super::{GestureCtx, GestureEffect};
 /// bound widget: a binding says where this widget's *value* goes, and where the
 /// keyboard is pointing is not it.
 fn report(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32, gained: bool) {
+    // A light control takes the focus and says nothing about it (see
+    // `Element::reports_focus`): its event stream is its value.
+    if host
+        .widget_kind(def_id, widget_id)
+        .is_some_and(|kind| !kind.reports_focus())
+    {
+        return;
+    }
     emit(
         host,
         out,
@@ -49,9 +57,11 @@ pub(super) fn ring(host: &Host, ctx: &GestureCtx) -> Vec<i32> {
     let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {
         return Vec::new();
     };
-    placed
+    // With a dialog up the ring is the dialog's: Tab cannot walk behind it.
+    let from = crate::host::chrome::modal_start(&placed).unwrap_or(0);
+    placed[from..]
         .iter()
-        .filter(|p| p.widget.kind.accepts_focus())
+        .filter(|p| p.widget.live && p.widget.kind.accepts_focus())
         .filter_map(|p| p.widget.id)
         .collect()
 }

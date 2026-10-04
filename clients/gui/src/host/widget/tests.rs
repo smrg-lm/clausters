@@ -1009,6 +1009,7 @@ fn flow_props_parse_and_apply() {
         layout: Layout::Col,
         flow: Flow::default(),
         hug: false,
+        group: Group::default(),
     };
     assert!(kind.apply("flow", &serde_json::json!("row")));
     assert!(kind.apply("gap", &serde_json::json!(10)));
@@ -1019,6 +1020,7 @@ fn flow_props_parse_and_apply() {
             layout: Layout::Row,
             flow: Flow { gap: Some(g), .. },
             hug: true,
+            ..
         } if g == 10.0
     ));
 }
@@ -1061,7 +1063,7 @@ fn parses_controls_and_clamps_value() {
         r#"{"type":"window","children":[
             {"id":1,"type":"slider","min":20.0,"max":2000.0,"value":5000.0,"label":"cut"},
             {"id":2,"type":"toggle","value":1},
-            {"id":3,"type":"menu","options":["a","b","c"],"index":1}
+            {"id":3,"type":"choice","options":["a","b","c"],"index":1}
         ]}"#,
     );
     let w = Widget::from_node(9, &n, &[]).unwrap();

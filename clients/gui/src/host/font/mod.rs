@@ -39,6 +39,55 @@ use super::paint::{Color, Mesh};
 #[cfg(feature = "font-atlas")]
 pub mod atlas;
 
+/// **The symbol set**: the characters the host draws as its own icons, each at
+/// the Unicode codepoint that means it.
+///
+/// A widget's `icon` is any character; these are the ones the embedded bitmap
+/// face draws, so they are the ones that work with no typeface loaded. The
+/// chrome reads them from here rather than drawing its marks by hand -- a
+/// chooser's marker, a checked entry, a stepper's arrows.
+pub mod symbol {
+    pub const CHECK: char = '\u{2713}';
+    pub const CLOSE: char = '\u{2715}';
+    pub const LEFT: char = '\u{2190}';
+    pub const UP: char = '\u{2191}';
+    pub const RIGHT: char = '\u{2192}';
+    pub const DOWN: char = '\u{2193}';
+    pub const PLAY: char = '\u{25B6}';
+    pub const POINT_UP: char = '\u{25B4}';
+    pub const POINT_RIGHT: char = '\u{25B8}';
+    pub const POINT_DOWN: char = '\u{25BE}';
+    pub const POINT_LEFT: char = '\u{25C2}';
+    pub const STOP: char = '\u{25A0}';
+    pub const RECORD: char = '\u{25CF}';
+    pub const PAUSE: char = '\u{23F8}';
+    pub const LOOP: char = '\u{21BB}';
+    pub const MENU: char = '\u{2261}';
+    pub const BULLET: char = '\u{2022}';
+
+    /// Every symbol the bitmap face draws -- what a test walks, and what a
+    /// reference lists.
+    pub const ALL: [char; 17] = [
+        CHECK,
+        CLOSE,
+        LEFT,
+        UP,
+        RIGHT,
+        DOWN,
+        PLAY,
+        POINT_UP,
+        POINT_RIGHT,
+        POINT_DOWN,
+        POINT_LEFT,
+        STOP,
+        RECORD,
+        PAUSE,
+        LOOP,
+        MENU,
+        BULLET,
+    ];
+}
+
 /// Glyph cell width: 5 columns, with one column of spacing after each glyph.
 pub const GLYPH_W: usize = 5;
 /// The **body box**: the rows a capital fills, and the line height every layout
@@ -325,6 +374,27 @@ fn base(c: char) -> Bitmap {
         '\u{b8}' => body([0, 0, 0, 0, 0, 0, 0x0C]),
         // The single-cell ellipsis clipped text ends in.
         '\u{2026}' => body([0, 0, 0, 0, 0, 0, 0x15]),
+        // **The symbol set** ([`symbol`]): what the host draws where another
+        // toolkit would reach for an icon. There are no icons here and there
+        // are fonts, so an icon is a character -- and the floor has to draw the
+        // ones the chrome itself uses.
+        symbol::CHECK => body([0, 0, 0x01, 0x02, 0x14, 0x08, 0]),
+        symbol::CLOSE => body([0, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0]),
+        symbol::LEFT => body([0, 0x04, 0x08, 0x1F, 0x08, 0x04, 0]),
+        symbol::RIGHT => body([0, 0x04, 0x02, 0x1F, 0x02, 0x04, 0]),
+        symbol::UP => body([0x04, 0x0E, 0x15, 0x04, 0x04, 0x04, 0x04]),
+        symbol::DOWN => body([0x04, 0x04, 0x04, 0x04, 0x15, 0x0E, 0x04]),
+        symbol::PLAY => body([0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10]),
+        symbol::POINT_RIGHT => body([0, 0x08, 0x0C, 0x0E, 0x0C, 0x08, 0]),
+        symbol::POINT_LEFT => body([0, 0x02, 0x06, 0x0E, 0x06, 0x02, 0]),
+        symbol::POINT_DOWN => body([0, 0, 0x1F, 0x0E, 0x04, 0, 0]),
+        symbol::POINT_UP => body([0, 0, 0x04, 0x0E, 0x1F, 0, 0]),
+        symbol::STOP => body([0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0]),
+        symbol::RECORD => body([0, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0]),
+        symbol::PAUSE => body([0, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0]),
+        symbol::LOOP => body([0x0E, 0x11, 0x10, 0x17, 0x13, 0x15, 0x0E]),
+        symbol::MENU => body([0, 0x1F, 0, 0x1F, 0, 0x1F, 0]),
+        symbol::BULLET => body([0, 0, 0x0E, 0x0E, 0x0E, 0, 0]),
         _ => body([0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F]), // fallback box
     }
 }
@@ -382,17 +452,56 @@ pub fn advance(scale: f32) -> f32 {
 pub fn advance_of(c: char, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return atlas::with(|a| a.advance_of(c, scale));
+        return atlas::with(|a| {
+            if falls_back(a, c) {
+                ADVANCE as f32 * scale
+            } else {
+                a.advance_of(c, scale)
+            }
+        });
     }
     let _ = c;
     advance(scale)
+}
+
+/// Whether `c` is drawn from the **bitmap** though a face is loaded: a symbol
+/// of the host's own set that the face has no glyph for.
+///
+/// The fallback is per character and only for the symbol set. A typeface is
+/// chosen for its letters, and most have no play triangle or check mark; the
+/// chrome draws those marks itself, so without this a loaded face would turn
+/// every one of them into its "no such glyph" box. Any other character the
+/// face lacks stays the face's to answer, as it was.
+#[cfg(feature = "font-atlas")]
+fn falls_back(a: &atlas::Atlas, c: char) -> bool {
+    symbol::ALL.contains(&c) && !a.has_glyph(c)
+}
+
+/// One glyph of the bitmap face, its body box's top-left at `(x, y)`.
+fn bitmap_glyph(mesh: &mut Mesh, ch: char, x: f32, y: f32, scale: f32, color: Color) {
+    let top = y - ASCENT as f32 * scale;
+    for (row, bits) in glyph(ch).iter().enumerate() {
+        for col in 0..GLYPH_W {
+            if bits & (0x10 >> col) != 0 {
+                mesh.rect(
+                    Rect::new(
+                        x + col as f32 * scale,
+                        top + row as f32 * scale,
+                        scale,
+                        scale,
+                    ),
+                    color,
+                );
+            }
+        }
+    }
 }
 
 /// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel).
 pub fn width(s: &str, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return atlas::with(|a| s.chars().map(|c| a.advance_of(c, scale)).sum());
+        return s.chars().map(|c| advance_of(c, scale)).sum();
     }
     s.chars().count() as f32 * advance(scale)
 }
@@ -486,6 +595,12 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
             let baseline = y + a.baseline(scale);
             let mut pen = x;
             for ch in s.chars() {
+                // A symbol the face has no glyph for is the bitmap's, in place.
+                if falls_back(a, ch) {
+                    bitmap_glyph(mesh, ch, pen.round(), y, scale, color);
+                    pen += ADVANCE as f32 * scale;
+                    continue;
+                }
                 let Some(g) = a.glyph(ch, scale) else { break };
                 if g.w > 0.0 {
                     // Whole pixels: the glyph was rasterized at this size, so a
@@ -499,23 +614,8 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
         return;
     }
     let mut pen_x = x;
-    let top = y - ASCENT as f32 * scale;
     for ch in s.chars() {
-        for (row, bits) in glyph(ch).iter().enumerate() {
-            for col in 0..GLYPH_W {
-                if bits & (0x10 >> col) != 0 {
-                    mesh.rect(
-                        Rect::new(
-                            pen_x + col as f32 * scale,
-                            top + row as f32 * scale,
-                            scale,
-                            scale,
-                        ),
-                        color,
-                    );
-                }
-            }
-        }
+        bitmap_glyph(mesh, ch, pen_x, y, scale, color);
         pen_x += advance(scale);
     }
 }
@@ -640,6 +740,24 @@ pub fn text_centered(mesh: &mut Mesh, s: &str, area: Rect, scale: f32, color: Co
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every symbol of the set has a drawing of its own in the bitmap face --
+    /// not the box an unknown character falls back to -- and no two share one.
+    #[test]
+    fn every_symbol_has_its_own_bitmap() {
+        let unknown = glyph('\u{1F600}');
+        let mut seen: Vec<Bitmap> = Vec::new();
+        for c in symbol::ALL {
+            let g = glyph(c);
+            assert_ne!(g, unknown, "U+{:04X} draws the fallback box", c as u32);
+            assert!(
+                !seen.contains(&g),
+                "U+{:04X} repeats another symbol",
+                c as u32
+            );
+            seen.push(g);
+        }
+    }
 
     /// The body rows of `c`, as they were written before the glyph grew an
     /// ascent and a descent around them.

@@ -279,7 +279,7 @@ impl Element for Text {
             // delivered, so there is no send for it to trigger.
             Key::Enter => {}
             // The ring's, never the field's.
-            Key::Tab => return None,
+            Key::Tab | Key::Escape => return None,
         }
         // Consumed either way -- the caret moved, which is a repaint -- and a
         // content change also delivers the new value, ungated.

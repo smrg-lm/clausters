@@ -115,6 +115,11 @@ pub mod frame;
 pub mod interact;
 pub mod status;
 pub mod world;
+// What opens over a window's tree, and the tree of entries a menu is.
+pub mod chrome;
+pub mod menu;
+pub mod menubar;
+pub mod popup;
 
 // Where values and samples come from, on the agnostic side of the seam: the
 // per-frame bus reads and the buffer-fetch conversation. Their I/O ends are in
@@ -756,6 +761,10 @@ pub struct Host {
     /// they are fed by the same two events: an edit going out, and the
     /// acknowledgement coming back.
     status: std::cell::RefCell<HashMap<i32, status::Status>>,
+    /// **What is open over each window**: the lists and the tip of the popup
+    /// layer, per def id (see [`popup`]). The host's and not an element's,
+    /// because a menu bar and a context menu have no element to live in.
+    popups: HashMap<i32, popup::Popups>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
@@ -879,6 +888,7 @@ impl Host {
             owns_transport: false,
             outbox: Default::default(),
             status: Default::default(),
+            popups: HashMap::new(),
             owner: None,
             clock_shown: None,
             #[cfg(test)]
@@ -1196,7 +1206,7 @@ impl Host {
         // A window fitted to its content is fitted to the bar as well, or the
         // bar would be taken out of the content it was measured to hold and a
         // hugging window would open one line short of what it asked for.
-        let h = h.map(|h| h + status::bar_h(tree, metrics));
+        let h = h.map(|h| h + status::bar_h(tree, metrics) + menubar::bar_h(tree, metrics));
         Some((round(w, *width), round(h, *height)))
     }
 
@@ -1242,8 +1252,9 @@ impl Host {
         Some(layout::layout_on(area, tree, metrics))
     }
 
-    /// The framebuffer of window `def_id` **minus its status bar** -- the area
-    /// its tree is laid out in.
+    /// The framebuffer of window `def_id` **minus the host's bands** -- its
+    /// status bar and its menu bar -- which is the area its tree is laid out in
+    /// and the area a popup may cover.
     ///
     /// One function because two passes read it: the renderer draws the tree in
     /// it ([`frame::render`]) and the hit test places the tree in it
@@ -1256,12 +1267,11 @@ impl Host {
         let Some(tree) = self.window_def(def_id) else {
             return area;
         };
-        status::content(
-            tree,
-            self.status.borrow().get(&def_id),
-            area,
-            self.metrics_for(def_id),
-        )
+        let m = self.metrics_for(def_id);
+        // Both of the host's bands come off: the status bar along the bottom
+        // and the menu bar along the top.
+        let area = status::content(tree, self.status.borrow().get(&def_id), area, m);
+        menubar::content(tree, area, m)
     }
 
     /// The status bar's band in window `def_id`'s framebuffer, when it has one

@@ -119,7 +119,7 @@ from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
 | `canvas` | a WGSL shader over the widget area | `shader`, `params`, `buses` |
 | `label` | static text | `text`, `text_size`, `wrap`, `align` |
 
-The controls — `knob`, `slider`, `number`, `button`, `toggle`, `text`, `menu` —
+The controls — `knob`, `slider`, `number`, `button`, `toggle`, `text`, `choice` —
 are elements with a value and no axis, and they did not move: a knob names what
 it is.
 
@@ -165,7 +165,7 @@ a take and an automation curve under a shared ruler, and a patcher beside it. No
 below is a shortcut.
 
 ```python
-from clausters.gui import (curve, layout, menu, node, plane, signal, slider,
+from clausters.gui import (choice, curve, layout, node, plane, signal, slider,
                            view)
 
 SR, BEAT = 48_000.0, 24_000.0
@@ -176,7 +176,7 @@ axis = {"unit": "beats", "tempo": 2.0, "quant": 4.0,
 
 v = view(
     # -- the chrome: a picker bound to the page stack under it
-    layout(menu(["arrangement", "graph"], name="picker"),
+    layout(choice(["arrangement", "graph"], name="picker"),
            slider(name="scroll", min=0.0, max=8 * BEAT),
            flow="row", h=32.0),
 
@@ -219,7 +219,7 @@ whichever member it is bound to.
 
 **The stack is a flow, not a type.** `layout(..., flow="stack", index=0)` shows
 one child; the other is neither laid out nor drawn, and keeps its GPU slot for
-when you come back. The `menu` bound to `index` is the tab bar, and the script
+when you come back. The `choice` bound to `index` is the tab bar, and the script
 never hears the click.
 
 ## Seeing what goes out

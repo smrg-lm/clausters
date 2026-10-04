@@ -61,7 +61,7 @@ class PointsView(View):
         tree = editor._call("window", widget=wid, shape=shape)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate -- into the row under the curve,
-        # beside the segment's shape menu.
+        # beside the segment's shape chooser.
         row = tree["children"][1]["children"][0]
         row["children"] = [*row.get("children", ()), *editor.extra]
         return tree
@@ -99,7 +99,7 @@ class PointsEditor(Editor):
     The window shows the rules: the time ruler under the curve, in its own
     seconds, the value ruler beside it, and a readout of what the pointer is
     over -- a point's value against the range, and the shape of its segment.
-    A click on a segment selects it, and the menu in the row under the curve
+    A click on a segment selects it, and the chooser in the row under the curve
     sets its shape; ``extra`` widgets go in that row, beside it.
     """
 

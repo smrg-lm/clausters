@@ -154,7 +154,8 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `toggle` | control | Boolean state. |
 | `number` | control | Numeric entry field (int or float). |
 | `text` | control | Text entry field. |
-| `menu` | control | Dropdown / option list. |
+| `choice` | control | One of several, in six presentations over the same options and index: combo (a field and the list it opens), radio, segmented, tabs, pager, list (G37.1, G39). It was `menu`. |
+| `separator`, `progress` | element | A line between groups of a strip (a spring with a `weight`); a bar over a value in `0..1`, or indeterminate (G39). |
 | `waveform` | heavy GPU view | Editor-grade min/max peak waveform of a buffer/file/blob: multichannel lanes (stacked or overlaid), LOD-crossfaded zoom, adaptive rulers, selection, playhead, amplitude zoom/pan, linked navigation groups via `link` (G20-G20d); the measured layers — RMS, true peak, loudness — planned in the A track. |
 | `spectrogram` | heavy GPU view | Editor-grade STFT time-frequency view, same sources and chrome as `waveform` plus a Hz ruler and frequency zoom/pan, linked groups via `link` (G20-G20d); a constant-Q analysis mode experimental (G20f). |
 | `scope` | heavy GPU view | Time-domain scope over `channels` adjacent buses from `bus`, at `rate` (audio by default, control for a bus history): the audio-rate form is a triggered oscilloscope — lanes or `overlay` traces, ms/value rulers, a trigger-level mark and a lock/free read-out (G28, G33). |
@@ -1419,7 +1420,14 @@ part of the design.
 an entry and a tip name a verb, and the key beside it appears when `G36`'s table
 exists.
 
-- ⬜ **G37.1 — The popup layer, and the chooser on it.**
+- ✅ **G37.1 — The popup layer, and the chooser on it.** *(Done 2026-10-04.
+  `overlay_rect`/`overlay` were replaced: an element asks for a list through
+  `Events::and_popup` and is told the pick through `Element::picked`, and a
+  `draw_over` keeps the one thing the old pair also served, a stored plot's
+  hover readout -- which the old walk never drew, since it asked only an
+  element that had declared an outside rectangle. The list marks the chosen
+  option. The out-of-line list the user reported is not reproduced; it is under
+  "Found by use".)*
 
   **What exists:** one overlay per element. An element declares `overlay_rect`
   and draws `overlay`; `frame::draw_element_overlays` draws it last and
@@ -1467,7 +1475,11 @@ exists.
   held at the right edge, scrolled, clear of the status band — and the wheel,
   the keys and the motion repaint tested through the gesture machine.
 
-- ⬜ **G37.2 — A menu is a tree of entries, shown in three places.**
+- ✅ **G37.2 — A menu is a tree of entries, shown in three places.** *(Done
+  2026-10-04. Freeing a widget inside an open window now takes it out of the
+  tree the front draws -- it was left on screen and under the pointer, which a
+  dialog closed by freeing it is how it showed. A context menu and a tip per
+  part of a heavy view stay open below.)*
 
   **The tree** is a prop value, `menu`, not a node type: a list of entries, each
   an **action**, a **check**, **one of several**, a **separator** or a
@@ -1512,7 +1524,10 @@ exists.
 
 *(Added 2026-09-14 by the user as the tooltip milestone; widened 2026-10-04.)*
 
-- ⬜ **G38.1 — `enabled`, and every control takes the focus.** `enabled` is a
+- ✅ **G38.1 — `enabled`, and every control takes the focus.** *(Done
+  2026-10-04. The light controls take the focus and do not report it: their
+  event stream is their value, read by callbacks of one argument. A disabled
+  widget draws through a theme derived from its own, `Theme::disabled`.)* `enabled` is a
   prop of every widget: a disabled one draws through a `text_disabled` role,
   declines the press and leaves the tab ring, and a disabled container disables
   its subtree. A control under the pointer draws through a `hover` role, and the
@@ -1522,7 +1537,7 @@ exists.
   and a `toggle`, the arrows on a `slider`, a `knob`, a `number` and a `choice`.
   Whether those keys sit in `G36`'s table is `G36`'s question.
 
-- ⬜ **G38.2 — `tip`: a widget says what it is when the pointer rests on it.**
+- ✅ **G38.2 — `tip`: a widget says what it is when the pointer rests on it.** *(Done 2026-10-04.)*
   A prop, not a widget. The tip shows in the popup layer once the pointer has
   rested — the timer `G37.2` gave the machine — beside the pointer and inside
   the work area; it goes when the pointer leaves, on a press and on a key; and
@@ -1532,7 +1547,7 @@ exists.
   status bar, which reports what a hand did. **Open:** a tip per part of a
   heavy view, the same question `G37.2` leaves.
 
-- ⬜ **G38.3 — `icon`: a glyph of the font.** There are no icons in the host
+- ✅ **G38.3 — `icon`: a glyph of the font.** *(Done 2026-10-04; seventeen symbols.)* There are no icons in the host
   and there are fonts, so an icon is a character. `icon` is a prop of a
   `button`, a `toggle` and a menu entry, drawn beside the label or in its place.
   The embedded bitmap face gains a **small symbol set** — arrows, check, close,
@@ -1546,10 +1561,14 @@ exists.
 
 ## G39 — One choice, several presentations, and the small elements beside it
 
-- ⬜ **G39 — Tabs, a pager, a radio group and a segmented control are one
+- ✅ **G39 — Tabs, a pager, a radio group and a segmented control are one
   element.** *(Added 2026-10-04 with the user: tabs and a pager already exist as
   composition — a `stack` whose `index` is bound to a chooser — and what is
-  missing is the look.)*
+  missing is the look. Done 2026-10-04. Two additions the composition needed:
+  a binding may name its target **by the node**, resolved when the tree is
+  opened (`tabs` and `pager` wire a chooser to a stack before either has an
+  id), and a strip takes **`pack`**, which sizes each child by its content --
+  without it a toolbar's buttons shared the row evenly.)*
 
   - **`choice` gains `view`**: `combo` (the default, `G37.1`), `radio`,
     `segmented`, `tabs`, `pager`, `list`. The data, the value and the event are
@@ -1574,8 +1593,10 @@ exists.
 
 ## G40 — Container chrome: groups, split panes, scroll bars and a dialog
 
-- ⬜ **G40 — What a container shows of itself.** *(Added 2026-10-04 with the
-  user.)* Four props on the containers there are:
+- ✅ **G40 — What a container shows of itself.** *(Added 2026-10-04 with the
+  user. Done 2026-10-04; a texture view inside a dialog is under "Found by
+  use". The example is `panels/chrome`, which holds every element of the set in
+  one window.)* Four props on the containers there are:
 
   - **`title`, `frame` and `collapsed` on a `layout`**: a titled group, and a
     section that folds to its title strip. A press on the strip reports the
@@ -8043,3 +8064,20 @@ module of its own.
   - **Left:** the session window a standalone host opens is still def 1 with
     its chrome at 2 to 8, in the hand-picked range below every allocated
     id, which is what that range is for.
+- ⬜ **The chooser's list opening out of line with its field is not
+  reproduced** *(reported by the user 2026-09-14, carried by `G37.1`)*. The
+  list hangs off the field's body by the placement function every list goes
+  through, and nothing found by reading or by test puts it elsewhere. What is
+  left is to see it in a window: if it is still out of line, the rectangle the
+  element names (`Choice::body`) and the one the frame draws the field in are
+  two answers.
+- ⬜ **A texture view inside a dialog is drawn under it** *(found 2026-10-04,
+  closing `G40`)*. A dialog's flat drawing goes into the overlay batch, over
+  the window; the heavy views' texture passes run between the two batches, so a
+  spectrogram or a shader `canvas` placed in a dialog is drawn under the dialog
+  that holds it. A dialog of controls is unaffected. The fix is a pass order
+  for what stands over the window, not a dialog's own.
+- ⬜ **A context menu and a tip per part of a heavy view** *(left open by
+  `G37.2` and `G38.2`)*. Today one menu and one tip answer for the whole
+  widget; a clip, a note or a box answering with its own is a question for the
+  editors that hold them.

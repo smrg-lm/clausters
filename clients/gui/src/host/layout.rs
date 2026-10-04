@@ -245,18 +245,77 @@ fn place_all<'a>(
     indents: HashMap<GroupKey, f32>,
 ) -> Vec<Placed<'a>> {
     let mut out = Vec::new();
+    let mut modals = Vec::new();
     let ctx = Ctx { metrics, indents };
+    let space = Space::window(metrics);
     place(
         area,
         root,
         None,
-        Space::window(metrics),
+        space,
         &ctx,
         None,
         &mut out,
         None,
+        &mut modals,
     );
+    // **The dialogs, after everything else.** A `layout` carrying `modal` is
+    // not placed by its parent's flow: it stands over the window, centred in
+    // it, and it is placed last so that it is the last thing drawn and the
+    // first thing hit. Its size is the one it declares, else what its content
+    // wants, else half the window.
+    let mut next = 0;
+    while next < modals.len() {
+        let (widget, parent): (&Widget, usize) = modals[next];
+        next += 1;
+        let (want_w, want_h) = widget.hug_size(&space.metrics, space.unit);
+        let w = widget
+            .place
+            .w
+            .map(|w| space.px(w))
+            .or(want_w)
+            .unwrap_or(area.w * 0.5)
+            .min(area.w);
+        let h = widget
+            .place
+            .h
+            .map(|h| space.px(h))
+            .or(want_h)
+            .unwrap_or(area.h * 0.5)
+            .min(area.h);
+        let rect = Rect::new(
+            (area.x + (area.w - w) * 0.5).round(),
+            (area.y + (area.h - h) * 0.5).round(),
+            w.round(),
+            h.round(),
+        );
+        place(
+            rect,
+            widget,
+            None,
+            space,
+            &ctx,
+            Some(parent),
+            &mut out,
+            None,
+            &mut modals,
+        );
+    }
     out
+}
+
+/// The children a container's flow arranges: every one but its dialogs, which
+/// stand over the window instead ([`place_all`]). The dialogs are handed to
+/// `modals` with the placement they hang off.
+fn flow_children<'a>(
+    widget: &'a Widget,
+    me: usize,
+    modals: &mut Vec<(&'a Widget, usize)>,
+) -> Vec<&'a Widget> {
+    let (dialogs, kids): (Vec<&Widget>, Vec<&Widget>) =
+        widget.children.iter().partition(|c| c.kind.is_modal());
+    modals.extend(dialogs.into_iter().map(|d| (d, me)));
+    kids
 }
 
 /// What one layout pass carries besides its recursion state: the window's size
@@ -296,6 +355,7 @@ fn place<'a>(
     parent: Option<usize>,
     out: &mut Vec<Placed<'a>>,
     indent: Option<f32>,
+    modals: &mut Vec<(&'a Widget, usize)>,
 ) {
     let me = out.len();
     out.push(Placed {
@@ -307,12 +367,25 @@ fn place<'a>(
         parent,
         widget,
     });
-    let (layout, flow) = match widget.kind {
-        WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow, .. } => {
-            (layout, flow)
+    let (layout, flow, strip) = match &widget.kind {
+        WidgetKind::Window { layout, flow, .. } => (*layout, *flow, 0.0),
+        // A group's title strip comes off the top of its rectangle before its
+        // children are placed -- and a folded one places none: no rectangle, so
+        // nothing draws them and nothing hits them, the way a stack's hidden
+        // pages are.
+        WidgetKind::Panel {
+            layout,
+            flow,
+            group,
+            ..
+        } => {
+            if group.folded() {
+                return;
+            }
+            (*layout, *flow, group.strip_h(&space.metrics))
         }
         WidgetKind::Scroll { .. } => {
-            return place_scrolled(area, widget, clip, space, ctx, me, out);
+            return place_scrolled(area, widget, clip, space, ctx, me, out, modals);
         }
         // One child at a time: the shown page fills the container, and the
         // hidden ones are not placed at all -- no rectangle, so nothing draws
@@ -325,25 +398,24 @@ fn place<'a>(
                     .map_or(space.metrics.margin, |m| space.px(m))
                     .max(0.0),
             );
-            if let Some(child) = usize::try_from(index)
+            if let Some(child) = usize::try_from(*index)
                 .ok()
                 .and_then(|i| widget.children.get(i))
             {
-                place(inner, child, clip, space, ctx, Some(me), out, None);
+                place(inner, child, clip, space, ctx, Some(me), out, None, modals);
             }
             return;
         }
         _ => return, // leaves have no children to place
     };
-    let inner = area.inset(margin(flow, space));
-    for (child, rect) in widget.children.iter().zip(child_rects(
-        inner,
-        widget.children.as_slice(),
-        layout,
-        flow,
-        space,
-    )) {
-        place(rect, child, clip, space, ctx, Some(me), out, None);
+    let under = Rect::new(area.x, area.y + strip, area.w, (area.h - strip).max(0.0));
+    let inner = under.inset(margin(flow, space));
+    let kids = flow_children(widget, me, modals);
+    for (child, rect) in kids
+        .iter()
+        .zip(child_rects(inner, &kids, layout, flow, space))
+    {
+        place(rect, child, clip, space, ctx, Some(me), out, None, modals);
     }
 }
 
@@ -377,6 +449,7 @@ fn place_scrolled<'a>(
     ctx: &Ctx,
     me: usize,
     out: &mut Vec<Placed<'a>>,
+    modals: &mut Vec<(&'a Widget, usize)>,
 ) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
         return;
@@ -393,20 +466,18 @@ fn place_scrolled<'a>(
     let inner = Rect::new(0.0, 0.0, content_w, content_h).inset(margin(flow, plane));
     let inside = space.scrolled(zoom as f32);
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
-    for (child, r) in widget.children.iter().zip(child_rects(
-        inner,
-        widget.children.as_slice(),
-        layout,
-        flow,
-        plane,
-    )) {
+    let kids = flow_children(widget, me, modals);
+    for (child, r) in kids
+        .iter()
+        .zip(child_rects(inner, &kids, layout, flow, plane))
+    {
         let rect = Rect::new(
             area.x + ((r.x as f64 - vx) * zoom) as f32,
             area.y + ((r.y as f64 - vy) * zoom) as f32,
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, inside, ctx, Some(me), out, None);
+        place(rect, child, clip, inside, ctx, Some(me), out, None, modals);
     }
 }
 
@@ -485,7 +556,7 @@ fn child_intrinsic_size(widget: &Widget) -> Option<(f32, f32)> {
 /// The child rectangles for `children` laid out in `inner` by `layout`.
 fn child_rects(
     inner: Rect,
-    children: &[Widget],
+    children: &[&Widget],
     layout: Layout,
     flow: Flow,
     space: Space,
@@ -499,8 +570,8 @@ fn child_rects(
             .iter()
             .map(|c| free_rect(inner, c.place, space))
             .collect(),
-        Layout::Row => strip(inner, children, gap, true, space),
-        Layout::Col => strip(inner, children, gap, false, space),
+        Layout::Row => strip(inner, children, gap, true, flow.pack, space),
+        Layout::Col => strip(inner, children, gap, false, flow.pack, space),
         Layout::Grid => grid(inner, children.len(), gap, flow.cols),
     }
 }
@@ -525,7 +596,9 @@ fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
 /// one order: an explicit main-axis size (`w` in a row, `h` in a column) is
 /// taken as given; an explicit `weight` takes that share of the leftover; a
 /// widget with a natural size on this axis takes exactly that; everything else
-/// shares the leftover at weight 1. The cross axis fills.
+/// shares the leftover at weight 1. The cross axis fills. In a **packed** strip
+/// (`pack`) a child with no natural size on the axis takes what its content
+/// wants instead of a share, so only an explicit `weight` stretches.
 ///
 /// **And when the strip is shorter than what its children asked for**, the
 /// order runs backwards through the naturally-sized ones: each is squeezed
@@ -543,7 +616,14 @@ fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
 /// the strip -- it shares whatever is left, down to nothing -- so it needs no
 /// floor to be squeezable and gets none, which is what keeps this one pass and
 /// not a solver.
-fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Space) -> Vec<Rect> {
+fn strip(
+    inner: Rect,
+    children: &[&Widget],
+    gap: f32,
+    horizontal: bool,
+    pack: bool,
+    space: Space,
+) -> Vec<Rect> {
     let gaps = gap * (children.len() as f32 - 1.0);
     let main = if horizontal { inner.w } else { inner.h };
     let axis = |(w, h): (Option<f32>, Option<f32>)| if horizontal { w } else { h };
@@ -558,20 +638,30 @@ fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Sp
         }
         // Measured in this space's own coordinates, at the scale its text will
         // draw at -- one table, one scale.
-        let want = axis(c.natural_size(&space.metrics, space.unit))?.max(0.0);
-        let floor = axis(c.floor_size(&space.metrics, space.unit))
-            .unwrap_or(want)
-            .clamp(0.0, want);
-        Some((want, want - floor))
+        if let Some(want) = axis(c.natural_size(&space.metrics, space.unit)) {
+            let want = want.max(0.0);
+            let floor = axis(c.floor_size(&space.metrics, space.unit))
+                .unwrap_or(want)
+                .clamp(0.0, want);
+            return Some((want, want - floor));
+        }
+        // **A packed strip asks its children what their content wants**, the
+        // question a hugging container asks of them: a button is as wide as
+        // what it says, and gives none of it back. A child with no content to
+        // measure (a surface) still shares the leftover.
+        pack.then(|| axis(c.hug_size(&space.metrics, space.unit)))
+            .flatten()
+            .map(|want| (want.max(0.0), 0.0))
     };
     let explicit_of = |c: &Widget| {
         let p = c.place;
         if horizontal { p.w } else { p.h }.map(|s| space.px(s).max(0.0))
     };
     let fixed_of = |c: &Widget| explicit_of(c).or_else(|| wanted_of(c).map(|(want, _)| want));
-    let fixed: f32 = children.iter().filter_map(fixed_of).sum();
+    let fixed: f32 = children.iter().copied().filter_map(fixed_of).sum();
     let total_weight: f32 = children
         .iter()
+        .copied()
         .filter(|c| fixed_of(c).is_none())
         .map(|c| c.place.weight.unwrap_or(1.0).max(0.0))
         .sum();
@@ -583,6 +673,7 @@ fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Sp
     let deficit = (gaps + fixed - main).max(0.0);
     let offered: f32 = children
         .iter()
+        .copied()
         .filter(|c| explicit_of(c).is_none())
         .filter_map(wanted_of)
         .map(|(_, give)| give)
@@ -606,6 +697,7 @@ fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Sp
     let mut at = if horizontal { inner.x } else { inner.y };
     children
         .iter()
+        .copied()
         .map(|c| {
             let size = share(c);
             let rect = if horizontal {
@@ -661,13 +753,54 @@ mod tests {
     /// container did not measure what it held. With `hug` it takes exactly its
     /// content and the view keeps the rest -- and the resolution order is
     /// unchanged, this is just another natural size.
+    /// A packed row is a row of tools: each as wide as what it says, and the
+    /// one child that names a weight takes what is left -- the spring.
+    #[test]
+    fn a_packed_row_sizes_its_children_by_their_content_and_a_weight_takes_the_rest() {
+        let m = Metrics::default();
+        let build = |pack: &str| {
+            tree(&format!(
+                r#"{{"type":"window","margin":0,"gap":0,"flow":"row"{pack},"children":[
+                    {{"id":2,"type":"button","label":"a"}},
+                    {{"id":3,"type":"button","label":"a much longer label"}},
+                    {{"id":4,"type":"separator","weight":1,"line":0}},
+                    {{"id":5,"type":"button","label":"z"}}]}}"#
+            ))
+        };
+        let area = Rect::new(0.0, 0.0, 600.0, 40.0);
+        let packed_tree = build(r#","pack":true"#);
+        let packed = layout(area, &packed_tree, &m);
+        let w = |placed: &[Placed], id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .rect
+        };
+        assert!(
+            w(&packed, 3).w > w(&packed, 2).w,
+            "each follows its own label"
+        );
+        assert!(w(&packed, 2).w < 60.0, "a one-letter tool is narrow");
+        let last = w(&packed, 5);
+        assert_eq!(
+            last.x + last.w,
+            600.0,
+            "the spring pushed it to the far edge"
+        );
+        // Without it the three buttons and the spring split the row evenly.
+        let even_tree = build("");
+        let even = layout(area, &even_tree, &m);
+        assert_eq!(w(&even, 2).w, w(&even, 3).w);
+    }
+
     #[test]
     fn a_hugging_strip_takes_its_content_and_the_view_keeps_the_rest() {
         let w = tree(
             r#"{"type":"window","children":[
             {"id":5,"type":"signal","view":"trace","data":[]},
             {"id":6,"type":"layout","flow":"row","hug":1,"children":[
-                {"id":7,"type":"menu","options":["time","samples","beats"],"label":"time axis"},
+                {"id":7,"type":"choice","options":["time","samples","beats"],"label":"time axis"},
                 {"id":8,"type":"toggle","label":"rulers"}]}]}"#,
         );
         let m = Metrics::default();

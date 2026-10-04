@@ -710,7 +710,66 @@ export interface WidgetOptions {
      * measures only time), `locate` and `none`.
      */
     gestures?: Record<string, string>;
+    /**
+     * `false` takes the widget out of the hand's reach: it draws in quieter
+     * roles, takes no press and is no stop on the tab ring. On a container it
+     * disables the whole subtree.
+     */
+    enabled?: boolean;
+    /**
+     * A short text shown beside the pointer once it has rested on the widget.
+     * It goes when the pointer leaves, on a press and on a key.
+     */
+    tip?: string;
+    /**
+     * A {@link menu} the secondary button (or a press held still) opens at the
+     * pointer. The nearest ancestor that carries one answers, so a
+     * container's context menu serves everything inside it that has none.
+     */
+    context?: MenuTree;
     [prop: string]: unknown;
+}
+
+/**
+ * One entry of a {@link menu} as it rides the wire, or the string `"-"` for a
+ * separator, or a plain string for an action whose label is its verb.
+ */
+export type MenuItem = string | Record<string, unknown>;
+
+/** A menu: a tree of entries, the value of a `menu` or a `context` prop. */
+export type MenuTree = readonly MenuItem[];
+
+/**
+ * What a `layout` shows of itself: a title strip, a frame, whether it folds
+ * and how it stands, whether its gaps are dividers, whether it is a dialog.
+ */
+export interface GroupOptions extends ContainerOptions {
+    /** A strip along the top naming the group. */
+    title?: string;
+    /** A line around the group. */
+    frame?: boolean;
+    /**
+     * Makes a titled group a **section**: a press on the strip folds it to the
+     * strip and unfolds it, reported as `"collapsed" 1|0`. Leave it out for a
+     * group that does not fold.
+     */
+    collapsed?: boolean;
+    /**
+     * On a `row` or a `col`: the gap between two children is a **divider** a
+     * drag moves. The two trade room, and on release the container reports
+     * `"split" size ...`, one size per child.
+     */
+    split?: boolean;
+    /** Makes it a **dialog** (see {@link dialog}). */
+    modal?: boolean;
+    /**
+     * On a `row` or a `col`: each child takes **what its content wants** along
+     * the strip -- a button as wide as what it says -- so only a child that
+     * names a `weight` shares what is left. Without it the children with no
+     * size of their own share the strip evenly, which is right for a row of
+     * work surfaces and wrong for a row of tools (see {@link toolbar}).
+     */
+    pack?: boolean;
 }
 
 /**
@@ -1030,6 +1089,25 @@ export function node(
 // (`panel`, `waveform`, `timeruler`, ...) are shortcuts that build the same
 // nodes with a familiar name and the props of one common case.
 
+/** The props a container shows of itself, as the wire takes them. */
+function group(
+    title: string | undefined,
+    frame: boolean | undefined,
+    collapsed: boolean | undefined,
+    modal: boolean | undefined,
+    split: boolean | undefined,
+    pack: boolean | undefined,
+): (readonly [string, unknown])[] {
+    return [
+        ["title", title],
+        ["frame", flag(frame)],
+        ["collapsed", flag(collapsed)],
+        ["modal", flag(modal)],
+        ["split", flag(split)],
+        ["pack", flag(pack)],
+    ];
+}
+
 /**
  * A container with **no axes**, arranging its children by `flow`:
  * `"row"`, `"col"` (the default), `"grid"`, `"free"` -- or `"stack"`, which
@@ -1038,7 +1116,7 @@ export function node(
  * with a selection instead of an arrangement.
  */
 export function layout(
-    options: ContainerOptions & {
+    options: GroupOptions & {
         /** With `flow: "stack"`, the child shown (from 0). */
         index?: number;
         /** The arrangement; `layout` is accepted as its old name. */
@@ -1054,7 +1132,10 @@ export function layout(
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { flow, index, layout: arrangement, margin, gap, cols, hug, theme, ...rest } = options;
+    const {
+        flow, index, layout: arrangement, margin, gap, cols, hug, theme,
+        title, frame, collapsed, modal, split, pack, ...rest
+    } = options;
     return node("layout", {
         ...rest,
         ...drop([
@@ -1063,8 +1144,9 @@ export function layout(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
-            ["hug", flag(hug)],
             ["theme", theme],
+            ["hug", flag(hug)],
+            ...group(title, frame, collapsed, modal, split, pack),
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1085,6 +1167,8 @@ export function plane(
         viewX?: number;
         viewY?: number;
         viewZoom?: number;
+        /** Scroll bars along the axes the plane pans (see {@link scroll}). */
+        bars?: boolean;
         flow?: string;
         boxes?: readonly unknown[] | Source;
         cords?: readonly number[] | Source;
@@ -1092,7 +1176,7 @@ export function plane(
     ...children: GuiNode[]
 ): GuiNode {
     const {
-        axis, zoom, contentW, contentH, viewX, viewY, viewZoom, boxes, cords,
+        axis, zoom, contentW, contentH, viewX, viewY, viewZoom, bars, boxes, cords,
         flow, layout: arrangement, margin, gap, cols, theme, ...rest
     } = options;
     return node("plane", {
@@ -1112,6 +1196,7 @@ export function plane(
             ["gap", gap],
             ["cols", cols],
             ["theme", theme],
+            ["bars", flag(bars)],
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1366,10 +1451,26 @@ export function view(
      * default.
      */
     plays?: boolean;
+    /**
+     * The gaps between the window's own children are dividers a drag moves,
+     * as on {@link layout}.
+     */
+    split?: boolean;
+    /**
+     * The window's **menu bar**: a {@link menu} tree whose first entries are
+     * the titles of a band the host draws along the top edge, each opening its
+     * list under it. It is chrome, like the status bar -- not a widget, and
+     * taken out of the area the children are laid out in. A pick is reported
+     * by the window itself, as `"menu" verb`.
+     */
+    menu?: MenuTree;
     } = {},
     ...children: GuiNode[]
 ): View {
-    const { title, flow, layout, margin, gap, cols, hug, status, plays, theme, ...rest } = options;
+    const {
+        title, flow, layout, margin, gap, cols, hug, status, plays, theme, split,
+        menu: bar, ...rest
+    } = options;
     return node("window", {
         ...rest,
         ...drop([
@@ -1378,10 +1479,12 @@ export function view(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
+            ["theme", theme],
+            ["menu", bar === undefined ? undefined : [...bar]],
+            ["split", flag(split)],
             ["hug", flag(hug)],
             ["status", flag(status)],
             ["plays", flag(plays)],
-            ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1398,7 +1501,7 @@ export const window = view;
  * any widget; `theme` makes it a theme group over its whole subtree.
  */
 export function panel(
-    options: ContainerOptions & {
+    options: GroupOptions & {
         flow?: string;
     /**
      * Size to the content instead of to the share the layout offers: a `row`
@@ -1411,7 +1514,10 @@ export function panel(
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
-    const { flow, layout, margin, gap, cols, hug, theme, ...rest } = options;
+    const {
+        flow, layout, margin, gap, cols, hug, theme,
+        title, frame, collapsed, modal, split, pack, ...rest
+    } = options;
     return node("layout", {
         ...rest,
         ...drop([
@@ -1419,8 +1525,9 @@ export function panel(
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
-            ["hug", flag(hug)],
             ["theme", theme],
+            ["hug", flag(hug)],
+            ...group(title, frame, collapsed, modal, split, pack),
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1435,7 +1542,7 @@ export function panel(
  * comes back without re-uploading anything.
  *
  * `index` is live via `set`, and it is the prop a control **binds** to: a
- * toggle or a menu bound to it (`GuiHost.bindWidget`, or an inline
+ * toggle or a choice bound to it (`GuiHost.bindWidget`, or an inline
  * `bind: ["widget", stackId, "index"]`) flips the page with no round-trip
  * through this script -- which is what makes tabs, a pager and a
  * waveform/spectrogram switch composition rather than widgets. An `index`
@@ -1509,11 +1616,17 @@ export function scroll(
         viewX?: number;
         viewY?: number;
         viewZoom?: number;
+        /**
+         * **Scroll bars** along the axes the plane pans, each shown only where
+         * the content is larger than the view: a thumb a drag moves, and a
+         * groove a press on brings the thumb to.
+         */
+        bars?: boolean;
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
     const {
-        axis, zoom, contentW, contentH, viewX, viewY, viewZoom,
+        axis, zoom, contentW, contentH, viewX, viewY, viewZoom, bars,
         flow, layout, margin, gap, cols, theme, ...rest
     } = options;
     return node("plane", {
@@ -1531,6 +1644,7 @@ export function scroll(
             ["gap", gap],
             ["cols", cols],
             ["theme", theme],
+            ["bars", flag(bars)],
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1751,10 +1865,25 @@ export function slider(
     }).setControl(source_);
 }
 
+/** A `number`'s options: a range's, and the arrows that step it. */
+export interface NumberOptions extends RangeOptions {
+    /**
+     * A pair of arrows at the field's right edge that move the value one
+     * `step` each -- the same step the arrow keys take when the field holds the
+     * focus.
+     */
+    stepper?: boolean;
+}
+
 /** A draggable numeric read-out over a range. Takes a control, like {@link knob}. */
-export function number(control?: ControlLike | RangeOptions, options?: RangeOptions): View {
-    const [source_, opts] = controlArgs<RangeOptions>(control, options);
-    const [rest, props] = rangeProps(opts);
+export function number(
+    control?: ControlLike | NumberOptions,
+    options?: NumberOptions,
+): View {
+    const [source_, all] = controlArgs<NumberOptions>(control, options);
+    const { stepper, ...opts } = all;
+    const [rest, ranged] = rangeProps(opts);
+    const props = { ...ranged, ...drop([["stepper", flag(stepper)]]) };
     const built = source_ === null
         ? { ...rest, ...props }
         : { ...fromControl(source_, props, { needsRange: true }), ...rest };
@@ -1776,6 +1905,19 @@ export interface ButtonOptions extends WidgetOptions {
     /** What the press sends, and what the release sends under `"gate"`. */
     on?: number;
     off?: number;
+    /**
+     * One character drawn before the label, or in its place when there is
+     * none: there are no icons in the host and there are fonts, so an icon is
+     * a glyph ({@link ICON} names the ones the host's own face draws).
+     */
+    icon?: string;
+    /** No box until the pointer is over the button -- what a row of tools wants. */
+    flat?: boolean;
+    /**
+     * A {@link menu} tree: the button then opens it under itself instead of
+     * firing, and what it reports is the entry picked, as `"menu" verb`.
+     */
+    menu?: MenuTree;
     textSize?: number;
 }
 
@@ -1815,7 +1957,7 @@ export function button(
     options?: ButtonOptions,
 ): View {
     const [source_, opts] = controlArgs<ButtonOptions>(control, options);
-    const { label: text, mode, on, off, textSize, ...rest } = opts;
+    const { label: text, mode, on, off, icon, flat, menu: list, textSize, ...rest } = opts;
     if (mode !== undefined && mode !== "gate" && mode !== "press") {
         throw new Error(
             `unknown button mode '${mode}'; use "gate" (on while held) or ` +
@@ -1824,7 +1966,8 @@ export function button(
     }
     const props = drop([
         ["label", text], ["mode", mode], ["on", on], ["off", off],
-        ["text_size", textSize],
+        ["icon", icon], ["menu", list === undefined ? undefined : [...list]],
+        ["text_size", textSize], ["flat", flag(flat)],
     ]);
     let built;
     if (source_ === null) {
@@ -1856,6 +1999,14 @@ export interface ToggleOptions extends WidgetOptions {
     /** The two values that state stands for on the wire. */
     on?: number;
     off?: number;
+    /**
+     * The picture, over the same state: `"check"` (the default, a box that is
+     * filled or empty), `"switch"` (a track with a knob at one end or the
+     * other) or `"button"` (a button that stays pressed).
+     */
+    view?: "check" | "switch" | "button";
+    /** One character drawn with the label, as on {@link button}. */
+    icon?: string;
     textSize?: number;
 }
 
@@ -1877,10 +2028,15 @@ export function toggle(
     options?: ToggleOptions,
 ): View {
     const [source_, opts] = controlArgs<ToggleOptions>(control, options);
-    const { label: text, value, on, off, textSize, ...rest } = opts;
+    const { label: text, value, on, off, view: look, icon, textSize, ...rest } = opts;
+    if (look !== undefined && !["check", "switch", "button"].includes(look)) {
+        throw new Error(
+            `unknown toggle view '${String(look)}'; use "check", "switch" or "button"`,
+        );
+    }
     const props = drop([
-        ["label", text], ["value", flag(value)], ["on", on], ["off", off],
-        ["text_size", textSize],
+        ["label", text], ["on", on], ["off", off], ["view", look], ["icon", icon],
+        ["text_size", textSize], ["value", flag(value)],
     ]);
     // A toggle needs no range: it is 0/1 whatever the control declares.
     const built = source_ === null
@@ -1917,25 +2073,257 @@ export function text(
     });
 }
 
+/** The presentations of a {@link choice}. */
+export const CHOICE_VIEWS = ["combo", "radio", "segmented", "tabs", "pager", "list"] as const;
+
 /**
- * A `menu` over `options` (strings), emitting the chosen `index`.
+ * One of several: a `choice` over `options` (strings), emitting the chosen
+ * `index`.
  *
- * A press **opens the list** over the window -- the field grown downward by a
- * row per option, flipped above it near the bottom edge -- and a press on a row
- * picks it; a press anywhere else dismisses it and picks nothing. The list is
- * the host's, so a bound menu drives its target with no round trip through the
- * page.
+ * `view` is how it is presented, and nothing else about it changes -- the
+ * data, the value and the event are the same in all of them:
+ *
+ * - `"combo"` (the default) -- a field showing the chosen option, with a list
+ *   that opens under it. A press opens the list over the window and a press on
+ *   a row picks it; a press anywhere else dismisses it.
+ * - `"radio"` -- every option on a row of its own, a mark beside the chosen
+ *   one.
+ * - `"segmented"` -- the options side by side in one bar.
+ * - `"tabs"` -- the options as tabs, each as wide as its name; the ones that
+ *   do not fit gather under a last one, whose list holds them.
+ * - `"pager"` -- two arrows and the position between them.
+ * - `"list"` -- every option on a row of its own, the chosen one lit.
+ *
+ * Because the value is the index in every view, a choice **bound** to a
+ * {@link stack}'s `index` is tabs or a pager with nothing new on the wire --
+ * which is what {@link tabs} and {@link pager} build. The list is the host's,
+ * so a bound choice drives its target with no round trip through the page.
+ * With the focus, the arrows move the choice and Enter opens a combo's list.
+ *
+ * It was called `menu`. That name is the tree of entries now ({@link menu}): a
+ * menu reports verbs, and this reports a value, like every other control.
  */
-export function menu(
+export function choice(
     options: readonly string[] = [],
-    rest: WidgetOptions & { index?: number; label?: string; textSize?: number } = {},
+    rest: WidgetOptions & {
+        index?: number;
+        label?: string;
+        view?: (typeof CHOICE_VIEWS)[number];
+        textSize?: number;
+    } = {},
 ): GuiNode {
-    const { index, label: text, textSize, ...others } = rest;
-    return node("menu", {
+    const { index, label: text, view: look, textSize, ...others } = rest;
+    if (look !== undefined && !CHOICE_VIEWS.includes(look)) {
+        throw new Error(
+            `unknown choice view '${String(look)}'; use one of ${CHOICE_VIEWS.join(", ")}`,
+        );
+    }
+    return node("choice", {
         ...others,
         options: [...options],
-        ...drop([["index", index], ["label", text], ["text_size", textSize]]),
+        ...drop([
+            ["index", index], ["label", text], ["view", look], ["text_size", textSize],
+        ]),
     });
+}
+
+/**
+ * One entry of a {@link menu}.
+ *
+ * `verb` is what a pick reports -- the entry's `label` when it names none. What
+ * the entry *is* follows from what else it carries:
+ *
+ * - nothing more -- an **action**: a pick reports the verb.
+ * - `checked` -- a **check**: a pick flips it and reports the verb with the
+ *   new state (`1` or `0`) after it.
+ * - `group` -- **one of several**: the entries of one list that share a group
+ *   name. A pick turns this one on and the rest of its group off, and reports
+ *   the verb. `checked` says which one starts on.
+ * - `menu` -- a **submenu**: a menu of its own, opened beside the entry.
+ *
+ * `enabled: false` leaves the entry in its list and out of reach. `icon` is
+ * one character drawn before the label.
+ *
+ * The state an entry holds is a prop like any other: the host flips it where
+ * it is drawn, reports it, and a query reads it back -- it is whoever owns the
+ * window that keeps it.
+ */
+export function entry(
+    label: string,
+    verb?: string,
+    options: {
+        checked?: boolean;
+        group?: string;
+        enabled?: boolean;
+        icon?: string;
+        menu?: MenuTree;
+    } = {},
+): Record<string, unknown> {
+    const out: Record<string, unknown> = { label };
+    if (verb !== undefined) out.verb = verb;
+    if (options.checked !== undefined) out.checked = options.checked;
+    if (options.group !== undefined) out.group = options.group;
+    if (options.enabled !== undefined) out.enabled = options.enabled;
+    if (options.icon !== undefined) out.icon = options.icon;
+    if (options.menu !== undefined) out.menu = [...options.menu];
+    return out;
+}
+
+/**
+ * A **menu**: a tree of entries, as the value of a `menu` or a `context` prop.
+ *
+ * Each argument is an {@link entry}, the string `"-"` for a separator, or a
+ * plain string for the shortest action -- one whose label is its verb:
+ *
+ * ```ts
+ * menu(entry("Open", "open"), "-", "Quit");
+ * ```
+ *
+ * A menu is not a node: it opens over the tree, in the host's popup layer, so
+ * it is the value of a prop and is shown in the three places a prop puts it --
+ * `view({ menu })` is the window's menu bar, `button({ menu })` the list under
+ * a button, and `context` on any widget the menu the secondary button opens
+ * there.
+ */
+export function menu(...entries: MenuItem[]): MenuItem[] {
+    for (const item of entries) {
+        if (typeof item !== "string" && (typeof item !== "object" || item === null)) {
+            throw new TypeError(
+                `a menu holds entries, "-" or plain strings, got ${String(item)}`,
+            );
+        }
+    }
+    return [...entries];
+}
+
+/**
+ * The symbol set of the host's embedded face: `ICON.play`, `ICON.check`, ...
+ * what an `icon` prop names with no typeface loaded. Any other character is an
+ * icon too wherever a typeface that has it is loaded; these are the ones that
+ * draw with none. Written as escapes: a source file is ASCII, and these are
+ * not.
+ */
+export const ICON = {
+    check: "\u2713",
+    close: "\u2715",
+    left: "\u2190",
+    up: "\u2191",
+    right: "\u2192",
+    down: "\u2193",
+    play: "\u25b6",
+    stop: "\u25a0",
+    record: "\u25cf",
+    pause: "\u23f8",
+    loop: "\u21bb",
+    menu: "\u2261",
+    bullet: "\u2022",
+    pointUp: "\u25b4",
+    pointRight: "\u25b8",
+    pointDown: "\u25be",
+    pointLeft: "\u25c2",
+} as const;
+
+/**
+ * A `separator`: a line between two groups of a strip.
+ *
+ * It has one thickness and no orientation of its own -- in a row it stands, in
+ * a column it lies; the cell it is given says which. With a `weight` it is the
+ * **spring** that takes the strip's leftover and pushes what follows it to the
+ * far edge. `line: false` keeps the space and draws no line.
+ */
+export function separator(options: WidgetOptions & { line?: boolean } = {}): GuiNode {
+    const { line, ...rest } = options;
+    return node("separator", { ...rest, ...drop([["line", flag(line)]]) });
+}
+
+/**
+ * A `progress` bar over `value` in `0..1`.
+ *
+ * With no value it is **indeterminate**: a band sweeping the bar, which says
+ * "working" without claiming how far. That is the only time it asks the page
+ * to keep repainting; a bar that shows a fraction is a still picture until the
+ * next `set({ value })`.
+ */
+export function progress(
+    value?: number,
+    options: WidgetOptions & { label?: string; textSize?: number } = {},
+): GuiNode {
+    const { label: text, textSize, ...rest } = options;
+    return node("progress", {
+        ...rest,
+        ...drop([["value", value], ["label", text], ["text_size", textSize]]),
+    });
+}
+
+/**
+ * **Tabs**: a row of `titles` over the `pages` they show, one at a time.
+ *
+ * A shortcut onto the model -- a {@link choice} in its `"tabs"` view bound to
+ * the `index` of a {@link stack} -- so it adds nothing to the wire: the hidden
+ * pages keep their place in the tree, and flipping one costs no round trip
+ * through the page. `index` is the page shown first.
+ */
+export function tabs(
+    options: WidgetOptions & { titles: readonly string[]; index?: number },
+    ...pages: GuiNode[]
+): GuiNode {
+    const { titles, index, ...rest } = options;
+    if (titles.length !== pages.length) {
+        throw new Error(
+            `tabs: ${titles.length} titles for ${pages.length} pages -- one title per page`,
+        );
+    }
+    const shown = stack({ index }, ...pages);
+    const strip = choice(titles, {
+        view: "tabs", index, bind: ["widget", shown, "index"],
+    });
+    return panel({ ...rest, flow: "col", margin: 0, gap: 0 }, strip, shown);
+}
+
+/**
+ * A **pager**: the `pages` one at a time, over two arrows and the position
+ * between them. The same composition as {@link tabs}, in the `"pager"` view of
+ * the {@link choice}.
+ */
+export function pager(
+    options: WidgetOptions & { index?: number } = {},
+    ...pages: GuiNode[]
+): GuiNode {
+    const { index, ...rest } = options;
+    const shown = stack({ index }, ...pages);
+    const strip = choice(pages.map((_, n) => String(n + 1)), {
+        view: "pager", index, bind: ["widget", shown, "index"],
+    });
+    return panel({ ...rest, flow: "col", margin: 0, gap: 0 }, shown, strip);
+}
+
+/**
+ * A **toolbar**: a row of tools as tall as the tools are.
+ *
+ * A shortcut onto a hugging, **packed** `row` -- each tool as wide as what it
+ * says: put flat buttons in it (`flat: true`), a {@link separator} between the
+ * groups, and a `separator({ weight: 1 })` where the rest should go to the far
+ * edge.
+ */
+export function toolbar(options: GroupOptions = {}, ...children: GuiNode[]): GuiNode {
+    return panel({ ...options, flow: "row", hug: true, pack: true }, ...children);
+}
+
+/**
+ * A **dialog**: a {@link layout} that stands over the window and takes every
+ * press while it exists.
+ *
+ * It is placed centred over the window rather than by its parent's flow, as
+ * big as `w`/`h` say or as its content wants, with the window dimmed behind
+ * it; nothing behind it can be reached, by the pointer or by Tab. It is up
+ * from the moment it is defined until it is **freed** -- which is how it is
+ * closed (`WidgetHandle.free`).
+ */
+export function dialog(
+    options: GroupOptions & { flow?: string } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    return layout({ ...options, modal: true, frame: true, hug: true }, ...children);
 }
 
 // ---- the heavy views ----
@@ -3189,6 +3577,17 @@ function stripNames(tree: GuiNode): GuiNode {
     const out: GuiNode = { type: tree.type };
     for (const [key, value] of Object.entries(tree)) {
         if (key !== "name" && key !== "children") out[key] = value;
+    }
+    const bind = out.bind;
+    if (Array.isArray(bind) && bind.some((b) => typeof b === "object" && b !== null)) {
+        // A binding that names its target by the node is resolved against the
+        // ids `GuiHost.define` assigns; a document serialized before that has
+        // no id to put there.
+        throw new Error(
+            "this tree binds a widget by reference (`tabs`, `pager`, or a `bind` " +
+                "naming a node), which is resolved when the tree is opened -- open " +
+                "or define it rather than serializing it directly",
+        );
     }
     if (tree.children && tree.children.length > 0) {
         out.children = tree.children.map(stripNames);

@@ -13,7 +13,7 @@ use crate::host::graphics::controls::field_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::size::Natural;
 
 use super::control::{self, Dial};
@@ -23,6 +23,9 @@ use super::control::{self, Dial};
 #[derive(Debug, Clone)]
 pub struct Number {
     pub range: Range,
+    /// The `stepper` prop: a pair of arrows at the field's right edge that
+    /// move the value one step each.
+    pub stepper: bool,
     drag: Dial,
 }
 
@@ -36,17 +39,32 @@ pub(super) fn build(
 fn from_props(props: &Map<String, Value>) -> Number {
     Number {
         range: Range::parse(props),
+        stepper: props
+            .get("stepper")
+            .and_then(crate::host::widget::parse::truthy)
+            .unwrap_or(false),
         drag: Dial::default(),
     }
 }
 
 impl Element for Number {
     fn set(&mut self, key: &str, v: &Value) -> bool {
-        control::set(&mut self.range, key, v)
+        match key {
+            "stepper" => crate::host::widget::parse::truthy(v)
+                .map(|b| self.stepper = b)
+                .is_some(),
+            _ => control::set(&mut self.range, key, v),
+        }
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        controls::number(d, &self.range, ctx.rect, self.range.text_size * ctx.scale);
+        controls::number(
+            d,
+            &self.range,
+            ctx.rect,
+            self.range.text_size * ctx.scale,
+            self.stepper,
+        );
     }
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
@@ -79,8 +97,26 @@ impl Element for Number {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        let body_h = control::body(&self.range, input).h;
-        self.drag.press(&self.range, body_h, at)
+        let body = control::body(&self.range, input);
+        // An arrow of the stepper is a step, by the same rule the keys step
+        // it; the rest of the field is the drag it always was.
+        if self.stepper {
+            let size = self.range.text_size * input.scale;
+            let (up, down) = controls::stepper_cells(body, size, input.metrics);
+            let key = if up.contains(at.0, at.1) {
+                Some(Key::Up)
+            } else if down.contains(at.0, at.1) {
+                Some(Key::Down)
+            } else {
+                None
+            };
+            if let Some(key) = key {
+                return Claim::events(
+                    control::key(&mut self.range, &key, input.mods).unwrap_or_default(),
+                );
+            }
+        }
+        self.drag.press(&self.range, body.h, at)
     }
 
     fn drag(&mut self, at: (f64, f64), _input: &Input) -> Events {
@@ -90,6 +126,18 @@ impl Element for Number {
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.drag.release();
         Events::none()
+    }
+
+    fn accepts_focus(&self) -> bool {
+        true
+    }
+
+    fn reports_focus(&self) -> bool {
+        false
+    }
+
+    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        control::key(&mut self.range, key, input.mods)
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

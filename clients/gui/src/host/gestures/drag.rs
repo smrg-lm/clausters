@@ -76,6 +76,7 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
+        self.press_moved(host.metrics_for(def_id).hit_slop as f64, (cx, cy));
         let Some(drag) = self.drag.clone() else {
             return out;
         };
@@ -134,6 +135,14 @@ impl Gestures {
                     .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / row_h * y_len;
                 set_y_view(host, &mut out, def_id, id, start, y_len);
+            }
+            Drag::Split(split) => {
+                let at = if split.row { cx } else { cy };
+                self.split_to(host, ctx, &split, at, &mut out);
+            }
+            Drag::Bar(bar) => {
+                let at = if bar.vertical { cy } else { cx };
+                self.bar_to(host, ctx, &bar, at, &mut out);
             }
             Drag::ScrollPan {
                 id,
@@ -332,6 +341,7 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Vec<GestureEffect> {
+        self.press_ended();
         // Taken either way: a gesture that swept is no longer a click, and the
         // press it came from is spent.
         let click = self
@@ -372,6 +382,33 @@ impl Gestures {
     /// What the drag itself delivers on release -- one arm per [`Drag`] variant,
     /// and the half of the release that is about *what was held* rather than
     /// about where the hand pointed.
+    /// **Lets go of the press without a click**: what a hold that became a
+    /// context request does to the press it grew out of. An element is told
+    /// the button came up *off* it, so a button closes its gate and fires no
+    /// command; anything else ends the way a release where it stands ends.
+    pub(super) fn abandon(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
+        self.click = None;
+        self.range_click = None;
+        if let Some(Drag::Element { at, .. }) = self.drag {
+            self.drag = None;
+            let mut out = Vec::new();
+            if let Some(events) = element::with(host, ctx, at, |el, input| {
+                el.release((cx, cy), false, input)
+            }) {
+                element::report(host, &mut out, ctx, at.id, events);
+            }
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return out;
+        }
+        self.release_drag(host, ctx, cx, cy)
+    }
+
     fn release_drag(
         &mut self,
         host: &mut Host,
@@ -468,6 +505,14 @@ impl Gestures {
         if let Some(Drag::Marquee { .. }) = self.drag {
             self.drag = None;
             out.push(GestureEffect::Redraw(def_id));
+            return out;
+        }
+        // A divider reports where it was left, once, at the end -- what moved
+        // on the way was the picture, and one gesture is one report.
+        if let Some(Drag::Split(split)) = self.drag.clone() {
+            self.drag = None;
+            let at = if split.row { cx } else { cy };
+            self.split_done(host, ctx, &split, at, &mut out);
             return out;
         }
         if let Some(Drag::Select { id, .. }) = self.drag {
