@@ -315,8 +315,7 @@ opened it.
   as this one may, and as the samples editor did -- answers undo and redo
   with `reload`, which re-reads the whole buffer for a stroke of a thousand
   samples. `/gui_ack` already carries `source generation` pairs that the host
-  keeps and nothing reads, and no client sends one (`clients/gui/PLAN.md`,
-  Found by use, "A generation is carried, stored, and read by nothing"). What
+  keeps and nothing reads, and no client sends one. What
   it waits on is what a source id is on that path -- a document's source, or
   a widget's `buffer=N`; the audio editor answered it for itself (its takes'
   ids are their buffer numbers), which is the precedent to read first.
@@ -952,7 +951,7 @@ opened it.
   document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
   what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8` which
-  element admits which edit, `N9` the score in the arrangement). A `Score` already
+  element admits which edit, `N9` a score as a box of the multitrack). A `Score` already
   joins the editing context as an external member. What the application is, over
   that track, is not written yet.
 
@@ -975,10 +974,15 @@ opened it.
   slots, `notes` 1775, `curve` 803, `score` 788, `patch` 694, `keys` 547.
 
   **Open:** which of these are applications and which stay a client's composition;
-  whether a monitor (scope, phase, spectrum, meters) is one application or several.
-  **Related:** "The heavy families as features" (`clients/gui/PLAN.md`), which is
-  about the bundle's size rather than where an application lives, over the same
-  widgets.
+  whether a monitor (scope, phase, spectrum, meters) is one application or several;
+  and whether the heavy families -- `timeline` and `signal` -- become Cargo
+  features a build can drop, as `notation` and `patcher` are *(moved here from
+  `clients/gui/PLAN.md` by the user, 2026-10-04, "The heavy families as
+  features", which keeps what was measured: `signal` is named in twenty-nine
+  files and the timeline family in nineteen, at the frame and the pipelines
+  rather than at the edges, so making either a feature is a structural change
+  first)*. Which of these widgets become applications decides what a build
+  could drop, so the two questions are taken together.
 
 - ✅ **X7 - The audio editor's nodes on the server.** *(Done 2026-09-24,
   heard and seen by the user in both examples; what is left is at the end of
@@ -1447,6 +1451,19 @@ only for a choice with non-obvious context.
 ## Future directions (to fold into milestones as they firm up)
 
 Every entry carries a checkbox.
+
+- ⬜ **Time-stretch: an edge that changes the material rather than the window**
+  *(moved here from `clients/gui/PLAN.md` by the user, 2026-10-04: it is the
+  multitrack application's)*. An edge drag is a **trim** and the material
+  stands still; the other answer a multitrack has is to change the material's
+  *length* -- resampling it, or stretching it at pitch -- which is a rendering
+  on demand (an NRT pass over the source, its result a new take) and not a
+  placement edit. The host already draws the picture such a stretch produces
+  (`fit` draws a placement's span over the whole of its material). What is
+  undecided: which gesture asks for it (a modifier on the edge, or a verb like
+  the split's), what the document does with the result (a new source, or a
+  source that remembers it was stretched), and whether the drawing shows the
+  stretch before the render lands.
 
 - ⬜ **The applications' window chrome in standalone** *(recorded 2026-09-24,
   the user: "para poder correr las aplicaciones del host en standalone se va

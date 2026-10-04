@@ -54,12 +54,6 @@ editor, and which composed views get one — are milestones of
 `crates/clausters-apps/PLAN.md` (`X2`-`X6`), each opened on a question rather
 than on a design, and the score editor is not started.
 
-One thing deferred to `O24` still has no step of its own: the manual surface
-the reconcile has never had — no example in either client sends a second
-`/gui_def` over an open window (`clients/gui/PLAN.md`, "Found by use", "The
-reconcile has no example to see it in"). `AP5`'s catalogue views, deferred with
-it, are the crate's since `a1e54513`.
-
 Where the work lives:
 
 | Track | File | What it is |
@@ -157,9 +151,9 @@ its plan; the plan is where its acceptance is read.
   **`N7`** — what opening somebody else's score should preserve, since the
   reader stores an engraver's beams and page breaks as though a writer had
   chosen them. **`N8`** — which element admits which edit, where today a page
-  is editable or it is not. **`N9`** — the score as an element of the
-  arrangement, the question the multitrack and piano-roll views already
-  answered for their own material.
+  is editable or it is not. **`N9`** — a score as a box of the multitrack,
+  drawn the way a box of notes is drawn as a piano roll, since the two show
+  the same notes.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
   continued, `X9`**
@@ -174,7 +168,8 @@ its plan; the plan is where its acceptance is read.
   go behind a mixin (`clients/gui/PLAN.md`, Found by use, "The points editor
   carries a range and a selection it has no use for"); **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
-  spectrogram) get an application; and **`X9`**, the multitrack editor
+  spectrogram) get an application, and with it whether the heavy families
+  become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
   clip or a stretch of one), postponed by the user until the multitrack's
   development resumes and waiting on `O21`(a). **Related:** an application
@@ -228,17 +223,6 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
-
-- ⬜ **Try cubic instead of straight segments where the samples are joined**
-  *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
-  layer only: the sub-two-sample columns and the joined segments take the same
-  curve, and `signal` stays the reconstruction. **Related:** the entry below.
-
-- ⬜ **The reconstruction draws nothing zoomed out**
-  *(`clients/gui/PLAN.md`, "Found by use")*. A cache-format change rather than
-  a drawing one: the reconstructed envelope as a plane in the peak pyramid,
-  computed once when the cache is built. **Related:** the A track's `A3`, which
-  left the filter it needs (`clients/gui/PLAN.md`); independent of `A4`.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
@@ -301,13 +285,6 @@ its plan; the plan is where its acceptance is read.
   conversion is private to the notes editor, and `Ppar`/`Pmono` are a separate
   pattern-side question.
 
-- ⬜ **A roll that sounds shows no cursor, and what can drive the line is a
-  `Playhead`** *(`clients/gui/PLAN.md`, Future directions)*. **Related:** the
-  same question from the view's side. The host's half is done and general
-  (`PlayheadSync` drives any widget's line, and a timeline gives it a
-  position); what it cannot do is follow a pattern player, which is
-  forward-only and has no position — the question this one owns.
-
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
@@ -333,10 +310,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   "Key bindings per window" (`clients/gui/PLAN.md`, Future directions).
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
-  builders from the catalog instead of contrasting against them), the GUI's (the
-  double click and the long press, and a pass over the gesture vocabulary; a
-  steady goniometer; the heavy families as features; composed text (IME); a Tauri
-  wrapper; the three heavy-view rendering questions; key bindings per window and
+  builders from the catalog instead of contrasting against them), the GUI's (a
+  steady goniometer; composed text (IME); a Tauri wrapper, only a possibility; the three heavy-view rendering questions; key bindings per window and
   a key in a tip; the page's clipboard reaching the browser's), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, and the document crate's interpreter

@@ -4009,33 +4009,36 @@ Whatever symbols the model itself needs owe their rows either way
   entry declines where a note cannot go; and whatever the page allows is
   readable from the display list rather than guessed from a shape.
 
-- ⬜ **N9 — The score in the arrangement**. The `score` widget is a view of a
-  *score*, standing on its own: a client engraves one, drives one transport
-  over it, and hears it. What it is not is a view of **the piece** — the
-  arrangement (`clausters.form`) places elements in time, groups them and
-  renders them, and a score is exactly the kind of element it should be able to
-  place, alongside a take and a pattern.
+- ⬜ **N9 — A score as a box of the multitrack.** *(Rewritten 2026-10-04 with
+  the user. It was written as "the score in the arrangement", and the
+  arrangement it meant was `clausters.form`, frozen since; what it asks now is
+  a box on the multitrack drawn as a score, the way a box of notes is drawn as
+  a piano roll -- the roll and the score show the same notes.)*
 
-  Both neighbouring views have already answered this for their own material,
-  which is what makes the question askable rather than open-ended: a `clip`
-  draws a take placed on a lane and edits it back, and the piano roll draws
-  notes on the same axis. A score placed on a lane is the third, and it brings
-  its own questions — what a score's *element* is (the sheet, or a stretch of
-  it), whether the arrangement's beat axis and the page's own metric grid are
-  one axis or two, and what a clip of a score draws when the lane is a
-  centimetre tall. The model needs nothing new to hold it: an element is
-  already deliberately general, and a sheet is data.
-  **Acceptance:** a sheet is an element of an arrangement, placed and rendered
-  like any other; the editor draws it and edits it back through the verbs it
-  already has; and the composition chapter shows the same piece as a score and
-  as a timeline. *(The G31 line "Notation as a composition surface", numbered
-  2026-08-30 now that the model it needed exists.)*
+  **What is there.** A box's base view is what its contents are: a box over
+  samples draws a trace or a spectrogram, a box of notes draws a roll fitted to
+  the box -- the `pianoroll`'s own element, handed the box's axis through the
+  body door -- and a double click on a box of notes opens the roll over the
+  same sequence. A score is the third presentation: the `score` element drawn
+  into the box the way the roll is, and a double click opening the score
+  editor (`X5`, `crates/clausters-apps/PLAN.md`) over what the box holds.
 
-  *Re-read 2026-09-14.* "The arrangement (`clausters.form`)" is the frozen
-  module now, and a piece is the session in `crates/clausters-document`: a track
-  holds lanes of regions, and a region's contents are what it windows. So the
-  question stands and its address moved: a score placed in a piece is a region
-  whose contents is a sheet, which is the score editor's half of `O24`.
+  **Open, none of it decided:**
+
+  - **What the box holds** when it is drawn as a score: the notes a roll draws,
+    engraved -- one sequence, two presentations, chosen like the multitrack's
+    `view` -- or a sheet of its own.
+  - **The time axis.** A box sits on a linear axis and an engraving spaces by
+    duration, not proportionally: proportional notation inside the box, or the
+    box's time mapped onto the engraving's measures.
+  - **Size.** What a staff draws when the row is a few pixels tall, the same
+    question the roll answered by fitting its pitch range.
+  - **Editing.** A box's contents draw read-only on the multitrack, as a roll
+    body does, and are edited in the editor the double click opens.
+
+  **Acceptance:** a box of notes on a multitrack can be drawn as a score,
+  scrolls and zooms with the time axis, and opens the score editor; shown in
+  an example and in both clients' composition chapter.
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
@@ -4367,7 +4370,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   Both legs took it together, and `recording-host.html` asserts the fork by what the host says it did: a zoom between the bucket and the sample logs a **grid** and no `read back`, and the deeper zoom beside it still reads the samples. The record of why is in `docs/decisions.md` ("A zoom past the summary asks for a finer summary, and only then for the samples"), with the shape in `docs/architecture.md` and the two commands under `fills` in `docs/gui-protocol.md`.
 
-- ⬜ **Time-stretch: an edge that changes the material rather than the window** *(named 2026-08-18 with the clip's window, which is what made it nameable)*. An edge drag is a **trim** and the material stands still; a multitrack's other answer is to change the material's *length* — resampling it, or stretching it at pitch — which is a **rendering on demand** (an NRT pass over the source, its result a new take) and not a placement edit. Everything it needs is now stated: `fit` is the prop that draws a placement's span over the whole of its material, which is exactly the picture such a stretch produces, and the window says which segment is being stretched. What is undecided is the rest of it: which gesture asks for it (a modifier on the edge, a verb like the split's), what the client does with the result (a new source, or a source that remembers it was stretched), and whether the drawing shows the stretch before the render lands. Deliberately not part of the interaction rules: they had to say what an edge drag *is*, and they do.
+- ✅ **Time-stretch: an edge that changes the material rather than the window** *(named 2026-08-18 with the clip's window, which is what made it nameable; moved 2026-10-04 by the user to the multitrack application, `crates/clausters-apps/PLAN.md`, Future directions, where it stays open)*. An edge drag is a **trim** and the material stands still; a multitrack's other answer is to change the material's *length* — resampling it, or stretching it at pitch — which is a **rendering on demand** (an NRT pass over the source, its result a new take) and not a placement edit. Everything it needs is now stated: `fit` is the prop that draws a placement's span over the whole of its material, which is exactly the picture such a stretch produces, and the window says which segment is being stretched. What is undecided is the rest of it: which gesture asks for it (a modifier on the edge, a verb like the split's), what the client does with the result (a new source, or a source that remembers it was stretched), and whether the drawing shows the stretch before the render lands. Deliberately not part of the interaction rules: they had to say what an edge drag *is*, and they do.
 
 - ⬜ **The audio editor's layers: the view is the next container, and it is the richer one** *(named 2026-08-18 by the user while the clip's rules closed, in two notes: "el concepto vale también para la edición de audio", and then what that means in detail — this is a design to think through and build, not a gap to patch)*.
 
@@ -4402,7 +4405,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 - ⬜ **A steady goniometer, and what a phase view should read** *(the design half left standing by the ✅ "The goniometer's figure jumped, and the signal was the staircase" fix below — smoothing the source removed the staircase and left the view's own question exposed)*. With the signal smoothed the figure sweeps, and what is left is the view's own: it draws the **newest** window of two taps with no alignment, so consecutive ticks read overlapping stretches and the trace's ends need not meet. Three shapes, and the one that is chosen decides what a phase view *is*. **Align it** — reuse the oscilloscope's trigger on the left channel, which costs nothing new and stands a periodic pair still, at the price of no longer showing where in the signal it is. **Persist it** — the classic hardware look: several windows drawn with a decay, which the mesh's per-vertex alpha already allows and which turns instability into the glow it is on a scope. Or **take a positioned window** (`read_bus_at` reports where a window ends, which is what the retained history already appends by), so consecutive ticks read *consecutive* samples and the phase advances continuously instead of overlapping. The third is the only one that changes what the view reads rather than how it draws, and it is the one that would also survive a slower frame rate.
 
   **Where it shows is the evidence**: with the signal smoothed, what remains is visible at the *ends* of a sweep, where the figure degenerates into a straight line (mono is one diagonal, anti-phase the other). A line is exactly where a phase error is most legible — any of it opens the line into a thin ellipse — so the residue is the unaligned window and not the drawing's resolution, which is what points at the positioned read rather than at drawing more of it.
-- ⬜ **The heavy families as features** *(what K13 measured and did not take)*. `timeline` and `signal` were named as element families beside `notation` and `patcher`; they are not families in the same sense yet, and the difference is structural rather than a matter of effort. The two that landed are named outside their own modules in two and four places; `signal` is named in **twenty-nine** files and the timeline family in **nineteen**, and not at the edges — `frame/mod.rs` is built around `WaveformSlot`/`SpectrogramSlot`, `view::Renderers` holds both heavy pipelines, `bulk.rs` and the server leg resolve into them, the navigation groups live on the `Host` and the time containers are placements in `layout.rs`. So gating them is not a `Cargo.toml` line: it means the frame's slot machinery, the bulk path and the navigation model each compile with **no heavy view at all**, which needs its own decisions (what a `clip` is with no take; what `Renderers` is when it holds nothing; whether a host with no timeline still has navigation groups) and a milestone of K7's size to carry them. The seam itself is not in doubt — `elements::builtin` → `Unknown` is proven by the two families that did land — and `check-features.sh` is already the runner such a milestone would report through. What it buys is the browser bundle above all, which is where a dropped family is worth real kilobytes. The A and D tracks make it heavier, not lighter: both grow the signal element, so this is measured again when they close.
+- ✅ **The heavy families as features** *(what K13 measured and did not take; moved 2026-10-04 by the user to the applications' plan, where it is an open question of `X6` -- `crates/clausters-apps/PLAN.md` -- since which heavy widgets become applications decides what a build can drop)*. `timeline` and `signal` were named as element families beside `notation` and `patcher`; they are not families in the same sense yet, and the difference is structural rather than a matter of effort. The two that landed are named outside their own modules in two and four places; `signal` is named in **twenty-nine** files and the timeline family in **nineteen**, and not at the edges — `frame/mod.rs` is built around `WaveformSlot`/`SpectrogramSlot`, `view::Renderers` holds both heavy pipelines, `bulk.rs` and the server leg resolve into them, the navigation groups live on the `Host` and the time containers are placements in `layout.rs`. So gating them is not a `Cargo.toml` line: it means the frame's slot machinery, the bulk path and the navigation model each compile with **no heavy view at all**, which needs its own decisions (what a `clip` is with no take; what `Renderers` is when it holds nothing; whether a host with no timeline still has navigation groups) and a milestone of K7's size to carry them. The seam itself is not in doubt — `elements::builtin` → `Unknown` is proven by the two families that did land — and `check-features.sh` is already the runner such a milestone would report through. What it buys is the browser bundle above all, which is where a dropped family is worth real kilobytes. The A and D tracks make it heavier, not lighter: both grow the signal element, so this is measured again when they close.
 - ✅ **The in-page shared-memory path — measured, and it does not open.** The browser engine shipped (the server's B track) and it talks over a **MessagePort**: OSC bytes both ways, commands crossing into the engine through the same in-memory ring the native embed uses. What did *not* ship is the half that would make a browser host look like the native one — a **`SharedArrayBuffer`** carrying the zero-message `BusSource` (control buses read each frame) and the bulk audio path *inside* the page, the roles `host::shm`/`mapfile` play natively. In a tab those still take the WS/`fetch` fallback built for a *remote* server, even when the engine is in the same document. It was left out **by requirement, not by omission**: SAB needs COOP/COEP isolation headers, and an embeddable component cannot demand those of a page it does not control (`docs/decisions.md`). That is also what makes it a **track rather than a milestone** — it is an optimization behind a build: a page that can isolate itself opts in, every other page keeps the MessagePort path, and both have to stay correct, which is a second backend for one seam and not a redesign (the ring seam was shaped to accept it).
 
   **The number is in, and it argues the other way** *(measured 2026-08-20; the profile is `clients/web/tools/bus-stream-profile.html`, run by `clients/web/tools/profile-bus-stream.sh`)*. The page builds N canvases, each a window with a control-rate meter and a control-rate scope on two buses of its own and an LFO per bus, and measures the same page three times over: streaming, with the subscription cancelled under the host's own peer tag, and streaming again — the same canvases ticking and drawing throughout, so what the phases differ by is the stream and nothing else. At **forty canvases (eighty buses)** one `/bus_stream.reply` frame is **824 bytes**, and taking it in — decode plus apply, timed around `bridge.server_reply`, which is the whole of what a shared segment would replace with a load — costs **~29 µs of the main thread per 33 ms frame: 0.09 % of it**, about 25 kB/s. At sixty-four canvases the frame is 1304 bytes and the cost is the same 28 µs: it is per-call overhead, not payload. The page's own frame rate, its event-loop lag and Chrome's blocked-time total do not separate the streaming phases from the cancelled one at all — the lag moves by a few tenths of a millisecond between runs, in both directions. (Headless Chrome on software WebGL, so the *drawing* is a floor rather than a forecast; the stream's own cost is CPU work either way and carries over.)
@@ -4440,7 +4443,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   word, so a field is usable rather than good. Showing a preedit means the host
   drawing text it does not own, under a caret it does not own, and that is a
   widget design rather than a shell fix — it is what would open this again.
-- ⬜ **Packaging: an optional Tauri desktop wrapper** reusing the web frontend. The rest of what this entry once listed has shipped — the GUI chapter of the client's book (`gui.md` and its pages) and the worked `gui_*` examples — so the wrapper alone is what remains, and it stays **last** by the ordering rule above: it changes how the system ships, not what it can show.
+- ⬜ **Packaging: an optional Tauri desktop wrapper** reusing the web frontend. The rest of what this entry once listed has shipped — the GUI chapter of the client's book (`gui.md` and its pages) and the worked `gui_*` examples — so the wrapper alone is what remains, and it stays **last** by the ordering rule above: it changes how the system ships, not what it can show. **Only a possibility** *(the user, 2026-10-04)*: `clausters-editor` is already a Tauri application, so a wrapper could come from there later if it is wanted; nothing is planned.
 
 - ⬜ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
 
@@ -4454,7 +4457,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   verbatim 2026-08-20. Two of the questions that stood beside them have since landed —
   the LOD crossfade in G20 and the `bpf` editor's edit-back in G21.)*
 
-- ⬜ **A roll that sounds shows no cursor, and what can drive the line is a
+- ✅ **A roll that sounds shows no cursor, and what can drive the line is a
   `Playhead`** *(named 2026-08-30 by the user, from `examples/editors/pianoroll`
   in both clients; rewritten the same day, because the first version of this
   entry said the props are moved by nothing outside the `Editor`, and that is
@@ -4492,8 +4495,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   played as a timeline can drive the line today, with no verb missing. The
   question this side owns is unchanged: a pattern player is still forward-only
   and has no position.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
-- ⬜ **Copying an *element* needs a door the protocol does not have.** The typed
+- ✅ **Copying an *element* needs a door the protocol does not have.** The typed
   clipboard has an `elements` kind — a piece of the tree, placed members — and
   nothing builds one, because neither side can. The **host** cannot: it owns no
   composition, so it has no member to serialize, and writing one would mean
@@ -4513,6 +4517,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   system clipboard is a separate question and stays out**: what crosses to the
   desktop or to a page is a string, which is why a note block already travels in
   the `text` kind, and bridging it is its own work with its own platform matrix.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ⬜ **A selected staff is edited by its line count, not by its position**
   *(the user, 2026-09-07, during the visual review's second sitting)*. Selecting
@@ -4681,7 +4686,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   **Related:** `O24`. This is what a multitrack's transport *is*, and doing it
   before the application is taking it off the application's first day.
 
-- ⬜ **Messages are not the roll's to edit, and nothing else edits them**
+- ✅ **Messages are not the roll's to edit, and nothing else edits them**
   *(the user, 2026-09-07, after the markers lane was made read-only: "mensajes
   (no eventos) OSC podrian tener otro widget con linea temporal especial pero
   no es parte del roll")*. A `Timeline` holds three kinds of item and only one
@@ -4725,6 +4730,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `item_data`/`item_from_data` implement today. Nothing about `Timeline` or the
   items was changed for the read-only fix, deliberately: the defect was the
   widget's.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ⬜ **A press on a score means what its context says, not what is under it**
   *(the user, 2026-09-07, after the staff-line fix and the regression that
@@ -4797,11 +4803,14 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **A box cut in two dotted the same sample at the end of one half and the start of the other** *(found 2026-09-17 by the user, same session)*. The sample regime reaches the sample just past each edge so the line crosses it, and dotted it too: the sample on a view's right edge is the first one after the view, so the first half drew the second half's first sample. A dot now marks only the samples of a half-open view. Held by `the_sample_on_the_right_edge_is_the_next_views`.
 
-- ⬜ **A box's edges on the multitrack are drawn on a sample, where a selection's are drawn between two** *(asked 2026-09-17 by the user: "la selección de muestras visualmente posiciona los márgenes entre los espacios anterior y posterior en el editor de audio. Eso acá debería ser posible también?")*. A selection's band runs from half a sample before its first sample to half a sample after its last (`selection::span_x`), so a one-sample selection is one sample wide. A box `[k0, k1)` is drawn from `x(k0)` to `x(k1)`, so zoomed to the sample its edges sit on the dots of its first sample and of the next box's first. Drawing the box by the same half-sample rule would put a cut between the two samples it separates. It reaches the box rectangle, its hit testing and edge drags, the local view its contents and layer are drawn in, and its fades; the position cursor and the playhead stay on the sample.
+- ✅ **A box's edges on the multitrack are drawn on a sample, where a selection's are drawn between two** *(asked 2026-09-17 by the user: "la selección de muestras visualmente posiciona los márgenes entre los espacios anterior y posterior en el editor de audio. Eso acá debería ser posible también?")*. A selection's band runs from half a sample before its first sample to half a sample after its last (`selection::span_x`), so a one-sample selection is one sample wide. A box `[k0, k1)` is drawn from `x(k0)` to `x(k1)`, so zoomed to the sample its edges sit on the dots of its first sample and of the next box's first. Drawing the box by the same half-sample rule would put a cut between the two samples it separates. It reaches the box rectangle, its hit testing and edge drags, the local view its contents and layer are drawn in, and its fades; the position cursor and the playhead stay on the sample.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
-- ⬜ **Try cubic instead of straight segments where the samples are joined** *(asked 2026-09-15 by the user, after `A3`)*. Straight segments remain in two places: above the dots' zoom, where a column under two samples wide measures the line between samples (`line_column`), and at the dots' zoom when a view draws `measure: "peak"` without the `signal` layer. The user wants to try a cubic (Catmull-Rom or Hermite) there so the joined samples do not read as polylines. Two constraints go with it: a cubic is smooth but is still not the signal (its overshoots are its own, not the inter-sample peaks), so it belongs only to the sample layer and never replaces `signal`; and `line_column` and the joined segments must use the same curve, or the picture changes character again at the dots' crossing.
+- ✅ **Try cubic instead of straight segments where the samples are joined** *(asked 2026-09-15 by the user, after `A3`)*. Straight segments remain in two places: above the dots' zoom, where a column under two samples wide measures the line between samples (`line_column`), and at the dots' zoom when a view draws `measure: "peak"` without the `signal` layer. The user wants to try a cubic (Catmull-Rom or Hermite) there so the joined samples do not read as polylines. Two constraints go with it: a cubic is smooth but is still not the signal (its overshoots are its own, not the inter-sample peaks), so it belongs only to the sample layer and never replaces `signal`; and `line_column` and the joined segments must use the same curve, or the picture changes character again at the dots' crossing.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
-- ⬜ **The reconstruction draws nothing zoomed out** *(found 2026-09-15, closing `A3`)*. The `signal` layer is drawn only where the samples are separate points; in the column regime it is absent, because a picture of it there is the envelope of the *reconstructed* signal and that differs from the samples' envelope by a fixed amount at every zoom, so no bounded reconstruction per frame reaches it. The fix is a plane in the peak pyramid — the reconstructed min/max per bucket, computed once when the cache is built, as the mean square was in `A1` — which makes it a cache-format change (CLPK v3 → v4, `CORE_ABI_VERSION`, the Python builder, the parity vectors). iZotope RX draws exactly this ("Show analog waveform … when the waveform is zoomed out"), so the shape is settled and the cost is the format.
+- ✅ **The reconstruction draws nothing zoomed out** *(found 2026-09-15, closing `A3`)*. The `signal` layer is drawn only where the samples are separate points; in the column regime it is absent, because a picture of it there is the envelope of the *reconstructed* signal and that differs from the samples' envelope by a fixed amount at every zoom, so no bounded reconstruction per frame reaches it. The fix is a plane in the peak pyramid — the reconstructed min/max per bucket, computed once when the cache is built, as the mean square was in `A1` — which makes it a cache-format change (CLPK v3 → v4, `CORE_ABI_VERSION`, the Python builder, the parity vectors). iZotope RX draws exactly this ("Show analog waveform … when the waveform is zoomed out"), so the shape is settled and the cost is the format.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ✅ **A join blinked: its box drew empty until its own buffer had been downloaded** *(found 2026-09-15 by the user, on the web multitrack example: a join of shuffled fragments drew its waveform, but the box flashed empty first)*. Measured frame by frame in the page: the joined box was empty from the moment the join was drawn until about 290 ms later, the time it took to download the join's whole buffer -- 96 000 samples, one chunk a frame -- although every one of those samples is a span of a take already on screen. A join owns no samples, so the download was of nothing new, and its picture could only arrive after the server had built the buffer and the host had read it back.
 
@@ -5043,59 +5052,6 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   layered under anything. It is now a field, and `a_body_draws_without_the_view_s_chrome`
   drives a real body against a real view rather than one object through two
   branches.
-
-- ⬜ **Nothing draws a tempo map as such, because a break-point body bends in
-  its own x** *(found 2026-09-05, writing `views/tempo_ruler`)*. A `bpf` body
-  interpolates each segment in the axis it is placed on -- seconds here, or
-  samples -- and a `TempoMap` interpolates its segments **in beats**. So a
-  curve given the map's own breakpoints and the map's own shape numbers agrees
-  with it exactly at every corner and parts from it between: measured on that
-  example's envelope, at most 1.17 BPM out of a 25 BPM excursion, worst at
-  about 14.8 s, which is some eight pixels on a 400-pixel lane.
-
-  Drawing the map densely instead is not a way out: the `bpf` draws a disc per
-  point, so a sampled curve reads as a string of beads rather than as the five
-  statements the piece actually makes. What is missing is a body that knows it
-  is drawing a tempo map -- one that places its corners in seconds and bends
-  between them in beats, which is a conversion the shared crate already does.
-  Until then `views/tempo_ruler` names the gap in its own prose, which is the
-  honest form: the picture is right where it matters (every corner, and the
-  ruler above it) and approximate where it does not.
-
-- ⬜ **A generation is carried, stored, and read by nothing** *(found 2026-09-04
-  in the review, fixing the samples window's lag behind its own undo)*.
-  `/gui_ack` takes `source generation` pairs, `ack::Outbox` keeps the last one
-  per source, and `outbox.generation(id)` is called by two tests and by no
-  code. Neither client ever sends a pair. So the one thing that can say
-  *these samples changed while their identity stayed put* says it to nobody,
-  and the protocol reference describes a mechanism that does not run.
-
-  **What is in its place, and why that is not the end of it.** The samples
-  editor now answers a history step with `reload`, which makes the element
-  forget what it resolved and read its server buffer again. It is correct and
-  it is the door that is open, but it re-reads a **whole take** for a stroke of
-  a thousand samples -- fine for a two-second take, wrong for the minutes-long
-  one the bulk path exists for. *(The example this was measured in,
-  `editors/composed.py`, was deleted with `FormEditor` on 2026-09-06; the
-  measurement stands and wants a new example under `O24`.)*
-
-  **What the work is**: a client sends `(source, generation)` for samples it
-  wrote; `settle` compares it with what the host holds for that source and, on
-  a bump, re-reads *that* source -- the same `reread` `reload` reaches, chosen
-  by the host instead of asked for by the owner. What it needs decided first is
-  what a **source id** is on this path: the pairs are named for the document's
-  sources, and a script-driven window has widgets over a `buffer=N` rather than
-  a document. Until that is answered a client cannot fill the field it is being
-  asked to fill, which is the likeliest reason neither ever did.
-
-  Related: the standalone host has no such gap -- it owns the document, so an
-  undo goes through `replay_writes` and its picture moves with the write.
-
-  **Deferred to the audio editor** *(decided by the user 2026-09-18)*. Not
-  fixed on its own: the samples editor is the part of the Rust audio editor
-  that is still to be written (`crates/clausters-apps/PLAN.md`, `X1`), and the
-  answer to what a source id is depends on how that application holds its
-  takes. It is taken there, and `reload` stays until then.
 
 - ✅ **The time range is the ruler's, and the two selections coexist**
   *(stated 2026-09-03 by the user closing the marquee's unification, decided and
@@ -7231,7 +7187,7 @@ finished work, where a pending item reads as done.
   from both. That separation is what let the two halves ship a day apart without
   either one reaching into the other.
 
-- ⬜ **The double click and the long press, and whichever gestures a pass over
+- ✅ **The double click and the long press, and whichever gestures a pass over
   the usual ones turns up** *(named 2026-08-24, when the click closed; the user
   asked for the review rather than for the two)*. Neither exists, and unlike the
   click neither is a hit test: a double click is a press-time **window** the
@@ -7243,37 +7199,16 @@ finished work, where a pending item reads as done.
   *(2026-10-04: the long press now has something waiting on it — `G37.2` takes
   it, with the secondary button, as the request that opens a context menu, and
   `G38.2` reuses its timer for a tip. The review of the rest stands.)*
-
-- ⬜ **A def can name a widget that does not exist, and nothing says so**
-  *(found 2026-08-27, in the manual review, on the demo bundle — the stale name
-  it hit is fixed in the commit; what is left here is the class)*. A type the
-  host has no built-in and no registration for resolves to `Unknown`: laid out,
-  never painted. That is the **right** behaviour and the plan says why — it is
-  how a host older than the def already behaves, and it is the seam the
-  crate's features hang on, so a family compiled out drops its rows and every
-  other widget still draws. What is missing is that it happens **silently**.
-  No warning on the host, nothing in the `/gui_def` reply, nothing in a
-  client's builder — so a def that names a widget nobody implements looks
-  exactly like a widget that draws nothing, and the reader's first guess is the
-  layout: a band of empty window, three elastic children where one is a ghost.
-
-  It went unseen for as long as it did because nothing catches it either. The
-  smokes that boot this bundle watch the meter's bus stream and passed
-  throughout; a page shows no console error; the def is valid JSON and its
-  props parse. The one thing that named it was a person looking at the window
-  and asking why the space was there.
-
-  The fix is a diagnostic, and where it goes is the decision: a host-side
-  `tracing::warn!` naming the type and the widget id is the cheapest and
-  reaches every leg (the browser's `log` goes to the console), but a def
-  arrives over the wire from a client that could have caught it at build time
-  — and the clients' builders emit the type name themselves, so the only defs
-  that can carry an unknown one are hand-written, like this bundle's. Worth
-  deciding whether the answer is only the warning, or also a reply the sender
-  can read (`/gui_def` acknowledges nothing today), and whether an unknown type
-  should still take a share of the layout at all or collapse to nothing so the
-  window looks wrong in the direction of "something is missing" rather than
-  "something is empty".
+  *(Closed 2026-10-04: both exist, and the pass over the vocabulary is done.
+  The machine counts a run of presses from the front's clock (`count_press`,
+  400 ms and 6 px apart, handed to an element as `Input::clicks`): a double
+  click opens a box of notes and activates a table row, a double and a triple
+  click select a word and a line in a text field. The long press is `G37.2`'s
+  timer, a held finger asking for the context menu, and `G38.2`'s rest timer
+  shows a tip. With them the vocabulary is the usual one -- click, double and
+  triple click, drag, Shift/Ctrl/Alt with either, the secondary button, the
+  middle button pasting the primary selection, the wheel and the long press --
+  and no widget invents its own.)*
 
 - ✅ **A paste was refused everywhere, and the reason blamed samples for it**
   *(found 2026-09-02, reading the three verbs against each other after a
@@ -7449,7 +7384,7 @@ finished work, where a pending item reads as done.
   real drag still reports, and a drag that came back to where it began reports
   nothing either.
 
-- ⬜ **Step entry keeps a position of its own, and a click does not move it**
+- ✅ **Step entry keeps a position of its own, and a click does not move it**
   *(found 2026-09-08, closing "One cursor" -- the paste and the cut read the
   window's cursor now, and this is the one anchor that still does not)*.
   `Notes::step` is where live MIDI writes when the transport is stopped, and it
@@ -7463,8 +7398,9 @@ finished work, where a pending item reads as done.
   -- a request beside `Events::and_select`, and the same door a step-recording
   roll would need to scroll the view it is writing past the end of. Worth doing
   with whatever else needs that door rather than as a special case for `midi`.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
-- ⬜ **A `multitrack` clip draws one waveform body and nothing else**
+- ✅ **A `multitrack` clip draws one waveform body and nothing else**
   *(found 2026-09-08, porting `--session`'s tree onto the widget)*. A box is a
   window onto **one server buffer** (`Clip::source`), so the three bodies the
   old `clip` widget could carry no longer draw: a **roll** (an aggregate of
@@ -7484,6 +7420,7 @@ finished work, where a pending item reads as done.
   roll's body on the box's own axis (`multitrack/draw.rs`, since the multitrack
   became an application, 2026-09-13), and a join is stitched into one take, so
   it draws as one waveform. The spectrogram is what is left, with its design.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ✅ **A left trim does not travel with the clip**
   *(found 2026-09-08, same port)*. The `"clips"` payload carries `start` — the
@@ -7594,7 +7531,7 @@ finished work, where a pending item reads as done.
   since four beats are longer later than earlier under a ritardando; the ruler
   is handed the same map so its labels and the boxes agree.
 
-- ⬜ **A session snaps to nothing, and its grid is musical while the prop is in
+- ✅ **A session snaps to nothing, and its grid is musical while the prop is in
   frames** *(found 2026-09-09, reading why a dragged region landed at beat
   8.0558)*. `--session` never sets `Look::quant`, so the `multitrack` gets no
   `snap` and a drag lands wherever the pixel was; `q` over a selection
@@ -7608,6 +7545,7 @@ finished work, where a pending item reads as done.
   what is missing is a **musical** snap: the widget's own axis knows the map
   (`tempo_map`), which is what makes the ruler right, and the snap has to be
   read off the same one instead of off a number the wire converted once.
+  *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ✅ **The browser host's space bar never reaches `play_key`** *(fixed 2026-09-14: the page's key path answers the space bar among the window's keys, after a focused field and the widget under the cursor, as the native one does -- the take under the pointer, or the window's `play` over nothing, which is also what it does before a pointer has been over the canvas at all, since a piece is the window's. Reading the two key paths side by side found `Ctrl`+`S` missing from the page too, and it tells the window `save` now, as a desktop window does. Unchecked in a tab until the page is run by hand.)* *(found 2026-09-13, moving a piece's transport into the applications crate)*. The native front routes a space to `play_key`, which plays the take under the pointer or, over nothing a take answers for, tells the window `play` — what a multitrack editor reads as play/pause. The browser front maps the key to `HostKey::Char(' ')` for a focused field and stops (`host/web/input.rs`), so in a page the space bar neither plays a take nor reaches a script's editor. The host is one host compiled twice, and a key that does something in a window and nothing in a tab is the divergence that rule forbids: the page's key path should reach the same `play_key`.
 
@@ -7643,13 +7581,6 @@ finished work, where a pending item reads as done.
 
 - ✅ **A buffer that failed to be made is fetched a hundred times a second** *(found 2026-09-13, in the same log)*. When a session's join failed to stitch, the multitrack asked the server for buffer 5 on every frame -- `waits on server buffer 5`, then `buffer 5: 0 frames ... loaded`, then again, about ten ms apart, for as long as the window was open. A reply of zero frames is an answer, and the fetch machine has to hold it as one (drawn empty, asked again only when something says the buffer changed) rather than as a miss to retry.
   **Fixed 2026-09-13, and it was every take, not only the missing one.** The pass each front runs before every repaint is meant to serve only the elements told their resource moved, but it also pushed every `Needs::takes` of the multitrack: natively each take was mapped again and its summary rebuilt per frame (a full pass over the samples where the server wrote no overview), and on a leg that downloads, a finished download started again on the next frame. The repetition was also hiding a race: a join's box names its buffer in the turn `mint_sources` queues the stitch, so the first ask can find the buffer unallocated, or published and not yet copied into, and the next frame repaired it. Now an element answers its takes through `Samples::ask_takes` -- all of them when a window is built, only the ones not yet asked for on a repaint -- and `/done /buffer_stitch n` makes every element that asked for `n` forget it (`Host::forget_stitched`, called by both fronts), so a join is asked for once more when its samples are there. Held by `a_take_is_asked_for_once_and_again_when_forgotten` and `a_stitched_take_is_asked_for_again`.
-
-- ⬜ **The reconcile has no example to see it in** *(found 2026-09-07 on the AP
-  track, going to check it by eye)*. `widget::reconcile` has unit tests and no
-  manual test surface: no example in either client sends a second `/gui_def` over
-  an open window, so the behaviour that fixed the track's opening complaint cannot
-  be watched happening. The by-eye pass belongs in the multitrack's example — a
-  lane zoomed in, a clip added to another lane, and the zoom still there.
 
 - ✅ **A change of shape redefined the whole window, so an edit in one lane cost
   every other lane its screen state** *(found 2026-09-06 by the user, by eye:
@@ -7816,7 +7747,9 @@ finished work, where a pending item reads as done.
   every view is redrawn while any playhead in it moves. Now that the host
   knows which views draw a moving line and from which counter, a frame could
   repaint only those -- a change to the drawing pipeline rather than to the
-  protocol, and a design of its own.
+  protocol, and a design of its own. *(Checked 2026-10-04: still so -- every
+  pass begins with `LoadOp::Clear` and nothing tracks a changed region; the
+  user marked it important.)*
 
 The entries below are one audit of the host's orchestration layer
 *(2026-09-25, asked by the user once `host/mod.rs` reached 5748 lines)*:
@@ -8082,13 +8015,6 @@ module of its own.
   - **Left:** the session window a standalone host opens is still def 1 with
     its chrome at 2 to 8, in the hand-picked range below every allocated
     id, which is what that range is for.
-- ⬜ **The chooser's list opening out of line with its field is not
-  reproduced** *(reported by the user 2026-09-14, carried by `G37.1`)*. The
-  list hangs off the field's body by the placement function every list goes
-  through, and nothing found by reading or by test puts it elsewhere. What is
-  left is to see it in a window: if it is still out of line, the rectangle the
-  element names (`Choice::body`) and the one the frame draws the field in are
-  two answers.
 - ⬜ **A texture view inside a dialog is drawn under it** *(found 2026-10-04,
   closing `G40`)*. A dialog's flat drawing goes into the overlay batch, over
   the window; the heavy views' texture passes run between the two batches, so a
@@ -8099,8 +8025,9 @@ module of its own.
   `table`'s rows ride the def and every `set` of them; a list of tens of
   thousands of rows wants the bulk path, and which size is the line is not
   decided.
-- ⬜ **A context menu and a tip per part of a heavy view** *(left open by
-  `G37.2` and `G38.2`)*. Today one menu and one tip answer for the whole
+- ✅ **A context menu and a tip per part of a heavy view** *(left open by
+  `G37.2` and `G38.2`; closed 2026-10-04 by the user: it is being done in the
+  applications, `crates/clausters-apps/PLAN.md`)*. Today one menu and one tip answer for the whole
   widget; a clip, a note or a box answering with its own is a question for the
   editors that hold them.
 
