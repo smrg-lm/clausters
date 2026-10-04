@@ -5523,9 +5523,10 @@ work, where a pending item reads as done.)*
     picked by hand may be somebody's, and `server.transport_new()`
     (`transportNew`) takes a free one for a timeline or a group of the
     script's own; `transport_at(n)` addresses one already known.
-  - **Left as it was: the default of 8.** Seven are above 0, so a script
-    alone plays seven things at once and a script with a GUI host three (the
-    host takes four). Raising the server's default is a decision of its own.
+  - **The default went from 8 to 16** *(the user, the same day, on being
+    told what 8 left: seven above 0, and three for a script beside a GUI
+    host)*. Fifteen are above 0, so a script alone plays fifteen things at
+    once and a script with a GUI host seven (the host takes eight).
 
 - ✅ **A loop asked while stopped was lost, and a script's loop was not the
   roll's** *(found 2026-10-02 by the user, trying `C58` by hand:

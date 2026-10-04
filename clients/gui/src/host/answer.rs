@@ -5,6 +5,10 @@
 
 use super::*;
 
+/// The role a roll's window and its notes widget play, in the names the host's
+/// own widget ids are asked for by.
+const ROLL: &str = "roll";
+
 impl Host {
     /// Retires everything an acknowledgement covers and lets go of what it was
     /// drawing -- the two halves of *drop every pending at or below the stamp,
@@ -420,15 +424,23 @@ impl Host {
         use clausters_apps::editing::Member;
         use std::net::{Ipv4Addr, SocketAddr};
 
-        /// Where the rolls' windows are numbered: past the multitrack's own
-        /// window and its chrome, ten ids apiece.
-        const ROLLS: i32 = 1000;
-
+        if self.owner.is_none() {
+            return;
+        }
+        // **The window and its roll are named by the source they draw**, in
+        // the host's own widget ids: the same two numbers for as long as the
+        // roll is open, and none a client of this host is handed.
+        let structure = i64::try_from(source).unwrap_or(i64::MAX);
+        let (Some(def_id), Some(roll)) = (
+            self.own_widget(structure, ROLL, "window"),
+            self.own_widget(structure, ROLL, "notes"),
+        ) else {
+            return;
+        };
         let Some(owner) = self.owner.as_mut() else {
             return;
         };
         let id = clausters_document::SourceId(source);
-        let def_id = ROLLS + 10 * i32::try_from(source).unwrap_or(0);
         if owner.rolls.contains_key(&def_id) && self.window_defs.contains_key(&def_id) {
             return;
         }
@@ -454,7 +466,7 @@ impl Host {
         };
         let def = match owner.editing.member_mut(member) {
             Some(Member::Notes(editor)) => {
-                let def = editor.window(def_id + 1);
+                let def = editor.window(roll);
                 clausters_apps::notes::editor::call_json(
                     editor,
                     &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),
@@ -524,6 +536,9 @@ impl Host {
         if outcome.turn == Kind::Closed {
             owner.rolls.remove(&def_id);
             self.close_notes(source);
+            let structure = i64::try_from(source.0).unwrap_or(i64::MAX);
+            self.forget_own_widget(structure, ROLL, "window");
+            self.forget_own_widget(structure, ROLL, "notes");
             return true;
         }
         if outcome.turn == Kind::Step {

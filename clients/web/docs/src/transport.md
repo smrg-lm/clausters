@@ -132,7 +132,7 @@ Every position is a sample of the transport; a note is a synth of the def it nam
 
 ## Several transports
 
-A server has several transports — 8 unless it was booted with another count (`--transports`, read back as `(await server.queryInfo()).transports`) — and each is independent: its own grid, rolling state, position, loop, end mark, governed group and clock. Two applications on one server, a multitrack and an audio editor say, each play, pause and locate their own nodes without moving the other's.
+A server has several transports — 16 unless it was booted with another count (`--transports`, read back as `(await server.queryInfo()).transports`) — and each is independent: its own grid, rolling state, position, loop, end mark, governed group and clock. Two applications on one server, a multitrack and an audio editor say, each play, pause and locate their own nodes without moving the other's.
 
 Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is transport `n` as an object of its own, a `Transport` — the same one every time it is asked for, and the way to address one already known, such as an editor's `transport.id` — played the way a routine or a timeline is: `play`, `pause`, `stop`, `locate`, `loop` and `unloop`, `end()` and `setEnd()` (where a pass stops), `playing()`, and a `wait()` a page awaits or not. Its other commands are there by their own names — `group`, `follow`, `fade`, `locateSample`, `laneNew`, `state` — and it goes wherever a transport is taken.
 
@@ -165,7 +165,7 @@ What must go on running while a transport is stopped and still has to know it �
 
 **A transport above 0 is taken, not named.** A multitrack plays on transport 0. Everything else that plays on its own takes one of the rest from the server's: each sequence (`play(sequence)`, a roll), the audio editors of a server, and the GUI host's monitor, for a window that draws samples with no application behind it. So two sequences are two transports and sound together, and a roll's play cursor is its own sequence's. `server.transportNew()` takes one for a page — a timeline of its own, a group to govern apart — and `await transport.free()` gives any of them back: for a sequence it also stops it and frees its lane. A roll gives its sequence's back when the last roll over it closes, unless a page asked for the transport, whose it then is to free.
 
-A server has a fixed number of them, and a GUI host sharing the server takes half of what is above 0: with the default 8, a page alone has seven and a page with a host three. With none left, playing fails and says so; boot the server with more (`--transports 16`).
+A server has a fixed number of them, and a GUI host sharing the server takes half of what is above 0: with the default 16, a page alone has fifteen and a page with a host seven. With none left, playing fails and says so; boot the server with more (`--transports 32`, at most 64).
 
 ## See also
 

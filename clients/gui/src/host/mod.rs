@@ -707,6 +707,14 @@ pub struct Host {
     /// node, control bus, buffer and transport it takes, by the one policy
     /// every client allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
+    /// **The ids of the widgets this host opens for itself** -- a roll over a
+    /// sequence of the session it owns, a bundle it mounts -- in a window of
+    /// their own past the one its clients allocate from
+    /// (`clausters_core::widgetids::HOST_BASE`), so they never answer to a
+    /// number a client attached to this host defines.
+    widget_ids: clausters_core::widgetids::WidgetIds,
+    /// The drawer this host names its own widgets as, in that table.
+    drawer: i64,
     /// **The take monitor's nodes** -- the audio editor's playback, the one
     /// every endpoint holds ([`clausters_editing::audio_playback`]), on the
     /// monitor's own transport, allocated from [`Host::ids`] when it first
@@ -834,6 +842,11 @@ impl Default for Host {
 
 impl Host {
     pub fn new() -> Self {
+        let mut widget_ids = clausters_core::widgetids::WidgetIds::new(
+            clausters_core::widgetids::HOST_BASE,
+            clausters_core::widgetids::HOST_CAPACITY,
+        );
+        let drawer = widget_ids.owner();
         Self {
             registry: Registry::new(),
             head_clock: HeadClock::default(),
@@ -854,6 +867,8 @@ impl Host {
                 clausters_core::ids::ServerShape::DEFAULT,
                 clausters_core::ids::IdShare::WHOLE,
             ),
+            widget_ids,
+            drawer,
             monitor: clausters_editing::audio_playback::AudioEditorPlayback::new(
                 clausters_editing::apply::Endpoint::default(),
             ),

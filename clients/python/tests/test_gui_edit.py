@@ -791,20 +791,20 @@ def test_two_sequences_play_together_and_a_free_gives_the_transport_back():
 
     server = _PlayingServer()
     seqs = [EventSequence([(0.0, Event(midinote=60 + i, dur=1.0))], tempo_map=TempoMap(TEMPO))
-            for i in range(8)]
-    transports = [play(seq, server=server) for seq in seqs[:7]]
-    assert len({t.id for t in transports}) == 7 and min(t.id for t in transports) == 1, \
-        "eight transports, above the one addressed by number"
+            for i in range(16)]
+    transports = [play(seq, server=server) for seq in seqs[:15]]
+    assert len({t.id for t in transports}) == 15 and min(t.id for t in transports) == 1, \
+        "sixteen transports, above the one addressed by number"
     with pytest.raises(RuntimeError, match="--transports"):
-        play(seqs[7], server=server)
+        play(seqs[15], server=server)
 
     server.sent.clear()
     freed = transports[0].free()
     addrs = [addr for addr, _ in server.sent]
     assert "/lane_free" in addrs and "/node_free" in addrs
-    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 6
+    assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 14
     assert freed.span is None and freed._driver is None, "nothing loaded on it now"
-    assert play(seqs[7], server=server).id == freed.id, "the one given back"
+    assert play(seqs[15], server=server).id == freed.id, "the one given back"
 
 
 def test_a_script_takes_a_transport_of_its_own_and_gives_it_back():

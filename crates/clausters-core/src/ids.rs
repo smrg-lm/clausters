@@ -186,7 +186,7 @@ impl ServerShape {
         outputs: 2,
         control_buses: 16384,
         buffers: 4096,
-        transports: 8,
+        transports: 16,
     };
 }
 

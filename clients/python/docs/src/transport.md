@@ -226,7 +226,7 @@ Every position is a sample of the transport; a note is a synth of the def it nam
 
 ## Several transports
 
-A server has several transports — 8 unless it was booted with another count
+A server has several transports — 16 unless it was booted with another count
 (`ServerOptions(transports=...)`, read back as `server.query_info().transports`)
 — and each is independent: its own grid, rolling state, position, loop, end
 mark, governed group and clock. Two applications on one server, a multitrack
@@ -312,9 +312,9 @@ frees its lane. A roll gives its sequence's back when the last roll over it
 closes, unless a script asked for the transport, whose it then is to free.
 
 A server has a fixed number of them, and a GUI host sharing the server takes
-half of what is above 0: with the default 8, a script alone has seven and a
-script with a host three. With none left, playing fails and says so; boot the
-server with more (`ServerOptions(transports=16)`).
+half of what is above 0: with the default 16, a script alone has fifteen and
+a script with a host seven. With none left, playing fails and says so; boot
+the server with more (`ServerOptions(transports=32)`, at most 64).
 
 ## See also
 

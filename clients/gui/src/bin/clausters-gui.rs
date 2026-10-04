@@ -1184,6 +1184,10 @@ fn run_standalone(
     // legs. Without one -- or with a manifest written before the contract -- the
     // saved tree is opened verbatim, exactly as it always was.
     let manifest = bundle::read_manifest(data_dir).filter(bundle::is_symbolic);
+    // The host exists before the mount, because the mount allocates from its
+    // id tables: the ones its voices, its monitor and its own windows come
+    // from afterwards, so nothing it plays later is handed a bundle's id.
+    let mut host = Host::new();
     let mounted = match &manifest {
         Some(manifest) => {
             // The store hands back the record's two halves -- its id and its
@@ -1194,12 +1198,13 @@ fn run_standalone(
                 gui: serde_json::from_slice(&json)
                     .map_err(|e| format!("--standalone: GuiDef \"{name}\" is not a tree: {e}"))?,
             };
-            let mut alloc = bundle::MountAllocator::default();
+            let (ids, widgets) = host.mount_ids();
             let mount = bundle::mount(
                 manifest,
                 &template,
                 &data_dir.to_string_lossy(),
-                &mut alloc,
+                ids,
+                widgets,
                 &Default::default(),
             )
             .map_err(|e| format!("--standalone: mounting \"{name}\": {e}"))?;
@@ -1248,7 +1253,7 @@ fn run_standalone(
 
     // Register the GuiDef so the windowed front opens it on resume. The embed is
     // the host's server link, so bound widgets drive it directly.
-    let mut host = Host::new()
+    let mut host = host
         .with_server_link(ServerLink::Embed(embed))
         .with_store(store);
     host.on_link_attached();

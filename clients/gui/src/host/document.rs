@@ -1814,9 +1814,17 @@ mod window_verb_tests {
         };
         assert!(host.owner.as_ref().unwrap().rolls.contains_key(&roll));
 
+        // The window and its roll are the host's own widgets, named by the
+        // source: past every id a client of this host allocates.
+        let named = i64::try_from(source.0).unwrap();
+        assert_eq!(host.own_widget_id(named, "roll", "window"), Some(roll));
+        assert!(i64::from(roll) >= clausters_core::widgetids::HOST_BASE);
+
         // A note dragged in the roll: its id, where it now starts, its length,
         // its pitch, velocity and channel.
-        let widget = roll + 1;
+        let widget = host
+            .own_widget_id(named, "roll", "notes")
+            .expect("the roll's widget");
         let seq = host.outbox.borrow_mut().stamp(roll, widget);
         let moved: Vec<OscType> = vec![
             OscType::String("notes".into()),

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Two transports on one server, each moving its own take and nothing else.
 
-A server has several transports (`--transports`, 8 by default), and each is
+A server has several transports (`--transports`, 16 by default), and each is
 independent: its own play, pause, locate, loop and governed group. This plays
 two takes at once, one per transport, and moves them separately:
 

@@ -63,6 +63,24 @@ use std::collections::{HashMap, HashSet};
 
 use crate::registry::Registry;
 
+/// **Where a host's clients name their widgets**: the first id a client's
+/// table hands out. Ids below it are the hand-picked range, which never
+/// collides with an allocated one.
+pub const CLIENT_BASE: i64 = 1000;
+
+/// How many ids the clients' window holds. Far past any count of widgets live
+/// at once, so the window recycles and never runs out in practice.
+pub const CLIENT_CAPACITY: usize = 1 << 20;
+
+/// **Where a host names the widgets it opens for itself** -- a roll over a
+/// sequence of the session it owns, a bundle it mounts: past the clients'
+/// window, so what a host opens and what a client attached to it defines
+/// never answer to one number.
+pub const HOST_BASE: i64 = CLIENT_BASE + CLIENT_CAPACITY as i64;
+
+/// How many ids the host's own window holds.
+pub const HOST_CAPACITY: usize = 1 << 20;
+
 /// The separator inside a composed key. A control character, so a role or a
 /// caller's own key can hold anything printable without ambiguity.
 const SEP: char = '\u{1}';
@@ -153,6 +171,14 @@ impl WidgetIds {
     /// `None` when the space is full.
     pub fn alloc(&mut self) -> Option<i64> {
         self.ids.alloc(1)
+    }
+
+    /// **A run of `width` contiguous anonymous ids**, its first: what a
+    /// mounted bundle takes, whose template numbers its widgets from 1 and is
+    /// offset as a block. Each goes back through [`free`](Self::free). `None`
+    /// when no such run is free; `width` 0 counts as 1.
+    pub fn alloc_block(&mut self, width: usize) -> Option<i64> {
+        self.ids.alloc(width)
     }
 
     /// The id that draws this name, minted on first ask and the same one after
@@ -311,6 +337,26 @@ mod tests {
         let mut ids = WidgetIds::new(base, capacity);
         let who = ids.owner();
         (ids, who)
+    }
+
+    /// **A block is a run of the same map**: contiguous, never over an id a
+    /// name or a lease holds, and given back id by id.
+    #[test]
+    fn a_block_is_contiguous_and_shares_the_map_with_both_doors() {
+        let (mut ids, who) = table(1000, 8);
+        let lease = ids.alloc().unwrap();
+        let named = ids.id_for(who, 7, "clip", "3").unwrap();
+        let block = ids.alloc_block(4).unwrap();
+        let run = block..block + 4;
+        assert!(!run.contains(&lease) && !run.contains(&named));
+        assert_eq!(ids.in_use(), 6);
+        assert_eq!(ids.alloc_block(4), None, "two are left: no run of four");
+        for id in run {
+            ids.free(id);
+        }
+        assert_eq!(ids.in_use(), 2);
+        // The host's window starts where the clients' ends.
+        assert_eq!(HOST_BASE, CLIENT_BASE + CLIENT_CAPACITY as i64);
     }
 
     #[test]

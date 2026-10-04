@@ -15,7 +15,7 @@
 //! since the engine serves strictly in order -- is the page's "bundle is up"
 //! signal (`/server_sync.reply sync_id+1`).
 //!
-//! The second half is the **mount** ([`mount`], [`MountAllocator`]): a bundle
+//! The second half is the **mount** ([`mount`], [`allocate`]): a bundle
 //! whose manifest declares the component contract is a *template*, and mounting
 //! it means allocating its symbols and resolving its holes
 //! ([`clausters_core::bundle`]). That is the same pass the browser runs, so one
@@ -24,8 +24,10 @@
 //! which is what keeps today's bundles running.
 
 use clausters_core::bundle::{
-    Allocation, Error as BundleError, Manifest, ParamInput, Requirements, Resolved,
+    Allocation, BusRate, Error as BundleError, Manifest, ParamInput, Requirements, Resolved,
 };
+use clausters_core::ids::{IdError, IdSpaces, Space};
+use clausters_core::widgetids::WidgetIds;
 
 /// The GuiDef template a mount fills, re-exported so a caller that has one
 /// spells it here rather than reaching into the core for it.
@@ -151,67 +153,84 @@ pub fn boot_messages(tree_json: &[u8]) -> Vec<OscMessage> {
 
 // --- the mount ------------------------------------------------------------
 
-/// Where a host's own id spaces start when it mounts bundles.
-///
-/// The standalone front is the **only** client of its embedded server, so a
-/// bump allocator is the whole story: nothing else is handing out these ids and
-/// a mount never gives one back. The bases keep out of the way of what a
-/// hand-written def already uses -- node ids follow the client range's `1000`
-/// (scsynth convention), buses start above the low ones instruments write to
-/// out of habit, buffers above the first few a `boot.json` may name.
-const WIDGET_BASE: i32 = 1000;
-const NODE_BASE: i32 = 1000;
-const BUS_BASE: i32 = 64;
-const BUFFER_BASE: i32 = 32;
-
-/// The id spaces a host hands to the bundles it mounts, one bump each.
-///
-/// It is deliberately not a [`Registry`](clausters_core::registry::Registry):
-/// nothing here is ever released, because a mounted component lives as long as
-/// the process. The browser leg allocates from the page's real allocators
-/// instead -- the resolver takes an allocation either way, which is exactly why
-/// it takes one rather than making it.
-pub struct MountAllocator {
-    widget: i32,
-    node: i32,
-    bus: i32,
-    buffer: i32,
+/// **Why a mount failed**: the bundle's own error, or an id space of the host
+/// with nothing left to allocate.
+#[derive(Debug)]
+pub enum MountError {
+    /// The manifest or the template is wrong ([`clausters_core::bundle`]).
+    Bundle(BundleError),
+    /// A node id, a bus or a buffer the manifest declares could not be
+    /// allocated.
+    Ids(IdError),
+    /// No run of widget ids wide enough for the bundle's widgets is free.
+    Widgets,
 }
 
-impl Default for MountAllocator {
-    fn default() -> Self {
-        Self {
-            widget: WIDGET_BASE,
-            node: NODE_BASE,
-            bus: BUS_BASE,
-            buffer: BUFFER_BASE,
+impl std::fmt::Display for MountError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MountError::Bundle(e) => write!(f, "{e}"),
+            MountError::Ids(e) => write!(f, "{e}"),
+            MountError::Widgets => write!(f, "out of widget ids"),
         }
     }
 }
 
-impl MountAllocator {
-    /// Allocates one instance's worth of ids. Two calls with the same
-    /// requirements never overlap -- which is what lets one bundle mount twice.
-    pub fn allocate(&mut self, req: &Requirements) -> Allocation {
-        let mut allocation = Allocation {
-            widget_base: self.widget,
-            ..Allocation::default()
+impl std::error::Error for MountError {}
+
+impl From<BundleError> for MountError {
+    fn from(e: BundleError) -> Self {
+        MountError::Bundle(e)
+    }
+}
+
+impl From<IdError> for MountError {
+    fn from(e: IdError) -> Self {
+        MountError::Ids(e)
+    }
+}
+
+/// **Allocates one instance's worth of ids from the host's own tables**: the
+/// node ids, buses and buffers from the spaces everything else the host plays
+/// allocates from (its voices, its take monitor, a multitrack's nodes), and
+/// the widget block from the host's own widget ids. One policy, so a bundle's
+/// node and a voice the host plays later are never handed one id, and two
+/// calls with the same requirements never overlap -- which is what lets one
+/// bundle mount twice. The browser leg allocates the same way, from the
+/// page's spaces.
+///
+/// A mounted component lives as long as the process, so nothing here is given
+/// back; a node it declared comes back on its `/node_end`, as any node does.
+pub fn allocate(
+    req: &Requirements,
+    ids: &mut IdSpaces,
+    widgets: &mut WidgetIds,
+) -> Result<Allocation, MountError> {
+    let widget_base = widgets
+        .alloc_block(req.widgets.max(1))
+        .and_then(|first| i32::try_from(first).ok())
+        .ok_or(MountError::Widgets)?;
+    let mut allocation = Allocation {
+        widget_base,
+        ..Allocation::default()
+    };
+    for name in &req.nodes {
+        let node = ids.alloc(Space::Nodes, 1)? as i32;
+        allocation.nodes.insert(name.clone(), node);
+    }
+    for spec in &req.buses {
+        let space = match spec.rate {
+            BusRate::Audio => Space::AudioBuses,
+            BusRate::Control => Space::ControlBuses,
         };
-        self.widget += req.widgets.max(1) as i32;
-        for name in &req.nodes {
-            allocation.nodes.insert(name.clone(), self.node);
-            self.node += 1;
-        }
-        for spec in &req.buses {
-            allocation.buses.insert(spec.name.clone(), self.bus);
-            self.bus += spec.channels.max(1) as i32;
-        }
-        for name in &req.buffers {
-            allocation.buffers.insert(name.clone(), self.buffer);
-            self.buffer += 1;
-        }
-        allocation
+        let first = ids.alloc(space, spec.channels.max(1) as usize)? as i32;
+        allocation.buses.insert(spec.name.clone(), first);
     }
+    for name in &req.buffers {
+        let buffer = ids.alloc(Space::Buffers, 1)? as i32;
+        allocation.buffers.insert(name.clone(), buffer);
+    }
+    Ok(allocation)
 }
 
 /// One mounted instance, ready to send: the GuiDef to open and the messages
@@ -236,8 +255,9 @@ pub fn is_symbolic(manifest: &Manifest) -> bool {
     manifest.widgets > 0 || !manifest.symbols.is_empty() || !manifest.params.is_empty()
 }
 
-/// Mounts one instance of `template`: allocates what the manifest declares,
-/// resolves the holes, and lays out what to send.
+/// Mounts one instance of `template`: allocates what the manifest declares
+/// from the host's id tables ([`allocate`]), resolves the holes, and lays out
+/// what to send.
 ///
 /// `dir` is the bundle's directory, used to resolve declared buffer files to
 /// the paths `/buffer_allocRead` reads. `params` is what the caller supplies for the
@@ -246,11 +266,12 @@ pub fn mount(
     manifest: &Manifest,
     template: &Template,
     dir: &str,
-    alloc: &mut MountAllocator,
+    ids: &mut IdSpaces,
+    widgets: &mut WidgetIds,
     params: &ParamInput,
-) -> Result<Mount, BundleError> {
+) -> Result<Mount, MountError> {
     let requirements = clausters_core::bundle::requirements_for(manifest, Some(template));
-    let allocation = alloc.allocate(&requirements);
+    let allocation = allocate(&requirements, ids, widgets)?;
     let Resolved {
         def_id, tree, boot, ..
     } = clausters_core::bundle::resolve(manifest, template, &allocation, params)?;
@@ -410,12 +431,14 @@ mod tests {
     #[test]
     fn one_bundle_mounts_twice_without_colliding() {
         let (manifest, template) = symbolic();
-        let mut alloc = MountAllocator::default();
+        let mut host = crate::host::Host::new();
+        let (ids, widgets) = host.mount_ids();
         let first = mount(
             &manifest,
             &template,
             "/data/fm",
-            &mut alloc,
+            ids,
+            widgets,
             &ParamInput::default(),
         )
         .unwrap();
@@ -423,7 +446,8 @@ mod tests {
             &manifest,
             &template,
             "/data/fm",
-            &mut alloc,
+            ids,
+            widgets,
             &ParamInput::default(),
         )
         .unwrap();
@@ -445,6 +469,15 @@ mod tests {
             OscType::String("/data/fm/audio/hit.wav".into())
         );
         assert_ne!(first.messages[0].args[0], second.messages[0].args[0]);
+
+        // **One allocator for the bundle and for the host**: a node the host
+        // makes afterwards -- a voice, its monitor -- is none of the bundle's.
+        let later = host.alloc_nodes(1).map(OscType::Int).unwrap();
+        assert_ne!(later, node_of(&first));
+        assert_ne!(later, node_of(&second));
+        // ...and the bundle's widgets are in the host's own window, which no
+        // client of this host allocates from.
+        assert!(i64::from(first.def_id) >= clausters_core::widgetids::HOST_BASE);
     }
 
     /// A bundle written before the contract existed declares nothing, so it

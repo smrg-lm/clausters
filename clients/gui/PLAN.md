@@ -7763,7 +7763,7 @@ module of its own.
   rounds a selection to whole samples and a three-second curve would be
   swept in whole seconds.
 
-- ⬜ **A bundle mounted by the standalone host is given ids by an allocator
+- ✅ **A bundle mounted by the standalone host is given ids by an allocator
   of its own** *(audit 2026-10-03, asked for by the user while transports
   became a space of the ids: "check whether there are several
   implementations for assigning ids")*. Every endpoint allocates server ids
@@ -7788,3 +7788,29 @@ module of its own.
     a client's `WidgetIds` leases from at the same base. A session owned by
     the host has no client defining widgets beside it, so nothing collides
     today; the ids would come from the host's own widget-id table.
+  *(Fixed 2026-10-03, with a third case the fix turned up.)*
+  - **The mount allocates from the host's tables.** `bundle::MountAllocator`
+    is gone: `bundle::allocate` takes the node ids, buses and buffers from
+    the host's `IdSpaces` and the widget block from the host's widget ids,
+    so the host exists before the mount and nothing it plays later is handed
+    a bundle's id. The fixed bases went with it: a bundle's control buses and
+    buffers now start where any client's do, as on the browser leg, rather
+    than at 64 and 32.
+  - **The host has widget ids of its own.** A `WidgetIds` over a window past
+    the one its clients allocate from (`clausters_core::widgetids`:
+    `CLIENT_BASE` and `CLIENT_CAPACITY`, then `HOST_BASE`), so what a host
+    opens for itself and what a client attached to it defines never answer
+    to one number. A roll's window and its notes widget are named there by
+    the source they draw and forgotten when the roll closes; a mounted
+    bundle's widgets are a block of it (`WidgetIds::alloc_block`, new).
+  - **A page had two maps over one window.** A component mounted on the
+    page's host took its widget block from a registry of the page's pools,
+    and a `GuiHost` attached to that same host named its windows from a
+    table of its own; both started at 1000, where the comment in
+    `base/pool.ts` said they were one. They are now: `pageWidgetIds` is the
+    page host's one table, the pools' widgets are a view of it and an
+    attached `GuiHost` allocates from it. A host of a handle's own, and a
+    share of one, keep their own table.
+  - **Left:** the session window a standalone host opens is still def 1 with
+    its chrome at 2 to 8, in the hand-picked range below every allocated
+    id, which is what that range is for.

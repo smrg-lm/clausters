@@ -1,6 +1,6 @@
 //! **The host's ids**: the node ids, buses, buffers and transports it
-//! allocates on the server it plays through, and the replies that give them
-//! back.
+//! allocates on the server it plays through, the replies that give them back,
+//! and the ids of the widgets it opens for itself.
 //!
 //! A host is a client of its audio server like any script, so it allocates by
 //! the one policy every client does ([`clausters_core::ids`]): the node table's
@@ -20,6 +20,7 @@
 
 use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 use clausters_core::osc::{OscMessage, OscType};
+use clausters_core::widgetids::WidgetIds;
 
 use crate::host::instance::Leg;
 use crate::host::{Host, diag};
@@ -42,6 +43,39 @@ impl Host {
     /// before anything plays.
     pub fn ids_mut(&mut self) -> &mut IdSpaces {
         &mut self.ids
+    }
+
+    /// **Both of the host's id tables at once**, for a caller that allocates
+    /// server ids and widget ids in one go: a bundle being mounted.
+    pub fn mount_ids(&mut self) -> (&mut IdSpaces, &mut WidgetIds) {
+        (&mut self.ids, &mut self.widget_ids)
+    }
+
+    /// **The id of a widget this host opens for itself**, by what it draws:
+    /// the same number for as long as the name is held, and one no client of
+    /// this host is handed. `None`, said out loud, when the table is full.
+    pub(crate) fn own_widget(&mut self, structure: i64, role: &str, key: &str) -> Option<i32> {
+        let id = self
+            .widget_ids
+            .id_for(self.drawer, structure, role, key)
+            .and_then(|id| i32::try_from(id).ok());
+        if id.is_none() {
+            diag::warn!("out of widget ids for the host's own windows");
+        }
+        id
+    }
+
+    /// Returns the id of one of the host's own widgets, by its name.
+    pub(crate) fn forget_own_widget(&mut self, structure: i64, role: &str, key: &str) {
+        self.widget_ids.forget(structure, role, key);
+    }
+
+    /// The id one of the host's own widgets has, when it has one.
+    #[cfg(test)]
+    pub(crate) fn own_widget_id(&self, structure: i64, role: &str, key: &str) -> Option<i32> {
+        self.widget_ids
+            .id_of(structure, role, key)
+            .and_then(|id| i32::try_from(id).ok())
     }
 
     /// A run of `width` node ids, or `None` said out loud.

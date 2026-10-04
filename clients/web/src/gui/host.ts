@@ -227,7 +227,9 @@ export class GuiHost {
      * The one widget-id namespace for this host client -- recycling, so a
      * freed subtree's ids return to the pool. Windows and widgets share it.
      */
-    private readonly alloc: GuiIdAllocator;
+    private alloc: GuiIdAllocator;
+    /** Whether this handle takes the whole of its host's widget ids. */
+    private readonly wholeShare: boolean;
     /** The window ids opened through `open` and not yet closed. */
     private readonly opened = new Set<number>();
     /**
@@ -322,6 +324,7 @@ export class GuiHost {
         this.instance = gui ?? null;
         this.audio = engine ?? null;
         this.alloc = new GuiIdAllocator(undefined, undefined, share);
+        this.wholeShare = share === undefined || share.of === 1;
         this.listener = (packet) => this.dispatch(packet);
         if (connection) this.openOn(connection);
     }
@@ -359,6 +362,13 @@ export class GuiHost {
             );
         }
         this.ownsInstance = own && !this.instance;
+        // **The page's own host is one widget namespace**, and components are
+        // mounted on it from the page's table: a handle attached to it names
+        // its widgets from that same table, so neither is handed the other's
+        // ids. A host of this handle's own, or a share of one, keeps its own.
+        if (!own && !this.instance && this.wholeShare && this.alloc.inUse === 0) {
+            this.alloc = GuiIdAllocator.page();
+        }
         this.instance = await found;
         this.openOn(await pageGuiConnection(this.instance));
         return this.conn!;

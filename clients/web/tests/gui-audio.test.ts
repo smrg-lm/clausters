@@ -88,7 +88,7 @@ type Sent = [string, (number | string)[]];
 class FakeServer {
     sent: Sent[] = [];
     buffers = new FakeAllocator();
-    ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 8, 0, 1);
+    ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 16, 0, 1);
     /** Whether the transport rolls, as a `/transport_query` answers. */
     playing = false;
 

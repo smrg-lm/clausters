@@ -9271,8 +9271,8 @@ not by putting a sequence back in a timeline.
 
 ## A transport above 0 is taken, not named
 
-A server has a fixed number of transports (`--transports`, 8 by default), and
-for a while each application had one by number: 0 the multitrack, 1 the audio
+A server has a fixed number of transports (`--transports`), and for a while
+each application had one by number: 0 the multitrack, 1 the audio
 editor, 2 the GUI host's take monitor, 3 the notes editor and every
 `play(sequence)`. The numbers were there because nothing allocated. Two of
 them, 1 and 2, were the same crate playback held by two endpoints, told apart
@@ -9289,9 +9289,35 @@ addressed by number**: it is what a server's own transport commands address
 when no playback is behind them, the grid clients phase on, and a multitrack
 plays there.
 
-The cost is that the count is finite and visible. Seven are above 0, a GUI
-host sharing the server takes four of them, and a client that finds none left
-is refused with a message naming `--transports` rather than being handed one
-in use. A number above 0 picked by hand may be somebody's, so a script takes
+The cost is that the count is finite and visible, so the default went from 8
+to 16 with it: fifteen are above 0, a GUI host sharing the server takes eight
+of them, and a client that finds none left is refused with a message naming
+`--transports` rather than being handed one in use. Eight had been sized for
+four applications with a number each; with a transport per sequence it left a
+script beside a host three. A number above 0 picked by hand may be somebody's, so a script takes
 one too (`transport_new`), and `transport_at(n)` addresses one it already
 knows.
+
+## A host names its own widgets past its clients' window
+
+Widget ids are one namespace per host, allocated by its clients from a window
+that starts at 1000. A host also opens widgets nobody asked it for: a roll over
+a sequence of the session it owns, a bundle it mounts when it starts. Those
+were numbered by hand -- a roll at `1000 + 10 * source`, a bundle's block from
+1000 -- inside the very window a client attached to that host allocates from,
+and a bundle's node ids, buses and buffers came from a bump allocator beside
+the host's own id spaces, which hand out the same node ids.
+
+The host now has a widget-id table of its own, over the window that starts
+where the clients' ends (`clausters_core::widgetids::HOST_BASE`), and a mount
+allocates its server ids from the host's `IdSpaces`. The split is the one the
+node table already has between the server's ids and the clients': two
+allocators of one namespace, kept apart by where each starts rather than by a
+protocol between them. A share of the clients' window would have needed the
+launcher to say how many clients there are, which the host that opens a roll
+by itself is not told.
+
+The same audit found the page keeping two occupancy maps over the clients'
+window -- a mounted component's block and the page host's client each started
+at 1000 -- and those are one table now (`pageWidgetIds`).
+

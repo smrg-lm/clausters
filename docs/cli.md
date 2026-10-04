@@ -84,7 +84,7 @@ allocators from these, so a server launched with other numbers is worth
 | `--max-buffers` | count | `4096` | Buffer pool size. |
 | `--max-graph-children` | count | `512` | Per-group child capacity. |
 | `--max-ugen-inputs` | count | `32` | Accepted inputs per UGen when a def is compiled; also the maximum. |
-| `--transports` | count | `8` | Independent transports, `0` to the count minus one, at most 64. Transport 0 is the one addressed by number and a multitrack's; everything else that plays on its own — a sequence, an audio editor, the GUI host's take monitor — is allocated one of the rest from the client's id spaces, which two clients of one server split. A client that finds none left says so and names this flag. |
+| `--transports` | count | `16` | Independent transports, `0` to the count minus one, at most 64. Transport 0 is the one addressed by number and a multitrack's; everything else that plays on its own — a sequence, an audio editor, the GUI host's take monitor — is allocated one of the rest from the client's id spaces, which two clients of one server split. A client that finds none left says so and names this flag. |
 | `--taps` | count | `8` | Audio-tap rings for oscilloscopes; `0` disables the tap region. `/bus_tap` routes an audio bus into one. |
 | `--tap-frames` | samples | `16384` | Per-tap ring capacity, rounded up to a power of two. |
 

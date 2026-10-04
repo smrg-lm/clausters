@@ -243,6 +243,7 @@ spaces kept apart by arithmetic are two spaces that eventually overlap.
 | `clausters_widgetids_owner` | `JsWidgetIds.owner` | a drawer's identity, handed out by the table — one table serves a whole host, and a drawer each client invented for itself would eventually collide |
 | `clausters_widgetids_alloc` | `JsWidgetIds.alloc` | |
 | `clausters_widgetids_release` | `JsWidgetIds.release` | |
+| — | `JsWidgetIds.alloc_block` | `n/a` — a contiguous run of anonymous ids, for the widgets of a bundle a **page** mounts, so that they come from the same table the page's `GuiHost` names its windows from. No C caller mounts a bundle: natively the host mounts it itself, in Rust, from its own table |
 | `clausters_widgetids_id_for` | `JsWidgetIds.id_for` | `idiom` — C takes each string as pointer + length and answers -1 for "no id"; wasm takes `&str` and answers `undefined` |
 | `clausters_widgetids_id_of` | `JsWidgetIds.id_of` | `idiom` — as above |
 | `clausters_widgetids_forget` | `JsWidgetIds.forget` | `idiom` — as above |

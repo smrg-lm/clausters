@@ -161,8 +161,11 @@ pub struct Limits {
     pub transports: usize,
 }
 
-/// Transports a server is booted with when nobody says otherwise.
-pub const DEFAULT_TRANSPORTS: usize = 8;
+/// Transports a server is booted with when nobody says otherwise: transport
+/// 0 and fifteen for what plays on its own -- a sequence each, an audio
+/// editor, a GUI host's take monitor -- which a client sharing the server
+/// with a GUI host has seven of.
+pub const DEFAULT_TRANSPORTS: usize = 16;
 
 impl Default for Limits {
     fn default() -> Self {

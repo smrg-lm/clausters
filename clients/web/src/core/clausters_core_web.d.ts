@@ -1015,6 +1015,12 @@ export class WidgetIds {
      */
     alloc(): number | undefined;
     /**
+     * The first of a run of `width` contiguous anonymous ids -- what a
+     * mounted bundle's widgets take -- or `undefined` when no such run is
+     * free. Each goes back through `release`.
+     */
+    allocBlock(width: number): number | undefined;
+    /**
      * Starts `owner`'s draw: every keyed id that owner asks for until its
      * `retire` counts as still drawn.
      */
@@ -2061,6 +2067,7 @@ export interface InitOutput {
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly voiceToSheet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly widgetids_alloc: (a: number) => [number, number];
+    readonly widgetids_allocBlock: (a: number, b: number) => [number, number];
     readonly widgetids_begin: (a: number, b: number) => void;
     readonly widgetids_clear: (a: number) => void;
     readonly widgetids_forget: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

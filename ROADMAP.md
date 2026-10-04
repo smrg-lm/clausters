@@ -110,11 +110,7 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A bundle mounted by the standalone host is given ids by an allocator
-  of its own** *(`clients/gui/PLAN.md`, "Found by use")*. The mount counts
-  node ids, buses and buffers by hand beside the host's own id spaces, which
-  now hand out the same node ids; the roll windows' ids are counted by
-  formula too.
+None is open now.
 
 
 ## 2. Fixes that need a decision first

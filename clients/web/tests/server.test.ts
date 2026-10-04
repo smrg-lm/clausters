@@ -542,7 +542,7 @@ test("each transport rolls on its own, as the object transportAt answers", {
         assert.equal(server.transportAt(1), server.transportAt(1), "one transport, one object");
         const one = server.transportAt(1);
         assert.ok(one.id === 1 && one.server === server);
-        assert.equal((await server.queryInfo()).transports, 8, "the default boot");
+        assert.equal((await server.queryInfo()).transports, 16, "the default boot");
 
         const governed = new Group({ server });
         await one.group(governed);

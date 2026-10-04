@@ -55,7 +55,7 @@ export const DEFAULT_TAPS = 8;
 export const DEFAULT_TAP_FRAMES = 16384;
 
 /** The transports a server boots with when no `--transports` says otherwise. */
-export const DEFAULT_TRANSPORTS = 8;
+export const DEFAULT_TRANSPORTS = 16;
 
 /**
  * The sizes a client's allocators need. They are a property of the *server*,

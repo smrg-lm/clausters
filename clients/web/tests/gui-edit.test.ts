@@ -867,22 +867,22 @@ test("two sequences play together and a free gives the transport back", async ()
     // Each `play(sequence)` takes a transport, so two sound at once; with none
     // left the play fails saying so, and a `free` gives one back.
     const server = new PlayingServer();
-    const seqs = Array.from({ length: 8 }, (_, i) =>
+    const seqs = Array.from({ length: 16 }, (_, i) =>
         new EventSequence([[0.0, new Event({ midinote: 60 + i, dur: 1.0 })]], { tempoMap: new TempoMap(TEMPO) }));
     const transports = [];
-    for (const seq of seqs.slice(0, 7)) transports.push(await seq.play({ server: server as never }));
+    for (const seq of seqs.slice(0, 15)) transports.push(await seq.play({ server: server as never }));
     const ids = transports.map((t) => t.id);
-    assert.equal(new Set(ids).size, 7);
-    assert.equal(Math.min(...ids), 1, "eight transports, above the one addressed by number");
-    await assert.rejects(seqs[7]!.play({ server: server as never }), /--transports/);
+    assert.equal(new Set(ids).size, 15);
+    assert.equal(Math.min(...ids), 1, "sixteen transports, above the one addressed by number");
+    await assert.rejects(seqs[15]!.play({ server: server as never }), /--transports/);
 
     server.sent.length = 0;
     const freed = await transports[0]!.free();
     const addrs = server.sent.map(([addr]) => addr);
     assert.ok(addrs.includes("/lane_free") && addrs.includes("/node_free"));
-    assert.equal(server.ids.inUse("transports"), 6);
+    assert.equal(server.ids.inUse("transports"), 14);
     assert.ok(freed.span === null && freed.driver === null, "nothing loaded on it now");
-    assert.equal((await seqs[7]!.play({ server: server as never })).id, freed.id, "the one given back");
+    assert.equal((await seqs[15]!.play({ server: server as never })).id, freed.id, "the one given back");
 });
 
 test("a page takes a transport of its own and gives it back", async () => {

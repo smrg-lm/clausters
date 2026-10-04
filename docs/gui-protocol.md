@@ -61,7 +61,10 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   to any widget built without one (and to every window) from a bounded window
   starting at 1000, and a freed subtree returns its ids to the pool, so a long
   live session reuses ids instead of climbing. Hand-picked ids below 1000 never
-  collide with assigned ones. A client's **editor** does not lease: it names each
+  collide with assigned ones. The window holds 2^20 ids; **the ones past it are
+  the host's own**, for the widgets it opens for itself — a roll over a
+  sequence of a session it owns, a bundle it mounts — so those never answer to
+  an id a client attached to the same host allocates. A client's **editor** does not lease: it names each
   id after what the widget draws — the structure, its role in the picture, a key
   — so a widget still in the picture keeps its number across every redraw, which
   is what the host matches widgets by when it reconciles a def.

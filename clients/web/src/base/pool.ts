@@ -12,10 +12,11 @@
 // components), and the component run time must not reach the def builders at
 // all -- see `../runtime.ts`.
 //
-// **Widget ids are shared with the client** (`GuiHost` allocates from this
-// same pool), because a widget id names a node of the one host's one widget
-// namespace: a page that mounts components *and* opens windows from script
-// must not hand the same id to both. Node ids, buses and buffers are a
+// **Widget ids are shared with the client** (a `GuiHost` attached to the
+// page's host allocates from this same table, `pageWidgetIds`), because a
+// widget id names a node of the one host's one widget namespace: a page that
+// mounts components *and* opens windows from script must not hand the same id
+// to both. Node ids, buses and buffers are a
 // `Server`'s to size from `/server_query`.
 //
 // **On the page's engine they are one `IdSpaces`** (`pageIds`): the pools draw
@@ -26,7 +27,7 @@
 // it plays, takes the second. It is the page's form of what a script does when
 // it launches a host with `--id-share`.
 
-import { IdSpaces, Registry, requireCore } from "./core.ts";
+import { IdSpaces, Registry, WidgetIds, requireCore } from "./core.ts";
 import type { IdShare } from "./ids.ts";
 
 /**
@@ -122,10 +123,16 @@ export function newPools(shape: PoolShape = ENGINE_SHAPE): Pools {
     );
 }
 
-/** The pools as views of `ids`, with widget ids in their own window. */
-function poolsOver(ids: IdSpaces): Pools {
+/**
+ * The pools as views of `ids`, with widget ids in their own window: `widgets`
+ * when the window is one somebody else names widgets in too (the page's host),
+ * a registry of this set's own otherwise.
+ */
+function poolsOver(ids: IdSpaces, widgets?: WidgetIds): Pools {
     return {
-        widgets: pool(WIDGET_BASE, WIDGET_CAPACITY, "widget"),
+        widgets: widgets === undefined
+            ? pool(WIDGET_BASE, WIDGET_CAPACITY, "widget")
+            : widgetPool(widgets),
         nodes: space(ids, "nodes", "node"),
         controlBuses: space(ids, "control", "control bus"),
         audioBuses: space(ids, "audio", "audio bus"),
@@ -153,7 +160,7 @@ export const ENGINE_SHAPE: PoolShape = {
     outputs: 2,
     controlBuses: 16384,
     buffers: 4096,
-    transports: 8,
+    transports: 16,
 };
 
 /** A `Pool` over one space of an `IdSpaces`, throwing rather than returning `undefined`. */
@@ -185,12 +192,48 @@ function space(
 }
 
 /**
+ * A `Pool` over a widget-id table: a mount takes a contiguous block of it, and
+ * whatever else names widgets on the same host takes from the same table.
+ */
+function widgetPool(table: WidgetIds): Pool {
+    return {
+        alloc(width = 1) {
+            const first = table.allocBlock(width);
+            if (first === undefined) {
+                throw new Error(`clausters: out of widget ids (${table.inUse} in use)`);
+            }
+            return first;
+        },
+        release(first, width = 1) {
+            for (let i = 0; i < width; i++) table.release(first + i);
+        },
+        get inUse() {
+            return table.inUse;
+        },
+    };
+}
+
+let pageWidgets: WidgetIds | null = null;
+
+/**
+ * **The page host's one widget-id table**: what a mounted component's widget
+ * block and a `GuiHost` attached to the page's host both allocate from, since
+ * they name widgets in one namespace -- a page that mounts components and
+ * opens windows from script hands neither the other's ids.
+ */
+export function pageWidgetIds(): WidgetIds {
+    requireCore("the page's widget ids");
+    pageWidgets ??= new WidgetIds(WIDGET_BASE, WIDGET_CAPACITY);
+    return pageWidgets;
+}
+
+/**
  * The page's pools, made on first use. Every component sharing the page's
  * engine and host allocates from these, which is what keeps two instances of
  * one bundle apart. A client of its own takes `newPools` instead.
  */
 export function pagePools(): Pools {
-    instance ??= poolsOver(pageIds());
+    instance ??= poolsOver(pageIds(), pageWidgetIds());
     return instance;
 }
 

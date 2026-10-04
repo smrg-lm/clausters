@@ -140,6 +140,24 @@ test("widget ids split the same way, so two clients of one host agree too", () =
     assert.equal(second, BASE_ID + CAPACITY / 2);
 });
 
+test("a component's widgets and the page host's client come from one table", () => {
+    // A page that mounts components and opens windows from script names both
+    // in the page host's one namespace: the mount's block and the client's
+    // ids are one occupancy map, so neither is handed the other's.
+    const pools = pagePools();
+    const before = pools.widgets.inUse;
+    const block = pools.widgets.alloc(3);
+    const client = GuiIdAllocator.page();
+    const window = client.alloc();
+    assert.ok(window < block || window >= block + 3, `window ${window} inside the block at ${block}`);
+    assert.equal(pools.widgets.inUse, before + 4, "one count for both");
+    client.free(window);
+    pools.widgets.release(block, 3);
+    assert.equal(pools.widgets.inUse, before);
+    // ...and a client of a host of its own keeps a table of its own.
+    assert.equal(new GuiIdAllocator().alloc(), BASE_ID);
+});
+
 test("a host client takes the share it is given", () => {
     const kernel = new GuiHost({ connection: recorder(), share: { index: 0, of: 2 } });
     const page = new GuiHost({ connection: recorder(), share: { index: 1, of: 2 } });

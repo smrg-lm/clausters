@@ -3707,7 +3707,7 @@ class IdSpaces:
     NODES, AUDIO, CONTROL, BUFFERS, TRANSPORTS = 0, 1, 2, 3, 4
 
     def __init__(self, *, max_nodes: int, audio_buses: int, outputs: int,
-                 control_buses: int, buffers: int, transports: int = 8,
+                 control_buses: int, buffers: int, transports: int = 16,
                  index: int = 0, of: int = 1, score: bool = False):
         self._lib = lib()
         self._handle = self._lib.clausters_ids_new(

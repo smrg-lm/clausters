@@ -39,6 +39,7 @@
 
 import { AllocationError } from "../errors.ts";
 import { WidgetIds, requireCore } from "../base/core.ts";
+import { pageWidgetIds } from "../base/pool.ts";
 import { shareOf } from "../base/ids.ts";
 import type { IdShare } from "../base/ids.ts";
 
@@ -54,6 +55,9 @@ export const BASE_ID = 1000;
  * practice.
  */
 export const CAPACITY = 1 << 20;
+
+/** The table the allocator being constructed stands on, when it is not its own. */
+let adopted: WidgetIds | null = null;
 
 /**
  * The registry of a host client's widget-id space.
@@ -77,7 +81,21 @@ export class GuiIdAllocator {
         share?: IdShare,
     ) {
         requireCore("a widget id allocator");
-        this.registry = new WidgetIds(...shareOf(base, capacity, share));
+        this.registry = adopted ?? new WidgetIds(...shareOf(base, capacity, share));
+    }
+
+    /**
+     * The allocator over **the page host's own table** (`pageWidgetIds`): what
+     * a client attached to the page's host names its widgets from, so that
+     * they and the components mounted on that host are one namespace.
+     */
+    static page(): GuiIdAllocator {
+        adopted = pageWidgetIds();
+        try {
+            return new GuiIdAllocator();
+        } finally {
+            adopted = null;
+        }
     }
 
     /**

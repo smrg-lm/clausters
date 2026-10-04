@@ -501,6 +501,14 @@ impl JsWidgetIds {
         self.0.alloc().map(|id| id as f64)
     }
 
+    /// The first of a run of `width` contiguous anonymous ids -- what a
+    /// mounted bundle's widgets take -- or `undefined` when no such run is
+    /// free. Each goes back through `release`.
+    #[wasm_bindgen(js_name = allocBlock)]
+    pub fn alloc_block(&mut self, width: u32) -> Option<f64> {
+        self.0.alloc_block(width as usize).map(|id| id as f64)
+    }
+
     /// Returns an anonymous id to the space. Ids this table never handed out
     /// are ignored, so freeing is always safe.
     pub fn release(&mut self, id: f64) {
