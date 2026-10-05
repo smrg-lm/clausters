@@ -63,6 +63,15 @@ impl ScoreData {
         let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
         // under the ink, so the engraving still reads through the highlight
         self.draw_selection(mesh, fit, colors.selection);
+        // the edit cursor of note entry, under the ink as the selection is,
+        // in the cursors' color so that it is not taken for what is selected
+        if let Some(b) = self.edit_cursor_box() {
+            let b = b.transformed(fit);
+            mesh.rect(
+                Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
+                crate::host::theme::with_alpha(colors.playhead, 0.35),
+            );
+        }
         // A dragged notehead takes its ledger lines with it: the engraved ones
         // stay where the staff put them, so they are dropped and re-derived at
         // the displaced pitch -- which is also how they disappear when the note

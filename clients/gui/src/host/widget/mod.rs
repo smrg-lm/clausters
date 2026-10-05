@@ -104,6 +104,11 @@ pub enum WidgetKind {
         /// through its own playback, and the host's monitor stays out. Off by
         /// default.
         plays: bool,
+        /// The `keys` prop: **the key table's scopes in force in this
+        /// window** ([`keymap`](super::keymap)), read before its own rows --
+        /// an editor names the mode it is in, and that mode's keys are the
+        /// window's. None by default.
+        keys: Vec<String>,
     },
     /// A nestable container.
     Panel {

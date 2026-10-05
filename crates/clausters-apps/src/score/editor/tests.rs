@@ -131,7 +131,11 @@ fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     assert_eq!(page["type"], "score");
     assert_eq!(page["id"], 10);
     assert_eq!(page["editable"], true);
-    assert_eq!(page["entry"], true);
+    // the window opens outside note entry, with no edit cursor, and the
+    // score's own keys in force
+    assert_eq!(page["entry"], false);
+    assert_eq!(page["edit_cursor"], "");
+    assert_eq!(window["keys"], json!(["score"]));
     assert!(
         page.get("notes").is_none(),
         "the notes are the caller's layer"
@@ -212,18 +216,149 @@ fn an_unknown_verb_is_refused_rather_than_guessed() {
     assert!(!out.changed);
 }
 
-#[test]
-fn a_press_on_empty_staff_writes_the_value_in_hand_and_selects_it() {
-    let mut editor = opened();
-    call_json(&mut editor, r#"{"verb": "sync", "value": [1, 8]}"#);
-    let out = editor.event(&gesture("insert", &[json!("n4"), json!(-4), json!(0)]), 1);
-    assert!(out.changed);
-    let selected = out.selected.expect("the new note is selected");
-    let id = item_id(&selected[0]).expect("an item");
+/// A press on the page, stamped with the version the page saw.
+fn pressed(tag: &str, payload: &[Value], version: i64) -> Event {
+    let mut event = gesture(tag, payload);
+    event.args[2] = json!(version);
+    event
+}
+
+/// `event`, stamped with the version its widget saw.
+fn stamped(mut event: Event, version: i64) -> Event {
+    event.args[2] = json!(version);
+    event
+}
+
+/// A key of the window's: a verb the key table reports to the owner.
+fn key(verb: &str) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(1), json!(9), json!(1), json!(verb)],
+    }
+}
+
+/// The first voice's items, as `(value, sounds)`.
+fn shape(editor: &ScoreEditor) -> Vec<(Ratio, bool)> {
     let held = editor.held();
-    let at = verbs::locate(held.sheet().unwrap(), id).expect("written");
-    assert_eq!(at.item.dur(), Ratio::new(1, 8));
-    assert_eq!(at.onset, Ratio::ONE, "after the fourth quarter");
+    held.sheet().unwrap().staves[0].voices[0]
+        .items
+        .iter()
+        .map(|i| (i.dur(), i.sounds()))
+        .collect()
+}
+
+#[test]
+fn note_entry_writes_at_the_cursor_and_nothing_moves() {
+    let mut editor = with_tools();
+    call_json(&mut editor, r#"{"verb": "sync", "value": [1, 8]}"#);
+    // outside the mode the letters are nobody's
+    assert!(editor.event(&key("pitch_g"), 1).answer.is_none());
+    // N: the cursor goes to the first beat, with nothing selected
+    let out = editor.event(&key("entry"), 1);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    let page = corrections.iter().find(|c| c.widget == 10).unwrap();
+    assert_eq!(page.props["entry"], true);
+    assert_eq!(page.props["edit_cursor"]["at"], "n1");
+    assert!(
+        corrections
+            .iter()
+            .any(|c| c.widget == 1 && c.props["keys"] == json!(["score", "note_entry"]))
+    );
+    // a G over the first quarter: an eighth and the rest of it silence, and
+    // the bar is as long as it was
+    let out = editor.event(&key("pitch_g"), 1);
+    assert_eq!(out.record.expect("an entry").label, "write a note");
+    let q = Ratio::new(1, 4);
+    let e = Ratio::new(1, 8);
+    assert_eq!(
+        shape(&editor),
+        vec![(e, true), (e, false), (q, true), (q, true), (q, true)]
+    );
+    let first = |editor: &ScoreEditor| {
+        let held = editor.held();
+        held.sheet().unwrap().staves[0].voices[0].items[0].clone()
+    };
+    // the G nearest the middle of the staff, then a B above it in its chord
+    assert_eq!(first(&editor).pitches()[0].midi(), 67);
+    editor.event(&key("chord_b"), 2);
+    assert_eq!(
+        first(&editor)
+            .pitches()
+            .iter()
+            .map(Pitch::midi)
+            .collect::<Vec<_>>(),
+        vec![67, 71]
+    );
+    // the cursor stood past the G: a rest goes over the silence, then a
+    // step back and up moves the note just written... none here, so the
+    // note the cursor is on
+    editor.event(&key("enter_rest"), 3);
+    assert_eq!(shape(&editor).len(), 5);
+    editor.event(&key("cursor_left"), 3);
+    editor.event(&key("cursor_left"), 3);
+    editor.event(&key("step_up"), 3);
+    assert_eq!(first(&editor).pitches()[0].midi(), 69, "a step up is an A");
+    // the digits pick the value in hand
+    editor.event(&key("value_half"), 4);
+    assert!(call_json(&mut editor, r#"{"verb": "input"}"#).contains("[1,2]"));
+    // Escape leaves the mode, and the cursor goes
+    let out = editor.event(&key("entry_off"), 4);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    let page = corrections.iter().find(|c| c.widget == 10).unwrap();
+    assert_eq!(page.props["edit_cursor"], "", "the empty string is none");
+    // and coming back with nothing selected, it is where it was left
+    editor.event(&pressed("element", &[json!("")], 5), 5);
+    editor.event(&key("entry"), 5);
+    assert!(
+        editor
+            .describe()
+            .starts_with("note entry: staff 1 voice 1, bar 1 + 0"),
+        "{}",
+        editor.describe()
+    );
+}
+
+#[test]
+fn a_press_in_note_entry_writes_over_a_rest_and_chords_a_note() {
+    let mut editor = with_tools();
+    editor.event(&gesture("element", &[json!("n3")]), 1);
+    editor.act(&json!({"action": "silence"}), 1);
+    // the mode opens on what is selected: the third beat
+    editor.event(&key("entry"), 2);
+    assert!(
+        editor.describe().contains("bar 1 + 1/2"),
+        "{}",
+        editor.describe()
+    );
+    // a press on the rest's column writes the value in hand there
+    let out = editor.event(&pressed("enter", &[json!("n3"), json!(-3), json!(0)], 2), 2);
+    assert_eq!(
+        out.record
+            .unwrap_or_else(|| panic!("an entry: {:?}", out.answer))
+            .label,
+        "write a note"
+    );
+    let held = editor.held();
+    let third = held.sheet().unwrap().staves[0].voices[0].items[2].clone();
+    drop(held);
+    assert!(third.sounds());
+    assert_eq!(third.pitches()[0].midi(), 72, "three steps under F5 is C5");
+    // a press on a note's column builds its chord
+    let out = editor.event(&pressed("enter", &[json!("n4"), json!(-5), json!(0)], 3), 3);
+    assert_eq!(out.record.expect("an entry").label, "add to the chord");
+    let held = editor.held();
+    let fourth = &held.sheet().unwrap().staves[0].voices[0].items[3];
+    assert_eq!(fourth.pitches().len(), 2);
+    drop(held);
+    assert_eq!(shape(&editor).len(), 4, "nothing moved");
+    // and playing leaves the mode
+    let out = editor.event(&key("play"), 4);
+    assert!(out.play.is_some());
+    assert!(!editor.describe().starts_with("note entry"));
 }
 
 #[test]
@@ -339,14 +474,15 @@ fn a_press_on_a_staff_selects_its_measure_where_entry_is_off() {
     let mut editor = opened();
     assert_eq!(
         call_json(&mut editor, r#"{"verb": "entry"}"#),
-        r#"{"entry":true}"#
+        r#"{"entry":false}"#
     );
-    call_json(&mut editor, r#"{"verb": "sync", "entry": false}"#);
+    call_json(&mut editor, r#"{"verb": "sync", "entry": true}"#);
     // the page learns it with the next correction
     let Answer::Push { corrections, .. } = editor.resync_all(1) else {
         panic!("corrections")
     };
-    assert_eq!(corrections[0].props["entry"], json!(false));
+    assert_eq!(corrections[0].props["entry"], json!(true));
+    call_json(&mut editor, r#"{"verb": "sync", "entry": false}"#);
     // a staff's own lines are named by measure and staff
     editor.event(&gesture("element", &[json!("m1s1")]), 1);
     assert_eq!(editor.items(), vec![1, 2, 3, 4]);
@@ -667,15 +803,21 @@ fn the_input_state_is_what_the_next_press_writes() {
     assert!(
         corrections
             .iter()
-            .any(|c| c.widget == 100 && c.props == json!({"index": 3}))
+            .any(|c| c.widget == i64::from(numbered()["value"]) && c.props == json!({"index": 3}))
     );
     editor.event(&tool("dot", json!(1)), 1);
     assert_eq!(
         call_json(&mut editor, r#"{"verb": "input"}"#),
         r#"{"accidental":null,"dotted":true,"rest":false,"value":[1,8]}"#
     );
-    // a press writes a dotted eighth
-    let out = editor.event(&gesture("insert", &[json!("n4"), json!(-3), json!(0)]), 1);
+    // a press past the bar, in note entry, writes a dotted eighth there
+    editor.event(&tool("entry", json!(1)), 1);
+    call_json(&mut editor, r#"{"verb": "sync", "entry": false}"#);
+    call_json(&mut editor, r#"{"verb": "sync", "entry": true}"#);
+    for _ in 0..4 {
+        editor.event(&key("cursor_right"), 1);
+    }
+    let out = editor.event(&key("pitch_c"), 1);
     assert_eq!(out.record.expect("an entry").label, "write a note");
     let written = |editor: &ScoreEditor| {
         let held = editor.held();
@@ -683,14 +825,14 @@ fn the_input_state_is_what_the_next_press_writes() {
     };
     assert_eq!(written(&editor).dur(), Ratio::new(3, 16));
     assert!(written(&editor).sounds());
-    // and with rest on, a rest of that value
-    editor.event(&tool("rest", json!(1)), 2);
-    let out = editor.event(&gesture("insert", &[json!("n1"), json!(-3), json!(0)]), 2);
+    // and with rest on, a press writes a rest of that value
+    editor.event(&stamped(tool("rest", json!(1)), 2), 2);
+    let silenced = editor.act(&json!({"action": "silence"}), 2);
+    assert!(silenced.changed);
+    let out = editor.event(&pressed("enter", &[json!("n5"), json!(-3), json!(0)], 3), 3);
     assert_eq!(out.record.expect("an entry").label, "write a rest");
-    let held = editor.held();
-    let second = &held.sheet().unwrap().staves[0].voices[0].items[1];
-    assert!(!second.sounds());
-    assert_eq!(second.dur(), Ratio::new(3, 16));
+    assert!(!written(&editor).sounds());
+    assert_eq!(written(&editor).dur(), Ratio::new(3, 16));
 }
 
 #[test]
@@ -703,8 +845,12 @@ fn an_accidental_is_the_selections_or_armed_for_the_next_note() {
         call_json(&mut editor, r#"{"verb": "input"}"#),
         r#"{"accidental":1,"dotted":false,"rest":false,"value":[1,4]}"#
     );
-    let out = editor.event(&gesture("insert", &[json!("n4"), json!(-3), json!(0)]), 1);
-    assert!(out.changed);
+    call_json(&mut editor, r#"{"verb": "sync", "entry": true}"#);
+    for _ in 0..4 {
+        editor.event(&key("cursor_right"), 1);
+    }
+    let out = editor.event(&key("pitch_c"), 1);
+    assert!(out.changed, "{:?}", out.answer);
     let alter_of = |editor: &ScoreEditor, at: usize| {
         let held = editor.held();
         held.sheet().unwrap().staves[0].voices[0].items[at].pitches()[0].alter
@@ -719,7 +865,7 @@ fn an_accidental_is_the_selections_or_armed_for_the_next_note() {
         "it was for that note"
     );
     // the note written is selected, so a flat now is its own
-    let out = editor.event(&tool("accidental", json!(2)), 2);
+    let out = editor.event(&stamped(tool("accidental", json!(2)), 2), 2);
     assert_eq!(out.record.expect("an entry").label, "accidental");
     assert_eq!(alter_of(&editor, 4), -1);
     assert!(call_json(&mut editor, r#"{"verb": "input"}"#).contains(r#""accidental":null"#));

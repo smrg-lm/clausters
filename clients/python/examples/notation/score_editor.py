@@ -45,12 +45,17 @@ What it shows, in the order it does it:
 * **A gesture names a place; the editor names the note.** A click selects a
   note and the status line under the page says what it is. A drag moves it
   along the staff -- only a note drags; a slur or a time signature is selected
-  and never displaced. A press on empty staff writes what the toolbar says:
-  a note or a rest of the value in hand (an eighth, below), and selects it.
+  and never displaced. A press on a staff selects the measure it fell in.
+* **Writing is a mode, note entry**: N, or the toolbar's pencil, puts an edit
+  cursor on what is selected, and Escape takes it away. A letter ``a`` to
+  ``g`` writes that pitch at the cursor, of the value in hand (an eighth,
+  below), over what was there -- nothing after it moves -- and the cursor goes
+  on; Shift and a letter adds to the chord, the arrows move the cursor, and
+  Ctrl+Alt+2 puts it in the second voice. A press on a staff writes at the
+  time it fell at, or into the chord of the note there. Playing leaves it.
 * **Several notes are selected at once.** Ctrl+click adds a note to the
   selection or takes it out; Shift+click extends the selection to the note
-  clicked, in time and across the staves between. With entry switched off
-  (Notes, Write notes), a press on a staff selects the measure it fell in.
+  clicked, in time and across the staves between.
 * **A pick and a method call are one path.** Every entry of the menu, every
   tool and every palette entry is one of the editor's verbs, and each verb is
   a method: the fermata on the last note is put there by this script
@@ -95,8 +100,9 @@ Then, with the client importable::
 **Ctrl+click** another to add it, **Shift+click** one to select everything up
 to it. **Drag** a note up or down the staff to move it (which is not
 transposition: it takes the key signature's alteration for the letter it lands
-on). **Press on empty staff** -- between two notes, or past the last one, on
-either staff -- to write an eighth there. The **space bar** plays and stops.
+on). **Press N** to write: type ``c d e``, and they replace what was under
+the cursor with eighths; **Shift+E** adds an E to the chord just written,
+**Escape** leaves. The **space bar** plays and stops.
 Close the window to stop. Needs an audio device, a display and a GPU. The file
 it saves goes to ``clients/python/examples/out/``.
 
@@ -195,7 +201,7 @@ session.gui()          # the host wired to this session's server
 
 editor = edit(score, title="Score editor (a document, and its model)",
               width=1100, height=800)
-editor.value = (1, 8)          # a press on empty staff writes an eighth
+editor.value = (1, 8)          # note entry writes eighths
 
 # %% [markdown]
 # ## A pick and a method call are one path

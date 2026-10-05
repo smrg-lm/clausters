@@ -39,6 +39,7 @@ pub(super) fn build_kind(
             // On unless the window says otherwise: see `host::status::shown`.
             status: props.get("status").and_then(truthy).unwrap_or(true),
             plays: props.get("plays").and_then(truthy).unwrap_or(false),
+            keys: props.get("keys").map(scopes).unwrap_or_default(),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its
@@ -295,4 +296,21 @@ pub(crate) fn signal_element(
     // it is built for, not on the one after.
     el.refresh_loudness();
     Ok(el)
+}
+
+/// A window's `keys`: the scope names it lists -- as a list, or as the JSON
+/// string a scalar wire carries one in -- one name alone, or none.
+pub(super) fn scopes(v: &Value) -> Vec<String> {
+    match v {
+        Value::String(s) if s.starts_with('[') => serde_json::from_str::<Value>(s)
+            .map(|list| scopes(&list))
+            .unwrap_or_default(),
+        Value::String(s) if !s.is_empty() => vec![s.clone()],
+        Value::Array(items) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
 }

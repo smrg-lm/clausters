@@ -353,8 +353,8 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
             staff.voices.iter().collect()
         };
         let mut per_voice = Vec::new();
-        for voice in voices {
-            let mut cells = project(voice, &sheet.grid, count, &printed)?;
+        for (v, voice) in voices.into_iter().enumerate() {
+            let mut cells = project(voice, &sheet.grid, count, &printed, v == 0)?;
             beam(&mut cells, voice, sheet)?;
             per_voice.push(cells);
         }
@@ -627,12 +627,14 @@ fn units(items: &[Item]) -> Vec<Unit<'_>> {
 }
 
 /// Lay one voice out over `count` measures, returning the rendered elements of
-/// each measure.
+/// each measure. `first` is whether it is its staff's first voice, which is
+/// the one that keeps a measure it does not reach with a rest.
 fn project(
     voice: &Voice,
     grid: &Grid,
     count: usize,
     printed: &std::collections::HashSet<(u64, usize)>,
+    first: bool,
 ) -> Result<Vec<Vec<String>>, String> {
     let mut measures: Vec<Vec<String>> = vec![Vec::new(); count.max(1)];
     let mut measure = 0;
@@ -789,6 +791,11 @@ fn project(
 
     // A voice that ran out before the score did keeps its place with rests, so
     // the staves stay aligned and no measure is left empty of everything.
+    //
+    // **A second voice keeps it with nothing.** It completes the measure it
+    // ended in, as a voice does, and the whole measures past it are empty
+    // space rather than a rest each: a second line written into one bar is
+    // not a rest in every bar after it, which is what the page drew.
     while pos < bar || measure + 1 < measures.len() {
         if pos == bar {
             measure += 1;
@@ -796,7 +803,9 @@ fn project(
             bar = bar_ticks(grid, measure)?;
             continue;
         }
-        if pos == 0 {
+        if pos == 0 && !first {
+            measures[measure].push("<mSpace/>".to_string());
+        } else if pos == 0 {
             // the same rule for the emitter's own filler: a whole measure of
             // silence is one centred `<mRest/>`
             measures[measure].push("<mRest/>".to_string());
@@ -1720,8 +1729,8 @@ mod emission {
         let mine = sheet(vec![Staff {
             clef: "G2".into(),
             voices: vec![
-                voice(vec![note(Step::C, Ratio::from(2), 1)]),
                 voice(vec![note(Step::E, Ratio::ONE, 2)]),
+                voice(vec![note(Step::C, Ratio::from(2), 1)]),
             ],
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
@@ -1730,6 +1739,29 @@ mod emission {
             !mei.contains("<rest dur=\"1\""),
             "not a decomposed whole rest"
         );
+    }
+
+    #[test]
+    fn a_second_voice_leaves_the_measures_past_it_empty() {
+        // a second line written into the first bar completes it with a rest,
+        // and is no rest at all in the bars after it
+        let mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![
+                voice(vec![note(Step::C, Ratio::from(3), 1)]),
+                voice(vec![note(Step::E, Ratio::new(1, 2), 2)]),
+            ],
+        }]);
+        let mei = sheet_to_mei(&mine).expect("writes it");
+        let second: Vec<&str> = mei.split("<layer n=\"2\">").skip(1).collect();
+        assert_eq!(second.len(), 3, "{mei}");
+        assert!(second[0].contains("<rest"), "its own bar is completed");
+        assert!(second[1].starts_with("<mSpace/>"), "{}", second[1]);
+        assert!(second[2].starts_with("<mSpace/>"), "{}", second[2]);
+        // and read back, the voice is as long as what was written in it: the
+        // filler is the page's
+        let read = super::super::mei_to_sheet(&mei).expect("reads it");
+        assert_eq!(read.staves[0].voices[1].len(), Ratio::new(1, 2));
     }
 
     #[test]

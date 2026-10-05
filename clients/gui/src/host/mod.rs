@@ -1160,6 +1160,15 @@ impl Host {
 
     /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
     /// is then the window's own verb, and the monitor stays out.
+    /// **The key table's scopes in force in window `id`** -- its `keys` prop
+    /// ([`keymap`]).
+    pub fn window_keys(&self, id: i32) -> Vec<String> {
+        match self.window_def(id).map(|w| &w.kind) {
+            Some(WidgetKind::Window { keys, .. }) => keys.clone(),
+            _ => Vec::new(),
+        }
+    }
+
     pub fn window_plays(&self, id: i32) -> bool {
         matches!(
             self.window_def(id).map(|w| &w.kind),

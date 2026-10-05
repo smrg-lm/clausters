@@ -67,8 +67,14 @@ class ScoreEditor(Editor):
     """A symbolic score on its page, edited by hand, in place.
 
     A press on a note selects it, a drag moves it along its staff, and a press
-    on empty staff writes a note of `value` there (`entry`; off, it selects the
-    measure). The menu bar holds every action, and the toolbar what a hand
+    on a staff selects its measure. **Note entry** is a mode (`entry`, the
+    toolbar's pencil, or N; Escape leaves it): an edit cursor stands on a
+    staff, in a voice, and what is entered is written there over what was
+    there, nothing after it moving -- a letter `a` to `g` writes that pitch of
+    `value` and the cursor goes on, Shift and a letter adds it to the chord, a
+    press on a staff writes at the time it fell at (on a note, into its
+    chord), the arrows move the cursor and Ctrl+Alt+1 to 4 change its voice.
+    Playing leaves the mode. The menu bar holds every action, and the toolbar what a hand
     reaches for while it writes: the value, its dot, a rest, an accidental,
     the articulations, a tie, a triplet, the voice and the layout. Beside the
     page stand the palettes: what can be written, a kind of element to a
@@ -153,10 +159,11 @@ class ScoreEditor(Editor):
 
     @property
     def entry(self) -> bool:
-        """Whether a press on empty staff writes a note. On by default; off,
-        the same press on a staff selects the measure it fell in. Set it to
-        switch: ``editor.entry = False``."""
-        return bool(self._call("entry").get("entry", True))
+        """Whether the window is in note entry, where the keys and a press on a
+        staff write at the edit cursor. Off by default, and off once a pass
+        plays; outside it a press on a staff selects the measure it fell in.
+        Set it to switch: ``editor.entry = True``."""
+        return bool(self._call("entry").get("entry", False))
 
     @entry.setter
     def entry(self, on: bool) -> None:

@@ -198,6 +198,39 @@ pub enum Op {
         #[serde(default)]
         voice: usize,
     },
+    /// Write a note, chord or rest over a stretch of one voice, as note entry
+    /// does: what the stretch covered goes, and nothing else moves. With
+    /// `chord`, the pitch joins the note that starts at `at` instead.
+    Enter {
+        /// Where it starts, in whole notes from the start of the score.
+        #[serde(default)]
+        at: Option<Ratio>,
+        /// ...or where the item with this id starts -- what a press during
+        /// note entry names, the element whose column it fell in. Ignored
+        /// when `at` is given; with neither, the start of the score.
+        #[serde(default)]
+        item: Option<u64>,
+        /// Its written value.
+        dur: Ratio,
+        /// The pitches; none for a rest.
+        #[serde(default)]
+        pitches: Vec<Pitch>,
+        /// Where on the staff, in whole diatonic steps from its top line,
+        /// positive upward, as for `insert`: the pitch is the clef and the
+        /// key read together. Ignored when `pitches` is given.
+        #[serde(default)]
+        position: Option<i32>,
+        /// Which staff.
+        #[serde(default)]
+        staff: usize,
+        /// Which voice; one the staff does not have yet is made.
+        #[serde(default)]
+        voice: usize,
+        /// Add the pitch to the chord starting at `at` rather than writing
+        /// over the stretch.
+        #[serde(default)]
+        chord: bool,
+    },
     /// Take an item out; what follows moves earlier by its value.
     Delete {
         /// The item.
@@ -399,6 +432,35 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
                 *voice,
             )
         }
+        Op::Enter {
+            at,
+            item,
+            dur,
+            pitches,
+            position,
+            staff,
+            voice,
+            chord,
+        } => {
+            let pitches = match (pitches.is_empty(), position) {
+                (true, Some(position)) => vec![edit::pitch_at(&sheet, *staff, *position)?],
+                _ => pitches.clone(),
+            };
+            let at = match (at, item) {
+                (Some(at), _) => *at,
+                (None, Some(id)) => edit::onset(&sheet, *id)
+                    .ok_or_else(|| format!("no item with id {id} is in this score"))?,
+                (None, None) => Ratio::ZERO,
+            };
+            if *chord {
+                let [pitch] = pitches.as_slice() else {
+                    return Err("a chord grows by one pitch at a time".to_string());
+                };
+                edit::add_to_chord(sheet, *staff, *voice, at, *pitch)
+            } else {
+                edit::enter(sheet, *staff, *voice, at, pitches, *dur)
+            }
+        }
         Op::Delete { id } => edit::delete(sheet, *id),
         Op::Silence { id } => edit::silence(sheet, *id),
         Op::SetDur { id, dur } => edit::set_dur(sheet, *id, *dur),
@@ -516,6 +578,13 @@ pub fn catalog() -> &'static [OpSpec] {
             op: "insert",
             required: &["dur"],
             optional: &["after", "pitches", "position", "staff", "voice"],
+        },
+        OpSpec {
+            op: "enter",
+            required: &["dur"],
+            optional: &[
+                "at", "item", "pitches", "position", "staff", "voice", "chord",
+            ],
         },
         OpSpec {
             op: "delete",

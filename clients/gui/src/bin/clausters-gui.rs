@@ -478,13 +478,13 @@ fn run(args: &[String]) -> Result<(), String> {
     // so a stale file loses one binding rather than the program's keys.
     let mut keys = Keymap::default();
     if let Some(table) = &cfg.gui.keys {
-        for w in keys.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_strs()))) {
+        for w in overlay_keys(&mut keys, table) {
             tracing::warn!("{w} (config [gui.keys])");
         }
     }
     if let Some(path) = &keys_path {
         let table = clausters_core::config::read_keys_file(Path::new(path))?;
-        for w in keys.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_strs()))) {
+        for w in overlay_keys(&mut keys, &table) {
             tracing::warn!("{w} ({path})");
         }
     }
@@ -1412,4 +1412,28 @@ fn init_logging(verbosity: i8) {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+/// Overlays a `[gui.keys]` table on `keys`: its rows, and each sub-table into
+/// the scope it names.
+fn overlay_keys(
+    keys: &mut Keymap,
+    table: &std::collections::BTreeMap<String, clausters_core::config::Chords>,
+) -> Vec<String> {
+    use clausters_core::config::Chords;
+    let mut warnings = keys.overlay(
+        table
+            .iter()
+            .filter(|(_, v)| !matches!(v, Chords::Scope(_)))
+            .map(|(k, v)| (k.as_str(), v.as_strs())),
+    );
+    for (scope, entries) in table {
+        if let Chords::Scope(entries) = entries {
+            warnings.extend(keys.overlay_in(
+                Some(scope),
+                entries.iter().map(|(k, v)| (k.as_str(), v.as_strs())),
+            ));
+        }
+    }
+    warnings
 }

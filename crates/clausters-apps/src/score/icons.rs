@@ -57,6 +57,8 @@ pub const BREAK_NONE: &str = "F000B";
 
 /// Back to the start: the transport's, which the host's own symbols lack.
 pub const REWIND: &str = "F000C";
+/// Note entry: a pencil.
+pub const ENTRY: &str = "F000D";
 
 /// SMuFL's own, for the symbols it names and a face may leave out.
 pub const BARLINE_SINGLE: &str = "E030";
@@ -125,6 +127,7 @@ pub fn complete(outlines: &mut Outlines) {
         (BREAK_PAGE, Some(break_page())),
         (BREAK_NONE, Some(break_none())),
         (REWIND, Some(rewind())),
+        (ENTRY, Some(pencil())),
         (
             APPOGGIATURA,
             outlines.get(EIGHTH_UP).map(|eighth| grace(eighth, false)),
@@ -583,6 +586,40 @@ fn rewind() -> String {
     let mut pen = Pen::new();
     pen.rect(0.0, 0.0, 80.0, HIGH);
     pen.polygon(&[(150.0, HIGH / 2.0), (560.0, HIGH), (560.0, 0.0)]);
+    pen.done()
+}
+
+/// Note entry: a pencil, tilted, its point down to the left -- a body, the
+/// wood cut to a point, and the graphite at the tip.
+fn pencil() -> String {
+    // along the pencil's own axis, then turned
+    let (sin, cos) = (std::f64::consts::FRAC_PI_4).sin_cos();
+    let turn = |(u, v): (f64, f64)| (300.0 + u * cos - v * sin, 300.0 + u * sin + v * cos);
+    let shape = |points: &[(f64, f64)]| points.iter().copied().map(turn).collect::<Vec<_>>();
+    const HALF: f64 = 70.0;
+    let mut pen = Pen::new();
+    // the body, and the band at its end
+    pen.polygon(&shape(&[
+        (-140.0, -HALF),
+        (330.0, -HALF),
+        (330.0, HALF),
+        (-140.0, HALF),
+    ]));
+    pen.polygon(&shape(&[
+        (360.0, -HALF),
+        (420.0, -HALF),
+        (420.0, HALF),
+        (360.0, HALF),
+    ]));
+    // the wood cut to a point, short of the tip
+    pen.polygon(&shape(&[
+        (-170.0, -HALF),
+        (-170.0, HALF),
+        (-300.0, 22.0),
+        (-300.0, -22.0),
+    ]));
+    // and the graphite
+    pen.polygon(&shape(&[(-315.0, -18.0), (-315.0, 18.0), (-370.0, 0.0)]));
     pen.done()
 }
 

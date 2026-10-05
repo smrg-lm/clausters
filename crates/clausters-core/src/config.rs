@@ -203,24 +203,29 @@ pub struct GuiConfig {
     /// their default chords. A verb the host does not perform is the
     /// application's, reported to the window's owner when its chord is
     /// pressed; a chord that cannot be read is warned about and skipped by the
-    /// host, never fatal.
+    /// host, never fatal. A sub-table is a **scope** -- `[gui.keys.note_entry]`
+    /// -- whose bindings hold only in a window that names it.
     pub keys: Option<BTreeMap<String, Chords>>,
 }
 
-/// The chords a `[gui.keys]` entry binds: one, or a list of them.
+/// The chords a `[gui.keys]` entry binds: one, or a list of them -- or, for
+/// a sub-table, a scope's own entries.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum Chords {
     One(String),
     Many(Vec<String>),
+    Scope(BTreeMap<String, Chords>),
 }
 
 impl Chords {
-    /// The chords as a list, whichever way the entry spelled them.
+    /// The chords as a list, whichever way the entry spelled them; none for
+    /// a scope, whose entries are its own.
     pub fn as_strs(&self) -> Vec<&str> {
         match self {
             Chords::One(s) => vec![s.as_str()],
             Chords::Many(v) => v.iter().map(String::as_str).collect(),
+            Chords::Scope(_) => Vec::new(),
         }
     }
 }
@@ -716,6 +721,8 @@ mod tests {
             [gui.keys]
             split = "S"
             redo = ["Ctrl+Y", "Ctrl+Shift+Z"]
+            [gui.keys.note_entry]
+            pitch_c = "K"
             "#,
         )
         .unwrap();
@@ -734,6 +741,11 @@ mod tests {
             merged["export"].as_strs().is_empty(),
             "an unbinding is kept"
         );
+        // a sub-table is a scope's entries
+        let Chords::Scope(scope) = &merged["note_entry"] else {
+            panic!("a scope: {:?}", merged["note_entry"]);
+        };
+        assert_eq!(scope["pitch_c"].as_strs(), ["K"]);
     }
 
     #[test]

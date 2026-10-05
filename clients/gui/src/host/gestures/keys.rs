@@ -76,18 +76,19 @@ impl Gestures {
                     let at = crate::host::chrome::modal_start(&placed)?;
                     placed[at].widget.id
                 });
-            let Some(dialog) = dialog else {
-                return None; // nothing open: the front's own Escape
-            };
-            let mut out = Vec::new();
-            emit(
-                host,
-                &mut out,
-                ctx.def_id,
-                dialog,
-                vec![OscType::String(super::chrome::CANCEL.into())],
-            );
-            return Some(out);
+            // nothing open: the focused element's, then the key table's
+            // scopes, and with neither the front's own Escape
+            if let Some(dialog) = dialog {
+                let mut out = Vec::new();
+                emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    dialog,
+                    vec![OscType::String(super::chrome::CANCEL.into())],
+                );
+                return Some(out);
+            }
         }
         // Only an element focused in *this* window: a key is delivered by the
         // window it was typed into.
@@ -176,7 +177,11 @@ impl Gestures {
         // list's to walk, pick and dismiss with.
         let mut out = Vec::new();
         let command = mods.ctrl || mods.alt || matches!(key, Key::F(_));
-        if command && host.popup(ctx.def_id).is_some() && host.keys.lookup(&key, mods).is_some() {
+        let scopes = host.window_keys(ctx.def_id);
+        if command
+            && host.popup(ctx.def_id).is_some()
+            && host.keys.lookup_in(&key, mods, &scopes).is_some()
+        {
             host.close_popup(ctx.def_id);
             out.push(GestureEffect::Redraw(ctx.def_id));
         }
@@ -184,7 +189,7 @@ impl Gestures {
             out.extend(more);
             return Some(out);
         }
-        let Some(verb) = host.keys.lookup(&key, mods).map(str::to_string) else {
+        let Some(verb) = host.keys.lookup_in(&key, mods, &scopes).map(str::to_string) else {
             diag::note!(host, ctx.def_id, "key", "key {key:?}: bound to nothing");
             return None;
         };

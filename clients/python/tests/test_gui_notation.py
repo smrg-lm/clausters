@@ -499,6 +499,12 @@ def test_an_edit_names_its_item_and_deleting_is_not_silencing():
         three, id, [notation.pitch("b", 3, 1)]))[1]["pitches"][0]["step"] == "b"
     assert _items(notation.tie(three, id))[1]["tie"] is True
     assert len(notation.to_voice(three, [id], 1)["staves"][0]["voices"]) == 2
+    # an entry replaces: an eighth over the second quarter adds no time
+    entered = notation.enter(three, (1, 8), at=(1, 4), pitches=[notation.pitch("d", 4)])
+    assert [i["dur"] for i in _items(entered)] == [[1, 4], [1, 8], [1, 8], [1, 4]]
+    # where a press names the item whose column it fell in
+    chord = notation.enter(three, (1, 4), item=id, position=-1, chord=True)
+    assert len(_items(chord)[1]["pitches"]) == 2
     # and every verb refuses an item that is not there, saying which
     with pytest.raises(ValueError, match="999"):
         notation.delete(three, 999)
@@ -562,10 +568,11 @@ def test_an_accidental_is_printed_only_where_it_is_needed():
 def test_a_rest_that_fills_a_measure_is_written_as_one():
     # MEI has an element for it and an engraver draws it centred in the bar,
     # which is where a reader looks; a decomposed whole rest hangs at the start
-    # and reads as a rest on the downbeat with something after it.
+    # and reads as a rest on the downbeat with something after it. (The first
+    # voice is the short one: a second voice leaves the bars past it empty.)
     duo = notation.stack(
-        notation.sheet_from_voice([{"midis": [60], "ticks": 32}] * 2),
-        notation.sheet_from_voice([{"midis": [60], "ticks": 32}]))
+        notation.sheet_from_voice([{"midis": [60], "ticks": 32}]),
+        notation.sheet_from_voice([{"midis": [60], "ticks": 32}] * 2))
     mei = notation.to_mei(duo)
     assert "<mRest/>" in mei
     assert '<rest dur="1"' not in mei

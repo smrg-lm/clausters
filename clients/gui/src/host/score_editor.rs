@@ -342,18 +342,23 @@ mod tests {
         assert_eq!(unknown(window), Vec::<String>::new());
         assert!(window.find(page).is_some(), "the page is in the window");
 
-        // a press on empty staff writes a quarter, on the holder's own score
-        let insert = host.event_message(
-            page,
-            1,
-            vec![
-                OscType::String("insert".into()),
-                OscType::String("n4".into()),
-                OscType::Int(-2),
-                OscType::Int(0),
-            ],
+        // the window opens on the score's own keys, and N puts it in note
+        // entry: its keys are in force there
+        assert_eq!(host.window_keys(def_id), vec!["score".to_string()]);
+        let key = |host: &mut Host, seq: i32, verb: &str| {
+            let message = host.event_message(def_id, seq, vec![OscType::String(verb.into())]);
+            assert!(host.deliver(def_id, &message), "{verb}");
+        };
+        key(&mut host, 1, "entry");
+        assert_eq!(
+            host.window_keys(def_id),
+            vec!["score".to_string(), "note_entry".to_string()]
         );
-        assert!(host.deliver(def_id, &insert));
+        // past the bar, a C writes a quarter, on the holder's own score
+        for _ in 0..4 {
+            key(&mut host, 1, "cursor_right");
+        }
+        key(&mut host, 1, "pitch_c");
         assert_eq!(items(&held), 5);
 
         // and the window's undo takes it back, through the one history
@@ -378,25 +383,34 @@ mod tests {
             "it is in the window"
         );
 
-        // the tool holds state and reports its value: a press now writes a rest
+        // the tool holds state and reports its value: a press in note entry,
+        // in the second voice, now writes a rest
         let on = host.event_message(rest, 1, vec![OscType::Int(1)]);
         assert!(host.deliver(def_id, &on));
-        let insert = host.event_message(
+        for verb in ["entry", "voice_2"] {
+            let key = host.event_message(def_id, 1, vec![OscType::String(verb.into())]);
+            assert!(host.deliver(def_id, &key));
+        }
+        let enter = host.event_message(
             page,
             2,
             vec![
-                OscType::String("insert".into()),
+                OscType::String("enter".into()),
                 OscType::String("n4".into()),
                 OscType::Int(-2),
                 OscType::Int(0),
             ],
         );
-        assert!(host.deliver(def_id, &insert));
-        let last_sounds = held.lock().unwrap().sheet().unwrap().staves[0].voices[0]
-            .items
-            .last()
-            .is_some_and(Item::sounds);
-        assert_eq!((items(&held), last_sounds), (5, false));
+        assert!(host.deliver(def_id, &enter));
+        let second = |held: &clausters_apps::score::Shared| -> Vec<bool> {
+            held.lock().unwrap().sheet().unwrap().staves[0]
+                .voices
+                .get(1)
+                .map(|v| v.items.iter().map(Item::sounds).collect())
+                .unwrap_or_default()
+        };
+        assert_eq!(second(&held), vec![false, false], "a pad, then the rest");
+        assert_eq!(items(&held), 4, "the first voice did not move");
 
         // what was written is selected, and a pick of the bar is a verb over it
         let delete = host.event_message(
@@ -408,7 +422,7 @@ mod tests {
             ],
         );
         assert!(host.deliver(def_id, &delete));
-        assert_eq!(items(&held), 4);
+        assert_eq!(second(&held), vec![false]);
     }
 
     /// The index of the stack the dialogs are pages of, as the window stands.

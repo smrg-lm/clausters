@@ -88,6 +88,7 @@ impl ScoreData {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         data.entry = props.get("entry").and_then(Value::as_bool).unwrap_or(false);
+        data.edit_cursor = props.get("edit_cursor").and_then(edit_cursor);
         // Which ids name a sounding element rather than the furniture that also
         // carries one. The client's walk is what knows; a renderer cannot
         // re-derive it, since to it an id is an id.
@@ -224,4 +225,21 @@ fn parse_prim(v: &Value) -> Option<Prim> {
         }),
         _ => None,
     }
+}
+
+/// The `edit_cursor` prop: `{"at": <id>, "staff": <n>, "end": <bool>}` -- as
+/// an object, or as the JSON string a scalar wire carries it in -- or anything
+/// else, the empty string first, for none.
+pub fn edit_cursor(v: &Value) -> Option<super::EditCursor> {
+    if let Value::String(text) = v {
+        return serde_json::from_str::<Value>(text)
+            .ok()
+            .as_ref()
+            .and_then(edit_cursor);
+    }
+    Some(super::EditCursor {
+        at: v.get("at")?.as_str()?.to_string(),
+        staff: v.get("staff").and_then(Value::as_u64).unwrap_or(0) as usize,
+        end: v.get("end").and_then(Value::as_bool).unwrap_or(false),
+    })
 }

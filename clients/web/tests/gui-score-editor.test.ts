@@ -65,7 +65,7 @@ if (!existsSync(engraver)) {
         // the toolbar is a row of the crate's tools, each under an id of its own
         const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
         assert.equal((toolbar as unknown as { flow: string }).flow, "row");
-        assert.equal(new Set(tools.map((tool) => tool.id)).size, 15);
+        assert.equal(new Set(tools.map((tool) => tool.id)).size, 16);
         // a tool is drawn with the engraver's own symbol: its label is the
         // SMuFL character, and the window carries the outline the host draws
         // it with
@@ -80,7 +80,7 @@ if (!existsSync(engraver)) {
         const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
         assert.equal(page.type, "score");
         assert.equal(page.editable, true);
-        assert.equal(page.entry, true);
+        assert.equal(page.entry, false);
         assert.ok("kinds" in page && !("notes" in page));
         assert.equal(status.type, "label");
         // the window carries the menu bar, which holds every action
@@ -157,9 +157,9 @@ if (!existsSync(engraver)) {
 
     test("entry is the crate's switch", async () => {
         const editor = new ScoreEditor(await Score.open(PHRASE));
+        assert.equal(editor.entry, false, "the window opens outside note entry");
+        editor.entry = true;
         assert.equal(editor.entry, true);
-        editor.entry = false;
-        assert.equal(editor.entry, false);
     });
 
     const drawnPage = (editor: ScoreEditor) =>
@@ -232,12 +232,18 @@ if (!existsSync(engraver)) {
         editor.dotted = true;
         editor.nextAccidental = 1;
         assert.deepEqual([editor.dotted, editor.nextAccidental], [true, 1]);
-        const last = items(score).at(-1)!.id;
+        // in note entry, a press on a rest's column writes over it
+        const last = items(score).length - 1;
+        editor.select([`n${items(score)[last].id}`]);
+        assert.ok(editor.silence());
+        editor.entry = true;
         const page = editor.view!.widget(editor, "page", editor.structure);
+        const rest = items(score)[last].id;
         assert.ok(
-            editor.apply("/gui_event", [page, 1, versionOf(editor), "insert", `n${last}`, -3, 0]),
+            // (a script's edit raised the floor, so the press states no version)
+            editor.apply("/gui_event", [page, 1, 0, "enter", `n${rest}`, -3, 0]),
         );
-        const written = items(score).at(-1)!;
+        const written = items(score)[last];
         assert.deepEqual(written.dur, [3, 16]);
         assert.equal(written.pitches?.[0].alter, 1);
         assert.equal(editor.nextAccidental, null, "it was for that note");

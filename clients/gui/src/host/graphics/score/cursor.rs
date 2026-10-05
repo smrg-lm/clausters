@@ -15,6 +15,10 @@
 
 use super::tess::staff_distance;
 use super::{Affine, Entry, Prim, ScoreData, Staff};
+
+/// How far from a staff, in diatonic steps, a press in note entry still
+/// writes on it: the reach of four ledger lines.
+const LEDGER_REACH: f32 = 8.0;
 use crate::host::layout::Rect;
 
 impl ScoreData {
@@ -170,9 +174,8 @@ impl ScoreData {
         Some((((staff.y0 - y) / self.step).round()) as i32)
     }
 
-    /// Where a press on **blank paper** landed, for a page that takes note
-    /// entry: which staff, how far up it, and the element the new note would
-    /// follow.
+    /// Where a press on a staff landed, for a page in note entry: which
+    /// staff, how far up it, and the element whose column it fell in.
     ///
     /// This is the gesture's whole contribution, and the division is the same
     /// one every other score gesture keeps: the host measures the *page*, which
@@ -181,18 +184,22 @@ impl ScoreData {
     /// position is not a pitch until something knows the clef and the key, and
     /// the host knows neither.
     ///
-    /// `after` is the last element to the **left** on that staff, so a client
-    /// inserts after it; `None` means the press was before everything on the
-    /// staff, which is where a score with nothing written yet begins.
+    /// `at` is the sounding element of that staff nearest the press across,
+    /// so a client writes at the time it stands for; `None` is a staff with
+    /// nothing on it. A press further from every staff than its ledger lines
+    /// reach is on none, and `None` comes back.
     pub fn entry_at(&self, rect: Rect, x: f32, y: f32) -> Option<Entry> {
         let inv = self.fit(rect).invert()?;
         let [px, py] = inv.apply(x, y);
         let staff = self.staff_at(py)?;
+        if staff_distance(&staff, py) > LEDGER_REACH * self.step {
+            return None;
+        }
         let index = self.staff_of_system(staff)?;
         // The elements of this staff, which is the nearest one to each: a hit
         // is placed by where it is drawn, exactly as a note off the staff still
         // belongs to the staff its ledger lines count from.
-        let after = self
+        let at = self
             .hits
             .iter()
             .filter(|h| self.elements.contains(&h.id))
@@ -200,13 +207,56 @@ impl ScoreData {
                 let mid = 0.5 * (h.bounds.y0 + h.bounds.y1);
                 self.staff_at(mid) == Some(staff)
             })
-            .filter(|h| h.bounds.x1 <= px)
-            .max_by(|a, b| a.bounds.x1.total_cmp(&b.bounds.x1))
+            .min_by(|a, b| {
+                let off = |h: &super::HitBox| (0.5 * (h.bounds.x0 + h.bounds.x1) - px).abs();
+                off(a).total_cmp(&off(b))
+            })
             .map(|h| h.id.clone());
         Some(Entry {
             staff: index,
             position: (((staff.y0 - py) / self.step).round()) as i32,
-            after,
+            at,
+        })
+    }
+
+    /// **The rectangle the edit cursor covers**, in page units: the column of
+    /// its element (or a notehead's width past it, at the end of a voice),
+    /// over the staff it names in that element's system, a step beyond its
+    /// lines.
+    pub fn edit_cursor_box(&self) -> Option<super::Bounds> {
+        let cursor = self.edit_cursor.as_ref()?;
+        let column = self.hits.iter().find(|h| h.id == cursor.at)?.bounds;
+        let mid = 0.5 * (column.y0 + column.y1);
+        let own = self.staff_at(mid)?;
+        // the staves of the system the element is in, top down
+        let system = self
+            .systems
+            .iter()
+            .find(|[y0, y1]| mid >= *y0 - 8.0 * self.step && mid <= *y1 + 8.0 * self.step);
+        let staves: Vec<Staff> = match system {
+            Some([y0, y1]) => self
+                .staves
+                .iter()
+                .copied()
+                .filter(|s| {
+                    let m = 0.5 * (s.y0 + s.y1);
+                    m >= y0 - self.step && m <= y1 + self.step
+                })
+                .collect(),
+            None => vec![own],
+        };
+        let staff = staves.get(cursor.staff).copied().unwrap_or(own);
+        let width = (column.x1 - column.x0).max(2.0 * self.step);
+        let x0 = if cursor.end {
+            column.x1 + self.step
+        } else {
+            column.x0 - 0.25 * self.step
+        };
+        Some(super::Bounds {
+            x0,
+            x1: x0 + width + 0.5 * self.step,
+            y0: staff.y0 - self.step,
+            y1: staff.y1 + self.step,
         })
     }
 

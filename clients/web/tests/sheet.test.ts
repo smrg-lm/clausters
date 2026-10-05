@@ -18,6 +18,7 @@ import {
     addSpanner,
     concat,
     del,
+    enter,
     fromNotes,
     insert,
     header,
@@ -220,6 +221,12 @@ test("an edit names its item, and deleting is not silencing", () => {
     assert.equal(items(setPitches(three, id, [pitch("b", 3, 1)]))[1].pitches[0].step, "b");
     assert.equal(items(tie(three, id))[1].tie, true);
     assert.equal((toVoice(three, [id], 1).staves[0] as { voices: unknown[] }).voices.length, 2);
+    // an entry replaces: an eighth over the second quarter adds no time
+    const entered = enter(three, [1, 8], { at: [1, 4], pitches: [pitch("d", 4)] });
+    assert.deepEqual(items(entered).map((i) => i.dur), [[1, 4], [1, 8], [1, 8], [1, 4]]);
+    // where a press names the item whose column it fell in
+    const chord = enter(three, [1, 4], { item: id, position: -1, chord: true });
+    assert.equal(items(chord)[1].pitches.length, 2);
     // and every verb refuses an item that is not there, saying which
     assert.throws(() => del(three, 999), /999/);
 });
@@ -281,10 +288,11 @@ test("an accidental is printed only where it is needed", () => {
 test("a rest that fills a measure is written as one", () => {
     // MEI has an element for it and an engraver draws it centred in the bar,
     // which is where a reader looks; a decomposed whole rest hangs at the start
-    // and reads as a rest on the downbeat with something after it.
+    // and reads as a rest on the downbeat with something after it. (The first
+    // voice is the short one: a second voice leaves the bars past it empty.)
     const duo = stack(
-        sheetFromVoice([{ midis: [60], ticks: 32 }, { midis: [60], ticks: 32 }]),
         sheetFromVoice([{ midis: [60], ticks: 32 }]),
+        sheetFromVoice([{ midis: [60], ticks: 32 }, { midis: [60], ticks: 32 }]),
     );
     const mei = toMei(duo);
     assert.match(mei, /<mRest\/>/);

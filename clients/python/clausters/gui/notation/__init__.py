@@ -51,7 +51,7 @@ from .mei import (
     to_sequence, to_timeline,
 )
 from .sheet import (
-    add_spanner, apply, concat, delete, header, insert, insert_measures,
+    add_spanner, apply, concat, delete, enter, header, insert, insert_measures,
     interpretation, invert, item_id, marks, measures, move_steps, ops, pitch,
     remove_measures,
     remove_spanner, render_events, repeat, retrograde, set_barline, set_break,
@@ -71,6 +71,7 @@ __all__ = [
     "concat",
     "delete",
     "engrave",
+    "enter",
     "from_notes",
     "from_timeline",
     "header",

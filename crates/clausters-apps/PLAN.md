@@ -984,9 +984,9 @@ opened it.
   termines reviso los resultados y debugueamos"). The first looks of that
   pass are under "Found by use" -- the page that was in no window, the
   cursor, the written breaks, the symbols, the page's head, the dialogs, a
-  text typed over where it is drawn, all fixed there. What stays open: note
-  entry as a mode with a cursor, decided and not built, which is also how the
-  second voice is written; a written page break; the ○ palette entries, each
+  text typed over where it is drawn, all fixed there; note entry, built as a
+  mode with an edit cursor, which is also how the second voice is written.
+  What stays open: a written page break; the ○ palette entries, each
   the model growing; a channel group edited as one; an edit to a sounding
   pitch respelling the written one; New and Close in the File menu; the
   standalone host's playback and export; and the sound, which nobody has
@@ -2584,7 +2584,7 @@ wrong.
   the next pass gives both back; a channel whose last curve goes finishes its
   notes the same way.
 
-- ⬜ **A note cannot be written into the second voice** *(found 2026-10-05,
+- ✅ **A note cannot be written into the second voice** *(found 2026-10-05,
   building `X5.5.2`'s voice tool)*. The page's `insert` gesture names the
   item the new note **follows**, and an insertion after an item goes into
   that item's voice and adds its time to it, so there is no press that writes
@@ -2597,6 +2597,12 @@ wrong.
   holds. *(2026-10-05: that is the edit cursor of "Writing notes has no
   cursor, and a note written pushes the rest along", below -- a place in a
   voice, and an entry that replaces there. This closes with it.)*
+  **Fixed 2026-10-05 with note entry**: `Ctrl+Alt+2` puts the edit cursor in
+  the second voice, and what is entered there is written against the first,
+  which does not move; the voice is made, and padded with a rest to where the
+  entry starts. The bars past a second voice's end are left empty rather than
+  given a rest each (`<mSpace/>`), which is what the page drew the first time
+  one was written.
 
 - ✅ **The value and dot tools do not act on the selection** *(found
   2026-10-05, the same step)*. They are the input state alone: with notes
@@ -2755,7 +2761,7 @@ wrong.
   height, a staff's stem room on one staff and three times it on a grand
   staff; it is a measure of the staff now (`notation::cursors::stem_room`).
 
-- ⬜ **Writing notes has no cursor, and a note written pushes the rest
+- ✅ **Writing notes has no cursor, and a note written pushes the rest
   along** *(found 2026-10-05, the user's first sitting at the page: "Tiene que
   haber cursor de edición ... Las alturas que se ingresan no pueden desplazar
   a las demás ni dentro del compás ni entre compases")*. Today a press on
@@ -2835,6 +2841,21 @@ wrong.
   voice, where `insert` adds time), bound in both clients; the host's `score`
   element draws the cursor and reads a press by the mode; the example's
   prose and both books' paragraph on a gesture change with it.
+  **Built 2026-10-05**, as decided. The model's verb is `enter`
+  (`notation::edit::enter`, `Op::Enter`, in both clients): a stretch of one
+  voice written over, at a time or at the time an item starts, or a pitch
+  added to the chord there. The crate's `score::entry` keeps the cursor's
+  arithmetic, and the editor the mode, the cursor, where it was left and the
+  note just written. The host's `score` element reads a plain press on a staff
+  in the mode as `"enter" <column> <position> <staff>` -- the element whose
+  column it fell in -- and draws the cursor the editor names (`edit_cursor`);
+  the key table grew **scopes** (`[gui.keys.score]`, `[gui.keys.note_entry]`, a
+  window's `keys`), read first in a window that names them, so the letters are
+  pitches in the mode and `E` is still `split` elsewhere. The toolbar has the
+  pencil, the menu's entry is Note entry, and the window opens outside the
+  mode. Checked in the browser: entering, chords by key and by press, the
+  second voice, the arrows, Escape. Left as found: overwriting the note a slur
+  or a hairpin starts on takes the spanner with it, as a deleted note does.
 
 - ⬜ **The ○ entries are notation the model does not hold** *(listed by
   `X5.6`; taken 2026-10-05)*. Each is the model growing an item or a field,

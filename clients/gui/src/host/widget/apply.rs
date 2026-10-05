@@ -24,6 +24,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Window { plays, .. } if key == "plays" => {
             truthy(v).map(|b| *plays = b).is_some()
         }
+        WidgetKind::Window { keys, .. } if key == "keys" => {
+            *keys = super::build::scopes(v);
+            true
+        }
         // What a `layout` shows of itself -- its title, its frame, whether it
         // is folded or a dialog -- is the layout's alone, answered before the
         // arm it shares with the window.

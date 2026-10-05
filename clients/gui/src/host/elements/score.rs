@@ -106,6 +106,7 @@ impl Element for Score {
                     // replaced the display list.
                     data.editable = keep.editable;
                     data.entry = keep.entry;
+                    data.edit_cursor = keep.edit_cursor;
                     // a text being typed over stays so while the page that
                     // came still draws it
                     data.editing = keep.editing.filter(|edit| data.text_of(&edit.id).is_some());
@@ -138,6 +139,12 @@ impl Element for Score {
             // the reverse). A drag only transposes while this is true.
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
             "entry" => v.as_bool().map(|b| data.entry = b).is_some(),
+            // Where note entry writes next, as the owner names it; anything
+            // that names no element takes the cursor away.
+            "edit_cursor" => {
+                data.edit_cursor = crate::host::graphics::score::edit_cursor(v);
+                true
+            }
             _ => false,
         }
     }
@@ -257,34 +264,24 @@ impl Element for Score {
         if typing {
             return Claim::events(written);
         }
-        // **On a page that takes note entry, a staff line is a place.** The hit
-        // test answers with a sounding element where there is one and with the
-        // tightest box otherwise, and the tightest box on an engraved page is a
-        // staff *line* -- a hairline the width of the system, thinner than any
-        // notehead, carrying the staff's own id. So a press aimed at a line
-        // rather than at a space was answered with the engraver's own drawing
-        // and spent on a selection: measured over one sitting, 64 presses wrote
-        // a quarter and 10 came back as `"element"`.
-        //
-        // Selecting a staff is not the wrong answer -- writing is what a press
-        // on the staff is *for*, and being a pixel onto a line is not a way to
-        // ask for something else. So on a page that takes entry, a press on the
-        // staff's own drawing is the place that drawing is at, and selecting a
-        // staff needs its own way to be asked for (see the plan's "A selected
-        // staff is edited by its line count").
-        //
-        // **The staff's lines and nothing else.** The first cut of this asked
-        // whether the pick *sounds*, which is a different question with a
-        // different answer: a slur, a hairpin, a dynamic and a beam sound
-        // nothing and are elements of the score all the same, so that rule made
-        // them unselectable and turned every press on one into a note. What the
-        // page can say for itself is which primitives draw the staves
-        // (`ScoreData::staff_ids`, derived by the same geometry the staves are),
-        // and that is exactly the furniture this is allowed to reach.
-        let picked = match &picked {
-            Some(id) if self.data.entry && self.data.staff_ids.contains(id) => None,
-            _ => picked,
-        };
+        // **In note entry a press on a staff is an entry**, wherever on the
+        // staff it lands -- on a line, a space, a note or a rest: the place it
+        // names is the time of the column it fell in and the line or space
+        // under it, and the owner writes there. It selects nothing and never
+        // drags. A modified press is still a selection, and a press away from
+        // every staff is still what it is on any page.
+        let plain = !input.mods.ctrl && !input.mods.shift;
+        if self.data.entry
+            && plain
+            && let Some(entry) = self.data.entry_at(input.rect, at.0 as f32, at.1 as f32)
+        {
+            return Claim::events(Events::message(vec![
+                OscType::String("enter".into()),
+                OscType::String(entry.at.unwrap_or_default()),
+                OscType::Int(entry.position),
+                OscType::Int(entry.staff as i32),
+            ]));
+        }
         // **A modified press adds to the selection rather than replacing it**:
         // Ctrl toggles the element in it, Shift extends it to the element --
         // the field's two conventions. What a range *is* (the notes in time
@@ -342,25 +339,6 @@ impl Element for Score {
                 steps: 0,
             });
             self.origin_y = Some(at.1);
-        }
-        // A press on blank paper, on a page that takes note entry, reports
-        // *where* it landed rather than only that nothing is there. The host
-        // names a place -- the staff, how far up it, the element it would follow
-        // -- and nothing else: a staff position is not a pitch until something
-        // knows the clef and the key, and a duration is a choice nobody made by
-        // clicking. Both are the client's, which is the line every other score
-        // gesture already draws.
-        if picked.is_none()
-            && mode.is_empty()
-            && self.data.entry
-            && let Some(entry) = self.data.entry_at(input.rect, at.0 as f32, at.1 as f32)
-        {
-            return Claim::events(Events::message(vec![
-                OscType::String("insert".into()),
-                OscType::String(entry.after.unwrap_or_default()),
-                OscType::Int(entry.position),
-                OscType::Int(entry.staff as i32),
-            ]));
         }
         match (changed, dragging) {
             // Nothing selected, nothing to drag: the press was never this
@@ -925,24 +903,24 @@ mod tests {
         assert!(score.data.drag.is_none());
         assert!(score.data.prims.is_empty(), "and the drawing was replaced");
     }
-    /// **A press on blank paper reports a place, on a page that asked for one.**
-    /// It names the staff, how far up it, and the element the note would follow
-    /// -- and nothing else. A staff position is not a pitch until something
-    /// knows the clef and the key, and the host knows neither.
+    /// **A press in note entry reports a place.** It names the staff, how far
+    /// up it, and the element whose column it fell in -- and nothing else. A
+    /// staff position is not a pitch until something knows the clef and the
+    /// key, and the host knows neither.
     #[test]
     fn a_page_taking_note_entry_reports_where_a_press_landed() {
         let metrics = Metrics::default();
         let input = input(&metrics);
         let mut score = entry_page();
 
-        // To the right of both notes, on the staff: it follows the second. The
-        // top line is y=20 and a step is 90, so the middle line at y=380 is
-        // four steps below it.
+        // Right of both notes, on the staff: the second is the nearer column.
+        // The top line is y=20 and a step is 90, so the middle line at y=380
+        // is four steps below it.
         let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
         assert_eq!(
             claim,
             Claim::events(Events::message(vec![
-                OscType::String("insert".into()),
+                OscType::String("enter".into()),
                 OscType::String("n2".into()),
                 OscType::Int(-4),
                 OscType::Int(0),
@@ -975,38 +953,23 @@ mod tests {
         assert_eq!(
             claim,
             Claim::events(Events::message(vec![
-                OscType::String("insert".into()),
+                OscType::String("enter".into()),
                 OscType::String("n2".into()),
                 OscType::Int(-4),
                 OscType::Int(0),
             ])),
             "the line is a place to write, not a thing to select"
         );
-
-        // A note still answers as itself: the rule reaches the furniture only.
-        score.press(at(&score, input.rect, 450.0, 250.0), &input);
-        assert_eq!(
-            score.data.selected.first().map(String::as_str),
-            Some("n2"),
-            "a press on a notehead is still the note's"
-        );
+        assert!(score.data.selected.is_empty(), "and it selected nothing");
     }
 
-    /// **A slur, a dynamic and anything else that does not sound are still
-    /// selected by pointing at them**, on a page that takes entry.
-    ///
-    /// The regression this pins, shipped and caught by eye within the hour: the
-    /// first cut of the rule above asked whether the pick *sounds*, and
-    /// `elements` names notes and rests. A slur, a hairpin, a `p` and a beam
-    /// sound nothing and are elements of the score all the same, so every press
-    /// on one became a note and none of them could be selected --
-    /// *"no es posible seleccionar ligaduras, p, mp y otros elementos, ahora
-    /// siempre agrega notas"*. Sounding and *being the staff's own drawing* are
-    /// different questions; only the second is this fix's business.
+    /// **A modified press still selects in note entry**: a plain press on a
+    /// staff writes, so what does not sound -- a slur, a dynamic -- is reached
+    /// with Ctrl, or outside the mode, where a press selects.
     #[test]
-    fn a_slur_or_a_dynamic_is_still_selected_on_a_page_that_takes_entry() {
+    fn a_modified_press_still_selects_in_note_entry() {
         let metrics = Metrics::default();
-        let input = input(&metrics);
+        let mut input = input(&metrics);
         let props: Map<String, Value> = serde_json::from_str(
             r#"{"vb":[1000,1000],"step":90,"editable":true,"entry":true,
                 "glyphs":{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"},
@@ -1036,11 +999,16 @@ mod tests {
             "and a glyph is not one of them"
         );
 
+        // plain, the press under the staff is an entry
+        let plain = score.press(at(&score, input.rect, 750.0, 950.0), &input);
+        assert!(format!("{plain:?}").contains("\"enter\""), "{plain:?}");
+        // with Ctrl, it selects the dynamic
+        input.mods.ctrl = true;
         score.press(at(&score, input.rect, 750.0, 950.0), &input);
         assert_eq!(
             score.data.selected.first().map(String::as_str),
             Some("dyn1"),
-            "a press on the dynamic selects it rather than writing a note"
+            "a modified press on the dynamic selects it"
         );
     }
 
@@ -1109,7 +1077,7 @@ mod tests {
         assert_eq!(
             claim,
             Claim::events(Events::message(vec![
-                OscType::String("insert".into()),
+                OscType::String("enter".into()),
                 OscType::String(String::new()),
                 OscType::Int(-6),
                 OscType::Int(1),
@@ -1147,7 +1115,7 @@ mod tests {
         assert_eq!(
             claim,
             Claim::events(Events::message(vec![
-                OscType::String("insert".into()),
+                OscType::String("enter".into()),
                 OscType::String("n1".into()),
                 OscType::Int(-4),
                 OscType::Int(0),
@@ -1178,10 +1146,11 @@ mod tests {
         );
     }
 
-    /// A press that lands *on* an element is a selection, whatever the page
-    /// takes: note entry is what happens where there is nothing.
+    /// **In note entry a press on a note is an entry too**: it names the
+    /// note's column, which is how a chord is built by pressing another line
+    /// or space where the note is -- and it never drags.
     #[test]
-    fn note_entry_does_not_take_over_a_press_on_a_note() {
+    fn in_note_entry_a_press_on_a_note_names_its_column() {
         let metrics = Metrics::default();
         let input = input(&metrics);
         let mut score = entry_page();
@@ -1189,9 +1158,12 @@ mod tests {
         assert_eq!(
             claim,
             Claim::events(Events::message(vec![
-                OscType::String("element".into()),
+                OscType::String("enter".into()),
                 OscType::String("n1".into()),
+                OscType::Int(-2),
+                OscType::Int(0),
             ]))
         );
+        assert!(score.data.drag.is_none(), "and nothing is dragged");
     }
 }

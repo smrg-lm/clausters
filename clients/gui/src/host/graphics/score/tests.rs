@@ -566,50 +566,73 @@ fn line_prim_renders_within_clip() {
     assert!(!mesh.is_empty(), "a staff line should paint");
 }
 
-/// **A press on blank paper names a place, in the ids the client engraved.**
+/// **A press in note entry names a place, in the ids the client engraved.**
 /// The host is the only one that can measure where the finger went; it says so
 /// and stops there -- no pitch, because that needs a clef and a key it does not
 /// have, and no duration, because a click implies none.
 #[test]
-fn a_press_on_blank_paper_names_the_staff_the_step_and_what_it_follows() {
+fn a_press_on_a_staff_names_the_staff_the_step_and_the_column() {
     let mut data = staffed_page();
     // The client says which ids are sounding elements. Without that a staff
-    // line, which carries the staff's id, would be "the element to the left" of
-    // everything -- to a renderer an id is an id.
+    // line, which carries the staff's id, would be a column of its own -- to
+    // a renderer an id is an id.
     data.elements.insert("n1".to_string());
     let rect = Rect::new(0.0, 0.0, 11000.0, 3000.0);
     assert_eq!(data.fit(rect).sx, 1.0);
 
-    // To the right of the note, on the staff: it follows the note.
+    // On the staff, nearer the note than anything else: its column.
     let entry = data
-        .entry_at(rect, 4000.0, 1400.0)
+        .entry_at(rect, 2400.0, 1400.0)
         .expect("a staff is there");
-    assert_eq!(entry.after.as_deref(), Some("n1"));
+    assert_eq!(entry.at.as_deref(), Some("n1"));
     assert_eq!(entry.staff, 0);
-    // 1400 is two steps of 90... no: the staff's top line is 1040 and a step is
-    // 90, so 1400 is four steps below it.
+    // the staff's top line is 1040 and a step is 90, so 1400 is four steps
+    // below it
     assert_eq!(entry.position, -4);
-
-    // Before everything: nothing to follow, which is where an empty score
-    // begins rather than an error.
-    let first = data.entry_at(rect, 700.0, 1040.0).expect("still the staff");
-    assert_eq!(first.after, None);
-    assert_eq!(first.position, 0, "the top line itself");
+    let top = data.entry_at(rect, 700.0, 1040.0).expect("still the staff");
+    assert_eq!(top.position, 0, "the top line itself");
+    // and far from every staff, a press is on none
+    assert_eq!(data.entry_at(rect, 2400.0, 2900.0), None);
 }
 
-/// **The furniture is not an element.** A staff's lines carry the staff's id,
-/// so without the client's list the nearest thing to the left of any press is
-/// always a staff line -- and an insertion "after the staff" names nothing a
-/// model can resolve.
+/// **The furniture is not a column.** A staff's lines carry the staff's id,
+/// so without the client's list a staff line would be what a press names --
+/// and a time "at the staff" is nothing a model can resolve.
 #[test]
-fn a_staff_line_is_never_what_a_new_note_follows() {
+fn a_staff_line_is_never_the_column_a_press_names() {
     let data = staffed_page();
     assert!(data.elements.is_empty(), "nothing was declared an element");
     let rect = Rect::new(0.0, 0.0, 11000.0, 3000.0);
     let entry = data
         .entry_at(rect, 4000.0, 1400.0)
         .expect("a staff is there");
-    assert_eq!(entry.after, None, "the staff line is not a candidate");
+    assert_eq!(entry.at, None, "the staff line is not a candidate");
+}
+
+/// **The edit cursor covers its element's column over the staff it names**,
+/// or a notehead past it at the end of a voice.
+#[test]
+fn the_edit_cursor_stands_on_its_column_over_its_staff() {
+    let mut data = staffed_page();
+    assert_eq!(data.edit_cursor_box(), None, "no cursor, nothing drawn");
+    data.edit_cursor = Some(EditCursor {
+        at: "n1".into(),
+        staff: 0,
+        end: false,
+    });
+    let on = data.edit_cursor_box().expect("a box");
+    assert!(
+        on.x0 < 1783.0 && on.x1 > 1783.0,
+        "over the notehead: {on:?}"
+    );
+    assert_eq!((on.y0, on.y1), (1040.0 - 90.0, 1760.0 + 90.0));
+    // the scalar wire's JSON string, and the empty string that is none
+    let wired = Value::String(r#"{"at": "n1", "staff": 0, "end": true}"#.into());
+    assert_eq!(edit_cursor(&wired).map(|c| c.end), Some(true));
+    assert_eq!(edit_cursor(&Value::String(String::new())), None);
+    data.edit_cursor.as_mut().unwrap().end = true;
+    let past = data.edit_cursor_box().expect("a box");
+    assert!(past.x0 > on.x1 - 90.0, "past the note: {past:?}");
 }
 
 /// The measurement follows the page fit, exactly as hit testing does: the same

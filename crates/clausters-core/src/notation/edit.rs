@@ -94,6 +94,204 @@ pub fn insert(
     Ok(sheet)
 }
 
+/// **Write a note, chord or rest over a stretch of one voice**, as note entry
+/// does: `[at, at + dur)` of voice `voice` on staff `staff` becomes the new
+/// item, and **nothing else moves** -- the measures keep their length and
+/// every other item its time. This is what [`insert`] is not: an insertion
+/// adds time, an entry replaces it.
+///
+/// What the stretch covered goes. A note it starts inside keeps the part
+/// before it, and one it ends inside leaves a rest for the part after, so
+/// the voice is as long as it was or, where the entry ran past its end,
+/// longer by what was written. A voice that ends before `at` is padded with a
+/// rest to it, and a voice the staff does not have yet is made -- which is
+/// how a second voice is written against a first. A value that runs past a
+/// barline is one item, and the page writes it as tied parts.
+///
+/// An empty `pitches` is a rest.
+///
+/// # Errors
+/// When the value is not positive, `at` is before the start, or the staff is
+/// not there.
+pub fn enter(
+    mut sheet: Sheet,
+    staff: usize,
+    voice: usize,
+    at: Ratio,
+    pitches: Vec<Pitch>,
+    dur: Ratio,
+) -> Result<Sheet, String> {
+    if !dur.is_positive() {
+        return Err(format!("{dur} is not a length a written item can have"));
+    }
+    if at < Ratio::ZERO {
+        return Err(format!("{at} is before the start of the score"));
+    }
+    if staff >= sheet.staves.len() {
+        return Err(format!("this score has no staff {staff}"));
+    }
+    sheet.assign_ids();
+    let end = at + dur;
+    let new = sheet.mint();
+    let mut mint = {
+        let mut next = sheet.next_id;
+        move || {
+            next += 1;
+            next - 1
+        }
+    };
+    let staff_ref = &mut sheet.staves[staff];
+    while staff_ref.voices.len() <= voice {
+        staff_ref.voices.push(super::model::Voice::default());
+    }
+    let old = std::mem::take(&mut staff_ref.voices[voice].items);
+    let mut before: Vec<Item> = Vec::new();
+    let mut after: Vec<Item> = Vec::new();
+    let mut onset = Ratio::ZERO;
+    for item in old {
+        let (start, stop) = (onset, onset + item.dur());
+        onset = stop;
+        if stop <= at {
+            before.push(item);
+        } else if start >= end {
+            after.push(item);
+        } else {
+            // the part before the stretch stays the item it was, shorter
+            if start < at {
+                before.push(item.with_dur(at - start));
+            }
+            // and the part after it is silence: what sounded there was
+            // the item the entry wrote over
+            if stop > end {
+                after.insert(
+                    0,
+                    Item::Rest {
+                        id: mint(),
+                        dur: stop - end,
+                    },
+                );
+            }
+        }
+    }
+    if onset < at {
+        before.push(Item::Rest {
+            id: mint(),
+            dur: at - onset,
+        });
+    }
+    // a tie written into what is no longer there ties into nothing
+    if let Some(Item::Note {
+        tie, pitches: held, ..
+    }) = before.last_mut()
+        && !held.iter().any(|p| pitches.contains(p))
+    {
+        *tie = false;
+    }
+    let item = if pitches.is_empty() {
+        Item::Rest { id: new, dur }
+    } else {
+        Item::Note {
+            id: new,
+            pitches,
+            dur,
+            tie: false,
+            marks: Marks::default(),
+        }
+    };
+    before.push(item);
+    before.extend(after);
+    sheet.staves[staff].voices[voice].items = before;
+    sheet.next_id = mint();
+    super::operators::prune_spanners(&mut sheet);
+    Ok(sheet)
+}
+
+/// **Where the item `id` starts**, in whole notes from the start of the score.
+pub fn onset(sheet: &Sheet, id: u64) -> Option<Ratio> {
+    let (si, vi, ii) = sheet.locate(id)?;
+    Some(
+        sheet.staves[si].voices[vi].items[..ii]
+            .iter()
+            .fold(Ratio::ZERO, |acc, item| acc + item.dur()),
+    )
+}
+
+/// **Add a pitch to the chord that starts at `at`** in voice `voice` of staff
+/// `staff` -- how a chord is built during note entry. Nothing moves; a pitch
+/// the chord already holds changes nothing.
+///
+/// # Errors
+/// When no note of that voice starts at `at`: a rest has no chord to add to.
+pub fn add_to_chord(
+    mut sheet: Sheet,
+    staff: usize,
+    voice: usize,
+    at: Ratio,
+    pitch: Pitch,
+) -> Result<Sheet, String> {
+    sheet.assign_ids();
+    let items = sheet
+        .staves
+        .get_mut(staff)
+        .and_then(|s| s.voices.get_mut(voice))
+        .map(|v| &mut v.items)
+        .ok_or_else(|| format!("this score has no voice {voice} on staff {staff}"))?;
+    let mut onset = Ratio::ZERO;
+    for item in items.iter_mut() {
+        if onset == at {
+            let Item::Note { pitches, .. } = item else {
+                break;
+            };
+            if !pitches.contains(&pitch) {
+                pitches.push(pitch);
+                pitches.sort_by_key(Pitch::midi);
+            }
+            return Ok(sheet);
+        }
+        onset = onset + item.dur();
+        if onset > at {
+            break;
+        }
+    }
+    Err(format!(
+        "no note of voice {voice} on staff {staff} starts at {at}, so there is no chord to add to"
+    ))
+}
+
+/// **The pitch the letter `step` names, in the octave nearest `near`** --
+/// what typing a letter during note entry writes: the note closest to the one
+/// before it, the key signature's alteration on it. With nothing before it,
+/// the octave is the one the staff's clef sits in the middle of.
+///
+/// # Errors
+/// When there is no such staff.
+pub fn pitch_near(
+    sheet: &Sheet,
+    staff: usize,
+    step: Step,
+    near: Option<Pitch>,
+) -> Result<Pitch, String> {
+    let near = match near {
+        Some(pitch) => pitch,
+        // the middle line of the staff
+        None => pitch_at(sheet, staff, -4)?,
+    };
+    let from = near.octave * 7 + near.step.index();
+    // the ladder index of the letter nearest `from`: at most three steps away
+    let offset = (step.index() - near.step.index()).rem_euclid(7);
+    let ladder = if offset <= 3 {
+        from + offset
+    } else {
+        from + offset - 7
+    };
+    Ok(Pitch {
+        step,
+        alter: super::mei::key_alteration(&sheet.key, step),
+        octave: ladder.div_euclid(7),
+        forced: false,
+    })
+}
+
 /// Take an item out. Everything after it in that voice moves earlier by its
 /// value -- see [`silence`] for the other thing this could mean.
 pub fn delete(mut sheet: Sheet, id: u64) -> Result<Sheet, String> {
@@ -623,6 +821,125 @@ mod tests {
         // and one written at the start goes first
         let out = insert(three(), At::Start, vec![], Ratio::new(1, 4), 0, 0).unwrap();
         assert!(items(&out)[0].pitches().is_empty());
+    }
+
+    fn d4() -> Pitch {
+        Pitch {
+            step: Step::D,
+            alter: 0,
+            octave: 4,
+            forced: false,
+        }
+    }
+
+    /// The onsets of a voice's items, and whether each sounds.
+    fn shape(sheet: &Sheet, voice: usize) -> Vec<(Ratio, Ratio, bool)> {
+        let mut onset = Ratio::ZERO;
+        sheet.staves[0].voices[voice]
+            .items
+            .iter()
+            .map(|i| {
+                let at = onset;
+                onset = onset + i.dur();
+                (at, i.dur(), i.sounds())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_entry_replaces_and_nothing_after_it_moves() {
+        let q = Ratio::new(1, 4);
+        let e = Ratio::new(1, 8);
+        // an eighth over the second quarter: its first half is the new note,
+        // its second half silence, and the third quarter is where it was
+        let sheet = three();
+        let third = items(&sheet)[2].id();
+        let out = enter(sheet, 0, 0, q, vec![d4()], e).unwrap();
+        assert_eq!(
+            shape(&out, 0),
+            vec![
+                (Ratio::ZERO, q, true),
+                (q, e, true),
+                (q + e, e, false),
+                (Ratio::new(1, 2), q, true),
+            ]
+        );
+        assert_eq!(items(&out)[3].id(), third, "the item after keeps its id");
+        assert_eq!(out.len(), Ratio::new(3, 4), "no time was added");
+
+        // a half over the last two quarters ends where they did
+        let out = enter(three(), 0, 0, q, vec![d4()], Ratio::new(1, 2)).unwrap();
+        assert_eq!(out.len(), Ratio::new(3, 4));
+        assert_eq!(items(&out).len(), 2);
+
+        // an entry starting inside a note keeps the note's head
+        let out = enter(three(), 0, 0, e, vec![d4()], q).unwrap();
+        assert_eq!(
+            shape(&out, 0),
+            vec![
+                (Ratio::ZERO, e, true),
+                (e, q, true),
+                (q + e, e, false),
+                (Ratio::new(1, 2), q, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_entry_past_the_end_pads_and_a_new_voice_is_made() {
+        let q = Ratio::new(1, 4);
+        let out = enter(three(), 0, 0, Ratio::ONE, vec![d4()], q).unwrap();
+        // a rest fills the gap from the end of the voice to the entry
+        assert_eq!(shape(&out, 0).last().copied(), Some((Ratio::ONE, q, true)));
+        assert_eq!(out.len(), Ratio::ONE + q);
+        // a second voice is written against the first, which does not move
+        let out = enter(three(), 0, 1, Ratio::new(1, 2), vec![d4()], q).unwrap();
+        assert_eq!(items(&out).len(), 3);
+        assert_eq!(
+            shape(&out, 1),
+            vec![
+                (Ratio::ZERO, Ratio::new(1, 2), false),
+                (Ratio::new(1, 2), q, true)
+            ]
+        );
+        // and a rest is entered the same way
+        let out = enter(three(), 0, 0, q, vec![], q).unwrap();
+        assert!(!items(&out)[1].sounds());
+        assert_eq!(items(&out).len(), 3);
+    }
+
+    #[test]
+    fn a_chord_grows_by_a_pitch_where_a_note_starts() {
+        let q = Ratio::new(1, 4);
+        let out = add_to_chord(three(), 0, 0, q, d4()).unwrap();
+        assert_eq!(items(&out)[1].pitches(), &[c4(), d4()]);
+        // twice is once
+        let again = add_to_chord(out.clone(), 0, 0, q, d4()).unwrap();
+        assert_eq!(again, out);
+        // no note starts at an eighth, and a rest has no chord
+        assert!(add_to_chord(three(), 0, 0, Ratio::new(1, 8), d4()).is_err());
+        let quiet = silence(three(), 2).unwrap();
+        assert!(add_to_chord(quiet, 0, 0, q, d4()).is_err());
+    }
+
+    #[test]
+    fn a_letter_is_written_in_the_octave_nearest_the_note_before() {
+        let sheet = three();
+        // from C4, a G is the one below and an E the one above
+        let g = pitch_near(&sheet, 0, Step::G, Some(c4())).unwrap();
+        assert_eq!((g.step, g.octave), (Step::G, 3));
+        let e = pitch_near(&sheet, 0, Step::E, Some(c4())).unwrap();
+        assert_eq!((e.step, e.octave), (Step::E, 4));
+        // from B4, a C is the one above
+        let b = Pitch {
+            step: Step::B,
+            ..c4()
+        };
+        let c = pitch_near(&sheet, 0, Step::C, Some(b)).unwrap();
+        assert_eq!((c.step, c.octave), (Step::C, 5));
+        // with nothing before, around the treble staff's middle line, B4
+        let first = pitch_near(&sheet, 0, Step::A, None).unwrap();
+        assert_eq!((first.step, first.octave), (Step::A, 4));
     }
 
     #[test]

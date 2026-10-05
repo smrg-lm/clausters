@@ -49,6 +49,7 @@ export {
     apply,
     concat,
     del,
+    enter,
     fromMei as sheetFromMei,
     fromVoice as sheetFromVoice,
     header,

@@ -1184,3 +1184,58 @@ fn a_dialog_holding_heavy_views_reaches_its_last_row() {
         emitted(&e, 9)
     );
 }
+
+/// **A window's scopes are read before the table**: in a window whose `keys`
+/// name note entry, `E` is that scope's pitch where everywhere else it is the
+/// host's `split`, and Escape -- with no dialog up and no element that takes
+/// it -- is the scope's to bind rather than the front's close.
+#[test]
+fn a_windows_key_scopes_are_read_before_the_table() {
+    let mut host = host_from(
+        r#"{"type":"window","keys":["score","note_entry"],"children":[
+            {"id":5,"type":"label","text":"x"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Char('e'), None)
+        .expect("consumed");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![OscType::String("pitch_e".into())]]
+    );
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Escape, None)
+        .expect("the scope's, not the front's");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![OscType::String("entry_off".into())]]
+    );
+    // a list rides a scalar wire as its JSON string
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_SET.into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String("keys".into()),
+                OscType::String(r#"["note_entry"]"#.into()),
+            ],
+        }),
+        from(),
+    );
+    assert_eq!(host.window_keys(1), vec!["note_entry".to_string()]);
+    // the scopes go with the prop, and Escape is the front's again
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_SET.into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String("keys".into()),
+                OscType::String("score".into()),
+            ],
+        }),
+        from(),
+    );
+    assert_eq!(host.window_keys(1), vec!["score".to_string()]);
+    assert!(g.press_key(&mut host, &ctx, Key::Escape, None).is_none());
+}

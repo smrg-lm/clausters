@@ -33,7 +33,7 @@ export interface ScoreViewOptions {
     sampleRate?: number;
     /** Opt the page into pitch editing. */
     editable?: boolean;
-    /** Opt into note entry: a press on blank paper reports where it landed. */
+    /** Put the page in note entry: a press on a staff reports where it landed. */
     entry?: boolean;
 }
 
@@ -53,10 +53,10 @@ export interface ScoreViewOptions {
  * `editable` opts the page into pitch editing: left off, a drag does nothing and
  * the view is read-only, which is what a plain plot of a score wants; a driver
  * that applies the `"transpose"` round trip passes `editable: true`. `entry`
- * opts it into **note entry**: a press on blank paper inside a staff reports
- * `"insert" <after-xml:id> <position> <staff>` -- a place, not a note, since the
- * pitch needs the clef and the key and the duration is nobody's until a driver
- * chooses one.
+ * puts it in **note entry**: a press on a staff reports
+ * `"enter" <xml:id> <position> <staff>` -- the element whose column it fell in,
+ * a place and not a note, since the pitch needs the clef and the key and the
+ * duration is nobody's until a driver chooses one.
  *
  * `scrollName` tags the **scroll**, which a driver needs for one thing: the page
  * is drawn to fit the box it is given, so an edit that adds a system would

@@ -176,7 +176,7 @@ pub fn menu(state: &State<'_>) -> Value {
         sub(
             "Notes",
             vec![
-                json!({"label": "Write notes", "verb": "entry", "checked": state.entry}),
+                json!({"label": "Note entry", "verb": "entry", "checked": state.entry}),
                 sub(
                     "Value",
                     VALUES

@@ -191,8 +191,14 @@ export interface PageOptions {
  * A symbolic score on its page, edited by hand, in place.
  *
  * A press on a note selects it, a drag moves it along its staff, and a press on
- * empty staff writes a note of {@link ScoreEditor.value} there
- * ({@link ScoreEditor.entry}; off, it selects the measure). Ctrl+click adds a
+ * a staff selects its measure. **Note entry** is a mode
+ * ({@link ScoreEditor.entry}, the toolbar's pencil, or N; Escape leaves it): an
+ * edit cursor stands on a staff, in a voice, and what is entered is written
+ * there over what was there, nothing after it moving -- a letter `a` to `g`
+ * writes that pitch of {@link ScoreEditor.value} and the cursor goes on, Shift
+ * and a letter adds it to the chord, a press on a staff writes at the time it
+ * fell at (on a note, into its chord), the arrows move the cursor and
+ * Ctrl+Alt+1 to 4 change its voice. Playing leaves the mode. Ctrl+click adds a
  * note to the selection or takes it out, and Shift+click extends the selection
  * to it, in time and across the staves between. The verbs act on what is
  * selected ({@link ScoreEditor.selected}, {@link ScoreEditor.select}); each is
@@ -536,12 +542,13 @@ export class ScoreEditor extends Editor<Score> {
     }
 
     /**
-     * Whether a press on empty staff writes a note. On by default; off, the
-     * same press on a staff selects the measure it fell in. Set it to switch:
-     * `editor.entry = false`.
+     * Whether the window is in note entry, where the keys and a press on a
+     * staff write at the edit cursor. Off by default, and off once a pass
+     * plays; outside it a press on a staff selects the measure it fell in. Set
+     * it to switch: `editor.entry = true`.
      */
     get entry(): boolean {
-        return this.coreCall("entry").entry !== false;
+        return this.coreCall("entry").entry === true;
     }
 
     set entry(on: boolean) {

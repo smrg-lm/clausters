@@ -31,6 +31,7 @@
 
 pub mod dialogs;
 pub mod editor;
+pub mod entry;
 pub mod icons;
 pub mod menu;
 pub mod palettes;
@@ -125,8 +126,13 @@ pub struct Window<'a> {
     pub size: (i64, i64),
     /// What the status line says.
     pub status: &'a str,
-    /// Whether a press on empty staff writes a note.
+    /// Whether the page is in note entry.
     pub entry: bool,
+    /// Where note entry writes next, as the page's `edit_cursor` prop, or
+    /// the empty string outside the mode.
+    pub edit_cursor: Value,
+    /// The key table's scopes in force in the window, as its `keys` prop.
+    pub keys: Value,
     /// How big the drawing is ([`scale_for`]).
     pub scale: f64,
     /// The menu bar ([`menu::menu`]).
@@ -156,6 +162,8 @@ pub fn window(w: Window<'_>) -> Value {
         size,
         status,
         entry,
+        edit_cursor,
+        keys,
         scale,
         menu,
         toolbar,
@@ -169,6 +177,7 @@ pub fn window(w: Window<'_>) -> Value {
     picture.insert("id".into(), json!(ids.page));
     picture.insert("editable".into(), json!(true));
     picture.insert("entry".into(), json!(entry));
+    picture.insert("edit_cursor".into(), edit_cursor);
     // **The play cursor is anchored at the score's start**: the page draws it
     // over the engraver's timemap from whatever counter the window's head
     // clock names, which is the position of the transport the score plays on
@@ -226,6 +235,9 @@ pub fn window(w: Window<'_>) -> Value {
         // **The space bar is the application's**: it plays the score through
         // the editor's own playback, so the host's monitor stays out.
         "plays": true,
+        // **The keys are the editor's in its scopes**: `N` everywhere in the
+        // window, and the letters, the arrows and the digits in note entry.
+        "keys": keys,
         "children": children,
     });
     if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {

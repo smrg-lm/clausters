@@ -13,6 +13,14 @@
 //! the ones in [`Verb`]; any other name is the application's, and pressing its
 //! chord reports it to the window's owner. That is what lets a program with no
 //! chrome at all have commands: it names them in the table and answers them.
+//!
+//! **A binding may hold only inside a scope.** A window says which scopes are
+//! in force in it (its `keys` prop), and a chord bound in one of them is read
+//! before the table's own: inside a score editor's note entry the letters are
+//! pitches, while `E` is still the host's `split` everywhere else. A scope is
+//! a sub-table, `[gui.keys.note_entry]` in the config and a nested object on
+//! `/gui_keys`. Escape, the dismissal, may be bound in a scope -- leaving a
+//! mode is a dismissal -- and never in the table's own rows.
 
 use super::widget::element::{Key, Mods};
 
@@ -102,6 +110,60 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     ("delete", &["Delete", "Backspace"]),
 ];
 
+/// A table's rows: each verb and the chords that perform it.
+type Rows = &'static [(&'static str, &'static [&'static str])];
+
+/// The scopes the host starts with, each a table of its own: the score
+/// editor's window (`score`) and its note entry (`note_entry`), whose keys are
+/// the settled ones of notation programs.
+const SCOPED: &[(&str, Rows)] = &[
+    ("score", &[("entry", &["N"])]),
+    (
+        "note_entry",
+        &[
+            ("entry", &["N"]),
+            ("entry_off", &["Escape"]),
+            ("pitch_a", &["A"]),
+            ("pitch_b", &["B"]),
+            ("pitch_c", &["C"]),
+            ("pitch_d", &["D"]),
+            ("pitch_e", &["E"]),
+            ("pitch_f", &["F"]),
+            ("pitch_g", &["G"]),
+            ("chord_a", &["Shift+A"]),
+            ("chord_b", &["Shift+B"]),
+            ("chord_c", &["Shift+C"]),
+            ("chord_d", &["Shift+D"]),
+            ("chord_e", &["Shift+E"]),
+            ("chord_f", &["Shift+F"]),
+            ("chord_g", &["Shift+G"]),
+            ("cursor_left", &["Left"]),
+            ("cursor_right", &["Right"]),
+            ("bar_left", &["Ctrl+Left"]),
+            ("bar_right", &["Ctrl+Right"]),
+            ("staff_up", &["Alt+Up"]),
+            ("staff_down", &["Alt+Down"]),
+            ("step_up", &["Up"]),
+            ("step_down", &["Down"]),
+            ("octave_up", &["Ctrl+Up"]),
+            ("octave_down", &["Ctrl+Down"]),
+            ("voice_1", &["Ctrl+Alt+1"]),
+            ("voice_2", &["Ctrl+Alt+2"]),
+            ("voice_3", &["Ctrl+Alt+3"]),
+            ("voice_4", &["Ctrl+Alt+4"]),
+            ("value_64th", &["1"]),
+            ("value_32nd", &["2"]),
+            ("value_16th", &["3"]),
+            ("value_eighth", &["4"]),
+            ("value_quarter", &["5"]),
+            ("value_half", &["6"]),
+            ("value_whole", &["7"]),
+            ("dot", &["."]),
+            ("enter_rest", &["0"]),
+        ],
+    ),
+];
+
 /// A key and the modifiers held with it, **normalized** so the table and a
 /// press compare equal whichever way they were spelled or typed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -167,10 +229,12 @@ impl Chord {
             "right" => Key::Right,
             "up" => Key::Up,
             "down" => Key::Down,
-            // The ring's and the dismissal's: the platform's, never a verb's.
-            "tab" | "escape" | "esc" => {
+            // The ring's: the platform's, never a verb's.
+            "tab" => {
                 return Err(format!("'{name}' is reserved and cannot be bound"));
             }
+            // The dismissal's, which only a scope may bind ([`Keymap::bind_in`]).
+            "escape" | "esc" => Key::Escape,
             f if f.len() > 1 && f.starts_with('f') && f[1..].parse::<u8>().is_ok() => {
                 let n: u8 = f[1..].parse().unwrap_or(0);
                 if !(1..=12).contains(&n) {
@@ -212,9 +276,11 @@ impl Chord {
     }
 }
 
-/// One verb and the chords that perform it.
+/// One verb and the chords that perform it, in the table's own rows or in a
+/// scope's.
 #[derive(Debug, Clone, PartialEq)]
 struct Binding {
+    scope: Option<String>,
     verb: String,
     chords: Vec<Chord>,
 }
@@ -239,27 +305,51 @@ impl Default for Keymap {
             let warnings = map.bind(verb, chords);
             debug_assert!(warnings.is_empty(), "{warnings:?}");
         }
+        for (scope, rows) in SCOPED {
+            for (verb, chords) in *rows {
+                let warnings = map.bind_in(Some(scope), verb, chords);
+                debug_assert!(warnings.is_empty(), "{warnings:?}");
+            }
+        }
         map
     }
 }
 
 impl Keymap {
-    /// The verb a press asks for, if any chord in the table is it.
+    /// The verb a press asks for, if any chord in the table's own rows is it.
     pub fn lookup(&self, key: &Key, mods: Mods) -> Option<&str> {
+        self.lookup_in(key, mods, &[])
+    }
+
+    /// The verb a press asks for **in a window where `scopes` are in force**:
+    /// the last scope named that binds the chord, else the table's own rows.
+    pub fn lookup_in(&self, key: &Key, mods: Mods, scopes: &[String]) -> Option<&str> {
         let chord = Chord::of(key, mods);
-        self.bindings
+        let bound = |scope: Option<&str>| {
+            self.bindings
+                .iter()
+                .find(|b| b.scope.as_deref() == scope && b.chords.contains(&chord))
+                .map(|b| b.verb.as_str())
+        };
+        scopes
             .iter()
-            .find(|b| b.chords.contains(&chord))
-            .map(|b| b.verb.as_str())
+            .rev()
+            .find_map(|scope| bound(Some(scope)))
+            .or_else(|| bound(None))
     }
 
     /// The first chord bound to `verb`, as a reader sees it -- what a menu
-    /// entry naming the verb shows beside its label.
+    /// entry naming the verb shows beside its label. The table's own rows
+    /// first, then any scope's.
     pub fn label(&self, verb: &str) -> Option<String> {
-        self.bindings
-            .iter()
-            .find(|b| b.verb == verb)
-            .and_then(|b| b.chords.first())
+        let first = |global: bool| {
+            self.bindings
+                .iter()
+                .filter(|b| b.scope.is_none() == global && b.verb == verb)
+                .find_map(|b| b.chords.first())
+        };
+        first(true)
+            .or_else(|| first(false))
             .map(|c| c.label(self.mac))
     }
 
@@ -274,6 +364,13 @@ impl Keymap {
     /// chord means one thing. Returns a warning per chord it could not read,
     /// which is skipped -- never fatal, as the theme's bad colors are not.
     pub fn bind(&mut self, verb: &str, chords: &[&str]) -> Vec<String> {
+        self.bind_in(None, verb, chords)
+    }
+
+    /// [`bind`](Self::bind), in `scope` -- `None` for the table's own rows. A
+    /// chord means one verb **within** a scope, and Escape is refused outside
+    /// one.
+    pub fn bind_in(&mut self, scope: Option<&str>, verb: &str, chords: &[&str]) -> Vec<String> {
         let mut warnings = Vec::new();
         let verb = verb.trim();
         if verb.is_empty() {
@@ -283,17 +380,29 @@ impl Keymap {
         let mut parsed = Vec::new();
         for text in chords.iter().filter(|c| !c.trim().is_empty()) {
             match Chord::parse(text) {
+                Ok(chord) if chord.key == Key::Escape && scope.is_none() => warnings.push(format!(
+                    "keys: {verb}: Escape is reserved outside a scope and cannot be bound"
+                )),
                 Ok(chord) if !parsed.contains(&chord) => parsed.push(chord),
                 Ok(_) => {}
                 Err(e) => warnings.push(format!("keys: {verb}: {e}")),
             }
         }
-        for b in &mut self.bindings {
+        for b in self
+            .bindings
+            .iter_mut()
+            .filter(|b| b.scope.as_deref() == scope)
+        {
             b.chords.retain(|c| !parsed.contains(c));
         }
-        match self.bindings.iter_mut().find(|b| b.verb == verb) {
+        match self
+            .bindings
+            .iter_mut()
+            .find(|b| b.scope.as_deref() == scope && b.verb == verb)
+        {
             Some(b) => b.chords = parsed,
             None => self.bindings.push(Binding {
+                scope: scope.map(str::to_string),
                 verb: verb.to_string(),
                 chords: parsed,
             }),
@@ -307,21 +416,42 @@ impl Keymap {
     where
         I: IntoIterator<Item = (&'a str, Vec<&'a str>)>,
     {
+        self.overlay_in(None, entries)
+    }
+
+    /// [`overlay`](Self::overlay), into `scope`.
+    pub fn overlay_in<'a, I>(&mut self, scope: Option<&str>, entries: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = (&'a str, Vec<&'a str>)>,
+    {
         entries
             .into_iter()
-            .flat_map(|(verb, chords)| self.bind(verb, &chords))
+            .flat_map(|(verb, chords)| self.bind_in(scope, verb, &chords))
             .collect()
     }
 
     /// Overlays a JSON object of `verb: "chord"` or `verb: ["chord", ...]` --
-    /// `/gui_keys`'s payload, the same table the TOML file carries. A value of
-    /// any other shape is reported and skipped.
+    /// `/gui_keys`'s payload, the same table the TOML file carries; a value
+    /// that is itself an object is a scope's table. A value of any other shape
+    /// is reported and skipped.
     pub fn overlay_json(
         &mut self,
         table: &serde_json::Map<String, serde_json::Value>,
     ) -> Vec<String> {
+        self.overlay_json_in(None, table)
+    }
+
+    fn overlay_json_in(
+        &mut self,
+        scope: Option<&str>,
+        table: &serde_json::Map<String, serde_json::Value>,
+    ) -> Vec<String> {
         let mut warnings = Vec::new();
         for (verb, value) in table {
+            if let (None, serde_json::Value::Object(inner)) = (scope, value) {
+                warnings.extend(self.overlay_json_in(Some(verb), inner));
+                continue;
+            }
             let chords: Vec<&str> = match value {
                 serde_json::Value::String(s) => vec![s.as_str()],
                 serde_json::Value::Array(items) => {
@@ -337,7 +467,7 @@ impl Keymap {
                     continue;
                 }
             };
-            warnings.extend(self.bind(verb, &chords));
+            warnings.extend(self.bind_in(scope, verb, &chords));
         }
         warnings
     }
@@ -421,9 +551,50 @@ mod tests {
     #[test]
     fn a_chord_that_cannot_be_read_is_warned_about_and_skipped() {
         let mut map = Keymap::default();
-        let warnings = map.bind("split", &["Hyper+E", "Tab", "F13", "Ctrl+E"]);
-        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        let warnings = map.bind("split", &["Hyper+E", "Tab", "F13", "Ctrl+E", "Escape"]);
+        assert_eq!(warnings.len(), 4, "{warnings:?}");
         assert_eq!(map.lookup(&Key::Char('e'), ctrl()), Some("split"));
+    }
+
+    /// **A scope's chord is read before the table's**, only in a window where
+    /// the scope is in force, and Escape is a scope's alone.
+    #[test]
+    fn a_scope_binds_over_the_table_where_it_is_in_force() {
+        let mut map = Keymap::default();
+        let none = Mods::default();
+        let entry = vec!["score".to_string(), "note_entry".to_string()];
+        assert_eq!(map.lookup(&Key::Char('e'), none), Some("split"));
+        assert_eq!(
+            map.lookup_in(&Key::Char('e'), none, &entry),
+            Some("pitch_e")
+        );
+        // a chord the scope does not bind is the table's
+        assert_eq!(
+            map.lookup_in(&Key::Char('q'), none, &entry),
+            Some("quantize")
+        );
+        assert_eq!(
+            map.lookup_in(&Key::Char('n'), none, &entry[..1]),
+            Some("entry")
+        );
+        assert_eq!(map.lookup_in(&Key::Escape, none, &entry), Some("entry_off"));
+        assert_eq!(map.lookup(&Key::Escape, none), None);
+        let warnings = map.bind("leave", &["Escape"]);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        // a scope's table overlays from JSON as a nested object, and takes a
+        // chord from the scope's other verbs only
+        let table = serde_json::json!({"note_entry": {"pitch_e": "Shift+E"}});
+        assert!(map.overlay_json(table.as_object().unwrap()).is_empty());
+        let shift = Mods {
+            shift: true,
+            ..none
+        };
+        assert_eq!(
+            map.lookup_in(&Key::Char('e'), shift, &entry),
+            Some("pitch_e")
+        );
+        assert_eq!(map.lookup(&Key::Char('e'), none), Some("split"));
+        assert_eq!(map.label("pitch_c").as_deref(), Some("C"));
     }
 
     #[test]

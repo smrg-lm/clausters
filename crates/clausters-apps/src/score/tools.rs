@@ -39,6 +39,7 @@ use super::menu::VALUES;
 
 /// The tools, by the names the caller numbers them under, left to right.
 pub const TOOLS: &[&str] = &[
+    "entry",
     "value",
     "dot",
     "rest",
@@ -107,7 +108,7 @@ pub fn codes() -> Vec<&'static str> {
         .chain([DOT, REST, TRIPLET])
         .chain(ACCIDENTALS.iter().map(|a| a.1))
         .chain(ARTICULATIONS.iter().map(|a| a.2))
-        .chain([icons::TIE, icons::NONE, icons::REWIND])
+        .chain([icons::TIE, icons::NONE, icons::REWIND, icons::ENTRY])
         .collect()
 }
 
@@ -124,6 +125,8 @@ fn shown(outlines: &Outlines, code: &str, text: &str) -> String {
 /// What the toolbar shows of the editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
+    /// Whether the window is in note entry.
+    pub entry: bool,
     /// The written value a note is entered with, undotted.
     pub value: Ratio,
     /// Whether the value is dotted.
@@ -157,6 +160,7 @@ impl State {
     /// What each tool is set to, by name, as the prop that shows it.
     fn shown(&self) -> Vec<(&'static str, Value)> {
         vec![
+            ("entry", json!({"value": i32::from(self.entry)})),
             ("value", json!({"index": self.value_index()})),
             ("dot", json!({"value": i32::from(self.dotted)})),
             ("rest", json!({"value": i32::from(self.rest)})),
@@ -216,6 +220,17 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         }
         children.extend(tools);
     };
+    group(
+        vec![tool(
+            ids,
+            "entry",
+            symbols(latch(
+                &shown(icons::ENTRY, "N"),
+                "Note entry: write notes at the cursor (N)",
+            )),
+        )],
+        &mut children,
+    );
     group(
         vec![
             tool(
@@ -368,6 +383,8 @@ pub fn corrections(ids: &Ids, state: &State) -> Vec<(i32, Value)> {
 /// **What a tool's report asks of the editor.**
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tool {
+    /// Into note entry, or out of it.
+    Entry(bool),
     /// The value a note is written with.
     Value(Ratio),
     /// Whether it is dotted.
@@ -424,6 +441,7 @@ pub fn read(name: &str, tag: &str) -> Option<Tool> {
             let (_, (n, d)) = VALUES.get(index)?;
             Tool::Value(Ratio::new(*n, *d))
         }
+        "entry" => Tool::Entry(on),
         "dot" => Tool::Dot(on),
         "loop" => Tool::Loop(on),
         "rest" => Tool::Rest(on),
@@ -453,8 +471,14 @@ mod tests {
             .collect()
     }
 
+    /// The id the test numbers the tool `name` under.
+    fn id(name: &str) -> i32 {
+        ids()[name]
+    }
+
     fn state() -> State {
         State {
+            entry: true,
             value: Ratio::new(1, 8),
             dotted: true,
             rest: false,
@@ -469,19 +493,29 @@ mod tests {
     fn the_row_holds_every_tool_under_the_callers_id_showing_the_state() {
         let row = toolbar(&ids(), &state(), &Outlines::new()).expect("a toolbar");
         let children = row["children"].as_array().unwrap();
-        let by_id = |id: i32| children.iter().find(|c| c["id"] == json!(id)).unwrap();
-        for (i, name) in TOOLS.iter().enumerate() {
-            assert!(by_id(100 + i as i32).is_object(), "{name}");
+        let by = |name: &str| {
+            children
+                .iter()
+                .find(|c| c["id"] == json!(id(name)))
+                .unwrap()
+        };
+        for name in TOOLS {
+            assert!(by(name).is_object(), "{name}");
         }
-        assert_eq!(by_id(100)["index"], 3, "an eighth is the fourth value");
-        assert_eq!(by_id(101)["value"], 1, "dotted");
-        assert_eq!(by_id(103)["index"], 4, "a sharp, past none, bb, b and nat");
-        assert_eq!(by_id(110)["index"], 1, "the second voice");
-        assert_eq!(by_id(111)["index"], 1, "continuous");
-        assert_eq!(by_id(114)["value"], 1, "looping");
+        assert_eq!(by("entry")["value"], 1, "in note entry");
+        assert_eq!(by("value")["index"], 3, "an eighth is the fourth value");
+        assert_eq!(by("dot")["value"], 1, "dotted");
+        assert_eq!(
+            by("accidental")["index"],
+            4,
+            "a sharp, past none, bb, b and nat"
+        );
+        assert_eq!(by("voice")["index"], 1, "the second voice");
+        assert_eq!(by("layout")["index"], 1, "continuous");
+        assert_eq!(by("loop")["value"], 1, "looping");
         // the transport is past the spring, at the far edge
         let spring = children.iter().position(|c| c["weight"] == 1).unwrap();
-        assert_eq!(children[spring + 1]["id"], 112);
+        assert_eq!(children[spring + 1]["id"], id("rewind"));
         // a window that numbered no tool has no toolbar
         assert!(toolbar(&Ids::new(), &state(), &Outlines::new()).is_none());
     }
@@ -495,20 +529,26 @@ mod tests {
             .collect();
         let row = toolbar(&ids(), &state(), &outlines).expect("a toolbar");
         let children = row["children"].as_array().unwrap();
-        let by_id = |id: i32| children.iter().find(|c| c["id"] == json!(id)).unwrap();
-        let values = by_id(100)["options"].as_array().unwrap();
+        let by = |name: &str| {
+            children
+                .iter()
+                .find(|c| c["id"] == json!(id(name)))
+                .unwrap()
+        };
+        let values = by("value")["options"].as_array().unwrap();
         assert_eq!(values[2], "\u{E1D5}", "the quarter is its symbol");
         assert_eq!(values[3], "1/8", "the eighth has none and stays text");
-        assert_eq!(by_id(103)["options"][4], "\u{E262}");
-        assert_eq!(by_id(103)["options"][0], "-", "and so does none");
-        assert_eq!(by_id(104)["label"], ".");
+        assert_eq!(by("accidental")["options"][4], "\u{E262}");
+        assert_eq!(by("accidental")["options"][0], "-", "and so does none");
+        assert_eq!(by("stacc")["label"], ".");
+        assert_eq!(by("entry")["label"], "N", "no pencil was handed out");
         // a tool that shows symbols is drawn at their size, and one that
         // shows words at the words'
-        assert_eq!(by_id(100)["text_size"], SYMBOL_SIZE);
-        assert!(by_id(110).get("text_size").is_none(), "the voice is words");
+        assert_eq!(by("value")["text_size"], SYMBOL_SIZE);
+        assert!(by("voice").get("text_size").is_none(), "the voice is words");
         // every symbol asked for is a codepoint, each once
         let asked = codes();
-        assert_eq!(asked.len(), 22);
+        assert_eq!(asked.len(), 23);
         assert!(asked.iter().all(|code| glyph_char(code).is_some()));
     }
 
@@ -516,6 +556,7 @@ mod tests {
     fn a_report_is_read_as_what_it_asks() {
         assert_eq!(read("value", "3"), Some(Tool::Value(Ratio::new(1, 8))));
         assert_eq!(read("dot", "1"), Some(Tool::Dot(true)));
+        assert_eq!(read("entry", "1"), Some(Tool::Entry(true)));
         assert_eq!(read("accidental", "0"), Some(Tool::Accidental(None)));
         assert_eq!(read("accidental", "2"), Some(Tool::Accidental(Some(-1))));
         assert_eq!(read("voice", "1"), Some(Tool::Voice(1)));
@@ -548,9 +589,10 @@ mod tests {
     #[test]
     fn the_state_that_moved_is_what_the_tools_are_corrected_with() {
         let corrected = corrections(&ids(), &state());
-        assert!(corrected.contains(&(100, json!({"index": 3}))));
-        assert!(corrected.contains(&(101, json!({"value": 1}))));
+        assert!(corrected.contains(&(id("value"), json!({"index": 3}))));
+        assert!(corrected.contains(&(id("dot"), json!({"value": 1}))));
+        assert!(corrected.contains(&(id("entry"), json!({"value": 1}))));
         // an articulation shows no state, so it is not corrected
-        assert!(corrected.iter().all(|(id, _)| *id != 104));
+        assert!(corrected.iter().all(|(at, _)| *at != id("stacc")));
     }
 }

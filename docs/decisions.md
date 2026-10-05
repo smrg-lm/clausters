@@ -7781,6 +7781,11 @@ alteration is lost depending on which side of the engraver a document came from.
 
 ## Note entry: the host names a place, and nothing more
 
+*(The press described here is gone: note entry became a mode whose press names
+the column it fell in, `"enter"`, and writes over what is there -- see "Note
+entry is a mode, and an entry replaces". That the host names a place and
+nothing more still holds.)*
+
 The last gesture the score page owed, and the one that decides what a renderer
 is allowed to know. A press on blank paper inside a staff reports
 `"insert" <after> <position> <staff>` — the element the new note would follow on
@@ -9579,3 +9584,39 @@ playhead is repainted when its counter moves rather than thirty times a second
 for as long as it is open, a page keeps the fills it tessellated, and a
 triangle wholly inside its clip is not walked round it
 (`clients/gui/PLAN.md`, "Found by use").
+
+## Note entry is a mode, and an entry replaces
+
+The score editor's first way of writing was a press on blank paper that
+inserted a note after the element to its left (`notation::edit::insert`, the
+`"insert"` gesture, above). It was taken out of the page because it is the
+wrong act for writing into finished music: an insertion adds time, so a note
+written into a bar pushed every note after it along and re-barred the ones
+after that, and writing and selecting were one press told apart by a pixel.
+
+**Note entry is a mode with an edit cursor**, the settled principle of notation
+programs. Outside it a press selects and a drag moves; inside it the cursor
+stands on a staff, in a voice, at a time, and what is entered is written
+**over** the stretch it covers (`Op::Enter`): nothing after it moves, in the bar
+or past it, a value longer than what is left of the bar goes on tied, a voice
+that ends early is padded and a voice the staff does not have is made -- which
+is also how a second voice is written against a first. The window opens outside
+the mode, and playing leaves it. `insert` stays, as its own verb, for what adds
+time.
+
+**The page names a column, not a neighbour.** In note entry a press reports
+`"enter" <at> <position> <staff>`: the sounding element whose column the press
+fell in, read as the time it starts at (`Op::Enter`'s `item`), rather than the
+element the new note would follow. A press on a note of the cursor's voice adds
+the pitch to its chord, which is the other way a chord is built beside Shift
+and a letter.
+
+**A mode's keys are a scope of the key table.** The letters are pitches inside
+note entry and bindings of the host's elsewhere (`E` is `split`), so a chord is
+not one verb across the whole host any more: a window names the scopes in force
+in it (`keys`), and a scope's chords are read first. That is what keeps every
+key of the mode a binding a user can change in a file (`[gui.keys.note_entry]`)
+rather than a letter spelled in an element. Escape, the dismissal, may be bound
+in a scope and nowhere else, since leaving a mode is a dismissal; and it now
+reaches the focused element before the front's own close, which a text being
+typed over on the page had needed and never had.

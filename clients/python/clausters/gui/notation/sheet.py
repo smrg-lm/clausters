@@ -416,8 +416,8 @@ def insert(sheet: dict, dur, *, after: int | None = None, pitches: list | None =
     writing a note into finished music adds time.
 
     ``position`` is a place on the staff -- whole diatonic steps from its **top
-    line**, positive upward -- which is what the page's own ``"insert"`` gesture
-    reports, since a renderer can measure a place and not a pitch. Given, the
+    line**, positive upward -- which is what a press on the page reports during
+    note entry, since a renderer can measure a place and not a pitch. Given, the
     pitch is worked out from that staff's clef and the key, so clicking the
     middle line in E flat writes a B flat and no client has to know how to read
     a C clef. ``pitches`` wins where both are given.
@@ -427,6 +427,40 @@ def insert(sheet: dict, dur, *, after: int | None = None, pitches: list | None =
           "staff": staff, "voice": voice}
     if after is not None:
         op["after"] = after
+    if position is not None:
+        op["position"] = position
+    return apply(sheet, op)
+
+
+def enter(sheet: dict, dur, *, at=None, item: int | None = None,
+          pitches: list | None = None, position: int | None = None, staff: int = 0,
+          voice: int = 0, chord: bool = False) -> dict:
+    """Write a note, chord or rest over a stretch of one voice, as note entry
+    does: ``dur`` from ``at`` in ``voice`` on ``staff`` becomes the new item,
+    and **nothing else moves** -- not `insert`, which adds time.
+
+    ``at`` is whole notes from the start, as ``(num, den)`` or a whole number;
+    without it, ``item`` names the item whose time it starts at -- what a
+    press on the page reports during note entry, the element whose column it
+    fell in -- and with neither it is the start. What the stretch covered
+    goes: a note it starts inside keeps the part before it, one it ends inside
+    leaves a rest for the part after, a voice that ends before ``at`` is
+    padded with a rest, and a voice the staff does not have yet is made --
+    which is how a second voice is written. No ``pitches`` and no ``position``
+    is a rest; ``position`` is a place on the staff, as for `insert`.
+
+    With ``chord``, the one pitch joins the note that starts there instead,
+    and nothing else changes; refused where no note starts there.
+    """
+    def whole(value):
+        num, den = value if isinstance(value, (tuple, list)) else (value, 1)
+        return [num, den]
+    op = {"op": "enter", "dur": whole(dur), "pitches": pitches or [],
+          "staff": staff, "voice": voice, "chord": chord}
+    if at is not None:
+        op["at"] = whole(at)
+    if item is not None:
+        op["item"] = item
     if position is not None:
         op["position"] = position
     return apply(sheet, op)

@@ -8,12 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use clausters_core::notation::{
-    AnyEngraver, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, View, field_of, item_id,
-    layout_options, measure_id, sheet_to_mei,
+    AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, View, field_of, item_id,
+    layout_options, measure_id, pitch_near, sheet_to_mei,
 };
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
+use super::entry::{self, Place};
 use super::verbs::{self, Action};
 use super::{Chrome, dialogs, icons, menu, palettes, tools};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
@@ -23,7 +24,7 @@ use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 pub const DOMAIN: &str = "score";
 
 /// What the status line says when nothing is selected.
-pub const HINT: &str = "click a note, or press empty staff to write one";
+pub const HINT: &str = "click a note to select it, or press N to write notes";
 
 /// **What one turn came to.**
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -135,9 +136,19 @@ pub struct ScoreEditor {
     /// The accidental armed for the next note written, in semitones; it is
     /// let go once that note is.
     accidental: Option<i32>,
-    /// Whether a press on empty staff writes a note. Off, the same press on a
-    /// staff selects the measure it fell in.
+    /// **Whether the window is in note entry.** In it, a press on a staff
+    /// writes at the time it fell at and the keys write at the edit cursor;
+    /// outside it, a press on a staff selects the measure it fell in. The
+    /// window opens outside it.
     entry: bool,
+    /// The edit cursor, while in note entry.
+    place: Option<Place>,
+    /// Where the edit cursor was when the mode was last left: where it comes
+    /// back with nothing selected.
+    left: Option<Place>,
+    /// The item note entry wrote last, while the cursor stands just past it:
+    /// what a chord key adds to and what the arrows up and down move.
+    entered: Option<u64>,
     /// The ids the page last drew, so an item is selected as every element it
     /// is drawn as -- the parts a barline split it into, a chord's pitches.
     drawn: Vec<String>,
@@ -222,7 +233,10 @@ impl ScoreEditor {
             dotted: false,
             rest: false,
             accidental: None,
-            entry: true,
+            entry: false,
+            place: None,
+            left: None,
+            entered: None,
             drawn: Vec::new(),
             view: View::Page,
             laid: String::new(),
@@ -276,6 +290,8 @@ impl ScoreEditor {
             size: self.size,
             status: &self.describe(),
             entry: self.entry,
+            edit_cursor: self.edit_cursor(),
+            keys: self.keys(),
             scale: self.scale(),
             menu: self.menu(),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
@@ -296,6 +312,7 @@ impl ScoreEditor {
                 .map_or(0, |located| located.voice)
         };
         tools::State {
+            entry: self.entry,
             value: self.value,
             dotted: self.dotted,
             rest: self.rest,
@@ -396,7 +413,98 @@ impl ScoreEditor {
         if let Some(window) = self.window {
             out.push(Correction {
                 widget: i64::from(window),
-                props: json!({"menu": self.menu()}),
+                props: json!({"menu": self.menu(), "keys": self.keys()}),
+            });
+        }
+        out
+    }
+
+    /// **The key table's scopes in force in the window**: the score's own,
+    /// and note entry's while the window is in it.
+    fn keys(&self) -> Value {
+        if self.entry {
+            json!(["score", "note_entry"])
+        } else {
+            json!(["score"])
+        }
+    }
+
+    /// **The page's `edit_cursor`**: the element that shows where note entry
+    /// writes next, the staff and whether it stands past the element -- or
+    /// the empty string, which is none, outside the mode or where nothing is
+    /// drawn to show it by. Not `null`, which no wire has a type for.
+    fn edit_cursor(&self) -> Value {
+        let none = || json!("");
+        let Some(place) = self.place.filter(|_| self.entry) else {
+            return none();
+        };
+        let shown = {
+            let held = self.held();
+            held.sheet().and_then(|sheet| entry::shown_by(sheet, place))
+        };
+        let Some((item, end)) = shown else {
+            return none();
+        };
+        let parts = self.elements_of(&[item]);
+        let element = if end { parts.last() } else { parts.first() };
+        json!({"at": element, "staff": place.staff, "end": end})
+    }
+
+    /// **Into note entry, or out of it.** In, the cursor goes on what is
+    /// selected -- its staff, its voice, its time -- or, with nothing
+    /// selected, where it was last left, or the start of the score. Out, it
+    /// goes and its place is kept.
+    fn set_entry(&mut self, on: bool) {
+        if on == self.entry {
+            return;
+        }
+        self.entry = on;
+        self.entered = None;
+        if !on {
+            self.left = self.place.take();
+            return;
+        }
+        let selected = {
+            let held = self.held();
+            held.sheet().and_then(|sheet| {
+                let first = *verbs::in_time(sheet, &self.items()).first()?;
+                let at = verbs::locate(sheet, first)?;
+                Some(Place {
+                    staff: at.staff,
+                    voice: at.voice,
+                    at: at.onset,
+                })
+            })
+        };
+        self.place = Some(selected.or(self.left).unwrap_or_default());
+    }
+
+    /// **A pass is about to play, and playing leaves note entry**: what the
+    /// window is corrected with when it was in it, nothing when it was not.
+    fn leave_to_play(&mut self) -> Vec<Correction> {
+        if !self.entry {
+            return Vec::new();
+        }
+        self.set_entry(false);
+        let mut out = self.cursor_shown();
+        out.extend(self.chrome());
+        out
+    }
+
+    /// **The edit cursor and the status line, corrected** -- what moving
+    /// the cursor or the mode takes, with no page engraved.
+    fn cursor_shown(&self) -> Vec<Correction> {
+        let Some(ids) = self.ids else {
+            return Vec::new();
+        };
+        let mut out = vec![Correction {
+            widget: i64::from(ids.page),
+            props: json!({"entry": self.entry, "edit_cursor": self.edit_cursor()}),
+        }];
+        if let Some(status) = ids.status {
+            out.push(Correction {
+                widget: i64::from(status),
+                props: json!({"text": self.describe()}),
             });
         }
         out
@@ -585,6 +693,16 @@ impl ScoreEditor {
                 },
             );
         }
+        if let (true, Some(place)) = (self.entry, self.place) {
+            let (measure, into) = sheet.grid.position(place.at);
+            return format!(
+                "note entry: staff {} voice {}, bar {} + {into} -- a to g write, Shift adds \
+                 to the chord, 0 a rest, Esc leaves",
+                place.staff + 1,
+                place.voice + 1,
+                measure + 1,
+            );
+        }
         match items.as_slice() {
             [] if self.selection.is_empty() => HINT.into(),
             [] => format!("{} is not one of this model's items", self.selection[0]),
@@ -657,6 +775,7 @@ impl ScoreEditor {
         if let Some(Value::Object(props)) = out.first_mut().map(|c| &mut c.props) {
             props.insert("selected".into(), json!(self.selection));
             props.insert("entry".into(), json!(self.entry));
+            props.insert("edit_cursor".into(), self.edit_cursor());
         }
         if let Some(status) = ids.status {
             out.push(Correction {
@@ -831,7 +950,7 @@ impl ScoreEditor {
             menu::Pick::Save => (reason, shown) = self.save(out),
             menu::Pick::Play => {
                 out.play = Some(self.pass());
-                shown = Some(Vec::new());
+                shown = Some(self.leave_to_play());
             }
             menu::Pick::Rewind => {
                 self.rewind(out);
@@ -839,7 +958,7 @@ impl ScoreEditor {
             }
             menu::Pick::Loop(on) => shown = Some(self.set_looping(on, out)),
             menu::Pick::Layout(view) => self.view = view,
-            menu::Pick::Entry(on) => self.entry = on,
+            menu::Pick::Entry(on) => self.set_entry(on),
             menu::Pick::Value(value) => self.value = value,
             menu::Pick::Unknown => reason = Some(format!("the menu has no entry for {verb}")),
         }
@@ -871,18 +990,24 @@ impl ScoreEditor {
         Ok(())
     }
 
-    /// **Write one item**, as one entry: `insert` applied, the accidental that
+    /// **Write one item**, as one entry: `op` applied, the accidental that
     /// was armed given to the note it made -- and let go, since it was for
-    /// that note -- and the new item selected.
-    fn write(&mut self, insert: Op, label: &str, out: &mut Outcome) -> Result<(), String> {
+    /// that note -- and the new item selected. Answers the new item.
+    fn write(
+        &mut self,
+        op: Op,
+        label: &str,
+        note: bool,
+        out: &mut Outcome,
+    ) -> Result<Option<u64>, String> {
         let before = self.held().mei();
         let known = self.known_items();
-        if !self.held().apply(&insert) {
+        if !self.held().apply(&op) {
             self.held().load(&before);
             return Err(format!("{label}: the score refused it"));
         }
         let new = self.known_items().into_iter().find(|i| !known.contains(i));
-        if let (Some(id), Some(alter), false) = (new, self.accidental, self.rest) {
+        if let (Some(id), Some(alter), true) = (new, self.accidental, note) {
             let planned = {
                 let held = self.held();
                 held.sheet()
@@ -901,7 +1026,7 @@ impl ScoreEditor {
             out.selected = Some(self.selection.clone());
         }
         self.recorded(before, label, out);
-        Ok(())
+        Ok(new)
     }
 
     /// The score moved from `before`: the entry, and the version.
@@ -991,33 +1116,261 @@ impl ScoreEditor {
                 let reason = self.perform(&request, out);
                 (reason, self.corrections())
             }
-            // A press on empty staff named a place: what the input state
-            // says is written there -- a note or a rest, of the value in
-            // hand, with the accidental that was armed -- and selected.
-            "insert" => {
-                let after = values.first().map(text).unwrap_or_default();
+            // A press on a staff during note entry named a place: the column
+            // it fell in and the line or space under it. A note of the
+            // cursor's voice starting there takes the pitch into its chord;
+            // anywhere else the input state is written over the stretch --
+            // a note or a rest of the value in hand -- and the cursor goes on.
+            "enter" => {
+                let column = values.first().map(text).unwrap_or_default();
                 let position = values.get(1).map(int).unwrap_or(0) as i32;
                 let staff = values.get(2).map(int).unwrap_or(0).max(0) as usize;
-                let op = Op::Insert {
-                    after: item_id(&after),
-                    pitches: Vec::new(),
-                    position: (!self.rest).then_some(position),
-                    dur: self.written(),
-                    staff,
-                    voice: 0,
-                };
-                let label = if self.rest {
-                    "write a rest"
-                } else {
-                    "write a note"
-                };
-                if let Err(why) = self.write(op, label, out) {
-                    return (Some(why), self.corrections());
-                }
-                (None, self.corrections())
+                let reason = self.enter_pressed(&column, position, staff, out);
+                (reason, self.corrections())
             }
             _ => (None, Vec::new()),
         }
+    }
+
+    /// **A press during note entry**, written: into the chord of a note of
+    /// the cursor's voice that starts at the column pressed, or over the
+    /// stretch from it -- after which the cursor stands past what was
+    /// written. Answers why it was refused, if it was.
+    fn enter_pressed(
+        &mut self,
+        column: &str,
+        position: i32,
+        staff: usize,
+        out: &mut Outcome,
+    ) -> Option<String> {
+        if !self.entry {
+            return None;
+        }
+        let voice = self.place.map_or(0, |p| p.voice);
+        let (at, chord) = {
+            let held = self.held();
+            let Some(sheet) = held.sheet() else {
+                return Some("this document has no model to edit".into());
+            };
+            let at = item_id(column)
+                .and_then(|id| verbs::locate(sheet, id))
+                .map_or(Ratio::ZERO, |located| located.onset);
+            let place = Place { staff, voice, at };
+            let chord = entry::item_at(sheet, place).filter(|item| item.sounds());
+            (at, chord.map(|item| (item.id(), item.dur())))
+        };
+        let place = Place { staff, voice, at };
+        if let Some((id, dur)) = chord {
+            let op = Op::Enter {
+                at: Some(at),
+                item: None,
+                dur: self.written(),
+                pitches: Vec::new(),
+                position: Some(position),
+                staff,
+                voice,
+                chord: true,
+            };
+            if let Err(why) = self.edit(&[op], "add to the chord", out) {
+                return Some(why);
+            }
+            // the cursor stands past the chord, as after any entry
+            self.entered = Some(id);
+            self.place = Some(Place {
+                at: at + dur,
+                ..place
+            });
+            return None;
+        }
+        let note = !self.rest;
+        let op = Op::Enter {
+            at: Some(at),
+            item: None,
+            dur: self.written(),
+            pitches: Vec::new(),
+            position: note.then_some(position),
+            staff,
+            voice,
+            chord: false,
+        };
+        let label = if note { "write a note" } else { "write a rest" };
+        match self.write(op, label, note, out) {
+            Err(why) => Some(why),
+            Ok(new) => {
+                self.entered = new.filter(|_| note);
+                self.place = Some(Place {
+                    at: at + self.written(),
+                    ..place
+                });
+                None
+            }
+        }
+    }
+
+    /// **A key of note entry**, performed: a pitch written at the cursor or
+    /// added to the chord, a rest, the cursor moved, the note just written
+    /// moved, the voice or the value in hand changed. `None` for a verb that
+    /// is none of them; else why it was refused, if it was, and what the
+    /// window is corrected with.
+    fn entry_key(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+    ) -> Option<(Option<String>, Vec<Correction>)> {
+        if verb == "entry" {
+            self.set_entry(!self.entry);
+            let mut shown = self.cursor_shown();
+            shown.extend(self.chrome());
+            return Some((None, shown));
+        }
+        if verb == "entry_off" {
+            self.set_entry(false);
+            let mut shown = self.cursor_shown();
+            shown.extend(self.chrome());
+            return Some((None, shown));
+        }
+        if let Some(name) = verb.strip_prefix("value_") {
+            self.value = entry::value_of(name)?;
+            return Some((None, self.chrome()));
+        }
+        if verb == "dot" {
+            self.dotted = !self.dotted;
+            return Some((None, self.chrome()));
+        }
+        let place = self.place.filter(|_| self.entry)?;
+        let value = self.written();
+        let moved = |editor: &mut Self, to: Place| {
+            editor.place = Some(to);
+            editor.entered = None;
+            (None, editor.cursor_shown())
+        };
+        let sheet = self.held().sheet().cloned()?;
+        if let Some(letter) = verb.strip_prefix("pitch_") {
+            let step = entry::step_of(letter)?;
+            let entered = self.entered.and_then(|id| verbs::locate(&sheet, id));
+            let near = entry::near(&sheet, place, entered.map(|at| at.item));
+            let pitch = match pitch_near(&sheet, place.staff, step, near) {
+                Ok(pitch) => pitch,
+                Err(why) => return Some((Some(why), Vec::new())),
+            };
+            let op = Op::Enter {
+                at: Some(place.at),
+                item: None,
+                dur: value,
+                pitches: vec![pitch],
+                position: None,
+                staff: place.staff,
+                voice: place.voice,
+                chord: false,
+            };
+            return Some(match self.write(op, "write a note", true, out) {
+                Err(why) => (Some(why), self.corrections()),
+                Ok(new) => {
+                    self.entered = new;
+                    self.place = Some(Place {
+                        at: place.at + value,
+                        ..place
+                    });
+                    (None, self.corrections())
+                }
+            });
+        }
+        if let Some(letter) = verb.strip_prefix("chord_") {
+            let step = entry::step_of(letter)?;
+            // the note just written, or the one the cursor stands on
+            let target = self
+                .entered
+                .and_then(|id| verbs::locate(&sheet, id))
+                .map(|at| (at.staff, at.voice, at.onset, at.item.clone()))
+                .or_else(|| {
+                    entry::item_at(&sheet, place)
+                        .map(|item| (place.staff, place.voice, place.at, item.clone()))
+                })
+                .filter(|(.., item)| item.sounds());
+            let Some((staff, voice, at, item)) = target else {
+                return Some((Some("there is no note here to add to".into()), Vec::new()));
+            };
+            // the letter above the chord's top note
+            let top = item.pitches().iter().max_by_key(|p| p.midi()).copied();
+            let mut pitch = match pitch_near(&sheet, staff, step, top) {
+                Ok(pitch) => pitch,
+                Err(why) => return Some((Some(why), Vec::new())),
+            };
+            if top.is_some_and(|top| pitch.midi() <= top.midi()) {
+                pitch.octave += 1;
+            }
+            let op = Op::Enter {
+                at: Some(at),
+                item: None,
+                dur: item.dur(),
+                pitches: vec![pitch],
+                position: None,
+                staff,
+                voice,
+                chord: true,
+            };
+            let reason = self.edit(&[op], "add to the chord", out).err();
+            return Some((reason, self.corrections()));
+        }
+        if verb == "enter_rest" {
+            let op = Op::Enter {
+                at: Some(place.at),
+                item: None,
+                dur: value,
+                pitches: Vec::new(),
+                position: None,
+                staff: place.staff,
+                voice: place.voice,
+                chord: false,
+            };
+            return Some(match self.write(op, "write a rest", false, out) {
+                Err(why) => (Some(why), self.corrections()),
+                Ok(_) => {
+                    self.entered = None;
+                    self.place = Some(Place {
+                        at: place.at + value,
+                        ..place
+                    });
+                    (None, self.corrections())
+                }
+            });
+        }
+        if let Some(steps) = match verb {
+            "step_up" => Some(1),
+            "step_down" => Some(-1),
+            "octave_up" => Some(7),
+            "octave_down" => Some(-7),
+            _ => None,
+        } {
+            let id = self
+                .entered
+                .or_else(|| entry::item_at(&sheet, place).map(Item::id))?;
+            let reason = self.edit(&[Op::MoveSteps { id, steps }], "move", out).err();
+            return Some((reason, self.corrections()));
+        }
+        if let Some(n) = verb.strip_prefix("voice_") {
+            let voice: usize = n.parse().ok()?;
+            if !(1..=entry::VOICES).contains(&voice) {
+                return None;
+            }
+            return Some(moved(
+                self,
+                Place {
+                    voice: voice - 1,
+                    ..place
+                },
+            ));
+        }
+        let to = match verb {
+            "cursor_left" => entry::back(&sheet, place, value),
+            "cursor_right" => entry::on(&sheet, place, value),
+            "bar_left" => entry::bar_back(&sheet, place),
+            "bar_right" => entry::bar_on(&sheet, place),
+            "staff_up" => entry::staff_by(&sheet, place, -1),
+            "staff_down" => entry::staff_by(&sheet, place, 1),
+            _ => return None,
+        };
+        Some(moved(self, to))
     }
 
     /// Every item id the model holds.
@@ -1101,7 +1454,13 @@ impl ScoreEditor {
             }
             tools::Tool::Play => {
                 out.play = Some(self.pass());
-                return (None, Vec::new());
+                return (None, self.leave_to_play());
+            }
+            tools::Tool::Entry(on) => {
+                self.set_entry(on);
+                let mut out = self.cursor_shown();
+                out.extend(self.chrome());
+                return (None, out);
             }
             tools::Tool::Rewind => {
                 self.rewind(out);
@@ -1171,13 +1530,13 @@ impl Converse for ScoreEditor {
             // the playback is the pass, with the loop switch the host sends
             "play" | "loop" => {
                 out.turn = Kind::Route;
-                let mut corrections = Vec::new();
-                if message.tag == "play" {
+                let corrections = if message.tag == "play" {
                     out.play = Some(self.pass());
+                    self.leave_to_play()
                 } else {
                     let on = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
-                    corrections = self.set_looping(on, out);
-                }
+                    self.set_looping(on, out)
+                };
                 out.answer = Some(conversation::answer(
                     message.seq,
                     out.version,
@@ -1196,7 +1555,19 @@ impl Converse for ScoreEditor {
                     shown.unwrap_or_default(),
                 ));
             }
-            _ => return false,
+            // the keys of note entry, and `N` that enters it
+            verb => {
+                let Some((reason, corrections)) = self.entry_key(verb, out) else {
+                    return false;
+                };
+                out.turn = Kind::Route;
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    reason,
+                    corrections,
+                ));
+            }
         }
         true
     }
@@ -1326,7 +1697,7 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
                 editor.size = (w, h);
             }
             if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
-                editor.entry = entry;
+                editor.set_entry(entry);
             }
             // `null` is a score with no file; left out, the path stays
             if let Some(path) = request.get("path") {

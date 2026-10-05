@@ -50,7 +50,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
         "Measures"]
     # the toolbar is a row of the crate's tools, each under an id of its own
     tools = [tool for tool in toolbar["children"] if "id" in tool]
-    assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 15
+    assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 16
     # a tool is drawn with the engraver's own symbol: its label is the SMuFL
     # character, and the window carries the outline the host draws it with
     values = next(tool for tool in tools if tool.get("type") == "choice")["options"]
@@ -60,7 +60,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     assert scroll["type"] == "plane"
     page = scroll["children"][0]
     assert page["type"] == "score"
-    assert page["editable"] is True and page["entry"] is True
+    assert page["editable"] is True and page["entry"] is False
     assert "kinds" in page and "notes" not in page
     assert status["type"] == "label"
     # the window carries the menu bar, which holds every action
@@ -132,9 +132,9 @@ def test_a_transformation_runs_over_the_measures_selected(score):
 
 def test_entry_is_the_crates_switch(score):
     editor = ScoreEditor(score)
+    assert editor.entry is False, "the window opens outside note entry"
+    editor.entry = True
     assert editor.entry is True
-    editor.entry = False
-    assert editor.entry is False
 
 
 def test_the_layout_is_the_windows_and_the_paper_is_fixed(score):
@@ -191,10 +191,16 @@ def test_the_input_state_is_the_handles_and_a_press_writes_it(score):
     editor.dotted = True
     editor.next_accidental = 1
     assert (editor.dotted, editor.next_accidental) == (True, 1)
-    last = _items(score)[-1]["id"]
+    # in note entry, a press on a rest's column writes over it
+    last = len(_items(score)) - 1
+    editor.select([f"n{_items(score)[last]['id']}"])
+    assert editor.silence()
+    editor.entry = True
     page = editor.view.widget(editor, "page", editor.structure)
-    assert editor.apply("/gui_event", [page, 1, editor._version, "insert", f"n{last}", -3, 0])
-    written = _items(score)[-1]
+    rest = _items(score)[last]["id"]
+    # (a script's edit raised the floor, so the press states no version)
+    assert editor.apply("/gui_event", [page, 1, 0, "enter", f"n{rest}", -3, 0])
+    written = _items(score)[last]
     assert written["dur"] == [3, 16]
     assert written["pitches"][0]["alter"] == 1
     assert editor.next_accidental is None, "it was for that note"

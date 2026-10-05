@@ -1057,6 +1057,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
+         keys: list | str | None = None,
          split: bool | None = None, menu: list | None = None,
          glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
@@ -1101,6 +1102,11 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     application that sounds its take through its own playback says. Off by
     default.
 
+    ``keys`` names the **key table's scopes** in force in the window: a scope
+    is a sub-table of the host's keys (``[gui.keys.note_entry]``), and its
+    chords are read before the table's own rows -- how an application's mode
+    has keys of its own (``["score", "note_entry"]``). None by default.
+
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
     the whole window -- a **theme group**. On the root it persists with a named
@@ -1125,6 +1131,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
                        cols=cols, theme=theme, color=color, menu=menu,
+                       keys=[keys] if isinstance(keys, str) else keys,
                        glyphs=None if glyphs is None else dict(glyphs))
     if split is not None:
         extra["split"] = 1 if split else 0
@@ -2612,8 +2619,8 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
           playhead_at: float | None = None, playhead_loop_start: float | None = None,
           playhead_loop_len: float | None = None, sample_rate: float | None = None,
           selected: str | None = None, editable: bool | None = None,
-          entry: bool | None = None, color: str | None = None,
-          id: int | None = None, **props) -> View:
+          entry: bool | None = None, edit_cursor: dict | str | None = None,
+          color: str | None = None, id: int | None = None, **props) -> View:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -2658,20 +2665,24 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     inspecting a page (clicking a note to hear it) is not editing it. Toggle it
     live with ``GuiHost.set(score_id, editable=True)``.
 
-    **Note entry is opt-in too**, with ``entry=True``, and it is its own flag
-    rather than a second meaning for ``editable`` because it takes over a
-    gesture that already does something: on any other page, pressing blank paper
-    clears the selection, and a page that had not asked for note entry would
-    start reporting an insertion every time a user dismissed one. With it on, a
-    press that lands on blank paper inside a staff emits
-    ``"insert" <after-xml:id> <position> <staff>`` -- the element the new note
-    would **follow** on that staff (empty when the press is before everything on
-    it), the staff position in whole steps from the top line, and which staff,
-    counted from the top. The host names a *place* and nothing more: a staff
-    position is not a pitch until something knows the clef and the key, and a
-    duration is a choice nobody made by clicking. Both are the driver's, which
-    is the same line every other score gesture draws -- and
-    `clausters.gui.notation.insert` is what turns the three into an operation.
+    **Note entry is a mode**, ``entry=True``, and its own flag rather than a
+    second meaning for ``editable`` because it takes over the page's every
+    press. In it a plain press on a staff -- a line, a space, a note or a rest
+    -- emits ``"enter" <xml:id> <position> <staff>``: the sounding element
+    whose column the press fell in (empty on a staff with nothing on it), the
+    staff position in whole steps from the top line, and which staff, counted
+    from the top of its system. It selects nothing and never drags; a press
+    with Ctrl or Shift still selects. The host names a *place* and nothing
+    more: a staff position is not a pitch until something knows the clef and
+    the key, and a duration is a choice nobody made by clicking. Both are the
+    driver's, which is the same line every other score gesture draws -- and
+    `clausters.gui.notation.enter` is what turns the three into an operation
+    (``item=``, ``position=``, ``staff=``).
+
+    ``edit_cursor`` draws where note entry writes next, as the driver keeps
+    it: ``{"at": xml_id, "staff": n}`` covers that element's column on staff
+    ``n`` of its system, ``"end": True`` stands just past it -- where a voice
+    that has run out goes on -- and ``""`` draws none.
 
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
@@ -2696,7 +2707,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        sample_rate=sample_rate, selected=selected,
-                       editable=editable, entry=entry)
+                       editable=editable, entry=entry, edit_cursor=edit_cursor)
     if isinstance(display_list, Source):
         extra["display_list"] = display_list   # `node` expands it into the five
     else:

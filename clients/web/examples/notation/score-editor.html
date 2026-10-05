@@ -71,13 +71,19 @@ selected, and what it is said in a sentence when the pointer rests on it.
 <b>A gesture names a place; the editor names the note.</b> A click selects a
 note and the status line under the page says what it is. A drag moves it along
 the staff -- only a note drags; a slur or a time signature is selected and
-never displaced. A press on empty staff writes what the toolbar says: a note
-or a rest of the value in hand (an eighth, below), and selects it.
+never displaced. A press on a staff selects the measure it fell in.
+
+<b>Writing is a mode, note entry</b>: N, or the toolbar's pencil, puts an edit
+cursor on what is selected, and Escape takes it away. A letter <code>a</code>
+to <code>g</code> writes that pitch at the cursor, of the value in hand (an
+eighth, below), over what was there -- nothing after it moves -- and the cursor
+goes on; Shift and a letter adds to the chord, the arrows move the cursor, and
+Ctrl+Alt+2 puts it in the second voice. A press on a staff writes at the time
+it fell at, or into the chord of the note there. Playing leaves it.
 
 <b>Several notes are selected at once.</b> Ctrl+click adds a note to the
 selection or takes it out; Shift+click extends the selection to the note
-clicked, in time and across the staves between. With entry switched off (Notes,
-Write notes), a press on a staff selects the measure it fell in.
+clicked, in time and across the staves between.
 
 <b>A pick and a method call are one path.</b> Every entry of the menu, every
 tool and every palette entry is one of the editor's verbs, and each verb is a
@@ -122,9 +128,10 @@ editor's entries and the page's alike.
 <b>Ctrl+click</b> another to add it, <b>Shift+click</b> one to select
 everything up to it. <b>Drag</b> a note up or down the staff to move it (which
 is not transposition: it takes the key signature's alteration for the letter
-it lands on). <b>Press on empty staff</b> -- between two notes, or past the
-last one, on either staff -- to write an eighth there. The <b>space bar</b>
-plays and stops. Everything runs on the <b>in-page engine</b>: no server
+it lands on). <b>Press N</b> to write: type <code>c d e</code>, and they
+replace what was under the cursor with eighths; <b>Shift+E</b> adds an E to the
+chord just written, <b>Escape</b> leaves. The <b>space bar</b> plays and
+stops. Everything runs on the <b>in-page engine</b>: no server
 process, no socket.</div>
 
       <div class="row">
@@ -243,7 +250,7 @@ B c d e | f2 e d | c B A B | G4 |
           title: "Score editor (a document, and its model)",
           width: 1100, height: 800, stage: el("stage"),
         });
-        editor.value = [1, 8];         // a press on empty staff writes an eighth
+        editor.value = [1, 8];         // note entry writes eighths
 
         // A pick and a method call are one path. The Ornaments palette puts a
         // fermata on what is selected. So does this: the last note of the line
@@ -262,7 +269,7 @@ B c d e | f2 e d | c B A B | G4 |
         el("open-roll").disabled = false;
         editor.onClosed(() => log("window closed"));
         log("click a note to select it (Ctrl adds, Shift extends), drag one up or "
-          + "down the staff, press empty staff to write an eighth; the space bar "
+          + "down the staff, N to write (a to g, Escape leaves); the space bar "
           + "plays, and the menus, the toolbar and the palettes act on the selection");
       }
 

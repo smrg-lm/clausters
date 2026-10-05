@@ -1456,6 +1456,13 @@ export function view(
      */
     plays?: boolean;
     /**
+     * The **key table's scopes** in force in the window: a scope is a
+     * sub-table of the host's keys (`[gui.keys.note_entry]`), and its chords
+     * are read before the table's own rows -- how an application's mode has
+     * keys of its own (`["score", "note_entry"]`). None by default.
+     */
+    keys?: readonly string[];
+    /**
      * The gaps between the window's own children are dividers a drag moves,
      * as on {@link layout}.
      */
@@ -1484,7 +1491,7 @@ export function view(
     ...children: GuiNode[]
 ): View {
     const {
-        title, flow, layout, margin, gap, cols, hug, status, plays, theme, split,
+        title, flow, layout, margin, gap, cols, hug, status, plays, keys, theme, split,
         menu: bar, glyphs, ...rest
     } = options;
     return node("window", {
@@ -1502,6 +1509,7 @@ export function view(
             ["hug", flag(hug)],
             ["status", flag(status)],
             ["plays", flag(plays)],
+            ["keys", keys === undefined ? undefined : [...keys]],
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -3349,15 +3357,17 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * displacement, so a resend cannot move the note twice and a page re-engraved
  * under the gesture needs no rebasing.
  *
- * `entry` turns on **note entry**, and it is its own flag rather than a second
- * meaning for `editable` because it takes over a gesture that already does
- * something: on any other page, pressing blank paper clears the selection. With
- * it on, a press on blank paper inside a staff emits
- * `"insert" <after-xml:id> <position> <staff>` -- the element the new note would
- * *follow* on that staff (empty before everything on it), the staff position,
- * and which staff from the top. The host names a place and nothing more: a
- * staff position is not a pitch until something knows the clef and the key, and
- * a duration is a choice nobody made by clicking.
+ * `entry` puts the page in **note entry**, a mode, and its own flag rather
+ * than a second meaning for `editable` because it takes over the page's every
+ * press. In it a plain press on a staff -- a line, a space, a note or a rest --
+ * emits `"enter" <xml:id> <position> <staff>`: the sounding element whose
+ * column the press fell in (empty on a staff with nothing on it), the staff
+ * position, and which staff from the top of its system. It selects nothing and
+ * never drags; a press with Ctrl or Shift still selects. The host names a place
+ * and nothing more: a staff position is not a pitch until something knows the
+ * clef and the key, and a duration is a choice nobody made by clicking --
+ * `notation.enter` turns the three into an operation. `editCursor` draws where
+ * note entry writes next.
  *
  * The playback cursor works exactly as a timeline view's:
  * `playheadAt` anchors it to the engine clock, `playhead` is a static time in
@@ -3375,11 +3385,13 @@ export function score(
         selected?: string;
         editable?: boolean;
         entry?: boolean;
+        /** Where note entry writes next, as the driver keeps it; `""` is none. */
+        editCursor?: EditCursor | "";
     } = {},
 ): GuiNode {
     const {
         displayList, playhead, playheadAt, playheadLoopStart, playheadLoopLen,
-        sampleRate, selected, editable, entry, ...rest
+        sampleRate, selected, editable, entry, editCursor, ...rest
     } = options;
     return node("score", {
         ...rest,
@@ -3392,6 +3404,7 @@ export function score(
             ["selected", selected],
             ["editable", editable],
             ["entry", entry],
+            ["edit_cursor", editCursor === undefined ? undefined : editCursor],
         ]),
         // A source goes in as itself and `node` expands it into the five;
         // anything else is expanded here.
@@ -3399,6 +3412,17 @@ export function score(
             ? { display_list: displayList }
             : scorePage(displayList ?? {})),
     });
+}
+
+/**
+ * Where a `score`'s note entry writes next: `at` names an element whose column
+ * it covers on staff `staff` of its system, and `end` stands just past it --
+ * where a voice that has run out goes on.
+ */
+export interface EditCursor {
+    at: string;
+    staff?: number;
+    end?: boolean;
 }
 
 /**

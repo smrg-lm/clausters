@@ -51,8 +51,9 @@ pub use admits::{Admits, admits};
 pub use any::AnyEngraver;
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
-    At, add_spanner, delete, insert, move_steps, pitch_at, remove_spanner, set_barline, set_break,
-    set_dur, set_header, set_marks, set_page, set_pitches, silence, tie, to_voice,
+    At, add_spanner, add_to_chord, delete, enter, insert, move_steps, onset, pitch_at, pitch_near,
+    remove_spanner, set_barline, set_break, set_dur, set_header, set_marks, set_page, set_pitches,
+    silence, tie, to_voice,
 };
 pub use interp::{
     Accent, Articulation, DynamicsAs, Interpretation, LevelPoint, Note, StaffLevel,

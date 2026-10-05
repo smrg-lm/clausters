@@ -549,8 +549,8 @@ export function insert(
         pitches?: unknown[];
         /**
          * A place on the staff -- whole diatonic steps from its **top line**,
-         * positive upward -- which is what the page's own `"insert"` gesture
-         * reports, since a renderer can measure a place and not a pitch. Given,
+         * positive upward -- which is what a press on the page reports during
+         * note entry, since a renderer can measure a place and not a pitch. Given,
          * the pitch is worked out from that staff's clef and the key, so
          * clicking the middle line in E flat writes a B flat and no client has
          * to know how to read a C clef. `pitches` wins where both are given.
@@ -562,6 +562,43 @@ export function insert(
 ): Sheet {
     const op: Op = { op: "insert", dur: ratio(dur), pitches, staff, voice };
     if (after !== undefined) op.after = after;
+    if (position !== undefined) op.position = position;
+    return apply(sheet, op);
+}
+
+/**
+ * Write a note, chord or rest over a stretch of one voice, as note entry does:
+ * `dur` from `at` in `voice` on `staff` becomes the new item, and **nothing
+ * else moves** -- not {@link insert}, which adds time.
+ *
+ * `at` is whole notes from the start; without it, `item` names the item whose
+ * time it starts at -- what a press on the page reports during note entry, the
+ * element whose column it fell in -- and with neither it is the start. What the
+ * stretch covered goes: a note it starts inside keeps the part before it, one
+ * it ends inside leaves a rest for the part after, a voice that ends before
+ * `at` is padded with a rest, and a voice the staff does not have yet is made
+ * -- which is how a second voice is written. No `pitches` and no `position` is
+ * a rest; `position` is a place on the staff, as for {@link insert}.
+ *
+ * With `chord`, the one pitch joins the note that starts there instead, and
+ * nothing else changes; refused where no note starts there.
+ */
+export function enter(
+    sheet: Sheet,
+    dur: Ratio | number,
+    { at, item, pitches = [], position, staff = 0, voice = 0, chord = false }: {
+        at?: Ratio | number;
+        item?: number;
+        pitches?: unknown[];
+        position?: number;
+        staff?: number;
+        voice?: number;
+        chord?: boolean;
+    } = {},
+): Sheet {
+    const op: Op = { op: "enter", dur: ratio(dur), pitches, staff, voice, chord };
+    if (at !== undefined) op.at = ratio(at);
+    if (item !== undefined) op.item = item;
     if (position !== undefined) op.position = position;
     return apply(sheet, op);
 }

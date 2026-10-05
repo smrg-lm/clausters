@@ -135,7 +135,7 @@ impl Bounds {
 }
 
 pub use hit::{HitBox, HitGrid, HitShape};
-pub use list::selection;
+pub use list::{edit_cursor, selection};
 pub use tess::{edges, triangles};
 
 /// One placed element of the engraved page, in verovio page units.
@@ -328,9 +328,10 @@ pub struct Staff {
     pub width: f32,
 }
 
-/// Where a press on blank paper landed: the staff it belongs to (top down from
-/// zero), how far up that staff in whole diatonic steps, and the element the
-/// note would follow.
+/// Where a press on a staff landed during note entry: the staff it belongs to
+/// (its rank in its system, from zero), how far up that staff in whole
+/// diatonic steps, and the element whose column it fell in -- the nearest
+/// sounding element of that staff, across.
 ///
 /// It carries no pitch and no duration on purpose. A staff position becomes a
 /// pitch only once something knows the clef and the key, and a duration is a
@@ -340,7 +341,18 @@ pub struct Staff {
 pub struct Entry {
     pub staff: usize,
     pub position: i32,
-    pub after: Option<String>,
+    pub at: Option<String>,
+}
+
+/// **Where note entry writes next**, as its owner names it: the column of the
+/// element `at`, on the `staff`-th staff of the system that element is in --
+/// or, with `end`, just past it, where a voice that has run out goes on. The
+/// host draws it and knows nothing else about it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EditCursor {
+    pub at: String,
+    pub staff: usize,
+    pub end: bool,
 }
 
 /// The default page units per diatonic step: verovio's default `unit` (9) times
@@ -430,18 +442,19 @@ pub struct ScoreData {
     /// editor opts in (`editable: true`). Selection and the `"element"` click are
     /// not gated by this: inspecting a read-only page is not editing it.
     pub editable: bool,
-    /// Whether a press on **blank paper** inside a staff reports where it
-    /// landed (`"insert"`), for a page that takes note entry.
+    /// Whether the page is in **note entry**: a press on a staff reports
+    /// where it landed (`"enter"`) instead of selecting or dragging.
     ///
     /// Its own flag rather than a second meaning for `editable`, because it
-    /// takes over a gesture that already does something useful: on any other
-    /// page, pressing blank paper clears the selection, and a page that had not
-    /// asked for note entry would start reporting an insertion every time a
-    /// user dismissed one.
+    /// takes over the page's every press: outside the mode a press selects
+    /// and a drag moves, and inside it a press is an entry and never a drag.
     pub entry: bool,
     /// The text of the page being typed over, when one is: host state, like
     /// the selection, that no display list carries.
     pub editing: Option<TextEditing>,
+    /// **The edit cursor** of note entry, when its owner put one on the page
+    /// (`edit_cursor`); `None` outside the mode.
+    pub edit_cursor: Option<EditCursor>,
     /// The ids that name a **sounding element** -- a note, a rest -- as against
     /// the staff and layer furniture that also carries one. Sent by the client,
     /// because the walk that engraved the page is what knows, and to a renderer
@@ -511,6 +524,7 @@ impl Default for ScoreData {
             editable: false,
             entry: false,
             editing: None,
+            edit_cursor: None,
             elements: std::collections::HashSet::new(),
             systems: Vec::new(),
             kinds: HashMap::new(),
