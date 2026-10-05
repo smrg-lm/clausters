@@ -47,7 +47,8 @@ const vectors = JSON.parse(
  *
  * `elements` is a list of those same ids rather than objects carrying one, so
  * it is normalized by name: leaving it raw would compare two engravings' minted
- * ids directly, which is the one thing this exists to avoid.
+ * ids directly, which is the one thing this exists to avoid. `kinds` is keyed by
+ * them, so it becomes `[index, kind]` pairs in index order.
  */
 function normalized(value: unknown, ids = new Map<string, number>()): unknown {
     if (Array.isArray(value)) return value.map((v) => normalized(v, ids));
@@ -63,6 +64,13 @@ function normalized(value: unknown, ids = new Map<string, number>()): unknown {
                     if (!ids.has(id)) ids.set(id, ids.size);
                     return ids.get(id);
                 });
+            } else if (key === "kinds" && v !== null && typeof v === "object") {
+                out[key] = Object.entries(v as Record<string, string>)
+                    .map(([id, kind]): [number, string] => {
+                        if (!ids.has(id)) ids.set(id, ids.size);
+                        return [ids.get(id) as number, kind];
+                    })
+                    .sort((a, b) => a[0] - b[0]);
             } else {
                 out[key] = normalized(v, ids);
             }

@@ -1392,12 +1392,25 @@ opened it.
 
   **The steps**, each closing with its commit, in this order:
 
-  - ⬜ **X5.0 - Which element admits which edit** (`clients/gui/PLAN.md`,
+  - ✅ **X5.0 - Which element admits which edit** (`clients/gui/PLAN.md`,
     `N8`, taken here). The display list carries each id's kind; the table of
     what a kind admits is in the core; a drag moves only what has a pitch, and
     ledger lines follow only a notehead; an accidental's press is its note's.
     The hit test on the drawn shape and its index. Host and core only, tested
-    without the application.
+    without the application. *(Done 2026-10-05. `DisplayList::kinds` is the
+    engraver's class per drawn id, read off the SVG; `notation::admits` is the
+    table, and today only a `note` admits a pitch drag. An accidental needed
+    nothing: the walk already gives a note's parts the note's id. The host's
+    hit index moved to its own module (`score/hit.rs`): each entry is tested
+    as the shape it is drawn as -- a glyph's or a fill's outline, a stroke's
+    distance from its line, a notehead's oval -- first exactly, then within
+    the hit slop, the staff's own lines taking none; a uniform grid of two
+    staff spaces narrows a press to its neighbourhood, chosen over a binary
+    space partition because a page is static and every query a point. Found
+    on the way: both clients sent the page through a fixed list of keys that
+    had never included `systems`, so the grand-staff fix never reached the
+    host; each client now has one list (`SCORE_PAGE`) read everywhere, with
+    `systems` and `kinds` on it.)*
   - ⬜ **X5.1 - The application in the crate.** `clausters-apps::score`: the
     window, its props and the conversation (a gesture read, an `Op` applied, a
     page sent back as the `Outcome`), the `Score` a member of the editing

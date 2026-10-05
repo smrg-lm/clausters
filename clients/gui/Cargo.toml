@@ -60,7 +60,7 @@ diagnostics = []
 # so it has to be asked for. A build with it out drops the `score` row from
 # `elements::builtin`, and a def naming one is `Unknown`: laid out, not painted,
 # exactly as a host older than that def already behaves.
-notation = ["dep:lyon"]
+notation = ["dep:lyon", "clausters-core/notation"]
 # The `plane`-with-boxes patcher: the graph view and its cord editing. Same
 # shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.

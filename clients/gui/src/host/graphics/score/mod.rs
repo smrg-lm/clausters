@@ -31,6 +31,7 @@
 
 mod cursor;
 mod glyphs;
+mod hit;
 mod list;
 mod tess;
 
@@ -119,25 +120,6 @@ impl Bounds {
         x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
     }
 
-    /// Whether `(x, y)` is on the primitive this box was measured around --
-    /// which is the box itself for everything engraved straight, and the
-    /// **ellipse inscribed in it** for a notehead.
-    fn holds(&self, shape: HitShape, x: f32, y: f32) -> bool {
-        match shape {
-            HitShape::Rect => self.contains(x, y),
-            HitShape::Ellipse => crate::host::graphics::shape::in_ellipse(
-                x as f64,
-                y as f64,
-                crate::host::layout::Rect::new(
-                    self.x0,
-                    self.y0,
-                    self.x1 - self.x0,
-                    self.y1 - self.y0,
-                ),
-            ),
-        }
-    }
-
     fn area(&self) -> f32 {
         (self.x1 - self.x0) * (self.y1 - self.y0)
     }
@@ -152,40 +134,7 @@ impl Bounds {
     }
 }
 
-/// **What an entry's extent means**: the box, or the ellipse inside it.
-///
-/// A hit index is measured as boxes because that is what a path's extent is,
-/// but the box is not always the shape: a notehead is an oval lying in a
-/// rectangle whose corners are paper, and on a dense page those corners belong
-/// to the beam, the stem or the note on the next line. The distinction is
-/// carried per entry rather than decided at the test, because only the indexer
-/// knows what it measured.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HitShape {
-    /// The box itself -- a line, a stem, a beam, a text run, any glyph whose
-    /// outline fills what was measured around it.
-    Rect,
-    /// The ellipse inscribed in the box: a notehead.
-    Ellipse,
-}
-
-/// The SMuFL **Noteheads** range (U+E0A0-U+E0FF): the glyphs whose shape is an
-/// oval and whose box therefore over-answers for them. Whether a codepoint is a
-/// notehead is a fact about the font's layout, not about this page, so it is
-/// read straight off the range rather than configured.
-fn is_notehead(cp: u32) -> bool {
-    (0xE0A0..=0xE0FF).contains(&cp)
-}
-
-/// One entry of the hit-testing index: the page-unit extent of an identified
-/// primitive and the shape it stands for, paired with the MEI `xml:id` it was
-/// engraved from.
-#[derive(Clone, Debug)]
-pub struct HitBox {
-    pub id: String,
-    pub bounds: Bounds,
-    pub shape: HitShape,
-}
+pub use hit::{HitBox, HitGrid, HitShape};
 
 /// One placed element of the engraved page, in verovio page units.
 #[derive(Clone, Debug)]
@@ -363,6 +312,8 @@ pub struct ScoreData {
     /// primitive, derived from `prims` and `glyphs` when the display list is
     /// parsed (see [`ScoreData::index`]).
     pub hits: Vec<HitBox>,
+    /// The spatial index in front of `hits`, built with them.
+    pub grid: HitGrid,
     /// **The ids of the primitives that draw the staff lines**, filled by the
     /// same pass that clusters them into staves ([`ScoreData::staves`]).
     ///
@@ -425,6 +376,24 @@ pub struct ScoreData {
     /// on the third system's upper staff named staff 4 of a two-staff score,
     /// which no model has.
     pub systems: Vec<[f32; 2]>,
+    /// **What each id is**: the engraver's class for the element that carries
+    /// it (`note`, `rest`, `slur`, `clef`, ...), sent by the client because the
+    /// walk that engraved the page is what knows. What a kind admits is
+    /// `clausters_core::notation::admits`, read through [`ScoreData::admits`].
+    pub kinds: HashMap<String, String>,
+}
+
+impl ScoreData {
+    /// What a hand may do to the element `id`: the core's table, read for the
+    /// kind the page names. An id the page names no kind for admits nothing
+    /// beyond being selected -- a gesture this host cannot be sure of is one it
+    /// does not offer.
+    pub fn admits(&self, id: &str) -> clausters_core::notation::Admits {
+        self.kinds
+            .get(id)
+            .map(|kind| clausters_core::notation::admits(kind))
+            .unwrap_or_default()
+    }
 }
 
 impl Default for ScoreData {
@@ -441,6 +410,7 @@ impl Default for ScoreData {
             playhead_loop_len: 0.0,
             sample_rate: 0.0,
             hits: Vec::new(),
+            grid: HitGrid::default(),
             staff_ids: std::collections::HashSet::new(),
             staves: Vec::new(),
             selected: None,
@@ -450,6 +420,7 @@ impl Default for ScoreData {
             entry: false,
             elements: std::collections::HashSet::new(),
             systems: Vec::new(),
+            kinds: HashMap::new(),
         }
     }
 }

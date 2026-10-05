@@ -127,6 +127,22 @@ mod tests {
     }
 
     #[test]
+    fn the_engraved_page_names_what_each_id_is() {
+        // the kinds are read off verovio's own SVG, so this is where it is
+        // checked that its class names are the ones the table asks about.
+        let page = score().display_list(1);
+        let kinds = &page.draw.kinds;
+        for id in note_ids(&page) {
+            assert_eq!(kinds.get(&id).map(String::as_str), Some("note"), "{id}");
+        }
+        let named: std::collections::BTreeSet<&str> = kinds.values().map(String::as_str).collect();
+        for kind in ["staff", "clef", "meterSig", "barLine"] {
+            assert!(named.contains(kind), "{kind} in {named:?}");
+        }
+        assert!(clausters_core::notation::admits("note").pitch);
+    }
+
+    #[test]
     fn the_cursor_times_follow_the_note_onsets() {
         let page = score().display_list(1);
         let onsets: Vec<f64> = page.notes.iter().map(|n| n.t).collect();

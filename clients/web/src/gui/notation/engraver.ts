@@ -18,6 +18,7 @@ import {
     svgToDisplayList as coreSvgToDisplayList,
 } from "../../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
+import { SCORE_PAGE } from "../guidef.ts";
 import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
@@ -26,12 +27,6 @@ import type { Op, Sheet } from "./sheet.ts";
 import type { Event } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
 
-/**
- * The display-list keys the host draws from -- everything but `notes`, which is
- * the client's own layer. {@link pageJson} and the `score` builder send exactly
- * these.
- */
-const PAGE_LAYERS = ["vb", "glyphs", "prims", "cursors", "step", "elements"] as const;
 
 /** One engraved page: what is drawn, where the cursor goes, and what sounds. */
 export interface Page {
@@ -419,7 +414,7 @@ export async function engrave(
  */
 export function pageJson(displayList: Page): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const key of PAGE_LAYERS) {
+    for (const key of SCORE_PAGE) {
         if (key in displayList) out[key] = displayList[key];
     }
     return out;

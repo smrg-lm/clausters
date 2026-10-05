@@ -105,6 +105,18 @@ impl ScoreData {
                     .collect()
             })
             .unwrap_or_default();
+        // What each id is, from the same walk. A page without it (an older
+        // client) names no kinds, and its elements admit nothing but a press.
+        data.kinds = props
+            .get("kinds")
+            .and_then(Value::as_object)
+            .map(|kinds| {
+                kinds
+                    .iter()
+                    .filter_map(|(id, kind)| Some((id.clone(), kind.as_str()?.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
         data.systems = props
             .get("systems")
             .and_then(Value::as_array)

@@ -3988,9 +3988,9 @@ Whatever symbols the model itself needs owe their rows either way
   the beam half; the break half fell out of the `N5` editor example on
   2026-08-30, which is what made it a milestone rather than an entry.)*
 
-- ⬜ **N8 — Which element admits which edit**. *(Taken as `X5.0` on
-  2026-10-05, the score editor's first step: `crates/clausters-apps/PLAN.md`
-  holds the table of what each kind admits; this entry closes with it.)* A
+- ✅ **N8 — Which element admits which edit**. *(Closed 2026-10-05 as
+  `X5.0`, the score editor's first step, in `crates/clausters-apps/PLAN.md`:
+  the display list's `kinds` and the core's `notation::admits`.)* A
   page is editable or it is not:
   `editable` gates the whole of it, and `entry` the whole of it again. That is
   the coarse cut and it was the right one to ship — the host cannot fulfil an

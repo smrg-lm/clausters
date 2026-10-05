@@ -3597,26 +3597,39 @@ export function flatCords(cords: readonly number[]): number[] {
 }
 
 /**
+ * The keys of an engraved page the host reads: everything the engraving walk
+ * produced except `notes`, which is the client's own layer. One list, read by
+ * the definition, by a live `displayList` replacement (`pageJson`) and by a
+ * source's expansion, so a key the walk adds reaches the host by every path or
+ * by none.
+ */
+export const SCORE_PAGE = [
+    "vb",
+    "glyphs",
+    "prims",
+    "cursors",
+    "step",
+    "elements",
+    "systems",
+    "kinds",
+] as const;
+
+/**
  * An engraved page as the props a **definition** carries it in: the wire spells
- * a `score`'s drawing as six keys, one per part of the display list, and
- * `GuiHost.set` spells the same page as the one `display_list`.
+ * a `score`'s drawing as one key per part of the display list
+ * ({@link SCORE_PAGE}), and `GuiHost.set` spells the same page as the one
+ * `display_list`.
  *
- * `elements` is the last of them and the odd one: not a drawing layer but the
- * list of ids that name a **sounding element**, which the engraving walk knows
- * and a renderer cannot re-derive -- to the host an id is an id, and a staff's
- * lines carry the staff's. It is what lets a press on blank paper say which
- * element it fell after.
+ * Three of them are not drawing layers but what the engraving walk knows and a
+ * renderer cannot re-derive -- to the host an id is an id, and a staff's lines
+ * carry the staff's: `elements`, the ids that name a **sounding element**, which
+ * lets a press on blank paper say which element it fell after; `systems`, which
+ * tells a grand staff from two systems; and `kinds`, what each id is, which
+ * decides what a hand may do to it.
  */
 export function scorePage(displayList: Record<string, unknown>): Props {
     const dl = displayList ?? {};
-    return drop([
-        ["vb", dl.vb],
-        ["glyphs", dl.glyphs],
-        ["prims", dl.prims],
-        ["cursors", dl.cursors],
-        ["step", dl.step],
-        ["elements", dl.elements],
-    ]);
+    return drop(SCORE_PAGE.map((key) => [key, dl[key]]));
 }
 
 /**
@@ -3632,7 +3645,7 @@ const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly
     cords: { props: (v) => ({ cords: flatCords(v as readonly number[]) }), slots: ["cords"] },
     display_list: {
         props: (v) => scorePage(v as Record<string, unknown>),
-        slots: ["vb", "glyphs", "prims", "cursors", "step", "elements"],
+        slots: SCORE_PAGE,
     },
 };
 

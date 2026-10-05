@@ -278,11 +278,11 @@ fn a_click_names_the_element_under_it() {
     let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
     assert_eq!(data.fit(rect).sx, 1.0);
     // over the notehead, where both boxes overlap: the note wins
-    assert_eq!(data.hit(rect, 550.0, 190.0), Some("n1"));
+    assert_eq!(data.hit(rect, 550.0, 190.0, 0.0), Some("n1"));
     // on the staff line away from the note: only the line is there
-    assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+    assert_eq!(data.hit(rect, 100.0, 200.0, 0.0), Some("staff"));
     // blank paper names nothing
-    assert_eq!(data.hit(rect, 100.0, 380.0), None);
+    assert_eq!(data.hit(rect, 100.0, 380.0, 0.0), None);
 }
 
 /// A staff line with a notehead written **on** it -- the box that traps the
@@ -321,9 +321,9 @@ fn a_note_on_a_staff_line_wins_over_the_line() {
         "the line is the thinner box, which is the whole trap"
     );
     // the notehead's own centre, which is exactly on the line it is written on
-    assert_eq!(data.hit(rect, 500.0, 200.0), Some("n1"));
+    assert_eq!(data.hit(rect, 500.0, 200.0, 0.0), Some("n1"));
     // and away from it the line is still selectable
-    assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+    assert_eq!(data.hit(rect, 100.0, 200.0, 0.0), Some("staff"));
 }
 
 /// A page whose client named no elements still answers something: the tightest
@@ -335,7 +335,7 @@ fn a_page_that_names_no_elements_falls_back_to_the_tightest_box() {
     let mut data = note_on_a_line();
     data.elements.clear();
     let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
-    assert_eq!(data.hit(rect, 500.0, 200.0), Some("staff"));
+    assert_eq!(data.hit(rect, 500.0, 200.0, 0.0), Some("staff"));
 }
 
 /// **A notehead is an oval, and the corners of the box around it are paper.**
@@ -352,16 +352,20 @@ fn a_notehead_is_hit_as_the_oval_it_is_drawn_as() {
         .iter()
         .find(|h| h.id == "n1")
         .expect("the notehead is indexed");
-    assert_eq!(head.shape, HitShape::Ellipse);
+    assert!(matches!(head.shape, HitShape::Ellipse));
     let b = head.bounds;
     // Inside the oval, off the staff line that crosses it (the smaller box
     // wins where two overlap, and that rule is untouched).
-    assert_eq!(data.hit(rect, 550.0, 190.0), Some("n1"), "the head itself");
+    assert_eq!(
+        data.hit(rect, 550.0, 190.0, 0.0),
+        Some("n1"),
+        "the head itself"
+    );
     // A hair inside the box's top-left corner: inside the rectangle, outside
     // the oval -- and it used to name the note.
-    assert_ne!(data.hit(rect, b.x0 + 1.0, b.y0 + 1.0), Some("n1"));
+    assert_ne!(data.hit(rect, b.x0 + 1.0, b.y0 + 1.0, 0.0), Some("n1"));
     // The staff line, whose own extent is a stroke, is unaffected.
-    assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+    assert_eq!(data.hit(rect, 100.0, 200.0, 0.0), Some("staff"));
 }
 
 #[test]
@@ -370,10 +374,10 @@ fn hit_testing_follows_the_page_fit() {
     // half scale, so the notehead's page x=500 lands at screen x=250
     let rect = Rect::new(0.0, 0.0, 500.0, 200.0);
     assert_eq!(data.fit(rect).sx, 0.5);
-    assert_eq!(data.hit(rect, 275.0, 95.0), Some("n1"));
+    assert_eq!(data.hit(rect, 275.0, 95.0, 0.0), Some("n1"));
     // the same screen point on the unscaled page is blank paper
     assert_eq!(
-        data.hit(Rect::new(0.0, 0.0, 1000.0, 400.0), 275.0, 95.0),
+        data.hit(Rect::new(0.0, 0.0, 1000.0, 400.0), 275.0, 95.0, 0.0),
         None
     );
 }
@@ -640,4 +644,123 @@ fn an_insertion_point_follows_the_page_fit() {
     let full = data.entry_at(Rect::new(0.0, 0.0, 11000.0, 3000.0), 4000.0, 1400.0);
     let half = data.entry_at(Rect::new(0.0, 0.0, 5500.0, 1500.0), 2000.0, 700.0);
     assert_eq!(full.map(|e| e.position), half.map(|e| e.position));
+}
+
+/// A page of one mark, fitted 1:1 into a 1000x400 rect, so page == screen.
+fn one_mark(prims: &str, glyphs: &str) -> ScoreData {
+    let props: Map<String, Value> = serde_json::from_str(&format!(
+        r#"{{"vb": [1000, 400], "glyphs": {{{glyphs}}}, "prims": [{prims}]}}"#
+    ))
+    .unwrap();
+    ScoreData::parse(&props)
+}
+
+const ONE: Rect = Rect {
+    x: 0.0,
+    y: 0.0,
+    w: 1000.0,
+    h: 400.0,
+};
+
+/// **A glyph is hit by its outline, not by its box.** A clef, a rest or a
+/// dynamic leaves most of its box as paper, and on a dense page that paper is
+/// where the next element is.
+#[test]
+fn a_glyph_is_hit_by_its_outline_not_its_box() {
+    // a right triangle in a 200x200 box: the lower-left half is the glyph
+    let data = one_mark(
+        r#"{"k": "glyph", "cp": "E050", "xf": [400, 300, 1, -1], "id": "c1"}"#,
+        r#""E050": "M0 0 L200 0 L0 200 Z""#,
+    );
+    assert_eq!(
+        data.hit(ONE, 430.0, 280.0, 0.0),
+        Some("c1"),
+        "inside the ink"
+    );
+    assert_eq!(
+        data.hit(ONE, 590.0, 110.0, 0.0),
+        None,
+        "inside the box, off the ink"
+    );
+}
+
+/// **A thin mark is reached within the slop.** A slur is a few page units
+/// thick; a press that misses it by a hair still names it.
+#[test]
+fn a_thin_mark_is_reached_within_the_slop() {
+    let data = one_mark(
+        r#"{"k": "fill", "d": "M0 0 L600 0 L600 6 L0 6 Z", "xf": [200, 200, 1, 1], "id": "s1"}"#,
+        "",
+    );
+    assert_eq!(data.hit(ONE, 500.0, 203.0, 0.0), Some("s1"), "on it");
+    assert_eq!(data.hit(ONE, 500.0, 210.0, 0.0), None, "a hair under it");
+    assert_eq!(
+        data.hit(ONE, 500.0, 210.0, 6.0),
+        Some("s1"),
+        "within the slop"
+    );
+    assert_eq!(data.hit(ONE, 500.0, 230.0, 6.0), None, "beyond it");
+}
+
+/// **What is drawn under the point wins over the slop.** A press on a slur
+/// that passes just over a note is the slur's, though the note is an element
+/// and within reach.
+#[test]
+fn what_is_drawn_under_the_point_wins_over_the_slop() {
+    let data = one_mark(
+        r#"{"k": "glyph", "cp": "E0A4", "xf": [500, 230, 1, -1], "id": "n1"},
+           {"k": "fill", "d": "M0 0 L600 0 L600 6 L0 6 Z", "xf": [200, 200, 1, 1], "id": "s1"}"#,
+        r#""E0A4": "M-40 -20 L40 -20 L40 20 L-40 20 Z""#,
+    );
+    let mut data = data;
+    data.elements.insert("n1".into());
+    assert_eq!(data.hit(ONE, 500.0, 203.0, 8.0), Some("s1"));
+    assert_eq!(data.hit(ONE, 500.0, 230.0, 8.0), Some("n1"));
+}
+
+/// **A stroke is hit by its distance from the line.** A hairpin's wedge is two
+/// diagonals whose box is mostly paper.
+#[test]
+fn a_stroke_is_hit_by_its_distance_from_the_line() {
+    let data = one_mark(
+        r#"{"k": "line", "pts": [[100, 100], [500, 300]], "w": 4, "id": "h1"}"#,
+        "",
+    );
+    assert_eq!(data.hit(ONE, 300.0, 200.0, 0.0), Some("h1"), "on the line");
+    assert_eq!(
+        data.hit(ONE, 150.0, 280.0, 6.0),
+        None,
+        "in its box, far from it"
+    );
+    assert_eq!(data.hit(ONE, 300.0, 205.0, 6.0), Some("h1"), "beside it");
+}
+
+/// **The staff's own lines take no slop.** Between them is the paper a note
+/// is written on, so a press a hair off a line, in a space, is not the staff.
+#[test]
+fn the_staff_lines_take_no_slop() {
+    let data = one_mark(
+        r#"{"k": "line", "pts": [[0, 200], [1000, 200]], "w": 2, "id": "staff"}"#,
+        "",
+    );
+    assert!(data.staff_ids.contains("staff"));
+    assert_eq!(data.hit(ONE, 500.0, 200.0, 6.0), Some("staff"));
+    assert_eq!(data.hit(ONE, 500.0, 205.0, 6.0), None);
+}
+
+/// **The grid finds what it indexed, across its cells.** A press far from a
+/// mark tests nothing, and a mark spanning many cells is found from any of
+/// them.
+#[test]
+fn the_grid_finds_a_mark_from_any_cell_it_crosses() {
+    let data = one_mark(
+        r#"{"k": "line", "pts": [[10, 50], [990, 50]], "w": 4, "id": "long"},
+           {"k": "line", "pts": [[600, 300], [610, 300]], "w": 4, "id": "short"}"#,
+        "",
+    );
+    for x in [20.0, 400.0, 980.0] {
+        assert_eq!(data.hit(ONE, x, 50.0, 0.0), Some("long"), "at {x}");
+    }
+    assert_eq!(data.hit(ONE, 605.0, 300.0, 0.0), Some("short"));
+    assert_eq!(data.hit(ONE, 100.0, 300.0, 0.0), None);
 }

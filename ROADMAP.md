@@ -152,17 +152,14 @@ its plan; the plan is where its acceptance is read.
 ### Waiting on a decision
 
 - ⬜ **The `N` track's second half — notation: what a page lets a hand do**,
-  `N7`-`N9` *(`clients/gui/PLAN.md`, "N track — notation: the score model, and
-  what is written on it")*. `N1`-`N6` closed on 2026-08-29/30: the model, its
-  verbs, the emission, the interpreter, the reader and the enriched forward
-  path. The three that follow were the notation lines left standing under
-  `G31`, plus one the editor example turned up, and each is numbered now
-  because each is a **decision** before it is work.
+  `N7` and `N9` *(`clients/gui/PLAN.md`, "N track — notation: the score model,
+  and what is written on it")*. `N1`-`N6` closed on 2026-08-29/30: the model,
+  its verbs, the emission, the interpreter, the reader and the enriched forward
+  path, and `N8` closed 2026-10-05 as the score editor's `X5.0`. The two left
+  are each a **decision** before they are work.
   **`N7`** — what opening somebody else's score should preserve, since the
   reader stores an engraver's beams and page breaks as though a writer had
-  chosen them. **`N8`** — which element admits which edit, now taken as `X5.0`
-  (`crates/clausters-apps/PLAN.md`), where today a page
-  is editable or it is not. **`N9`** — a score as a box of the multitrack,
+  chosen them. **`N9`** — a score as a box of the multitrack,
   drawn the way a box of notes is drawn as a piano roll, since the two show
   the same notes.
 
@@ -175,8 +172,8 @@ its plan; the plan is where its acceptance is read.
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, done but for its recording (`X3.10`), which waits for
   `T10` and is skipped for now; **`X5`** the score editor,
-  planned 2026-10-05 as `X5.0`-`X5.9` and opening on `N8` (`X5.0`), which it
-  takes from the `N` track; **`X6`** which composed views (scope, plot, waveform,
+  planned 2026-10-05 as `X5.0`-`X5.9`, its first step (`X5.0`, which was
+  `N8`) done; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a

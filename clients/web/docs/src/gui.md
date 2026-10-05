@@ -306,8 +306,10 @@ what the host **draws**, where the **cursor** goes at each onset, and what
 is what a driver plays).
 
 Editing rides on those ids. A click reports the element under the cursor; a
-vertical drag reports the diatonic staff position the note *reaches* — absolute,
-so an edit that arrives twice moves nothing the second time. Your script applies
+vertical drag on a note reports the diatonic staff position the note *reaches* —
+absolute, so an edit that arrives twice moves nothing the second time. Only a
+note drags: the page says what each id is (`kinds`), and a slur, a time
+signature or a rest is selected and never displaced. Your script applies
 it and sends the new page back:
 
 ```ts

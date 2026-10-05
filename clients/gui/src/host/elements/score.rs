@@ -160,7 +160,7 @@ impl Element for Score {
         // score. Pressing blank paper clears the selection.
         let picked = self
             .data
-            .hit(input.rect, at.0 as f32, at.1 as f32)
+            .hit(input.rect, at.0 as f32, at.1 as f32, input.metrics.hit_slop)
             .map(str::to_string);
         // **On a page that takes note entry, a staff line is a place.** The hit
         // test answers with a sounding element where there is one and with the
@@ -199,8 +199,13 @@ impl Element for Score {
         // nothing more. A read-only page (the default) still selects and
         // reports the element above, but a drag does nothing -- the host holds
         // no score, so an edit the client will not apply is a gesture it cannot
-        // fulfil.
-        let dragging = self.data.editable && picked.is_some();
+        // fulfil. **Only what has a pitch drags** (the core's `admits`): a
+        // slur, a time signature, a rest or a staff dragged like a notehead
+        // and grew ledger lines, and where those sit is the engraver's.
+        let dragging = self.data.editable
+            && picked
+                .as_deref()
+                .is_some_and(|id| self.data.admits(id).pitch);
         if dragging {
             self.data.drag = Some(ScoreDrag {
                 id: picked.clone().unwrap_or_default(),
@@ -313,7 +318,8 @@ mod tests {
                   {{"k":"line","pts":[[0,560],[1000,560]],"w":4}},
                   {{"k":"line","pts":[[0,740],[1000,740]],"w":4}},
                   {{"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"}},
-                  {{"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}}]}}"#
+                  {{"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}}],
+                "kinds":{{"n1":"note","n2":"note"}}}}"#
         ))
         .unwrap();
         Score {
@@ -336,7 +342,8 @@ mod tests {
                   {"k":"line","pts":[[0,560],[1000,560]],"w":4,"id":"staff1"},
                   {"k":"line","pts":[[0,740],[1000,740]],"w":4,"id":"staff1"},
                   {"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"},
-                  {"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}]}"#,
+                  {"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"}],
+                "kinds":{"n1":"note","n2":"note","staff1":"staff"}}"#,
         )
         .unwrap();
         Score {
@@ -429,6 +436,45 @@ mod tests {
         score.drag((x, y - 100.0), &input);
         assert!(score.data.drag.is_none());
         assert_eq!(score.release((x, y - 100.0), true, &input), Events::none());
+    }
+
+    /// **Only what has a pitch drags.** A slur on an editable page is selected
+    /// like any element and a drag on it moves nothing: no displacement, no
+    /// ledger lines, and nothing reported -- where a slur sits is the
+    /// engraver's, and its ends are notes.
+    #[test]
+    fn a_drag_on_what_has_no_pitch_does_nothing() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = page(true);
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,1000],"step":90,"editable":true,
+                "prims":[{"k":"fill","d":"M0 0 L400 0 L400 40 L0 40 Z","xf":[300,850,1,1],"id":"s1"}],
+                "kinds":{"s1":"slur"}}"#,
+        )
+        .unwrap();
+        score.data = ScoreData::parse(&props);
+        let (x, y) = at(&score, input.rect, 500.0, 870.0);
+        let pressed = score.press((x, y), &input);
+        assert_eq!(score.data.selected.as_deref(), Some("s1"), "it is selected");
+        assert!(!matches!(pressed, Claim::Decline), "and says so");
+        assert!(score.data.drag.is_none(), "but nothing is held");
+        score.drag((x, y - 100.0), &input);
+        assert!(score.data.drag.is_none());
+        assert_eq!(score.release((x, y - 100.0), true, &input), Events::none());
+    }
+
+    /// A page that names no kinds -- a client from before them -- offers no
+    /// drag at all, rather than guessing which ids have a pitch.
+    #[test]
+    fn a_page_naming_no_kinds_does_not_drag() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = page(true);
+        score.data.kinds.clear();
+        score.press(at(&score, input.rect, 150.0, 250.0), &input);
+        assert_eq!(score.data.selected.as_deref(), Some("n1"));
+        assert!(score.data.drag.is_none());
     }
 
     /// An editable page displaces the element as the drag crosses whole

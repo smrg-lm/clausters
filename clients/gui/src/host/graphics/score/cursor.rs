@@ -1,14 +1,11 @@
-//! **What is where, and what time it is**: the page's two indexes and the
-//! questions asked of them.
+//! **Where the staves are, and what time it is**: the staff index and the
+//! questions asked of it.
 //!
-//! An engraved page is a flat list of primitives, and everything interactive
-//! needs it as something else: the **hit index** ([`ScoreData::index`]) -- one
-//! page-unit box per identified primitive, so a click can name the element
-//! under it -- and the **staff index** (`index_staves`), which is what a ledger
-//! line and a diatonic step are measured against. Both are built once, when
-//! the display list arrives, because the geometry never moves afterwards and
-//! re-deriving it per click would mean re-parsing every glyph outline on every
-//! press.
+//! An engraved page is a flat list of primitives, and a pitch needs it as
+//! something else: the **staff index** (`index_staves`), which is what a ledger
+//! line, a diatonic step and a press on blank paper are measured against. It is
+//! built with the hit index (`super::hit`), once, when the display list
+//! arrives, because the geometry never moves afterwards.
 //!
 //! Beside them, the two mappings a gesture needs: [`ScoreData::fit`], the
 //! transform placing the page in its rectangle (the one every screen
@@ -16,91 +13,11 @@
 //! which reads the transport's position as a musical time on the client's
 //! timemap.
 
-use std::collections::HashMap;
-
-use super::glyphs::path_bounds;
 use super::tess::staff_distance;
-use super::{Affine, Bounds, Entry, HitBox, HitShape, Prim, ScoreData, Staff, is_notehead};
+use super::{Affine, Entry, Prim, ScoreData, Staff};
 use crate::host::layout::Rect;
 
-/// The tightest of a set of overlapping boxes.
-fn smallest<'a>(boxes: impl Iterator<Item = &'a HitBox>) -> Option<&'a HitBox> {
-    boxes.min_by(|a, b| a.bounds.area().total_cmp(&b.bounds.area()))
-}
-
 impl ScoreData {
-    /// Rebuild the hit-testing index from the placed primitives: one page-unit
-    /// box per identified primitive, so a click can name the element under it.
-    /// Done once when the display list arrives -- the geometry never moves
-    /// afterwards, and re-deriving it per click would mean re-parsing every
-    /// glyph outline on every press.
-    pub fn index(&mut self) {
-        // glyph outlines repeat all over a page (one notehead shape, hundreds of
-        // notes), so each codepoint's local extent is measured once.
-        let mut local: HashMap<u32, Option<Bounds>> = HashMap::new();
-        self.hits.clear();
-        for prim in &self.prims {
-            let Some(id) = prim.id() else { continue };
-            let bounds = match prim {
-                Prim::Glyph { cp, xf, .. } => {
-                    let b = *local
-                        .entry(*cp)
-                        .or_insert_with(|| self.glyphs.get(cp).and_then(|d| path_bounds(d)));
-                    b.map(|b| b.transformed(*xf))
-                }
-                Prim::Fill { d, xf, .. } => path_bounds(d).map(|b| b.transformed(*xf)),
-                Prim::Line { pts, width, .. } => {
-                    let mut b = Bounds {
-                        x0: f32::MAX,
-                        y0: f32::MAX,
-                        x1: f32::MIN,
-                        y1: f32::MIN,
-                    };
-                    for p in pts {
-                        b.x0 = b.x0.min(p[0]);
-                        b.y0 = b.y0.min(p[1]);
-                        b.x1 = b.x1.max(p[0]);
-                        b.y1 = b.y1.max(p[1]);
-                    }
-                    // a stroke is a hairline in one axis: give it its width.
-                    Some(b.grown(width * 0.5))
-                }
-                Prim::Text {
-                    s,
-                    x,
-                    y,
-                    size,
-                    anchor,
-                    ..
-                } => {
-                    // the host font is roughly 0.6 em wide per character
-                    let w = 0.6 * size * s.chars().count() as f32;
-                    let x0 = anchor.left(*x, w);
-                    Some(Bounds {
-                        x0,
-                        x1: x0 + w,
-                        y0: y - size,
-                        y1: *y,
-                    })
-                }
-            };
-            // What the box stands for: a notehead is the oval inside it, and
-            // everything else fills what was measured around it.
-            let shape = match prim {
-                Prim::Glyph { cp, .. } if is_notehead(*cp) => HitShape::Ellipse,
-                _ => HitShape::Rect,
-            };
-            if let Some(bounds) = bounds {
-                self.hits.push(HitBox {
-                    id: id.to_string(),
-                    bounds,
-                    shape,
-                });
-            }
-        }
-        self.index_staves();
-    }
-
     /// Cluster the staff lines into staves. A staff line is the one primitive
     /// every system draws the same way -- one of the page's **longest**
     /// horizontal strokes -- and within a staff they sit exactly one space (two
@@ -115,7 +32,7 @@ impl ScoreData {
     /// is `clausters_core::notation::DisplayList::staves`' and is kept
     /// identical to it: a pitch position measured here and resolved there has
     /// to mean the same thing.
-    fn index_staves(&mut self) {
+    pub(super) fn index_staves(&mut self) {
         let horizontals: Vec<(f32, f32, f32, Option<&str>)> = self
             .prims
             .iter()
@@ -251,31 +168,6 @@ impl ScoreData {
             })?;
         let staff = self.staff_at(y)?;
         Some((((staff.y0 - y) / self.step).round()) as i32)
-    }
-
-    /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the
-    /// page fitted into `rect`. `None` when the click lands on blank paper.
-    ///
-    /// **A sounding element wins over anything drawn across it**, and only then
-    /// does the smallest box decide. The order matters because area is a bad
-    /// proxy for "innermost" on an engraved page: a staff line is a hairline
-    /// the width of the system, so its box is *thinner* than a notehead's and area
-    /// alone hands it every note written on a line rather than in a space --
-    /// half the page, and the half a hand reaches for first. The page already
-    /// says which ids are notes and rests ([`ScoreData::elements`]), so the
-    /// question is answered by what a thing *is* and not by how big it is; the
-    /// same order keeps a note under a beam, a slur or a hairpin reachable.
-    pub fn hit(&self, rect: Rect, x: f32, y: f32) -> Option<&str> {
-        let inv = self.fit(rect).invert()?;
-        let [px, py] = inv.apply(x, y);
-        let under = || {
-            self.hits
-                .iter()
-                .filter(move |h| h.bounds.holds(h.shape, px, py))
-        };
-        smallest(under().filter(|h| self.elements.contains(&h.id)))
-            .or_else(|| smallest(under()))
-            .map(|h| h.id.as_str())
     }
 
     /// Where a press on **blank paper** landed, for a page that takes note

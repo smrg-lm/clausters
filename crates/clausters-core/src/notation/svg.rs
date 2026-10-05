@@ -61,6 +61,17 @@ pub struct DisplayList {
     /// the score's answer rather than a count down the page.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<[f64; 2]>,
+    /// **What each id on `prims` is**: the engraver's own class for the element
+    /// that carries it -- `note`, `rest`, `slur`, `hairpin`, `dynam`, `clef`,
+    /// `meterSig`, `barLine`, `staff` and the rest of the elements verovio
+    /// engraves.
+    ///
+    /// The walk reads it off the SVG it walks and nothing else can: to a
+    /// renderer an id is an id, so a host that has to answer a drag on a slur
+    /// differently from a drag on a note was answering both the same way. What a
+    /// kind admits is [`super::admits`], one table every renderer reads.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub kinds: BTreeMap<String, String>,
 }
 
 /// One placed primitive. The `k` discriminator names the kind; every primitive
@@ -154,6 +165,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
     let mut glyphs = BTreeMap::new();
     let mut prims = Vec::new();
     let mut elements = Vec::new();
+    let mut kinds = BTreeMap::new();
     walk(
         target,
         IDENTITY,
@@ -163,7 +175,12 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
         &mut glyphs,
         &mut prims,
         &mut elements,
+        &mut kinds,
     );
+    // Only the ids something is drawn under: a measure or a system carries an
+    // id and a class too, and nothing on the page answers to it.
+    let drawn: std::collections::BTreeSet<&str> = prims.iter().filter_map(Prim::id).collect();
+    kinds.retain(|id, _| drawn.contains(id.as_str()));
     let step = staff_step(&prims);
     let systems = super::cursors::staff_systems(&prims)
         .into_iter()
@@ -176,6 +193,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
         step,
         elements,
         systems,
+        kinds,
     }
 }
 
@@ -262,6 +280,7 @@ fn walk(
     glyphs: &mut BTreeMap<String, String>,
     prims: &mut Vec<Prim>,
     elements: &mut Vec<String>,
+    kinds: &mut BTreeMap<String, String>,
 ) {
     let xf = compose(parent_xf, parse_transform(node.attribute("transform")));
     // Which element a primitive belongs to. verovio gives a note's *parts* ids
@@ -273,7 +292,11 @@ fn walk(
     let own = node.attribute("id");
     let nid: Option<&str> = match own {
         Some(own) if !owned => {
-            owned = is_element_class(node.attribute("class").unwrap_or(""));
+            let class = node.attribute("class").unwrap_or("");
+            if let Some(kind) = class.split_whitespace().next() {
+                kinds.insert(own.to_string(), kind.to_string());
+            }
+            owned = is_element_class(class);
             // Where ownership begins is exactly where a sounding element does,
             // so this is the one place that knows, and it says so here rather
             // than leaving a renderer to guess from a box.
@@ -369,7 +392,9 @@ fn walk(
         }
         _ => {
             for child in node.children().filter(Node::is_element) {
-                walk(child, xf, nid, owned, glyph_defs, glyphs, prims, elements);
+                walk(
+                    child, xf, nid, owned, glyph_defs, glyphs, prims, elements, kinds,
+                );
             }
         }
     }
@@ -784,6 +809,36 @@ mod tests {
     }
 
     #[test]
+    fn every_drawn_id_names_its_kind() {
+        let dl = svg_to_display_list(SVG);
+        assert_eq!(dl.kinds.get("note-1").map(String::as_str), Some("note"));
+        // a part of a note is the note's, so it names no kind of its own
+        assert!(!dl.kinds.contains_key("stem-1"));
+        // an id with no class names nothing
+        assert!(!dl.kinds.contains_key("line-1"));
+    }
+
+    #[test]
+    fn a_note_owns_its_accidental() {
+        // verovio draws a note's accidental inside the note's own group, so
+        // pressing the sign is pressing the note -- which is what makes its drag
+        // the note's pitch drag rather than a second thing to move.
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+          <defs><g id="E0A4-abc"><path d="M0 0 L1 1Z"/></g><g id="E262-abc"><path d="M0 0 L1 1Z"/></g></defs>
+          <svg class="definition-scale" viewBox="0 0 1000 400">
+            <g id="n1" class="note">
+              <g id="nh1" class="notehead"><use xlink:href="#E0A4-abc" transform="translate(500,200)"/></g>
+              <g id="a1" class="accid"><use xlink:href="#E262-abc" transform="translate(440,200)"/></g>
+            </g>
+          </svg>
+        </svg>"##;
+        let dl = svg_to_display_list(svg);
+        assert_eq!(dl.prims.len(), 2);
+        assert!(dl.prims.iter().all(|p| p.id() == Some("n1")));
+        assert_eq!(dl.kinds.len(), 1);
+    }
+
+    #[test]
     fn a_note_owns_its_stem_under_one_id() {
         let dl = svg_to_display_list(SVG);
         // the notehead glyph and the stem line both take the note's id, not the
@@ -953,6 +1008,7 @@ mod tests {
             step: 90.0,
             elements: Vec::new(),
             systems: Vec::new(),
+            kinds: BTreeMap::new(),
         }
     }
 
@@ -1006,6 +1062,7 @@ mod tests {
             step: 90.0,
             elements: Vec::new(),
             systems: Vec::new(),
+            kinds: BTreeMap::new(),
         };
         assert_eq!(bare.staff_position("n1"), None);
     }

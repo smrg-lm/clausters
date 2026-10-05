@@ -92,7 +92,11 @@ def test_the_page_json_carries_the_drawing_layers_only():
     requires_engraver()
     dl = notation.engrave(PHRASE)
     page = json.loads(notation.page_json(dl))
-    assert sorted(page) == ["cursors", "elements", "glyphs", "prims", "step", "vb"]
+    assert sorted(page) == ["cursors", "elements", "glyphs", "kinds", "prims",
+                            "step", "systems", "vb"]
+    # what each id is reaches the host, and the client's own notes do not
+    assert "notes" not in page
+    assert set(page["kinds"].values()) >= {"note", "staff", "clef"}
     # what the builder sends when it defines the widget, so a re-engraved page
     # replaces it exactly
     built = score(id=11, display_list=dl)

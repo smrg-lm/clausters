@@ -318,6 +318,7 @@ mod tests {
             step: 45.0,
             elements: Vec::new(),
             systems: Vec::new(),
+            kinds: Default::default(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);
@@ -340,6 +341,7 @@ mod tests {
             step: 45.0,
             elements: Vec::new(),
             systems: Vec::new(),
+            kinds: Default::default(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);

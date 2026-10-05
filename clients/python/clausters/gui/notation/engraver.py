@@ -36,7 +36,6 @@ if os.path.isdir(os.path.join(_libpath.LIBS_DIR, "verovio")):
 
 # The display-list keys the host draws from -- everything but `notes`, which is
 # the client's own layer. `page_json` and `guidef.score` send exactly these.
-_PAGE_LAYERS = ("vb", "glyphs", "prims", "cursors", "step", "elements")
 
 class Score:
     """A loaded score, kept alive so it can be **edited** and re-engraved.
@@ -380,7 +379,9 @@ def page_json(display_list: dict) -> str:
     selection survive the replacement, which is what keeps the edited note
     selected across the round trip).
     """
-    return json.dumps({k: display_list[k] for k in _PAGE_LAYERS
+    from ..guidef import SCORE_PAGE
+
+    return json.dumps({k: display_list[k] for k in SCORE_PAGE
                        if k in display_list})
 
 

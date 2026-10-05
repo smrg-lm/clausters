@@ -858,7 +858,8 @@ normalizes it, so both spellings put the same flat list on the wire.
 
 An engraved page is the one that travels two ways, and the source hides it: a
 definition carries the display list as its parts (`vb`, `glyphs`, `prims`,
-`cursors`, `step`) and a live update carries the whole `display_list`, which is
+`cursors`, `step`, and what the walk knows about the ids: `elements`, `systems`,
+`kinds`) and a live update carries the whole `display_list`, which is
 the host's door for replacing a drawing in place. `page.set(...)` picks the
 right one.
 
@@ -955,7 +956,7 @@ from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
 | `keys` | `piano` | a playable keyboard with real piano proportions. `min`/`max` are the visible range (its overview strip pans and zooms it), `active_min`/`active_max` gray the keys outside a mapping, and `voice="def"` has the **host** manage one server voice per held key |
 | `nodes` | `nodetree` | the audio server's node graph, live, with each synth's controls |
 | `meter` | — | a bus level, read from the server's shared segment every frame with no messages at all |
-| `score` | — | an engraved notation page: the client engraves and sends a display list, the host fits and tessellates it. A click names an element, a drag transposes it |
+| `score` | — | an engraved notation page: the client engraves and sends a display list, the host fits and tessellates it. A click names an element, a drag on a note transposes it (only what has a pitch drags) |
 | `canvas` | — | a script-supplied WGSL shader over the widget area, fed by `params` and by control `buses` |
 | `label` | — | static text: `text_size`, `wrap`, `align` |
 

@@ -99,7 +99,8 @@ def normalized(page: dict) -> dict:
     ``elements`` is a list of those same ids rather than objects carrying one,
     so it is normalized by name: leaving it raw would compare two engravings'
     minted ids directly, which is the one thing this normalization exists to
-    avoid."""
+    avoid. ``kinds`` is keyed by them, so it becomes ``[index, kind]`` pairs in
+    index order."""
     ids: dict = {}
 
     def index(value):
@@ -111,6 +112,8 @@ def normalized(page: dict) -> dict:
         if isinstance(value, dict):
             return {k: (index(v) if k == "id" and isinstance(v, str)
                         else [index(e) for e in v] if k == "elements"
+                        else sorted([index(i), kind] for i, kind in v.items())
+                        if k == "kinds"
                         else walk(v))
                     for k, v in value.items()}
         if isinstance(value, list):

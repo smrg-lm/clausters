@@ -1,11 +1,11 @@
-//! **The outlines**: an SVG path `d` into a lyon path, and its extent.
+//! **The outlines**: an SVG path `d` into a lyon path.
 //!
 //! A SMuFL glyph reaches the host as the outline the client's font gave it --
 //! one path string per codepoint, sent once with the page and referenced by
 //! every note that draws it. This module is the only place that string is
 //! understood: [`build_path`] scans it into a [`LyonPath`] the tessellator can
-//! fill, [`path_bounds`] measures it for the hit index, and [`Tokens`] is the
-//! scanner both go through.
+//! fill and the hit index tests a press against, through the scanner
+//! [`Tokens`].
 //!
 //! Only the subset verovio emits is supported, and a malformed path yields
 //! `None` rather than a panic -- the primitive is then skipped, which is the
@@ -13,22 +13,6 @@
 
 use lyon::math::point;
 use lyon::path::Path as LyonPath;
-
-use super::Bounds;
-
-/// The extent of an SVG path `d` in its own coordinates, from the bezier control
-/// hull -- a slight over-estimate of the true curve extent, which is what a hit
-/// target wants anyway (a click just off a notehead's edge still names it).
-pub(super) fn path_bounds(d: &str) -> Option<Bounds> {
-    let path = build_path(d)?;
-    let b = lyon::algorithms::aabb::fast_bounding_box(&path);
-    Some(Bounds {
-        x0: b.min.x,
-        y0: b.min.y,
-        x1: b.max.x,
-        y1: b.max.y,
-    })
-}
 
 /// Build a lyon [`LyonPath`] from an SVG path `d`. Supports the subset verovio
 /// emits: `M/m` moveto, `L/l` lineto, `H/h`/`V/v` axis lines, `C/c` cubic,

@@ -31,6 +31,7 @@
 //! the score model included, so a page runs the same state machine a window
 //! does rather than a second one written in TypeScript.
 
+mod admits;
 mod cursors;
 mod edit;
 mod interp;
@@ -42,6 +43,7 @@ mod read;
 mod score;
 mod svg;
 
+pub use admits::{Admits, admits};
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
     At, add_spanner, delete, insert, move_steps, pitch_at, remove_spanner, set_barline, set_break,

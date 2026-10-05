@@ -1639,7 +1639,8 @@ fn score_host() -> Host {
             {"id":80,"type":"score","vb":[1000,400],"editable":true,
              "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
              "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
-                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}],
+             "kinds":{"n1":"note","staff":"staff"}}]}"#,
     )
 }
 
@@ -1767,7 +1768,8 @@ fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
             {"id":80,"type":"score","vb":[1000,400],
              "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
              "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
-                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+                      {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}],
+             "kinds":{"n1":"note","staff":"staff"}}]}"#,
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 1012, 412);
