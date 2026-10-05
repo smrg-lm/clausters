@@ -1614,6 +1614,19 @@ impl JsEditing {
         self.0.open_notes(&key, sequence.0.clone(), request)
     }
 
+    /// Opens a score editor over `score`, which it then edits in place -- the
+    /// C ABI's `clausters_apps_editing_open_score`. `request` carries the `key`
+    /// and what the editor is built from.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = openScore)]
+    pub fn open_score(&mut self, score: &JsScore, request: &str) -> String {
+        let key = serde_json::from_str::<serde_json::Value>(request)
+            .ok()
+            .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+            .unwrap_or_default();
+        self.0.open_score(&key, score.0.clone(), request)
+    }
+
     /// Opens a multitrack editor over `multitrack`, which it then edits in
     /// place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
     /// carries the `key` and what the editor is built from.
@@ -2961,6 +2974,12 @@ impl JsEngraver {
     }
 }
 
+// SAFETY: a page's wasm module runs on the one thread that made it, so the JS
+// object is never reached from another; `Send` is what an application's score
+// asks of every engraver, for the bindings that do have threads.
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for JsEngraver {}
+
 #[cfg(target_arch = "wasm32")]
 impl clausters_core::notation::Engraver for JsEngraver {
     /// A page has one thread and the engraver is reached from it alone, so
@@ -3010,7 +3029,20 @@ impl clausters_core::notation::Engraver for JsEngraver {
 /// window take the identical sequence of calls to verovio.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Score)]
-pub struct JsScore(clausters_core::notation::Score<JsEngraver>);
+pub struct JsScore(clausters_apps::score::Shared);
+
+#[cfg(target_arch = "wasm32")]
+impl JsScore {
+    /// The score, held for one call.
+    fn held(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        clausters_core::notation::Score<clausters_core::notation::AnyEngraver>,
+    > {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = Score)]
@@ -3023,22 +3055,26 @@ impl JsScore {
     /// toolkit before handing it over.
     #[wasm_bindgen(constructor)]
     pub fn new(engraver: js_sys::Object, data: &str) -> Result<JsScore, JsError> {
-        clausters_core::notation::Score::open(JsEngraver { object: engraver }, data)
-            .map(JsScore)
-            .ok_or_else(|| JsError::new("the engraver could not load the score data"))
+        clausters_core::notation::Score::open(
+            clausters_core::notation::AnyEngraver::new(JsEngraver { object: engraver }),
+            data,
+        )
+        .map(|score| JsScore(std::sync::Arc::new(std::sync::Mutex::new(score))))
+        .ok_or_else(|| JsError::new("the engraver could not load the score data"))
     }
 
     /// This score engraved into a page: the display list the host draws, the
     /// cursor track a playhead follows, and the notes that sound.
     #[wasm_bindgen(js_name = displayList)]
     pub fn display_list(&mut self, page: i32) -> Result<String, JsError> {
-        serde_json::to_string(&self.0.display_list(page)).map_err(|e| JsError::new(&e.to_string()))
+        serde_json::to_string(&self.held().display_list(page))
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// The score as MEI, ids and all -- what to persist, and what an undo step
     /// is made of.
     pub fn mei(&self) -> String {
-        self.0.mei()
+        self.held().mei()
     }
 
     /// Apply one **model** operation as a single undo step, and re-engrave.
@@ -3050,7 +3086,7 @@ impl JsScore {
     pub fn apply(&mut self, op: &str) -> Result<bool, JsError> {
         let op: clausters_core::notation::Op =
             serde_json::from_str(op).map_err(|e| JsError::new(&format!("op: {e}")))?;
-        Ok(self.0.apply(&op))
+        Ok(self.held().apply(&op))
     }
 
     /// The open score as the **model**.
@@ -3059,7 +3095,8 @@ impl JsScore {
     /// failure, since the page still draws and still plays and only the model's
     /// verbs are unavailable on it.
     pub fn sheet(&self) -> Result<String, JsError> {
-        let sheet = self.0.sheet().ok_or_else(|| {
+        let held = self.held();
+        let sheet = held.sheet().ok_or_else(|| {
             JsError::new(
                 "this document could not be read into the score model, so the \
                  model's verbs are not available on it; the page still draws \
@@ -3076,48 +3113,48 @@ impl JsScore {
     /// a previous one is put back through here. It clears the score's own
     /// stack, so there is only ever one history over one score.
     pub fn load(&mut self, mei: &str) -> bool {
-        self.0.load(mei)
+        self.held().load(mei)
     }
 
     /// Whether there is an edit to step back over.
     #[wasm_bindgen(getter, js_name = canUndo)]
     pub fn can_undo(&self) -> bool {
-        self.0.can_undo()
+        self.held().can_undo()
     }
 
     /// Whether there is an undone edit to step forward into.
     #[wasm_bindgen(getter, js_name = canRedo)]
     pub fn can_redo(&self) -> bool {
-        self.0.can_redo()
+        self.held().can_redo()
     }
 
     /// Step back one edit; `false` when there is nothing to undo.
     pub fn undo(&mut self) -> bool {
-        self.0.undo()
+        self.held().undo()
     }
 
     /// Step forward again after an undo; `false` when there is nothing to redo.
     pub fn redo(&mut self) -> bool {
-        self.0.redo()
+        self.held().redo()
     }
 
     /// Move a note by `steps` diatonic steps along the staff, as one undo step.
     /// The relative form: reach for it only when the delta is what you have.
     pub fn transpose(&mut self, element_id: &str, steps: i32) -> bool {
-        self.0.transpose(element_id, steps)
+        self.held().transpose(element_id, steps)
     }
 
     /// Move a note **to** a diatonic staff position, as one undo step -- the
     /// shape an edit travels in, so a resend cannot move the note twice.
     #[wasm_bindgen(js_name = transposeTo)]
     pub fn transpose_to(&mut self, element_id: &str, position: i32, page: i32) -> bool {
-        self.0.transpose_to(element_id, position, page)
+        self.held().transpose_to(element_id, position, page)
     }
 
     /// One raw editor action (`set`, `insert`, `delete`, ...) as a single undo
     /// step, `param` being its parameter object as JSON.
     pub fn edit(&mut self, action: &str, param: &str) -> bool {
-        self.0.edit(action, param)
+        self.held().edit(action, param)
     }
 }
 

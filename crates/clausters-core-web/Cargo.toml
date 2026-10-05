@@ -24,7 +24,7 @@ clausters-document = { path = "../clausters-document" }
 clausters-editing = { path = "../clausters-editing" }
 # The applications, bound here as they are bound over the C ABI: a page opens
 # the same editor window a script opens and a standalone host opens.
-clausters-apps = { path = "../clausters-apps" }
+clausters-apps = { path = "../clausters-apps", features = ["notation"] }
 # The MIDI file writers. Default features only -- `live` pulls midir in for a
 # virtual OS port, which is precisely what a page cannot have; what a page does
 # need is `write_smf`/`write_clip`, which are pure Rust over midly and compile

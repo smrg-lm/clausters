@@ -1,0 +1,341 @@
+/**
+ * Editing a symbolic score on its engraved page: the score editor (mirrors
+ * `clausters/gui/editing/score.py`).
+ *
+ * What it opens is a `Score` -- notation held as MEI, its model a sheet -- and it
+ * edits that score **in place**: the editor in the shared crate (the
+ * `openScore` member of `EditingCore`) holds the very score the page's handle
+ * names, so every edit is read back through the handle (`Score.sheet`,
+ * `Score.mei`) and there is nothing to write back.
+ *
+ * **The editor is the crate's**: the window, what each gesture on the page does
+ * to the score, the verbs over what is selected, the entry each one leaves and
+ * the corrections it answers with. What is here is what a language owns -- the
+ * socket, and handing the crate the window it is open in. Each verb below is one
+ * call into the crate, named as it names it.
+ *
+ * @module
+ */
+
+import { Score } from "../notation/engraver.ts";
+import type { GuiNode } from "../guidef.ts";
+import type { PropValue } from "../host.ts";
+import type { Answer } from "./echo.ts";
+import { Domain } from "./domain.ts";
+import { Editor } from "./editor.ts";
+import type { GenericEditorOptions } from "./editor.ts";
+import { plain } from "./samples.ts";
+import { View } from "./view.ts";
+
+/** What one turn of the core came to. */
+interface Outcome {
+    turn?: string;
+    changed?: boolean;
+    answer?: Answer;
+}
+
+/**
+ * A score's vocabulary, the crate's `score`: a step is the page it names, which
+ * the crate puts back on the score it shares, so there is nothing here to carry
+ * out.
+ */
+export class ScoreDomain extends Domain<Score> {
+    readonly name = "score";
+    override readonly ingested = true;
+
+    /** The crate reads the inverse off the score it holds. */
+    current(_structure: Score, _payload: unknown): unknown {
+        return null;
+    }
+
+    /** The crate put the step back on the score it shares with the page. */
+    project(_structure: Score, _payload: unknown): boolean {
+        return false;
+    }
+}
+
+/** The page, the scroll it sits in and the status line under it, composed by the crate. */
+export class ScoreView extends View<Score> {
+    build(editor: Editor<Score>): GuiNode {
+        const ed = editor as unknown as ScoreEditor;
+        const page = this.widget(editor, "page", editor.structure);
+        const scroll = this.widget(editor, "scroll", editor.structure);
+        const status = this.widget(editor, "status", editor.structure);
+        ed.syncCore();
+        const tree = ed.coreCall("window", { widget: page, scroll, status }) as unknown as GuiNode;
+        // **A page's own widgets are its objects**, so they are appended here
+        // rather than composed in the crate.
+        tree.children = [...(tree.children ?? []), ...editor.extra];
+        return tree;
+    }
+
+    override props(editor: Editor<Score>, widgetId: number): Record<string, PropValue> {
+        return (editor as unknown as ScoreEditor).coreCall("props", { widget: widgetId }) as Record<
+            string,
+            PropValue
+        >;
+    }
+}
+
+/** How a score editor is opened. */
+export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "sampleRate"> {
+    /**
+     * The written value a note entered on the page takes, as `[numerator,
+     * denominator]` of a whole note; a quarter by default.
+     */
+    value?: readonly [number, number];
+    /** Ignored: a page is engraved on beats, not on an engine's samples. */
+    sampleRate?: number;
+}
+
+/**
+ * A symbolic score on its page, edited by hand, in place.
+ *
+ * A press on a note selects it, a drag moves it along its staff, and a press on
+ * empty staff writes a note of {@link ScoreEditor.value} there. The verbs act on
+ * what is selected ({@link ScoreEditor.selected}, {@link ScoreEditor.select});
+ * each is one entry of the editing context's history, so Ctrl+Z over the window
+ * walks them back.
+ */
+export class ScoreEditor extends Editor<Score> {
+    /** This editor's member in its editing context. */
+    private readonly member: number;
+
+    constructor(score: Score, options: ScoreEditorOptions = {}) {
+        const domain = new ScoreDomain();
+        const { value, sampleRate: _rate, ...rest } = options;
+        super(score, {
+            title: "Score",
+            width: 960,
+            height: 640,
+            ...rest,
+            sampleRate: 48_000,
+            domain,
+            view: new ScoreView(),
+        });
+        const request: Record<string, unknown> = {
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+        };
+        if (value !== undefined) request.value = [Math.trunc(value[0]), Math.trunc(value[1])];
+        const opened = this.editing.openScore(`score:${keyOfScore(score)}`, score, request, domain);
+        this.member = opened.member;
+        this.structureId = opened.identity;
+    }
+
+    /** The score the page edits -- the one the editor was opened over. */
+    get score(): Score {
+        return this.structure;
+    }
+
+    /**
+     * One verb of this editor's member, through the context.
+     *
+     * @internal
+     */
+    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        return this.editing.member(this.member, verb, args);
+    }
+
+    /**
+     * Hand the crate the window it is open in and the chrome.
+     *
+     * @internal
+     */
+    syncCore(): void {
+        this.coreCall("sync", {
+            window: this.windowId,
+            title: this.title,
+            w: this.size[0],
+            h: this.size[1],
+        });
+    }
+
+    // ---- what is selected, and the value in hand ----
+
+    /** The selected items, as the model names them (`Score.sheet`'s item ids), each once. */
+    get selected(): number[] {
+        const items = this.coreCall("selected").items;
+        return Array.isArray(items) ? items.map(Number) : [];
+    }
+
+    /**
+     * Select the page's elements `elements` (their `xml:id`s, as the page
+     * reports them), or nothing with an empty list.
+     */
+    select(elements: Iterable<string>): void {
+        this.coreCall("select", { elements: [...elements].map(String) });
+        this.adopt();
+    }
+
+    /**
+     * The written value a note entered on the page takes, as `[numerator,
+     * denominator]` of a whole note: `[1, 4]` is a quarter. Set it to write
+     * another: `editor.value = [1, 8]`.
+     */
+    get value(): [number, number] {
+        const value = this.coreCall("value").value;
+        return Array.isArray(value) ? [Number(value[0]), Number(value[1])] : [1, 4];
+    }
+
+    set value(value: readonly [number, number]) {
+        this.coreCall("sync", { value: [Math.trunc(value[0]), Math.trunc(value[1])] });
+    }
+
+    // ---- the verbs, over what is selected ----
+
+    /**
+     * Move the selected notes `steps` diatonic steps along their staves, up
+     * when positive -- each takes the key signature's alteration for the letter
+     * it lands on.
+     */
+    move(steps: number): boolean {
+        return this.#act({ action: "move", steps: Math.trunc(steps) });
+    }
+
+    /**
+     * Scale the selected items' written values by `numerator / denominator`
+     * (`scale(2, 1)` is twice as long), against the barlines already there.
+     */
+    scale(numerator: number, denominator: number): boolean {
+        return this.#act({
+            action: "scale",
+            factor: [Math.trunc(numerator), Math.trunc(denominator)],
+        });
+    }
+
+    /**
+     * Give the selected notes an articulation (by its MEI name: `stacc`, `acc`,
+     * `ten`, `marc`...), or take it away when all of them have it.
+     */
+    articulation(name: string): boolean {
+        return this.#act({ action: "articulation", name: String(name) });
+    }
+
+    /** Put a dynamic (`pp` ... `ff`) under the first selected note, or take it away with none. */
+    dynamic(name: string | null = null): boolean {
+        return this.#act({ action: "dynamic", name });
+    }
+
+    /**
+     * Give the selected notes an ornament (`trill`, `mordent`, `turn`,
+     * `fermata`), or take it away with none.
+     */
+    ornament(name: string | null = null): boolean {
+        return this.#act({ action: "ornament", name });
+    }
+
+    /** Take every mark off the selected notes. */
+    clearMarks(): boolean {
+        return this.#act({ action: "clear_marks" });
+    }
+
+    /** Tie the selected notes to the next, or untie them when the first is tied already. */
+    tie(): boolean {
+        return this.#act({ action: "tie" });
+    }
+
+    /** Turn the selected notes into rests of the same length. */
+    silence(): boolean {
+        return this.#act({ action: "silence" });
+    }
+
+    /** Remove the selected items; what follows them moves earlier. */
+    delete(): boolean {
+        return this.#act({ action: "delete" });
+    }
+
+    /** Move the selected items into the other voice of their staff, leaving rests where they were. */
+    voice(): boolean {
+        return this.#act({ action: "voice" });
+    }
+
+    /** A `slur`, a `crescendo` or a `diminuendo` from the first selected item to the last, in time. */
+    spanner(kind: string): boolean {
+        return this.#act({ action: "spanner", kind: String(kind) });
+    }
+
+    /**
+     * A model operation, whole (the sheet vocabulary) -- for what has no verb
+     * here -- as one entry of the history. (`apply` is every editor's door for
+     * the host's messages.)
+     */
+    operate(op: Record<string, unknown>): boolean {
+        return this.#act({ action: "op", op });
+    }
+
+    /**
+     * One verb, through the context: recorded by the crate, and the window
+     * corrected with what it answers. Whether the score changed; why it did not
+     * is on the window's status bar.
+     */
+    #act(call: Record<string, unknown>): boolean {
+        const turned = this.editing.act(this.member, plain(call) as Record<string, unknown>);
+        const outcome = (turned.outcome ?? {}) as Outcome;
+        const changed = outcome.changed === true;
+        if (changed) {
+            this.dirty = true;
+            this.editing.changed();
+        }
+        if (this.windowId !== null) this.echo.send(outcome.answer);
+        return changed;
+    }
+
+    // ---- the crate's turns ----
+
+    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
+        this.syncCore();
+        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const outcome = (turned.outcome ?? {}) as Outcome;
+        if (outcome.turn === "closed") return this.closedWindow();
+        if (outcome.turn === "step") {
+            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
+            this.echo.send(outcome.answer);
+            return stepped;
+        }
+        return this.#take(outcome);
+    }
+
+    /** One `/gui_event` payload, with the stamp already taken off. */
+    protected override route(args: readonly unknown[]): boolean {
+        this.syncCore();
+        const [wid, tag, ...values] = args;
+        const turned = this.editing.event(
+            this.member,
+            "/gui_event",
+            plain([wid, 0, 0, tag, ...values]) as unknown[],
+        );
+        return this.#take((turned.outcome ?? {}) as Outcome);
+    }
+
+    /** Answers the host with what a turn came to; whether the score changed. */
+    #take(outcome: Outcome): boolean {
+        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        const changed = outcome.changed === true;
+        if (changed) {
+            this.dirty = true;
+            this.editing.changed();
+        }
+        this.echo.send(outcome.answer);
+        return changed;
+    }
+}
+
+/** A key per score, so two editors over one score are one structure in the order. */
+const keys = new WeakMap<Score, number>();
+let nextKey = 0;
+
+function keyOfScore(score: Score): number {
+    let key = keys.get(score);
+    if (key === undefined) {
+        key = ++nextKey;
+        keys.set(score, key);
+    }
+    return key;
+}
+
+/** Whether `edit` opens this in the score editor: a symbolic score. */
+export function isScore(structure: unknown): structure is Score {
+    return structure instanceof Score;
+}

@@ -63,6 +63,7 @@ from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
 from .playback import Playback
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import MEASURES, SamplesView, measures
+from .score import ScoreDomain, ScoreEditor, ScoreView
 from .trace import watch
 from .view import View
 
@@ -91,6 +92,9 @@ __all__ = [
     "PointsEditor",
     "PointsView",
     "SamplesView",
+    "ScoreDomain",
+    "ScoreEditor",
+    "ScoreView",
     "View",
     "edit",
     "not_an_edit",

@@ -1,4 +1,4 @@
-//! **Where this binary looks for libfaust**, and nothing else.
+//! **Where this binary looks for libfaust and libverovio**, and nothing else.
 //!
 //! The host links no native library of its own. It grows one with the
 //! `standalone-faust` feature, which pulls the server's `faust` family: the
@@ -24,6 +24,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=FAUST_PREFIX");
+    verovio();
 
     // The feature that links the embedded server *with* the Faust family.
     // `standalone` alone pulls `synth`, which needs no native library.
@@ -50,6 +51,24 @@ fn main() {
     // Only the rpath: the library itself and where to find it at *link* time
     // come from the server crate's own script, which is where the dependency
     // is declared.
+    println!("cargo:rustc-link-arg-bins=-Wl,--disable-new-dtags");
+    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN");
+    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../_libs");
+    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,{prefix}/lib");
+}
+
+/// **The same for libverovio**, which the `score` feature links to read a
+/// score file (`--score`). Its prefix is the one `clausters-notation`'s script
+/// found, published through its `links` key as `DEP_VEROVIO_PREFIX`.
+fn verovio() {
+    if std::env::var("CARGO_FEATURE_SCORE").is_err()
+        || std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32")
+    {
+        return;
+    }
+    let Ok(prefix) = std::env::var("DEP_VEROVIO_PREFIX") else {
+        return;
+    };
     println!("cargo:rustc-link-arg-bins=-Wl,--disable-new-dtags");
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN");
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../_libs");

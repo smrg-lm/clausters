@@ -12,7 +12,7 @@
 //! engraver to be right about, which is why they are here and not in the core,
 //! whose own tests drive the state machine over a fake.
 
-use clausters_core::notation::{Engraver, Score as CoreScore};
+use clausters_core::notation::{AnyEngraver, Engraver, Score as CoreScore};
 
 use crate::verovio::{
     EngraveError, EngraveOptions, Toolkit, default_resource_path, ffi_lock, options_json,
@@ -21,7 +21,10 @@ use crate::verovio::{
 pub use clausters_core::notation::{NoteEvent, Page};
 
 /// An editable score over the native engraver -- the type the C ABI hands out.
-pub type Score = CoreScore<Toolkit>;
+///
+/// Its engraver is the one type an application holds ([`AnyEngraver`]), so the
+/// same score a script opened is the one a score editor edits in place.
+pub type Score = CoreScore<AnyEngraver>;
 
 impl Engraver for Toolkit {
     /// libverovio has process-wide state, so the guard is the crate's FFI lock
@@ -76,7 +79,7 @@ pub fn open(data: &str, opts: &EngraveOptions) -> Result<Score, EngraveError> {
         tk.set_options(&options)?;
         tk
     };
-    Score::open(toolkit, data).ok_or(EngraveError::Load)
+    Score::open(AnyEngraver::new(toolkit), data).ok_or(EngraveError::Load)
 }
 
 #[cfg(test)]

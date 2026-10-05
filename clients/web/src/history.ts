@@ -44,6 +44,7 @@
 import { EditingCore } from "./core/clausters_core_web.js";
 import type { EventSequence } from "./seq/sequence.ts";
 import type { Multitrack } from "./multitrack.ts";
+import type { Score } from "./gui/notation/engraver.ts";
 
 /**
  * **What a history asks of a structure a page changes** -- a sequence, a
@@ -386,6 +387,45 @@ export class Editing {
         if (!this.structures.has(sequence)) this.structures.set(sequence, opened);
         this.claim(sequence);
         return opened;
+    }
+
+    /**
+     * **Open a score editor over `score`** -- a symbolic `Score`, which the
+     * editor then edits in place -- as the structure `key` names, and answer
+     * its member and identity. The score is claimed: an edit a page makes
+     * through it is a turn of this context. Throws with the crate's reason when
+     * it refuses.
+     */
+    openScore(
+        key: string,
+        score: Score,
+        request: Record<string, unknown>,
+        handler: StepHandler | null,
+    ): { member: number; identity: number } {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        const answer = JSON.parse(
+            this.#core.openScore(score.handle, JSON.stringify({ key, ...request })),
+        ) as Record<string, unknown>;
+        if (typeof answer.error === "string" || answer.member === undefined) {
+            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
+        }
+        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
+        this.handlers.set(opened.member, { structure: score, handler });
+        if (!this.structures.has(score)) this.structures.set(score, opened);
+        this.claim(score);
+        return opened;
+    }
+
+    /**
+     * **One verb a page calls on a member** -- `call` as that member's verbs
+     * read it -- recorded and answered by the crate like a gesture: the turn,
+     * with the corrections it owes.
+     */
+    act(member: number, call: Record<string, unknown>): Turned {
+        const turned = this.#call("act", { member, call }) as Turned | null;
+        if (turned === null) return {};
+        this.version = Number(turned.version ?? this.version);
+        return turned;
     }
 
     /**

@@ -362,6 +362,25 @@ fn envelope_error(message: &str) -> String {
 #[cfg(feature = "verovio")]
 use clausters_notation::{EngraveOptions, Score};
 
+/// **A score handle**: the open score, shared with every score editor opened
+/// over it (`clausters_apps_editing_open_score`), so a script reads every edit
+/// through the handle it already has.
+#[cfg(feature = "verovio")]
+pub struct ScoreHandle(pub(crate) clausters_apps::score::Shared);
+
+/// The score behind a live handle, held for the length of one call.
+///
+/// # Safety
+/// `h` must be a live, non-null score handle.
+#[cfg(feature = "verovio")]
+unsafe fn held<'a>(h: *mut ScoreHandle) -> std::sync::MutexGuard<'a, Score> {
+    // SAFETY: forwarded from this function's own contract.
+    let handle = unsafe { &*h };
+    // A poisoned lock is a panic elsewhere while the score was held; the
+    // document is still the score, and refusing it would lose it.
+    handle.0.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// The engraver's layout options: the scale/width pair, plus any `extra` verovio
 /// options as a JSON object merged over the defaults the whole layer shares.
 #[cfg(feature = "verovio")]
@@ -416,7 +435,7 @@ pub unsafe extern "C" fn clausters_score_open(
     page_width: i32,
     options: *const u8,
     options_len: usize,
-) -> *mut Score {
+) -> *mut ScoreHandle {
     // SAFETY: caller guarantees the ranges.
     let (Some(data), extra) = (unsafe { (text(data, data_len), text(options, options_len)) })
     else {
@@ -424,7 +443,9 @@ pub unsafe extern "C" fn clausters_score_open(
     };
     let opts = self::options(scale, page_width, extra.map(|e| e.into_owned()));
     match clausters_notation::open(&data, &opts) {
-        Ok(score) => Box::into_raw(Box::new(score)),
+        Ok(score) => Box::into_raw(Box::new(ScoreHandle(std::sync::Arc::new(
+            std::sync::Mutex::new(score),
+        )))),
         Err(_) => std::ptr::null_mut(),
     }
 }
@@ -435,7 +456,7 @@ pub unsafe extern "C" fn clausters_score_open(
 /// `h` must be a pointer from `clausters_score_open`, not yet freed.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_free(h: *mut Score) {
+pub unsafe extern "C" fn clausters_score_free(h: *mut ScoreHandle) {
     if !h.is_null() {
         // SAFETY: caller guarantees `h` came from Box::into_raw above.
         drop(unsafe { Box::from_raw(h) });
@@ -453,7 +474,7 @@ pub unsafe extern "C" fn clausters_score_free(h: *mut Score) {
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_display_list(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     page: i32,
     out: *mut u8,
     out_cap: usize,
@@ -462,8 +483,7 @@ pub unsafe extern "C" fn clausters_score_display_list(
         return 0;
     }
     // SAFETY: caller guarantees a live handle.
-    let score = unsafe { &mut *h };
-    let json = serde_json::to_vec(&score.display_list(page)).unwrap_or_default();
+    let json = serde_json::to_vec(&unsafe { held(h) }.display_list(page)).unwrap_or_default();
     // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
     unsafe { fill(&json, out, out_cap) }
 }
@@ -476,12 +496,16 @@ pub unsafe extern "C" fn clausters_score_display_list(
 /// (or null, to size only).
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_mei(h: *mut Score, out: *mut u8, out_cap: usize) -> usize {
+pub unsafe extern "C" fn clausters_score_mei(
+    h: *mut ScoreHandle,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
     if h.is_null() {
         return 0;
     }
     // SAFETY: caller guarantees a live handle.
-    let mei = unsafe { &*h }.mei();
+    let mei = unsafe { held(h) }.mei();
     // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
     unsafe { fill(mei.as_bytes(), out, out_cap) }
 }
@@ -496,7 +520,7 @@ pub unsafe extern "C" fn clausters_score_mei(h: *mut Score, out: *mut u8, out_ca
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_transpose(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     element_id: *const u8,
     id_len: usize,
     steps: i32,
@@ -506,7 +530,7 @@ pub unsafe extern "C" fn clausters_score_transpose(
         return 0;
     };
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.transpose(&id, steps) as i32
+    unsafe { held(h) }.transpose(&id, steps) as i32
 }
 
 /// Move a note **to** the diatonic staff position `position` on `page` -- whole
@@ -524,7 +548,7 @@ pub unsafe extern "C" fn clausters_score_transpose(
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_transpose_to(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     element_id: *const u8,
     id_len: usize,
     position: i32,
@@ -535,7 +559,7 @@ pub unsafe extern "C" fn clausters_score_transpose_to(
         return 0;
     };
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.transpose_to(&id, position, page) as i32
+    unsafe { held(h) }.transpose_to(&id, position, page) as i32
 }
 
 /// Apply one **model** operation to an open score as a single undo step, and
@@ -554,7 +578,11 @@ pub unsafe extern "C" fn clausters_score_transpose_to(
 /// `h` must be a live score handle and `op` readable for `op_len` bytes.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_len: usize) -> i32 {
+pub unsafe extern "C" fn clausters_score_apply(
+    h: *mut ScoreHandle,
+    op: *const u8,
+    op_len: usize,
+) -> i32 {
     if h.is_null() {
         return 0;
     }
@@ -566,7 +594,7 @@ pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_
         return 0;
     };
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.apply(&op) as i32
+    unsafe { held(h) }.apply(&op) as i32
 }
 
 /// The open score as the **model**, written to `out` in the usual envelope:
@@ -580,7 +608,7 @@ pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_sheet(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
@@ -588,7 +616,7 @@ pub unsafe extern "C" fn clausters_score_sheet(
         return 0;
     }
     // SAFETY: caller guarantees a live handle.
-    let json = match unsafe { &*h }.sheet() {
+    let json = match unsafe { held(h) }.sheet() {
         Some(sheet) => serde_json::json!({ "ok": sheet }).to_string(),
         None => envelope_error(
             "this document could not be read into the score model, so the model's \
@@ -610,7 +638,7 @@ pub unsafe extern "C" fn clausters_score_sheet(
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_edit(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     action: *const u8,
     action_len: usize,
     param: *const u8,
@@ -625,7 +653,7 @@ pub unsafe extern "C" fn clausters_score_edit(
         return 0;
     };
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.edit(&action, param.as_deref().unwrap_or("{}")) as i32
+    unsafe { held(h) }.edit(&action, param.as_deref().unwrap_or("{}")) as i32
 }
 
 /// Replace the document with `mei` -- **a state, not a step**. Returns `1` on
@@ -641,7 +669,7 @@ pub unsafe extern "C" fn clausters_score_edit(
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_load(
-    h: *mut Score,
+    h: *mut ScoreHandle,
     mei: *const u8,
     mei_len: usize,
 ) -> i32 {
@@ -653,7 +681,7 @@ pub unsafe extern "C" fn clausters_score_load(
         return 0;
     };
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.load(&mei) as i32
+    unsafe { held(h) }.load(&mei) as i32
 }
 
 /// Step back one edit. Returns `1` on success, `0` when there is nothing to
@@ -663,12 +691,12 @@ pub unsafe extern "C" fn clausters_score_load(
 /// `h` must be a live score handle.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_undo(h: *mut Score) -> i32 {
+pub unsafe extern "C" fn clausters_score_undo(h: *mut ScoreHandle) -> i32 {
     if h.is_null() {
         return 0;
     }
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.undo() as i32
+    unsafe { held(h) }.undo() as i32
 }
 
 /// Step forward again after [`clausters_score_undo`]. Returns `1` on success,
@@ -678,12 +706,12 @@ pub unsafe extern "C" fn clausters_score_undo(h: *mut Score) -> i32 {
 /// `h` must be a live score handle.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_redo(h: *mut Score) -> i32 {
+pub unsafe extern "C" fn clausters_score_redo(h: *mut ScoreHandle) -> i32 {
     if h.is_null() {
         return 0;
     }
     // SAFETY: caller guarantees a live handle.
-    unsafe { &mut *h }.redo() as i32
+    unsafe { held(h) }.redo() as i32
 }
 
 /// Whether there is an edit to step back over (`1`/`0`).
@@ -692,9 +720,9 @@ pub unsafe extern "C" fn clausters_score_redo(h: *mut Score) -> i32 {
 /// `h` must be a live score handle.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_can_undo(h: *mut Score) -> i32 {
+pub unsafe extern "C" fn clausters_score_can_undo(h: *mut ScoreHandle) -> i32 {
     // SAFETY: caller guarantees a live handle.
-    (!h.is_null() && unsafe { &*h }.can_undo()) as i32
+    (!h.is_null() && unsafe { held(h) }.can_undo()) as i32
 }
 
 /// Whether there is an undone edit to step forward into (`1`/`0`).
@@ -703,9 +731,9 @@ pub unsafe extern "C" fn clausters_score_can_undo(h: *mut Score) -> i32 {
 /// `h` must be a live score handle.
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_score_can_redo(h: *mut Score) -> i32 {
+pub unsafe extern "C" fn clausters_score_can_redo(h: *mut ScoreHandle) -> i32 {
     // SAFETY: caller guarantees a live handle.
-    (!h.is_null() && unsafe { &*h }.can_redo()) as i32
+    (!h.is_null() && unsafe { held(h) }.can_redo()) as i32
 }
 
 #[cfg(test)]

@@ -314,6 +314,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_sequence_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_document_sequence_call` | `JsEventSequence.call` | `idiom` — C fills a buffer size-then-fill; wasm returns the string |
 | `clausters_apps_editing_open_notes` | `JsEditing.open_notes` | `idiom` — C takes the two handles and fills a buffer size-then-fill; wasm takes the sequence object and returns the string |
+| `clausters_apps_editing_open_score` | `JsEditing.open_score` | `idiom` — C takes the two handles and fills a buffer size-then-fill; wasm takes the score object and returns the string. The score is the one the caller opened (`clausters_score_open`, `JsScore.new`), shared with the editor, so a script reads every edit through it |
 | `clausters_document_multitrack_new` | `JsMultitrack.new` | `idiom` — C returns a handle; wasm wraps the multitrack in an object |
 | `clausters_document_multitrack_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_document_multitrack_call` | `JsMultitrack.call` | `idiom` — C fills a buffer size-then-fill; wasm returns the string |

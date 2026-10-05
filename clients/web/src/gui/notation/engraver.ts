@@ -100,6 +100,16 @@ export class Score {
     }
 
     /**
+     * The score in the shared core, for a score editor opened over it -- which
+     * then edits this very score in place.
+     *
+     * @internal
+     */
+    get handle(): CoreScore {
+        return this.inner;
+    }
+
+    /**
      * Load `data` -- a score in any format the engraver auto-detects -- and keep
      * the document open.
      */

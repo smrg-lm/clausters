@@ -5,6 +5,14 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The applications over the document -- the multitrack editor today, the audio and score editors after it: the window each one opens and what it answers, written once, run by the GUI host and bound by every client."
 
+[features]
+default = []
+# The score editor: the notation model and its engraving's display list, which
+# pull an XML reader the other applications do not need -- off by default, as
+# the notation layer is everywhere else. The engraver itself is never linked
+# here: it is a port the caller hands in.
+notation = ["clausters-core/notation"]
+
 [dependencies]
 # The numeric rules an application composes with: where a beat lands on the
 # sample axis, rounded the way every client rounds it.

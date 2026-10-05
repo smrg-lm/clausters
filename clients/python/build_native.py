@@ -54,7 +54,8 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_GUI_FEATURES``     the GUI binary's features, replacing the
                                  default (``standalone-faust``, or
                                  ``standalone`` where there is no libfaust to
-                                 link).
+                                 link; with ``,score`` where there is a
+                                 libverovio).
 - ``CLAUSTERS_CARGO_FEATURES``   features for the embed library
                                  (default ``embed,realtime``).
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
@@ -270,7 +271,7 @@ def _gui_workspace(workspace: str) -> str:
     return os.path.join(workspace, "clients", "gui")
 
 
-def _gui_features(with_faust: bool) -> str:
+def _gui_features(with_faust: bool, with_verovio: bool = False) -> str:
     """The GUI binary's features: **the standalone host**, with the Faust
     family where there is a libfaust to link.
 
@@ -287,16 +288,23 @@ def _gui_features(with_faust: bool) -> str:
     hold. Where there is no libfaust to link, it degrades to `standalone` the
     way the server degrades to a SynthDef-only build -- the families are peers
     here too.
+
+    `score` goes with it where there is a libverovio to link: it is what lets
+    the host open a score file on its own (`--score`), with the engraver the
+    package already bundles.
     """
-    return "standalone-faust" if with_faust else "standalone"
+    features = "standalone-faust" if with_faust else "standalone"
+    return features + ",score" if with_verovio else features
 
 
-def _cargo_build_gui(workspace: str, profile: str, with_faust: bool = True):
+def _cargo_build_gui(workspace: str, profile: str, with_faust: bool = True,
+                     with_verovio: bool = False):
     """Build the ``clausters-gui`` binary in its own workspace (``clients/gui``)."""
     cmd = ["cargo", "build", "--bin", "clausters-gui"]
     if profile == "release":
         cmd.append("--release")
-    features = os.environ.get("CLAUSTERS_GUI_FEATURES") or _gui_features(with_faust)
+    features = (os.environ.get("CLAUSTERS_GUI_FEATURES")
+                or _gui_features(with_faust, with_verovio))
     if features:
         cmd += ["--features", features]
     print("clausters: " + " ".join(cmd) + " (in clients/gui)")
@@ -725,7 +733,7 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
     # The visual server (clausters-gui), from its own workspace, bundled so the
     # one package is self-contained. Skippable for a light, server-only wheel.
     if not os.environ.get("CLAUSTERS_SKIP_GUI_BUILD"):
-        _cargo_build_gui(workspace, profile, with_faust)
+        _cargo_build_gui(workspace, profile, with_faust, with_verovio)
         guiname = stage_gui_binary(workspace, profile)
         if guiname:
             copied.append(guiname)

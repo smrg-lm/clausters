@@ -182,6 +182,10 @@ pub struct Owner {
     /// **The rolls a double click opened**, by the window each is in: the
     /// source it edits and its member of [`Owner::editing`].
     pub rolls: HashMap<i32, (clausters_document::SourceId, MemberId)>,
+    /// **The score editors open here**, by the window each is in: its member
+    /// of [`Owner::editing`], and the file Ctrl+S writes the score to.
+    #[cfg(feature = "notation")]
+    pub scores: HashMap<i32, (MemberId, Option<std::path::PathBuf>)>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -245,6 +249,8 @@ impl Owner {
             editor_member: None,
             sequences: HashMap::new(),
             rolls: HashMap::new(),
+            #[cfg(feature = "notation")]
+            scores: HashMap::new(),
         }
     }
 

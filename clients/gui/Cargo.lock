@@ -398,6 +398,7 @@ dependencies = [
  "clausters-editing",
  "clausters-midi",
  "clausters-net",
+ "clausters-notation",
  "console_error_panic_hook",
  "fontdue",
  "js-sys",
@@ -433,6 +434,15 @@ version = "0.11.0"
 dependencies = [
  "tracing",
  "tungstenite",
+]
+
+[[package]]
+name = "clausters-notation"
+version = "0.11.0"
+dependencies = [
+ "clausters-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

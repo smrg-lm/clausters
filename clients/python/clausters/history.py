@@ -157,6 +157,33 @@ class Editing:
         self.claim(sequence)
         return member, identity
 
+    def open_score(self, key: str, score, request: dict, handler) -> tuple:
+        """**Open a score editor over ``score``** -- a
+        `clausters.gui.notation.Score`, which the editor then edits in place --
+        as the structure ``key`` names, and answer its ``(member, identity)``.
+        The score is claimed: an edit a script makes through it is a turn of
+        this context.
+
+        Raises:
+            ValueError: the crate refused the request, with its reason.
+        """
+        answer = self.core.open_score(score._h, key=str(key), **request)
+        if "error" in answer or "member" not in answer:
+            raise ValueError(answer.get("error", "the context opened nothing"))
+        member, identity = int(answer["member"]), int(answer["structure"])
+        self._handlers[member] = (score, handler)
+        self._structures.setdefault(id(score), (score, member, identity))
+        self.claim(score)
+        return member, identity
+
+    def act(self, member: int, call: dict) -> dict:
+        """**One verb a client calls on a member** -- ``call`` as that
+        member's verbs read it -- recorded and answered by the crate like a
+        gesture: the turn, with the corrections it owes."""
+        if self.core is None:
+            return {}
+        return self.core.call("act", member=int(member), call=call) or {}
+
     def open_multitrack(self, key: str, multitrack, request: dict, handler) -> tuple:
         """**Open a multitrack editor over ``multitrack``** -- a
         `clausters.multitrack.Multitrack`, which the editor then edits in place

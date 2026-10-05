@@ -48,6 +48,7 @@ usage:
                 [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
+                [--score <file> [--save-to <file>]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
@@ -106,6 +107,11 @@ usage:
                             the samples, and plays through the server --server
                             points at -- which is a separate process holding
                             the devices, and the only one that can record.
+      --score <file>        open a score (MEI, MusicXML, ABC -- what the engraver
+                            reads) in the score editor, with this host as its
+                            owner: edited and undone here, and Ctrl+S writes it
+                            as MEI to --save-to. Built with the `score` feature,
+                            which links the engraver (libverovio)
       --save-to <file>      write the session back here when the window closes.
                             Without it nothing is written: overwriting the file
                             you opened is a decision, not a default
@@ -252,6 +258,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
     let mut session_path: Option<String> = None;
+    let mut score_path: Option<String> = None;
     let mut save_to: Option<String> = None;
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
@@ -383,6 +390,13 @@ fn run(args: &[String]) -> Result<(), String> {
                         .clone(),
                 );
             }
+            "--score" => {
+                score_path = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--score needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
             "--save-to" => {
                 save_to = Some(
                     it.next()
@@ -495,6 +509,18 @@ fn run(args: &[String]) -> Result<(), String> {
         })
         .or_else(|| cfg.gui.data_dir.clone());
     let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
+
+    // A score: the host opens it in the score editor and owns it. Only a build
+    // with the engraver can read the file.
+    if let Some(path) = score_path {
+        #[cfg(feature = "score")]
+        return run_score(&path, save_to.as_deref(), udp_bind, look);
+        #[cfg(not(feature = "score"))]
+        return Err(format!(
+            "--score {path}: this clausters-gui was built without the engraver \
+             (rebuild with `--features score`)"
+        ));
+    }
 
     // A session: the host opens a document and owns it. No store, no embedded
     // server and no script -- the multitrack is not played yet, which is what
@@ -690,6 +716,40 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
             None
         }
     }
+}
+
+/// Opens a score in the score editor, with this host as its **owner**: the
+/// engraver reads the file, the applications crate's editor draws and edits it,
+/// and Ctrl+S writes it as MEI where `--save-to` says.
+#[cfg(feature = "score")]
+fn run_score(
+    path: &str,
+    save_to: Option<&str>,
+    udp_bind: SocketAddr,
+    look: Look,
+) -> Result<(), String> {
+    use clausters_gui::host::document::Owner;
+
+    let data = std::fs::read_to_string(path).map_err(|e| format!("--score {path}: {e}"))?;
+    let score = clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
+        .map_err(|e| format!("--score {path}: {e}"))?;
+    let shared = Arc::new(std::sync::Mutex::new(score));
+    let mut host = Host::new();
+    look.apply(&mut host);
+    host.owner = Some(Owner::new(clausters_document::Document::empty()));
+    let name = Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
+    let title = match save_to {
+        Some(out) => format!("{name} -> {out}"),
+        None => format!("{name} (read-only: no --save-to)"),
+    };
+    host.open_score(shared, &title, (960, 720), save_to.map(Into::into))
+        .ok_or_else(|| "--score: the editor could not open a window".to_string())?;
+    tracing::info!("score: opened {path}");
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
+    gui::run(host, Arc::new(socket), None, None, None)
 }
 
 /// Opens a session and draws it, with this host as its **owner**.

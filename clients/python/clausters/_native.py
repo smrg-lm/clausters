@@ -985,6 +985,11 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
             fn = getattr(lib, f"clausters_score_{name}")
             fn.restype = ctypes.c_int32
             fn.argtypes = [ctypes.c_void_p]
+        # The score editor opens over a score handle, so it is the engraver's.
+        lib.clausters_apps_editing_open_score.restype = size
+        lib.clausters_apps_editing_open_score.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, u8p, size, u8p, size,
+        ]
     except AttributeError:
         return
     _HAS_ENGRAVER = True
@@ -2152,6 +2157,18 @@ class EditingCore:
         body = json.dumps(request).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_open_notes,
                              ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                             as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def open_score(self, score_handle, **request) -> dict:
+        """Open a score editor over the score behind ``score_handle`` (a
+        `clausters.gui.notation.Score`'s), which it then edits in place
+        (`clausters_apps_editing_open_score`): ``{"member", "structure"}``."""
+        if not self._handle:
+            return {}
+        body = json.dumps(request).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_open_score,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
                              as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 

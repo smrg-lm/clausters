@@ -1015,6 +1015,20 @@ standalone host links the same context in its `Owner`, where the tree and the
 multitrack are external members beside the editor, so a stroke on the tree and a box
 moved on the multitrack undo in one order there too.
 
+The **score editor** (`clausters_apps::score`, behind the crate's `notation`
+feature) opens a symbolic score and edits it **in place**: what it holds is the
+core's `Score` over `AnyEngraver` — any engraver behind a box, so the score a
+script opened natively, the one a page opened over wasm and the one a
+standalone host read itself are one type, and the crate links no engraver. Its
+window is the page in a scroll over a status line; a gesture on the page (a
+press, a pitch drag, a press on empty staff) and a **verb** a client calls over
+the selection (`score::verbs`: a move, a length, a mark, a voice, a spanner)
+are each read into model operations, applied to the shared score and recorded
+with the MEI before them as the inverse — a state, which a step loads back
+whole. A verb crosses through the context's `act`, which records it as a
+gesture is recorded. The standalone host opens one with `--score`, a feature
+that links the engraver to read the file and nothing else.
+
 ### The application in each client, and the picture the host owns
 
 On the client side an **application** (`clausters.gui.editing.Application` and

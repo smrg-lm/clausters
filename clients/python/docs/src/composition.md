@@ -58,6 +58,7 @@ opens, which is why the curve row below names three unrelated types:
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
+| a `Score` (a symbolic score) | `ScoreEditor` | a `score` page | `score` |
 
 **An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`, and is edited **in place**: the editor is the shared crate's, and it holds the very sequence the script's handle names, so there is nothing to write back. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
@@ -127,6 +128,8 @@ inverse rides on the wire — a stroke's event carries the run it wrote *and* th
 run it replaced. This client writes a stroke's samples synchronously; a page's
 buffer calls are asynchronous, so the web client queues them in order instead,
 and that is the only difference between the two.
+
+**A `Score` opens in the score editor**, `clausters.gui.editing.ScoreEditor`, and is edited **in place**: the editor is the shared crate's and holds the very score the script's handle names, so `score.sheet()` and `score.mei()` read every edit. Its window is the engraved page, in a scroll, over a status line saying what is selected. A click selects a note, a drag moves it along its staff -- only a note drags; a slur, a time signature or a rest is selected and never displaced -- and a press on empty staff writes a note of `editor.value` there (`editor.value = (1, 8)` writes eighths). **The verbs act on what is selected** -- `move`, `scale`, `articulation`, `dynamic`, `ornament`, `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` (from the first selected note to the last), and `operate` for any model operation -- and each is one call into the crate and one entry of the editing context's history, so Ctrl+Z over the window walks it back. `editor.selected` is what is selected, as the model's item ids, and `editor.select(elements)` selects from the script by the page's `xml:id`s. A score read from a document somebody else wrote is written from its model when the editor opens, so a press names an item of the model at once.
 
 ## The arrangement: tracks, take lanes, regions
 

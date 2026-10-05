@@ -1,47 +1,42 @@
 #!/usr/bin/env python3
-"""Editing a score **by hand**: the page, the model, and every verb between them.
+"""Editing a score **by hand**: the score editor, over a document somebody
+else typed.
 
 The third of the notation examples, and the one that closes the loop.
 ``score.py`` plays an engraved phrase and drags a note; ``compose.py`` builds a
-score by operating on it; this one opens a document *somebody else typed* and
-edits it the way a score editor does -- with the mouse on the page, and one of
-the model's verbs behind every gesture.
+score by operating on it; this one opens a document *somebody else typed* in
+the **score editor** -- the application the shared crate writes once, the same
+window a page opens and a standalone host opens -- and edits it the way a score
+editor does: with the mouse on the page, and one of the editor's verbs behind
+every button.
 
 What it shows, roughly in the order it does it:
 
-* **A document becomes a model.** The phrase below is ABC. Until it is *read*
-  (`clausters.gui.notation.Score.sheet`) it is a picture: it draws, it plays,
-  and not one verb applies to it. Reading is the whole difference between a
-  score you can look at and a score you can edit.
-* **What was typed once can be operated on.** The typed phrase is a single
-  treble line; the bass staff under it is *made here*, by transposing a copy
-  down two octaves, re-clefing it and stacking the two -- so a grand staff, a
-  slur and a crescendo all exist on a document nobody wrote them into.
-* **A page is a document, and a document was decided.** The title, the double
-  bar dividing the halves and the system break are written into the model,
-  because each is a statement somebody made. What the engraver decides when
-  nobody decided is not stored and is not loss -- it is worked out again
-  identically every time.
-* **A gesture names a place; the model names the note.** A click reports the
-  *element* under the cursor, `clausters.gui.notation.item_id` says which model
-  item it was written from, and from there every verb applies.
-* **Marks accumulate.** A note is staccato *and* accented *and* under a
-  dynamic. `set_marks` replaces the whole set rather than merging, which is the
-  honest shape for something a caller holds whole -- so every button here reads
-  the marks, changes one, and writes them back.
-* **Writing a note.** With ``entry=True`` a press on blank paper reports where
-  the press landed -- a place, not a note -- and `insert` puts one there, the
-  pitch worked out from that staff's clef and the key.
-* **Two lines on one staff.** ``2nd voice`` moves the selected note into a
-  second voice of its own staff, leaving a rest where it was, so nothing around
-  it moves -- which is how two lines written as one come apart. A note written
-  *after* one of those joins the line it follows, since `insert` puts a new item
-  in the voice of the item it comes after.
-* **What is written is what is heard.** Play at any point: the score is read
-  out of the *model*, so a staccato you just added shortens the sound and moves
-  no attack, and a dynamic governs the notes after it.
-* **One undo stack, and it is the model's.** Every edit is one
-  `clausters.gui.notation.Score.apply` -- one operation, one step back.
+* **A document becomes a model.** The phrase below is ABC. Read into the
+  model (`clausters.gui.notation.Score.sheet`), everything the model can do
+  applies to it -- and the editor writes the page from that model when it
+  opens, so a press on a note names an item of it at once.
+* **What was typed once can be operated on.** The bass staff under the typed
+  line is *made here*, by transposing a copy down two octaves, re-clefing it and
+  stacking the two; the title, a double bar, a system break, a slur, a
+  crescendo and two dynamics are written into the model the same way. These are the script's
+  edits, made through the score before the window opens.
+* **`edit(score)` opens the editor over the very score the script holds.**
+  It returns the editor, as `edit` does for every structure; the edited data is
+  read on the score passed in, which *is* the edited one.
+* **A gesture names a place; the editor names the note.** A click selects a
+  note and the status line under the page says what it is. A drag moves it
+  along the staff -- only a note drags; a slur or a time signature is selected
+  and never displaced. A press on empty staff writes a note of the editor's
+  `value` there (an eighth, below) and selects it.
+* **The verbs act on the selection.** Every button calls one method of the
+  editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
+  `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is
+  one call into the crate, which reads the score as it stands (an articulation
+  is toggled against the ones the note has) and records one entry.
+* **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
+  editor's entries and the script's alike, and so do the undo and redo
+  buttons.
 
 The engraver is **libverovio**, which ships inside the installed package. In a
 source checkout, build and stage it once (``third_party/BUILD-VEROVIO.md``)::
@@ -53,12 +48,13 @@ Then, with the client importable::
 
     python clients/python/examples/notation/score_editor.py
 
-**Click** a note to select and hear it; the window's status line says what is
-selected. **Drag** one up or down the staff to move it (which is not
-transposition: it takes the key signature's alteration for the letter it lands
-on). **Press on empty staff** -- between two notes, or past the last one, on
-either staff -- to write a quarter there. The buttons act on the selection.
-Close the window to stop. Needs an audio device, a display and a GPU.
+**Click** a note to select it; the status line says what is selected. **Drag**
+one up or down the staff to move it (which is not transposition: it takes the
+key signature's alteration for the letter it lands on). **Press on empty
+staff** -- between two notes, or past the last one, on either staff -- to write
+an eighth there. The buttons act on the selection; **play** plays the score as
+it stands. Close the window to stop. Needs an audio device, a display and a
+GPU.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
 step through it with Shift+Enter and the window stays up between cells, or run
@@ -68,8 +64,8 @@ it as a plain script.
 # %%
 import sys
 
-from clausters import Event, Session, TempoMap, play
-from clausters.gui import button, label, notation, panel, source, view
+from clausters import Session, TempoMap
+from clausters.gui import button, edit, notation, panel
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter
@@ -85,17 +81,8 @@ G A B c | d2 c B | A G F G | E4 |
 B c d e | f2 e d | c B A B | G4 |
 """
 
-# Two beats per second: the quarter = 120 the engraver times the page at. A
-# quarter is then one beat in the model and 500 ms on the page, which is what
-# ties the cursor to the sound -- the sync places its cursor in *score*
-# milliseconds and reads the model in beats through the timeline's map, so the
-# two have to agree.
+# Two beats per second, the quarter = 120 the page is timed at.
 TEMPO = 2.0
-
-# How wide the page is drawn. The height follows from the engraving's aspect
-# and is kept in step with it on every edit (see `refresh`), so the drawn size
-# never changes under a hand that is editing.
-PAGE_W = 900.0
 
 # %% [markdown]
 # ## Open it, and read it
@@ -113,9 +100,7 @@ print(f"read {sum(len(v['items']) for s in typed['staves'] for v in s['voices'])
 # verovio's ABC importer writes one staff whatever the source says, so the
 # grand staff below is not in the document: it is the model's. A copy of the
 # line goes down two octaves, takes the bass clef, and `stack` puts the two on
-# one system -- a brace and one barline through both. The whole point of
-# reading a document is that everything the model can do applies to it
-# afterwards.
+# one system -- a brace and one barline through both.
 
 # %%
 lower = notation.transpose(typed, -24)
@@ -127,10 +112,7 @@ score.apply({"op": "stack", "sheet": lower, "as_staff": True})
 # A title, a double bar dividing the two halves, a system break so the second
 # half starts a line -- and two spans that no single note could carry: a slur
 # over the opening figure and a crescendo under it. None of these changes a
-# note; all of them are statements, and a statement is stored. What the
-# engraver decides when nobody decided -- where the lines would otherwise
-# break, how the eighths would otherwise beam, the double bar that ends any
-# score -- is not stored and is not loss.
+# note; all of them are statements, and a statement is stored.
 
 # %%
 score.apply({"op": "set_header",
@@ -149,410 +131,128 @@ score.apply({"op": "set_marks", "id": top[8],
              "marks": notation.marks(dynamic="f")})
 
 # %% [markdown]
-# ## The window
-
-# %%
-def scene(engraved, sample_rate: float) -> dict:
-    """A page that can be written on, under three rows of verbs.
-
-    Every widget is *named*, so the script drives each by name and never picks
-    an id. ``editable=True`` opts the page into pitch editing (a drag reports
-    the staff position it reaches) and ``entry=True`` into note entry (a press
-    on empty staff reports the place). They are separate opt-ins because a
-    press on blank paper already means something everywhere else -- it clears
-    the selection -- and a page that never asked to be written on must go on
-    meaning that.
-
-    ``scroll_name`` is what lets `refresh` grow the page's box with the page
-    instead of letting the engraving shrink into a fixed one."""
-    return view(
-        panel(button(name="play", label="play"),
-              button(name="stop", label="stop"),
-              button(name="up", label="up"),
-              button(name="down", label="down"),
-              button(name="longer", label="longer"),
-              button(name="shorter", label="shorter"),
-              layout="row", h=34.0),
-        panel(button(name="stacc", label="staccato"),
-              button(name="accent", label="accent"),
-              button(name="tenuto", label="tenuto"),
-              button(name="trill", label="trill"),
-              button(name="mf", label="mf"),
-              button(name="ff", label="ff"),
-              button(name="plain", label="no marks"),
-              layout="row", h=34.0),
-        panel(button(name="slur", label="slur x4"),
-              button(name="voice", label="2nd voice"),
-              button(name="tie", label="tie"),
-              button(name="silence", label="silence"),
-              button(name="delete", label="delete"),
-              button(name="undo", label="undo"),
-              button(name="redo", label="redo"),
-              layout="row", h=34.0),
-        label("click a note, or press empty staff to write one",
-              name="status", h=22.0),
-        notation.score_view(engraved, name="score", scroll_name="page",
-                            width=PAGE_W, sample_rate=sample_rate,
-                            editable=True, entry=True),
-        layout="col", title="Score editor (a document, and its model)",
-        w=960, h=640,
-    )
-
-
-# %% [markdown]
-# ## Open the window
+# ## The editor
+# The window is the editor's: the page, in a scroll, over a status line. The
+# rows of buttons are this script's own widgets (`extra`), each calling one of
+# the editor's verbs.
 
 # %%
 session = Session.live()
 server = session.server
-# `query_info` rather than the launch options: it is the one spelling both
-# clients have, so this file and its page twin ask the same question.
-sr = server.query_info().nominal_sample_rate
-gui = session.gui()
-dl = score.display_list()
-engraved = source(display_list=dl)
 
+buttons = [
+    panel(button(name="play", label="play"),
+          button(name="stop", label="stop"),
+          button(name="up", label="up"),
+          button(name="down", label="down"),
+          button(name="longer", label="longer"),
+          button(name="shorter", label="shorter"),
+          layout="row", h=34.0),
+    panel(button(name="stacc", label="staccato"),
+          button(name="accent", label="accent"),
+          button(name="tenuto", label="tenuto"),
+          button(name="trill", label="trill"),
+          button(name="mf", label="mf"),
+          button(name="ff", label="ff"),
+          button(name="plain", label="no marks"),
+          layout="row", h=34.0),
+    panel(button(name="slur", label="slur x4"),
+          button(name="voice", label="other voice"),
+          button(name="tie", label="tie"),
+          button(name="silence", label="silence"),
+          button(name="delete", label="delete"),
+          button(name="undo", label="undo"),
+          button(name="redo", label="redo"),
+          layout="row", h=34.0),
+]
 
-def page_height(page: dict) -> float:
-    """The page's drawn height at `PAGE_W`, in its own aspect."""
-    vb = page.get("vb") or [1.0, 1.0]
-    return round(PAGE_W * vb[1] / vb[0], 1) if vb[0] else PAGE_W
-
-
-win = scene(engraved, sr).open()
-
-selected: dict = {"element": None, "item": None}
-
-
-def say(line: str) -> None:
-    """Put a line on the window's status label and in the log."""
-    print(f"  {line}")
-    win["status"].set(text=line)
-
-
-def refresh() -> None:
-    """Re-engrave and replace the drawn page in place. Every edit ends here.
-
-    **The page's box grows with the page**, which is the whole of keeping an
-    edit from moving the picture: a score widget draws what it is sent to fit
-    the box it is given, so a page that gained a system would otherwise shrink
-    to stay inside, re-scaling everything a hand was working on. Setting the
-    height from the new engraving's aspect keeps the drawn size fixed and lets
-    the scroll do what a scroll is for -- and the reader's own zoom, which is
-    the scroll's, is untouched either way."""
-    page = score.display_list()
-    engraved.set(page)
-    height = page_height(page)
-    win["score"].set(h=height)
-    win["page"].set(content_h=height)
-
-
-def item():
-    """The selected model item, or None with a word about why."""
-    if selected["item"] is None:
-        say("select a note first (click one)")
-    return selected["item"]
-
-
-def locate(id):
-    """Where the item sits and what it is written as: ``(staff, voice, item)``,
-    or three Nones. An edit that depends on the current value -- a length, a
-    mark it toggles, the voice it is in -- reads it rather than guessing."""
-    for si, staff in enumerate(score.sheet()["staves"]):
-        for vi, voice in enumerate(staff["voices"]):
-            for entry in voice["items"]:
-                if entry["id"] == id:
-                    return si, vi, entry
-    return None, None, None
-
-
-def find(id) -> dict | None:
-    """Just the item."""
-    return locate(id)[2]
-
-
-def edit(op: str, **params) -> None:
-    """Apply one operation to the selected item, as one undo step."""
-    id = item()
-    if id is None:
-        return
-    if score.apply({"op": op, "id": id, **params}):
-        refresh()
-        say(f"{op} on item {id}")
-    else:
-        say(f"{op} refused on item {id}")
-
+editor = edit(score, title="Score editor (a document, and its model)",
+              width=960, height=760, extra=buttons)
+editor.value = (1, 8)          # a press on empty staff writes an eighth
+win = editor.window
 
 # %% [markdown]
-# ## The marks, which accumulate
-# `set_marks` **replaces** the whole set rather than merging -- the honest
-# shape for something a caller holds whole, since a merge would leave no way to
-# take a mark away. So a button that changes one mark reads them, changes that
-# one, and writes them back; which is also why a note can be staccato and
-# accented and under a dynamic at the same time.
+# ## A span has two ends
+# A slur cannot ride a note the way an articulation does: it runs from one note
+# to another, so the editor makes it **from the first selected note to the
+# last**. A click selects one, so this button selects the note clicked and the
+# third after it, and asks for the slur between them.
 
 # %%
-def with_marks(**changes):
-    """The selected item's marks with `changes` applied, or None if nothing is
-    selected. A value of None takes a mark away."""
-    id = item()
-    if id is None:
-        return None, None
-    entry = find(id)
-    if entry is None:
-        return None, None
-    marks = dict(entry.get("marks") or {})
-    for key, value in changes.items():
-        if value is None:
-            marks.pop(key, None)
-        else:
-            marks[key] = value
-    return id, marks
-
-
-def toggle_articulation(name: str):
-    """Add or take away one articulation, leaving the others -- and the
-    dynamic, and the ornament -- where they are."""
-    def act():
-        id, marks = with_marks()
-        if id is None:
-            return
-        articulations = list(marks.get("articulations") or [])
-        if name in articulations:
-            articulations.remove(name)
-        else:
-            articulations.append(name)
-        marks["articulations"] = articulations
-        edit("set_marks", marks=marks)
-    return act
-
-
-def set_mark(**changes):
-    """A dynamic or an ornament, put on or taken off without touching the rest."""
-    def act():
-        id, marks = with_marks(**changes)
-        if id is None:
-            return
-        edit("set_marks", marks=marks)
-    return act
-
-
-def scale_dur(factor: int):
-    """Twice as long, or half: the written value, against the barlines that
-    were already there. A value that now overruns a bar is split and tied when
-    the page is written, which is what augmentation looks like."""
-    def act():
-        id = item()
-        entry = find(id) if id is not None else None
-        if entry is None:
-            return
-        num, den = entry["dur"]
-        edit("set_dur", dur=[num * factor, den] if factor > 1 else [num, den * 2])
-    return act
-
-
-def to_second_voice() -> None:
-    """Move the selected note into a second voice of its own staff.
-
-    **Two lines written as one come apart here**: the item keeps its id and its
-    place in time, and a rest holds the gap open where it was, so nothing around
-    either line moves. The voice is made if the staff has only one. A note
-    written *after* one of these joins the second line, because `insert` puts a
-    new item in the voice of the item it follows."""
-    id = item()
-    if id is None:
-        return
-    _, voice, _ = locate(id)
-    if voice is None:
-        return
-    target = 1 if voice == 0 else 0
-    if score.apply({"op": "to_voice", "ids": [id], "voice": target}):
-        refresh()
-        say(f"item {id} moved to voice {target + 1}, a rest left where it was")
-    else:
-        say(f"item {id} is already the only thing in voice {target + 1}")
-
-
 def slur_four() -> None:
-    """A slur from the selected note over the next three. A span has **two
-    ends**, so it cannot ride a note the way an articulation does: it lives
-    beside the staves and names the two items it runs between."""
-    id = item()
-    if id is None:
+    """A slur from the selected note over the next three."""
+    if not editor.selected:
         return
+    first = editor.selected[0]
     for staff in score.sheet()["staves"]:
         for voice in staff["voices"]:
-            ids = [entry["id"] for entry in voice["items"]]
-            if id in ids:
-                at = ids.index(id)
-                last = ids[min(at + 3, len(ids) - 1)]
-                if last == id:
-                    return say("nothing after it to slur to")
-                if score.apply({"op": "add_spanner", "kind": "slur",
-                                "from": id, "to": last}):
-                    refresh()
-                    say(f"slur from item {id} to item {last}")
+            ids = [item["id"] for item in voice["items"]]
+            if first in ids:
+                last = ids[min(ids.index(first) + 3, len(ids) - 1)]
+                if last != first:
+                    editor.select([f"n{first}", f"n{last}"])
+                    editor.spanner("slur")
                 return
 
 
 # %% [markdown]
 # ## Playing what is written
-# The timeline comes out of the **model**, not out of the engraving: `to_timeline`
-# reads what the symbols mean, so a staccato added a moment ago is honoured, a
-# dynamic governs the notes after it, and every attack stays where it was.
-# `instruments` binds a staff to what plays it, since the notation never says.
+# The timeline comes out of the **model**, not out of the engraving:
+# `to_timeline` reads what the symbols mean, so a staccato added a moment ago
+# is honoured and a dynamic governs the notes after it.
 
 # %%
-def timeline():
-    """The model as it stands right now, read into a timeline at `TEMPO`."""
+playing: dict = {"timeline": None}
+
+
+def play() -> None:
+    """The score as it stands right now, from the top."""
+    stop()
     timeline = notation.to_timeline(score.sheet())
     timeline.map = TempoMap(TEMPO)
-    return timeline
+    playing["timeline"] = timeline.play(at=0.0, destination=server)
 
 
-def pass_from(at: float):
-    """One playback pass, read out of the model as it stands right now."""
-    return timeline().play(at=at, destination=server)
-
-
-def phrase_end() -> float:
-    """Where the score ends, in beats -- the last note's onset plus its written
-    value. The transport parks the cursor there when a pass runs out."""
-    notes = notation.to_notes(score.sheet())
-    return max((n["t"] + n["dur"] for n in notes), default=0.0)
-
-
-transport = notation.playhead_sync(gui, win["score"].id, source=pass_from,
-                                   structure=timeline, sample_rate=sr,
-                                   extent=phrase_end)
-transport.locate(0.0)
-
-# %% [markdown]
-# ## The page's three edit-backs
-
-# %%
-def on_score(tag, *payload):
-    """What the page reports, and what this side makes of it.
-
-    ``"element"`` is a click: the page names the element under the cursor, and
-    `clausters.gui.notation.item_id` turns it into the model item it was
-    written from -- ``n7``, ``n7-2`` (a part split across a barline) and
-    ``n7-p1`` (one pitch of a chord) are all item 7, which is what lets a
-    gesture anywhere on a note reach the note.
-
-    ``"transpose"`` is a drag: it names the staff position the note **reaches**,
-    absolute rather than a displacement, so an edit that arrives twice moves
-    nothing the second time. Moving along the staff takes the key signature's
-    alteration for the letter it lands on, so a note dragged onto a B in E flat
-    is a B flat -- which is why it is not `transpose`.
-
-    ``"insert"`` is a press on empty staff: the element the new note would
-    follow, how far up the staff the press landed, and which staff. A place,
-    not a note -- a staff position is a pitch only once something knows the
-    clef and the key, and `insert` is what knows.
-
-    A handler runs on the client's reply thread, where the ambient session is
-    another thread's, so every `play` here names its `server`."""
-    if tag == "element" and payload:
-        selected["element"] = payload[0] or None
-        selected["item"] = notation.item_id(payload[0]) if payload[0] else None
-        entry = find(selected["item"]) if selected["item"] is not None else None
-        if entry is None:
-            say("nothing selected" if not payload[0]
-                else f"{payload[0]} is not one of this model's items")
-            return
-        staff, voice, _ = locate(selected["item"])
-        marks = entry.get("marks") or {}
-        num, den = entry["dur"]
-        say(f"item {selected['item']}: {num}/{den}"
-            + f", staff {staff} voice {voice}"
-            + (f", {marks}" if marks else "")
-            + (", tied" if entry.get("tie") else ""))
-        for note in notation.to_notes(score.sheet()):
-            if note["id"] == selected["item"]:
-                play(Event(midinote=note["pitch"], dur=note["sustain"],
-                           amp=0.15), server=server)
-                break
-    elif tag == "transpose" and len(payload) >= 2:
-        id = notation.item_id(payload[0])
-        if id is None or find(id) is None:
-            return
-        if score.transpose_to(payload[0], int(payload[1])):
-            refresh()
-            say(f"moved item {id} to staff position {int(payload[1]):+d}")
-    elif tag == "insert" and len(payload) >= 3:
-        after, position, staff = payload[0], int(payload[1]), int(payload[2])
-        op = {"op": "insert", "dur": [1, 4], "pitches": [],
-              "position": position, "staff": staff, "voice": 0}
-        id = notation.item_id(after) if after else None
-        if id is not None:
-            op["after"] = id
-        if score.apply(op):
-            refresh()
-            say(f"wrote a quarter at staff position {position:+d} "
-                f"on staff {staff}")
-        else:
-            say("the insert was refused")
+def stop() -> None:
+    if playing["timeline"] is not None:
+        playing["timeline"].stop()
+        playing["timeline"] = None
 
 
 # %% [markdown]
 # ## Wire it up
 
 # %%
-def undo() -> None:
-    """Step back one edit. The stack is the *model's*: every edit above is one
-    operation, so one step back is one operation undone -- including the ones
-    that came from a gesture on the page."""
-    if score.undo():
-        refresh()
-        say("undo")
-    else:
-        say("nothing to undo")
-
-
-def redo() -> None:
-    if score.redo():
-        refresh()
-        say("redo")
-    else:
-        say("nothing to redo")
-
-
-win["play"].on_click(lambda: transport.play(server))
-win["stop"].on_click(transport.stop)
-win["up"].on_click(lambda: edit("move_steps", steps=1))
-win["down"].on_click(lambda: edit("move_steps", steps=-1))
-win["longer"].on_click(scale_dur(2))
-win["shorter"].on_click(scale_dur(1))
-win["stacc"].on_click(toggle_articulation("stacc"))
-win["accent"].on_click(toggle_articulation("acc"))
-win["tenuto"].on_click(toggle_articulation("ten"))
-win["trill"].on_click(set_mark(ornament="trill"))
-win["mf"].on_click(set_mark(dynamic="mf"))
-win["ff"].on_click(set_mark(dynamic="ff"))
-win["plain"].on_click(lambda: edit("set_marks", marks={}))
+win["play"].on_click(play)
+win["stop"].on_click(stop)
+win["up"].on_click(lambda: editor.move(1))
+win["down"].on_click(lambda: editor.move(-1))
+win["longer"].on_click(lambda: editor.scale(2, 1))
+win["shorter"].on_click(lambda: editor.scale(1, 2))
+win["stacc"].on_click(lambda: editor.articulation("stacc"))
+win["accent"].on_click(lambda: editor.articulation("acc"))
+win["tenuto"].on_click(lambda: editor.articulation("ten"))
+win["trill"].on_click(lambda: editor.ornament("trill"))
+win["mf"].on_click(lambda: editor.dynamic("mf"))
+win["ff"].on_click(lambda: editor.dynamic("ff"))
+win["plain"].on_click(editor.clear_marks)
 win["slur"].on_click(slur_four)
-win["voice"].on_click(to_second_voice)
-win["tie"].on_click(lambda: edit("tie", tied=True))
-win["silence"].on_click(lambda: edit("silence"))
-win["delete"].on_click(lambda: edit("delete"))
-win["undo"].on_click(undo)
-win["redo"].on_click(redo)
-win["score"].on_event(on_score)
-win.on_closed(lambda: print("window closed"))
-print("click a note to select and hear it, drag one up or down the staff, "
-      "press empty staff to write a quarter; the buttons act on the selection")
+win["voice"].on_click(editor.voice)
+win["tie"].on_click(editor.tie)
+win["silence"].on_click(editor.silence)
+win["delete"].on_click(editor.delete)
+win["undo"].on_click(editor.undo)
+win["redo"].on_click(editor.redo)
+editor.on_closed(lambda: print("window closed"))
+print("click a note to select it, drag one up or down the staff, press empty "
+      "staff to write an eighth; the buttons act on the selection")
 
 
 # %%
 def run():
-    """Hold the window open until it is closed.
-
-    Nothing is driven here: the host's event loop delivers every gesture, and
-    the transport asks about the end of its own pass on the application clock
-    over that same loop.
-    """
-    win.wait()
+    """Hold the window open until it is closed. Nothing is driven here: the
+    host's event loop delivers every gesture to the editor."""
+    editor.wait()
 
 
 # %%
@@ -560,6 +260,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run()
     finally:
+        stop()
         session.close()
 else:
     print("editor up - run() to hold the window, session.close() to end")

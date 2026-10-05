@@ -139,6 +139,8 @@ pub mod winit_keys;
 mod answer;
 mod clocks;
 mod define;
+#[cfg(feature = "notation")]
+mod score_editor;
 mod set;
 mod takes;
 #[cfg(test)]

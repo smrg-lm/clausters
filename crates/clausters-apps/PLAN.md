@@ -1411,7 +1411,7 @@ opened it.
     had never included `systems`, so the grand-staff fix never reached the
     host; each client now has one list (`SCORE_PAGE`) read everywhere, with
     `systems` and `kinds` on it.)*
-  - ⬜ **X5.1 - The application in the crate.** `clausters-apps::score`: the
+  - ✅ **X5.1 - The application in the crate.** `clausters-apps::score`: the
     window, its props and the conversation (a gesture read, an `Op` applied, a
     page sent back as the `Outcome`), the `Score` a member of the editing
     context that the crate applies. The engraver is a port the caller hands
@@ -1420,7 +1420,29 @@ opened it.
     the C ABI and wasm, declared in `docs/bindings.md`; both clients' editor a
     handle over the crate; the standalone host opens a score file. The
     script-side editor of `notation/score_editor` goes, and the example opens
-    the application.
+    the application. *(Done 2026-10-05. The engraver port is
+    `notation::AnyEngraver` -- any engraver behind a box -- so the score both
+    bindings hand out and the one the app holds are one type,
+    `Score<AnyEngraver>`; the C ABI's score handle and the wasm `Score` now
+    wrap it shared (`clausters_apps::score::Shared`), and
+    `clausters_apps_editing_open_score` / `JsEditing.open_score` open the
+    editor over it. The crate's part is behind its `notation` feature:
+    `score::window` (the page in a scroll over a status line),
+    `score::editor::ScoreEditor` (the three page gestures, a selection, the
+    value a note is entered with) and `score::verbs` (move, scale,
+    articulation, dynamic, ornament, clear marks, tie, silence, delete, voice,
+    spanner from the first selected to the last, and any `Op`), each verb one
+    entry through the context's new `act`. Opening writes the page from the
+    model when the document's ids are not the model's -- a score read from a
+    foreign file had ids no item answered to, so the first press selected
+    nothing. Both clients' `ScoreEditor` binds the verbs as methods (`move`,
+    `scale`, ... `operate`, the escape hatch, since `apply` is every editor's
+    door for the host's messages), `selected`/`select` and `value`, and
+    `edit(score)` opens it. The standalone host opens one with `--score`
+    under a `score` feature that links the engraver, and the package's host is
+    built with it. The example opens the application, its buttons calling the
+    verbs; the playback stays the script's until `X5.8`, and the slur button
+    selects two notes itself until `X5.2` lets a hand do it.)*
   - ⬜ **X5.2 - Selection.** ctrl+click, shift+click, the measure; `selected`
     as a list; every verb over the selection; spanners from the first and last
     notes; the Transform menu over its span.

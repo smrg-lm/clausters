@@ -38,6 +38,7 @@ import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor, isTake } from "./audio.ts";
+import { ScoreEditor, isScore } from "./score.ts";
 import { main } from "../../base/main.ts";
 
 /** What `edit` passes on to whichever editor the structure asks for. */
@@ -147,6 +148,9 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
             ...rest,
         }) as unknown as Editor<never>;
     }
+    if (isScore(structure)) {
+        return new ScoreEditor(structure, rest) as unknown as Editor<never>;
+    }
     if (isMultitrack(structure)) {
         // A multitrack states its own tempo, like a timeline.
         return new MultitrackEditor(structure, {
@@ -157,14 +161,16 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
             "`edit` opens a Buffer (its samples), an Automation (its curve), an " +
-            "EventSequence or a Timeline (its notes) or a Multitrack (the multitrack).",
+            "EventSequence or a Timeline (its notes), a Multitrack (the multitrack) or a " +
+            "Score (its page).",
     );
 }
 
 /**
  * Opens `structure` in an editor of its own kind -- a `Buffer` (its samples), an
- * `Automation` (its curve), a `Timeline` (its notes) or a `Multitrack` (the
- * multitrack) -- and answers the open editor.
+ * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
+ * multitrack) or a `Score` (a symbolic score, on its page, in place) -- and
+ * answers the open editor.
  *
  * **It opens.** The window is up and listening when this resolves, so the
  * structure the caller already holds is the edited one from that moment: read

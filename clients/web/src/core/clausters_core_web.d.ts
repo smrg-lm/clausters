@@ -119,6 +119,12 @@ export class EditingCore {
      * `key` and what the editor is built from.
      */
     openNotes(sequence: JsEventSequence, request: string): string;
+    /**
+     * Opens a score editor over `score`, which it then edits in place -- the
+     * C ABI's `clausters_apps_editing_open_score`. `request` carries the `key`
+     * and what the editor is built from.
+     */
+    openScore(score: Score, request: string): string;
 }
 
 /**
@@ -1884,6 +1890,7 @@ export interface InitOutput {
     readonly editingcore_new: () => number;
     readonly editingcore_openMultitrack: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly editingcore_openScore: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
     readonly event_midi: (a: number, b: number, c: number) => [number, number];

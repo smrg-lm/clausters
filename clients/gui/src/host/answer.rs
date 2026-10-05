@@ -124,6 +124,14 @@ impl Host {
         {
             return self.answer_roll(def_id, message);
         }
+        #[cfg(feature = "notation")]
+        if self
+            .owner
+            .as_ref()
+            .is_some_and(|o| o.scores.contains_key(&def_id))
+        {
+            return self.answer_score(def_id, message);
+        }
         if self
             .owner
             .as_ref()

@@ -46,6 +46,11 @@ standalone = ["dep:clausters", "clausters/synth"]
 # runs, just skipping FaustDefs (with a warning). Build with
 # `cargo build --features standalone-faust`.
 standalone-faust = ["standalone", "clausters/faust"]
+# A score file opened by this host alone (`--score`): the engraver that reads
+# it, which links libverovio -- so opt-in, as the server's Faust family is. The
+# editor itself is the applications crate's and needs nothing more than the
+# `notation` feature; only reading the file does.
+score = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]
 # **The diagnostic channel, in a build that is not a debug build.** `diag`'s
 # `debug!` and `note!` levels compile out of a release
 # (`#[cfg(debug_assertions)]`), arguments and all, which is what they are for.
@@ -60,7 +65,7 @@ diagnostics = []
 # so it has to be asked for. A build with it out drops the `score` row from
 # `elements::builtin`, and a def naming one is `Unknown`: laid out, not painted,
 # exactly as a host older than that def already behaves.
-notation = ["dep:lyon", "clausters-core/notation"]
+notation = ["dep:lyon", "clausters-core/notation", "clausters-apps/notation"]
 # The `plane`-with-boxes patcher: the graph view and its cord editing. Same
 # shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.
@@ -100,6 +105,9 @@ clausters-editing = { path = "../../crates/clausters-editing" }
 # clients bind, so a session opened here is the editor a script opens rather
 # than an editor of the host's own.
 clausters-apps = { path = "../../crates/clausters-apps" }
+# The engraver, for `--score` alone (the `score` feature): a score opened by
+# this host with no client is read by the same libverovio binding a script's is.
+clausters-notation = { path = "../../crates/clausters-notation", optional = true }
 # The full server crate, linked ONLY under the `standalone` feature for the
 # in-process embedded server (`host::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so

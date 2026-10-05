@@ -39,6 +39,7 @@ from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
 from .audio import AudioEditor, is_take
+from .score import ScoreEditor, is_score
 
 
 def edit(structure, *, sample_rate: float = 0.0,
@@ -52,7 +53,9 @@ def edit(structure, *, sample_rate: float = 0.0,
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
             the editor's ``sequence`` then holds; the timeline is not changed)
-            or a `clausters.multitrack.Multitrack` (the multitrack).
+            a `clausters.multitrack.Multitrack` (the multitrack) or a
+            `clausters.gui.notation.Score` (a symbolic score, on its page, in
+            place).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
             take knows its own and needs none; anything else takes the
             ambient server's nominal rate -- the current session's, else the
@@ -107,6 +110,8 @@ def edit(structure, *, sample_rate: float = 0.0,
             structure = structure.render_events(until=options.pop("until", None))
         editor = NotesEditor(structure, sample_rate=sample_rate or _ambient_rate(),
                              **options)
+    elif is_score(structure):
+        editor = ScoreEditor(structure, **options)
     elif is_multitrack(structure):
         # A multitrack states its own tempo, like a timeline.
         editor = MultitrackEditor(structure, sample_rate=sample_rate or _ambient_rate(),
@@ -115,8 +120,8 @@ def edit(structure, *, sample_rate: float = 0.0,
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
             f"(its samples), a curve -- anything with to_points/set_points -- "
-            f"an EventSequence or a Timeline (its notes) "
-            f"or a Multitrack (the multitrack)."
+            f"an EventSequence or a Timeline (its notes), "
+            f"a Multitrack (the multitrack) or a Score (its page)."
         )
     if open:
         editor.open(host)

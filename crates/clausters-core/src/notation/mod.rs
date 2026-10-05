@@ -32,6 +32,7 @@
 //! does rather than a second one written in TypeScript.
 
 mod admits;
+mod any;
 mod cursors;
 mod edit;
 mod interp;
@@ -44,6 +45,7 @@ mod score;
 mod svg;
 
 pub use admits::{Admits, admits};
+pub use any::AnyEngraver;
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
     At, add_spanner, delete, insert, move_steps, pitch_at, remove_spanner, set_barline, set_break,

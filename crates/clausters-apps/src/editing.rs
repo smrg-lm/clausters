@@ -42,6 +42,8 @@ use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::notes::Shared;
 use crate::notes::editor::{self as notes, NotesEditor};
 use crate::points::editor::{self as points, PointsEditor};
+#[cfg(feature = "notation")]
+use crate::score::editor::{self as score, ScoreEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -63,6 +65,9 @@ pub enum Member {
     /// A points editor over a curve it shares with every points editor opened
     /// under the same key.
     Points(Box<PointsEditor>),
+    /// A score editor over a score it shares with its holder.
+    #[cfg(feature = "notation")]
+    Score(Box<ScoreEditor>),
     /// A structure the crate does not apply: the context records and walks for
     /// it, and hands its legs back to be applied.
     External {
@@ -78,6 +83,8 @@ impl Member {
             Member::Audio(_) => audio::DOMAIN.into(),
             Member::Notes(_) => notes::DOMAIN.into(),
             Member::Points(_) => points::DOMAIN.into(),
+            #[cfg(feature = "notation")]
+            Member::Score(_) => score::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
         }
     }
@@ -102,6 +109,9 @@ pub enum Outcome {
     Notes(notes::Outcome),
     /// A points editor's.
     Points(points::Outcome),
+    /// A score editor's.
+    #[cfg(feature = "notation")]
+    Score(score::Outcome),
 }
 
 impl Outcome {
@@ -111,6 +121,8 @@ impl Outcome {
             Outcome::Audio(o) => o.turn,
             Outcome::Notes(o) => o.turn,
             Outcome::Points(o) => o.turn,
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.turn,
         }
     }
 
@@ -120,6 +132,8 @@ impl Outcome {
             Outcome::Audio(o) => o.record.as_ref(),
             Outcome::Notes(o) => o.record.as_ref(),
             Outcome::Points(o) => o.record.as_ref(),
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.record.as_ref(),
         }
     }
 
@@ -129,6 +143,8 @@ impl Outcome {
             Outcome::Audio(o) => o.changed,
             Outcome::Notes(o) => o.changed,
             Outcome::Points(o) => o.changed,
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.changed,
         }
     }
 
@@ -138,6 +154,8 @@ impl Outcome {
             Outcome::Audio(o) => o.version,
             Outcome::Notes(o) => o.version,
             Outcome::Points(o) => o.version,
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.version,
         }
     }
 
@@ -147,6 +165,8 @@ impl Outcome {
             Outcome::Audio(o) => (o.seq, o.redo),
             Outcome::Notes(o) => (o.seq, o.redo),
             Outcome::Points(o) => (o.seq, o.redo),
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => (o.seq, o.redo),
         }
     }
 
@@ -156,6 +176,8 @@ impl Outcome {
             Outcome::Audio(o) => o.answer = Some(answer),
             Outcome::Notes(o) => o.answer = Some(answer),
             Outcome::Points(o) => o.answer = Some(answer),
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.answer = Some(answer),
         }
     }
 }
@@ -237,6 +259,16 @@ pub enum Effect {
         member: MemberId,
         /// The curve's points.
         points: Vec<f64>,
+    },
+    /// A score editor put the page the step names back on the score it
+    /// shares: its holder reads the change through its own handle.
+    #[cfg(feature = "notation")]
+    #[serde(rename_all = "camelCase")]
+    Score {
+        /// The member.
+        member: MemberId,
+        /// Whether the score changed.
+        applied: bool,
     },
     /// Payloads an external member applies, in order.
     #[serde(rename_all = "camelCase")]
@@ -665,6 +697,8 @@ impl Editing {
             Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
             Member::Notes(editor) => Outcome::Notes(editor.event(event, version)),
             Member::Points(editor) => Outcome::Points(editor.event(event, version)),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => Outcome::Score(editor.event(event, version)),
             Member::External { .. } => return None,
         };
         if let Some(record) = outcome.record().cloned() {
@@ -699,6 +733,10 @@ impl Editing {
                     Member::Points(editor) => {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
+                    #[cfg(feature = "notation")]
+                    Member::Score(editor) => {
+                        outcome.answer(editor.acknowledge(seq, version, reason));
+                    }
                     Member::External { .. } => {}
                 }
             }
@@ -708,6 +746,39 @@ impl Editing {
         Some(Turned {
             outcome,
             stepped,
+            corrections,
+            freed,
+            stored,
+            version: self.version,
+        })
+    }
+
+    /// **One verb a client calls on a member** -- `request` as that member's
+    /// own verbs read it -- read, recorded and answered like a message: an edit
+    /// the hand asked for through the client rather than on the page.
+    ///
+    /// `None` for a member that is not there or takes no verbs this way.
+    #[cfg(feature = "notation")]
+    pub fn act(&mut self, member: MemberId, request: &Value) -> Option<Turned> {
+        let version = self.version;
+        let seat = self.seats.get_mut(member as usize)?;
+        let structure = seat.structure;
+        let outcome = match &mut seat.member {
+            Member::Score(editor) => Outcome::Score(editor.act(request, version)),
+            _ => return None,
+        };
+        if let Some(record) = outcome.record().cloned() {
+            self.record_at(structure, &record, false);
+        }
+        let mut corrections = Vec::new();
+        if outcome.changed() {
+            self.version = outcome.version();
+            corrections = self.corrections(Some(member));
+        }
+        let (freed, stored) = self.release();
+        Some(Turned {
+            outcome,
+            stepped: None,
             corrections,
             freed,
             stored,
@@ -795,6 +866,22 @@ impl Editing {
                             out.effects.push(Effect::Points { member, points });
                         }
                     }
+                    // One score, shared by every score editor over it: the
+                    // first loads the page the step names and the rest are
+                    // corrected.
+                    #[cfg(feature = "notation")]
+                    Member::Score(editor) if !written => {
+                        written = true;
+                        let mut done = false;
+                        for payload in payloads {
+                            done |= editor.apply(&payload.0);
+                        }
+                        applied |= done;
+                        out.effects.push(Effect::Score {
+                            member,
+                            applied: done,
+                        });
+                    }
                     Member::External { .. } if !written => {
                         written = true;
                         applied |= !payloads.is_empty();
@@ -838,6 +925,8 @@ impl Editing {
                 Member::Audio(editor) => editor.resync_all(version),
                 Member::Notes(editor) => editor.resync_all(version),
                 Member::Points(editor) => editor.resync_all(version),
+                #[cfg(feature = "notation")]
+                Member::Score(editor) => editor.resync_all(version),
                 Member::External { .. } => continue,
             };
             if answer != Answer::Silent {
@@ -895,6 +984,9 @@ struct RecordedLeg {
 ///   curve.
 /// - `external` -- `key`, `domain`: `{"member", "structure"}`.
 /// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
+/// - `act` -- `member`, `call`: a verb a client calls on a member, which
+///   edits -- a [`Turned`], or `null` (the score editor's verbs, built with the
+///   `notation` feature).
 /// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
 /// - `record` -- `member`, `label`, `legs` (`forward`, `backward`, `key`),
 ///   `coalesce`: `{"recorded", "version"}`.
@@ -963,6 +1055,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             to_json(&editing.event(member, &event))
         }
+        #[cfg(feature = "notation")]
+        "act" => to_json(&editing.act(member, &get(&request, "call"))),
         "step" => {
             let direction = get(&request, "direction")
                 .as_str()
@@ -1012,6 +1106,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
                 Some(Member::Notes(editor)) => notes::call_json(editor, &call.to_string()),
                 Some(Member::Points(editor)) => points::call_json(editor, &call.to_string()),
+                #[cfg(feature = "notation")]
+                Some(Member::Score(editor)) => score::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             }
         }
@@ -1040,6 +1136,22 @@ impl Editing {
         }
         let editor = notes::new_json(sequence, &request.to_string());
         joined(self, key, Member::Notes(Box::new(editor)))
+    }
+}
+
+#[cfg(feature = "notation")]
+impl Editing {
+    /// **Opens a score editor over `score`**, shared with the caller -- the
+    /// door a binding's score handle opens through, so the editor edits the
+    /// very score the script holds. `request` is what [`score::new_json`]
+    /// reads; the answer is the `openNotes` one's shape.
+    pub fn open_score(&mut self, key: &str, shared: crate::score::Shared, request: &str) -> String {
+        let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
+        if let Some(map) = request.as_object_mut() {
+            map.insert("version".into(), json!(self.version));
+        }
+        let editor = score::new_json(shared, &request.to_string());
+        joined(self, key, Member::Score(Box::new(editor)))
     }
 }
 

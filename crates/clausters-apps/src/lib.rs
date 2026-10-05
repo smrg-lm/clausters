@@ -37,4 +37,6 @@ pub mod multitrack;
 pub mod notes;
 pub mod points;
 pub mod samples;
+#[cfg(feature = "notation")]
+pub mod score;
 pub mod turn;
