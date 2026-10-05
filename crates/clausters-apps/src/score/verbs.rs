@@ -60,6 +60,12 @@ pub enum Action {
         #[serde(default)]
         to: Option<usize>,
     },
+    /// Make the selected notes grace notes -- `acc`, an appoggiatura, or
+    /// `unacc`, an acciaccatura -- or notes of the bar again, with none.
+    Grace {
+        #[serde(default)]
+        kind: Option<String>,
+    },
     /// Give the selected notes an accidental: `alter` semitones from the
     /// letter (`1` a sharp, `-1` a flat, `0` a natural), printed whatever the
     /// key says.
@@ -156,6 +162,7 @@ impl Action {
             Action::Delete => "delete".into(),
             Action::Voice { .. } => "move to the other voice".into(),
             Action::Accidental { .. } => "accidental".into(),
+            Action::Grace { .. } => "grace note".into(),
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
@@ -456,6 +463,24 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 ids: ids.clone(),
                 voice,
             }]
+        }
+        Action::Grace { kind } => {
+            need_notes("a grace note")?;
+            if let Some(kind) = kind
+                && !matches!(kind.as_str(), "acc" | "unacc")
+            {
+                return Err(format!(
+                    "a grace note is acc, an appoggiatura, or unacc, an acciaccatura, not {kind}"
+                ));
+            }
+            notes
+                .iter()
+                .map(|&id| {
+                    let mut marks = marks_of(id);
+                    marks.grace = kind.clone();
+                    Op::SetMarks { id, marks }
+                })
+                .collect()
         }
         Action::Accidental { alter } => {
             need_notes("an accidental")?;
@@ -829,6 +854,26 @@ mod tests {
             }]
         );
         assert!(to(0).is_empty(), "it is in the first voice already");
+    }
+
+    #[test]
+    fn a_grace_note_is_a_mark_of_the_note_and_is_taken_back_with_none() {
+        let sheet = sheet();
+        let grace = |json: &str| {
+            let action: Action = serde_json::from_str(json).unwrap();
+            ops(&sheet, &[1], &action)
+        };
+        let planned = grace(r#"{"action": "grace", "kind": "unacc"}"#).unwrap();
+        let [Op::SetMarks { id: 1, marks }] = planned.as_slice() else {
+            panic!("one note, marked: {planned:?}")
+        };
+        assert_eq!(marks.grace.as_deref(), Some("unacc"));
+        let planned = grace(r#"{"action": "grace"}"#).unwrap();
+        let [Op::SetMarks { marks, .. }] = planned.as_slice() else {
+            panic!("one note: {planned:?}")
+        };
+        assert_eq!(marks.grace, None);
+        assert!(grace(r#"{"action": "grace", "kind": "slash"}"#).is_err());
     }
 
     #[test]

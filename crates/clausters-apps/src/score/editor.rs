@@ -2,6 +2,8 @@
 //! verb a client calls does to the score, the entry it leaves, and what the
 //! window is corrected with.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -13,8 +15,8 @@ use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::verbs::{self, Action};
+use super::{Chrome, dialogs, menu, palettes, tools};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
-use super::{dialogs, menu, tools};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
 /// The vocabulary the editor's structure is registered under.
@@ -63,11 +65,14 @@ pub struct ScoreEditor {
     tools: tools::Ids,
     /// The dialogs' widgets, by name ([`dialogs::names`]).
     dialogs: dialogs::Ids,
+    /// The palettes' entries, by name ([`palettes::names`]).
+    palettes: palettes::Ids,
     /// The form that is up, and what its fields hold as they are typed.
     dialog: Option<dialogs::Open>,
-    /// The engraver's outlines for the symbols the tools are drawn with:
-    /// asked once, the first time a window has a toolbar, and kept -- `None`
-    /// until then, and empty when the engraver handed none out.
+    /// The engraver's outlines for the symbols the tools and the palettes
+    /// are drawn with: asked once, the first time a window has either, and
+    /// kept -- `None` until then, and empty when the engraver handed none
+    /// out.
     outlines: Option<tools::Outlines>,
     title: String,
     size: (i64, i64),
@@ -157,6 +162,7 @@ impl ScoreEditor {
             ids: None,
             tools: tools::Ids::new(),
             dialogs: dialogs::Ids::new(),
+            palettes: palettes::Ids::new(),
             dialog: None,
             outlines: None,
             title: "Score".into(),
@@ -184,21 +190,23 @@ impl ScoreEditor {
         self.score.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// **The window**, with the page under `ids.page`, each tool of the
-    /// toolbar under the id `tools` gives it and each widget of the dialogs
-    /// under the one `dialogs` does -- which are then the widgets the editor
-    /// answers for. With no tool numbered the window has no toolbar, and
-    /// without every widget of the dialogs it has none of them.
-    pub fn window(&mut self, ids: Ids, tools: tools::Ids, dialogs: dialogs::Ids) -> Value {
+    /// **The window**, with the page under `ids.page` and every widget of the
+    /// chrome under the id `chrome` gives it -- which are then the widgets
+    /// the editor answers for. Chrome left unnumbered is chrome the window
+    /// does not have: no toolbar, no palettes, no dialogs.
+    pub fn window(&mut self, ids: Ids, chrome: Chrome) -> Value {
         self.ids = Some(ids);
-        self.tools = tools;
-        self.dialogs = dialogs;
+        self.tools = chrome.tools;
+        self.dialogs = chrome.dialogs;
+        self.palettes = chrome.palettes;
         // a window drawn again opens with no form up
         self.dialog = None;
         // the tools' symbols are the engraver's, asked for before the page is
         // drawn since asking loads the document again
-        if !self.tools.is_empty() && self.outlines.is_none() {
-            let found = self.held().outlines(&tools::codes());
+        let labelled = !self.tools.is_empty() || !self.palettes.is_empty();
+        if labelled && self.outlines.is_none() {
+            let codes = [tools::codes(), palettes::codes()].concat();
+            let found = self.held().outlines(&codes);
             self.outlines = Some(found);
         }
         let none = tools::Outlines::new();
@@ -216,6 +224,7 @@ impl ScoreEditor {
             menu: self.menu(),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
             dialogs: dialogs::stack(&self.dialogs),
+            palettes: palettes::column(&self.palettes, &outlines),
             glyphs: &outlines,
         })
     }
@@ -248,6 +257,14 @@ impl ScoreEditor {
         } else {
             self.value
         }
+    }
+
+    /// The palette entry the widget `widget` is, by name.
+    fn palette_entry(&self, widget: i64) -> Option<&str> {
+        self.palettes
+            .iter()
+            .find(|(_, id)| i64::from(**id) == widget)
+            .map(|(name, _)| name.as_str())
     }
 
     /// The tool the widget `widget` is, when it is one of the toolbar's.
@@ -500,6 +517,7 @@ impl ScoreEditor {
             .flatten()
             .chain(self.tools.values().copied())
             .chain(self.dialogs.values().copied())
+            .chain(self.palettes.values().copied())
             .any(|id| i64::from(id) == widget);
         if !ours {
             return Vec::new();
@@ -740,6 +758,16 @@ impl ScoreEditor {
         if let Some(name) = self.dialog_widget(widget).map(str::to_string) {
             return self.form_said(&name, tag, out);
         }
+        // an entry of a palette is a verb over what is selected
+        if let Some(name) = self.palette_entry(widget) {
+            return match palettes::read(name, tag) {
+                Some(action) => {
+                    let reason = self.perform(&action, out);
+                    (reason, self.corrections())
+                }
+                None => (None, Vec::new()),
+            };
+        }
         if self.ids.map(|ids| i64::from(ids.page)) != Some(widget) {
             return (None, Vec::new());
         }
@@ -907,6 +935,7 @@ impl Converse for ScoreEditor {
         self.ids.map(|ids| i64::from(ids.page)) == Some(widget)
             || self.tool_of(widget).is_some()
             || self.dialog_widget(widget).is_some()
+            || self.palette_entry(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -962,6 +991,9 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 /// - `dialogs` -- `{"dialogs"}`: the names of the dialogs' widgets, for a
 ///   caller to number and hand to `window` the same way (`dialogs`: the id
 ///   of each by name; without all of them the window has no dialogs).
+/// - `palettes` -- `{"palettes"}`: the names of the palettes' entries, for a
+///   caller to number and hand to `window` as `palettes`; left out, the
+///   window has none.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
 ///   `value` (the written value a note is entered with, `[n, d]`), `entry`
@@ -995,27 +1027,29 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         .unwrap_or_default()
     {
         "window" => {
-            // the tools the caller numbered, by name; a name that is no tool
-            // numbers nothing
-            let numbered: tools::Ids = request
-                .get("tools")
-                .and_then(Value::as_object)
-                .map(|map| {
-                    map.iter()
-                        .filter(|(name, _)| tools::TOOLS.contains(&name.as_str()))
-                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let named: dialogs::Ids = request
-                .get("dialogs")
-                .and_then(Value::as_object)
-                .map(|map| {
-                    map.iter()
-                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
-                        .collect()
-                })
-                .unwrap_or_default();
+            // what the caller numbered, by the names the crate gave: a name
+            // that is none of them numbers nothing
+            let named = |key: &str| -> BTreeMap<String, i32> {
+                request
+                    .get(key)
+                    .and_then(Value::as_object)
+                    .map(|map| {
+                        map.iter()
+                            .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let mut chrome = Chrome {
+                tools: named("tools"),
+                dialogs: named("dialogs"),
+                palettes: named("palettes"),
+            };
+            chrome
+                .tools
+                .retain(|name, _| tools::TOOLS.contains(&name.as_str()));
+            let entries = palettes::names();
+            chrome.palettes.retain(|name, _| entries.contains(name));
             editor
                 .window(
                     Ids {
@@ -1023,13 +1057,13 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
                         scroll: id("scroll"),
                         status: id("status"),
                     },
-                    numbered,
-                    named,
+                    chrome,
                 )
                 .to_string()
         }
         "tools" => json!({"tools": tools::TOOLS}).to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
+        "palettes" => json!({"palettes": palettes::names()}).to_string(),
         "props" => {
             let widget = id("widget").unwrap_or(0);
             match editor

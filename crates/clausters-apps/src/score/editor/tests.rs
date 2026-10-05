@@ -98,7 +98,7 @@ const IDS: Ids = Ids {
 
 fn opened() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    editor.window(IDS, Chrome::default());
     editor
 }
 
@@ -123,7 +123,7 @@ fn first_marks(editor: &ScoreEditor) -> Marks {
 #[test]
 fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    let window = editor.window(IDS, Chrome::default());
     let scroll = &window["children"][0];
     assert_eq!(scroll["type"], "scroll");
     assert_eq!(scroll["id"], 11);
@@ -374,7 +374,7 @@ fn a_transformation_runs_over_what_is_selected() {
 #[test]
 fn the_window_lays_the_score_out_on_its_paper_and_the_view_is_the_windows() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    let window = editor.window(IDS, Chrome::default());
     // a page view fixes the page, at the default nobody chose: A4
     assert_eq!(laid()["pageWidth"], 2100);
     assert_eq!(laid()["breaks"], "auto");
@@ -488,7 +488,7 @@ fn pick(verb: &str, state: Option<i64>) -> Event {
 #[test]
 fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    let window = editor.window(IDS, Chrome::default());
     let titles: Vec<&str> = window["menu"]
         .as_array()
         .unwrap()
@@ -528,7 +528,7 @@ fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
 #[test]
 fn what_is_the_windows_own_moves_the_editor_and_the_bar_says_so() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    editor.window(IDS, Chrome::default());
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     let out = editor.event(&pick("layout:continuous", Some(1)), 1);
     assert!(!out.changed && out.record.is_none(), "a layout is no edit");
@@ -579,7 +579,13 @@ fn tool(name: &str, report: Value) -> Event {
 
 fn with_tools() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, numbered(), dialogs::Ids::new());
+    editor.window(
+        IDS,
+        Chrome {
+            tools: numbered(),
+            ..Chrome::default()
+        },
+    );
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     editor
 }
@@ -587,9 +593,15 @@ fn with_tools() -> ScoreEditor {
 #[test]
 fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let bare = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    let bare = editor.window(IDS, Chrome::default());
     assert_eq!(bare["children"].as_array().unwrap().len(), 2);
-    let tree = editor.window(IDS, numbered(), dialogs::Ids::new());
+    let tree = editor.window(
+        IDS,
+        Chrome {
+            tools: numbered(),
+            ..Chrome::default()
+        },
+    );
     let children = tree["children"].as_array().unwrap();
     assert_eq!(
         children.len(),
@@ -742,7 +754,13 @@ fn said(name: &str, report: &str) -> Event {
 
 fn with_dialogs() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, tools::Ids::new(), named());
+    editor.window(
+        IDS,
+        Chrome {
+            dialogs: named(),
+            ..Chrome::default()
+        },
+    );
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     editor
 }
@@ -757,7 +775,7 @@ fn corrections_of(out: &Outcome) -> Vec<Correction> {
 #[test]
 fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let bare = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    let bare = editor.window(IDS, Chrome::default());
     assert_eq!(bare["children"].as_array().unwrap().len(), 2);
     let entry = |tree: &Value, label: &str| {
         tree["menu"][0]["menu"]
@@ -769,7 +787,13 @@ fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
             .unwrap()
     };
     assert_eq!(entry(&bare, "Page text...")["enabled"], false);
-    let tree = editor.window(IDS, tools::Ids::new(), named());
+    let tree = editor.window(
+        IDS,
+        Chrome {
+            dialogs: named(),
+            ..Chrome::default()
+        },
+    );
     let children = tree["children"].as_array().unwrap();
     assert_eq!(
         children.len(),
@@ -892,4 +916,53 @@ fn a_transformation_asks_for_its_parameter() {
     let held = editor.held();
     let after = held.sheet().unwrap().staves[0].voices[0].items[0].pitches()[0].octave;
     assert_eq!(after, before + 1, "an octave up");
+}
+
+/// The palettes' entries, numbered from 400 in the order the crate names them.
+fn entries() -> palettes::Ids {
+    palettes::names()
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| (name, 400 + i as i32))
+        .collect()
+}
+
+#[test]
+fn the_palettes_stand_beside_the_page_and_an_entry_is_a_verb_over_the_selection() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    let tree = editor.window(
+        IDS,
+        Chrome {
+            palettes: entries(),
+            ..Chrome::default()
+        },
+    );
+    // a row split between the column of palettes and the page's scroll
+    let work = &tree["children"][0];
+    assert_eq!(
+        (work["flow"].as_str(), work["split"].as_bool()),
+        (Some("row"), Some(true))
+    );
+    assert!(work["children"][0]["children"][0]["title"].is_string());
+    assert_eq!(work["children"][1]["type"], "scroll");
+    // the door names the entries for a caller to number
+    let names: Value =
+        serde_json::from_str(&call_json(&mut editor, r#"{"verb": "palettes"}"#)).unwrap();
+    assert_eq!(names["palettes"].as_array().unwrap().len(), entries().len());
+
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    let press = |name: &str, report: &str| Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(entries()[name]), json!(6), json!(1), json!(report)],
+    };
+    // the button's value is no command; its click is the entry's verb
+    let out = editor.event(&press("articulations:ten", "1"), 1);
+    assert!(!out.changed);
+    let out = editor.event(&press("articulations:ten", "click"), 1);
+    assert_eq!(out.record.expect("an entry").label, "articulation ten");
+    assert_eq!(first_marks(&editor).articulations, vec!["ten".to_string()]);
+    let out = editor.event(&press("notes:unacc", "click"), 2);
+    assert_eq!(out.record.expect("an entry").label, "grace note");
+    assert_eq!(first_marks(&editor).grace.as_deref(), Some("unacc"));
 }

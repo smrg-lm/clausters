@@ -23,10 +23,15 @@ def score():
     return notation.Score("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/")
 
 
-def _page(tree: dict) -> dict:
-    """The `score` widget of an editor's window: the scroll's one child."""
-    scroll = next(child for child in tree["children"] if child.get("type") == "scroll")
-    return scroll["children"][0]
+def _page(tree: dict) -> "dict | None":
+    """The `score` widget of an editor's window, wherever the chrome put it."""
+    if tree.get("type") == "score":
+        return tree
+    for child in tree.get("children", ()):
+        page = _page(child)
+        if page is not None:
+            return page
+    return None
 
 
 def _items(score) -> list:
@@ -36,7 +41,13 @@ def _items(score) -> list:
 def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     editor = ScoreEditor(score)
     tree = editor.draw()
-    toolbar, scroll, status = tree["children"][:3]
+    toolbar, work, status = tree["children"][:3]
+    # the palettes stand beside the page, a divider between them
+    palettes, scroll = work["children"]
+    assert work["split"] is True
+    assert [group["title"] for group in palettes["children"]] == [
+        "Notes", "Accidentals", "Articulations", "Ornaments", "Lines", "Dynamics",
+        "Measures"]
     # the toolbar is a row of the crate's tools, each under an id of its own
     tools = [tool for tool in toolbar["children"] if "id" in tool]
     assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 12
@@ -45,7 +56,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     values = next(tool for tool in tools if tool.get("type") == "choice")["options"]
     assert values[2] == "\ue1d5"
     assert tree["glyphs"]["E1D5"].startswith("M")
-    assert len(tree["glyphs"]) == 19
+    assert len(tree["glyphs"]) > 19, "the tools' symbols, and the palettes'"
     assert scroll["type"] == "scroll"
     page = scroll["children"][0]
     assert page["type"] == "score"
@@ -233,3 +244,18 @@ def test_a_menu_entry_opens_a_form_and_ok_writes_one_entry(score):
     assert (head["title"], head["notes"]) == ("A title", ["* one", "* two"])
     assert editor.undo()
     assert "header" not in score.sheet(), "the form was one entry"
+
+
+def test_an_entry_of_a_palette_is_a_verb_over_the_selection(score):
+    editor = ScoreEditor(score)
+    editor.draw()
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    entry = editor.view.widget(editor, "palette", editor.structure, "ornaments:trill")
+    assert editor.apply("/gui_event", [entry, 1, editor._version, "click"])
+    assert _items(score)[0]["marks"]["ornament"] == "trill"
+    # and the verb a palette brought is a method too
+    assert editor.grace("acc")
+    assert _items(score)[0]["marks"]["grace"] == "acc"
+    assert editor.grace()
+    assert "grace" not in _items(score)[0]["marks"]

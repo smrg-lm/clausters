@@ -10,8 +10,9 @@
 //! # The window
 //!
 //! A menu bar holding every action the application has ([`menu`]); a toolbar
-//! with what a hand reaches for while it writes ([`tools`]); the forms a
-//! menu entry opens over it ([`dialogs`]); the engraved score in a scroll that pans and zooms -- every page of the paper
+//! with what a hand reaches for while it writes ([`tools`]); the palettes of
+//! what can be written, beside the page ([`palettes`]); the forms a menu
+//! entry opens over it ([`dialogs`]); the engraved score in a scroll that pans and zooms -- every page of the paper
 //! one under another, or one system as long as the music -- and a status line
 //! under it saying what is selected. The page takes
 //! pitch edits and note entry; what a hand may do to each element is the
@@ -31,6 +32,7 @@
 pub mod dialogs;
 pub mod editor;
 pub mod menu;
+pub mod palettes;
 pub mod tools;
 pub mod verbs;
 
@@ -53,6 +55,21 @@ pub struct Ids {
     pub scroll: Option<i32>,
     /// The line saying what is selected.
     pub status: Option<i32>,
+}
+
+/// **The chrome's widget ids**, which are the caller's too: each tool of the
+/// toolbar, each widget of the dialogs and each entry of the palettes, by the
+/// name the crate gives it ([`tools::TOOLS`], [`dialogs::names`],
+/// [`palettes::names`]). What is left empty is chrome the window does not
+/// have.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Chrome {
+    /// The toolbar's tools.
+    pub tools: tools::Ids,
+    /// The dialogs' widgets: all of them, or the window has no dialogs.
+    pub dialogs: dialogs::Ids,
+    /// The palettes' entries.
+    pub palettes: palettes::Ids,
 }
 
 /// How tall the status line under the page is.
@@ -117,6 +134,8 @@ pub struct Window<'a> {
     pub toolbar: Option<Value>,
     /// The dialogs ([`dialogs::stack`]), when the caller numbered them.
     pub dialogs: Option<Value>,
+    /// The palettes ([`palettes::column`]), when the caller numbered any.
+    pub palettes: Option<Value>,
     /// The outlines of the symbols the chrome is labelled with, by codepoint
     /// ([`tools::Outlines`]): the window's `glyphs`, which is what lets the
     /// host draw a character of a music font it has no face for.
@@ -124,8 +143,9 @@ pub struct Window<'a> {
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the menu bar; the
-/// toolbar; the drawing under `ids.page`, in a scroll that pans both ways and
-/// zooms; and the status line under it. A script's own widgets are the client's to
+/// toolbar; the palettes beside the drawing, which is under `ids.page` in a
+/// scroll that pans both ways and zooms; the status line under them; and the
+/// dialogs. A script's own widgets are the client's to
 /// append, as in every application here.
 pub fn window(w: Window<'_>) -> Value {
     let Window {
@@ -139,6 +159,7 @@ pub fn window(w: Window<'_>) -> Value {
         menu,
         toolbar,
         dialogs,
+        palettes,
         glyphs,
     } = w;
     let (width, height) = drawn_size(page, scale);
@@ -171,9 +192,22 @@ pub fn window(w: Window<'_>) -> Value {
     if let (Some(id), Some(map)) = (ids.status, line.as_object_mut()) {
         map.insert("id".into(), json!(id));
     }
+    // **The palettes stand beside the page**, with a divider a drag moves
+    // between them; a window without them gives the page the whole width.
+    let work = match palettes {
+        Some(palettes) => json!({
+            "type": "layout",
+            "flow": "row",
+            "margin": 0,
+            "split": true,
+            "weight": 1,
+            "children": [palettes, scroll],
+        }),
+        None => scroll,
+    };
     let children: Vec<Value> = toolbar
         .into_iter()
-        .chain([scroll, line])
+        .chain([work, line])
         .chain(dialogs)
         .collect();
     let mut window = json!({

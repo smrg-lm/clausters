@@ -41,6 +41,10 @@ What it shows, roughly in the order it does it:
   path. An entry that ends in three dots opens a dialog over the window --
   the page's text, its margins, a transformation's parameter -- and writes
   what it holds on OK, as one step of the history.
+* **The palettes, beside the page, are what can be written**: a kind of
+  element to a folding group -- accidentals, articulations, ornaments, lines,
+  dynamics, measures -- each entry a verb over what is selected, and what it
+  is said in a sentence when the pointer rests on it.
 * **The toolbar holds what a hand reaches for while it writes**: the value
   the next note takes, its dot, whether it is a rest and its accidental (the
   input state, which is also `editor.value`, `editor.dotted`, `editor.rest`

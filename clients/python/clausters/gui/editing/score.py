@@ -31,8 +31,9 @@ class ScoreDomain(Domain):
 
 
 class ScoreView(View):
-    """The toolbar, the page in the scroll it sits in, the status line under
-    it and the dialogs a menu entry opens, composed by the crate."""
+    """The toolbar, the palettes beside the page in the scroll it sits in,
+    the status line under them and the dialogs a menu entry opens, composed
+    by the crate."""
 
     def build(self, editor) -> dict:
         page = self.widget(editor, "page", editor.structure)
@@ -44,9 +45,12 @@ class ScoreView(View):
         # and the widgets of its dialogs, the same way
         dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
                    for name in editor._call("dialogs").get("dialogs") or ()}
+        # and the entries of its palettes
+        palettes = {str(name): self.widget(editor, "palette", editor.structure, str(name))
+                    for name in editor._call("palettes").get("palettes") or ()}
         editor._sync_core()
         tree = editor._call("window", widget=page, scroll=scroll, status=status,
-                            tools=tools, dialogs=dialogs)
+                            tools=tools, dialogs=dialogs, palettes=palettes)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]
@@ -63,7 +67,9 @@ class ScoreEditor(Editor):
     on empty staff writes a note of `value` there (`entry`; off, it selects the
     measure). The menu bar holds every action, and the toolbar what a hand
     reaches for while it writes: the value, its dot, a rest, an accidental,
-    the articulations, a tie, a triplet, the voice and the layout. An entry
+    the articulations, a tie, a triplet, the voice and the layout. Beside the
+    page stand the palettes: what can be written, a kind of element to a
+    folding group, each entry a verb over what is selected. An entry
     that needs more than a pick -- the page's text, its margins, a
     transformation's parameter -- opens a dialog over the window. Ctrl+click
     adds a note to the selection or takes it out, and
@@ -303,6 +309,12 @@ class ScoreEditor(Editor):
         if to is not None:
             call["to"] = int(to)
         return self._act(call)
+
+    def grace(self, kind: "str | None" = None) -> bool:
+        """Make the selected notes grace notes -- ``"acc"``, an appoggiatura,
+        or ``"unacc"``, an acciaccatura -- or notes of the bar again with
+        none."""
+        return self._act({"action": "grace", "kind": kind})
 
     def accidental(self, alter: int) -> bool:
         """Give the selected notes an accidental: ``alter`` semitones from the

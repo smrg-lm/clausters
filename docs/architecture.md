@@ -1054,7 +1054,14 @@ corrected to its page with its fields corrected to what the score holds. A
 field reports its text as it is typed and the editor keeps it
 (`editor/forms.rs`); nothing reaches the score until `OK`, which is one entry
 of the history however many fields changed, and a form that cannot be read
-stays up and says why. **The paper is the document's and the layout the
+stays up and says why. **The palettes are what can be written**
+(`score::palettes`): a column beside the page, one folding group to a kind of
+element -- under the names MEI gives them, since the elements are the
+engraver's and the model is ours -- where an entry is a verb over the
+selection and its tip the element in a sentence. Only what the model holds
+has an entry. The three sets of ids a caller numbers -- tools, dialogs,
+palette entries -- are one `score::Chrome`, and whatever is left empty in it
+is chrome the window does not have. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

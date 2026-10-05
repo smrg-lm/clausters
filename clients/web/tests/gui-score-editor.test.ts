@@ -24,13 +24,14 @@ interface Item {
     id: number;
     dur: [number, number];
     pitches?: { alter?: number }[];
-    marks?: { articulations?: string[] };
+    marks?: { articulations?: string[]; ornament?: string; grace?: string };
 }
 
-/** The `score` widget of an editor's window: the scroll's one child. */
+/** The `score` widget of an editor's window, wherever the chrome put it. */
 function pageOf(tree: GuiNode): GuiNode {
-    const scroll = (tree.children ?? []).find((child) => child.type === "scroll");
-    return (scroll?.children ?? [])[0];
+    const find = (node: GuiNode): GuiNode | undefined =>
+        node.type === "score" ? node : (node.children ?? []).map(find).find((page) => page);
+    return find(tree) as GuiNode;
 }
 
 /** The document version an event is made against, which the editor keeps. */
@@ -51,7 +52,14 @@ if (!existsSync(engraver)) {
     test("the window is the page in a scroll over a status line", async () => {
         const editor = new ScoreEditor(await Score.open(PHRASE));
         const tree = editor.draw();
-        const [toolbar, scroll, status] = tree.children ?? [];
+        const [toolbar, work, status] = tree.children ?? [];
+        // the palettes stand beside the page, a divider between them
+        const [palettes, scroll] = work.children ?? [];
+        assert.equal((work as unknown as { split: boolean }).split, true);
+        assert.deepEqual(
+            (palettes.children ?? []).map((group) => (group as unknown as { title: string }).title),
+            ["Notes", "Accidentals", "Articulations", "Ornaments", "Lines", "Dynamics", "Measures"],
+        );
         // the toolbar is a row of the crate's tools, each under an id of its own
         const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
         assert.equal((toolbar as unknown as { flow: string }).flow, "row");
@@ -65,7 +73,7 @@ if (!existsSync(engraver)) {
         assert.equal(values.options[2], "\uE1D5");
         const glyphs = (tree as unknown as { glyphs: Record<string, string> }).glyphs;
         assert.ok(glyphs.E1D5.startsWith("M"));
-        assert.equal(Object.keys(glyphs).length, 19);
+        assert.ok(Object.keys(glyphs).length > 19, "the tools' symbols, and the palettes'");
         assert.equal(scroll.type, "scroll");
         const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
         assert.equal(page.type, "score");
@@ -285,6 +293,22 @@ if (!existsSync(engraver)) {
         assert.deepEqual([header()?.title, header()?.notes], ["A title", ["* one", "* two"]]);
         assert.ok(editor.undo());
         assert.equal(header(), undefined, "the form was one entry");
+    });
+
+    test("an entry of a palette is a verb over the selection", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        const first = items(score)[0].id;
+        editor.select([`n${first}`]);
+        const entry = editor.view!.widget(editor, "palette", editor.structure, "ornaments:trill");
+        assert.ok(editor.apply("/gui_event", [entry, 1, versionOf(editor), "click"]));
+        assert.equal(items(score)[0].marks?.ornament, "trill");
+        // and the verb a palette brought is a method too
+        assert.ok(editor.grace("acc"));
+        assert.equal(items(score)[0].marks?.grace, "acc");
+        assert.ok(editor.grace());
+        assert.equal(items(score)[0].marks?.grace, undefined);
     });
 
     test("edit opens a score in the score editor", async () => {

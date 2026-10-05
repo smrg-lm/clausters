@@ -55,8 +55,9 @@ export class ScoreDomain extends Domain<Score> {
 }
 
 /**
- * The toolbar, the page in the scroll it sits in, the status line under it and
- * the dialogs a menu entry opens, composed by the crate.
+ * The toolbar, the palettes beside the page in the scroll it sits in, the
+ * status line under them and the dialogs a menu entry opens, composed by the
+ * crate.
  */
 export class ScoreView extends View<Score> {
     build(editor: Editor<Score>): GuiNode {
@@ -76,6 +77,12 @@ export class ScoreView extends View<Score> {
         for (const name of Array.isArray(named) ? named.map(String) : []) {
             dialogs[name] = this.widget(editor, "dialog", editor.structure, name);
         }
+        // and the entries of its palettes
+        const entries = ed.coreCall("palettes").palettes;
+        const palettes: Record<string, number> = {};
+        for (const name of Array.isArray(entries) ? entries.map(String) : []) {
+            palettes[name] = this.widget(editor, "palette", editor.structure, name);
+        }
         ed.syncCore();
         const tree = ed.coreCall("window", {
             widget: page,
@@ -83,6 +90,7 @@ export class ScoreView extends View<Score> {
             status,
             tools,
             dialogs,
+            palettes,
         }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.
@@ -443,6 +451,14 @@ export class ScoreEditor extends Editor<Score> {
         const call: Record<string, unknown> = { action: "voice" };
         if (to !== null) call.to = Math.trunc(to);
         return this.#act(call);
+    }
+
+    /**
+     * Make the selected notes grace notes -- `"acc"`, an appoggiatura, or
+     * `"unacc"`, an acciaccatura -- or notes of the bar again with none.
+     */
+    grace(kind: string | null = null): boolean {
+        return this.#act({ action: "grace", kind });
     }
 
     /**

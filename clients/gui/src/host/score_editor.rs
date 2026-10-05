@@ -53,6 +53,20 @@ impl Host {
                 Some((name, id))
             })
             .collect();
+        // and the palettes' entries
+        let palettes: clausters_apps::score::palettes::Ids =
+            clausters_apps::score::palettes::names()
+                .into_iter()
+                .filter_map(|name| {
+                    let id = self.own_widget(structure, SCORE, &format!("palette:{name}"))?;
+                    Some((name, id))
+                })
+                .collect();
+        let chrome = clausters_apps::score::Chrome {
+            tools,
+            dialogs,
+            palettes,
+        };
         let owner = self.owner.as_mut()?;
         let request = serde_json::json!({"title": title, "w": size.0, "h": size.1}).to_string();
         let opened: serde_json::Value = serde_json::from_str(&owner.editing.open_score(
@@ -66,7 +80,7 @@ impl Host {
             .map(|m| m as clausters_apps::editing::MemberId)?;
         let def = match owner.editing.member_mut(member) {
             Some(Member::Score(editor)) => {
-                let def = editor.window(ids, tools, dialogs);
+                let def = editor.window(ids, chrome);
                 clausters_apps::score::editor::call_json(
                     editor,
                     &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),

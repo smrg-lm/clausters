@@ -1577,11 +1577,29 @@ opened it.
       **A text of the page edited in place is not in it** and is recorded
       under "Found by use": it needs the page to report a double click and to
       say where the text is drawn, which is a gesture of the host's.)*
-  - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
+  - ✅ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
     groups. Each ○ entry is the model growing an item or a field with its
     emission, its reading and its `Op`; they are taken palette by palette,
     each its own step, and the ones not taken when this milestone closes are
-    written down as open.
+    written down as open. *(Done 2026-10-05, for the ● entries.
+    `score::palettes` is a column beside the page, a divider between them:
+    Notes (a triplet, the two grace notes, the other voice), Accidentals,
+    Articulations (the thirteen MEI names), Ornaments, Lines (slur, tie, the
+    two hairpins), Dynamics (`pp` to `ff`, `sf`, `fp`) and Measures (insert,
+    remove, the barlines, the breaks), which opens folded. A group is a titled
+    section that folds on its strip, the host's to remember; an entry is a
+    flat button labelled with the engraver's symbol where it has one, whose
+    tip says what the element is in a sentence, and whose click is one of the
+    editor's verbs over the selection. The entries are named by the crate and
+    numbered by the caller, as the tools are -- the three sets of chrome ids
+    are now one `Chrome`. The grace note had a field in the model and no
+    verb: `grace` is new, in the crate and both clients. **No ○ entry was
+    taken**: each is the model growing, and they stay as the list above
+    writes them -- `multiRest`, the tremolos, `ornam`, `arpeg`, `gliss`,
+    `breath` and `caesura`, `lv`, `phrase`, `octave`, `pedal`, `bracketSpan`,
+    `beamSpan`, `tempo`, `dir`, `reh`, `fing`, `harm`, lyrics, a change of
+    key or of clef inside the score, `ending`, `repeatMark`, `mRpt` and
+    `beatRpt`, a staff's line count and label, and `staffGrp`.)*
   - ⬜ **X5.7 - The notation keys.** The table above settled key by key:
     the written pitch, the written value and the tuplet, `staff` and `voice`,
     the mark against the level, the grace note, the spanners over event ids,
@@ -2452,12 +2470,19 @@ wrong.
   and an operation that writes there without moving what the other voice
   holds.
 
-- ⬜ **The value and dot tools do not act on the selection** *(found
+- ✅ **The value and dot tools do not act on the selection** *(found
   2026-10-05, the same step)*. They are the input state alone: with notes
   selected, picking an eighth changes what the next press writes and leaves
   the selection as it was, where the accidental tool, beside them, is the
   selection's when there is one. One rule for the three, or the difference
   said in the tool's tip, is to be decided with the palettes (`X5.6`).
+  **Decided 2026-10-05 with `X5.6`**: the toolbar is what a hand writes with
+  and the palettes are what is done to what is written. The value, the dot
+  and the rest stay the input state, as their tips say; a selection's values
+  change by `scale` (Notes, Longer and Shorter), and its accidentals by the
+  Accidentals palette, which always acts on the selection. The accidental
+  *tool* keeps both readings, since arming one for the next note is its
+  reason to be on the toolbar.
 
 - ⬜ **A text of the page cannot be edited where it is drawn** *(found
   2026-10-05, closing `X5.5.4`)*. A press on a title selects it and the status
