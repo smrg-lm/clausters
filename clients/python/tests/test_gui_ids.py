@@ -199,7 +199,7 @@ def test_every_widget_builder_takes_a_name_without_an_id():
     # and nothing else.
     cases = [
         (g.label, {}), (g.knob, {}), (g.slider, {}), (g.number, {}),
-        (g.button, {}), (g.toggle, {}), (g.text, {}), (g.menu, {}),
+        (g.button, {}), (g.toggle, {}), (g.text, {}), (g.choice, {}),
         (g.waveform, {}), (g.spectrogram, {}), (g.pianoroll, {}), (g.meter, {}),
         (g.scope, {}), (g.phasescope, {}), (g.spectrum, {}), (g.nodetree, {}),
         (g.bpf, {}), (g.plot, {}), (g.canvas, {}), (g.score, {}), (g.piano, {}),
