@@ -351,3 +351,30 @@ def test_the_score_plays_on_a_transport_of_its_own_and_hears_an_edit(score):
     send("play", 0)
     assert [addr for addr, _ in server.sent][-1] == "/transport_play"
     assert editor._playback.cursor == 2.0, "the third quarter is beat 2"
+
+
+def test_a_score_is_exported_as_the_sequence_it_renders(score, tmp_path):
+    from clausters.seq import EventSequence
+
+    editor = ScoreEditor(score)
+    editor.draw()
+    editor._window = 0
+    notes = len(_items(score))
+    # a MIDI file, by its extension: the notes, at the engraver's tempo
+    path = editor.export(tmp_path / "a.mid")
+    read = EventSequence.from_smf(open(path, "rb").read())
+    assert len(read) == notes
+    assert read.tempo_map.secs_at(2.0) == pytest.approx(1.0)
+    # a clip, named or by its extension
+    clip = editor.export(tmp_path / "a.midi2")
+    assert len(EventSequence.from_clip(open(clip, "rb").read())) == notes
+    assert editor.export(tmp_path / "b.bin", "clip") == str(tmp_path / "b.bin")
+    with pytest.raises(ValueError, match="smf"):
+        editor.export(tmp_path / "c.mid", "wav")
+    # and the File menu's Export is the same, through its form
+    widget = lambda name: editor.view.widget(editor, "dialog", editor.structure, name)
+    send = lambda *args: editor.apply("/gui_event", [args[0], 1, editor._version, *args[1:]])
+    send(0, "menu", "dialog:export_midi")
+    send(widget("file:path"), str(tmp_path / "menu.mid"))
+    send(widget("file:ok"), "click")
+    assert len(EventSequence.from_smf((tmp_path / "menu.mid").read_bytes())) == notes

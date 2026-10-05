@@ -130,6 +130,9 @@ pub fn menu(state: &State<'_>) -> Value {
                 form("Open...", "open", state),
                 word("Save", "save"),
                 form("Save as...", "save", state),
+                sep(),
+                form("Export MIDI...", "export_midi", state),
+                form("Export clip...", "export_clip", state),
             ],
         ),
         sub(

@@ -55,6 +55,23 @@ pub enum File {
     Open,
     /// The file to write the score to, from now on.
     SaveAs,
+    /// The file to write the score's render to, as a Standard MIDI File.
+    ExportMidi,
+    /// The same, as a MIDI 2.0 Clip File.
+    ExportClip,
+}
+
+impl File {
+    /// The format an export writes, as the outcome names it; `None` for what
+    /// is no export.
+    #[must_use]
+    pub fn format(self) -> Option<&'static str> {
+        match self {
+            File::ExportMidi => Some("smf"),
+            File::ExportClip => Some("clip"),
+            File::Open | File::SaveAs => None,
+        }
+    }
 }
 
 /// **The transformations that ask for a number.**
@@ -131,6 +148,8 @@ impl Form {
             "page" => Form::Page,
             "open" => Form::File(File::Open),
             "save" => Form::File(File::SaveAs),
+            "export_midi" => Form::File(File::ExportMidi),
+            "export_clip" => Form::File(File::ExportClip),
             "transpose" => Form::Param(Param::Transpose),
             "repeat" => Form::Param(Param::Repeat),
             "stretch" => Form::Param(Param::Stretch),
@@ -198,6 +217,8 @@ impl Form {
             Form::Page => "Page setup",
             Form::File(File::Open) => "Open",
             Form::File(File::SaveAs) => "Save as",
+            Form::File(File::ExportMidi) => "Export MIDI",
+            Form::File(File::ExportClip) => "Export clip",
         }
     }
 }

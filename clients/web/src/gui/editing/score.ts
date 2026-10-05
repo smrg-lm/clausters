@@ -18,7 +18,7 @@
  */
 
 import { Score } from "../notation/engraver.ts";
-import { readFileAt } from "../../base/files.ts";
+import { readFileAt, writeFileAt } from "../../base/files.ts";
 import { area } from "../../base/log.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { Transport } from "../../defs/server/transport.ts";
@@ -53,6 +53,8 @@ interface Outcome {
     save?: string;
     /** The file to open in place of the score, when the turn asked for one. */
     open?: string;
+    /** The file to export the score's render to, and as what. */
+    export?: { path: string; format: "smf" | "clip" };
     /** What a play asks of the playback: the space bar, the toolbar, the menu. */
     play?: Pass;
     /** What the loop switch asks of a pass in progress. */
@@ -838,6 +840,28 @@ export class ScoreEditor extends Editor<Score> {
     }
 
     /**
+     * Write the score **rendered** to the file at `path` and answer the path:
+     * a Standard MIDI File (`"smf"`) or a MIDI 2.0 Clip File (`"clip"`), by
+     * `path`'s extension when left out -- `.midi2` is a clip, anything else a
+     * MIDI file. The File menu's two Exports, as a method.
+     *
+     * It is the sequence `Score.renderEvents` answers, at the engraver's
+     * tempo, written as a sequence writes either (`EventSequence.toSmf`,
+     * `toClip`): its notes, a channel to a voice, the dynamics as each
+     * channel's expression.
+     */
+    async export(path: string, format: "smf" | "clip" | null = null): Promise<string> {
+        const kind = format ?? (path.toLowerCase().endsWith(".midi2") ? "clip" : "smf");
+        if (kind !== "smf" && kind !== "clip") {
+            throw new Error(`an export is 'smf' or 'clip', not '${String(kind)}'`);
+        }
+        const rendered = EventSequence.fromData(this.#render());
+        const data = kind === "clip" ? rendered.toClip() : rendered.toSmf();
+        await writeFileAt(path, new Uint8Array(data) as Uint8Array<ArrayBuffer>);
+        return path;
+    }
+
+    /**
      * One verb, through the context: recorded by the crate, and the window
      * corrected with what it answers. Whether the score changed; why it did not
      * is on the window's status bar.
@@ -900,6 +924,13 @@ export class ScoreEditor extends Editor<Score> {
             this.filed = this.score.write(outcome.save).then(
                 () => undefined,
                 (error: unknown) => console.warn(`save: ${outcome.save}:`, error),
+            );
+        }
+        if (outcome.export) {
+            const { path, format } = outcome.export;
+            this.filed = this.export(path, format).then(
+                () => undefined,
+                (error: unknown) => console.warn(`export: ${path}:`, error),
             );
         }
         if (outcome.open) {

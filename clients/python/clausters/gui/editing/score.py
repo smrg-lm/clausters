@@ -570,6 +570,30 @@ class ScoreEditor(Editor):
             self.score.path = str(path)
         return loaded
 
+    def export(self, path, format: "str | None" = None) -> str:
+        """Write the score **rendered** to the file at ``path`` and answer the
+        path: a Standard MIDI File (``format="smf"``) or a MIDI 2.0 Clip File
+        (``"clip"``), by ``path``'s extension when left out -- ``.midi2`` is a
+        clip, anything else a MIDI file. The File menu's two Exports, as a
+        method.
+
+        It is the sequence `clausters.gui.notation.Score.render_events`
+        answers, at the engraver's tempo, written as a sequence writes either
+        (`clausters.seq.EventSequence.to_smf`, ``to_clip``): its notes, a
+        channel to a voice, the dynamics as each channel's expression."""
+        import os
+
+        target = os.fspath(path)
+        if format is None:
+            format = "clip" if target.lower().endswith(".midi2") else "smf"
+        if format not in ("smf", "clip"):
+            raise ValueError(f"an export is 'smf' or 'clip', not {format!r}")
+        rendered = EventSequence.from_data(self._render())
+        data = rendered.to_clip() if format == "clip" else rendered.to_smf()
+        with open(target, "wb") as file:
+            file.write(data)
+        return target
+
     def operate(self, op: dict) -> bool:
         """A model operation, whole (`clausters.gui.notation.sheet`'s
         vocabulary) -- for what has no verb here -- as one entry of the
@@ -629,6 +653,8 @@ class ScoreEditor(Editor):
         # A file is this client's to write and to read: the turn said which.
         if outcome.get("save"):
             self.score.write(outcome["save"])
+        if outcome.get("export"):
+            self.export(outcome["export"]["path"], outcome["export"]["format"])
         if outcome.get("open"):
             with open(outcome["open"], encoding="utf-8") as file:
                 opened = self._editing.act(

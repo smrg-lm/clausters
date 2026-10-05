@@ -7,7 +7,7 @@
 // built. Run with `npm test`.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -365,6 +365,38 @@ if (!existsSync(engraver)) {
         assert.ok(await editor.load(other));
         assert.equal(items(score).length, 2);
         assert.equal(await editor.save(join(dir, "again.mei")), join(dir, "again.mei"));
+        rmSync(dir, { recursive: true });
+    });
+
+    test("a score is exported as the sequence it renders", async () => {
+        const { EventSequence } = await import("../src/seq/sequence.ts");
+        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        (editor as unknown as { windowId: number | null }).windowId ??= 0;
+        const notes = items(score).length;
+        // a MIDI file, by its extension: the notes, at the engraver's tempo
+        const path = await editor.export(join(dir, "a.mid"));
+        const read = EventSequence.fromSmf(new Uint8Array(readFileSync(path)));
+        assert.equal(read.length, notes);
+        assert.ok(Math.abs(read.tempoMap!.secsAt(2) - 1) < 1e-9);
+        // a clip, named or by its extension
+        const clip = await editor.export(join(dir, "a.midi2"));
+        assert.equal(EventSequence.fromClip(new Uint8Array(readFileSync(clip))).length, notes);
+        assert.equal(await editor.export(join(dir, "b.bin"), "clip"), join(dir, "b.bin"));
+        await assert.rejects(() => editor.export(join(dir, "c.mid"), "wav" as "smf"), /smf/);
+        // and the File menu's Export is the same, through its form
+        const widget = (name: string) =>
+            editor.view!.widget(editor, "dialog", editor.structure, name);
+        const send = (id: number, ...payload: unknown[]) =>
+            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
+        send(0, "menu", "dialog:export_midi");
+        send(widget("file:path"), join(dir, "menu.mid"));
+        send(widget("file:ok"), "click");
+        await editor.filed;
+        const menu = EventSequence.fromSmf(new Uint8Array(readFileSync(join(dir, "menu.mid"))));
+        assert.equal(menu.length, notes);
         rmSync(dir, { recursive: true });
     });
 

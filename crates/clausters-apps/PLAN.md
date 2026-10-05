@@ -1628,7 +1628,7 @@ opened it.
     sequence does, where what has two ends names them by event id. Each
     client's `NOTATION_KEYS` is the table's names, pinned by a test, and both
     books carry the table row for row, pinned too. Core ABI 82.)*
-  - ⬜ **X5.8 - The score into a sequence, and its playback.** *(Taken in
+  - ✅ **X5.8 - The score into a sequence, and its playback.** *(Taken in
     four parts: `X5.8.1` the render and its curves, done 2026-10-05 and
     described under this entry; `X5.8.2` the score's file; `X5.8.3` its
     playback; `X5.8.4` the export.)* The render,
@@ -1699,7 +1699,19 @@ opened it.
       turned it may ask for the state it already has; and a tempo the score
       states is not read, since the model holds none (`tempo`, in the
       palettes' open list).)*
-    - ⬜ **X5.8.4 - The export.**
+    - ✅ **X5.8.4 - The export.** *(Done 2026-10-05. The File menu's
+      Export MIDI and Export clip name a file through the file form, and the
+      turn's outcome names it and its format (`smf`, a Standard MIDI File;
+      `clip`, a MIDI 2.0 Clip File -- which is what "a clip" is here: the
+      sequence already writes one). Its holder renders the score and writes
+      it as a sequence writes either, so nothing about MIDI is in the editor
+      and what is exported is what the roll shows: the notes, a channel to a
+      voice, the dynamics as each channel's expression, at the engraver's
+      tempo. `editor.export(path, format)` is the two as a method, the format
+      read off the extension when left out. **The standalone host exports
+      nothing**: it links no MIDI file writer, and says so; the writer is the
+      clients' crate (`clausters-midi`), and giving the host the same one is
+      what closing that takes.)*
   - ⬜ **X5.9 - The books and the example**, both clients. *(The user,
     2026-10-05: the editing examples are gathered into one.)* `notation/
     score.py` (a drag and an undo), `notation/score_editor.py` (every verb)

@@ -162,6 +162,14 @@ impl Host {
         if let Some(path) = outcome.open {
             self.open_into_score(def_id, member, Path::new(&path));
         }
+        // An export is the score rendered and written as MIDI, which is a
+        // client's to write: this host links no MIDI file writer.
+        if let Some(export) = outcome.export {
+            diag::warn!(
+                "export: {}: a host with no client writes no MIDI file -- open the score from a script to export it",
+                export["path"].as_str().unwrap_or_default()
+            );
+        }
         true
     }
 

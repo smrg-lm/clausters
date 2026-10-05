@@ -172,11 +172,13 @@ its plan; the plan is where its acceptance is read.
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, done but for its recording (`X3.10`), which waits for
   `T10` and is skipped for now; **`X5`** the score editor,
-  planned 2026-10-05 as `X5.0`-`X5.9`, its first eight steps (`X5.0`, which was
+  planned 2026-10-05 as `X5.0`-`X5.9`, its first nine steps (`X5.0`, which was
   `N8`, `X5.1`, the application in the crate, `X5.2`, selection, `X5.3`, the
   views and the paper, `X5.4`, the page's text, `X5.5`, the menu bar, the
-  toolbar and the dialogs, `X5.6`, the palettes of what the model holds, and
-  `X5.7`, the notation keys) done; **`X6`** which composed views (scope, plot, waveform,
+  toolbar and the dialogs, `X5.6`, the palettes of what the model holds,
+  `X5.7`, the notation keys, and `X5.8`, the score into a sequence, its
+  file, its playback and its export) done, with `X5.9`, the books and the one
+  example, left; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a

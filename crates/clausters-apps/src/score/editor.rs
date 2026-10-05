@@ -59,6 +59,12 @@ pub struct Outcome {
     /// the text and hands it back as the `open` verb, which is the edit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<String>,
+    /// **The file to export the score's render to**, and as what:
+    /// `{"path", "format"}`, the format `"smf"`, a Standard MIDI File, or
+    /// `"clip"`, a MIDI 2.0 Clip File. Its holder renders the score and
+    /// writes it, as a sequence writes either.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export: Option<Value>,
     /// **What a play asks of the playback**: `{"looping", "range", "from"}`
     /// -- the space bar over the window, the toolbar's play or the menu's.
     /// `from` is the beat a pass starts at, where the selection starts or

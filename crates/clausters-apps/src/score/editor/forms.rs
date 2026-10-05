@@ -54,7 +54,15 @@ impl ScoreEditor {
             }
             Form::Param(param) => [("value".to_string(), param.initial().to_string())].into(),
             Form::Page => dialogs::page_of(&self.setup()),
-            Form::File(_) => [("path".to_string(), self.path.clone().unwrap_or_default())].into(),
+            // an export is a file of its own: it opens asking, where a save
+            // offers the score's
+            Form::File(file) => {
+                let offered = match file.format() {
+                    Some(_) => String::new(),
+                    None => self.path.clone().unwrap_or_default(),
+                };
+                [("path".to_string(), offered)].into()
+            }
         };
         let open = Open { form, values };
         let shown = corrected(open.shown(&self.dialogs));
@@ -124,9 +132,12 @@ impl ScoreEditor {
                 if path.is_empty() {
                     return Some("a file is named by its path".into());
                 }
-                match file {
-                    dialogs::File::Open => out.open = Some(path),
-                    dialogs::File::SaveAs => {
+                match (file, file.format()) {
+                    (_, Some(format)) => {
+                        out.export = Some(serde_json::json!({"path": path, "format": format}));
+                    }
+                    (dialogs::File::Open, _) => out.open = Some(path),
+                    (_, None) => {
                         self.path = Some(path.clone());
                         out.save = Some(path);
                     }

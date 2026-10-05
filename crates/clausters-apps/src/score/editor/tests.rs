@@ -1156,3 +1156,30 @@ fn the_score_plays_as_its_render_on_the_engravers_time() {
     // the window says its owner plays it
     assert_eq!(editor.window(IDS, Chrome::default())["plays"], true);
 }
+
+#[test]
+fn an_export_names_its_file_and_its_format_and_edits_nothing() {
+    let mut editor = with_dialogs();
+    let ids = named();
+    for (entry, title, format) in [
+        ("dialog:export_midi", "Export MIDI", "smf"),
+        ("dialog:export_clip", "Export clip", "clip"),
+    ] {
+        let out = editor.event(&pick(entry, None), 1);
+        assert!(
+            corrections_of(&out)
+                .iter()
+                .any(|c| c.widget == i64::from(ids["file"]) && c.props == json!({"title": title}))
+        );
+        editor.event(&said("file:path", "/tmp/a.mid"), 1);
+        let out = editor.event(&said("file:ok", "click"), 1);
+        assert_eq!(
+            out.export,
+            Some(json!({"path": "/tmp/a.mid", "format": format}))
+        );
+        assert!(
+            !out.changed && out.save.is_none(),
+            "the score and its file are as they were"
+        );
+    }
+}
