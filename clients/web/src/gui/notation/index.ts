@@ -72,6 +72,7 @@ export {
     setHeader,
     setMarks,
     setMeter,
+    setPage,
     setPitches,
     silence,
     stack,

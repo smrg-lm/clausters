@@ -88,6 +88,35 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
     sampleRate?: number;
 }
 
+/** A score's page setup: lengths in tenths of a millimetre, the staff in hundredths. */
+export interface PageSetup {
+    width: number;
+    height: number;
+    /** Top, right, bottom, left. */
+    margins: [number, number, number, number];
+    /** The height of a five-line staff. */
+    staff: number;
+}
+
+/** What {@link ScoreEditor.page} answers. */
+export interface PageInfo {
+    page: PageSetup;
+    /** The paper's name, when it is one of `papers`. */
+    paper: string | null;
+    landscape: boolean;
+    /** The papers there are, by name. */
+    papers: string[];
+}
+
+/** What {@link ScoreEditor.setPage} changes beside the paper. */
+export interface PageOptions {
+    landscape?: boolean;
+    width?: number;
+    height?: number;
+    margins?: readonly [number, number, number, number];
+    staff?: number;
+}
+
 /**
  * A symbolic score on its page, edited by hand, in place.
  *
@@ -198,6 +227,53 @@ export class ScoreEditor extends Editor<Score> {
     set entry(on: boolean) {
         this.coreCall("sync", { entry: Boolean(on) });
         this.adopt();
+    }
+
+    // ---- the layout, which is the window's, and the page, the document's ----
+
+    /**
+     * How the window looks at the score: `"page"`, every page of the paper one
+     * under another, fixed whatever the window's size; or `"continuous"`, one
+     * system as long as the music, with no page. Set it to switch:
+     * `editor.layout = "continuous"`. It is the window's, not the score's, and
+     * enters no history.
+     */
+    get layout(): "page" | "continuous" {
+        return this.coreCall("layout").layout === "continuous" ? "continuous" : "page";
+    }
+
+    set layout(layout: "page" | "continuous") {
+        this.coreCall("sync", { layout: String(layout) });
+        this.adopt();
+    }
+
+    /**
+     * The page the score is laid out on: the setup itself (`width`, `height`
+     * and `margins` in tenths of a millimetre, `staff` in hundredths), the name
+     * of its paper when it is a known one, which way up it is, and the names of
+     * the papers there are. Change it with {@link ScoreEditor.setPage}.
+     */
+    get page(): PageInfo {
+        return this.coreCall("page") as unknown as PageInfo;
+    }
+
+    /**
+     * Lay the score out on another page, as one entry of the history: a `paper`
+     * by name (`"A4"`, `"Letter"`, `"Octavo"` ... -- see
+     * {@link ScoreEditor.page}), turned with `landscape`, or a `width` and
+     * `height` of its own; the `margins` (top, right, bottom, left) and the
+     * `staff` height. Lengths are in tenths of a millimetre and the staff in
+     * hundredths (`720` is 7.2 mm). What is left out stays as it is. The setup
+     * is the score's, and travels in its MEI.
+     */
+    setPage(paper: string | null = null, options: PageOptions = {}): boolean {
+        const call: Record<string, unknown> = { action: "page" };
+        if (paper !== null) call.paper = paper;
+        for (const key of ["landscape", "width", "height", "staff"] as const) {
+            if (options[key] !== undefined) call[key] = options[key];
+        }
+        if (options.margins !== undefined) call.margins = options.margins.map(Math.trunc);
+        return this.#act(call);
     }
 
     // ---- the verbs, over what is selected ----

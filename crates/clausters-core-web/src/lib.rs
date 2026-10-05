@@ -3019,6 +3019,18 @@ impl clausters_core::notation::Engraver for JsEngraver {
         self.text("midiValues", &[JsValue::from_str(xml_id)])
             .filter(|s| !s.is_empty())
     }
+
+    fn set_options(&self, options: &str) -> bool {
+        self.call("setOptions", &[JsValue::from_str(options)])
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
+    }
+
+    fn page_count(&self) -> i32 {
+        self.call("pageCount", &[])
+            .and_then(|v| v.as_f64())
+            .map_or(1, |n| n as i32)
+    }
 }
 
 /// A loaded score, held open in Rust so it can be edited and re-engraved -- the

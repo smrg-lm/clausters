@@ -121,6 +121,41 @@ if (!existsSync(engraver)) {
         assert.equal(editor.entry, false);
     });
 
+    const drawnPage = (editor: ScoreEditor) =>
+        ((editor.draw().children ?? [])[0].children ?? [])[0] as unknown as {
+            vb: number[];
+            systems: number[][];
+        };
+
+    test("the layout is the window's and the paper is fixed", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        assert.equal(editor.layout, "page");
+        // the drawing is the paper nobody chose, A4, whatever the music needs
+        assert.deepEqual(drawnPage(editor).vb, [21000, 29700]);
+        editor.layout = "continuous";
+        assert.equal(editor.layout, "continuous");
+        assert.equal(drawnPage(editor).systems.length, 1);
+        assert.ok(!score.mei().includes("page.width"), "a layout writes nothing");
+    });
+
+    test("the page setup is the score's and walks back", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        assert.equal(editor.page.paper, "A4");
+        assert.ok(editor.page.papers.includes("Octavo"));
+        assert.ok(editor.setPage("Letter", { landscape: true, staff: 800 }));
+        const setup = editor.page;
+        assert.deepEqual([setup.paper, setup.landscape], ["Letter", true]);
+        assert.equal(setup.page.staff, 800);
+        assert.equal((score.sheet() as unknown as { page: { width: number } }).page.width, 2794);
+        assert.ok(score.mei().includes('page.width="279.4mm"'), "it travels in the document");
+        assert.equal(drawnPage(editor).vb[0], 27940);
+        assert.ok(editor.undo());
+        assert.equal((score.sheet() as unknown as { page?: unknown }).page, undefined);
+        assert.equal(editor.setPage("foolscap"), false);
+    });
+
     test("edit opens a score in the score editor", async () => {
         const score = await Score.open(PHRASE);
         const editor = await edit(score, { open: false });

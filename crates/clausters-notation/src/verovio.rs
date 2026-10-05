@@ -32,6 +32,7 @@ unsafe extern "C" {
         xmlId: *const c_char,
     ) -> *const c_char;
     fn vrvToolkit_edit(tkPtr: *mut c_void, editorAction: *const c_char) -> bool;
+    fn vrvToolkit_getPageCount(tkPtr: *mut c_void) -> i32;
     fn vrvToolkit_editInfo(tkPtr: *mut c_void) -> *const c_char;
 }
 
@@ -233,6 +234,12 @@ impl Toolkit {
         let c = CString::new(action).map_err(|_| EngraveError::NulByte)?;
         // SAFETY: live toolkit, valid C string.
         Ok(unsafe { vrvToolkit_edit(self.ptr, c.as_ptr()) })
+    }
+
+    /// How many pages the loaded document was laid out into.
+    pub fn page_count(&self) -> i32 {
+        // SAFETY: `self.ptr` is a live toolkit for as long as `self` is.
+        unsafe { vrvToolkit_getPageCount(self.ptr) }
     }
 
     /// What the editor reported about the last action, as a JSON object string.

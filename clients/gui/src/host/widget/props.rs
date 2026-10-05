@@ -1122,12 +1122,25 @@ impl GestureMap {
 /// is enabled (`zoom: 0` disables it), and an explicit content size (absent,
 /// the content area sizes from the children's free-placement extents, or the
 /// widget's own area).
+/// What a plane's `zoom` says: whether the wheel zooms at all, and whether it
+/// waits for Ctrl to (`"ctrl"`).
+fn zoom_of(v: &Value) -> Option<(bool, bool)> {
+    match v.as_str() {
+        Some("ctrl") => Some((true, true)),
+        _ => truthy(v).map(|on| (on, false)),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollView {
     pub axis: Axis,
     /// Whether the wheel zooms (`zoom: 0` degrades the workspace to a plain
     /// scroll view; the wheel then pans along the axis).
     pub zoom_enabled: bool,
+    /// Whether the zoom waits for **Ctrl** (`zoom: "ctrl"`): the wheel then
+    /// pans along the axis and Ctrl with the wheel zooms -- what a page wants,
+    /// where turning the wheel is turning the pages.
+    pub zoom_ctrl: bool,
     pub content_w: Option<f32>,
     pub content_h: Option<f32>,
     /// The content coordinate at the widget's left edge.
@@ -1185,7 +1198,8 @@ impl ScrollView {
         let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
         ScrollView {
             axis: Axis::parse(props),
-            zoom_enabled: props.get("zoom").and_then(truthy).unwrap_or(true),
+            zoom_enabled: props.get("zoom").and_then(zoom_of).is_none_or(|z| z.0),
+            zoom_ctrl: props.get("zoom").and_then(zoom_of).is_some_and(|z| z.1),
             content_w: f("content_w"),
             content_h: f("content_h"),
             view_x: number_f64(props, "view_x", 0.0),
@@ -1209,7 +1223,9 @@ impl ScrollView {
                 .and_then(Axis::from_str)
                 .map(|a| self.axis = a)
                 .is_some(),
-            "zoom" => truthy(v).map(|b| self.zoom_enabled = b).is_some(),
+            "zoom" => zoom_of(v)
+                .map(|(on, ctrl)| (self.zoom_enabled, self.zoom_ctrl) = (on, ctrl))
+                .is_some(),
             "bars" => truthy(v).map(|b| self.bars = b).is_some(),
             "content_w" => {
                 self.content_w = v.as_f64().map(|n| n as f32);

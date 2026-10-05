@@ -60,6 +60,14 @@ impl Engraver for Toolkit {
     fn midi_values(&self, xml_id: &str) -> Option<String> {
         Toolkit::midi_values(self, xml_id).ok()
     }
+
+    fn set_options(&self, options: &str) -> bool {
+        Toolkit::set_options(self, options).unwrap_or(false)
+    }
+
+    fn page_count(&self) -> i32 {
+        Toolkit::page_count(self)
+    }
 }
 
 /// Open `data` (a score in any format verovio auto-detects) on a fresh toolkit
@@ -143,6 +151,50 @@ mod tests {
             assert!(named.contains(kind), "{kind} in {named:?}");
         }
         assert!(clausters_core::notation::admits("note").pitch);
+    }
+
+    /// Two hundred bars of quarters: more than one page of A4 holds.
+    fn long_score() -> Score {
+        let voice: Vec<Slot> = (0..800).map(|i| Slot::note(vec![60 + i % 12], 8)).collect();
+        open(
+            &voice_to_mei(&voice, "4/4", "G2", "C"),
+            &EngraveOptions::default(),
+        )
+        .expect("opens")
+    }
+
+    #[test]
+    fn a_fixed_paper_pages_the_music_and_a_continuous_view_does_not_break_it() {
+        use clausters_core::notation::{PageSetup, View, layout_options};
+
+        let mut score = long_score();
+        let setup = PageSetup::default();
+        assert!(score.relayout(&layout_options(&setup, View::Page)));
+        let pages = score.page_count();
+        assert!(pages > 1, "a long score takes more than one A4: {pages}");
+        let all = score.pages(500.0, true);
+        // the paper is the size it was asked to be, whatever the music needs
+        assert_eq!(all.draw.vb[0], 21000.0);
+        let expected = f64::from(pages) * 29700.0 + f64::from(pages - 1) * 500.0;
+        assert_eq!(all.draw.vb[1], expected);
+        assert_eq!(
+            all.notes.len(),
+            800,
+            "every page's notes are in the one drawing"
+        );
+        // a note on a later page is still moved, by a caller that names no page
+        let last = all.notes.last().unwrap().id.clone();
+        assert!(score.transpose_to_on_any_page(&last, 0));
+
+        assert!(score.relayout(&layout_options(&setup, View::Continuous)));
+        assert_eq!(score.page_count(), 1);
+        let line = score.pages(0.0, false);
+        assert_eq!(
+            line.draw.systems.len(),
+            1,
+            "one system, as long as the music"
+        );
+        assert!(line.draw.vb[0] > 21000.0);
     }
 
     #[test]

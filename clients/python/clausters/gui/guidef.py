@@ -1195,7 +1195,7 @@ def stack(*children, index: int | None = None, margin: float | None = None,
     return node("layout", id=id, children=children, flow="stack", **extra, **props)
 
 
-def scroll(*children, axis: str | None = None, zoom: bool | None = None,
+def scroll(*children, axis: str | None = None, zoom: "bool | str | None" = None,
            content_w: float | None = None, content_h: float | None = None,
            view_x: float | None = None, view_y: float | None = None,
            view_zoom: float | None = None, bars: bool | None = None,
@@ -1214,6 +1214,8 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     - ``axis="y", zoom=False`` is a plain vertical scroll view (the wheel
       scrolls, x never moves),
     - ``axis="x", zoom=False`` a horizontal strip,
+    - ``zoom="ctrl"`` keeps both: the wheel scrolls (Shift scrolls x) and Ctrl
+      with the wheel zooms -- a page of text or of music,
     - the default (``axis="both"``, zoom on) is the free plane.
 
     ``layout`` arranges the children inside the content area and defaults to

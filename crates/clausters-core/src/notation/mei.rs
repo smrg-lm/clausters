@@ -265,6 +265,7 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
             voices: vec![Voice { items }],
         }],
         spanners: Vec::new(),
+        page: None,
     }
 }
 
@@ -354,19 +355,41 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
     };
 
     let head = header_xml(&sheet.header);
+    let page = sheet.page.as_ref().map(page_attrs).unwrap_or_default();
     Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
          \x20<meiHead><fileDesc><titleStmt>{head}</titleStmt>\
          <pubStmt/></fileDesc></meiHead>\n\
          \x20<music><body><mdiv><score>\n\
-         \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\">\n\
+         \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\"{page}>\n\
          \x20\x20\x20{group}\n\
          \x20\x20</scoreDef>\n\
          \x20\x20<section>\n{body}\n\x20\x20</section>\n\
          \x20</score></mdiv></body></music>\n\
          </mei>\n"
     ))
+}
+
+/// **The page setup as the score definition's attributes**: MEI's own places
+/// for a page's size and margins (`page.width`, `page.topmar`, ...) and for the
+/// size of the staff (`vu.height`, the virtual unit -- half a staff space).
+/// Lengths are written in millimetres, which is what a reader of the file
+/// expects of a page; [`super::read`] reads them back to the tenth.
+fn page_attrs(page: &super::PageSetup) -> String {
+    let mm = |tenths: u32| format!("{}.{}mm", tenths / 10, tenths % 10);
+    let [top, right, bottom, left] = page.margins;
+    format!(
+        " page.width=\"{}\" page.height=\"{}\" page.topmar=\"{}\" page.rightmar=\"{}\" \
+         page.botmar=\"{}\" page.leftmar=\"{}\" vu.height=\"{}mm\"",
+        mm(page.width),
+        mm(page.height),
+        mm(top),
+        mm(right),
+        mm(bottom),
+        mm(left),
+        f64::from(page.staff) / 800.0,
+    )
 }
 
 /// Wrap each written beam around the elements it covers.

@@ -72,6 +72,13 @@ note to the last, so it is made by selecting its two ends.
 retrograde -- the span of what is selected, or everything with nothing
 selected.
 
+<b>The paper is the score's, and the way of looking at it is the
+window's.</b> The score opens as pages of A4, fixed whatever the window's size:
+drag on blank paper to pan, turn the wheel with Ctrl to zoom. <code>paper</code>
+lays it out on the next paper (<code>setPage</code>, an edit like any other,
+written into the MEI); <code>layout</code> switches to one continuous system and
+back, which edits nothing.
+
 <b>One undo order.</b> Ctrl+Z and Ctrl+Shift+Z over the window walk the
 editor's entries and the page's alike, and so do the undo and redo buttons.
 
@@ -136,6 +143,23 @@ B c d e | f2 e d | c B A B | G4 |
       const toggleEntry = () => {
         editor.entry = !editor.entry;
         editor.window.widget("write").set({ label: `write: ${editor.entry ? "on" : "off"}` });
+      };
+
+      // The paper, and the way of looking at it. Two switches that look alike
+      // and are not: the layout is this window's and edits nothing; the paper
+      // is the score's, so changing it is an edit -- undone with the rest, and
+      // written into the MEI.
+      const toggleLayout = () => {
+        editor.layout = editor.layout === "page" ? "continuous" : "page";
+        editor.window.widget("layout").set({ label: `layout: ${editor.layout}` });
+      };
+      const nextPaper = () => {
+        const setup = editor.page;
+        const at = setup.papers.indexOf(setup.paper);
+        const paper = setup.papers[(at + 1) % setup.papers.length];
+        if (editor.setPage(paper, { landscape: false })) {
+          editor.window.widget("paper").set({ label: `paper: ${paper}` });
+        }
       };
 
       // Playing what is written: the timeline comes out of the **model**, so a
@@ -232,6 +256,8 @@ B c d e | f2 e d | c B A B | G4 |
             gui.button({ name: "write", label: "write: on" }),
             gui.button({ name: "octave", label: "octave up" }),
             gui.button({ name: "retro", label: "retrograde" }),
+            gui.button({ name: "layout", label: "layout: page" }),
+            gui.button({ name: "paper", label: "paper: A4" }),
           ),
         ];
 
@@ -265,6 +291,8 @@ B c d e | f2 e d | c B A B | G4 |
         win.widget("write").onClick(toggleEntry);
         win.widget("octave").onClick(() => editor.transform("transpose", { semitones: 12 }));
         win.widget("retro").onClick(() => editor.transform("retrograde"));
+        win.widget("layout").onClick(toggleLayout);
+        win.widget("paper").onClick(nextPaper);
         editor.onClosed(() => log("window closed"));
         log("click a note to select it (Ctrl adds, Shift extends), drag one up or "
           + "down the staff, press empty staff to write an eighth; the buttons act on "

@@ -80,7 +80,8 @@ export class Toolkit {
         this.fns = {
             constructor: cw("constructor", "number", []),
             destructor: cw("destructor", null, ["number"]),
-            setOptions: cw("setOptions", null, ["number", "string"]),
+            setOptions: cw("setOptions", "number", ["number", "string"]),
+            getPageCount: cw("getPageCount", "number", ["number"]),
             loadData: cw("loadData", "number", ["number", "string"]),
             renderToSVG: cw("renderToSVG", "string", ["number", "number", "number"]),
             getMEI: cw("getMEI", "string", ["number", "string"]),
@@ -141,5 +142,17 @@ export class Toolkit {
 
     midiValues(xmlId: string): string {
         return (this.fns.getMIDIValuesForElement?.(this.ptr, xmlId) as string) ?? "";
+    }
+
+    // ---- and the two a layout change asks for ----
+
+    /** Configure the layout, as the engraver's own options; it takes effect at the next load. */
+    setOptions(options: string): boolean {
+        return Boolean(this.fns.setOptions?.(this.ptr, options));
+    }
+
+    /** How many pages the loaded document was laid out into. */
+    pageCount(): number {
+        return (this.fns.getPageCount?.(this.ptr) as number) ?? 1;
     }
 }

@@ -81,6 +81,20 @@ pub trait Engraver {
     /// `vrvToolkit_getMIDIValuesForElement`: what one element sounds as, or
     /// `None` when the engraver had nothing to say about it.
     fn midi_values(&self, xml_id: &str) -> Option<String>;
+
+    /// `vrvToolkit_setOptions`: configure the layout -- the page, the margins,
+    /// the breaks -- as the JSON object verovio takes. It takes effect at the
+    /// next load. `false` when it refused, which is what an engraver that
+    /// cannot be reconfigured answers.
+    fn set_options(&self, _options: &str) -> bool {
+        false
+    }
+
+    /// `vrvToolkit_getPageCount`: how many pages the loaded document was laid
+    /// out into. One, for an engraver that does not say.
+    fn page_count(&self) -> i32 {
+        1
+    }
 }
 
 /// The engraver's options for one page, as the JSON object it is configured
@@ -214,6 +228,54 @@ impl<E: Engraver> Score<E> {
     pub fn display_list(&mut self, page: i32) -> Page {
         let _guard = self.engraver.lock();
         self.page_locked(page)
+    }
+
+    /// **Every page, as one drawing**: the pages one under another with `gap`
+    /// page units between them -- each inside a hairline frame, with `frame`,
+    /// so the paper is seen -- and the cursors and the notes of the whole score.
+    ///
+    /// One drawing rather than one per page, because everything a hand does on
+    /// a score is asked of the score: a selection runs across a page turn, a
+    /// cursor sweeps through it, and a widget per page would make each of
+    /// those a question about which widget.
+    pub fn pages(&mut self, gap: f64, frame: bool) -> Page {
+        let _guard = self.engraver.lock();
+        let count = self.engraver.page_count().max(1);
+        let draw = DisplayList::stacked(
+            (1..=count)
+                .map(|page| svg_to_display_list(&self.engraver.render_svg(page)))
+                .collect(),
+            gap,
+            frame,
+        );
+        self.drawn = true;
+        let timemap = self.timemap_locked();
+        let cursors = cursor_track(&draw, &timemap);
+        let notes = self.note_events_locked(&timemap);
+        Page {
+            draw,
+            cursors,
+            notes,
+        }
+    }
+
+    /// How many pages the document is laid out into.
+    pub fn page_count(&self) -> i32 {
+        let _guard = self.engraver.lock();
+        self.engraver.page_count().max(1)
+    }
+
+    /// **Lay the document out again under `options`** -- the engraver's own, as
+    /// [`super::layout_options`] writes them -- keeping the document, the model
+    /// and the history as they are: a page turned, a view switched, nothing
+    /// edited. `false` when the engraver refused the options or the document.
+    pub fn relayout(&mut self, options: &str) -> bool {
+        let _guard = self.engraver.lock();
+        let mei = self.mei_locked();
+        if !self.engraver.set_options(options) {
+            return false;
+        }
+        self.load_locked(&mei)
     }
 
     /// The score as MEI, ids and all -- the format to persist, and what the undo
@@ -403,6 +465,19 @@ impl<E: Engraver> Score<E> {
             return false;
         };
         from == position || self.transpose(element_id, position - from)
+    }
+
+    /// [`Score::transpose_to`] for a caller that does not know which page the
+    /// element is on -- a drawing of every page names an element and not its
+    /// page: the first page that draws it is the one it is measured on.
+    pub fn transpose_to_on_any_page(&mut self, element_id: &str, position: i32) -> bool {
+        (1..=self.page_count()).any(|page| {
+            self.display_list(page)
+                .draw
+                .staff_position(element_id)
+                .is_some()
+                && self.transpose_to(element_id, position, page)
+        })
     }
 
     /// Apply one raw verovio editor action (`set`, `insert`, `delete`, ...) as a

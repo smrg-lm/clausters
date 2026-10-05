@@ -682,6 +682,21 @@ export function setHeader(sheet: Sheet, fields: HeaderFields): Sheet {
 }
 
 /**
+ * Lay the score out on `page` -- `{ width, height, margins, staff }`: the paper
+ * as it is turned and the margins (top, right, bottom, left) in tenths of a
+ * millimetre, and the height of a five-line staff in hundredths -- or on
+ * nothing anybody chose, with `null`.
+ *
+ * A4 upright is `{ width: 2100, height: 2970 }`; left out, the margins are half
+ * an inch and the staff 7.2 mm. The setup is the document's: it is written into
+ * the MEI and read back. A page the engraver could not take (a staff under
+ * 3.6 mm, margins that leave nothing) is refused.
+ */
+export function setPage(sheet: Sheet, page: Record<string, unknown> | null): Sheet {
+    return apply(sheet, { op: "set_page", page });
+}
+
+/**
  * Give `measure` (1-based) a right barline: `"end"`, `"rptstart"`, `"rptend"`,
  * `"rptboth"`, `"dbl"`, `"invis"` -- or `"single"`, which takes the override
  * back rather than storing one saying "ordinary".

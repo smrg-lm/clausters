@@ -66,6 +66,7 @@ pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
                 if clefs.is_empty() {
                     clefs = read_clefs(child);
                     sheet.key = read_key(child);
+                    sheet.page = read_page(child);
                 }
                 if let Some(meter) = read_meter(child, measure) {
                     meters.push(meter);
@@ -262,6 +263,36 @@ fn read_key(score_def: Node) -> String {
         .find(|(s, _)| *s == sig)
         .map(|(_, name)| (*name).to_string())
         .unwrap_or_else(|| "C".to_string())
+}
+
+/// The page setup this `scoreDef` states, if it states a page: its size, the
+/// margins it gives (the default where it gives none) and the staff size, read
+/// from millimetres to the tenth -- what [`super::mei`] writes.
+fn read_page(def: Node) -> Option<super::PageSetup> {
+    let mm = |name: &str| -> Option<f64> {
+        def.attribute(name)?
+            .trim()
+            .strip_suffix("mm")?
+            .trim()
+            .parse()
+            .ok()
+    };
+    let tenths = |name: &str| mm(name).map(|v| (v * 10.0).round() as u32);
+    let default = super::PageSetup::default();
+    let setup = super::PageSetup {
+        width: tenths("page.width")?,
+        height: tenths("page.height")?,
+        margins: [
+            tenths("page.topmar").unwrap_or(default.margins[0]),
+            tenths("page.rightmar").unwrap_or(default.margins[1]),
+            tenths("page.botmar").unwrap_or(default.margins[2]),
+            tenths("page.leftmar").unwrap_or(default.margins[3]),
+        ],
+        staff: mm("vu.height")
+            .map(|v| (v * 800.0).round() as u32)
+            .unwrap_or(default.staff),
+    };
+    setup.check().ok().map(|()| setup)
 }
 
 /// The meter this `scoreDef` states, if it states one.

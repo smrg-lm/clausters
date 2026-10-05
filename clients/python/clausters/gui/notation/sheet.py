@@ -566,6 +566,20 @@ def set_header(sheet: dict, header: dict) -> dict:
     return apply(sheet, {"op": "set_header", "header": header})
 
 
+def set_page(sheet: dict, page: "dict | None") -> dict:
+    """Lay the score out on ``page`` -- ``{"width", "height", "margins",
+    "staff"}``: the paper as it is turned and the margins (top, right, bottom,
+    left) in tenths of a millimetre, and the height of a five-line staff in
+    hundredths -- or on nothing anybody chose, with ``None``.
+
+    A4 upright is ``{"width": 2100, "height": 2970}``; left out, the margins are
+    half an inch and the staff 7.2 mm. The setup is the document's: it is
+    written into the MEI and read back. A page the engraver could not take (a
+    staff under 3.6 mm, margins that leave nothing) is refused.
+    """
+    return apply(sheet, {"op": "set_page", "page": page})
+
+
 def set_barline(sheet: dict, measure: int, kind: str) -> dict:
     """Give ``measure`` (1-based) a right barline: ``"end"``, ``"rptstart"``,
     ``"rptend"``, ``"rptboth"``, ``"dbl"``, ``"invis"`` -- or ``"single"``, which

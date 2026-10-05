@@ -14,6 +14,8 @@ use super::*;
 /// a page to be right about.
 struct Kept {
     mei: Mutex<String>,
+    /// The options it was last laid out under.
+    options: Arc<Mutex<String>>,
 }
 
 impl Engraver for Kept {
@@ -37,6 +39,10 @@ impl Engraver for Kept {
     }
     fn midi_values(&self, _xml_id: &str) -> Option<String> {
         None
+    }
+    fn set_options(&self, options: &str) -> bool {
+        *self.options.lock().unwrap() = options.to_string();
+        true
     }
 }
 
@@ -70,8 +76,18 @@ fn shared() -> Shared {
     let mei = sheet_to_mei(&sheet).expect("writes");
     let engraver = AnyEngraver::new(Kept {
         mei: Mutex::new(String::new()),
+        options: OPTIONS.with(Arc::clone),
     });
     Arc::new(Mutex::new(Score::open(engraver, &mei).expect("opens")))
+}
+
+thread_local! {
+    /// What this test's engraver was last asked to lay out under.
+    static OPTIONS: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+}
+
+fn laid() -> Value {
+    serde_json::from_str(&OPTIONS.with(|o| o.lock().unwrap().clone())).unwrap_or_default()
 }
 
 const IDS: Ids = Ids {
@@ -353,4 +369,55 @@ fn a_transformation_runs_over_what_is_selected() {
         5,
         "the bar it is in moved up an octave"
     );
+}
+
+#[test]
+fn the_window_lays_the_score_out_on_its_paper_and_the_view_is_the_windows() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    let window = editor.window(IDS);
+    // a page view fixes the page, at the default nobody chose: A4
+    assert_eq!(laid()["pageWidth"], 2100);
+    assert_eq!(laid()["breaks"], "auto");
+    let scroll = &window["children"][0];
+    assert_eq!(
+        scroll["axis"], "both",
+        "a drag on blank paper pans either way"
+    );
+    assert_eq!(scroll["bars"], true);
+    // the view is switched without an entry: nothing was edited
+    call_json(&mut editor, r#"{"verb": "sync", "layout": "continuous"}"#);
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "layout"}"#),
+        r#"{"layout":"continuous"}"#
+    );
+    editor.resync_all(1);
+    assert_eq!(laid()["breaks"], "none");
+}
+
+#[test]
+fn the_page_setup_is_the_documents_and_an_edit_like_any_other() {
+    let mut editor = opened();
+    let out = editor.act(
+        &json!({"action": "page", "paper": "letter", "landscape": true, "staff": 800}),
+        1,
+    );
+    assert!(out.changed, "{:?}", out.answer);
+    let record = out.record.expect("an entry");
+    assert_eq!(record.label, "page setup");
+    let page: Value = serde_json::from_str(&call_json(&mut editor, r#"{"verb": "page"}"#)).unwrap();
+    assert_eq!(page["paper"], "Letter");
+    assert_eq!(page["landscape"], true);
+    assert_eq!(page["page"]["width"], 2794);
+    assert_eq!(page["page"]["staff"], 800);
+    assert!(page["papers"].as_array().unwrap().contains(&json!("A4")));
+    // the engraver is laid out again on the new paper
+    assert_eq!(laid()["pageWidth"], 2794);
+    assert_eq!(laid()["unit"], 10.0);
+    // and the history puts the old one back
+    assert!(editor.apply(&record.legs[0].backward));
+    editor.resync_all(2);
+    assert_eq!(laid()["pageWidth"], 2100);
+    // a paper nobody makes is refused out loud
+    let out = editor.act(&json!({"action": "page", "paper": "foolscap"}), 2);
+    assert!(!out.changed);
 }

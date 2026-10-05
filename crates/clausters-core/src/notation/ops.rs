@@ -247,6 +247,14 @@ pub enum Op {
         /// How many places on the staff, up when positive.
         steps: i32,
     },
+    /// Lay the score out on a page: the paper as it is turned, the margins
+    /// and the staff size.
+    SetPage {
+        /// The whole setup, replacing whatever was there; none is the default
+        /// nobody chose.
+        #[serde(default)]
+        page: Option<super::PageSetup>,
+    },
     /// Write what is above the music: the title, and who wrote it.
     SetHeader {
         /// The whole header, replacing whatever was there. It **replaces**
@@ -399,6 +407,7 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::SetMarks { id, marks } => edit::set_marks(sheet, *id, marks.clone()),
         Op::MoveSteps { id, steps } => edit::move_steps(sheet, *id, *steps),
         Op::SetHeader { header } => edit::set_header(sheet, header.clone()),
+        Op::SetPage { page } => edit::set_page(sheet, *page),
         Op::SetBarline { measure, kind } => edit::set_barline(sheet, *measure, kind),
         Op::SetBreak { measure, kind } => edit::set_break(sheet, *measure, kind),
         Op::AddSpanner { kind, from, to } => edit::add_spanner(sheet, kind, *from, *to),
@@ -547,6 +556,11 @@ pub fn catalog() -> &'static [OpSpec] {
             op: "set_header",
             required: &[],
             optional: &["header"],
+        },
+        OpSpec {
+            op: "set_page",
+            required: &[],
+            optional: &["page"],
         },
         OpSpec {
             op: "set_barline",

@@ -9,8 +9,9 @@
 //!
 //! # The window
 //!
-//! The engraved page, in a scroll as tall as the page is at the window's
-//! width, and a status line under it saying what is selected. The page takes
+//! The engraved score in a scroll that pans and zooms -- every page of the
+//! paper one under another, or one system as long as the music -- and a status
+//! line under it saying what is selected. The page takes
 //! pitch edits and note entry; what a hand may do to each element is the
 //! page's own (`kinds`, read against the core's `admits`), so a slur is
 //! selected and never dragged.
@@ -32,7 +33,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 
-use clausters_core::notation::{AnyEngraver, Page, Score};
+use clausters_core::notation::{AnyEngraver, Page, PageSetup, Score};
 
 /// A score the editor and its holder edit together.
 pub type Shared = Arc<Mutex<Score<AnyEngraver>>>;
@@ -66,26 +67,34 @@ pub fn drawing(page: &Page) -> Map<String, Value> {
     out
 }
 
-/// **How tall the page is drawn at `width`**, in its own aspect: what the
-/// `score` widget and the scroll's content are sized to, so an edit that adds a
-/// system grows the page rather than shrinking the engraving to fit.
-pub fn drawn_height(page: &Page, width: f64) -> f64 {
+/// **How big the drawing is in the window**, `(width, height)`: the page's
+/// own units times `scale`, pixels per page unit.
+///
+/// The scale is fixed by the paper and the window it opened in
+/// ([`scale_for`]), not by the drawing -- so a staff is the same size in a
+/// page view and in a continuous one, and an edit that adds a page makes the
+/// drawing longer rather than the engraving smaller.
+pub fn drawn_size(page: &Page, scale: f64) -> (f64, f64) {
     let [w, h] = page.draw.vb;
-    if w > 0.0 {
-        (width * h / w * 10.0).round() / 10.0
-    } else {
-        width
-    }
+    let round = |v: f64| (v * scale * 10.0).round() / 10.0;
+    (round(w).max(1.0), round(h).max(1.0))
 }
 
-/// The page's width in a window of `size`, the margins taken off.
-pub fn page_width(size: (i64, i64)) -> f64 {
-    (size.0 as f64 - 16.0).max(1.0)
+/// **The pixels a page unit is drawn at**: what makes a page of `setup`'s
+/// width fill a window of `size`, the margins taken off. A drawing's units are
+/// ten to the engraver's, which are tenths of a millimetre.
+pub fn scale_for(setup: &PageSetup, size: (i64, i64)) -> f64 {
+    let width = (size.0 as f64 - 16.0).max(1.0);
+    width / (f64::from(setup.width.max(1)) * 10.0)
 }
 
-/// **The window**, as a GuiDef rooted at a `window` node: the page under
-/// `ids.page`, in a scroll, with the status line under it saying `status`;
-/// `entry` is whether a press on empty staff writes a note. A script's own
+/// The gap between two pages of a page view, in page units: a centimetre.
+pub const PAGE_GAP: f64 = 1000.0;
+
+/// **The window**, as a GuiDef rooted at a `window` node: the drawing under
+/// `ids.page`, in a scroll that pans both ways and zooms, with the status line
+/// under it saying `status`; `entry` is whether a press on empty staff writes
+/// a note and `scale` how big the drawing is ([`scale_for`]). A script's own
 /// widgets are the client's to append, as in every application here.
 pub fn window(
     page: &Page,
@@ -94,9 +103,9 @@ pub fn window(
     size: (i64, i64),
     status: &str,
     entry: bool,
+    scale: f64,
 ) -> Value {
-    let width = page_width(size);
-    let height = drawn_height(page, width);
+    let (width, height) = drawn_size(page, scale);
     let mut picture = drawing(page);
     picture.insert("type".into(), json!("score"));
     picture.insert("id".into(), json!(ids.page));
@@ -105,9 +114,16 @@ pub fn window(
     for (key, value) in [("x", 0.0), ("y", 0.0), ("w", width), ("h", height)] {
         picture.insert(key.into(), json!(value));
     }
+    // **A drag that starts on no staff and no element pans**: the page
+    // declines that press, and the scroll it sits in takes it. Both axes,
+    // since a continuous view is as long as the music and a page zoomed in is
+    // wider than the window.
     let mut scroll = json!({
         "type": "scroll",
-        "axis": "y",
+        "axis": "both",
+        // the wheel turns the pages, and Ctrl with it zooms
+        "zoom": "ctrl",
+        "bars": true,
         "content_w": width,
         "content_h": height,
         "children": [Value::Object(picture)],
@@ -129,17 +145,17 @@ pub fn window(
     })
 }
 
-/// **What the window is corrected with** after the score changed: the page
-/// replaced in place and sized again, and the scroll grown with it -- each
+/// **What the window is corrected with** after the score changed: the drawing
+/// replaced in place and sized again, and the scroll's content with it -- each
 /// `(widget, props)`.
-pub fn correction(page: &Page, ids: Ids, size: (i64, i64)) -> Vec<(i32, Value)> {
-    let height = drawn_height(page, page_width(size));
+pub fn correction(page: &Page, ids: Ids, scale: f64) -> Vec<(i32, Value)> {
+    let (width, height) = drawn_size(page, scale);
     let mut out = vec![(
         ids.page,
-        json!({"display_list": Value::Object(drawing(page)), "h": height}),
+        json!({"display_list": Value::Object(drawing(page)), "w": width, "h": height}),
     )];
     if let Some(scroll) = ids.scroll {
-        out.push((scroll, json!({"content_h": height})));
+        out.push((scroll, json!({"content_w": width, "content_h": height})));
     }
     out
 }

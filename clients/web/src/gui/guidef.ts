@@ -1586,8 +1586,10 @@ export function stack(
  * through a window that pans and zooms -- dragging the empty plane pans it,
  * the wheel zooms anchored at the cursor. The constrained scroll views are
  * this same widget configured down: `{ axis: "y", zoom: false }` is a plain
- * vertical scroll view, `{ axis: "x", zoom: false }` a horizontal strip, the
- * default the free plane. `layout` defaults to `"free"` here, so a child's
+ * vertical scroll view, `{ axis: "x", zoom: false }` a horizontal strip,
+ * `{ zoom: "ctrl" }` keeps both -- the wheel scrolls (Shift scrolls x) and Ctrl
+ * with the wheel zooms, a page of text or of music -- and the default is the
+ * free plane. `layout` defaults to `"free"` here, so a child's
  * `x`/`y`/`w`/`h` place it in **content units**.
  */
 export function scroll(
@@ -1596,8 +1598,8 @@ export function scroll(
         flow?: string;
         /** `"both"` (the default), `"x"` or `"y"`. */
         axis?: string;
-        /** The wheel zoom (on by default). */
-        zoom?: boolean;
+        /** The wheel zoom (on by default); `"ctrl"` makes it wait for Ctrl, the wheel scrolling. */
+        zoom?: boolean | "ctrl";
         /** The content area, when the children's extents should not size it. */
         contentW?: number;
         contentH?: number;
@@ -1633,7 +1635,7 @@ export function scroll(
         ...rest,
         ...drop([
             ["axis", axis],
-            ["zoom", flag(zoom)],
+            ["zoom", zoom === "ctrl" ? zoom : flag(zoom)],
             ["content_w", contentW],
             ["content_h", contentH],
             ["view_x", viewX],

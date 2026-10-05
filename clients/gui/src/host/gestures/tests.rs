@@ -445,6 +445,29 @@ fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
 }
 
 #[test]
+fn a_plane_whose_zoom_waits_for_ctrl_scrolls_on_the_wheel() {
+    // `zoom: "ctrl"` is a page: turning the wheel turns the pages, and only
+    // Ctrl with it changes the scale.
+    let mut host = workspace(r#","zoom":"ctrl""#);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
+    let v = view_of(&host, 20);
+    assert_eq!(
+        v.zoom(&Metrics::default()),
+        1.0,
+        "the wheel alone does not scale"
+    );
+    assert_eq!(v.view_y, scroll::WHEEL_PAN_PX, "it scrolls");
+    ctx.ctrl = true;
+    g.wheel(&mut host, &ctx, 300.0, 200.0, 1.0);
+    assert!(
+        view_of(&host, 20).zoom(&Metrics::default()) > 1.0,
+        "Ctrl with the wheel zooms in"
+    );
+}
+
+#[test]
 fn a_vertical_scroll_view_is_the_workspace_constrained_by_configuration() {
     // `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view: the
     // wheel scrolls, x never moves, the zoom stays put.

@@ -628,6 +628,11 @@ pub struct Sheet {
     /// What is written between two notes rather than on one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub spanners: Vec<Spanner>,
+    /// **The page it is laid out on**: the paper, the margins and the staff
+    /// size somebody chose. `None` is nobody having chosen, which engraves on
+    /// the default ([`super::PageSetup::default`]) and writes nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<super::PageSetup>,
 }
 
 fn default_key() -> String {
@@ -647,6 +652,7 @@ impl Default for Sheet {
             header: Header::default(),
             staves: vec![Staff::default()],
             spanners: Vec::new(),
+            page: None,
         }
     }
 }

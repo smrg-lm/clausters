@@ -250,11 +250,12 @@ impl Gestures {
         }
         // The 2D workspace: wheel zooms the plane anchored at the cursor;
         // with zoom disabled it pans along the axis instead (Shift pans x in
-        // a two-axis workspace) -- the plain scroll view's wheel. A widget
+        // a two-axis workspace) -- the plain scroll view's wheel. A plane
+        // whose zoom waits for Ctrl is both: the wheel pans, Ctrl zooms. A widget
         // with its own wheel (a timeline view, a piano) won above.
         if let Some((id, area, view)) = interact::plane_of(&chain) {
             let zoom = view.zoom(host.metrics_for(def_id));
-            let next = if view.zoom_enabled {
+            let next = if view.zoom_enabled && (!view.zoom_ctrl || ctx.ctrl) {
                 let factor = 0.85f64.powf(-steps); // wheel up zooms in
                 scroll::zoom_at((view.view_x, view.view_y, zoom), area, (cx, cy), factor)
             } else {

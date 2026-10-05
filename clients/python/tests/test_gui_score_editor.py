@@ -106,3 +106,32 @@ def test_entry_is_the_crates_switch(score):
     assert editor.entry is True
     editor.entry = False
     assert editor.entry is False
+
+
+def test_the_layout_is_the_windows_and_the_paper_is_fixed(score):
+    editor = ScoreEditor(score)
+    assert editor.layout == "page"
+    tree = editor.draw()
+    page = tree["children"][0]["children"][0]
+    # the drawing is the paper nobody chose, A4, whatever the music needs
+    assert page["vb"] == [21000.0, 29700.0]
+    editor.layout = "continuous"
+    assert editor.layout == "continuous"
+    line = editor.draw()["children"][0]["children"][0]
+    assert len(line["systems"]) == 1, "one system, as long as the music"
+    assert score.mei() and "page.width" not in score.mei(), "a layout writes nothing"
+
+
+def test_the_page_setup_is_the_scores_and_walks_back(score):
+    editor = ScoreEditor(score)
+    assert editor.page["paper"] == "A4" and "Octavo" in editor.page["papers"]
+    assert editor.set_page("Letter", landscape=True, staff=800)
+    setup = editor.page
+    assert (setup["paper"], setup["landscape"]) == ("Letter", True)
+    assert setup["page"]["staff"] == 800
+    assert score.sheet()["page"]["width"] == 2794
+    assert 'page.width="279.4mm"' in score.mei(), "it travels in the document"
+    assert editor.draw()["children"][0]["children"][0]["vb"][0] == 27940.0
+    assert editor.undo()
+    assert "page" not in score.sheet()
+    assert editor.set_page("foolscap") is False

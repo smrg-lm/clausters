@@ -132,6 +132,50 @@ class ScoreEditor(Editor):
         self._call("sync", entry=bool(on))
         self.adopt()
 
+    # ---- the layout, which is the window's, and the page, the document's ----
+
+    @property
+    def layout(self) -> str:
+        """How the window looks at the score: ``"page"``, every page of the
+        paper one under another, fixed whatever the window's size; or
+        ``"continuous"``, one system as long as the music, with no page. Set it
+        to switch: ``editor.layout = "continuous"``. It is the window's, not
+        the score's, and enters no history."""
+        return str(self._call("layout").get("layout", "page"))
+
+    @layout.setter
+    def layout(self, layout: str) -> None:
+        self._call("sync", layout=str(layout))
+        self.adopt()
+
+    @property
+    def page(self) -> dict:
+        """The page the score is laid out on: ``{"page", "paper", "landscape",
+        "papers"}`` -- the setup itself (``width``, ``height`` and ``margins``
+        in tenths of a millimetre, ``staff`` in hundredths), the name of its
+        paper when it is a known one, which way up it is, and the names of the
+        papers there are. Change it with `set_page`."""
+        return self._call("page")
+
+    def set_page(self, paper: "str | None" = None, *, landscape: "bool | None" = None,
+                 width: "int | None" = None, height: "int | None" = None,
+                 margins=None, staff: "int | None" = None) -> bool:
+        """Lay the score out on another page, as one entry of the history: a
+        ``paper`` by name (``"A4"``, ``"Letter"``, ``"Octavo"`` ... -- see
+        `page`), turned with ``landscape``, or a ``width`` and ``height`` of
+        its own; the ``margins`` (top, right, bottom, left) and the ``staff``
+        height. Lengths are in tenths of a millimetre and the staff in
+        hundredths (``720`` is 7.2 mm). What is left out stays as it is. The
+        setup is the score's, and travels in its MEI."""
+        call = {"action": "page"}
+        for key, value in (("paper", paper), ("landscape", landscape),
+                           ("width", width), ("height", height), ("staff", staff)):
+            if value is not None:
+                call[key] = value
+        if margins is not None:
+            call["margins"] = [int(m) for m in margins]
+        return self._act(call)
+
     # ---- the verbs, over what is selected ----
 
     def move(self, steps: int) -> bool:

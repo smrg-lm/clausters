@@ -1027,7 +1027,15 @@ transformation over the measures it covers)
 are each read into model operations, applied to the shared score and recorded
 with the MEI before them as the inverse — a state, which a step loads back
 whole. A verb crosses through the context's `act`, which records it as a
-gesture is recorded. **The selection is the editor's**: a press names one
+gesture is recorded. **The paper is the document's and the layout the
+window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
+margins, the staff — is a field of the sheet, written into the MEI's score
+definition, and a `View` is how one window looks at it; the two come to the
+engraver as its options through one function, and the editor lays the score
+out again only when one of them changed. A page view draws every page one
+under another in one display list (`DisplayList::stacked`), so a selection and
+a cursor run across a page turn without a widget per page. **The selection is
+the editor's**: a press names one
 element and how it was pressed (alone, with Ctrl, with Shift), and the editor
 answers with every element that is now selected — a range in time, a measure
 named by the id the emitter gives each staff of it (`m3s1`), an item as every

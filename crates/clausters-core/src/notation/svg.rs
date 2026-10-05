@@ -130,6 +130,16 @@ pub enum Prim {
 }
 
 impl Prim {
+    /// This primitive moved down the page by `dy` page units.
+    fn lowered(mut self, dy: f64) -> Prim {
+        match &mut self {
+            Prim::Glyph { xf, .. } | Prim::Fill { xf, .. } => xf[1] += dy,
+            Prim::Line { pts, .. } => pts.iter_mut().for_each(|p| p[1] += dy),
+            Prim::Text { y, .. } => *y += dy,
+        }
+        self
+    }
+
     /// The id of the element this primitive belongs to, if any.
     pub fn id(&self) -> Option<&str> {
         match self {
@@ -686,6 +696,51 @@ pub struct Staff {
 }
 
 impl DisplayList {
+    /// **Several pages as one drawing**: each under the one before, `gap` page
+    /// units apart, and with `frame` each inside a hairline rectangle, so the
+    /// paper is seen and where one page ends is too.
+    ///
+    /// The frame is drawn as four fills rather than four strokes, because a
+    /// page-wide horizontal stroke is exactly what a staff line is told apart
+    /// by, and the paper's edge must never be read as a staff.
+    pub fn stacked(pages: Vec<DisplayList>, gap: f64, frame: bool) -> DisplayList {
+        let mut out = DisplayList::default();
+        let mut top = 0.0;
+        for page in pages {
+            let [w, h] = page.vb;
+            out.step = if out.step > 0.0 { out.step } else { page.step };
+            out.glyphs.extend(page.glyphs);
+            if frame && w > 0.0 && h > 0.0 {
+                // a hairline a fifth of a diatonic step wide
+                let t = (0.2 * out.step).max(1.0);
+                for (x, y, fw, fh) in [
+                    (0.0, 0.0, w, t),
+                    (0.0, h - t, w, t),
+                    (0.0, 0.0, t, h),
+                    (w - t, 0.0, t, h),
+                ] {
+                    out.prims.push(Prim::Fill {
+                        d: format!("M0 0 L{fw:.1} 0 L{fw:.1} {fh:.1} L0 {fh:.1} Z"),
+                        xf: [x, top + y, 1.0, 1.0],
+                        id: None,
+                    });
+                }
+            }
+            out.prims
+                .extend(page.prims.into_iter().map(|p| p.lowered(top)));
+            out.elements.extend(page.elements);
+            out.kinds.extend(page.kinds);
+            out.vb[0] = out.vb[0].max(w);
+            top += h + gap;
+        }
+        out.vb[1] = (top - gap).max(0.0);
+        out.systems = super::cursors::staff_systems(&out.prims)
+            .into_iter()
+            .map(|(y0, y1)| [r(y0, 1), r(y1, 1)])
+            .collect();
+        out
+    }
+
     /// The staves on this page: its longest horizontal strokes, clustered into
     /// systems.
     ///
@@ -806,6 +861,32 @@ mod tests {
             dl.glyphs.get("E0A4").map(String::as_str),
             Some("M0 0 C1 1 2 2 3 3Z")
         );
+    }
+
+    #[test]
+    fn pages_stack_under_one_another_inside_their_frames() {
+        let one = svg_to_display_list(SVG);
+        let prims = one.prims.len();
+        let two = DisplayList::stacked(vec![one.clone(), one.clone()], 100.0, true);
+        assert_eq!(two.vb, [1000.0, 900.0], "two pages of 400 and the gap");
+        assert_eq!(two.prims.len(), 2 * (prims + 4), "each page and its frame");
+        // the second page's notehead is the first's, a page and a gap lower
+        let heads: Vec<f64> = two
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Glyph { xf, .. } => Some(xf[1]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(heads, vec![200.0, 700.0]);
+        // the frame is fills, so the paper's edge is never read as a staff
+        assert!(two.prims.iter().all(
+            |p| !matches!(p, Prim::Line { pts, .. } if pts[0][0] == 0.0 && pts[1][0] == 1000.0 && pts[0][1] == 0.0)
+        ));
+        let bare = DisplayList::stacked(vec![one], 100.0, false);
+        assert_eq!(bare.prims.len(), prims);
+        assert_eq!(bare.vb, [1000.0, 400.0]);
     }
 
     #[test]

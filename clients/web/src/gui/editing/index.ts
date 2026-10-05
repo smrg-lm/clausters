@@ -53,7 +53,7 @@
 export { Application, BASE_ID } from "./application.ts";
 export { AudioDomain, AudioEditor, isTake } from "./audio.ts";
 export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
-export type { ScoreEditorOptions } from "./score.ts";
+export type { PageInfo, PageOptions, PageSetup, ScoreEditorOptions } from "./score.ts";
 export type { AudioEditorOptions } from "./audio.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "../../history.ts";

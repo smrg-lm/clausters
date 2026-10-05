@@ -15,7 +15,7 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use clausters_core::notation::{Item, Marks, Op, Sheet};
+use clausters_core::notation::{Item, Marks, Op, PageSetup, Sheet, paper};
 use clausters_core::ratio::Ratio;
 
 /// **One verb, as a client names it**: `{"action": ..., <its arguments>}`.
@@ -59,6 +59,24 @@ pub enum Action {
     Spanner { kind: String },
     /// A model operation, whole -- the escape hatch for what has no verb here.
     Op { op: Box<Op> },
+    /// **Lay the score out on another page**: a `paper` by name (turned with
+    /// `landscape`), or a `width` and `height` of its own, the `margins` (top,
+    /// right, bottom, left) and the `staff` height -- lengths in tenths of a
+    /// millimetre, the staff in hundredths. What is left out stays as it is.
+    Page {
+        #[serde(default)]
+        paper: Option<String>,
+        #[serde(default)]
+        landscape: Option<bool>,
+        #[serde(default)]
+        width: Option<u32>,
+        #[serde(default)]
+        height: Option<u32>,
+        #[serde(default)]
+        margins: Option<[u32; 4]>,
+        #[serde(default)]
+        staff: Option<u32>,
+    },
     /// **A transformation over the measures the selection covers** -- or over
     /// everything, with nothing selected: `transpose` (`semitones`, `steps`),
     /// `invert` (`axis`), `retrograde`, `stretch` (`factor`) or `repeat`
@@ -90,6 +108,7 @@ impl Action {
             Action::Voice => "move to the other voice".into(),
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
+            Action::Page { .. } => "page setup".into(),
             Action::Op { op } => serde_json::to_value(op)
                 .ok()
                 .and_then(|v| v.get("op").and_then(|o| o.as_str()).map(str::to_string))
@@ -149,6 +168,35 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
     }
     if let Action::Transform { name, params } = action {
         return transform(sheet, selection, name, params).map(|op| vec![op]);
+    }
+    if let Action::Page {
+        paper: name,
+        landscape,
+        width,
+        height,
+        margins,
+        staff,
+    } = action
+    {
+        let mut page = sheet.page.unwrap_or_default();
+        // a paper is named portrait; which way up it goes is said beside it,
+        // and stays as it was where it is not said
+        let turned = landscape.unwrap_or(page.landscape());
+        if let Some(name) = name {
+            let found = paper(name).ok_or_else(|| format!("there is no paper called {name}"))?;
+            page = PageSetup {
+                margins: page.margins,
+                staff: page.staff,
+                ..PageSetup::on(found, turned)
+            };
+        } else if turned != page.landscape() {
+            (page.width, page.height) = (page.height, page.width);
+        }
+        page.width = width.unwrap_or(page.width);
+        page.height = height.unwrap_or(page.height);
+        page.margins = margins.unwrap_or(page.margins);
+        page.staff = staff.unwrap_or(page.staff);
+        return Ok(vec![Op::SetPage { page: Some(page) }]);
     }
     let ids = in_time(sheet, selection);
     if ids.is_empty() {
@@ -273,7 +321,9 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 to,
             }]
         }
-        Action::Op { .. } | Action::Transform { .. } => unreachable!("answered above"),
+        Action::Op { .. } | Action::Transform { .. } | Action::Page { .. } => {
+            unreachable!("answered above")
+        }
     })
 }
 

@@ -5,12 +5,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_core::notation::{AnyEngraver, Op, Score, item_id, measure_id, sheet_to_mei};
+use clausters_core::notation::{
+    AnyEngraver, Op, PAPERS, Page, PageSetup, Score, View, item_id, layout_options, measure_id,
+    sheet_to_mei,
+};
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::verbs::{self, Action};
-use super::{Ids, Shared, correction, window};
+use super::{Ids, PAGE_GAP, Shared, correction, scale_for, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
 /// The vocabulary the editor's structure is registered under.
@@ -68,6 +71,12 @@ pub struct ScoreEditor {
     /// The ids the page last drew, so an item is selected as every element it
     /// is drawn as -- the parts a barline split it into, a chord's pitches.
     drawn: Vec<String>,
+    /// How the window looks at the score: as pages, or as one system. The
+    /// window's, not the document's.
+    view: View,
+    /// The engraver's options the score is laid out under, so it is laid out
+    /// again only when the paper or the view changed.
+    laid: String,
 }
 
 impl std::fmt::Debug for ScoreEditor {
@@ -134,6 +143,8 @@ impl ScoreEditor {
             value: Ratio::new(1, 4),
             entry: true,
             drawn: Vec::new(),
+            view: View::Page,
+            laid: String::new(),
         }
     }
 
@@ -152,7 +163,7 @@ impl ScoreEditor {
     /// widget the editor answers for.
     pub fn window(&mut self, ids: Ids) -> Value {
         self.ids = Some(ids);
-        let page = self.held().display_list(1);
+        let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
         window(
             &page,
@@ -161,7 +172,42 @@ impl ScoreEditor {
             self.size,
             &self.describe(),
             self.entry,
+            self.scale(),
         )
+    }
+
+    /// The page setup the score is on: the one somebody chose, or the default.
+    pub fn setup(&self) -> PageSetup {
+        self.held()
+            .sheet()
+            .and_then(|sheet| sheet.page)
+            .unwrap_or_default()
+    }
+
+    /// The pixels a page unit is drawn at: the paper's width across the window
+    /// it opened in, in either view.
+    fn scale(&self) -> f64 {
+        scale_for(&self.setup(), self.size)
+    }
+
+    /// **Lay the score out for this window**: on its paper, as this view --
+    /// again only when one of the two changed since it was last laid out, an
+    /// edit to the page setup included. It changes the layout of the score the
+    /// holder has, which is one engraver's: two windows over one score show one
+    /// layout.
+    fn lay_out(&mut self) {
+        let options = layout_options(&self.setup(), self.view);
+        if options != self.laid && self.held().relayout(&options) {
+            self.laid = options;
+        }
+    }
+
+    /// **The drawing**: every page of the paper one under another, each in its
+    /// frame, or the one system of a continuous view.
+    fn page(&mut self) -> Page {
+        self.lay_out();
+        let paged = self.view == View::Page;
+        self.held().pages(if paged { PAGE_GAP } else { 0.0 }, paged)
     }
 
     /// **The elements an item is drawn as**: every id of the page that is the
@@ -325,14 +371,14 @@ impl ScoreEditor {
         let Some(ids) = self.ids else {
             return Vec::new();
         };
-        let page = self.held().display_list(1);
+        let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
         // an item re-engraved may be drawn as other parts than it was
         let items = self.items();
         if !items.is_empty() {
             self.selection = self.elements_of(&items);
         }
-        let mut out: Vec<Correction> = correction(&page, ids, self.size)
+        let mut out: Vec<Correction> = correction(&page, ids, self.scale())
             .into_iter()
             .map(|(widget, props)| Correction {
                 widget: i64::from(widget),
@@ -479,7 +525,10 @@ impl ScoreEditor {
                     return (None, Vec::new());
                 };
                 let before = self.held().mei();
-                if !self.held().transpose_to(&element, int(position) as i32, 1) {
+                if !self
+                    .held()
+                    .transpose_to_on_any_page(&element, int(position) as i32)
+                {
                     return (
                         Some("that cannot be moved there".into()),
                         self.corrections(),
@@ -606,12 +655,17 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
 ///   `value` (the written value a note is entered with, `[n, d]`), `entry`
-///   (whether a press on empty staff writes a note): `{}`.
+///   (whether a press on empty staff writes a note), `layout` (`"page"` or
+///   `"continuous"`, how the window looks at the score): `{}`.
 /// - `select` -- `elements`: the page's element ids to select. `{}`.
 /// - `selected` -- `{"elements", "items"}`: what is selected, as the page and
 ///   the model name it.
 /// - `value` -- `{"value"}`: the written value a note is entered with, `[n, d]`.
 /// - `entry` -- `{"entry"}`: whether a press on empty staff writes a note.
+/// - `layout` -- `{"layout"}`: how the window looks at the score.
+/// - `page` -- `{"page", "paper", "landscape", "papers"}`: the page setup,
+///   the name of its paper when it is a known one, which way up it is, and the
+///   papers there are.
 /// - `mei` -- `{"mei"}`: the score as MEI.
 ///
 /// A verb that edits (`act`) is the context's, since it leaves an entry. An
@@ -660,6 +714,13 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
                 editor.entry = entry;
             }
+            if let Some(view) = request
+                .get("layout")
+                .and_then(Value::as_str)
+                .and_then(View::parse)
+            {
+                editor.view = view;
+            }
             if let Some(value) = request
                 .get("value")
                 .and_then(|v| serde_json::from_value::<Ratio>(v.clone()).ok())
@@ -689,6 +750,17 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         .to_string(),
         "value" => json!({"value": editor.value}).to_string(),
         "entry" => json!({"entry": editor.entry}).to_string(),
+        "layout" => json!({"layout": editor.view.word()}).to_string(),
+        "page" => {
+            let setup = editor.setup();
+            json!({
+                "page": setup,
+                "paper": setup.paper(),
+                "landscape": setup.landscape(),
+                "papers": PAPERS.iter().map(|p| p.name).collect::<Vec<_>>(),
+            })
+            .to_string()
+        }
         "mei" => json!({"mei": editor.held().mei()}).to_string(),
         _ => "{}".into(),
     }

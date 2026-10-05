@@ -397,6 +397,19 @@ pub fn set_header(mut sheet: Sheet, header: Header) -> Result<Sheet, String> {
     Ok(sheet)
 }
 
+/// Lay the score out on `page` -- the paper, the margins, the staff size --
+/// or, with `None`, on nothing anybody chose: the default.
+///
+/// # Errors
+/// When the engraver could not take the setup ([`super::PageSetup::check`]).
+pub fn set_page(mut sheet: Sheet, page: Option<super::PageSetup>) -> Result<Sheet, String> {
+    if let Some(page) = &page {
+        page.check()?;
+    }
+    sheet.page = page;
+    Ok(sheet)
+}
+
 /// Give a measure a right barline other than the ordinary single one.
 ///
 /// `measure` is 1-based, as everywhere a caller names one. `single` removes the

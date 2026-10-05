@@ -21,6 +21,8 @@ trait Erased {
     fn edit(&self, action: &str) -> bool;
     fn timemap(&self, options: &str) -> String;
     fn midi_values(&self, xml_id: &str) -> Option<String>;
+    fn set_options(&self, options: &str) -> bool;
+    fn page_count(&self) -> i32;
 }
 
 impl<E> Erased for E
@@ -48,6 +50,12 @@ where
     }
     fn midi_values(&self, xml_id: &str) -> Option<String> {
         Engraver::midi_values(self, xml_id)
+    }
+    fn set_options(&self, options: &str) -> bool {
+        Engraver::set_options(self, options)
+    }
+    fn page_count(&self) -> i32 {
+        Engraver::page_count(self)
     }
 }
 
@@ -93,6 +101,12 @@ impl Engraver for AnyEngraver {
     }
     fn midi_values(&self, xml_id: &str) -> Option<String> {
         self.0.midi_values(xml_id)
+    }
+    fn set_options(&self, options: &str) -> bool {
+        self.0.set_options(options)
+    }
+    fn page_count(&self) -> i32 {
+        self.0.page_count()
     }
 }
 

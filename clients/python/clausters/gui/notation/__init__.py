@@ -55,7 +55,8 @@ from .sheet import (
     interpretation, invert, item_id, marks, measures, move_steps, ops, pitch,
     remove_measures,
     remove_spanner, repeat, retrograde, set_barline, set_break, set_dur,
-    set_header, set_marks, set_meter, set_pitches, silence, stack, stretch, tie,
+    set_header, set_marks, set_meter, set_page, set_pitches, silence, stack,
+    stretch, tie,
     to_mei, to_notes, to_voice, transpose,
 )
 from .sheet import from_mei as sheet_from_mei
@@ -94,6 +95,7 @@ __all__ = [
     "set_header",
     "set_marks",
     "set_meter",
+    "set_page",
     "set_pitches",
     "sheet_from_mei",
     "sheet_from_notes",

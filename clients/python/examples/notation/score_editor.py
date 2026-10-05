@@ -44,6 +44,12 @@ What it shows, roughly in the order it does it:
 * **A transformation takes the measures the selection covers.** `transform`
   hands the model's operators -- here an octave up and a retrograde -- the
   span of what is selected, or everything with nothing selected.
+* **The paper is the score's, and the way of looking at it is the
+  window's.** The score opens as pages of A4, fixed whatever the window's
+  size: drag on blank paper to pan, turn the wheel with Ctrl to zoom. `paper`
+  lays it out on the next paper (`set_page`, an edit like any other, written
+  into the MEI); `layout` switches to one continuous system and back, which
+  edits nothing.
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike, and so do the undo and redo
   buttons.
@@ -179,6 +185,8 @@ buttons = [
     panel(button(name="write", label="write: on"),
           button(name="octave", label="octave up"),
           button(name="retro", label="retrograde"),
+          button(name="layout", label="layout: page"),
+          button(name="paper", label="paper: A4"),
           layout="row", h=34.0),
 ]
 
@@ -196,6 +204,29 @@ win = editor.window
 def toggle_entry() -> None:
     editor.entry = not editor.entry
     win["write"].set(label=f"write: {'on' if editor.entry else 'off'}")
+
+
+# %% [markdown]
+# ## The paper, and the way of looking at it
+# Two switches that look alike and are not: the **layout** is this window's
+# (pages, or one system that never breaks) and edits nothing; the **paper** is
+# the score's, so changing it is an edit -- it is undone with the rest, and it
+# is written into the MEI.
+
+# %%
+def toggle_layout() -> None:
+    editor.layout = "continuous" if editor.layout == "page" else "page"
+    win["layout"].set(label=f"layout: {editor.layout}")
+
+
+def next_paper() -> None:
+    """The next paper of the ones there are, upright."""
+    setup = editor.page
+    papers = setup["papers"]
+    at = papers.index(setup["paper"]) if setup["paper"] in papers else -1
+    paper = papers[(at + 1) % len(papers)]
+    if editor.set_page(paper, landscape=False):
+        win["paper"].set(label=f"paper: {paper}")
 
 
 # %% [markdown]
@@ -249,6 +280,8 @@ win["redo"].on_click(editor.redo)
 win["write"].on_click(toggle_entry)
 win["octave"].on_click(lambda: editor.transform("transpose", semitones=12))
 win["retro"].on_click(lambda: editor.transform("retrograde"))
+win["layout"].on_click(toggle_layout)
+win["paper"].on_click(next_paper)
 editor.on_closed(lambda: print("window closed"))
 print("click a note to select it (Ctrl adds, Shift extends), drag one up or "
       "down the staff, press empty staff to write an eighth; the buttons act on "

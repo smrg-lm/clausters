@@ -36,6 +36,7 @@ mod any;
 mod cursors;
 mod edit;
 mod interp;
+mod layout;
 mod mei;
 mod model;
 mod operators;
@@ -49,9 +50,10 @@ pub use any::AnyEngraver;
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
     At, add_spanner, delete, insert, move_steps, pitch_at, remove_spanner, set_barline, set_break,
-    set_dur, set_header, set_marks, set_pitches, silence, tie, to_voice,
+    set_dur, set_header, set_marks, set_page, set_pitches, silence, tie, to_voice,
 };
 pub use interp::{Accent, Articulation, Interpretation, Note, default_interpretation, perform};
+pub use layout::{PAPERS, PageSetup, Paper, View, options as layout_options, paper};
 pub use mei::{Slot, key_alteration, sheet_to_mei, voice_to_mei, voice_to_sheet};
 pub use model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use operators::{

@@ -1461,10 +1461,30 @@ opened it.
     here, and the menu that offers it is `X5.5`'s. Both clients gained `entry`
     and `transform`, and the example's slur is made from a selection of its
     two ends.)*
-  - ⬜ **X5.3 - The views and the paper.** Page and continuous; page setup in
+  - ✅ **X5.3 - The views and the paper.** Page and continuous; page setup in
     the model and in MEI; the paper sizes, the orientation, the margins and the
     staff size; every page in the plane; pan from blank paper, zoom as the
-    view's transform.
+    view's transform. *(Done 2026-10-05. `notation::layout` holds the papers,
+    the `PageSetup` -- a field of the sheet, set by the `set_page` operation,
+    written into the score definition as `page.*` and `vu.height` and read
+    back -- the `View`, and the one function that turns the two into the
+    engraver's options. Measured against the engraver: `auto` honours a
+    written break and fills in the rest, so it is the page view's mode; and
+    its `scale` is a zoom of the layout, so paper is laid out at 100 or a page
+    holds more music than its staff size says. The engraver port gained
+    `set_options` and `page_count`, and `Score::relayout` lays a document out
+    again with its history intact. A page view is every page one under another
+    in one display list (`DisplayList::stacked`), each in a frame drawn as
+    fills so the paper's edge is never read as a staff; the drawing is sized
+    by the paper's width across the window in both views, so a staff is the
+    same size in either. The window's scroll pans both ways with bars, a drag
+    on blank paper pans because the page declines that press, and the host
+    gained `zoom: "ctrl"` on a plane -- the wheel scrolls and Ctrl with it
+    zooms -- since a plane could only do one or the other. Both clients gained
+    `layout` (the window's: it is not called `view`, which is every editor's
+    picture), `page` and `set_page`, and the `set_page` sheet builder. A
+    second window over one score shows the layout of the last one laid out:
+    the engraver is one, and that is left as it is.)*
   - ⬜ **X5.4 - The page's text.** The head and foot layout in the model,
     emitted as encoded running elements; editing in place and the dialog.
   - ⬜ **X5.5 - The menu bar and the toolbar.** Every entry above; the input
@@ -1495,13 +1515,16 @@ opened it.
     others go with the script-side editor they assembled. `score_from_data.py`
     renders a timeline into a score rather than editing one, and stays.
 
-  **Open, each decided at its step:** the accidental's drag (proposed: it is
-  its note's); whether a spanner's end can also be dragged onto another note,
-  beside re-choosing it from a selection; the hit index's structure, by measurement; which `breaks` mode the page
-  view uses; whether pages stack vertically or side by side; how a channel
-  group is named in the sequence; each notation key's spelling (`X5.7`). `N7` (what a foreign score's layout keeps)
-  and `N9` (a score as a box of the multitrack) stay where they are; `N9`'s
-  double click opens this application.
+  **Open, each decided at its step:** whether a spanner's end can also be
+  dragged onto another note, beside re-choosing it from a selection; how a
+  channel group is named in the sequence; each notation key's spelling
+  (`X5.7`). *(Settled on the way: an accidental's press and drag are its
+  note's, since the walk gives a note's parts its id; the hit index is a
+  uniform grid; the page view's `breaks` mode is `auto`; pages stack one under
+  another; the toolbar's icons are the engraver's SMuFL outlines.)* `N7` (what
+  a foreign score's layout keeps) and `N9` (a score as a box of the
+  multitrack) stay where they are; `N9`'s double click opens this
+  application.
 
 - ⬜ **X6 - The composed views: which heavy widgets get an application.**
   *(Raised by the user 2026-09-14: it may also be worth moving some composed
