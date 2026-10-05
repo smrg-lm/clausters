@@ -1038,7 +1038,14 @@ numbered by whoever opens the window, as every widget id is. A tool that holds
 state reports its value and one that acts reports a click, and both are read
 into the same verbs; the *input state* they set -- the value, its dot, a rest,
 an armed accidental -- is the editor's, so a press on the page writes it
-whichever client is driving. **The paper is the document's and the layout the
+whichever client is driving. **A tool is drawn with the engraver's symbol.**
+The engraver has no door that hands a glyph out, but it draws any codepoint
+asked of it as a notehead, so `Score::outlines` engraves a *specimen*
+(`notation::specimen`: one note per codepoint) and reads the glyph table every
+page carries, then puts the document back -- the same call under the native
+engraver and the wasm one. The window carries those outlines as its `glyphs`,
+and the host's font module draws a character that has one as a shape in the
+glyph's cell (`font::outline`), which is all an icon ever was there. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

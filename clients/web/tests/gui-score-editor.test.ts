@@ -56,6 +56,16 @@ if (!existsSync(engraver)) {
         const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
         assert.equal((toolbar as unknown as { flow: string }).flow, "row");
         assert.equal(new Set(tools.map((tool) => tool.id)).size, 12);
+        // a tool is drawn with the engraver's own symbol: its label is the
+        // SMuFL character, and the window carries the outline the host draws
+        // it with
+        const values = tools.find((tool) => tool.type === "choice") as unknown as {
+            options: string[];
+        };
+        assert.equal(values.options[2], "\uE1D5");
+        const glyphs = (tree as unknown as { glyphs: Record<string, string> }).glyphs;
+        assert.ok(glyphs.E1D5.startsWith("M"));
+        assert.equal(Object.keys(glyphs).length, 19);
         assert.equal(scroll.type, "scroll");
         const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
         assert.equal(page.type, "score");

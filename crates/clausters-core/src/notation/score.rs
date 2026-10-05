@@ -21,6 +21,8 @@
 //! in a page), so an abstraction over it would be a third vocabulary nobody
 //! speaks.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use super::{
@@ -257,6 +259,30 @@ impl<E: Engraver> Score<E> {
             cursors,
             notes,
         }
+    }
+
+    /// **The engraver's outlines for `codes`** -- SMuFL codepoints, in hex --
+    /// as codepoint to the SVG path of its shape, in the font's units with `y`
+    /// upward: the table a page carries, for symbols no page of this score may
+    /// hold. A codepoint the font has no glyph for is absent from the answer.
+    ///
+    /// It is asked by engraving a [`specimen`](super::specimen) and putting
+    /// the document back, so the model, the history and what is on the page
+    /// are as they were; it costs two loads, and a caller keeps the answer.
+    pub fn outlines(&mut self, codes: &[&str]) -> BTreeMap<String, String> {
+        let _guard = self.engraver.lock();
+        let held = self.mei_locked();
+        let mut found = BTreeMap::new();
+        if self.engraver.load_data(&super::specimen(codes)) {
+            for page in 1..=self.engraver.page_count().max(1) {
+                let drawn = svg_to_display_list(&self.engraver.render_svg(page));
+                found.extend(drawn.glyphs.into_iter().filter(|(code, _)| {
+                    codes.iter().any(|asked| asked.eq_ignore_ascii_case(code))
+                }));
+            }
+        }
+        self.load_locked(&held);
+        found
     }
 
     /// How many pages the document is laid out into.

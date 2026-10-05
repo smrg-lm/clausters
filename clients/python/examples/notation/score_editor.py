@@ -43,7 +43,8 @@ What it shows, roughly in the order it does it:
   the next note takes, its dot, whether it is a rest and its accidental (the
   input state, which is also `editor.value`, `editor.dotted`, `editor.rest`
   and `editor.next_accidental`); the articulations, a tie and a triplet for
-  what is selected; the voice of the selection; and the layout.
+  what is selected; the voice of the selection; and the layout. Each tool is
+  drawn with the engraver's own symbol, in the font the page is engraved in.
 * **The verbs act on the selection.** Every button calls one method of the
   editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
   `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is

@@ -313,6 +313,7 @@ SHAPES = {
     "theme": {"accent": "#ff8800"},
     "menu": [{"label": "Open", "verb": "open"}, "-",
              {"label": "More", "menu": ["Quit"]}],
+    "glyphs": {"E1D5": "M0 0h250v250h-250z"},
     "display_list": None,
 }
 

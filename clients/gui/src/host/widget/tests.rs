@@ -1149,3 +1149,34 @@ fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
         "see this test's documentation before adding a variant"
     );
 }
+
+/// A window's `glyphs` are the outlines of characters its text uses: taken
+/// when the window is built, added to by a set, and a window's alone -- the
+/// same key on another node is that node's own business (a `score` carries
+/// its page's table under it).
+#[cfg(feature = "notation")]
+#[test]
+fn a_window_brings_the_outlines_of_the_characters_its_text_uses() {
+    use crate::host::font::outline;
+
+    let (built, set, panel) = ('\u{F4B0}', '\u{F4B1}', '\u{F4B2}');
+    let mut tree = Widget::from_node(
+        1,
+        &node(
+            r#"{"id":1,"type":"window","glyphs":{"F4B0":"M0 0h500v500h-500z"},"children":[
+                {"id":2,"type":"layout","glyphs":{"F4B2":"M0 0h500v500h-500z"}}]}"#,
+        ),
+        &[],
+    )
+    .unwrap();
+    assert!(outline::has(built));
+    assert!(!outline::has(panel), "only a window brings them");
+    let more = serde_json::json!({"U+F4B1": "M0 0h500v500h-500z"});
+    assert!(tree.common_apply("glyphs", &more));
+    assert!(outline::has(set));
+    let child = tree.find_mut(2).unwrap();
+    assert!(
+        !child.common_apply("glyphs", &more),
+        "nor is it a layout's to set"
+    );
+}

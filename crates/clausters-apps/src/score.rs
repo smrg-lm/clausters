@@ -114,6 +114,10 @@ pub struct Window<'a> {
     pub menu: Value,
     /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
     pub toolbar: Option<Value>,
+    /// The outlines of the symbols the chrome is labelled with, by codepoint
+    /// ([`tools::Outlines`]): the window's `glyphs`, which is what lets the
+    /// host draw a character of a music font it has no face for.
+    pub glyphs: &'a tools::Outlines,
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the menu bar; the
@@ -131,6 +135,7 @@ pub fn window(w: Window<'_>) -> Value {
         scale,
         menu,
         toolbar,
+        glyphs,
     } = w;
     let (width, height) = drawn_size(page, scale);
     let mut picture = drawing(page);
@@ -163,7 +168,7 @@ pub fn window(w: Window<'_>) -> Value {
         map.insert("id".into(), json!(id));
     }
     let children: Vec<Value> = toolbar.into_iter().chain([scroll, line]).collect();
-    json!({
+    let mut window = json!({
         "type": "window",
         "title": title,
         "w": size.0,
@@ -171,7 +176,11 @@ pub fn window(w: Window<'_>) -> Value {
         "flow": "col",
         "menu": menu,
         "children": children,
-    })
+    });
+    if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {
+        map.insert("glyphs".into(), json!(glyphs));
+    }
+    window
 }
 
 /// **What the window is corrected with** after the score changed: the drawing

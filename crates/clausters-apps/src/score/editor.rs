@@ -61,6 +61,10 @@ pub struct ScoreEditor {
     ids: Option<Ids>,
     /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
     tools: tools::Ids,
+    /// The engraver's outlines for the symbols the tools are drawn with:
+    /// asked once, the first time a window has a toolbar, and kept -- `None`
+    /// until then, and empty when the engraver handed none out.
+    outlines: Option<tools::Outlines>,
     title: String,
     size: (i64, i64),
     /// The selected elements, as the page names them (`n7`, `n7-2`), in the
@@ -148,6 +152,7 @@ impl ScoreEditor {
             window: None,
             ids: None,
             tools: tools::Ids::new(),
+            outlines: None,
             title: "Score".into(),
             size: (960, 640),
             selection: Vec::new(),
@@ -179,6 +184,14 @@ impl ScoreEditor {
     pub fn window(&mut self, ids: Ids, tools: tools::Ids) -> Value {
         self.ids = Some(ids);
         self.tools = tools;
+        // the tools' symbols are the engraver's, asked for before the page is
+        // drawn since asking loads the document again
+        if !self.tools.is_empty() && self.outlines.is_none() {
+            let found = self.held().outlines(&tools::codes());
+            self.outlines = Some(found);
+        }
+        let none = tools::Outlines::new();
+        let outlines = self.outlines.clone().unwrap_or(none);
         let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
         window(Window {
@@ -190,7 +203,8 @@ impl ScoreEditor {
             entry: self.entry,
             scale: self.scale(),
             menu: self.menu(),
-            toolbar: tools::toolbar(&self.tools, &self.input()),
+            toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
+            glyphs: &outlines,
         })
     }
 

@@ -136,6 +136,7 @@ impl Bounds {
 
 pub use hit::{HitBox, HitGrid, HitShape};
 pub use list::selection;
+pub use tess::triangles;
 
 /// One placed element of the engraved page, in verovio page units.
 #[derive(Clone, Debug)]

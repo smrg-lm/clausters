@@ -198,6 +198,24 @@ mod tests {
     }
 
     #[test]
+    fn the_engraver_hands_out_the_outline_of_a_symbol_no_page_holds() {
+        let mut score = score();
+        let before = score.mei();
+        let sheet = score.sheet().cloned();
+        // a quarter note with its stem, a sharp, and a codepoint with no glyph
+        let found = score.outlines(&["E1D5", "E262", "F8FF"]);
+        assert_eq!(
+            found.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["E1D5", "E262"]
+        );
+        assert!(found["E1D5"].starts_with('M') && found["E1D5"].ends_with('z'));
+        // and the score is as it was: the document, the model, the page
+        assert_eq!(score.mei(), before);
+        assert_eq!(score.sheet().cloned(), sheet);
+        assert!(!note_ids(&score.display_list(1)).is_empty());
+    }
+
+    #[test]
     fn the_page_text_is_drawn_in_its_cells_and_survives_the_engraver() {
         use clausters_core::notation::{
             Halign, Header, PageSetup, Place, Prim, Sheet, View, default_place, layout_options,

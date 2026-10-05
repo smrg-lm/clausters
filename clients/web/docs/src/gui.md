@@ -225,7 +225,10 @@ win.handle().onEvent((tag, ...payload) => console.log(tag, payload));
 
 `gui.toolbar`, `gui.tabs`, `gui.pager`, `gui.dialog` and `gui.fileDialog` build
 the same compositions as in Python, `gui.table` the same rows of data, and `gui.ICON` names the glyphs the host's own face
-draws. A `files` chooser lists the page's own storage (OPFS) -- a path in a tab
+draws. A character the host has no face for -- a symbol of a music font -- is
+still an icon when the window brings its outline: `gui.view({ glyphs: { E1D5:
+path } })` maps a codepoint to the SVG path of its shape, and from then on that
+character is drawn as the shape wherever text is. A `files` chooser lists the page's own storage (OPFS) -- a path in a tab
 is a path there, and `/` its root -- where the same chooser lists the disk in a
 window. `examples/panels/chrome.html` holds one of each.
 

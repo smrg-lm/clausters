@@ -1054,6 +1054,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
          split: bool | None = None, menu: list | None = None,
+         glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
@@ -1107,9 +1108,19 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     out of the area the children are laid out in. A pick is reported by the
     window itself, as ``("menu", verb)``. ``split`` makes the gaps between the
     window's own children dividers a drag moves, as on `layout`.
+
+    ``glyphs`` are **outlines for characters the window's text uses**: a
+    codepoint in hex (``"E1D5"``) to the SVG path of its shape, in the font's
+    units with ``y`` upward and 1000 to the em -- the form a `score`'s display
+    list carries its own in. Such a character is then drawn as that shape
+    wherever text is -- an ``icon``, a label, a `choice`'s option, a menu entry
+    -- which is how a symbol of a music font is an icon on a machine with no
+    face for it. The table is the host's: the last outline sent for a
+    character is the one drawn, in every window.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
-                       cols=cols, theme=theme, color=color, menu=menu)
+                       cols=cols, theme=theme, color=color, menu=menu,
+                       glyphs=None if glyphs is None else dict(glyphs))
     if split is not None:
         extra["split"] = 1 if split else 0
     if hug is not None:

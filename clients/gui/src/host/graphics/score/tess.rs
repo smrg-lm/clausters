@@ -280,6 +280,36 @@ fn xf_shrink(xf: Affine) -> f32 {
     1.0 / xf.sx.abs().max(f32::MIN_POSITIVE)
 }
 
+/// **The fill of the path `d`, as triangle corners** in the path's own
+/// coordinates, three to a triangle -- nothing for a path that fills nothing.
+///
+/// What a caller keeps when it draws one outline many times at sizes it does
+/// not know yet: the triangles are tessellated once, at tolerance `tol` in the
+/// path's units, and mapped where they are drawn.
+pub fn triangles(d: &str, tol: f32) -> Vec<[f32; 2]> {
+    let Some(path) = build_path(d) else {
+        return Vec::new();
+    };
+    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
+    let opts = FillOptions::tolerance(tol.max(f32::MIN_POSITIVE)).with_fill_rule(FillRule::NonZero);
+    let filled = FillTessellator::new().tessellate_path(
+        &path,
+        &opts,
+        &mut BuffersBuilder::new(&mut buffers, |v: FillVertex| {
+            let p = v.position();
+            [p.x, p.y]
+        }),
+    );
+    if filled.is_err() {
+        return Vec::new();
+    }
+    buffers
+        .indices
+        .iter()
+        .map(|&i| buffers.vertices[i as usize])
+        .collect()
+}
+
 /// Parse an SVG path `d`, flatten + fill it with lyon, and emit the triangles
 /// into `mesh` after mapping each vertex through `xf`. Tessellation happens in
 /// the path's own coordinate space (tolerance `tol`), then the resulting

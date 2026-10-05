@@ -1464,12 +1464,23 @@ export function view(
      * by the window itself, as `"menu" verb`.
      */
     menu?: MenuTree;
+    /**
+     * **Outlines for characters the window's text uses**: a codepoint in hex
+     * (`"E1D5"`) to the SVG path of its shape, in the font's units with `y`
+     * upward and 1000 to the em -- the form a `score`'s display list carries
+     * its own in. Such a character is then drawn as that shape wherever text
+     * is -- an `icon`, a label, a `choice`'s option, a menu entry -- which is
+     * how a symbol of a music font is an icon on a machine with no face for
+     * it. The table is the host's: the last outline sent for a character is
+     * the one drawn, in every window.
+     */
+    glyphs?: Record<string, string>;
     } = {},
     ...children: GuiNode[]
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, theme, split,
-        menu: bar, ...rest
+        menu: bar, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1481,6 +1492,7 @@ export function view(
             ["cols", cols],
             ["theme", theme],
             ["menu", bar === undefined ? undefined : [...bar]],
+            ["glyphs", glyphs === undefined ? undefined : { ...glyphs }],
             ["split", flag(split)],
             ["hug", flag(hug)],
             ["status", flag(status)],

@@ -5187,6 +5187,19 @@
  },
  {
   "builder": "view",
+  "option": "glyphs",
+  "value": {
+   "E1D5": "M0 0h250v250h-250z"
+  },
+  "tree": {
+   "type": "window",
+   "glyphs": {
+    "E1D5": "M0 0h250v250h-250z"
+   }
+  }
+ },
+ {
+  "builder": "view",
   "option": "theme",
   "value": {
    "accent": "#ff8800"
@@ -5838,6 +5851,19 @@
      ]
     }
    ]
+  }
+ },
+ {
+  "builder": "window",
+  "option": "glyphs",
+  "value": {
+   "E1D5": "M0 0h250v250h-250z"
+  },
+  "tree": {
+   "type": "window",
+   "glyphs": {
+    "E1D5": "M0 0h250v250h-250z"
+   }
   }
  },
  {

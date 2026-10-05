@@ -19,12 +19,19 @@
 //! both: with notes selected it is theirs, and with none it is armed for the
 //! next note and let go once that note is written. The voice is the
 //! selection's.
+//!
+//! **A tool is drawn with the engraver's own symbol** where it has one: its
+//! label is the SMuFL character ([`CODES`]), and the window carries the
+//! outline of each ([`Outlines`], asked of the engraver once), so the host
+//! draws the shape the page would. Where the engraver handed none out -- a
+//! font without that glyph, an engraver that draws nothing -- the label is the
+//! text it always was.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::View;
+use clausters_core::notation::{View, glyph_char};
 use clausters_core::ratio::Ratio;
 
 use super::menu::VALUES;
@@ -48,17 +55,58 @@ pub const TOOLS: &[&str] = &[
 /// The caller's widget id for each tool it numbered.
 pub type Ids = BTreeMap<String, i32>;
 
-/// The accidentals the toolbar offers, as semitones of alteration; the first
-/// segment is none.
-pub const ACCIDENTALS: &[(&str, i32)] = &[("bb", -2), ("b", -1), ("nat", 0), ("#", 1), ("x", 2)];
+/// The engraver's outlines, by SMuFL codepoint: what
+/// [`Score::outlines`](clausters_core::notation::Score::outlines) answers.
+pub type Outlines = BTreeMap<String, String>;
 
-/// The articulations it offers, by tool name: the label and what it says.
-const ARTICULATIONS: &[(&str, &str, &str)] = &[
-    ("stacc", ".", "Staccato"),
-    ("acc", ">", "Accent"),
-    ("ten", "-", "Tenuto"),
-    ("marc", "^", "Marcato"),
+/// The written values' symbols, in [`VALUES`]' order: a note of each, alone.
+const VALUE_CODES: [&str; 7] = ["E1D2", "E1D3", "E1D5", "E1D7", "E1D9", "E1DB", "E1DD"];
+
+/// The augmentation dot, a quarter rest and the triplet's figure.
+const DOT: &str = "E1E7";
+const REST: &str = "E4E5";
+const TRIPLET: &str = "E883";
+
+/// The accidentals the toolbar offers: the text label, the symbol, and the
+/// semitones of alteration; the first segment is none.
+pub const ACCIDENTALS: &[(&str, &str, i32)] = &[
+    ("bb", "E264", -2),
+    ("b", "E260", -1),
+    ("nat", "E261", 0),
+    ("#", "E262", 1),
+    ("x", "E263", 2),
 ];
+
+/// The articulations it offers, by tool name: the text label, the symbol, and
+/// what it says.
+const ARTICULATIONS: &[(&str, &str, &str, &str)] = &[
+    ("stacc", ".", "E4A2", "Staccato"),
+    ("acc", ">", "E4A0", "Accent"),
+    ("ten", "-", "E4A4", "Tenuto"),
+    ("marc", "^", "E4AC", "Marcato"),
+];
+
+/// **Every codepoint a tool is drawn with**: what the editor asks the
+/// engraver's outlines for.
+#[must_use]
+pub fn codes() -> Vec<&'static str> {
+    VALUE_CODES
+        .into_iter()
+        .chain([DOT, REST, TRIPLET])
+        .chain(ACCIDENTALS.iter().map(|a| a.1))
+        .chain(ARTICULATIONS.iter().map(|a| a.2))
+        .collect()
+}
+
+/// What a tool shows: the symbol `code`, as its character, when the engraver
+/// handed its outline out, and `text` otherwise.
+fn shown(outlines: &Outlines, code: &str, text: &str) -> String {
+    outlines
+        .contains_key(code)
+        .then(|| glyph_char(code))
+        .flatten()
+        .map_or_else(|| text.to_string(), String::from)
+}
 
 /// What the toolbar shows of the editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,7 +135,7 @@ impl State {
 
     fn accidental_index(&self) -> usize {
         self.accidental
-            .and_then(|alter| ACCIDENTALS.iter().position(|(_, a)| *a == alter))
+            .and_then(|alter| ACCIDENTALS.iter().position(|(_, _, a)| *a == alter))
             .map_or(0, |at| at + 1)
     }
 
@@ -127,9 +175,11 @@ fn press(label: &str, tip: &str) -> Value {
 }
 
 /// **The toolbar**, as a GuiDef row -- or `None` when the caller numbered no
-/// tool, which is a window without one.
+/// tool, which is a window without one. A tool whose symbol is in `outlines`
+/// is labelled with it.
 #[must_use]
-pub fn toolbar(ids: &Ids, state: &State) -> Option<Value> {
+pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
+    let shown = |code: &str, text: &str| shown(outlines, code, text);
     let sep = || json!({"type": "separator"});
     let mut children: Vec<Value> = Vec::new();
     let group = |tools: Vec<Option<Value>>, children: &mut Vec<Value>| {
@@ -150,19 +200,21 @@ pub fn toolbar(ids: &Ids, state: &State) -> Option<Value> {
                 segments(
                     VALUES
                         .iter()
-                        .map(|(_, (n, d))| {
-                            if *d == 1 {
+                        .zip(VALUE_CODES)
+                        .map(|((_, (n, d)), code)| {
+                            let text = if *d == 1 {
                                 n.to_string()
                             } else {
                                 format!("{n}/{d}")
-                            }
+                            };
+                            shown(code, &text)
                         })
                         .collect(),
                     "The value a note is written with",
                 ),
             ),
-            tool(ids, "dot", latch(".", "Dotted")),
-            tool(ids, "rest", latch("rest", "Write rests")),
+            tool(ids, "dot", latch(&shown(DOT, "."), "Dotted")),
+            tool(ids, "rest", latch(&shown(REST, "rest"), "Write rests")),
         ],
         &mut children,
     );
@@ -172,7 +224,7 @@ pub fn toolbar(ids: &Ids, state: &State) -> Option<Value> {
             "accidental",
             segments(
                 std::iter::once("-".to_string())
-                    .chain(ACCIDENTALS.iter().map(|(label, _)| (*label).to_string()))
+                    .chain(ACCIDENTALS.iter().map(|(text, code, _)| shown(code, text)))
                     .collect(),
                 "The accidental: of what is selected, or of the next note",
             ),
@@ -182,7 +234,7 @@ pub fn toolbar(ids: &Ids, state: &State) -> Option<Value> {
     group(
         ARTICULATIONS
             .iter()
-            .map(|(name, label, tip)| tool(ids, name, press(label, tip)))
+            .map(|(name, text, code, tip)| tool(ids, name, press(&shown(code, text), tip)))
             .collect(),
         &mut children,
     );
@@ -192,7 +244,7 @@ pub fn toolbar(ids: &Ids, state: &State) -> Option<Value> {
             tool(
                 ids,
                 "tuplet",
-                press("3", "Triplet: three in the time of two"),
+                press(&shown(TRIPLET, "3"), "Triplet: three in the time of two"),
             ),
         ],
         &mut children,
@@ -304,7 +356,7 @@ pub fn read(name: &str, tag: &str) -> Option<Tool> {
         "rest" => Tool::Rest(on),
         "accidental" => Tool::Accidental(match index {
             0 => None,
-            at => Some(ACCIDENTALS.get(at - 1)?.1),
+            at => Some(ACCIDENTALS.get(at - 1)?.2),
         }),
         "voice" => Tool::Voice(index.min(1)),
         "layout" => Tool::Layout(if index == 0 {
@@ -341,7 +393,7 @@ mod tests {
 
     #[test]
     fn the_row_holds_every_tool_under_the_callers_id_showing_the_state() {
-        let row = toolbar(&ids(), &state()).expect("a toolbar");
+        let row = toolbar(&ids(), &state(), &Outlines::new()).expect("a toolbar");
         let children = row["children"].as_array().unwrap();
         let by_id = |id: i32| children.iter().find(|c| c["id"] == json!(id)).unwrap();
         for (i, name) in TOOLS.iter().enumerate() {
@@ -353,7 +405,29 @@ mod tests {
         assert_eq!(by_id(110)["index"], 1, "the second voice");
         assert_eq!(by_id(111)["index"], 1, "continuous");
         // a window that numbered no tool has no toolbar
-        assert!(toolbar(&Ids::new(), &state()).is_none());
+        assert!(toolbar(&Ids::new(), &state(), &Outlines::new()).is_none());
+    }
+
+    #[test]
+    fn a_tool_is_labelled_with_its_symbol_where_the_engraver_has_it() {
+        // the engraver handed out a quarter and a sharp, and nothing else
+        let outlines: Outlines = [("E1D5", "M0 0h1v1z"), ("E262", "M0 0h1v1z")]
+            .into_iter()
+            .map(|(code, path)| (code.to_string(), path.to_string()))
+            .collect();
+        let row = toolbar(&ids(), &state(), &outlines).expect("a toolbar");
+        let children = row["children"].as_array().unwrap();
+        let by_id = |id: i32| children.iter().find(|c| c["id"] == json!(id)).unwrap();
+        let values = by_id(100)["options"].as_array().unwrap();
+        assert_eq!(values[2], "\u{E1D5}", "the quarter is its symbol");
+        assert_eq!(values[3], "1/8", "the eighth has none and stays text");
+        assert_eq!(by_id(103)["options"][4], "\u{E262}");
+        assert_eq!(by_id(103)["options"][0], "-", "none is no symbol");
+        assert_eq!(by_id(104)["label"], ".");
+        // every symbol asked for is a codepoint, each once
+        let asked = codes();
+        assert_eq!(asked.len(), 19);
+        assert!(asked.iter().all(|code| glyph_char(code).is_some()));
     }
 
     #[test]

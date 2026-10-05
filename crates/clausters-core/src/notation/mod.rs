@@ -41,6 +41,7 @@ mod mei;
 mod model;
 mod operators;
 mod ops;
+mod outlines;
 mod pagetext;
 mod read;
 mod score;
@@ -62,6 +63,7 @@ pub use operators::{
     stack, stretch,
 };
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
+pub use outlines::{glyph_char, specimen};
 pub use pagetext::{
     FIELDS, Halign, NOTE, Pages, Place, Region, Valign, default_place, field_id, field_of,
 };

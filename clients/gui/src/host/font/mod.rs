@@ -38,6 +38,7 @@ use super::paint::{Color, Mesh};
 
 #[cfg(feature = "font-atlas")]
 pub mod atlas;
+pub mod outline;
 
 /// **The symbol set**: the characters the host draws as its own icons, each at
 /// the Unicode codepoint that means it.
@@ -431,8 +432,9 @@ pub fn advance(scale: f32) -> f32 {
 /// in a layout pass calls it -- a measurement happens where a string changes.
 pub fn advance_of(c: char, scale: f32) -> f32 {
     // A symbol takes the bitmap's cell whatever face is loaded: it is drawn
-    // as a shape in that cell ([`symbol_shape`]).
-    if symbol::ALL.contains(&c) {
+    // as a shape in that cell ([`symbol_shape`]), and so is a character a
+    // window brought the outline of ([`outline`]).
+    if symbol::ALL.contains(&c) || outline::has(c) {
         return ADVANCE as f32 * scale;
     }
     #[cfg(feature = "font-atlas")]
@@ -452,7 +454,9 @@ pub fn advance_of(c: char, scale: f32) -> f32 {
 /// is crisp at any size and the same with or without a face.
 fn symbol_shape(mesh: &mut Mesh, c: char, x: f32, y: f32, scale: f32, color: Color) -> bool {
     if !symbol::ALL.contains(&c) {
-        return false;
+        // not one of the host's own: a character a window brought the
+        // outline of is a shape in the same cell
+        return outline::draw(mesh, c, x, y, scale, color);
     }
     let w = GLYPH_W as f32 * scale;
     let h = GLYPH_H as f32 * scale;

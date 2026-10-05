@@ -447,6 +447,13 @@ impl Widget {
         let id = id.or(node.id);
         let props = &node.props;
         let kind = build::build_kind(node.kind.as_str(), props, !node.children.is_empty(), blobs)?;
+        // A window's `glyphs` are the outlines of characters its text uses,
+        // taken before anything in it is measured or drawn.
+        if let (WidgetKind::Window { .. }, Some(glyphs)) =
+            (&kind, props.get("glyphs").and_then(Value::as_object))
+        {
+            super::font::outline::set(glyphs);
+        }
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored.
         let children = match kind {
@@ -567,8 +574,8 @@ impl Widget {
     }
 
     /// Applies a `/gui_set` of the props **every widget carries** beside its
-    /// style: `menu`, `context`, `enabled` and `tip`. Returns whether the key
-    /// was one of them and applied.
+    /// style: `menu`, `context`, `enabled` and `tip` -- and a window's
+    /// `glyphs`. Returns whether the key was one of them and applied.
     ///
     /// `enabled` composes down the tree, so the caller re-resolves the window
     /// after it -- the same mutation point a theme goes through.
@@ -586,6 +593,10 @@ impl Widget {
             "tip" => {
                 self.tip = v.as_str().filter(|t| !t.is_empty()).map(str::to_string);
                 true
+            }
+            // a window's own: more outlines for the characters its text uses
+            "glyphs" if matches!(self.kind, WidgetKind::Window { .. }) => {
+                v.as_object().map(super::font::outline::set).is_some()
             }
             _ => false,
         }

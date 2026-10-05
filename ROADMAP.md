@@ -175,8 +175,8 @@ its plan; the plan is where its acceptance is read.
   planned 2026-10-05 as `X5.0`-`X5.9`, its first five steps (`X5.0`, which was
   `N8`, `X5.1`, the application in the crate, `X5.2`, selection, `X5.3`, the
   views and the paper, and `X5.4`, the page's text) done, and `X5.5`, the
-  chrome, half way: the menu bar and the toolbar are in, its icons and its
-  dialogs are left; **`X6`** which composed views (scope, plot, waveform,
+  chrome, but for its last part: the menu bar, the toolbar and its icons are
+  in, the dialogs are left; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a

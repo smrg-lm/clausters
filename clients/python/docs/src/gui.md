@@ -488,7 +488,10 @@ it, `icon=` is one character — there are no icons in the host and there are
 fonts, and `ICON` names the glyphs its own face draws — a `separator` splits
 the groups, and one with a `weight` is the spring that sends the rest to the
 far edge. `tip=` on any widget is the text that shows once the pointer has
-rested on it.
+rested on it. A character the host has no face for — a symbol of a music font
+— is still an icon when the window brings its outline: `view(glyphs={"E1D5":
+path})` maps a codepoint to the SVG path of its shape, and from then on that
+character is drawn as the shape wherever text is.
 
 **A container shows itself with props.** `title=` and `frame=` make a `panel`
 a group, and `collapsed=` a section that folds on its title strip. `split=True`

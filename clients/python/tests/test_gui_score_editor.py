@@ -40,6 +40,12 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     # the toolbar is a row of the crate's tools, each under an id of its own
     tools = [tool for tool in toolbar["children"] if "id" in tool]
     assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 12
+    # a tool is drawn with the engraver's own symbol: its label is the SMuFL
+    # character, and the window carries the outline the host draws it with
+    values = next(tool for tool in tools if tool.get("type") == "choice")["options"]
+    assert values[2] == "\ue1d5"
+    assert tree["glyphs"]["E1D5"].startswith("M")
+    assert len(tree["glyphs"]) == 19
     assert scroll["type"] == "scroll"
     page = scroll["children"][0]
     assert page["type"] == "score"

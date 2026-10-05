@@ -1539,7 +1539,24 @@ opened it.
       input state as properties, and the methods of `X5.5.1`'s measure verbs,
       which had none. The tools are labelled in text until `X5.5.3`. Not in
       it: the transport controls, which wait for playback (`X5.8`).)*
-    - ⬜ **X5.5.3 - The toolbar's icons**, the engraver's SMuFL outlines.
+    - ✅ **X5.5.3 - The toolbar's icons**, the engraver's SMuFL outlines.
+      *(Done 2026-10-05. **Where the outlines come from** was measured: the
+      engraver has no door that hands a glyph out and its data directory is
+      not reachable in a page, but it draws any codepoint asked of it as a
+      notehead (`head.shape`), as an outline, in both builds. So
+      `notation::specimen` writes one note per codepoint, `Score::outlines`
+      engraves it, reads the glyph table every page carries and puts the
+      document back -- two loads, once per editor, and the same call native
+      and wasm. Nineteen symbols: the seven note values, the dot, a rest, five
+      accidentals, four articulations and the triplet's figure. **How the host
+      draws one** keeps its rule that an icon is a glyph of the font: a
+      `window` may carry `glyphs`, a codepoint to the path of its shape, and
+      the font module draws a character that has one as a shape in the glyph's
+      cell, as its own symbol set is -- so a tool's label is one character and
+      no widget learned a picture prop. A tool whose symbol the engraver did
+      not hand out keeps its text label; the tie has none in the font and
+      stays text. The size an outline is drawn at (the em 1.25 body boxes
+      tall) is set by reasoning and is to be judged by eye.)*
     - ⬜ **X5.5.4 - A dialog while the window is up**, and a text edited in
       place.
   - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
