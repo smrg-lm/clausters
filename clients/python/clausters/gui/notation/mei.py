@@ -252,11 +252,19 @@ def _write_marks(slot: dict, events, ticks: int, beat_unit: int) -> None:
     documented loss.
     """
     for key in NOTATION_KEYS:
+        if key == "pitches":
+            continue
         for ev in events:
             value = ev.get(key)
             if value is not None:
                 slot[key] = value
                 break
+    # The written pitches are the chord's only when every one of its notes
+    # states its own: one that gave a number has to be spelled, and a slot
+    # spells all of its notes or none.
+    written = [ev.get("pitches") for ev in events]
+    if written and all(written):
+        slot["pitches"] = [pitch for pitches in written for pitch in pitches]
     stated = next((ev for ev in events if ev.get("sustain") is not None), None)
     if stated is None or slot.get("articulations"):
         return

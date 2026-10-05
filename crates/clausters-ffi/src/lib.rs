@@ -520,7 +520,14 @@ pub use time::*;
 /// **v81 an event's curves are sent by the client.**
 /// `clausters_editing_event_curves`: the `/node_set`s a played event's curves
 /// come to, one window at a time. Additive.
-pub const CORE_ABI_VERSION: u32 = 81;
+/// **v82 the notation keys are one table.**
+/// `clausters_core_event_notation_keys`: what an event says about the page it
+/// is written on, each key with what it holds, its unit and which way it is
+/// read; and `clausters_core_event_written_midinote`, the MIDI note a
+/// `pitches` value sounds. Additive. An event that states no sounding pitch
+/// now sounds the first of its `pitches`, and `pitches`, `value`, `staff` and
+/// `voice` no longer reach a synth as controls.
+pub const CORE_ABI_VERSION: u32 = 82;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -1061,7 +1061,19 @@ engraver's and the model is ours -- where an entry is a verb over the
 selection and its tip the element in a sentence. Only what the model holds
 has an entry. The three sets of ids a caller numbers -- tools, dialogs,
 palette entries -- are one `score::Chrome`, and whatever is left empty in it
-is chrome the window does not have. **The paper is the document's and the layout the
+is chrome the window does not have.
+
+**What an event says about its page is one table.** The notation keys are
+`clausters_core::event::notation::KEYS`: each key with what it holds, its unit
+and which way it is read, reserved so none reaches a synth, crossed to every
+client by one symbol and pinned to each client's own list by a test. Two are
+the written form of something the event also sounds -- `pitches` against
+`midinote`, `value` against `dur` -- and the table says which is the source; an
+event that states no sounding pitch sounds the first it is written with, in the
+render and in each client's own reading alike. What is not any note's -- the
+grid, the key, the clefs, the page, and whatever has two ends -- is the
+sequence's `notation` section (`clausters_document::events::EventSequence`),
+kept as it was written and read by nothing a sequence does. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

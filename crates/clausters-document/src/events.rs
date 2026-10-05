@@ -124,6 +124,20 @@ pub struct EventSequence {
     /// for the server, where every curve is legal. See [`MidiSpec`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub midi: Option<MidiSpec>,
+    /// **What a score says that is not any note's**, when the sequence was
+    /// rendered from one: the meter and its changes, the key, the clefs, the
+    /// barlines and breaks, the page and its text -- and what has two ends, a
+    /// slur or a hairpin, which names them by event id. An event says what
+    /// its own note is on a page with the notation keys
+    /// (`clausters_core::event::notation`); this is the rest, kept with the
+    /// sequence so a score rendered into one loses nothing on the way.
+    ///
+    /// It is held as it was written and not read here: the score's model is
+    /// the notation layer's (`clausters_core::notation`, a feature this crate
+    /// does not ask for), and nothing a sequence does -- playing, editing an
+    /// event, drawing a roll -- depends on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notation: Option<Value>,
     /// The last id minted. Kept, so an id is never handed out twice, not even
     /// to an event that comes back after its first holder was removed.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -151,6 +165,8 @@ enum Written {
         #[serde(default)]
         midi: Option<MidiSpec>,
         #[serde(default)]
+        notation: Option<Value>,
+        #[serde(default)]
         next_id: u64,
         #[serde(flatten, default)]
         extra: Extra,
@@ -169,6 +185,7 @@ impl From<Written> for EventSequence {
                 tempo_map,
                 automation,
                 midi,
+                notation,
                 next_id,
                 extra,
             } => Self {
@@ -176,6 +193,7 @@ impl From<Written> for EventSequence {
                 tempo_map,
                 automation,
                 midi,
+                notation,
                 next_id,
                 extra,
             },

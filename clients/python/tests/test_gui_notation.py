@@ -753,6 +753,62 @@ def test_a_notation_key_is_never_sent_to_the_synth():
     assert args[args.index("cutoff") + 1] == 800.0
 
 
+def test_the_notation_keys_are_the_cores_table():
+    # one table for every client: what this one lists is what the core holds,
+    # in its order, and every key says what it holds, in what and which way
+    from clausters import _native
+    from clausters.seq.event import NOTATION_KEYS
+
+    table = _native.event_notation_keys()
+    assert tuple(key["name"] for key in table) == NOTATION_KEYS
+    assert all(key["holds"] and key["unit"] and key["reads"] for key in table)
+
+
+def test_both_books_reference_every_notation_key():
+    # the reference is the table, row for row: a key added to the core and to
+    # no book is a key nobody can look up
+    import pathlib
+
+    from clausters import _native
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    for page in ("clients/python/docs/src/timelines.md", "clients/web/docs/src/gui.md"):
+        text = (root / page).read_text(encoding="utf-8")
+        for key in _native.event_notation_keys():
+            assert f"| `{key['name']}` |" in text, f"{page} has no row for {key['name']}"
+
+
+def test_an_event_written_by_its_pitch_sounds_it_and_keeps_the_page_off_the_synth():
+    from clausters import _native
+
+    event = Event(pitches=[notation.pitch("a", 4)], value=(1, 12), staff=1, voice=1,
+                  cutoff=800)
+    assert (event.midinote(), event.freq()) == (69.0, 440.0)
+    args = _native.tagged_message(_native.event_synth(event.keys_data(), 1)["start"])
+    assert args[args.index("freq") + 1] == 440.0
+    assert not {"pitches", "value", "staff", "voice"} & set(args)
+    # a sounding pitch stated beside it is the one that sounds
+    bent = Event(pitches=[notation.pitch("a", 4)], midinote=68.5)
+    assert bent.midinote() == 68.5
+
+
+def test_written_pitches_and_a_written_value_reach_the_page_as_they_are():
+    # an F flat over an A flat, which no spelling of two numbers reaches, as a
+    # triplet eighth, which no count of 32nds holds
+    timeline = Timeline()
+    timeline.add(0.0, Event(pitches=[notation.pitch("f", 4, -1)], dur=1 / 3, value=(1, 12)))
+    timeline.add(0.0, Event(pitches=[notation.pitch("a", 4, -1)], dur=1 / 3))
+    item = notation.sheet_from_timeline(timeline)["staves"][0]["voices"][0]["items"][0]
+    assert [(p["step"], p["alter"]) for p in item["pitches"]] == [("f", -1), ("a", -1)]
+    assert item["dur"] == [1, 12]
+    # a chord one of whose notes gave a number is spelled, all of it
+    mixed = Timeline()
+    mixed.add(0.0, Event(pitches=[notation.pitch("f", 4, -1)], midinote=64, dur=1.0))
+    mixed.add(0.0, Event(midinote=68, dur=1.0))
+    item = notation.sheet_from_timeline(mixed)["staves"][0]["voices"][0]["items"][0]
+    assert [p["step"] for p in item["pitches"]] == ["e", "g"]
+
+
 def test_a_hairpin_written_to_a_note_that_is_gone_is_refused_by_name():
     sheet = _quarters(2)
     sheet["spanners"] = [{"kind": "crescendo", "from": 1, "to": 99}]

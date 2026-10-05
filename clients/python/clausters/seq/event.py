@@ -23,9 +23,14 @@ from ..defs.node import Node
 #: written back by `clausters.gui.notation.to_timeline`. Every one is a musical
 #: fact -- ``articulations=["stacc"]``, not an instruction to shorten a drawn
 #: value -- which is what lets the same key be read in both directions.
+#:
+#: The list is the core's table (`clausters._native.event_notation_keys`,
+#: which says what each one holds, its unit and which way it is read), in the
+#: table's order; a test pins the two together.
 NOTATION_KEYS = (
-    "articulations", "dynamic", "ornament", "grace", "stem",
-    "spelling", "accidental", "tie",
+    "pitches", "value", "staff", "voice",
+    "articulations", "dynamic", "ornament", "grace", "stem", "tie",
+    "spelling", "accidental",
 )
 
 #: Default parameters merged into every `Event`. ``type`` selects behaviour
@@ -112,12 +117,16 @@ class Event(dict):
     ``channel`` it names.
 
     An event may also carry what the note is **on a page** (`NOTATION_KEYS`):
-    ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``,
-    ``spelling``, ``accidental`` and ``tie``. They change nothing about how the
-    event sounds -- an articulation is honoured when a *score* is read, not when
-    an event is played -- and they are reserved, so none of them reaches the
-    synth as a control. What reads them is
-    `clausters.gui.notation.sheet_from_notes`.
+    ``pitches`` (the written pitches, as `clausters.gui.notation.pitch` makes
+    them), ``value`` (the written value, ``(numerator, denominator)`` of a
+    whole note), ``staff`` and ``voice`` (where it is written), and
+    ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``, ``tie``,
+    ``spelling`` and ``accidental``. They are reserved, so none of them reaches
+    the synth as a control, and all but one change nothing about how the event
+    sounds -- an articulation is honoured when a *score* is read, not when an
+    event is played. The one is ``pitches``: an event that states no ``freq``,
+    ``midinote`` or ``degree`` sounds the first pitch it is written with. What
+    reads them is `clausters.gui.notation.sheet_from_notes`.
     """
 
     def __init__(self, *args, **kwargs):
@@ -154,7 +163,12 @@ class Event(dict):
             self[key] = value
 
     def _pitch_keys(self):
-        return [self.get(k) for k in _native.PITCH_KEYS[:6]]
+        keys = [self.get(k) for k in _native.PITCH_KEYS[:6]]
+        # An event that states no sounding pitch sounds the one it is written
+        # with: the first of its `pitches`, as a MIDI note.
+        if all(key is None for key in keys[:3]) and self.get("pitches"):
+            keys[1] = _native.event_written_midinote(self.get("pitches"))
+        return keys
 
     def _set_pitch(self, key, value):
         if key == "degree" and isinstance(value, (tuple, list)):

@@ -1600,11 +1600,34 @@ opened it.
     `beamSpan`, `tempo`, `dir`, `reh`, `fing`, `harm`, lyrics, a change of
     key or of clef inside the score, `ending`, `repeatMark`, `mRpt` and
     `beatRpt`, a staff's line count and label, and `staffGrp`.)*
-  - ⬜ **X5.7 - The notation keys.** The table above settled key by key:
+  - ✅ **X5.7 - The notation keys.** The table above settled key by key:
     the written pitch, the written value and the tuplet, `staff` and `voice`,
     the mark against the level, the grace note, the spanners over event ids,
     and the sequence's notation section. In the core, reserved, read by both
-    clients, with its reference page in the books.
+    clients, with its reference page in the books. *(Done 2026-10-05.
+    **The spellings were the user's**: flat keys on the event, under the
+    model's own names -- `pitches` for the written pitch, `value` for the
+    written value -- "it can be changed later; the development has a long way
+    to go and compatibility can break further on". Weighed and left: a prefix
+    (`written_pitch`), MEI's `pname` (which is the letter alone there), every
+    key nested under one, and an event type of its own for notation, which put
+    `staff` and `voice` on an event at another level than the item's.
+    `clausters_core::event::notation::KEYS` is the table: twelve keys, each
+    with what it holds, its unit and which way it is read. `pitches`, `value`,
+    `staff` and `voice` are new and reserved; no tuplet key, since an exact
+    value says one. Two keys are the written form of what the event also
+    sounds, and the table says the source: an event that states no `freq`,
+    `midinote` or `degree` sounds the first of its `pitches`, in the render
+    and in each client's `midinote()` alike (`written_midinote`, bound); a
+    chord is one event per note. On the way to a page a slot takes `pitches`
+    and `value` as they are -- an F flat and a triplet eighth now reach the
+    sheet -- and reads `staff` and `voice` past. A mark is the source and a
+    level its performance; a grace note takes no time of the bar. What is no
+    note's is the sequence's **`notation` section**
+    (`EventSequence::notation`), kept as written and read by nothing a
+    sequence does, where what has two ends names them by event id. Each
+    client's `NOTATION_KEYS` is the table's names, pinned by a test, and both
+    books carry the table row for row, pinned too. Core ABI 82.)*
   - ⬜ **X5.8 - The score into a sequence, and its playback.** The render,
     one way, in Rust, and the Python client's `to_timeline` replaced; the
     interpreter yielding curves in its three scopes, a channel per voice and
@@ -2498,3 +2521,13 @@ wrong.
   the footnotes' field, and the size an outline glyph is drawn at were set by
   reasoning, with the window not on screen; they are to be judged in the eye
   pass that closes `X5`.
+
+- ⬜ **An edit to a sounding pitch does not rewrite the written one** *(found
+  2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's
+  `midinote` in a roll rewrites the `freq` and the `degree` it holds -- and
+  `pitches` is outside it: an event that holds both keeps the written pitch it
+  had after the note was dragged, so the page and the sound part ways. The
+  family's rule would be to respell `pitches` by `spelling` when a sounding key
+  is set, and to set `midinote` when `pitches` is. It waits on the way back
+  from the roll to the score ("From the roll to the score"), which is what
+  reads a sequence edited as numbers.

@@ -55,7 +55,8 @@ import {
 import type { Sheet } from "../src/gui/notation/index.ts";
 import { edit } from "../src/gui/editing/edit.ts";
 import { Editing } from "../src/history.ts";
-import { Event, synthRender } from "../src/seq/event.ts";
+import { Event, NOTATION_KEYS, synthRender } from "../src/seq/event.ts";
+import { event_notation_keys as coreNotationKeys } from "../src/core/clausters_core_web.js";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import * as notation from "../src/gui/notation/index.ts";
@@ -475,6 +476,51 @@ test("a notation key is never sent to the synth", () => {
     const args = JSON.stringify(synthRender(event.keysData(), 1).start);
     assert.ok(!args.includes("tie") && !args.includes("dynamic"), args);
     assert.ok(args.includes("cutoff"), args);
+});
+
+test("the notation keys are the core's table", () => {
+    // one table for every client: what this one lists is what the core holds,
+    // in its order, and every key says what it holds, in what and which way
+    const table = JSON.parse(coreNotationKeys()) as Record<string, string>[];
+    assert.deepEqual(table.map((key) => key.name), [...NOTATION_KEYS]);
+    assert.ok(table.every((key) => key.holds && key.unit && key.reads));
+});
+
+test("an event written by its pitch sounds it and keeps the page off the synth", () => {
+    const event = new Event({
+        pitches: [pitch("a", 4)],
+        value: [1, 12],
+        staff: 1,
+        voice: 1,
+        cutoff: 800,
+    });
+    assert.deepEqual([event.midinote(), event.freq()], [69, 440]);
+    const args = JSON.stringify(synthRender(event.keysData(), 1).start);
+    assert.ok(args.includes('"freq"],["f",440]'), args);
+    for (const key of ["pitches", "value", "staff", "voice"]) assert.ok(!args.includes(key), args);
+    // a sounding pitch stated beside it is the one that sounds
+    assert.equal(new Event({ pitches: [pitch("a", 4)], midinote: 68.5 }).midinote(), 68.5);
+});
+
+test("written pitches and a written value reach the page as they are", () => {
+    // an F flat over an A flat, which no spelling of two numbers reaches, as a
+    // triplet eighth, which no count of 32nds holds
+    const timeline = new Timeline();
+    timeline.add(0, new Event({ pitches: [pitch("f", 4, -1)], dur: 1 / 3, value: [1, 12] }));
+    timeline.add(0, new Event({ pitches: [pitch("a", 4, -1)], dur: 1 / 3 }));
+    const item = (sheetFromTimeline(timeline) as unknown as {
+        staves: { voices: { items: { pitches: { step: string; alter: number }[]; dur: number[] }[] }[] }[];
+    }).staves[0].voices[0].items[0];
+    assert.deepEqual(item.pitches.map((p) => [p.step, p.alter]), [["f", -1], ["a", -1]]);
+    assert.deepEqual(item.dur, [1, 12]);
+    // a chord one of whose notes gave a number is spelled, all of it
+    const mixed = new Timeline();
+    mixed.add(0, new Event({ pitches: [pitch("f", 4, -1)], midinote: 64, dur: 1 }));
+    mixed.add(0, new Event({ midinote: 68, dur: 1 }));
+    const spelled = (sheetFromTimeline(mixed) as unknown as {
+        staves: { voices: { items: { pitches: { step: string }[] }[] }[] }[];
+    }).staves[0].voices[0].items[0];
+    assert.deepEqual(spelled.pitches.map((p) => p.step), ["e", "g"]);
 });
 
 test("a hairpin written to a note that is gone is refused by name", () => {

@@ -1320,6 +1320,12 @@ export function event_delta(dur: number, stretch: number, delta: number): number
 export function event_midi(event: string, channel: number): string;
 
 /**
+ * JS face: the notation keys, as JSON -- the table of what an event says
+ * about the page it is written on (`clausters_core::event::notation::KEYS`).
+ */
+export function event_notation_keys(): string;
+
+/**
  * JS face: MIDI bytes as the event that plays them back, as JSON.
  */
 export function event_of_midi(bytes: Uint8Array): string;
@@ -1336,6 +1342,12 @@ export function event_sustain(dur: number, legato: number, stretch: number, sust
  * client's spelling.
  */
 export function event_synth(event: string, node: number): string;
+
+/**
+ * JS face: the MIDI note a `pitches` value sounds -- the notation key's JSON
+ * -- or NaN when it is no list holding one.
+ */
+export function event_written_midinote(pitches: string): number;
 
 /**
  * JS face: the `[audio, control]` widths GraphDef instances reserve at the
@@ -1894,9 +1906,11 @@ export interface InitOutput {
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
     readonly event_midi: (a: number, b: number, c: number) => [number, number];
+    readonly event_notation_keys: () => [number, number];
     readonly event_of_midi: (a: number, b: number) => [number, number];
     readonly event_sustain: (a: number, b: number, c: number, d: number) => number;
     readonly event_synth: (a: number, b: number, c: number) => [number, number];
+    readonly event_written_midinote: (a: number, b: number) => number;
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
     readonly history_canRedo: (a: number) => number;

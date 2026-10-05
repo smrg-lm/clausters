@@ -17,6 +17,7 @@
 import {
     event_of_midi as coreEventOfMidi,
     event_synth as coreEventSynth,
+    event_written_midinote as coreWrittenMidinote,
     event_delta as coreDelta,
     event_sustain as coreSustain,
     level_resolve as coreLevelResolve,
@@ -34,16 +35,24 @@ import type { MsgArg, OscArg, TimedMessage } from "../base/osc.ts";
  * `gui.notation.toTimeline`. Every one is a musical fact --
  * `articulations: ["stacc"]`, not an instruction to shorten a drawn value --
  * which is what lets the same key be read in both directions.
+ *
+ * The list is the core's table (its `event_notation_keys`, which says what
+ * each one holds, its unit and which way it is read), in the table's order; a
+ * test pins the two together.
  */
 export const NOTATION_KEYS = [
+    "pitches",
+    "value",
+    "staff",
+    "voice",
     "articulations",
     "dynamic",
     "ornament",
     "grace",
     "stem",
+    "tie",
     "spelling",
     "accidental",
-    "tie",
 ] as const;
 
 /**
@@ -147,11 +156,16 @@ export interface EventDestination {
  * pair (`degree: [1, 1]`) are both read as the two keys.
  *
  * An event may also carry what the note is **on a page**
- * ({@link NOTATION_KEYS}): `articulations`, `dynamic`, `ornament`, `grace`,
- * `stem`, `spelling`, `accidental` and `tie`. They change nothing about how the
- * event sounds -- an articulation is honoured when a *score* is read, not when
- * an event is played -- and they are reserved, so none of them reaches the synth
- * as a control. What reads them is `gui.notation.sheetFromNotes`.
+ * ({@link NOTATION_KEYS}): `pitches` (the written pitches, as
+ * `gui.notation.pitch` makes them), `value` (the written value, `[numerator,
+ * denominator]` of a whole note), `staff` and `voice` (where it is written),
+ * and `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `tie`,
+ * `spelling` and `accidental`. They are reserved, so none of them reaches the
+ * synth as a control, and all but one change nothing about how the event
+ * sounds -- an articulation is honoured when a *score* is read, not when an
+ * event is played. The one is `pitches`: an event that states no `freq`,
+ * `midinote` or `degree` sounds the first pitch it is written with. What reads
+ * them is `gui.notation.sheetFromNotes`.
  */
 export class Event {
     readonly props: EventProps;
@@ -201,10 +215,17 @@ export class Event {
     }
 
     private pitchKeys(): Float64Array {
-        return Float64Array.from(
+        const keys = Float64Array.from(
             PITCH_KEYS.slice(0, 6),
             (k) => (held(this.props[k]) ? Number(this.props[k]) : NaN),
         );
+        // An event that states no sounding pitch sounds the one it is written
+        // with: the first of its `pitches`, as a MIDI note.
+        const written = this.props.pitches;
+        if (keys.subarray(0, 3).every(Number.isNaN) && Array.isArray(written) && written.length) {
+            keys[1] = coreWrittenMidinote(JSON.stringify(written));
+        }
+        return keys;
     }
 
     private scale(): Float32Array {

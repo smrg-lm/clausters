@@ -152,6 +152,26 @@ pub struct Slot {
     /// That this note ties into the next slot: one sound across both values.
     #[serde(default)]
     pub tie: bool,
+    /// **The pitches as they are written** -- the `pitches` notation key.
+    /// Where a slot has them they are the note, letter and accidental as its
+    /// writer chose, and `midis`, `spelling` and `accidental` are not asked:
+    /// those spell a number, and this is not one.
+    #[serde(default)]
+    pub pitches: Vec<Pitch>,
+    /// **The written value** -- the `value` notation key -- where `ticks`
+    /// cannot say it: a triplet eighth is a twelfth of a whole note, which is
+    /// no count of 32nds.
+    #[serde(default)]
+    pub value: Option<Ratio>,
+    /// The staff and the voice the event names (the `staff` and `voice`
+    /// notation keys). A voice built from slots is one line on one staff, so
+    /// they place nothing here: they are read past, which lets a client hand
+    /// an event's notation keys over whole, and they are what a caller splits
+    /// its events by before it builds each voice.
+    #[serde(default)]
+    pub staff: Option<usize>,
+    #[serde(default)]
+    pub voice: Option<usize>,
 }
 
 impl Slot {
@@ -227,9 +247,23 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
         .enumerate()
         .map(|(i, slot)| {
             let id = i as u64 + 1;
-            let dur = Ratio::from_ticks(slot.ticks as i64, TPW as i64);
-            if slot.midis.is_empty() {
+            // the written value where the slot states it, else its ticks
+            let dur = slot
+                .value
+                .filter(Ratio::is_positive)
+                .unwrap_or_else(|| Ratio::from_ticks(slot.ticks as i64, TPW as i64));
+            if slot.midis.is_empty() && slot.pitches.is_empty() {
                 return Item::Rest { id, dur };
+            }
+            // written pitches are the note as it stands: nothing is spelled
+            if !slot.pitches.is_empty() {
+                return Item::Note {
+                    id,
+                    pitches: slot.pitches.clone(),
+                    dur,
+                    tie: slot.tie,
+                    marks: slot.marks(),
+                };
             }
             // Which accidental world this note is spelled into: the key's,
             // unless the slot chose one for itself.
@@ -1425,6 +1459,31 @@ mod tests {
             plain.staves[0].voices[0].items[0].pitches()[0].step,
             Step::D
         );
+    }
+
+    #[test]
+    fn a_slot_that_states_its_written_pitch_and_value_is_written_as_they_are() {
+        // an F flat, which no spelling of a number reaches, as a triplet
+        // eighth, which no count of 32nds holds; the staff and the voice the
+        // event named are read past
+        let voice: Vec<Slot> = serde_json::from_str(
+            r#"[{"midis": [64], "ticks": 3, "spelling": "sharp",
+                 "pitches": [{"step": "f", "alter": -1, "octave": 4}],
+                 "value": [1, 12], "staff": 1, "voice": 1},
+                {"ticks": 4, "pitches": [{"step": "c", "octave": 4}, {"step": "g", "octave": 4}]}]"#,
+        )
+        .expect("parses");
+        let sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        let items = &sheet.staves[0].voices[0].items;
+        let written = items[0].pitches()[0];
+        assert_eq!(
+            (written.step, written.alter, written.octave),
+            (Step::F, -1, 4)
+        );
+        assert_eq!(items[0].dur(), Ratio::new(1, 12));
+        // a slot with written pitches and no numbers is a note, not a rest
+        assert_eq!(items[1].pitches().len(), 2);
+        assert_eq!(items[1].dur(), Ratio::new(1, 8));
     }
 
     #[test]

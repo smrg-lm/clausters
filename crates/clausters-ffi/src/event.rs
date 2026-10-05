@@ -351,6 +351,43 @@ pub unsafe extern "C" fn clausters_core_event_of_midi(
     }
 }
 
+/// **The notation keys**, as JSON: the table of what an event says about the
+/// page it is written on -- each key's `name`, what it `holds`, its `unit`
+/// and which way it `reads` (`clausters_core::event::notation::KEYS`). Size
+/// query, then fill; the byte count it needs is returned either way.
+///
+/// One table for every client: the keys a client lists as notation are these,
+/// and its tests pin its list to this answer.
+///
+/// # Safety
+/// `out` must be null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_notation_keys(out: *mut u8, out_cap: usize) -> usize {
+    let json = clausters_core::event::notation::keys_json();
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
+/// **The MIDI note a `pitches` value sounds** -- the notation key's JSON, a
+/// list of written pitches -- or NaN when it is no list holding one
+/// (`clausters_core::event::notation::written_midinote`). What a client asks
+/// when an event states no sounding pitch, so its own `midinote` and what its
+/// synth is sent agree.
+///
+/// # Safety
+/// `pitches` must be null or readable for `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_written_midinote(
+    pitches: *const u8,
+    len: usize,
+) -> f64 {
+    // SAFETY: forwarded from the caller.
+    unsafe { text(pitches, len) }
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|value| clausters_core::event::notation::written_midinote(&value))
+        .unwrap_or(f64::NAN)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,5 +469,33 @@ mod tests {
         let bad = call(clausters_core_event_midi, r#"{"event":{"type":"osc"}}"#);
         assert!(bad["error"].is_string());
         assert!(call(clausters_core_event_synth, "nope")["error"].is_string());
+    }
+
+    #[test]
+    fn the_notation_keys_cross_as_the_table_and_a_written_pitch_as_its_note() {
+        // SAFETY: a null buffer sizes, and the buffer filled is that size.
+        let need = unsafe { clausters_core_event_notation_keys(std::ptr::null_mut(), 0) };
+        let mut out = vec![0u8; need];
+        let wrote = unsafe { clausters_core_event_notation_keys(out.as_mut_ptr(), need) };
+        let table: Value = serde_json::from_slice(&out[..wrote]).unwrap();
+        let names: Vec<&str> = table
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|key| key["name"].as_str())
+            .collect();
+        assert_eq!(names, clausters_core::event::notation::names());
+
+        let pitches = br#"[{"step": "e", "alter": -1, "octave": 4}]"#;
+        // SAFETY: the slice is readable for its length.
+        let note =
+            unsafe { clausters_core_event_written_midinote(pitches.as_ptr(), pitches.len()) };
+        assert_eq!(note, 63.0);
+        let none = b"[]";
+        // SAFETY: as above; and a null pointer is read as nothing.
+        assert!(
+            unsafe { clausters_core_event_written_midinote(none.as_ptr(), none.len()) }.is_nan()
+        );
+        assert!(unsafe { clausters_core_event_written_midinote(std::ptr::null(), 0) }.is_nan());
     }
 }

@@ -480,16 +480,55 @@ belongs to a style, and a style passes its own accents.
 **What plays a staff is not in the notation**, so each note names the `staff` it
 was written on and the binding is made where the score is rendered.
 
-**An event can also say what the note is on a page.** Beside `midinote` and
-`dur`, an event carries `articulations`, `dynamic`, `ornament`, `grace`, `stem`,
-`spelling`, `accidental` and `tie` — the notation keys, reserved so none of them
-reaches the synth as a control. Every one is a **musical fact rather than an
-instruction to the engraver** (`articulations: ["stacc"]`, never "draw a dot"),
-which is what lets the same key be read in both directions: written on the way
-out, and put back on the event by `toTimeline` on the way in. An explicit
-`sustain` becomes how long the note is *held*, but only where no symbol already
-says it — a note that is both staccato and short is one fact, not two, and
-writing both would shorten it twice on the next reading.
+**An event can also say what the note is on a page.** Beside what it sounds,
+an event carries the **notation keys** — twelve of them, reserved so none
+reaches the synth as a control:
+
+```js
+new seq.Event({ midinote: 60, dur: 1, articulations: ["stacc"], dynamic: "mf" });
+new seq.Event({ midinote: 63, dur: 1, spelling: "flat", accidental: "written" }); // an E flat, printed
+new seq.Event({ pitches: [notation.pitch("f", 4, -1)], dur: 1 / 3, value: [1, 12] }); // an F flat, a triplet eighth
+```
+
+Each names one fact, in one unit, and says which way it is read. The table is
+the core's, and `seq.NOTATION_KEYS` is its names:
+
+| Key | What it holds | Unit | Which way it is read |
+|---|---|---|---|
+| `pitches` | a list of written pitches, each `{step, alter, octave}`, with `forced` where the accidental is to be printed | `step` a letter `c` to `b`, `alter` in semitones, `octave` scientific (4 holds middle C) | the source of the pitch on a page. An event that states no `freq`, `midinote` or `degree` sounds the first of them; one with no `pitches` is written from `midinote`, spelled by `spelling` |
+| `value` | the written value, numerator and denominator | whole notes, exact: `1/4` a quarter, `3/8` a dotted quarter, `1/12` a triplet eighth | the source of the value on a page. `dur` and `sustain` are its performance in beats; an event without it is written from `dur` |
+| `staff` | the staff it is written on | an index from the top, from zero | where it is written; it sounds nothing |
+| `voice` | the voice of its staff it is written in | an index from zero | where it is written; a voice is one line |
+| `articulations` | a list of articulations | MEI names: `stacc`, `stacciss`, `spicc`, `acc`, `marc`, `ten`, `stress`, `upbow`, `dnbow`, `harm`, `snap`, `open`, `stop` | the mark is the fact; a shortened `sustain` or a raised level beside it is what an interpretation made of it |
+| `dynamic` | a dynamic written at this note | its name: `pp`, `p`, `mp`, `mf`, `f`, `ff`, `sf`, `fp` | the mark is the source of the level, and `amp`, `velocity` or `db` its performance |
+| `ornament` | an ornament on this note | `trill`, `mordent`, `turn`, `fermata` | the mark is the fact; the notes it is played as are the interpretation's |
+| `grace` | that this is a grace note, and of which kind | `acc`, an appoggiatura, or `unacc`, an acciaccatura | on a page it takes no time of the bar and stands before the next note of its voice; its `dur` is how it was played and its `value` what it is written as |
+| `stem` | a stem direction the writer forced | `up` or `down` | the page's alone |
+| `tie` | that this note ties into the next of its pitch | true or false | the two are one sound on a page; each event keeps its own length |
+| `spelling` | which accidental a pitch given as a number is written with | `sharp` or `flat` | a preference, read only where the event has no `pitches` |
+| `accidental` | whether the accidental is printed where the key or the measure implies it | `written` or `sounding` | read only where the event has no `pitches`, whose own `forced` says it |
+
+Every one is a **musical fact rather than an instruction to the engraver**
+(`articulations: ["stacc"]`, never "draw a dot"), which is what lets the same key
+be read in both directions. An explicit `sustain` becomes how long the note is
+*held*, but only where no symbol already says it — a note that is both staccato
+and short is one fact, not two, and writing both would shorten it twice on the
+next reading.
+
+Two of them are the written form of something the event also sounds. `pitches`
+is the note as it is written — a letter, an alteration, an octave, as
+`notation.pitch` makes it — where `midinote` is a number two written notes
+share: no spelling of 64 is an F flat. An event that states only `pitches`
+sounds it; one that states a sounding pitch beside it sounds that, and the page
+still writes `pitches`. A chord is one event per note, each with its own pitch,
+as it sounds. `value` is the written value as an exact fraction of a whole note,
+where `dur` is time in beats: a triplet eighth is a third of a beat that no
+float holds, and a grace note has a value and takes no time of the bar at all.
+
+**What is not any note's is not a key.** A slur and a hairpin have two ends; the
+meter and its changes, the key, the clefs, the breaks and the page's text belong
+to the score. A sequence rendered from a score keeps them in its `notation`
+section, beside its tempo map, where what has two ends names them by event id.
 
 **The round trip is honest, and both directions lose something.** Events to a
 score loses exact onsets, continuous amplitude, microtones and the instrument;

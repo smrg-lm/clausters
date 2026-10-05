@@ -317,6 +317,7 @@ function voiceFromNotes(notes: Iterable<Event>, beatUnit: number): Slot[] {
  */
 function writeMarks(slot: Slot, events: Event[], ticks: number, beatUnit: number): void {
     for (const key of NOTATION_KEYS) {
+        if (key === "pitches") continue;
         for (const event of events) {
             const value = event.get(key);
             if (value !== undefined && value !== null) {
@@ -324,6 +325,13 @@ function writeMarks(slot: Slot, events: Event[], ticks: number, beatUnit: number
                 break;
             }
         }
+    }
+    // The written pitches are the chord's only when every one of its notes
+    // states its own: one that gave a number has to be spelled, and a slot
+    // spells all of its notes or none.
+    const written = events.map((event) => event.get("pitches"));
+    if (written.length && written.every((pitches) => Array.isArray(pitches) && pitches.length)) {
+        (slot as unknown as Record<string, unknown>).pitches = written.flat();
     }
     const stated = events.find((e) => {
         const sustain = e.get("sustain");

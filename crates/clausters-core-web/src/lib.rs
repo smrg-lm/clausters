@@ -1333,6 +1333,25 @@ pub fn event_of_midi(bytes: &[u8]) -> String {
     serde_json::Value::Object(clausters_core::event::render::from_midi(bytes)).to_string()
 }
 
+/// JS face: the notation keys, as JSON -- the table of what an event says
+/// about the page it is written on (`clausters_core::event::notation::KEYS`).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_notation_keys() -> String {
+    clausters_core::event::notation::keys_json()
+}
+
+/// JS face: the MIDI note a `pitches` value sounds -- the notation key's JSON
+/// -- or NaN when it is no list holding one.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_written_midinote(pitches: &str) -> f64 {
+    serde_json::from_str::<serde_json::Value>(pitches)
+        .ok()
+        .and_then(|value| clausters_core::event::notation::written_midinote(&value))
+        .unwrap_or(f64::NAN)
+}
+
 // ---- the sample-clock model ----
 //
 // How a client paced by its own monotonic clock still schedules on a remote

@@ -923,3 +923,37 @@ fn the_scopes_refuse_what_they_cannot_hold() {
             .contains("MIDI 1.0")
     );
 }
+
+#[test]
+fn the_notation_section_is_kept_as_it_was_written() {
+    // what a score says that is no note's: here its key, and a slur between
+    // two events named by their ids
+    let section = json!({
+        "key": "Eb",
+        "spanners": [{"kind": "slur", "from": 1, "to": 2}],
+    });
+    let written = json!({
+        "events": [
+            {"id": 1, "at": 0.0, "data": {"pitches": [{"step": "e", "alter": -1, "octave": 4}]}},
+            {"id": 2, "at": 1.0, "data": {"midinote": 65}},
+        ],
+        "notation": section,
+    });
+    let mut sequence: EventSequence = serde_json::from_value(written).unwrap();
+    assert_eq!(sequence.notation, Some(section.clone()));
+    assert!(
+        sequence.extra.is_empty(),
+        "it is a field of the sequence's own"
+    );
+    // an edit to the events leaves it where it is
+    let mut history = History::new();
+    let roll = history.register(EVENTS);
+    history.apply(roll, &mut sequence, &set(vec![at(0.0)]), "set the events");
+    assert_eq!(beats(&sequence), vec![0.0]);
+    assert_eq!(sequence.notation, Some(section.clone()));
+    let back = serde_json::to_value(&sequence).unwrap();
+    assert_eq!(back["notation"], section);
+    // and a sequence that came from no score writes none
+    let bare = serde_json::to_value(EventSequence::new(vec![at(0.0)])).unwrap();
+    assert!(bare.get("notation").is_none());
+}

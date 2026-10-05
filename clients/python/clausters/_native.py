@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 81
+CORE_ABI_VERSION = 82
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -519,6 +519,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         fn.restype = ctypes.c_size_t
         fn.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
                        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t]
+    # The notation keys (ABI v82): no request, size-then-fill out.
+    lib.clausters_core_event_notation_keys.restype = ctypes.c_size_t
+    lib.clausters_core_event_notation_keys.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t]
+    lib.clausters_core_event_written_midinote.restype = ctypes.c_double
+    lib.clausters_core_event_written_midinote.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t]
     # The shared-memory segment (ABI v21): a peer maps the file itself and asks
     # here for every offset, for the directory's seqlock and for the ring
     # framing -- the numbers this binding used to transcribe.
@@ -3269,6 +3276,26 @@ def event_of_midi(message: bytes) -> dict:
     """MIDI bytes as the keys of the event that plays them back."""
     return _json_call(lib().clausters_core_event_of_midi, {"bytes": list(message)},
                       "event of midi")
+
+
+def event_notation_keys() -> list:
+    """The notation keys: what an event says about the page it is written on,
+    as the core's table -- each ``{"name", "holds", "unit", "reads"}``, in the
+    table's order."""
+    fn = lib().clausters_core_event_notation_keys
+    need = fn(None, 0)
+    out = (ctypes.c_ubyte * need)()
+    return json.loads(ctypes.string_at(out, fn(out, need)))
+
+
+def event_written_midinote(pitches) -> "float | None":
+    """The MIDI note a ``pitches`` value sounds -- the notation key, a list of
+    written pitches -- which is that of its first; ``None`` when it holds
+    none."""
+    data = json.dumps(pitches).encode("utf-8")
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    note = lib().clausters_core_event_written_midinote(buf, len(data))
+    return None if note != note else float(note)
 
 
 def tagged_message(tagged) -> tuple:

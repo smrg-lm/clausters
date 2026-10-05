@@ -36,6 +36,7 @@
 //! [`crate::scale::midi_to_hz`] / [`crate::scale::hz_to_midi`] (exact inverses, which is what
 //! coherence needs), and the `ampdb` / `dbamp` unary operators the server runs.
 
+pub mod notation;
 pub mod render;
 
 use crate::builtins::{UnaryOp, apply_unary};

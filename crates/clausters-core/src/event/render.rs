@@ -41,7 +41,11 @@ pub const RESERVED: &[&str] = &[
     "node",
     "velocity",
     "db",
-    // What the note says on a page.
+    // What the note says on a page ([`super::notation::KEYS`]).
+    "pitches",
+    "value",
+    "staff",
+    "voice",
     "articulations",
     "dynamic",
     "ornament",
@@ -127,6 +131,13 @@ pub fn pitch_of(keys: &Map<String, Value>) -> Pitch {
             pitch.degree = Some(whole);
             pitch.alter = Some(pitch.alter.unwrap_or(0.0) + written);
         }
+    }
+    // An event that states no sounding pitch sounds the one it is written
+    // with: `pitches`, the notation key, whose first pitch is the note.
+    if pitch.freq.is_none() && pitch.midinote.is_none() && pitch.degree.is_none() {
+        pitch.midinote = keys
+            .get("pitches")
+            .and_then(super::notation::written_midinote);
     }
     pitch
 }
@@ -587,6 +598,36 @@ mod tests {
         let gated = synth(&keys(json!({"instrument": "default"})), 1).unwrap();
         assert_eq!(gated.release[0], Arg::Str("/node_set".into()));
         assert!(synth(&keys(json!({"type": "rest"})), 1).is_none());
+    }
+
+    #[test]
+    fn an_event_sounds_the_pitch_it_is_written_with_and_the_page_stays_off_the_synth() {
+        // an A, written: no sounding pitch stated, so that is what it sounds;
+        // where it is written and what value it has are the page's alone
+        let written = keys(json!({
+            "instrument": "sine", "amp": 0.3,
+            "pitches": [{"step": "a", "alter": 0, "octave": 4}],
+            "value": [1, 12], "staff": 1, "voice": 1, "cutoff": 800,
+        }));
+        let s = synth(&written, 1000).unwrap();
+        assert_eq!(
+            s.start[5..],
+            [
+                Arg::Str("freq".into()),
+                Arg::Float(440.0),
+                Arg::Str("amp".into()),
+                Arg::Float(0.3),
+                Arg::Str("cutoff".into()),
+                Arg::Float(800.0),
+            ]
+        );
+        // a sounding pitch stated beside it is the one that sounds: an A
+        // written, played a quarter-tone flat
+        let both = keys(json!({
+            "instrument": "sine", "midinote": 68.5,
+            "pitches": [{"step": "a", "octave": 4}],
+        }));
+        assert_eq!(pitch_of(&both).midinote, Some(68.5));
     }
 
     #[test]
