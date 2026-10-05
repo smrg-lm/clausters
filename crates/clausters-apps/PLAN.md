@@ -2810,6 +2810,8 @@ wrong.
   - **The pitches are the letters `a` to `g`.**
   - **The cursor advances by the value after each entry**, and the arrows
     take it back or on.
+  - **`N` switches the mode on and off, and `Escape` switches it off**, as
+    is the convention (the toolbar's button beside them).
   - **Every key of note entry is a binding**, set by file like the rest of
     the host's key table (`[gui.keys]`, `--keys`), never spelled in an
     element.
