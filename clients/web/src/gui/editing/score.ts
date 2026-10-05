@@ -108,6 +108,16 @@ export interface PageInfo {
     papers: string[];
 }
 
+/** Where {@link ScoreEditor.setText} puts a text, and which footnote it is. */
+export interface TextOptions {
+    /** Which footnote, from zero. */
+    index?: number;
+    region?: "head" | "foot";
+    halign?: "left" | "center" | "right";
+    valign?: "top" | "middle" | "bottom";
+    pages?: "first" | "all";
+}
+
 /** What {@link ScoreEditor.setPage} changes beside the paper. */
 export interface PageOptions {
     landscape?: boolean;
@@ -273,6 +283,28 @@ export class ScoreEditor extends Editor<Score> {
             if (options[key] !== undefined) call[key] = options[key];
         }
         if (options.margins !== undefined) call.margins = options.margins.map(Math.trunc);
+        return this.#act(call);
+    }
+
+    /**
+     * Write a text of the page, or move it, as one entry of the history.
+     *
+     * `field` is `"title"`, `"subtitle"`, `"composer"`, `"arranger"`,
+     * `"lyricist"`, `"translator"`, `"copyright"` or `"note"` -- a footnote:
+     * `index` says which, from zero, and none adds one. `text` writes it, and
+     * an empty one takes it away. `region` (`"head"`, `"foot"`), `halign`
+     * (`"left"`, `"center"`, `"right"`), `valign` (`"top"`, `"middle"`,
+     * `"bottom"`) and `pages` (`"first"`, `"all"`) put it in a cell of the
+     * page's head or foot; what is left out stays as it is, and a field nobody
+     * moved sits where the printed page puts it. A press on a text names its
+     * field on the status line.
+     */
+    setText(field: string, text: string | null = null, options: TextOptions = {}): boolean {
+        const call: Record<string, unknown> = { action: "text", field: String(field) };
+        if (text !== null) call.text = text;
+        for (const key of ["index", "region", "halign", "valign", "pages"] as const) {
+            if (options[key] !== undefined) call[key] = options[key];
+        }
         return this.#act(call);
     }
 

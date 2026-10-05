@@ -198,6 +198,67 @@ mod tests {
     }
 
     #[test]
+    fn the_page_text_is_drawn_in_its_cells_and_survives_the_engraver() {
+        use clausters_core::notation::{
+            Halign, Header, PageSetup, Place, Prim, Sheet, View, default_place, layout_options,
+            sheet_to_mei, voice_to_sheet,
+        };
+
+        let voice: Vec<Slot> = (0..8).map(|i| Slot::note(vec![60 + i], 8)).collect();
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        sheet.header = Header {
+            title: "A title".into(),
+            composer: "A. Composer".into(),
+            lyricist: "words by C".into(),
+            copyright: "(c) somebody".into(),
+            notes: vec!["* a footnote".into()],
+            ..Header::default()
+        };
+        sheet.header.places.insert(
+            "lyricist".into(),
+            Place {
+                halign: Halign::Right,
+                ..default_place("lyricist")
+            },
+        );
+        let mut score = open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).unwrap();
+        assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
+        let page = score.pages(0.0, false);
+        let text = |id: &str| {
+            page.draw.prims.iter().find_map(|p| match p {
+                Prim::Text {
+                    s,
+                    x,
+                    y,
+                    id: Some(i),
+                    ..
+                } if i == id => Some((s.clone(), *x, *y)),
+                _ => None,
+            })
+        };
+        let (title, title_x, _) = text("t-title").expect("the title is drawn under its id");
+        assert_eq!(title, "A title");
+        assert!(
+            (title_x - 10500.0).abs() < 1.0,
+            "centred on an A4: {title_x}"
+        );
+        // the composer on the right; the words' author moved there too
+        let (_, composer_x, _) = text("t-composer").expect("the composer");
+        let (_, lyricist_x, _) = text("t-lyricist").expect("the lyricist");
+        assert!(composer_x > 15000.0 && lyricist_x > 15000.0);
+        // the foot is at the foot of the page
+        let (_, _, copyright_y) = text("t-copyright").expect("the copyright");
+        let (_, _, note_y) = text("t-note-1").expect("the footnote");
+        assert!(copyright_y > 25000.0 && note_y > 25000.0);
+        assert_eq!(
+            page.draw.kinds.get("t-title").map(String::as_str),
+            Some("rend")
+        );
+        // and what the engraver holds reads back as the header it was written from
+        assert_eq!(score.sheet().expect("a model").header, sheet.header);
+    }
+
+    #[test]
     fn the_cursor_times_follow_the_note_onsets() {
         let page = score().display_list(1);
         let onsets: Vec<f64> = page.notes.iter().map(|n| n.t).collect();

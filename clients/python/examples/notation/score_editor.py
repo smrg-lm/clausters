@@ -50,6 +50,11 @@ What it shows, roughly in the order it does it:
   lays it out on the next paper (`set_page`, an edit like any other, written
   into the MEI); `layout` switches to one continuous system and back, which
   edits nothing.
+* **The page has text of its own.** The title and its subtitle, the composer,
+  a copyright line and a footnote are fields of the score, each written in a
+  cell of the page's head or foot -- where the printed page puts it, until
+  `set_text` moves it. A click on one says which field it is on the status
+  line.
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike, and so do the undo and redo
   buttons.
@@ -135,7 +140,10 @@ score.apply({"op": "stack", "sheet": lower, "as_staff": True})
 # %%
 score.apply({"op": "set_header",
              "header": notation.header(title="Eight bars",
-                                       composer="typed, then operated on")})
+                                       subtitle="a document, and its model",
+                                       composer="typed, then operated on",
+                                       copyright="an example of clausters",
+                                       notes=["* the bass staff was made, not typed"])})
 score.apply({"op": "set_barline", "measure": 4, "kind": "dbl"})
 score.apply({"op": "set_break", "measure": 5, "kind": "system"})
 

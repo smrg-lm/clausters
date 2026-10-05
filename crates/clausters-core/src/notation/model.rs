@@ -564,8 +564,9 @@ pub struct Spanner {
     pub to: u64,
 }
 
-/// What is written above the music, and what a score editor offers a field for:
-/// the title and who wrote it.
+/// What is written on the page around the music, and what a score editor
+/// offers a field for: the title and who wrote it above, and what goes at the
+/// foot.
 ///
 /// Every field is optional, because most of them are most of the time -- a score
 /// built by operating on a motif is untitled until somebody names it, and that
@@ -587,6 +588,23 @@ pub struct Header {
     /// Who wrote the words.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lyricist: String,
+    /// Who arranged it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub arranger: String,
+    /// Who translated the words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub translator: String,
+    /// The copyright line, at the foot of the first page.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub copyright: String,
+    /// The footnotes, one line each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+    /// **Where a field is written**, for the ones somebody moved: by the
+    /// field's name, `note` for every footnote. A field not named here sits
+    /// where the convention puts it ([`super::default_place`]).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub places: std::collections::BTreeMap<String, super::Place>,
 }
 
 impl Header {
@@ -597,6 +615,48 @@ impl Header {
             && self.subtitle.is_empty()
             && self.composer.is_empty()
             && self.lyricist.is_empty()
+            && self.arranger.is_empty()
+            && self.translator.is_empty()
+            && self.copyright.is_empty()
+            && self.notes.is_empty()
+    }
+
+    /// The text of the single-line field `field`, or `None` for a name that
+    /// is not one ([`super::FIELDS`]; the footnotes are [`Header::notes`]).
+    pub fn text(&self, field: &str) -> Option<&str> {
+        Some(match field {
+            "title" => &self.title,
+            "subtitle" => &self.subtitle,
+            "composer" => &self.composer,
+            "lyricist" => &self.lyricist,
+            "arranger" => &self.arranger,
+            "translator" => &self.translator,
+            "copyright" => &self.copyright,
+            _ => return None,
+        })
+    }
+
+    /// The single-line field `field`, to write.
+    pub fn text_mut(&mut self, field: &str) -> Option<&mut String> {
+        Some(match field {
+            "title" => &mut self.title,
+            "subtitle" => &mut self.subtitle,
+            "composer" => &mut self.composer,
+            "lyricist" => &mut self.lyricist,
+            "arranger" => &mut self.arranger,
+            "translator" => &mut self.translator,
+            "copyright" => &mut self.copyright,
+            _ => return None,
+        })
+    }
+
+    /// Where `field` is written: where somebody put it, or where the
+    /// convention does.
+    pub fn place(&self, field: &str) -> super::Place {
+        self.places
+            .get(field)
+            .copied()
+            .unwrap_or_else(|| super::default_place(field))
     }
 }
 

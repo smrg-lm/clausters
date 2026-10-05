@@ -15,7 +15,10 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use clausters_core::notation::{Item, Marks, Op, PageSetup, Sheet, paper};
+use clausters_core::notation::{
+    FIELDS, Halign, Item, Marks, NOTE, Op, PageSetup, Pages, Region, Sheet, Valign, default_place,
+    paper,
+};
 use clausters_core::ratio::Ratio;
 
 /// **One verb, as a client names it**: `{"action": ..., <its arguments>}`.
@@ -77,6 +80,27 @@ pub enum Action {
         #[serde(default)]
         staff: Option<u32>,
     },
+    /// **Write a text of the page, or move it**: `field` is `title`,
+    /// `subtitle`, `composer`, `arranger`, `lyricist`, `translator`,
+    /// `copyright` or `note` (a footnote: `index` says which, from zero, and
+    /// none adds one). `text` writes it -- empty takes it away -- and `region`
+    /// (`head`, `foot`), `halign`, `valign` and `pages` (`first`, `all`) put it
+    /// in a cell; what is left out stays as it is.
+    Text {
+        field: String,
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        index: Option<usize>,
+        #[serde(default)]
+        region: Option<Region>,
+        #[serde(default)]
+        halign: Option<Halign>,
+        #[serde(default)]
+        valign: Option<Valign>,
+        #[serde(default)]
+        pages: Option<Pages>,
+    },
     /// **A transformation over the measures the selection covers** -- or over
     /// everything, with nothing selected: `transpose` (`semitones`, `steps`),
     /// `invert` (`axis`), `retrograde`, `stretch` (`factor`) or `repeat`
@@ -109,6 +133,7 @@ impl Action {
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
+            Action::Text { field, .. } => format!("page text: {field}"),
             Action::Op { op } => serde_json::to_value(op)
                 .ok()
                 .and_then(|v| v.get("op").and_then(|o| o.as_str()).map(str::to_string))
@@ -168,6 +193,54 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
     }
     if let Action::Transform { name, params } = action {
         return transform(sheet, selection, name, params).map(|op| vec![op]);
+    }
+    if let Action::Text {
+        field,
+        text,
+        index,
+        region,
+        halign,
+        valign,
+        pages,
+    } = action
+    {
+        let mut header = sheet.header.clone();
+        if field == NOTE {
+            if let Some(text) = text {
+                match index {
+                    Some(at) if *at < header.notes.len() && text.is_empty() => {
+                        header.notes.remove(*at);
+                    }
+                    Some(at) if *at < header.notes.len() => header.notes[*at] = text.clone(),
+                    Some(at) => return Err(format!("there is no footnote {}", at + 1)),
+                    None if text.is_empty() => {}
+                    None => header.notes.push(text.clone()),
+                }
+            }
+        } else {
+            let slot = header.text_mut(field).ok_or_else(|| {
+                format!(
+                    "there is no page text called {field}; it is one of {}, {NOTE}",
+                    FIELDS.join(", ")
+                )
+            })?;
+            if let Some(text) = text {
+                *slot = text.clone();
+            }
+        }
+        if region.is_some() || halign.is_some() || valign.is_some() || pages.is_some() {
+            let mut place = header.place(field);
+            place.region = region.unwrap_or(place.region);
+            place.halign = halign.unwrap_or(place.halign);
+            place.valign = valign.unwrap_or(place.valign);
+            place.pages = pages.unwrap_or(place.pages);
+            if place == default_place(field) {
+                header.places.remove(field);
+            } else {
+                header.places.insert(field.clone(), place);
+            }
+        }
+        return Ok(vec![Op::SetHeader { header }]);
     }
     if let Action::Page {
         paper: name,
@@ -321,7 +394,10 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 to,
             }]
         }
-        Action::Op { .. } | Action::Transform { .. } | Action::Page { .. } => {
+        Action::Op { .. }
+        | Action::Transform { .. }
+        | Action::Page { .. }
+        | Action::Text { .. } => {
             unreachable!("answered above")
         }
     })

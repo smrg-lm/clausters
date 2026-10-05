@@ -128,6 +128,21 @@ export interface HeaderFields {
     subtitle?: string;
     composer?: string;
     lyricist?: string;
+    arranger?: string;
+    translator?: string;
+    copyright?: string;
+    /** The footnotes, one line each. */
+    notes?: string[];
+    /** Where the fields somebody moved are written, by field (`note` for every footnote). */
+    places?: Record<string, TextPlace>;
+}
+
+/** A cell of the page's head or foot, and the pages a text is written on. */
+export interface TextPlace {
+    region: "head" | "foot";
+    halign: "left" | "center" | "right";
+    valign: "top" | "middle" | "bottom";
+    pages: "first" | "all";
 }
 
 /** What {@link transpose} takes past the interval itself. */
@@ -640,17 +655,30 @@ export function removeSpanner(sheet: Sheet, kind: string, from: number, to: numb
 }
 
 /**
- * What is written above the music, for {@link setHeader}.
+ * What is written on the page around the music, for {@link setHeader}.
  *
  * Every field is optional because most of them are most of the time: a score
  * built by operating on a motif is untitled until somebody names it, and that
- * is a state rather than something missing.
+ * is a state rather than something missing. `notes` are the footnotes, one line
+ * each.
+ *
+ * Each field is written where the printed page puts it -- the title centred
+ * with its subtitle under it, the lyricist and the translator on the left, the
+ * composer and the arranger on the right, the copyright centred at the foot of
+ * the first page, the footnotes at the foot on the left. `places` moves the
+ * ones named: `{ composer: { region: "head", halign: "left", valign: "bottom",
+ * pages: "all" } }` -- a region, a cell of its three by three and the pages;
+ * `note` names every footnote.
  */
 export function header(fields: HeaderFields = {}): HeaderFields {
     const out: HeaderFields = {};
-    for (const key of ["title", "subtitle", "composer", "lyricist"] as const) {
+    for (const key of [
+        "title", "subtitle", "composer", "lyricist", "arranger", "translator", "copyright",
+    ] as const) {
         if (fields[key]) out[key] = fields[key];
     }
+    if (fields.notes && fields.notes.length > 0) out.notes = fields.notes.map(String);
+    if (fields.places && Object.keys(fields.places).length > 0) out.places = { ...fields.places };
     return out;
 }
 

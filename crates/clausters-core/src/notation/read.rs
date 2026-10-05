@@ -67,6 +67,10 @@ pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
                     clefs = read_clefs(child);
                     sheet.key = read_key(child);
                     sheet.page = read_page(child);
+                    // the page's own text, where this layer wrote it: the
+                    // fields the document head has no place for, and where
+                    // each one sits
+                    super::pagetext::read_running(child, &mut sheet.header);
                 }
                 if let Some(meter) = read_meter(child, measure) {
                     meters.push(meter);
@@ -206,6 +210,7 @@ fn read_header(root: Node) -> Header {
         subtitle: named("subordinate"),
         composer: text_of(head, "composer"),
         lyricist: text_of(head, "lyricist"),
+        ..Header::default()
     }
 }
 

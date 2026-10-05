@@ -421,3 +421,56 @@ fn the_page_setup_is_the_documents_and_an_edit_like_any_other() {
     let out = editor.act(&json!({"action": "page", "paper": "foolscap"}), 2);
     assert!(!out.changed);
 }
+
+#[test]
+fn a_text_of_the_page_is_written_moved_and_described() {
+    let mut editor = opened();
+    let out = editor.act(
+        &json!({"action": "text", "field": "title", "text": "A title"}),
+        1,
+    );
+    assert!(out.changed, "{:?}", out.answer);
+    assert_eq!(out.record.expect("an entry").label, "page text: title");
+    editor.act(
+        &json!({"action": "text", "field": "note", "text": "* a footnote"}),
+        2,
+    );
+    // moved: the title to the left, on every page
+    editor.act(
+        &json!({"action": "text", "field": "title", "halign": "left", "pages": "all"}),
+        3,
+    );
+    {
+        let held = editor.held();
+        let header = &held.sheet().unwrap().header;
+        assert_eq!(header.title, "A title");
+        assert_eq!(header.notes, vec!["* a footnote".to_string()]);
+        assert_eq!(
+            header.place("title").halign,
+            clausters_core::notation::Halign::Left
+        );
+    }
+    // a press on its block says which field it is and where it sits
+    editor.event(&gesture("element", &[json!("t-title")]), 1);
+    assert_eq!(
+        editor.describe(),
+        "title: \"A title\" -- head left middle, every page"
+    );
+    // back where the convention puts it, the override goes
+    editor.act(
+        &json!({"action": "text", "field": "title", "halign": "center", "pages": "first"}),
+        4,
+    );
+    assert!(editor.held().sheet().unwrap().header.places.is_empty());
+    // an empty text takes a footnote away, and an unknown field is refused
+    editor.act(
+        &json!({"action": "text", "field": "note", "index": 0, "text": ""}),
+        5,
+    );
+    assert!(editor.held().sheet().unwrap().header.notes.is_empty());
+    assert!(
+        !editor
+            .act(&json!({"action": "text", "field": "motto", "text": "x"}), 6)
+            .changed
+    );
+}

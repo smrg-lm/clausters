@@ -395,7 +395,17 @@ fn walk(
             id: nid.map(str::to_string),
         }),
         "text" => {
-            if let Some(prim) = text_prim(node, xf, nid) {
+            // **A block of page text is named by its own id.** The page head
+            // and foot are laid out as blocks (`<tspan class="rend">`), each
+            // carrying the id of the text it was written from, while the
+            // `<text>` around it carries none -- so without this every title,
+            // composer and footnote answered to the head they sit in, and a
+            // press on one could not say which it was.
+            let block = block_id(node);
+            if let Some(block) = block {
+                kinds.insert(block.to_string(), "rend".to_string());
+            }
+            if let Some(prim) = text_prim(node, xf, block.or(nid)) {
                 prims.push(prim);
             }
             // its tspans are consumed here, not walked as elements
@@ -450,9 +460,27 @@ fn points_to_path(points_str: &str) -> String {
     format!("{} Z", parts.join(" "))
 }
 
+/// The id of the block of text a `<text>` draws: its first
+/// `<tspan class="rend">` that carries one.
+fn block_id<'a>(node: Node<'a, 'a>) -> Option<&'a str> {
+    node.descendants()
+        .filter(|n| n.is_element() && n.has_tag_name("tspan"))
+        .filter(|n| {
+            n.attribute("class")
+                .is_some_and(|c| c.split_whitespace().any(|c| c == "rend"))
+        })
+        .find_map(|n| n.attribute("id"))
+}
+
 fn text_prim(node: Node, xf: Xf, nid: Option<&str>) -> Option<Prim> {
-    let s = drawn_text(node);
-    let s = s.trim();
+    // The engraver indents its nested `<tspan>`s, and that indentation is
+    // text as far as XML goes: a page number written as a dash, a number and a
+    // dash arrived as three words with newlines and a column of spaces between
+    // them. A run of white space is one space, as a renderer shows it.
+    let s = drawn_text(node)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if s.is_empty() {
         return None;
     }
@@ -466,7 +494,7 @@ fn text_prim(node: Node, xf: Xf, nid: Option<&str>) -> Option<Prim> {
     let (px, py) = apply(xf, placed.0, placed.1);
     let size = text_font_size(node) * xf.2;
     Some(Prim::Text {
-        s: s.to_string(),
+        s,
         x: r(px, 1),
         y: r(py, 1),
         size: r(size, 1),
@@ -887,6 +915,48 @@ mod tests {
         let bare = DisplayList::stacked(vec![one], 100.0, false);
         assert_eq!(bare.prims.len(), prims);
         assert_eq!(bare.vb, [1000.0, 400.0]);
+    }
+
+    #[test]
+    fn a_block_of_page_text_is_named_by_its_own_id_and_read_as_one_line() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <svg class="definition-scale" viewBox="0 0 21000 29700">
+            <g id="head" class="pgHead">
+              <text font-size="0px">
+                <tspan id="t-title" class="rend" x="10000" y="417" text-anchor="middle">
+                  <title class="labelAttr">title</title>
+                  <tspan id="x1" class="text"><tspan font-size="607px">A title</tspan></tspan>
+                </tspan>
+              </text>
+              <text font-size="0px">
+                <tspan class="rend" x="10000" y="719" text-anchor="middle">
+                  <tspan class="text"><tspan font-size="405px">&#8211;&#160;</tspan></tspan>
+                  <tspan class="num">
+                     <tspan class="text"><tspan font-size="405px">2</tspan></tspan>
+                  </tspan>
+                  <tspan class="text"><tspan font-size="405px">&#160;&#8211;</tspan></tspan>
+                </tspan>
+              </text>
+            </g>
+          </svg>
+        </svg>"##;
+        let dl = svg_to_display_list(svg);
+        let texts: Vec<(&str, Option<&str>)> = dl
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Text { s, id, .. } => Some((s.as_str(), id.as_deref())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                ("A title", Some("t-title")),
+                ("\u{2013} 2 \u{2013}", Some("head"))
+            ]
+        );
+        assert_eq!(dl.kinds.get("t-title").map(String::as_str), Some("rend"));
     }
 
     #[test]

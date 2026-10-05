@@ -41,6 +41,7 @@ mod mei;
 mod model;
 mod operators;
 mod ops;
+mod pagetext;
 mod read;
 mod score;
 mod svg;
@@ -61,6 +62,9 @@ pub use operators::{
     stack, stretch,
 };
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
+pub use pagetext::{
+    FIELDS, Halign, NOTE, Pages, Place, Region, Valign, default_place, field_id, field_of,
+};
 pub use read::mei_to_sheet;
 pub use score::{Engraver, NoteEvent, Page, Score, engrave_options, item_id, measure_id};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

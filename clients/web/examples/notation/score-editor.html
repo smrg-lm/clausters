@@ -79,6 +79,12 @@ lays it out on the next paper (<code>setPage</code>, an edit like any other,
 written into the MEI); <code>layout</code> switches to one continuous system and
 back, which edits nothing.
 
+<b>The page has text of its own.</b> The title and its subtitle, the composer,
+a copyright line and a footnote are fields of the score, each written in a cell
+of the page's head or foot -- where the printed page puts it, until
+<code>setText</code> moves it. A click on one says which field it is on the
+status line.
+
 <b>One undo order.</b> Ctrl+Z and Ctrl+Shift+Z over the window walk the
 editor's entries and the page's alike, and so do the undo and redo buttons.
 
@@ -204,7 +210,13 @@ B c d e | f2 e d | c B A B | G4 |
         // The decisions that are the writer's, not the engraver's, and the two
         // spans no single note could carry.
         score.apply({ op: "set_header",
-          header: notation.header({ title: "Eight bars", composer: "typed, then operated on" }) });
+          header: notation.header({
+            title: "Eight bars",
+            subtitle: "a document, and its model",
+            composer: "typed, then operated on",
+            copyright: "an example of clausters",
+            notes: ["* the bass staff was made, not typed"],
+          }) });
         score.apply({ op: "set_barline", measure: 4, kind: "dbl" });
         score.apply({ op: "set_break", measure: 5, kind: "system" });
 

@@ -356,6 +356,7 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
 
     let head = header_xml(&sheet.header);
     let page = sheet.page.as_ref().map(page_attrs).unwrap_or_default();
+    let running = super::pagetext::running_xml(&sheet.header, escape);
     Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
@@ -363,7 +364,7 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
          <pubStmt/></fileDesc></meiHead>\n\
          \x20<music><body><mdiv><score>\n\
          \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\"{page}>\n\
-         \x20\x20\x20{group}\n\
+         \x20\x20\x20{group}{running}\n\
          \x20\x20</scoreDef>\n\
          \x20\x20<section>\n{body}\n\x20\x20</section>\n\
          \x20</score></mdiv></body></music>\n\

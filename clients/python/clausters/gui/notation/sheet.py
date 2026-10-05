@@ -526,18 +526,36 @@ def remove_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:
 
 
 def header(*, title: str = "", subtitle: str = "", composer: str = "",
-           lyricist: str = "") -> dict:
-    """What is written above the music, for `set_header`.
+           lyricist: str = "", arranger: str = "", translator: str = "",
+           copyright: str = "", notes=(), places: "dict | None" = None) -> dict:
+    """What is written on the page around the music, for `set_header`.
 
     Every field is optional because most of them are most of the time: a score
     built by operating on a motif is untitled until somebody names it, and that
-    is a state rather than something missing.
+    is a state rather than something missing. ``notes`` are the footnotes, one
+    line each.
+
+    Each field is written where the printed page puts it -- the title centred
+    with its subtitle under it, the lyricist and the translator on the left,
+    the composer and the arranger on the right, the copyright centred at the
+    foot of the first page, the footnotes at the foot on the left. ``places``
+    moves the ones named: ``{"composer": {"region": "head", "halign": "left",
+    "valign": "bottom", "pages": "all"}}`` -- a region (``head``, ``foot``), a
+    cell of its three by three (``left``/``center``/``right``,
+    ``top``/``middle``/``bottom``) and the pages (``first``, ``all``);
+    ``"note"`` names every footnote.
     """
     out = {}
     for key, value in (("title", title), ("subtitle", subtitle),
-                       ("composer", composer), ("lyricist", lyricist)):
+                       ("composer", composer), ("lyricist", lyricist),
+                       ("arranger", arranger), ("translator", translator),
+                       ("copyright", copyright)):
         if value:
             out[key] = value
+    if notes:
+        out["notes"] = [str(note) for note in notes]
+    if places:
+        out["places"] = dict(places)
     return out
 
 

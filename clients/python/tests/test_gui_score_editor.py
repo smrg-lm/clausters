@@ -135,3 +135,21 @@ def test_the_page_setup_is_the_scores_and_walks_back(score):
     assert editor.undo()
     assert "page" not in score.sheet()
     assert editor.set_page("foolscap") is False
+
+
+def test_a_text_of_the_page_is_written_and_placed(score):
+    editor = ScoreEditor(score)
+    assert editor.set_text("title", "A title")
+    assert editor.set_text("note", "* a footnote")
+    assert editor.set_text("composer", "A. Composer", halign="left", pages="all")
+    head = score.sheet()["header"]
+    assert (head["title"], head["notes"]) == ("A title", ["* a footnote"])
+    assert head["places"]["composer"]["halign"] == "left"
+    # each is drawn under its own id, which is what a press names
+    page = editor.draw()["children"][0]["children"][0]
+    drawn = {p["id"]: p["s"] for p in page["prims"] if p["k"] == "text" and p.get("id")}
+    assert drawn["t-title"] == "A title" and drawn["t-note-1"] == "* a footnote"
+    assert page["kinds"]["t-title"] == "rend"
+    assert editor.set_text("motto", "x") is False
+    assert editor.undo() and editor.undo() and editor.undo()
+    assert "header" not in score.sheet()

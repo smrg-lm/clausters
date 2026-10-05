@@ -1034,8 +1034,12 @@ definition, and a `View` is how one window looks at it; the two come to the
 engraver as its options through one function, and the editor lays the score
 out again only when one of them changed. A page view draws every page one
 under another in one display list (`DisplayList::stacked`), so a selection and
-a cursor run across a page turn without a widget per page. **The selection is
-the editor's**: a press names one
+a cursor run across a page turn without a widget per page. **The page's text**
+(`notation::pagetext`) is the header's fields, each in a cell of the page's
+head or foot: written as the score definition's running elements, every block
+under an id that names its field (`t-title`), so the page a press lands on says
+which text it was and the reader gets every field and its place back. **The
+selection is the editor's**: a press names one
 element and how it was pressed (alone, with Ctrl, with Shift), and the editor
 answers with every element that is now selected — a range in time, a measure
 named by the id the emitter gives each staff of it (`m3s1`), an item as every

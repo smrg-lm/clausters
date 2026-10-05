@@ -1485,10 +1485,31 @@ opened it.
     picture), `page` and `set_page`, and the `set_page` sheet builder. A
     second window over one score shows the layout of the last one laid out:
     the engraver is one, and that is left as it is.)*
-  - ⬜ **X5.4 - The page's text.** The head and foot layout in the model,
-    emitted as encoded running elements; editing in place and the dialog.
+  - ✅ **X5.4 - The page's text.** The head and foot layout in the model,
+    emitted as encoded running elements. *(Done 2026-10-05. The header gained
+    `arranger`, `translator`, `copyright`, the footnotes and `places`, the
+    cell a field was moved to; `notation::pagetext` holds the convention
+    (`default_place`), writes the fields as `pgHead`/`pgFoot` blocks placed by
+    `halign` and `valign`, each under an id that names it (`t-title`,
+    `t-note-2`), and reads them back. Measured against the engraver: two
+    blocks in one cell are written one under the other, an encoded head takes
+    over the engraver's own, so the page number is written here from the
+    second page on, and with no foot written the engraver draws none. The
+    walk now names a block of page text by its own id -- it carried the head's
+    -- and reads a run of white space as one space, which a page number
+    written as a dash, a number and a dash had shown as three words and a
+    column of blanks. The editor gained the `text` verb and says a pressed
+    text's field and place on the status line; both clients gained
+    `set_text` and the header builder its new fields. **Editing a text in
+    place and the page text dialog moved to `X5.5`**: both need the window to
+    grow widgets while it is open, which is the same thing the Transform
+    menu's parameter dialog needs, so the three are built there on one
+    mechanism.)*
   - ⬜ **X5.5 - The menu bar and the toolbar.** Every entry above; the input
-    state; the icons; the transport controls.
+    state; the icons; the transport controls. With it, from `X5.4`: a dialog
+    the window opens while it is up -- the page text's fields, a
+    transformation's parameter, the page setup -- and a text of the page
+    edited in place on a double click.
   - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
     groups. Each ○ entry is the model growing an item or a field with its
     emission, its reading and its `Op`; they are taken palette by palette,

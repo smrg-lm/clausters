@@ -176,6 +176,29 @@ class ScoreEditor(Editor):
             call["margins"] = [int(m) for m in margins]
         return self._act(call)
 
+    def set_text(self, field: str, text: "str | None" = None, *,
+                 index: "int | None" = None, region: "str | None" = None,
+                 halign: "str | None" = None, valign: "str | None" = None,
+                 pages: "str | None" = None) -> bool:
+        """Write a text of the page, or move it, as one entry of the history.
+
+        ``field`` is ``"title"``, ``"subtitle"``, ``"composer"``,
+        ``"arranger"``, ``"lyricist"``, ``"translator"``, ``"copyright"`` or
+        ``"note"`` -- a footnote: ``index`` says which, from zero, and none adds
+        one. ``text`` writes it, and an empty one takes it away. ``region``
+        (``"head"``, ``"foot"``), ``halign`` (``"left"``, ``"center"``,
+        ``"right"``), ``valign`` (``"top"``, ``"middle"``, ``"bottom"``) and
+        ``pages`` (``"first"``, ``"all"``) put it in a cell of the page's head
+        or foot; what is left out stays as it is, and a field nobody moved
+        sits where the printed page puts it. A press on a text names its field
+        on the status line."""
+        call = {"action": "text", "field": str(field)}
+        for key, value in (("text", text), ("index", index), ("region", region),
+                           ("halign", halign), ("valign", valign), ("pages", pages)):
+            if value is not None:
+                call[key] = value
+        return self._act(call)
+
     # ---- the verbs, over what is selected ----
 
     def move(self, steps: int) -> bool:

@@ -156,6 +156,33 @@ if (!existsSync(engraver)) {
         assert.equal(editor.setPage("foolscap"), false);
     });
 
+    test("a text of the page is written and placed", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        assert.ok(editor.setText("title", "A title"));
+        assert.ok(editor.setText("note", "* a footnote"));
+        assert.ok(editor.setText("composer", "A. Composer", { halign: "left", pages: "all" }));
+        const head = (score.sheet() as unknown as {
+            header: { title: string; notes: string[]; places: Record<string, { halign: string }> };
+        }).header;
+        assert.deepEqual([head.title, head.notes], ["A title", ["* a footnote"]]);
+        assert.equal(head.places.composer.halign, "left");
+        // each is drawn under its own id, which is what a press names
+        const page = ((editor.draw().children ?? [])[0].children ?? [])[0] as unknown as {
+            prims: { k: string; id?: string; s?: string }[];
+            kinds: Record<string, string>;
+        };
+        const drawn = Object.fromEntries(
+            page.prims.filter((p) => p.k === "text" && p.id).map((p) => [p.id, p.s]),
+        );
+        assert.equal(drawn["t-title"], "A title");
+        assert.equal(drawn["t-note-1"], "* a footnote");
+        assert.equal(page.kinds["t-title"], "rend");
+        assert.equal(editor.setText("motto", "x"), false);
+        assert.ok(editor.undo() && editor.undo() && editor.undo());
+        assert.equal((score.sheet() as unknown as { header?: unknown }).header, undefined);
+    });
+
     test("edit opens a score in the score editor", async () => {
         const score = await Score.open(PHRASE);
         const editor = await edit(score, { open: false });

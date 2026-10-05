@@ -92,6 +92,7 @@ export type {
     PerformedNote,
     Ratio,
     Sheet,
+    TextPlace,
     TransposeOptions,
 } from "./sheet.ts";
 export { playheadSync, scoreView } from "./view.ts";

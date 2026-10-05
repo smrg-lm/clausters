@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use clausters_core::notation::{
-    AnyEngraver, Op, PAPERS, Page, PageSetup, Score, View, item_id, layout_options, measure_id,
-    sheet_to_mei,
+    AnyEngraver, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, View, field_of, item_id,
+    layout_options, measure_id, sheet_to_mei,
 };
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
@@ -319,6 +319,31 @@ impl ScoreEditor {
             return "this document could not be read into a model: it draws, and takes no edit"
                 .into();
         };
+        // a text of the page: which field it is, and where it is written
+        if let [element] = self.selection.as_slice()
+            && let Some((field, index)) = field_of(element)
+        {
+            let header = &sheet.header;
+            let text = if field == NOTE {
+                header.notes.get(index).map(String::as_str)
+            } else {
+                header.text(field)
+            };
+            let place = header.place(field);
+            let word = |value: serde_json::Value| value.as_str().unwrap_or_default().to_string();
+            return format!(
+                "{field}: \"{}\" -- {} {} {}, {} page",
+                text.unwrap_or_default(),
+                word(json!(place.region)),
+                word(json!(place.halign)),
+                word(json!(place.valign)),
+                if place.pages == Pages::All {
+                    "every"
+                } else {
+                    "first"
+                },
+            );
+        }
         match items.as_slice() {
             [] if self.selection.is_empty() => HINT.into(),
             [] => format!("{} is not one of this model's items", self.selection[0]),
