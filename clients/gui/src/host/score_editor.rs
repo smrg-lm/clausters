@@ -81,9 +81,12 @@ impl Host {
         let def = match owner.editing.member_mut(member) {
             Some(Member::Score(editor)) => {
                 let def = editor.window(ids, chrome);
+                // the file it saves to is the one the caller named, if any
+                let path = save_to.as_ref().map(|p| p.display().to_string());
                 clausters_apps::score::editor::call_json(
                     editor,
-                    &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),
+                    &serde_json::json!({"verb": "sync", "window": def_id, "path": path})
+                        .to_string(),
                 );
                 def
             }
@@ -104,7 +107,8 @@ impl Host {
 
     /// **A gesture on a score editor's window**, answered by the editor: the
     /// turn is the editing context's, and the window is corrected with what it
-    /// moved. Ctrl+S is the host's, since a file is.
+    /// moved. A file is the host's: where the editor's turn names one to
+    /// save to or to open, this writes and reads it.
     pub(super) fn answer_score(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::editing::Outcome;
         use clausters_apps::turn::{Event, Kind};
@@ -112,13 +116,9 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let Some((member, save_to)) = owner.scores.get(&def_id).cloned() else {
+        let Some((member, _)) = owner.scores.get(&def_id).cloned() else {
             return false;
         };
-        if matches!(message.args.get(3), Some(OscType::String(tag)) if tag == "save") {
-            self.save_score(member, save_to.as_deref());
-            return true;
-        }
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
@@ -155,17 +155,55 @@ impl Host {
         if let Some(answer) = outcome.answer {
             self.tell(answer);
         }
+        // A file is this host's to write and to read: the editor said which.
+        if let Some(path) = outcome.save {
+            self.save_score(member, Path::new(&path));
+        }
+        if let Some(path) = outcome.open {
+            self.open_into_score(def_id, member, Path::new(&path));
+        }
         true
     }
 
-    /// Writes the score of `member` to `path` as MEI, or says why it did not.
-    fn save_score(&mut self, member: clausters_apps::editing::MemberId, path: Option<&Path>) {
-        use clausters_apps::editing::Member;
+    /// Reads the document at `path` into the score of `member`, as the
+    /// editor's `open` verb -- one entry of the history -- or says why not.
+    fn open_into_score(
+        &mut self,
+        def_id: i32,
+        member: clausters_apps::editing::MemberId,
+        path: &Path,
+    ) {
+        use clausters_apps::editing::Outcome;
 
-        let Some(path) = path else {
-            diag::info!("score: read-only -- open it with --save-to <file> for Ctrl+S to write");
+        let data = match std::fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(e) => {
+                diag::warn!("open: {}: {e}", path.display());
+                return;
+            }
+        };
+        let Some(owner) = self.owner.as_mut() else {
             return;
         };
+        let request = serde_json::json!({"action": "open", "data": data});
+        let Some(turned) = owner.editing.act(member, &request) else {
+            return;
+        };
+        for corrected in turned.corrections {
+            self.tell(corrected.answer);
+        }
+        if let Outcome::Score(outcome) = turned.outcome
+            && let Some(answer) = outcome.answer
+        {
+            self.tell(answer);
+        }
+        diag::info!("score {def_id}: opened {}", path.display());
+    }
+
+    /// Writes the score of `member` to `path` as MEI, or says why it did not.
+    fn save_score(&mut self, member: clausters_apps::editing::MemberId, path: &Path) {
+        use clausters_apps::editing::Member;
+
         let Some(Member::Score(editor)) = self
             .owner
             .as_mut()
@@ -224,27 +262,31 @@ mod tests {
         }
     }
 
+    /// `count` quarters, ids from 1.
+    fn items_of(count: u64) -> Vec<Item> {
+        (1..=count)
+            .map(|id| Item::Note {
+                id,
+                pitches: vec![Pitch {
+                    step: Step::G,
+                    alter: 0,
+                    octave: 4,
+                    forced: false,
+                }],
+                dur: Ratio::new(1, 4),
+                tie: false,
+                marks: Marks::default(),
+            })
+            .collect()
+    }
+
     /// A bar of four quarters, ids 1 to 4.
     fn score() -> clausters_apps::score::Shared {
-        let note = |id| Item::Note {
-            id,
-            pitches: vec![Pitch {
-                step: Step::G,
-                alter: 0,
-                octave: 4,
-                forced: false,
-            }],
-            dur: Ratio::new(1, 4),
-            tie: false,
-            marks: Marks::default(),
-        };
         let sheet = Sheet {
             next_id: 5,
             staves: vec![Staff {
                 clef: "G2".into(),
-                voices: vec![Voice {
-                    items: (1..=4).map(note).collect(),
-                }],
+                voices: vec![Voice { items: items_of(4) }],
             }],
             ..Sheet::default()
         };
@@ -387,5 +429,59 @@ mod tests {
             "A title"
         );
         assert_eq!(dialog_page(&host, def_id), 0);
+    }
+
+    #[test]
+    fn the_scores_file_is_written_and_read_by_this_host() {
+        let dir = std::env::temp_dir().join(format!("clausters-score-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let saved = dir.join("saved.mei");
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let held = score();
+        let def_id = host
+            .open_score(held.clone(), "score", (960, 640), Some(saved.clone()))
+            .expect("a window");
+
+        // Ctrl+S is the window's save: the editor names the file it was
+        // opened with, and the host writes the score there
+        let save = host.event_message(def_id, 1, vec![OscType::String("save".into())]);
+        assert!(host.deliver(def_id, &save));
+        let written = std::fs::read_to_string(&saved).expect("the file");
+        assert_eq!(written, held.lock().unwrap().mei());
+
+        // a file named in the open form is read into the score, as one entry
+        let other = dir.join("other.mei");
+        let two = Sheet {
+            next_id: 3,
+            staves: vec![Staff {
+                clef: "F4".into(),
+                voices: vec![Voice { items: items_of(2) }],
+            }],
+            ..Sheet::default()
+        };
+        std::fs::write(&other, sheet_to_mei(&two).unwrap()).unwrap();
+        let pick = host.event_message(
+            def_id,
+            2,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("dialog:open".into()),
+            ],
+        );
+        assert!(host.deliver(def_id, &pick));
+        let path = host.own_widget(0, SCORE, "dialog:file:path").unwrap();
+        let ok = host.own_widget(0, SCORE, "dialog:file:ok").unwrap();
+        let typed = host.event_message(path, 3, vec![OscType::String(other.display().to_string())]);
+        assert!(host.deliver(def_id, &typed));
+        let click = host.event_message(ok, 4, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        assert_eq!(items(&held), 2);
+        assert_eq!(held.lock().unwrap().sheet().unwrap().staves[0].clef, "F4");
+        // and the window's undo brings the first score back
+        let undo = host.event_message(def_id, 5, vec![OscType::String("undo".into())]);
+        assert!(host.deliver(def_id, &undo));
+        assert_eq!(items(&held), 4);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

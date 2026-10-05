@@ -966,3 +966,100 @@ fn the_palettes_stand_beside_the_page_and_an_entry_is_a_verb_over_the_selection(
     assert_eq!(out.record.expect("an entry").label, "grace note");
     assert_eq!(first_marks(&editor).grace.as_deref(), Some("unacc"));
 }
+
+/// The window's own save, as Ctrl+S sends it.
+fn window_save() -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(1), json!(8), json!(1), json!("save")],
+    }
+}
+
+#[test]
+fn a_save_names_the_scores_file_and_asks_for_one_where_it_has_none() {
+    let mut editor = with_dialogs();
+    let ids = named();
+    // no file yet: the save is asked where to, by the menu and by Ctrl+S alike
+    for ask in [pick("save", None), window_save()] {
+        let out = editor.event(&ask, 1);
+        assert_eq!(out.save, None);
+        let shown = corrections_of(&out);
+        assert!(
+            shown
+                .iter()
+                .any(|c| c.widget == i64::from(ids["file"])
+                    && c.props == json!({"title": "Save as"}))
+        );
+        assert_eq!(
+            shown.last().map(|c| (c.widget, c.props.clone())),
+            Some((i64::from(ids["stack"]), json!({"index": 4})))
+        );
+        editor.event(&said("file:cancel", "click"), 1);
+    }
+    // a path typed and accepted is the file, written now and from now on
+    editor.event(&pick("save", None), 1);
+    editor.event(&said("file:path", "/tmp/a score.mei"), 1);
+    let out = editor.event(&said("file:ok", "click"), 1);
+    assert_eq!(out.save.as_deref(), Some("/tmp/a score.mei"));
+    assert!(!out.changed && out.record.is_none(), "a save is no edit");
+    let out = editor.event(&window_save(), 1);
+    assert_eq!(out.save.as_deref(), Some("/tmp/a score.mei"));
+    // and a script that read the score from a file says so
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/other.mei"}"#);
+    assert_eq!(
+        editor.event(&pick("save", None), 1).save.as_deref(),
+        Some("/tmp/other.mei")
+    );
+    // an empty path names nothing
+    editor.event(&pick("dialog:save", None), 1);
+    editor.event(&said("file:path", "  "), 1);
+    let out = editor.event(&said("file:ok", "click"), 1);
+    assert!(out.save.is_none());
+    assert!(serde_json::to_value(&out.answer).unwrap()["reason"].is_string());
+}
+
+#[test]
+fn a_file_is_opened_by_its_holder_and_the_document_it_read_is_one_entry() {
+    let mut editor = with_dialogs();
+    // the form names the file; reading it is whoever drives the editor's
+    editor.event(&pick("dialog:open", None), 1);
+    editor.event(&said("file:path", "/tmp/two.mei"), 1);
+    let out = editor.event(&said("file:ok", "click"), 1);
+    assert_eq!(out.open.as_deref(), Some("/tmp/two.mei"));
+    assert!(!out.changed);
+
+    // what it read comes back as the `open` verb: the score, replaced whole
+    let two = Sheet {
+        next_id: 3,
+        staves: vec![Staff {
+            clef: "F4".into(),
+            voices: vec![Voice {
+                items: (1..=2).map(note).collect(),
+            }],
+        }],
+        ..Sheet::default()
+    };
+    let data = sheet_to_mei(&two).unwrap();
+    let before = editor.held().mei();
+    let out = editor.act(&json!({"action": "open", "data": data}), 1);
+    assert_eq!(out.record.as_ref().expect("an entry").label, "open");
+    assert_eq!(
+        editor.items(),
+        Vec::<u64>::new(),
+        "nothing of the old score is selected"
+    );
+    {
+        let held = editor.held();
+        let sheet = held.sheet().unwrap();
+        assert_eq!(sheet.staves[0].clef, "F4");
+        assert_eq!(sheet.staves[0].voices[0].items.len(), 2);
+    }
+    // and the score that was there is a step back
+    let leg = &out.record.unwrap().legs[0];
+    assert_eq!(leg.backward["mei"], json!(before));
+    // a document that is none is refused, and the score stays
+    let held = editor.held().mei();
+    let out = editor.act(&json!({"action": "open", "data": ""}), 2);
+    assert!(!out.changed);
+    assert_eq!(editor.held().mei(), held);
+}

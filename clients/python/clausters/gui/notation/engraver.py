@@ -82,6 +82,34 @@ class Score:
             _native.as_u8(extra), len(extra))
         if not self._h:
             raise ValueError("the engraver could not load the score data")
+        #: The file the score was read from or last written to, or ``None``.
+        self.path: "str | None" = None
+
+    @classmethod
+    def read(cls, path, **options) -> "Score":
+        """Read the score in the file at ``path`` -- MEI, MusicXML, ABC or
+        Plaine & Easie, whichever the engraver finds it to be -- and remember
+        the file as the score's (`path`). The options are the constructor's."""
+        with open(path, encoding="utf-8") as file:
+            score = cls(file.read(), **options)
+        score.path = os.fspath(path)
+        return score
+
+    def write(self, path=None) -> str:
+        """Write the score to the file at ``path`` -- or to the one it was read
+        from or last written to (`path`) -- as MEI, and answer the path.
+
+        The score is saved **as itself**: notes, marks, spanners, the meter and
+        the barlines, the page setup and the page's text, not a render of it;
+        read back, it is the same page. ``ValueError`` when no file is named
+        and the score has none."""
+        target = os.fspath(path) if path is not None else self.path
+        if not target:
+            raise ValueError("this score has no file: write(path) names one")
+        with open(target, "w", encoding="utf-8") as file:
+            file.write(self.mei())
+        self.path = target
+        return target
 
     def __del__(self):
         handle, self._h = getattr(self, "_h", None), None

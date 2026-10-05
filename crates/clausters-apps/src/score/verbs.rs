@@ -60,6 +60,11 @@ pub enum Action {
         #[serde(default)]
         to: Option<usize>,
     },
+    /// **Open another document in this editor**: `data` is the document's
+    /// text, in any format the engraver reads (MEI, MusicXML, ABC, Plaine &
+    /// Easie), and it replaces the score whole -- as one entry, so the score
+    /// that was there is a step back.
+    Open { data: String },
     /// Make the selected notes grace notes -- `acc`, an appoggiatura, or
     /// `unacc`, an acciaccatura -- or notes of the bar again, with none.
     Grace {
@@ -163,6 +168,7 @@ impl Action {
             Action::Voice { .. } => "move to the other voice".into(),
             Action::Accidental { .. } => "accidental".into(),
             Action::Grace { .. } => "grace note".into(),
+            Action::Open { .. } => "open".into(),
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
@@ -520,6 +526,9 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 from,
                 to,
             }]
+        }
+        Action::Open { .. } => {
+            unreachable!("a document is opened by the editor, which holds the engraver")
         }
         Action::Op { .. }
         | Action::Transform { .. }

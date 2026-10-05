@@ -259,3 +259,50 @@ def test_an_entry_of_a_palette_is_a_verb_over_the_selection(score):
     assert _items(score)[0]["marks"]["grace"] == "acc"
     assert editor.grace()
     assert "grace" not in _items(score)[0]["marks"]
+
+
+def test_a_score_is_written_to_a_file_and_read_back_as_itself(score, tmp_path):
+    editor = ScoreEditor(score)
+    assert editor.set_text("title", "A title")
+    with pytest.raises(ValueError, match="no file"):
+        score.write()
+    path = score.write(tmp_path / "a.mei")
+    assert score.path == path
+    again = notation.Score.read(path)
+    assert again.path == path
+    assert again.sheet() == score.sheet(), "notes, marks and the page's text"
+
+
+def test_the_file_menu_saves_and_opens_through_this_client(score, tmp_path):
+    saved, other = tmp_path / "saved.mei", tmp_path / "other.mei"
+    other.write_text(notation.Score("@clef:F-4\n@data:4CD/").mei(), encoding="utf-8")
+    editor = ScoreEditor(score)
+    editor.draw()
+    editor._window = 0
+    written = len(_items(score))
+    widget = lambda name: editor.view.widget(editor, "dialog", editor.structure, name)
+    send = lambda *args: editor.apply("/gui_event", [args[0], 1, editor._version, *args[1:]])
+    # a score with no file is asked for one, and is written there
+    send(0, "menu", "save")
+    send(widget("file:path"), str(saved))
+    send(widget("file:ok"), "click")
+    assert notation.Score.read(saved).sheet() == score.sheet()
+    assert score.path == str(saved)
+    # from then on Ctrl+S writes it without asking
+    assert editor.articulation("stacc") is False  # nothing selected: no edit
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    assert editor.articulation("stacc")
+    send(0, "save")
+    assert notation.Score.read(saved).sheet() == score.sheet()
+    # Open reads another document in place of the score, as one entry
+    send(0, "menu", "dialog:open")
+    send(widget("file:path"), str(other))
+    send(widget("file:ok"), "click")
+    assert len(_items(score)) == 2
+    assert score.sheet()["staves"][0]["clef"] == "F4"
+    assert editor.undo()
+    assert len(_items(score)) == written
+    # and the two are methods
+    assert editor.load(other) and len(_items(score)) == 2
+    assert editor.save(tmp_path / "again.mei") == str(tmp_path / "again.mei")

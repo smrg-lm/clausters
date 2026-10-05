@@ -1662,7 +1662,20 @@ opened it.
       clients' `to_timeline` and `to_sequence` are now this render -- the
       Python one written in the client is gone -- and the client `Score` has
       `render_events`. Core ABI 83.)*
-    - ⬜ **X5.8.2 - The score's file.**
+    - ✅ **X5.8.2 - The score's file.** *(Done 2026-10-05. **The verbs are
+      the ones a buffer has**: `Score.read(path)` and `score.write(path)` in
+      both clients, the score remembering its file (`path`). It is written as
+      MEI, whole, and read in whatever format the engraver finds it to be.
+      **The editor touches no file**: the File menu's Save -- and Ctrl+S,
+      which is the window's own -- is a turn whose outcome names the path, and
+      its holder writes it: the native host on the disk, a client on the disk
+      or in a page's own storage. A score with no file is asked for one by the
+      file form, which Save as always opens; Open names a file the holder
+      reads and hands back as the `open` verb, which replaces the score as
+      one entry, the score that was there a step back. The host's own
+      `--save-to` is now that path, given to the editor when it opens.
+      `editor.save` and `editor.load` are the two as methods. Not in it: New
+      and Close, which the menu's list names and nothing here builds.)*
     - ⬜ **X5.8.3 - The score's playback.**
     - ⬜ **X5.8.4 - The export.**
   - ⬜ **X5.9 - The books and the example**, both clients. *(The user,

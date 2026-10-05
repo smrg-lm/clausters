@@ -18,6 +18,7 @@
  */
 
 import { Score } from "../notation/engraver.ts";
+import { readFileAt } from "../../base/files.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Answer } from "./echo.ts";
@@ -32,6 +33,10 @@ interface Outcome {
     turn?: string;
     changed?: boolean;
     answer?: Answer;
+    /** The file to write the score to, when the turn asked for a save. */
+    save?: string;
+    /** The file to open in place of the score, when the turn asked for one. */
+    open?: string;
 }
 
 /**
@@ -220,6 +225,7 @@ export class ScoreEditor extends Editor<Score> {
             title: this.title,
             w: this.size[0],
             h: this.size[1],
+            path: this.score.path,
         });
     }
 
@@ -535,6 +541,29 @@ export class ScoreEditor extends Editor<Score> {
         return this.#act({ action: "op", op });
     }
 
+    // ---- the score's file ----
+
+    /**
+     * Write the score to its file -- `path`, which is then the score's, or the
+     * one it was read from or last saved to -- and answer the path. The File
+     * menu's Save, as a method (`Score.write`).
+     */
+    save(path: string | null = null): Promise<string> {
+        return this.score.write(path);
+    }
+
+    /**
+     * Open the document in the file at `path` in this editor, in place of the
+     * score, as one entry of the history: the score that was there is a step
+     * back. The File menu's Open, as a method; the file is then the score's.
+     */
+    async load(path: string): Promise<boolean> {
+        const data = new TextDecoder().decode(await readFileAt(path));
+        const loaded = this.#act({ action: "open", data });
+        if (loaded) this.score.path = path;
+        return loaded;
+    }
+
     /**
      * One verb, through the context: recorded by the crate, and the window
      * corrected with what it answers. Whether the score changed; why it did not
@@ -588,8 +617,30 @@ export class ScoreEditor extends Editor<Score> {
             this.editing.changed();
         }
         this.echo.send(outcome.answer);
+        // A file is this client's to write and to read: the turn said which.
+        // Both are the page's own storage in a tab, and neither is waited for
+        // by the turn that asked; what went wrong is said on the console.
+        if (outcome.save) {
+            this.filed = this.score.write(outcome.save).then(
+                () => undefined,
+                (error: unknown) => console.warn(`save: ${outcome.save}:`, error),
+            );
+        }
+        if (outcome.open) {
+            const path = outcome.open;
+            this.filed = this.load(path).then(
+                () => undefined,
+                (error: unknown) => console.warn(`open: ${path}:`, error),
+            );
+        }
         return changed;
     }
+
+    /**
+     * The last file the window's menu wrote or read, as it settles: what a
+     * caller awaits to know a Save or an Open it did not call has finished.
+     */
+    filed: Promise<void> = Promise.resolve();
 }
 
 /** A key per score, so two editors over one score are one structure in the order. */

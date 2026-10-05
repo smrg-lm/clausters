@@ -1086,7 +1086,15 @@ yields one yet), a channel's, and a **group** of channels, which is the same
 lane on each channel of a staff with several voices, each naming the group in
 its target so that everything that plays a lane by its channel needs to learn
 nothing. Both clients' `to_timeline` and `to_sequence` are this render, and a
-score's `render_events` is `to_sequence` of its sheet. **The paper is the document's and the layout the
+score's `render_events` is `to_sequence` of its sheet.
+
+**A file is its holder's to read and write.** The score editor never touches
+one: a save or an open is a turn whose outcome names the path (`save`,
+`open`), and whoever drives the editor -- the native host with the disk, a
+client with the disk or a page's own storage -- writes the score's MEI there,
+or reads the file and hands its text back as the `open` verb, which is the
+edit and one entry of the history. The editor keeps the path a save goes to,
+so Ctrl+S, the menu's Save and a client's method are one path. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

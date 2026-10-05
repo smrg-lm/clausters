@@ -110,7 +110,8 @@ class ScoreEditor(Editor):
     def _sync_core(self) -> None:
         """Hand the crate the window it is open in and the chrome."""
         self._call("sync", window=self._window, title=self.title,
-                   w=int(self.size[0]), h=int(self.size[1]))
+                   w=int(self.size[0]), h=int(self.size[1]),
+                   path=getattr(self.structure, "path", None))
 
     # ---- what is selected, and the value in hand ----
 
@@ -363,6 +364,26 @@ class ScoreEditor(Editor):
         ``"repeat"`` (``count``)."""
         return self._act({"action": "transform", "name": str(name), **params})
 
+    # ---- the score's file ----
+
+    def save(self, path=None) -> str:
+        """Write the score to its file -- ``path``, which is then the score's,
+        or the one it was read from or last saved to -- and answer the path.
+        The File menu's Save, as a method (`clausters.gui.notation.Score.write`)."""
+        return self.score.write(path)
+
+    def load(self, path) -> bool:
+        """Open the document in the file at ``path`` in this editor, in place
+        of the score, as one entry of the history: the score that was there is
+        a step back. The File menu's Open, as a method; the file is then the
+        score's."""
+        with open(path, encoding="utf-8") as file:
+            data = file.read()
+        loaded = self._act({"action": "open", "data": data})
+        if loaded:
+            self.score.path = str(path)
+        return loaded
+
     def operate(self, op: dict) -> bool:
         """A model operation, whole (`clausters.gui.notation.sheet`'s
         vocabulary) -- for what has no verb here -- as one entry of the
@@ -416,6 +437,16 @@ class ScoreEditor(Editor):
             self.dirty = True
             self._editing.changed()
         self.echo.send(outcome.get("answer"))
+        # A file is this client's to write and to read: the turn said which.
+        if outcome.get("save"):
+            self.score.write(outcome["save"])
+        if outcome.get("open"):
+            with open(outcome["open"], encoding="utf-8") as file:
+                opened = self._editing.act(
+                    self._member, {"action": "open", "data": file.read()})
+            if self._take(opened.get("outcome") or {}):
+                self.score.path = str(outcome["open"])
+                changed = True
         return changed
 
 

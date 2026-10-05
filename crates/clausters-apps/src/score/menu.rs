@@ -124,6 +124,10 @@ pub fn menu(state: &State<'_>) -> Value {
                 form("Page setup...", "page", state),
                 sep(),
                 form("Page text...", "text", state),
+                sep(),
+                form("Open...", "open", state),
+                word("Save", "save"),
+                form("Save as...", "save", state),
             ],
         ),
         sub(
@@ -332,6 +336,8 @@ pub enum Pick {
     SelectAll,
     /// A form, opened over the window.
     Dialog(Form),
+    /// The score, written to its file.
+    Save,
     /// The window looks at the score this way.
     Layout(View),
     /// A press on empty staff writes a note, or stops writing one.
@@ -366,6 +372,7 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "undo" => Pick::Undo,
         "redo" => Pick::Redo,
         "select_all" => Pick::SelectAll,
+        "save" => Pick::Save,
         "entry" => Pick::Entry(state.is_none_or(|on| on != 0)),
         _ => Pick::Unknown,
     }
@@ -450,6 +457,7 @@ mod tests {
         assert_eq!(read("value:0/8", None), Pick::Unknown);
         assert_eq!(read("fold", None), Pick::Unknown);
         assert_eq!(read("dialog:page", None), Pick::Dialog(Form::Page));
+        assert_eq!(read("save", None), Pick::Save);
         assert_eq!(read("dialog:fold", None), Pick::Unknown);
     }
 }

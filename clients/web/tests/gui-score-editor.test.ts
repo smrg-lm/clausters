@@ -7,7 +7,9 @@
 // built. Run with `npm test`.
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -309,6 +311,61 @@ if (!existsSync(engraver)) {
         assert.equal(items(score)[0].marks?.grace, "acc");
         assert.ok(editor.grace());
         assert.equal(items(score)[0].marks?.grace, undefined);
+    });
+
+    test("a score is written to a file and read back as itself", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        assert.ok(editor.setText("title", "A title"));
+        await assert.rejects(() => score.write(), /no file/);
+        const path = await score.write(join(dir, "a.mei"));
+        assert.equal(score.path, path);
+        const again = await Score.read(path);
+        assert.equal(again.path, path);
+        assert.deepEqual(again.sheet(), score.sheet(), "notes, marks and the page's text");
+        rmSync(dir, { recursive: true });
+    });
+
+    test("the File menu saves and opens through this client", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
+        const [saved, other] = [join(dir, "saved.mei"), join(dir, "other.mei")];
+        writeFileSync(other, (await Score.open("@clef:F-4\n@data:4CD/")).mei());
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        (editor as unknown as { windowId: number | null }).windowId ??= 0;
+        const written = items(score).length;
+        const widget = (name: string) =>
+            editor.view!.widget(editor, "dialog", editor.structure, name);
+        const send = (id: number, ...payload: unknown[]) =>
+            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
+        // a score with no file is asked for one, and is written there
+        send(0, "menu", "save");
+        send(widget("file:path"), saved);
+        send(widget("file:ok"), "click");
+        await editor.filed;
+        assert.deepEqual((await Score.read(saved)).sheet(), score.sheet());
+        assert.equal(score.path, saved);
+        // from then on the window's save writes it without asking
+        editor.select([`n${items(score)[0].id}`]);
+        assert.ok(editor.articulation("stacc"));
+        send(0, "save");
+        await editor.filed;
+        assert.deepEqual((await Score.read(saved)).sheet(), score.sheet());
+        // Open reads another document in place of the score, as one entry
+        send(0, "menu", "dialog:open");
+        send(widget("file:path"), other);
+        send(widget("file:ok"), "click");
+        await editor.filed;
+        assert.equal(items(score).length, 2);
+        assert.ok(editor.undo());
+        assert.equal(items(score).length, written);
+        // and the two are methods
+        assert.ok(await editor.load(other));
+        assert.equal(items(score).length, 2);
+        assert.equal(await editor.save(join(dir, "again.mei")), join(dir, "again.mei"));
+        rmSync(dir, { recursive: true });
     });
 
     test("edit opens a score in the score editor", async () => {

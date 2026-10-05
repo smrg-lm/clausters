@@ -49,6 +49,16 @@ pub struct Outcome {
     /// enters no history.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected: Option<Vec<String>>,
+    /// **The file to write the score to**, when the turn asked for a save. A
+    /// file is its holder's to write -- the disk under a native host, the
+    /// page's own storage in a tab -- so the editor says where and whoever
+    /// drives it writes the score's document there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub save: Option<String>,
+    /// **The file to open**, when the turn asked for one: its holder reads
+    /// the text and hands it back as the `open` verb, which is the edit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open: Option<String>,
 }
 
 turn::turned!(Outcome);
@@ -69,6 +79,9 @@ pub struct ScoreEditor {
     palettes: palettes::Ids,
     /// The form that is up, and what its fields hold as they are typed.
     dialog: Option<dialogs::Open>,
+    /// The file the score is saved to: the one it was read from, or the last
+    /// one a save named. `None` for a score that has no file yet.
+    path: Option<String>,
     /// The engraver's outlines for the symbols the tools and the palettes
     /// are drawn with: asked once, the first time a window has either, and
     /// kept -- `None` until then, and empty when the engraver handed none
@@ -164,6 +177,7 @@ impl ScoreEditor {
             dialogs: dialogs::Ids::new(),
             palettes: palettes::Ids::new(),
             dialog: None,
+            path: None,
             outlines: None,
             title: "Score".into(),
             size: (960, 640),
@@ -618,6 +632,7 @@ impl ScoreEditor {
     fn perform(&mut self, request: &Value, out: &mut Outcome) -> Option<String> {
         match serde_json::from_value::<Action>(request.clone()) {
             Err(why) => Some(format!("no such verb: {why}")),
+            Ok(Action::Open { data }) => self.open_document(&data, out),
             Ok(action) => {
                 let planned = {
                     let held = self.held();
@@ -629,6 +644,47 @@ impl ScoreEditor {
                 planned
                     .and_then(|ops| self.edit(&ops, &action.label(), out))
                     .err()
+            }
+        }
+    }
+
+    /// **Open the document `data` in place of the score**, as one entry: the
+    /// engraver reads it, whatever format it is in, and the model is read off
+    /// what it loaded. A document it cannot read leaves the score as it was.
+    fn open_document(&mut self, data: &str, out: &mut Outcome) -> Option<String> {
+        let before = self.held().mei();
+        if !self.held().load(data) {
+            self.held().load(&before);
+            return Some("that document could not be read as a score".into());
+        }
+        // the page is written from the model, as when an editor opens, so a
+        // press names an item at once
+        let written = self
+            .held()
+            .sheet()
+            .and_then(|sheet| sheet_to_mei(sheet).ok());
+        if let Some(mei) = written {
+            self.held().load(&mei);
+        }
+        self.selection.clear();
+        out.selected = Some(Vec::new());
+        self.laid.clear();
+        self.recorded(before, "open", out);
+        None
+    }
+
+    /// **Save**: the score goes to its file, which the turn's outcome names
+    /// for whoever drives the editor to write; a score with no file yet is
+    /// asked for one.
+    fn save(&mut self, out: &mut Outcome) -> (Option<String>, Option<Vec<Correction>>) {
+        match &self.path {
+            Some(path) => {
+                out.save = Some(path.clone());
+                (None, Some(Vec::new()))
+            }
+            None => {
+                let (reason, shown) = self.open_form(dialogs::Form::File(dialogs::File::SaveAs));
+                (reason, Some(shown))
             }
         }
     }
@@ -661,6 +717,7 @@ impl ScoreEditor {
                 reason = why;
                 shown = Some(corrections);
             }
+            menu::Pick::Save => (reason, shown) = self.save(out),
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.entry = on,
             menu::Pick::Value(value) => self.value = value,
@@ -952,18 +1009,33 @@ impl Converse for ScoreEditor {
         self.gesture(widget, tag, values, out)
     }
 
-    /// **A pick of the menu bar is the window's own verb**: the bar is the
-    /// window's, so the pick arrives addressed to it rather than to a widget.
+    /// **A pick of the menu bar is the window's own verb**, and so is its
+    /// save: the bar is the window's, so the pick arrives addressed to it
+    /// rather than to a widget.
     fn window_verb(
         &mut self,
         message: &conversation::Message,
         args: &[Value],
         out: &mut Outcome,
     ) -> bool {
-        if message.addr != "/gui_event" || !message.is_window || message.tag != "menu" {
+        if message.addr != "/gui_event" || !message.is_window {
             return false;
         }
-        self.pick(message, args, out);
+        match message.tag.as_str() {
+            "menu" => self.pick(message, args, out),
+            // the window's own save -- Ctrl+S -- is the menu's
+            "save" => {
+                let (reason, shown) = self.save(out);
+                out.turn = Kind::Route;
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    reason,
+                    shown.unwrap_or_default(),
+                ));
+            }
+            _ => return false,
+        }
         true
     }
 }
@@ -996,6 +1068,7 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 ///   window has none.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
+///   `path` (the file the score is saved to, or `null` for none),
 ///   `value` (the written value a note is entered with, `[n, d]`), `entry`
 ///   (whether a press on empty staff writes a note), `dotted`, `rest`
 ///   (whether that press writes a rest), `accidental` (the one armed for the
@@ -1090,6 +1163,10 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             }
             if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
                 editor.entry = entry;
+            }
+            // `null` is a score with no file; left out, the path stays
+            if let Some(path) = request.get("path") {
+                editor.path = path.as_str().filter(|p| !p.is_empty()).map(str::to_string);
             }
             if let Some(dotted) = request.get("dotted").and_then(Value::as_bool) {
                 editor.dotted = dotted;

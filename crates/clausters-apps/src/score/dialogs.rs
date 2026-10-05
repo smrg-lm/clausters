@@ -1,8 +1,9 @@
 //! **The score editor's dialogs**: the forms a menu entry opens over the
 //! window while it is up.
 //!
-//! Three of them -- the page's text, a transformation's parameter, the page's
-//! margins and staff -- and one rule for how a window comes to show one. A
+//! Four of them -- the page's text, a transformation's parameter, the page's
+//! margins and staff, a file's path -- and one rule for how a window comes to
+//! show one. A
 //! dialog is a node of the tree and an editor answers with props, never with
 //! nodes, so every dialog is **in the window from the start, on a page of a
 //! `stack`**: a hidden page is not placed, which is a dialog that is not up,
@@ -43,6 +44,17 @@ pub enum Form {
     Param(Param),
     /// The page's margins and the staff's height.
     Page,
+    /// The path of a file: to open, or to save as.
+    File(File),
+}
+
+/// **What a path is asked for.**
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum File {
+    /// The file to read into the editor.
+    Open,
+    /// The file to write the score to, from now on.
+    SaveAs,
 }
 
 /// **The transformations that ask for a number.**
@@ -117,6 +129,8 @@ impl Form {
         Some(match word {
             "text" => Form::Text,
             "page" => Form::Page,
+            "open" => Form::File(File::Open),
+            "save" => Form::File(File::SaveAs),
             "transpose" => Form::Param(Param::Transpose),
             "repeat" => Form::Param(Param::Repeat),
             "stretch" => Form::Param(Param::Stretch),
@@ -131,6 +145,7 @@ impl Form {
             Form::Text => "text",
             Form::Param(_) => "param",
             Form::Page => "page",
+            Form::File(_) => "file",
         }
     }
 
@@ -141,6 +156,7 @@ impl Form {
             Form::Text => 1,
             Form::Param(_) => 2,
             Form::Page => 3,
+            Form::File(_) => 4,
         }
     }
 
@@ -166,21 +182,34 @@ impl Form {
                 ("left", "Left margin (mm)"),
                 ("staff", "Staff height (mm)"),
             ],
+            Form::File(_) => vec![("path", "File")],
         }
     }
 
-    fn title(self) -> &'static str {
+    /// What its dialog is titled; a form that serves several questions is
+    /// corrected with the one it is asking when it is shown.
+    #[must_use]
+    pub fn title(self) -> &'static str {
         match self {
             Form::Text => "Page text",
-            Form::Param(_) => "Transform",
+            Form::Param(Param::Transpose) => "Transpose",
+            Form::Param(Param::Repeat) => "Repeat",
+            Form::Param(Param::Stretch) => "Stretch",
             Form::Page => "Page setup",
+            Form::File(File::Open) => "Open",
+            Form::File(File::SaveAs) => "Save as",
         }
     }
 }
 
-/// The three forms the window holds; the parameter's is one form whatever
-/// transformation asks.
-const FORMS: [Form; 3] = [Form::Text, Form::Param(Param::Transpose), Form::Page];
+/// The forms the window holds; the parameter's is one form whatever
+/// transformation asks, and the file's one whichever way the file goes.
+const FORMS: [Form; 4] = [
+    Form::Text,
+    Form::Param(Param::Transpose),
+    Form::Page,
+    Form::File(File::Open),
+];
 
 /// **Every widget of the dialogs, by name**, for a caller to number: the
 /// stack; and for each form its dialog (`text`), its fields (`text:title`),
@@ -345,6 +374,10 @@ impl Open {
         if let (Form::Param(param), Some(id)) = (self.form, ids.get("param:label")) {
             out.push((*id, json!({"text": param.label()})));
         }
+        // a dialog that serves several questions says which it is asking
+        if let Some(id) = ids.get(prefix) {
+            out.push((*id, json!({"title": self.form.title()})));
+        }
         if let Some(stack) = ids.get(STACK) {
             out.push((*stack, json!({"index": self.form.page()})));
         }
@@ -477,7 +510,7 @@ mod tests {
         );
         assert_eq!(stack["h"], 0, "it takes no room in the window");
         let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 4, "no dialog, and the three forms");
+        assert_eq!(pages.len(), 5, "no dialog, and the four forms");
         assert!(pages[0].get("children").is_none());
         for (page, form) in pages[1..].iter().zip(FORMS) {
             let dialog = &page["children"][0];
@@ -508,7 +541,16 @@ mod tests {
         let shown = open.shown(&ids);
         assert!(shown.contains(&(ids["param:value"], json!({"value": "3/2"}))));
         assert!(shown.contains(&(ids["param:label"], json!({"text": "Factor"}))));
+        assert!(shown.contains(&(ids["param"], json!({"title": "Stretch"}))));
         assert_eq!(shown.last(), Some(&(ids[STACK], json!({"index": 2}))));
+        // the file's form is one dialog for both ways a file goes
+        let save = Open {
+            form: Form::File(File::SaveAs),
+            values: [("path".to_string(), "a.mei".to_string())].into(),
+        };
+        let shown = save.shown(&ids);
+        assert!(shown.contains(&(ids["file"], json!({"title": "Save as"}))));
+        assert_eq!(shown.last(), Some(&(ids[STACK], json!({"index": 4}))));
         assert_eq!(hidden(&ids), vec![(ids[STACK], json!({"index": 0}))]);
     }
 

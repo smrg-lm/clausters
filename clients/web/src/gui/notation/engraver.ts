@@ -18,6 +18,7 @@ import {
     svgToDisplayList as coreSvgToDisplayList,
 } from "../../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
+import { readFileAt, writeFileAt } from "../../base/files.ts";
 import { SCORE_PAGE } from "../guidef.ts";
 import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
@@ -94,6 +95,8 @@ export interface EngraveOptions {
 export class Score {
     private readonly inner: CoreScore;
     private readonly toolkit: Toolkit;
+    /** The file the score was read from or last written to, or `null`. */
+    path: string | null = null;
 
     private constructor(inner: CoreScore, toolkit: Toolkit) {
         this.inner = inner;
@@ -128,6 +131,36 @@ export class Score {
             toolkit.free();
             throw error;
         }
+    }
+
+    /**
+     * Read the score in the file at `path` -- MEI, MusicXML, ABC or Plaine &
+     * Easie, whichever the engraver finds it to be -- and remember the file as
+     * the score's ({@link Score.path}). A path names the disk under node and
+     * the page's own storage in a tab. The options are {@link Score.open}'s.
+     */
+    static async read(path: string, options: EngraveOptions = {}): Promise<Score> {
+        const data = new TextDecoder().decode(await readFileAt(path));
+        const score = await Score.open(data, options);
+        score.path = path;
+        return score;
+    }
+
+    /**
+     * Write the score to the file at `path` -- or to the one it was read from
+     * or last written to ({@link Score.path}) -- as MEI, and answer the path.
+     *
+     * The score is saved **as itself**: notes, marks, spanners, the meter and
+     * the barlines, the page setup and the page's text, not a render of it;
+     * read back, it is the same page. Throws when no file is named and the
+     * score has none.
+     */
+    async write(path: string | null = null): Promise<string> {
+        const target = path ?? this.path;
+        if (!target) throw new Error("this score has no file: write(path) names one");
+        await writeFileAt(target, new TextEncoder().encode(this.mei()));
+        this.path = target;
+        return target;
     }
 
     /**

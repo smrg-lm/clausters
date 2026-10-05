@@ -54,6 +54,7 @@ impl ScoreEditor {
             }
             Form::Param(param) => [("value".to_string(), param.initial().to_string())].into(),
             Form::Page => dialogs::page_of(&self.setup()),
+            Form::File(_) => [("path".to_string(), self.path.clone().unwrap_or_default())].into(),
         };
         let open = Open { form, values };
         let shown = corrected(open.shown(&self.dialogs));
@@ -116,6 +117,22 @@ impl ScoreEditor {
                 Ok(action) => self.perform(&action, out),
                 Err(why) => Some(why),
             },
+            // A file is its holder's to read and write: the outcome names
+            // it, and for a save it is the score's file from now on.
+            Form::File(file) => {
+                let path = open.value("path").trim().to_string();
+                if path.is_empty() {
+                    return Some("a file is named by its path".into());
+                }
+                match file {
+                    dialogs::File::Open => out.open = Some(path),
+                    dialogs::File::SaveAs => {
+                        self.path = Some(path.clone());
+                        out.save = Some(path);
+                    }
+                }
+                None
+            }
         }
     }
 }
