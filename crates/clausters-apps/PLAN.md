@@ -2624,6 +2624,22 @@ wrong.
   reasoning, with the window not on screen; they are to be judged in the eye
   pass that closes `X5`.
 
+- ⬜ **Two lines of the page's head run into each other** *(found
+  2026-10-05, the first look at the page)*. In the example the subtitle,
+  centred under the title, and the composer, right-aligned on nearly the
+  same line, overlap where the one ends and the other begins. Not yet read
+  in the code; the first thing to check is whether the cells were sized with
+  the engraver's text metrics while the host draws the text in its own,
+  wider, face.
+
+- ⬜ **The palettes' symbols are too small to read, and three are not
+  symbols** *(the same look)*. An entry's outline is drawn in the body
+  text's cell, which is right for a letter and small for an articulation
+  dot or an accent. And three entries of Notes show their name cut to a
+  letter and an ellipsis, in a cell one glyph wide: the two grace notes,
+  whose codepoints the engraver handed no outline for, so the label is the
+  fallback; and the voice, which names no symbol at all.
+
 - ⬜ **An edit to a sounding pitch does not rewrite the written one** *(found
   2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's
   `midinote` in a roll rewrites the `freq` and the `degree` it holds -- and

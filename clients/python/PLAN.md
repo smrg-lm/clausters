@@ -6092,3 +6092,22 @@ than being ticked here.
   reads), and three were the audit's own: a JavaScript `import { A as B }`
   and a call on a dict's element were misread, and names imported from
   node's modules were taken for the client's.
+
+- ⬜ **An editor that plays draws no cursor unless the script opened the
+  session's host first** *(found 2026-10-05, the first look at
+  `notation/score_editor`)*. `edit` resolves its host as `plot` does
+  (`Application.resolve` -> `plot._ambient_host()` with no server), so with
+  no `session.gui()` before it the window opens on a host that stands alone:
+  it is a client of no server, reads no transport position, and the play
+  cursor is never drawn -- while the sound plays, since the editor resolves
+  its *server* on its own. Every editor that plays has the dependency (the
+  multitrack, the audio editor, the roll, the score); the first three never
+  showed it because each of their examples calls `session.gui()` on the line
+  before `edit`, and the score's did not. **Decided 2026-10-05: an editor
+  does what `scope` does** -- it hands `_ambient_host` the server it plays
+  on, so the owned host boots with that server's address and shared-memory
+  segment. To settle while doing it: `_ambient_host(server)` reboots an owned
+  host that was booted without the leg, which closes the windows open on it
+  (a `plot` opened before the editor); and the editors that do not play (a
+  curve) keep asking for no server. The web client's twin is `plot.ts`'s
+  owned host, and it changes in the same commit.
