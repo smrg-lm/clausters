@@ -2816,9 +2816,20 @@ wrong.
     the host's key table (`[gui.keys]`, `--keys`), never spelled in an
     element.
 
-  Still to settle when it is taken: which modifier builds the chord, and the
-  rest of the cursor's moves (a bar at a time, to another staff or voice),
-  against the shortcuts the window already has. What it
+  **The default keys, agreed the same day** (each a binding like the rest):
+  - **`Shift` + a pitch letter adds that pitch to the chord** at the cursor,
+    which then does not advance.
+  - **`Left`/`Right` move a note or rest at a time, `Ctrl` + `Left`/`Right`
+    a bar at a time, `Alt` + `Up`/`Down` to the staff above or below.**
+  - **`Up`/`Down` move the note just entered a step, `Ctrl` + `Up`/`Down` an
+    octave**; they do not move the cursor.
+  - **The digits pick the value in hand.**
+  - **A letter writes its pitch in the octave nearest the note before it.**
+
+  Still to settle when it is taken: the key that moves the cursor to another
+  voice; and that the letters are bindings already (`E` is `split` in the
+  host's table): inside the mode its keys go first, so the table grows a
+  binding scoped to a mode rather than a second name for `E`. What it
   touches: the model gains the verb an entry is (a write over a stretch of a
   voice, where `insert` adds time), bound in both clients; the host's `score`
   element draws the cursor and reads a press by the mode; the example's
