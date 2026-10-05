@@ -2743,7 +2743,8 @@ wrong.
   - **The cursor is put where the selection is**: entering the mode with a
     note or a rest selected puts it on that note or rest, and with a staff
     selected at the staff's start.
-  - **The cursor goes when the mode is left, and when the score plays.**
+  - **The cursor goes when the mode is left, and playing leaves the mode**:
+    a play switches note entry off, and the cursor goes with it.
   - **`insert` stays, as its own verb, and it moves everything after it.**
     It is for measures above all (inserting bars) and may serve for notes;
     it is never what an entry does.
@@ -2752,8 +2753,7 @@ wrong.
     be written into the second voice", above, when this is built.
 
   Still to settle when it is taken: where the cursor goes when the mode is
-  entered with nothing selected; whether playing leaves the mode or only
-  takes the cursor away until it stops; whether the cursor advances by the value
+  entered with nothing selected; whether the cursor advances by the value
   after an entry (the principle says it does, and a press on another line
   where the note is building a chord says the press, at least, does not move
   it on); which modifier builds the chord and which keys are the pitches and
