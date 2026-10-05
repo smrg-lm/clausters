@@ -122,17 +122,62 @@ impl ScoreData {
                     y,
                     size,
                     anchor,
-                    ..
+                    id,
                 } => {
-                    // baseline -> top-left for the host font; em height in px.
-                    let em = (size * fit.sy).abs();
-                    let scale = (em / crate::host::font::GLYPH_H as f32).max(0.5);
+                    // a text being typed over is drawn as it stands
+                    let editing = self
+                        .editing
+                        .as_ref()
+                        .filter(|edit| id.as_deref() == Some(edit.id.as_str()));
+                    let s = editing.map_or(s.as_str(), |edit| edit.value.as_str());
+                    // **The size is the em, and the host's line is the
+                    // capitals.** A font size names the em; the host's scale is
+                    // set by the body box, which a face's capitals fill. Taking
+                    // the one for the other drew a page's text at 1.4 times the
+                    // size the engraver laid it out for, and two lines of a
+                    // head that the engraver had kept apart ran together.
+                    let cap = (size * fit.sy).abs() * super::CAP_PER_EM;
+                    let scale = (cap / crate::host::font::GLYPH_H as f32).max(0.5);
                     let [sx, sy] = fit.apply(*x, *y);
                     // The anchor is resolved here and nowhere earlier, because
                     // it takes the width of the string *in the host's font*,
                     // which is the one thing the engraver could not know.
                     let left = anchor.left(sx, crate::host::font::width(s, scale));
-                    crate::host::font::text(mesh, s, left, sy - em, scale, color);
+                    // baseline -> the body box's top
+                    let top = sy - cap;
+                    if let Some(edit) = editing {
+                        use crate::host::font;
+                        // what is selected, behind the text; the caret, over it
+                        let at = |pos: usize| {
+                            let cols = edit.value[..pos.min(edit.value.len())].chars().count();
+                            left + font::prefix_width(&edit.value, cols, scale)
+                        };
+                        let (above, below) = (cap * 0.25, cap * 0.3);
+                        if let Some((from, to)) = edit.caret.selection() {
+                            mesh.rect(
+                                Rect::new(
+                                    at(from),
+                                    top - above,
+                                    at(to) - at(from),
+                                    cap + above + below,
+                                ),
+                                crate::host::theme::with_alpha(colors.selection, 0.45),
+                            );
+                        }
+                        font::text(mesh, s, left, top, scale, color);
+                        let caret = at(edit.caret.pos).round();
+                        mesh.rect(
+                            Rect::new(
+                                caret,
+                                top - above,
+                                scale.max(1.0).round(),
+                                cap + above + below,
+                            ),
+                            color,
+                        );
+                    } else {
+                        crate::host::font::text(mesh, s, left, top, scale, color);
+                    }
                 }
             }
         }
@@ -144,7 +189,13 @@ impl ScoreData {
     /// several (a note is a notehead plus its stem), so the whole gesture of it
     /// lights up rather than one glyph of it.
     fn draw_selection(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
-        for sel in &self.selected {
+        // a text being typed over shows what is selected *in* it instead
+        let typed = self.editing.as_ref().map(|edit| edit.id.as_str());
+        for sel in self
+            .selected
+            .iter()
+            .filter(|sel| Some(sel.as_str()) != typed)
+        {
             let fit = self.prim_fit(fit, Some(sel));
             for h in self.hits.iter().filter(|h| &h.id == sel) {
                 // a hair of page-unit padding so a hairline stem still shows a band
@@ -307,6 +358,28 @@ pub fn triangles(d: &str, tol: f32) -> Vec<[f32; 2]> {
         .indices
         .iter()
         .map(|&i| buffers.vertices[i as usize])
+        .collect()
+}
+
+/// **The edges of the path `d`**: its contours flattened at tolerance `tol`,
+/// one segment after another, every contour closed -- nothing for a path that
+/// draws nothing. What a caller that draws an outline small keeps beside its
+/// fill, since an edge is where a stroke thinner than a pixel is lost.
+pub fn edges(d: &str, tol: f32) -> Vec<[[f32; 2]; 2]> {
+    use lyon::path::PathEvent;
+    use lyon::path::iterator::PathIterator;
+
+    let Some(path) = build_path(d) else {
+        return Vec::new();
+    };
+    path.iter()
+        .flattened(tol.max(f32::MIN_POSITIVE))
+        .filter_map(|event| match event {
+            PathEvent::Line { from, to } => Some([[from.x, from.y], [to.x, to.y]]),
+            PathEvent::End { last, first, .. } => Some([[last.x, last.y], [first.x, first.y]]),
+            _ => None,
+        })
+        .filter(|[a, b]| a != b)
         .collect()
 }
 

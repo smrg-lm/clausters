@@ -266,14 +266,17 @@ impl ScoreData {
                     anchor,
                     ..
                 } => {
-                    // the host font is roughly 0.6 em wide per character
-                    let w = 0.6 * size * s.chars().count() as f32;
+                    // As wide as the host draws it -- the width of the string
+                    // in the host's own face, at the scale whose body box is
+                    // this text's capitals -- and as high as a line of them.
+                    let w = crate::host::font::width(s, 1.0) * size * super::CAP_PER_EM
+                        / crate::host::font::GLYPH_H as f32;
                     let x0 = anchor.left(*x, w);
                     Some((
                         Bounds {
                             x0,
                             x1: x0 + w,
-                            y0: y - size,
+                            y0: y - size * super::CAP_PER_EM,
                             y1: *y,
                         },
                         HitShape::Rect,

@@ -31,6 +31,7 @@
 
 pub mod dialogs;
 pub mod editor;
+pub mod icons;
 pub mod menu;
 pub mod palettes;
 pub mod tools;

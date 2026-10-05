@@ -15,7 +15,7 @@ use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::verbs::{self, Action};
-use super::{Chrome, dialogs, menu, palettes, tools};
+use super::{Chrome, dialogs, icons, menu, palettes, tools};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
@@ -255,8 +255,14 @@ impl ScoreEditor {
         // drawn since asking loads the document again
         let labelled = !self.tools.is_empty() || !self.palettes.is_empty();
         if labelled && self.outlines.is_none() {
-            let codes = [tools::codes(), palettes::codes()].concat();
-            let found = self.held().outlines(&codes);
+            // ...and what its face does not hold is the editor's to draw
+            let codes: Vec<&str> = [tools::codes(), palettes::codes(), icons::drawn_from()]
+                .concat()
+                .into_iter()
+                .filter(|code| !icons::is_own(code))
+                .collect();
+            let mut found = self.held().outlines(&codes);
+            icons::complete(&mut found);
             self.outlines = Some(found);
         }
         let none = tools::Outlines::new();
@@ -969,6 +975,21 @@ impl ScoreEditor {
                 }
                 self.recorded(before, "move", out);
                 (None, self.corrections())
+            }
+            // A text of the page was typed over where it is drawn: the field
+            // its element is, and what it now says.
+            "text" => {
+                let element = values.first().map(text).unwrap_or_default();
+                let written = values.get(1).map(text).unwrap_or_default();
+                let Some((field, index)) = field_of(&element) else {
+                    return (None, Vec::new());
+                };
+                let mut request = json!({"action": "text", "field": field, "text": written});
+                if field == NOTE {
+                    request["index"] = json!(index);
+                }
+                let reason = self.perform(&request, out);
+                (reason, self.corrections())
             }
             // A press on empty staff named a place: what the input state
             // says is written there -- a note or a rest, of the value in

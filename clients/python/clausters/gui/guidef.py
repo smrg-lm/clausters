@@ -902,6 +902,10 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
     ``axis="y", zoom=False`` -- and ``view_x``/``view_y``/``view_zoom`` are the
     window itself. See `scroll` for the whole of it.
 
+    A plane that **flows** its children (``flow="col"`` or ``"row"``) is as
+    long as they are along the flow, so a list scrolls with no ``content_h``
+    named -- which a column of folding sections could not name anyway.
+
     With ``boxes`` and ``cords`` the plane is a **patcher**: the boxes are what
     it places and the cords are the wires between them, which is all `patch`
     ever added to a plane. See `patch` for their shape.
@@ -1115,7 +1119,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     list carries its own in. Such a character is then drawn as that shape
     wherever text is -- an ``icon``, a label, a `choice`'s option, a menu entry
     -- which is how a symbol of a music font is an icon on a machine with no
-    face for it. The table is the host's: the last outline sent for a
+    face for it, at the ``text_size`` of the widget that shows it and as wide
+    as its own shape. The table is the host's: the last outline sent for a
     character is the one drawn, in every window.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
@@ -1319,7 +1324,7 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
           ) -> View:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
-    ``text_size`` is the glyph scale over the host's font (default 2.0 --
+    ``text_size`` is the glyph scale over the host's font (default 1.5 --
     every text-bearing widget takes it). A host drawing with its embedded
     bitmap face quantizes it to half-steps, so a glyph's own pixels stay
     equal; one built with a rasterizer takes it as sent. ``wrap=True``

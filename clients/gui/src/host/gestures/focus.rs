@@ -83,6 +83,17 @@ pub(super) fn set(
     }
     if let Some((def, id)) = from {
         host.clear_focus();
+        // what the element was in the middle of is settled as the focus goes
+        let left = host
+            .window_def_mut(def)
+            .and_then(|window| window.find_mut(id))
+            .and_then(|widget| match &mut widget.kind {
+                WidgetKind::Custom(element) => Some(element.blur()),
+                _ => None,
+            });
+        if let (Some(events), true) = (left, def == ctx.def_id) {
+            super::element::report(host, out, ctx, id, events);
+        }
         report(host, out, def, id, false);
         out.push(GestureEffect::Redraw(def));
     }

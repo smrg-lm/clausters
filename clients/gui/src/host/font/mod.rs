@@ -107,8 +107,16 @@ const ROWS: usize = ASCENT + GLYPH_H + DESCENT;
 const ADVANCE: usize = GLYPH_W + 1;
 
 /// The default glyph scale (the `text_size` prop's default): font-pixels per
-/// cell pixel, the size every widget drew at before the prop existed.
-pub const DEFAULT_SIZE: f32 = 2.0;
+/// cell pixel.
+///
+/// **Three quarters of the cell.** A capital is 10.5 logical pixels high in
+/// a line of 14, the proportion of a line of print and the size a desktop
+/// writes its own text at -- a browser's default text has capitals of 11 to
+/// 12. It was 2, capitals as high as the whole cell: half again the size of
+/// the text of the page a window is mounted in, with no air in its line, and
+/// beside it every symbol looked small. On a display scaled by a third it
+/// lands on a whole step of the bitmap face.
+pub const DEFAULT_SIZE: f32 = 1.5;
 
 /// One glyph: `ROWS` row bytes, index 0 the topmost ascent row and
 /// `ASCENT + GLYPH_H` the descent. Bit 4 (`0x10`) is the leftmost of 5 columns.
@@ -434,8 +442,11 @@ pub fn advance_of(c: char, scale: f32) -> f32 {
     // A symbol takes the bitmap's cell whatever face is loaded: it is drawn
     // as a shape in that cell ([`symbol_shape`]), and so is a character a
     // window brought the outline of ([`outline`]).
-    if symbol::ALL.contains(&c) || outline::has(c) {
+    if symbol::ALL.contains(&c) {
         return ADVANCE as f32 * scale;
+    }
+    if let Some(step) = outline::advance(c, scale) {
+        return step;
     }
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
@@ -454,9 +465,7 @@ pub fn advance_of(c: char, scale: f32) -> f32 {
 /// is crisp at any size and the same with or without a face.
 fn symbol_shape(mesh: &mut Mesh, c: char, x: f32, y: f32, scale: f32, color: Color) -> bool {
     if !symbol::ALL.contains(&c) {
-        // not one of the host's own: a character a window brought the
-        // outline of is a shape in the same cell
-        return outline::draw(mesh, c, x, y, scale, color);
+        return false;
     }
     let w = GLYPH_W as f32 * scale;
     let h = GLYPH_H as f32 * scale;
@@ -568,11 +577,7 @@ fn bitmap_glyph(mesh: &mut Mesh, ch: char, x: f32, y: f32, scale: f32, color: Co
 
 /// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel).
 pub fn width(s: &str, scale: f32) -> f32 {
-    #[cfg(feature = "font-atlas")]
-    if atlas::has_face() {
-        return s.chars().map(|c| advance_of(c, scale)).sum();
-    }
-    s.chars().count() as f32 * advance(scale)
+    s.chars().map(|c| advance_of(c, scale)).sum()
 }
 
 /// The width of the first `cols` characters of `s` -- where a caret sits, and
@@ -664,9 +669,14 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
             let baseline = y + a.baseline(scale);
             let mut pen = x;
             for ch in s.chars() {
-                // A symbol is a shape in the bitmap's cell, whatever the face.
+                // A symbol is a shape in the bitmap's cell, whatever the face,
+                // and a character a window brought the outline of is its own.
                 if symbol_shape(mesh, ch, pen.round(), y, scale, color) {
                     pen += ADVANCE as f32 * scale;
+                    continue;
+                }
+                if let Some(step) = outline::draw(mesh, ch, pen, y, scale, color) {
+                    pen += step;
                     continue;
                 }
                 let Some(g) = a.glyph(ch, scale) else { break };
@@ -683,6 +693,10 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
     }
     let mut pen_x = x;
     for ch in s.chars() {
+        if let Some(step) = outline::draw(mesh, ch, pen_x, y, scale, color) {
+            pen_x += step;
+            continue;
+        }
         if !symbol_shape(mesh, ch, pen_x, y, scale, color) {
             bitmap_glyph(mesh, ch, pen_x, y, scale, color);
         }
@@ -800,8 +814,18 @@ pub fn line_advance(scale: f32) -> f32 {
 /// Appends `s` centered horizontally in `area` and vertically, clipped to it
 /// (overflow ends in an ellipsis).
 pub fn text_centered(mesh: &mut Mesh, s: &str, area: Rect, scale: f32, color: Color) {
-    let tw = width(s, scale).min(area.w);
+    let full = width(s, scale);
     let th = height(scale);
+    // **One character has no shorter form.** A symbol wider than its box is
+    // drawn across it, centred, rather than cut to an ellipsis that says less
+    // than the symbol did -- which is what a wide dynamic in a narrow cell
+    // came to.
+    if full > area.w && s.chars().nth(1).is_none() {
+        let x = area.x + (area.w - full) * 0.5;
+        text(mesh, s, x, area.y + (area.h - th) * 0.5, scale, color);
+        return;
+    }
+    let tw = full.min(area.w);
     let x = area.x + (area.w - tw) * 0.5;
     let y = area.y + (area.h - th) * 0.5;
     text_ellipsis(mesh, s, x.max(area.x), y.max(area.y), area.w, scale, color);
@@ -833,6 +857,31 @@ mod tests {
     /// ascent and a descent around them.
     fn body_of(c: char) -> Vec<u8> {
         glyph(c)[ASCENT..ASCENT + GLYPH_H].to_vec()
+    }
+
+    /// **One character has no shorter form**: a symbol wider than its box is
+    /// drawn across it, centred, where a longer string is cut to an ellipsis.
+    #[test]
+    fn a_single_character_too_wide_for_its_box_is_drawn_across_it() {
+        let narrow = Rect::new(100.0, 0.0, 8.0, 40.0);
+        let mut one = Mesh::new();
+        text_centered(&mut one, "W", narrow, 4.0, [1.0; 4]);
+        assert!(one.vertex_count() > 0, "the letter is there");
+        let (left, right) = one
+            .positions()
+            .fold((f32::MAX, f32::MIN), |(l, r), (x, _)| (l.min(x), r.max(x)));
+        assert!(
+            left < narrow.x && right > narrow.x + narrow.w,
+            "across the box"
+        );
+        assert!(
+            ((left + right) * 0.5 - 104.0).abs() < 4.0,
+            "and centred on it"
+        );
+        // two characters in the same box are cut, and nothing of them fits
+        let mut two = Mesh::new();
+        text_centered(&mut two, "WW", narrow, 4.0, [1.0; 4]);
+        assert_eq!(two.vertex_count(), 0);
     }
 
     #[test]

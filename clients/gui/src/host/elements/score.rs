@@ -29,9 +29,10 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::graphics::score::{ScoreColors, ScoreData, ScoreDrag};
+use crate::host::graphics::score::{ScoreColors, ScoreData, ScoreDrag, TextEditing};
+use crate::host::graphics::textedit;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Needs};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Needs};
 use crate::host::widget::parse;
 
 /// An engraved page, plus the one thing a page does not carry: where the pitch
@@ -53,6 +54,27 @@ pub(super) fn build(
         data: ScoreData::parse(props),
         origin_y: None,
     }))
+}
+
+impl Score {
+    /// **The text being typed over is done**: what was written is reported
+    /// as `"text" <id> <string>` -- the page's element and what it now says,
+    /// for whoever owns the score to write -- unless nothing changed, and the
+    /// page goes back to drawing what it engraved either way. The owner
+    /// answers with a page that says it.
+    fn finish(&mut self) -> Events {
+        let Some(edit) = self.data.editing.take() else {
+            return Events::none();
+        };
+        if self.data.text_of(&edit.id) == Some(edit.value.as_str()) {
+            return Events::none();
+        }
+        Events::message(vec![
+            OscType::String("text".into()),
+            OscType::String(edit.id),
+            OscType::String(edit.value),
+        ])
+    }
 }
 
 impl Element for Score {
@@ -84,6 +106,9 @@ impl Element for Score {
                     // replaced the display list.
                     data.editable = keep.editable;
                     data.entry = keep.entry;
+                    // a text being typed over stays so while the page that
+                    // came still draws it
+                    data.editing = keep.editing.filter(|edit| data.text_of(&edit.id).is_some());
                     true
                 }
                 None => false,
@@ -157,6 +182,45 @@ impl Element for Score {
         vec![("selected".into(), selected)]
     }
 
+    /// An editor's page is where its keys point: it takes the focus so that a
+    /// text typed over on it has a keyboard, and says nothing about it.
+    fn accepts_focus(&self) -> bool {
+        self.data.editable
+    }
+
+    fn reports_focus(&self) -> bool {
+        false
+    }
+
+    /// Only while a text is being typed over: every other key of a page is a
+    /// command.
+    fn takes_text(&self) -> bool {
+        self.data.editing.is_some()
+    }
+
+    /// **The keys of a text being typed over.** Enter writes it, Escape
+    /// leaves it as it was, and the rest edit the line as a field's do. With
+    /// no text in hand a page has no key of its own.
+    fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        let edit = self.data.editing.as_mut()?;
+        match key {
+            Key::Enter => Some(self.finish()),
+            Key::Escape => {
+                self.data.editing = None;
+                Some(Events::none())
+            }
+            // Tab is the ring's, and moving the focus writes the text
+            Key::Tab => None,
+            // a key that edits nothing -- a chord that is the window's -- goes on
+            _ => super::text::edit_key(&mut edit.value, &mut edit.caret, false, key, input)
+                .map(|_| Events::none()),
+        }
+    }
+
+    fn blur(&mut self) -> Events {
+        self.finish()
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         // A press names the engraved element under it by its MEI id -- the same
         // id the client engraved from, so a driver resolves it in its own
@@ -165,6 +229,34 @@ impl Element for Score {
             .data
             .hit(input.rect, at.0 as f32, at.1 as f32, input.metrics.hit_slop)
             .map(str::to_string);
+        // **A press while a text is being typed over ends it**, written: the
+        // hand went elsewhere on the page, and that is all this press says --
+        // it selects nothing and writes no note, unless it is the double
+        // click that takes up another text.
+        let typing = self.data.editing.is_some();
+        let written = self.finish();
+        // **A double click on a text of the page types over it, where it is
+        // drawn**: the whole of it selected, as a field's is when it is
+        // entered. Only on a page that edits, and only a text -- a title, a
+        // name, a footnote -- which is what the page draws as a string.
+        if self.data.editable
+            && input.clicks >= 2
+            && let Some(id) = picked.as_deref()
+            && let Some(text) = self.data.text_of(id)
+        {
+            let value = text.to_string();
+            let mut caret = textedit::Caret::default();
+            textedit::select_all(&value, &mut caret);
+            self.data.editing = Some(TextEditing {
+                id: id.to_string(),
+                value,
+                caret,
+            });
+            return Claim::events(written);
+        }
+        if typing {
+            return Claim::events(written);
+        }
         // **On a page that takes note entry, a staff line is a place.** The hit
         // test answers with a sounding element where there is one and with the
         // tightest box otherwise, and the tightest box on an engraved page is a
@@ -404,6 +496,176 @@ mod tests {
         score.data.entry = true;
         score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
         score
+    }
+
+    /// A page that edits, with a title drawn as a text under its id.
+    fn titled() -> Score {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,1000],"step":90,"editable":true,"glyphs":{},
+                "prims":[{"k":"text","s":"A title","x":500,"y":300,"size":100,
+                          "anchor":"middle","id":"t-title"}],
+                "kinds":{"t-title":"rend"}}"#,
+        )
+        .unwrap();
+        Score {
+            data: ScoreData::parse(&props),
+            origin_y: None,
+        }
+    }
+
+    /// The keys `keys`, typed at `score` one after another: what the last
+    /// answered.
+    fn typed(score: &mut Score, keys: &[Key]) -> Option<Events> {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut last = None;
+        for key in keys {
+            let mut input = KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clipboard,
+                cursor: None,
+            };
+            last = score.key(key, &mut input);
+        }
+        last
+    }
+
+    /// **A double click on a text of the page types over it, where it is
+    /// drawn.** The whole of it is selected, so the first key replaces it;
+    /// Enter reports what it now says under the element's id, which is the
+    /// intent whoever owns the score writes; and the page goes back to
+    /// drawing what it engraved until that owner answers.
+    #[test]
+    fn a_double_click_on_a_text_types_over_it_and_enter_writes_it() {
+        let metrics = Metrics::default();
+        let mut once = input(&metrics);
+        let mut score = titled();
+        assert!(score.accepts_focus() && !score.takes_text());
+        let on_title = at(&score, once.rect, 500.0, 270.0);
+        // one press selects it, as it selects any element
+        assert!(matches!(score.press(on_title, &once), Claim::Take(_)));
+        assert!(score.data.editing.is_none());
+        // the second of a double click takes it up, all of it selected
+        once.clicks = 2;
+        score.press(on_title, &once);
+        let edit = score
+            .data
+            .editing
+            .clone()
+            .expect("the title is being typed over");
+        assert_eq!(
+            (edit.id.as_str(), edit.value.as_str()),
+            ("t-title", "A title")
+        );
+        assert_eq!(edit.caret.selection(), Some((0, 7)));
+        assert!(score.takes_text(), "its keys are characters now");
+
+        // typing replaces what was selected; the keys are a field's
+        let answered = typed(
+            &mut score,
+            &[Key::Char('N'), Key::Char('o'), Key::Backspace],
+        );
+        assert_eq!(
+            answered,
+            Some(Events::none()),
+            "nothing is said until it is done"
+        );
+        assert_eq!(score.data.editing.as_ref().unwrap().value, "N");
+        assert_eq!(
+            typed(&mut score, &[Key::Char('e'), Key::Char('w'), Key::Enter]),
+            Some(Events::message(vec![
+                OscType::String("text".into()),
+                OscType::String("t-title".into()),
+                OscType::String("New".into()),
+            ]))
+        );
+        assert!(score.data.editing.is_none() && !score.takes_text());
+        // with no text in hand a page has no key of its own
+        assert_eq!(typed(&mut score, &[Key::Char('x')]), None);
+    }
+
+    /// **Escape leaves the text as it was, and going elsewhere writes it**:
+    /// the focus leaving the page, or a press somewhere else on it -- which is
+    /// spent on ending the edit and selects nothing. A text left as it was is
+    /// not reported at all.
+    #[test]
+    fn a_text_typed_over_is_written_when_the_hand_goes_elsewhere() {
+        let metrics = Metrics::default();
+        let mut twice = input(&metrics);
+        twice.clicks = 2;
+        let mut score = titled();
+        let on_title = at(&score, twice.rect, 500.0, 270.0);
+        let written = |text: &str| {
+            Events::message(vec![
+                OscType::String("text".into()),
+                OscType::String("t-title".into()),
+                OscType::String(text.into()),
+            ])
+        };
+
+        score.press(on_title, &twice);
+        typed(&mut score, &[Key::Char('X'), Key::Escape]);
+        assert!(score.data.editing.is_none(), "Escape leaves it");
+        assert_eq!(score.blur(), Events::none(), "and nothing was written");
+
+        // the focus goes: what was typed is written
+        score.press(on_title, &twice);
+        typed(&mut score, &[Key::Char('B')]);
+        assert_eq!(score.blur(), written("B"));
+
+        // a press elsewhere on the page: written, and that is all it says
+        score.press(on_title, &twice);
+        typed(&mut score, &[Key::Char('C')]);
+        let once = input(&metrics);
+        let elsewhere = at(&score, once.rect, 100.0, 900.0);
+        assert_eq!(score.press(elsewhere, &once), Claim::events(written("C")));
+
+        // taken up and left untouched, it says nothing
+        score.press(on_title, &twice);
+        assert_eq!(typed(&mut score, &[Key::Enter]), Some(Events::none()));
+
+        // and a page that does not edit takes up no text
+        let mut reading = titled();
+        reading.data.editable = false;
+        reading.press(on_title, &twice);
+        assert!(reading.data.editing.is_none() && !reading.accepts_focus());
+    }
+
+    /// A text being typed over is drawn as it stands, with its caret -- and a
+    /// re-engraved page keeps it in hand only while it still draws that text.
+    #[test]
+    fn the_text_in_hand_is_drawn_and_survives_a_page_that_still_has_it() {
+        use crate::host::graphics::score::ScoreColors;
+        use crate::host::paint::Mesh;
+
+        let metrics = Metrics::default();
+        let mut twice = input(&metrics);
+        twice.clicks = 2;
+        let mut score = titled();
+        let rect = twice.rect;
+        let colors = ScoreColors {
+            ink: [1.0; 4],
+            playhead: [1.0; 4],
+            selection: [1.0; 4],
+        };
+        let drawn = |score: &Score| {
+            let mut mesh = Mesh::new();
+            score.data.render(&mut mesh, rect, None, -1.0, colors);
+            mesh.vertex_count()
+        };
+        let plain = drawn(&score);
+        score.press(at(&score, rect, 500.0, 270.0), &twice);
+        assert!(drawn(&score) > plain, "the selection band and the caret");
+
+        // the owner's answer to another edit: the same page again
+        let again = serde_json::json!({"vb": [1000, 1000], "step": 90, "glyphs": {},
+            "prims": [{"k": "text", "s": "A title", "x": 500, "y": 300, "size": 100,
+                       "anchor": "middle", "id": "t-title"}]});
+        assert!(score.set("display_list", &again));
+        assert!(score.data.editing.is_some());
+        // a page without that text lets go of it
+        let gone = serde_json::json!({"vb": [1000, 1000], "step": 90, "glyphs": {}, "prims": []});
+        assert!(score.set("display_list", &gone));
+        assert!(score.data.editing.is_none());
     }
 
     fn input<'a>(m: &'a Metrics) -> Input<'a> {

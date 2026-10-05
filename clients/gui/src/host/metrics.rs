@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(m.box_side, 24.0);
         assert_eq!(m.ruler_h, 18.0);
         assert_eq!(m.ruler_w, 46.0);
-        assert_eq!(m.header_w, 96.0);
+        assert_eq!(m.header_w, 72.0);
         assert_eq!(m.divider_w, 1.0);
         assert_eq!(m.focus_ring, 2.0);
         assert_eq!(m.trace_w, 1.5);
@@ -451,8 +451,8 @@ mod tests {
         assert_eq!(m.grip_w, 12.0);
         assert_eq!(m.label_gap, 14.0);
         assert_eq!(m.tick_gap, 7.0);
-        assert_eq!(m.text_scale, 2.0);
-        assert_eq!(m.label_scale, 2.0);
+        assert_eq!(m.text_scale, 1.5);
+        assert_eq!(m.label_scale, 1.5);
         assert_eq!(m.caption_scale, 1.5);
         assert_eq!(m.micro_scale, 1.0);
     }
@@ -563,8 +563,8 @@ mod tests {
         assert_eq!(m.pad, 8.0);
         assert_eq!(m.control_h, 44.0);
         assert_eq!(m.divider_w, 2.0, "a hairline is whole pixels, doubled");
-        assert_eq!(m.text_scale, 4.0);
-        assert_eq!(m.caption_scale, 3.0, "1.5 doubles onto a whole step");
+        assert_eq!(m.text_scale, 3.0, "1.5 doubles onto a whole step");
+        assert_eq!(m.caption_scale, 3.0);
         for role in Metrics::NAMES {
             let v = m.get(role).unwrap();
             assert!(v.is_finite() && v > 0.0, "{role} vanished: {v}");

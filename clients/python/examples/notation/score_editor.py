@@ -35,7 +35,9 @@ What it shows, in the order it does it:
     input state, which is also `editor.value`, `editor.dotted`, `editor.rest`
     and `editor.next_accidental`), the articulations, a tie and a triplet for
     what is selected, the voice, the layout, and at the far edge the
-    transport. Each tool is drawn with the engraver's own symbol;
+    transport. Each tool is drawn with the engraver's own symbol, and with
+    the editor's own drawing where the engraver's face has none (a tie, a
+    barline, a hairpin);
   - the **palettes**, beside the page, are what can be written: a kind of
     element to a folding group -- accidentals, articulations, ornaments,
     lines, dynamics, measures -- each entry a verb over what is selected, and
@@ -66,7 +68,8 @@ What it shows, in the order it does it:
 * **The page has text of its own.** The title and its subtitle, the composer,
   a copyright line and a footnote are fields of the score, each written in a
   cell of the page's head or foot. A click on one says which field it is on
-  the status line; File, Page text edits them all.
+  the status line, and a double click types over it where it is drawn (Enter
+  writes it, Escape leaves it); File, Page text edits them all.
 * **A score is saved as itself.** The script saves it once (`editor.save`),
   so the file is the score's and Ctrl+S, or File, Save, writes it again
   without asking; File, Open reads another document in its place, as one step

@@ -102,6 +102,93 @@ impl Text {
     }
 }
 
+/// **The keys that edit a line of text**, over a string and its caret: what a
+/// field does with a key, as a function of the two, so that anything typed
+/// into -- a field, a text of an engraved page edited where it is drawn -- is
+/// typed into the same way. `Some(changed)` is consumed, `changed` saying
+/// whether the string moved; `None` is a key that edits nothing and goes on
+/// (Tab, Escape, a function key, a chord that is the window's).
+///
+/// Enter is the caller's to mean something by: here it breaks the line of a
+/// `multiline` text and is otherwise consumed and inert.
+pub(super) fn edit_key(
+    value: &mut String,
+    caret: &mut Caret,
+    multiline: bool,
+    key: &Key,
+    input: &mut KeyInput,
+) -> Option<bool> {
+    let mods = input.mods;
+    let mut changed = false;
+    match key {
+        Key::Char(c) if mods.ctrl => match c.to_ascii_lowercase() {
+            'c' => {
+                if let Some(s) = textedit::selected(value, caret) {
+                    input.clipboard.set_text(s);
+                }
+            }
+            'x' => {
+                if let Some(s) = textedit::selected(value, caret) {
+                    input.clipboard.set_text(s);
+                    changed = textedit::delete_selection(value, caret);
+                }
+            }
+            'v' => {
+                // What another program copied since is what is pasted.
+                input.clipboard.refresh();
+                if !input.clipboard.is_empty() {
+                    // A single-line field takes a pasted block as one line.
+                    let pasted = input.clipboard.text();
+                    let text = if multiline {
+                        pasted
+                    } else {
+                        pasted.replace('\n', " ")
+                    };
+                    changed = textedit::insert(value, caret, &text);
+                }
+            }
+            'a' => textedit::select_all(value, caret),
+            // **Undo and redo are the field's while it is typed in**, as
+            // in every text field -- this one keeps no history, so they
+            // are consumed and inert rather than undoing the document
+            // behind it in the middle of a word.
+            'z' | 'y' => {}
+            // Any other chord is not editing, so it is the window's: a
+            // field holding the focus does not take Ctrl+S or Ctrl+O away
+            // from the program, as no platform's field does.
+            _ => return None,
+        },
+        // A plain printable char inserts; an Alt chord is a command, the
+        // key table's.
+        Key::Char(c) if !mods.alt => {
+            changed = textedit::insert(value, caret, c.encode_utf8(&mut [0; 4]));
+        }
+        Key::Char(_) => return None,
+        Key::Backspace if mods.ctrl => changed = textedit::backspace_word(value, caret),
+        Key::Backspace => changed = textedit::backspace(value, caret),
+        Key::Delete if mods.ctrl => changed = textedit::delete_word(value, caret),
+        Key::Delete => changed = textedit::delete(value, caret),
+        Key::Left if mods.ctrl => textedit::move_word_left(value, caret, mods.shift),
+        Key::Left => textedit::move_left(value, caret, mods.shift),
+        Key::Right if mods.ctrl => textedit::move_word_right(value, caret, mods.shift),
+        Key::Right => textedit::move_right(value, caret, mods.shift),
+        Key::Up => textedit::move_up(value, caret, mods.shift),
+        Key::Down => textedit::move_down(value, caret, mods.shift),
+        Key::Home => textedit::move_home(value, caret, mods.shift),
+        Key::End => textedit::move_end(value, caret, mods.shift),
+        Key::Enter if multiline => {
+            changed = textedit::insert(value, caret, "\n");
+        }
+        // A single-line field ignores Enter: the value has already been
+        // delivered, so there is no send for it to trigger.
+        Key::Enter => {}
+        // The ring's, never the field's -- and a function key edits
+        // nothing, so it goes on to the key table.
+        Key::Tab | Key::Escape | Key::F(_) => return None,
+    }
+    Some(changed)
+}
+
 impl Element for Text {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
@@ -252,83 +339,7 @@ impl Element for Text {
     }
 
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        let mods = input.mods;
-        let mut changed = false;
-        match key {
-            Key::Char(c) if mods.ctrl => match c.to_ascii_lowercase() {
-                'c' => {
-                    if let Some(s) = textedit::selected(&self.value, &self.caret) {
-                        input.clipboard.set_text(s);
-                    }
-                }
-                'x' => {
-                    if let Some(s) = textedit::selected(&self.value, &self.caret) {
-                        input.clipboard.set_text(s);
-                        changed = textedit::delete_selection(&mut self.value, &mut self.caret);
-                    }
-                }
-                'v' => {
-                    // What another program copied since is what is pasted.
-                    input.clipboard.refresh();
-                    if !input.clipboard.is_empty() {
-                        // A single-line field takes a pasted block as one line.
-                        let pasted = input.clipboard.text();
-                        let text = if self.multiline {
-                            pasted
-                        } else {
-                            pasted.replace('\n', " ")
-                        };
-                        changed = textedit::insert(&mut self.value, &mut self.caret, &text);
-                    }
-                }
-                'a' => textedit::select_all(&self.value, &mut self.caret),
-                // **Undo and redo are the field's while it is typed in**, as
-                // in every text field -- this one keeps no history, so they
-                // are consumed and inert rather than undoing the document
-                // behind it in the middle of a word.
-                'z' | 'y' => {}
-                // Any other chord is not editing, so it is the window's: a
-                // field holding the focus does not take Ctrl+S or Ctrl+O away
-                // from the program, as no platform's field does.
-                _ => return None,
-            },
-            // A plain printable char inserts; an Alt chord is a command, the
-            // key table's.
-            Key::Char(c) if !mods.alt => {
-                changed =
-                    textedit::insert(&mut self.value, &mut self.caret, c.encode_utf8(&mut [0; 4]));
-            }
-            Key::Char(_) => return None,
-            Key::Backspace if mods.ctrl => {
-                changed = textedit::backspace_word(&mut self.value, &mut self.caret)
-            }
-            Key::Backspace => changed = textedit::backspace(&mut self.value, &mut self.caret),
-            Key::Delete if mods.ctrl => {
-                changed = textedit::delete_word(&mut self.value, &mut self.caret)
-            }
-            Key::Delete => changed = textedit::delete(&mut self.value, &mut self.caret),
-            Key::Left if mods.ctrl => {
-                textedit::move_word_left(&self.value, &mut self.caret, mods.shift)
-            }
-            Key::Left => textedit::move_left(&self.value, &mut self.caret, mods.shift),
-            Key::Right if mods.ctrl => {
-                textedit::move_word_right(&self.value, &mut self.caret, mods.shift)
-            }
-            Key::Right => textedit::move_right(&self.value, &mut self.caret, mods.shift),
-            Key::Up => textedit::move_up(&self.value, &mut self.caret, mods.shift),
-            Key::Down => textedit::move_down(&self.value, &mut self.caret, mods.shift),
-            Key::Home => textedit::move_home(&self.value, &mut self.caret, mods.shift),
-            Key::End => textedit::move_end(&self.value, &mut self.caret, mods.shift),
-            Key::Enter if self.multiline => {
-                changed = textedit::insert(&mut self.value, &mut self.caret, "\n");
-            }
-            // A single-line field ignores Enter: the value has already been
-            // delivered, so there is no send for it to trigger.
-            Key::Enter => {}
-            // The ring's, never the field's -- and a function key edits
-            // nothing, so it goes on to the key table.
-            Key::Tab | Key::Escape | Key::F(_) => return None,
-        }
+        let changed = edit_key(&mut self.value, &mut self.caret, self.multiline, key, input)?;
         // Consumed either way -- the caret moved, which is a repaint -- and a
         // content change also delivers the new value, ungated.
         Some(if changed {

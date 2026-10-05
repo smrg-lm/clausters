@@ -1044,8 +1044,17 @@ asked of it as a notehead, so `Score::outlines` engraves a *specimen*
 (`notation::specimen`: one note per codepoint) and reads the glyph table every
 page carries, then puts the document back -- the same call under the native
 engraver and the wasm one. The window carries those outlines as its `glyphs`,
-and the host's font module draws a character that has one as a shape in the
-glyph's cell (`font::outline`), which is all an icon ever was there. **A
+and the host's font module draws a character that has one as a shape on the
+line, stepping by its own width (`font::outline`), which is all an icon ever
+was there. **What the engraver's face does not hold, the crate draws**
+(`score::icons`): a slur and a tie are curves the engraver computes, a barline
+a line it rules, and a face may leave out glyphs the standard has, so the
+table is *completed* before the window carries it -- each drawing an outline
+in the same form, under SMuFL's codepoint where the standard names the symbol
+(a face that has it wins) and under one of the editor's own, in a private
+plane, where it names none. A drawing that reuses a glyph (a grace note is the
+face's eighth, smaller) is written from that glyph's outline. A tool sets the
+size its symbol is drawn at as its `text_size`. **A
 dialog is in the window from the start** (`score::dialogs`): an editor answers
 with props, never with nodes, so the three forms -- the page's text, a
 transformation's parameter, the margins and the staff -- are each alone on a
@@ -1059,7 +1068,9 @@ stays up and says why. **The palettes are what can be written**
 element -- under the names MEI gives them, since the elements are the
 engraver's and the model is ours -- where an entry is a verb over the
 selection and its tip the element in a sentence. Only what the model holds
-has an entry. The three sets of ids a caller numbers -- tools, dialogs,
+has an entry, and the column is a `plane` that flows its groups, so it
+scrolls when they are taller than the window. The three sets of ids a caller
+numbers -- tools, dialogs,
 palette entries -- are one `score::Chrome`, and whatever is left empty in it
 is chrome the window does not have.
 

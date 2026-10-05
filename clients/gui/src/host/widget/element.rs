@@ -1802,6 +1802,18 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **The focus left this element**: what it was in the middle of is
+    /// settled, and whatever that comes to is reported like a key's answer.
+    ///
+    /// Nothing by default -- a field has delivered every keystroke already. It
+    /// is for an element that holds an edit *until it is done*: a text of a
+    /// page typed over where it is drawn is written when the hand goes
+    /// elsewhere, as it is on Enter, since a press on a tool is how most edits
+    /// end and the element is not the one that saw it.
+    fn blur(&mut self) -> Events {
+        Events::none()
+    }
+
     /// Whether a move of the focus onto or off this element is **reported**
     /// (`/gui_event <id> "focus" <1|0>`). `true` by default.
     ///

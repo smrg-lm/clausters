@@ -3,8 +3,8 @@
 
 Every text-bearing light widget -- ``label``, ``button``, ``toggle``, ``text``,
 ``number``, ``choice`` and the control labels on ``slider``/``knob`` -- takes a
-``text_size``: a glyph scale over the host's font, whose default 2.0 is exactly
-the size everything drew at before the prop existed.
+``text_size``: a glyph scale over the host's font, whose default 1.5 writes
+capitals three quarters of the line they stand in.
 
 The face writes **both cases** and the **Latin-1** letters, so a label, a track
 name or a file path in Spanish, French or German reads as written. Its cell is 5

@@ -62,7 +62,8 @@ whether it is a rest and its accidental (the input state, which is also
 <code>editor.rest</code> and <code>editor.nextAccidental</code>), the
 articulations, a tie and a triplet for what is selected, the voice, the
 layout, and at the far edge the transport. Each tool is drawn with the
-engraver's own symbol. The <b>palettes</b>, beside the page, are what can be
+engraver's own symbol, and with the editor's own drawing where the engraver's
+face has none (a tie, a barline, a hairpin). The <b>palettes</b>, beside the page, are what can be
 written: a kind of element to a folding group -- accidentals, articulations,
 ornaments, lines, dynamics, measures -- each entry a verb over what is
 selected, and what it is said in a sentence when the pointer rests on it.
@@ -99,7 +100,8 @@ one continuous system and back, which edits nothing.
 <b>The page has text of its own.</b> The title and its subtitle, the composer,
 a copyright line and a footnote are fields of the score, each written in a
 cell of the page's head or foot. A click on one says which field it is on the
-status line; File, Page text edits them all.
+status line, and a double click types over it where it is drawn (Enter writes
+it, Escape leaves it); File, Page text edits them all.
 
 <b>A score is saved as itself.</b> The page saves it once
 (<code>editor.save</code>), so the file is the score's and Ctrl+S, or File,

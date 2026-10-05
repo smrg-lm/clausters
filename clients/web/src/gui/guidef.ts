@@ -1157,6 +1157,10 @@ export function layout(
  * plane in content units. `axis`/`zoom` constrain it (see `scroll`), and with
  * `boxes`/`cords` it is the **patcher** -- the boxes are what the plane places
  * and the cords the wires between them, which is all `patch` ever added.
+ *
+ * A plane that **flows** its children (`flow: "col"` or `"row"`) is as long
+ * as they are along the flow, so a list scrolls with no `contentH` named --
+ * which a column of folding sections could not name anyway.
  */
 export function plane(
     options: ContainerOptions & {
@@ -1471,7 +1475,8 @@ export function view(
      * its own in. Such a character is then drawn as that shape wherever text
      * is -- an `icon`, a label, a `choice`'s option, a menu entry -- which is
      * how a symbol of a music font is an icon on a machine with no face for
-     * it. The table is the host's: the last outline sent for a character is
+     * it, at the `textSize` of the widget that shows it and as wide as its own
+     * shape. The table is the host's: the last outline sent for a character is
      * the one drawn, in every window.
      */
     glyphs?: Record<string, string>;
@@ -1668,7 +1673,7 @@ export function scroll(
 
 /**
  * Static `label` text. `textSize` is the glyph scale over the host's font
- * (default 2.0 -- every text-bearing widget takes it; a host drawing with its
+ * (default 1.5 -- every text-bearing widget takes it; a host drawing with its
  * embedded 5x7 face quantizes it to half-steps, one built with a rasterizer
  * takes it as sent); `wrap` word-
  * wraps to the label's width (off, an overflowing line clips with an

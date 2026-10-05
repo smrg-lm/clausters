@@ -68,10 +68,18 @@ use super::{Flow, Layout, Widget, WidgetKind};
 /// A widget's wanted extent per axis, `None` on an axis meaning elastic.
 pub type Natural = (Option<f32>, Option<f32>);
 
-/// The height of one row of text plus the padding above and below it -- the box
+/// The height of one line of *content*: a row of text and its padding -- what
 /// a line of content needs.
+///
+/// **A line is a cell, and text is written in it.** The text an ordinary
+/// widget draws is three quarters of the cell high, which is the proportion a
+/// line of print has, so the line a text needs is the cell's and not its own
+/// capitals': a label is as high as the control beside it, and a table's rows
+/// keep their pitch, whatever the face and at any size up to the cell's.
+/// Text larger than the cell takes the room it needs.
 pub(crate) fn line_box(size: f32, m: &Metrics) -> f32 {
-    font::height(size) + 2.0 * m.pad
+    let cell = m.control_h - 2.0 * m.pad;
+    font::height(size).max(cell) + 2.0 * m.pad
 }
 
 /// The height of one line of *control*: a row of text and its padding, never
@@ -234,6 +242,31 @@ impl Widget {
     /// the layout rather than guessing at it.
     pub fn hug_size(&self, m: &Metrics, scale: f32) -> Natural {
         self.fitted(m, scale, Want::Content)
+    }
+
+    /// **What the children a `scroll` flows want, strung together**: the
+    /// content of a plane that arranges its children in a row or a column,
+    /// composed as a hugging container's is -- `None` on an axis a child
+    /// leaves to the layout, and on both for a plane that places its children
+    /// freely or arranges none. It is what lets a plane scroll a list (a
+    /// column of sections taller than its pane) where its `content_h` names
+    /// no number, since how long a list is depends on what is folded.
+    pub(crate) fn flowed_content(&self, m: &Metrics, scale: f32) -> Natural {
+        match &self.kind {
+            WidgetKind::Scroll { layout, flow, .. }
+                if matches!(layout, Layout::Row | Layout::Col) =>
+            {
+                compose(
+                    &self.flow_children(),
+                    *layout,
+                    *flow,
+                    m,
+                    scale,
+                    Want::Content,
+                )
+            }
+            _ => (None, None),
+        }
     }
 
     /// The one walk both fitted questions take, told apart by `want`: the

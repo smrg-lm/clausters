@@ -529,13 +529,25 @@ pub fn scroll_content(widget: &Widget, area: Rect, metrics: &Metrics) -> (f32, f
         );
     }
     let free = layout == Layout::Free;
+    // **A plane that flows its children is as long as they are, along the
+    // flow**: a column of sections scrolls when it is taller than its pane,
+    // and is the pane's width across. Measured with the logical table at unit
+    // scale, which is the plane's own space, so it is a content extent like
+    // the others -- and never under the viewport, so a short list still fills
+    // its pane.
+    let (flow_w, flow_h) = widget.flowed_content(&metrics.at(1.0), 1.0);
+    let along = |wanted: Option<f32>, visible: f32, flows: bool| {
+        wanted.filter(|_| flows).map(|w| w.max(visible))
+    };
     (
         view.content_w
             .or_else(|| free.then(|| extent(|p| p.x, |p| p.w)).flatten())
+            .or_else(|| along(flow_w, visible_w, layout == Layout::Row))
             .unwrap_or(visible_w)
             .max(1.0),
         view.content_h
             .or_else(|| free.then(|| extent(|p| p.y, |p| p.h)).flatten())
+            .or_else(|| along(flow_h, visible_h, layout == Layout::Col))
             .unwrap_or(visible_h)
             .max(1.0),
     )
@@ -880,6 +892,46 @@ mod tests {
         );
         let placed = layout(area(), &w, &Metrics::default());
         assert_eq!(placed.iter().filter_map(|p| p.widget.id).count(), 2);
+    }
+
+    /// **A plane that flows its children scrolls its list.** A column of
+    /// sections taller than its pane is as long as they are -- which no
+    /// `content_h` could say, since how long it is depends on what is folded
+    /// -- and a short one still fills the pane; across the flow it is the
+    /// pane's width either way.
+    #[test]
+    fn a_plane_that_flows_its_children_is_as_long_as_they_are() {
+        let m = Metrics::default();
+        let column = |heights: &[u32]| {
+            let rows: Vec<String> = heights
+                .iter()
+                .enumerate()
+                .map(|(i, h)| format!(r#"{{"id":{},"type":"label","text":"x","h":{h}}}"#, 10 + i))
+                .collect();
+            tree(&format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":2,"type":"plane","flow":"col","axis":"y","zoom":0,"margin":0,
+                      "gap":0,"pack":1,"children":[{}]}}]}}"#,
+                rows.join(",")
+            ))
+        };
+        let pane = Rect::new(0.0, 0.0, 200.0, 300.0);
+        let long = column(&[200, 200, 200]);
+        let plane = &long.children[0];
+        assert_eq!(scroll_content(plane, pane, &m), (200.0, 600.0));
+        // its rows are placed one under another, each as high as it asked
+        let placed = layout(pane, &long, &m);
+        let last = placed.iter().find(|p| p.widget.id == Some(12)).unwrap();
+        assert_eq!((last.rect.y, last.rect.h), (400.0, 200.0));
+        // a list shorter than the pane fills it
+        let short = column(&[100]);
+        assert_eq!(scroll_content(&short.children[0], pane, &m), (200.0, 300.0));
+        // and a free plane is the surface it always was
+        let free = tree(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":2,"type":"plane","children":[{"id":3,"type":"label","text":"x","h":900}]}]}"#,
+        );
+        assert_eq!(scroll_content(&free.children[0], pane, &m).0, 200.0);
     }
 
     #[test]

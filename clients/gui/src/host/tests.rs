@@ -546,10 +546,14 @@ fn a_hugging_window_asks_for_the_size_of_its_content() {
     let knob = host.window_def(2).unwrap().hug_size(&host.metrics, 1.0);
     // The content **plus the status bar**: a window fitted to what it holds
     // is fitted to the chrome under it too, or the band would be taken out
-    // of the pixels the knob was measured to need.
+    // of the pixels the knob was measured to need. A window is whole pixels,
+    // so it takes the next one up of what a line of text made fractional.
     assert_eq!(
         (kw as f32, kh as f32),
-        (knob.0.unwrap(), knob.1.unwrap() + host.metrics.status_h),
+        (
+            knob.0.unwrap().ceil(),
+            (knob.1.unwrap() + host.metrics.status_h).ceil()
+        ),
     );
     assert!(kw < 420 && kh < 360, "the window is the knob: {kw}x{kh}");
 

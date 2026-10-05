@@ -263,6 +263,16 @@ pub fn numbered(ids: &Ids) -> bool {
     names().iter().all(|name| ids.contains_key(name))
 }
 
+/// How wide a row's caption is: the longest of them, "Bottom margin (mm)",
+/// at the size text is drawn, in either face.
+const CAPTION_W: f64 = 170.0;
+
+/// How wide a field is: a title, a path, a line of a footnote.
+const FIELD_W: f64 = 340.0;
+
+/// How high the footnotes' field is: four lines of them.
+const NOTES_H: f64 = 76.0;
+
 /// One form as a dialog: a row per field, and `Cancel` and `OK` under them.
 fn dialog(form: Form, ids: &Ids) -> Value {
     let prefix = form.prefix();
@@ -271,17 +281,25 @@ fn dialog(form: Form, ids: &Ids) -> Value {
         .fields()
         .iter()
         .map(|(name, label)| {
-            let mut caption = json!({"type": "label", "text": label, "w": 150});
+            let mut caption = json!({"type": "label", "text": label, "w": CAPTION_W});
             // the parameter's caption is the question the transformation asks
             if let (Form::Param(_), Some(map)) = (form, caption.as_object_mut()) {
                 map.insert("id".into(), json!(id("label")));
             }
-            let mut field = json!({"type": "text", "id": id(name), "value": "", "w": 320});
+            let mut field = json!({"type": "text", "id": id(name), "value": "", "w": FIELD_W});
             if let (true, Some(map)) = (*name == NOTES, field.as_object_mut()) {
                 map.insert("multiline".into(), json!(true));
-                map.insert("h".into(), json!(72));
+                map.insert("h".into(), json!(NOTES_H));
             }
-            json!({"type": "layout", "flow": "row", "hug": true, "children": [caption, field]})
+            // a row is its caption and its field and no air of its own: the
+            // dialog's gap is what separates one row from the next
+            json!({
+                "type": "layout",
+                "flow": "row",
+                "hug": true,
+                "margin": 0,
+                "children": [caption, field],
+            })
         })
         .collect();
     let buttons = json!({
@@ -289,6 +307,7 @@ fn dialog(form: Form, ids: &Ids) -> Value {
         "flow": "row",
         "hug": true,
         "pack": true,
+        "margin": 0,
         "children": [
             {"type": "separator", "weight": 1, "line": false},
             {"type": "button", "id": id("cancel"), "label": "Cancel"},

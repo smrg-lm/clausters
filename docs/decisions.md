@@ -9497,3 +9497,36 @@ of the call. The primary selection -- what a middle click pastes -- rides the
 same seam, with the host's own beside it. A page keeps the host's own
 clipboard: the host draws inside a canvas, and reaching the browser's takes
 code on the page's side, left as a future direction.
+
+## Text is three quarters of its line, and a symbol is twice a word
+
+*(2026-10-05, with the user, who asked for the proportions rather than a
+number: "hay que buscar las proporciones, yo no las conozco".)* The host's
+default `text_size` was 2, which writes capitals 14 logical pixels high -- the
+whole of the cell every size role is derived from. Two things followed from
+that one number. Text was half again the size of the text around it: a
+browser's default has capitals of 11 to 12 pixels, an interface's 9 to 10, and
+a window mounted in a page sat beside both. And a line had no air, because the
+line *was* the capitals -- so a symbol drawn at the text's size, which is what
+an icon was, looked small beside words that filled their row.
+
+**The default is 1.5, and the cell stays 14.** Capitals are 10.5 in a line of
+14: three quarters, the proportion a line of print has. The cell is declared
+and never derived from the face, so nothing else in the table moved -- a
+control is 22 high, a ruler 18 -- except the two roles counted in characters.
+What had to change with it is `size::line_box`, the height a line of *content*
+takes: it was the text's height plus padding, which is the cell only while the
+text fills it, and a label would have come out shorter than the control beside
+it. A line is the cell at any text size up to the cell's.
+
+**A symbol's size is its text's, and it is nearly twice a word's.** An icon
+is a glyph (a window brings the outlines of a music font), so a widget that
+shows one sets `text_size`; the score editor's tools draw theirs at 2.5 and its
+palettes at 3.5, an em of 22 and 30 pixels. That is the ratio an icon has to a
+caption on every desktop -- 16 pixels beside capitals of 9 -- and it is what
+makes an accidental stand a capital and a half high.
+
+The half-step is not new (ruler captions shipped at 1.5), and on the bitmap
+face it is the one concession to unequal pixels; on a display scaled by a
+third, the user's, 1.5 lands on a whole step. A script that wants the old size
+says `text_size: 2`.

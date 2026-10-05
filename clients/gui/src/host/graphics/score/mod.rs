@@ -136,7 +136,7 @@ impl Bounds {
 
 pub use hit::{HitBox, HitGrid, HitShape};
 pub use list::selection;
-pub use tess::triangles;
+pub use tess::{edges, triangles};
 
 /// One placed element of the engraved page, in verovio page units.
 #[derive(Clone, Debug)]
@@ -182,6 +182,12 @@ pub enum Prim {
     },
 }
 
+/// The height of a line of capitals to the em, for the text of a page: what
+/// turns the font size an engraver names into the body box the host's own
+/// scale is set by. A text face's is between 0.66 (a Times) and 0.73 (the
+/// sans a host usually loads); the page is laid out for the first.
+pub(crate) const CAP_PER_EM: f32 = 0.7;
+
 /// Where a text primitive's `x` falls in the string it places.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Anchor {
@@ -217,6 +223,17 @@ impl Prim {
             | Prim::Text { id, .. } => id.as_deref(),
         }
     }
+}
+
+/// **A text of the page being typed over where it is drawn**: the element, the
+/// string as it stands, and the caret in it. The page draws this in the place
+/// of the text it engraved under that id, at the same anchor, so a centred
+/// title stays centred while it grows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextEditing {
+    pub id: String,
+    pub value: String,
+    pub caret: crate::host::graphics::textedit::Caret,
 }
 
 /// One position of the playback cursor: at musical time `t` (ms) the sounding
@@ -366,6 +383,9 @@ pub struct ScoreData {
     /// asked for note entry would start reporting an insertion every time a
     /// user dismissed one.
     pub entry: bool,
+    /// The text of the page being typed over, when one is: host state, like
+    /// the selection, that no display list carries.
+    pub editing: Option<TextEditing>,
     /// The ids that name a **sounding element** -- a note, a rest -- as against
     /// the staff and layer furniture that also carries one. Sent by the client,
     /// because the walk that engraved the page is what knows, and to a renderer
@@ -392,6 +412,17 @@ impl ScoreData {
     /// kind the page names. An id the page names no kind for admits nothing
     /// beyond being selected -- a gesture this host cannot be sure of is one it
     /// does not offer.
+    /// The string the page draws under `id`, when that element is a text --
+    /// a title, a name, a footnote.
+    pub fn text_of(&self, id: &str) -> Option<&str> {
+        self.prims.iter().find_map(|p| match p {
+            Prim::Text {
+                s, id: Some(own), ..
+            } if own == id => Some(s.as_str()),
+            _ => None,
+        })
+    }
+
     pub fn admits(&self, id: &str) -> clausters_core::notation::Admits {
         self.kinds
             .get(id)
@@ -422,6 +453,7 @@ impl Default for ScoreData {
             drag: None,
             editable: false,
             entry: false,
+            editing: None,
             elements: std::collections::HashSet::new(),
             systems: Vec::new(),
             kinds: HashMap::new(),

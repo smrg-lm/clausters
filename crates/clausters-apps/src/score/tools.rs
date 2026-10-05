@@ -34,6 +34,7 @@ use serde_json::{Value, json};
 use clausters_core::notation::{View, glyph_char};
 use clausters_core::ratio::Ratio;
 
+use super::icons;
 use super::menu::VALUES;
 
 /// The tools, by the names the caller numbers them under, left to right.
@@ -64,6 +65,14 @@ pub type Outlines = BTreeMap<String, String>;
 
 /// The written values' symbols, in [`VALUES`]' order: a note of each, alone.
 const VALUE_CODES: [&str; 7] = ["E1D2", "E1D3", "E1D5", "E1D7", "E1D9", "E1DB", "E1DD"];
+
+/// **The size a tool's symbol is drawn at**, as the `text_size` of the tool
+/// that shows one. A symbol is a glyph, and a glyph's size is its text's; a
+/// tool's is nearly twice the size of the words beside it, the proportion an
+/// icon has to a caption, so that an accidental stands as tall as a capital
+/// and a half and a note with its stem and its flags stays inside the bar.
+/// The em comes to 22 logical pixels.
+pub const SYMBOL_SIZE: f64 = 2.5;
 
 /// The augmentation dot, a quarter rest and the triplet's figure.
 const DOT: &str = "E1E7";
@@ -98,6 +107,7 @@ pub fn codes() -> Vec<&'static str> {
         .chain([DOT, REST, TRIPLET])
         .chain(ACCIDENTALS.iter().map(|a| a.1))
         .chain(ARTICULATIONS.iter().map(|a| a.2))
+        .chain([icons::TIE, icons::NONE, icons::REWIND])
         .collect()
 }
 
@@ -180,6 +190,14 @@ fn press(label: &str, tip: &str) -> Value {
     json!({"type": "button", "flat": true, "label": label, "tip": tip})
 }
 
+/// `node` as a tool that shows symbols: drawn at [`SYMBOL_SIZE`].
+fn symbols(mut node: Value) -> Value {
+    if let Some(map) = node.as_object_mut() {
+        map.insert("text_size".into(), json!(SYMBOL_SIZE));
+    }
+    node
+}
+
 /// **The toolbar**, as a GuiDef row -- or `None` when the caller numbered no
 /// tool, which is a window without one. A tool whose symbol is in `outlines`
 /// is labelled with it.
@@ -203,7 +221,7 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
             tool(
                 ids,
                 "value",
-                segments(
+                symbols(segments(
                     VALUES
                         .iter()
                         .zip(VALUE_CODES)
@@ -217,10 +235,14 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
                         })
                         .collect(),
                     "The value a note is written with",
-                ),
+                )),
             ),
-            tool(ids, "dot", latch(&shown(DOT, "."), "Dotted")),
-            tool(ids, "rest", latch(&shown(REST, "rest"), "Write rests")),
+            tool(ids, "dot", symbols(latch(&shown(DOT, "."), "Dotted"))),
+            tool(
+                ids,
+                "rest",
+                symbols(latch(&shown(REST, "rest"), "Write rests")),
+            ),
         ],
         &mut children,
     );
@@ -228,29 +250,36 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         vec![tool(
             ids,
             "accidental",
-            segments(
-                std::iter::once("-".to_string())
+            symbols(segments(
+                std::iter::once(shown(icons::NONE, "-"))
                     .chain(ACCIDENTALS.iter().map(|(text, code, _)| shown(code, text)))
                     .collect(),
                 "The accidental: of what is selected, or of the next note",
-            ),
+            )),
         )],
         &mut children,
     );
     group(
         ARTICULATIONS
             .iter()
-            .map(|(name, text, code, tip)| tool(ids, name, press(&shown(code, text), tip)))
+            .map(|(name, text, code, tip)| tool(ids, name, symbols(press(&shown(code, text), tip))))
             .collect(),
         &mut children,
     );
     group(
         vec![
-            tool(ids, "tie", press("tie", "Tie to the next note")),
+            tool(
+                ids,
+                "tie",
+                symbols(press(&shown(icons::TIE, "tie"), "Tie to the next note")),
+            ),
             tool(
                 ids,
                 "tuplet",
-                press(&shown(TRIPLET, "3"), "Triplet: three in the time of two"),
+                symbols(press(
+                    &shown(TRIPLET, "3"),
+                    "Triplet: three in the time of two",
+                )),
             ),
         ],
         &mut children,
@@ -275,18 +304,22 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         &mut children,
     );
     // the transport goes to the far edge, past a spring: the host's own
-    // symbols, which every face draws
+    // symbols, which every face draws, at the size of the other tools'
     let transport: Vec<Value> = [
-        tool(ids, "rewind", press("|<", "Back to the start")),
+        tool(
+            ids,
+            "rewind",
+            symbols(press(&shown(icons::REWIND, "|<"), "Back to the start")),
+        ),
         tool(
             ids,
             "play",
-            press("\u{25B6}", "Play, or stop (the space bar)"),
+            symbols(press("\u{25B6}", "Play, or stop (the space bar)")),
         ),
         tool(
             ids,
             "loop",
-            latch("\u{21BB}", "Loop the selection, or the score (L)"),
+            symbols(latch("\u{21BB}", "Loop the selection, or the score (L)")),
         ),
     ]
     .into_iter()
@@ -467,11 +500,15 @@ mod tests {
         assert_eq!(values[2], "\u{E1D5}", "the quarter is its symbol");
         assert_eq!(values[3], "1/8", "the eighth has none and stays text");
         assert_eq!(by_id(103)["options"][4], "\u{E262}");
-        assert_eq!(by_id(103)["options"][0], "-", "none is no symbol");
+        assert_eq!(by_id(103)["options"][0], "-", "and so does none");
         assert_eq!(by_id(104)["label"], ".");
+        // a tool that shows symbols is drawn at their size, and one that
+        // shows words at the words'
+        assert_eq!(by_id(100)["text_size"], SYMBOL_SIZE);
+        assert!(by_id(110).get("text_size").is_none(), "the voice is words");
         // every symbol asked for is a codepoint, each once
         let asked = codes();
-        assert_eq!(asked.len(), 19);
+        assert_eq!(asked.len(), 22);
         assert!(asked.iter().all(|code| glyph_char(code).is_some()));
     }
 

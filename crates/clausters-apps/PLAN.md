@@ -2611,7 +2611,7 @@ wrong.
   *tool* keeps both readings, since arming one for the next note is its
   reason to be on the toolbar.
 
-- ⬜ **A text of the page cannot be edited where it is drawn** *(found
+- ✅ **A text of the page cannot be edited where it is drawn** *(found
   2026-10-05, closing `X5.5.4`)*. A press on a title selects it and the status
   line says its field and its place; changing it is the page text dialog, or
   `set_text`. Editing it in place needs two things the page does not do: to
@@ -2619,22 +2619,46 @@ wrong.
   it, and to hold a text field over the box the text is drawn in, which moves
   with the scroll and the zoom. Both are the host's `score` element's, and the
   field's commit is then the `text` verb that exists.
+  **Fixed 2026-10-05**, without the field: the state is the page's own. A
+  double click on a text of an `editable` page takes it up, all of it
+  selected; the page draws the string as it stands, with its caret and what
+  is selected, at the text's own anchor -- so it moves with the scroll and
+  the zoom because it is the page drawing it; the keys are a field's (the
+  one function both now call); Enter writes it, Escape leaves it, and so does
+  going elsewhere -- a press on the page, or the focus leaving it, which the
+  host now tells an element (`Element::blur`). What is reported is
+  `"text" <id> <string>`, and the editor reads it as the `text` verb. A page
+  that edits takes the keyboard focus for this, and says nothing about it.
 
-- ⬜ **The dialogs' labels and the toolbar are not laid out by eye yet**
+- ✅ **The dialogs' labels and the toolbar are not laid out by eye yet**
   *(the same day)*. The widths of a form's captions and fields, the height of
   the footnotes' field, and the size an outline glyph is drawn at were set by
   reasoning, with the window not on screen; they are to be judged in the eye
   pass that closes `X5`.
+  **Done 2026-10-05**, looking at the window in a browser at the user's
+  display factor (1.33), with a system face and with the built-in one. A
+  form's captions are 170 wide (the longest, "Bottom margin (mm)", was cut at
+  150), its fields 340, its rows carry no margin of their own -- the pitch
+  went from 50 to 28 -- and the footnotes' field holds four lines. The
+  toolbar's symbols are drawn at `tools::SYMBOL_SIZE` and the palettes' at
+  `palettes::SYMBOL_SIZE`; see the entry on the symbols, below.
 
-- ⬜ **Two lines of the page's head run into each other** *(found
+- ✅ **Two lines of the page's head run into each other** *(found
   2026-10-05, the first look at the page)*. In the example the subtitle,
   centred under the title, and the composer, right-aligned on nearly the
   same line, overlap where the one ends and the other begins. Not yet read
   in the code; the first thing to check is whether the cells were sized with
   the engraver's text metrics while the host draws the text in its own,
   wider, face.
+  **Fixed 2026-10-05**, and it was not the face's width: the host took the
+  font size the engraver names -- the em -- for the height of its own line of
+  capitals, so every text of a page was drawn at 1.4 times the size the
+  engraver had laid it out for, and two cells it had kept apart ran together.
+  The page's text is drawn at 0.7 of the em now
+  (`graphics::score::CAP_PER_EM`), and its hit box is as wide as the string
+  is in the host's face.
 
-- ⬜ **The symbols of the toolbar and the palettes cannot be read** *(the
+- ✅ **The symbols of the toolbar and the palettes cannot be read** *(the
   same look, and the user's own: "no se entiende bien qué es cada glifo")*.
   Four things, in the toolbar and the palettes alike:
   - **They are drawn too small.** An outline is drawn in the body text's
@@ -2650,6 +2674,28 @@ wrong.
     the fallback. The slur and the tie of Lines, and the toolbar's tie, are
     words as well.
   - **Some have no symbol at all**: the barlines of Measures, and the voice.
+  **Fixed 2026-10-05**, each of the four:
+  - *Size.* A symbol's size is its text's, so a tool that shows one sets
+    `text_size`: 2.5 on the toolbar (an em of 22 logical pixels) and 3.5 in
+    the palettes (30). What made them look small was as much the words: the
+    host's default text was capitals as high as the whole line, half again a
+    desktop's own text. It is three quarters of the line now, for every
+    window (`clients/gui/PLAN.md`, "Found by use").
+  - *Deformation.* The host keeps a stroke a pixel wide: under the size where
+    a music font's uprights are a pixel it draws the outline's edges over the
+    fill. And an outline steps by its own width, so a dynamic of two letters
+    is not run into its neighbour or cut to nothing.
+  - *Words.* `score::icons` draws what the engraver's face does not hold,
+    and completes the table the window carries: the grace notes (the face's
+    eighth, smaller, with its stroke), the slur, the tie, the hairpins.
+  - *No symbol.* The same module: the barlines and the repeats (under SMuFL's
+    own codepoints, so a face that has them wins), the voice, the measures'
+    three verbs, the breaks, "none", and the transport's back-to-start --
+    these under codepoints of the editor's own, in a private plane.
+  The palettes' column scrolls, which showed up as soon as the symbols had a
+  size: its last groups were under the window's foot.
+  Left as they are: the voice selector and the layout selector of the
+  toolbar are words (`v1`, `v2`; `page`, `line`).
 
 - ⬜ **An edit to a sounding pitch does not rewrite the written one** *(found
   2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's

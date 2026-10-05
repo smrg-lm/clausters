@@ -2391,6 +2391,59 @@ fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
     );
 }
 
+/// **What an element was in the middle of is settled as the focus leaves
+/// it.** A text of an engraved page typed over where it is drawn is written
+/// on Enter -- and when the hand goes to a tool instead, which is how most
+/// edits end and a press the page never sees. The machine tells the element
+/// (`Element::blur`) and reports what it answers, under the page's id.
+#[test]
+#[cfg(feature = "notation")]
+fn a_text_typed_over_on_a_page_is_written_when_a_press_lands_elsewhere() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"score","h":300,"editable":true,"vb":[1000,500],"step":90,
+             "glyphs":{},"kinds":{"t-title":"rend"},
+             "prims":[{"k":"text","s":"A title","x":500,"y":300,"size":120,
+                       "anchor":"middle","id":"t-title"}]},
+            {"id":7,"type":"label","text":"a tool"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    // the page fits 1000x500 into 600x300: the title is about its middle
+    let title = (300.0, 165.0);
+    ctx.now_ms = 1_000.0;
+    g.press(&mut host, &ctx, title.0, title.1);
+    g.release(&mut host, &ctx, title.0, title.1);
+    ctx.now_ms = 1_150.0;
+    g.press(&mut host, &ctx, title.0, title.1);
+    g.release(&mut host, &ctx, title.0, title.1);
+    assert_eq!(host.focused(), Some((1, 5)), "the page takes the keyboard");
+    assert!(key(&g, &mut host, &ctx, Key::Char('Z')).is_some());
+
+    // a press on the tool under the page: the focus goes, and the text is written
+    ctx.now_ms = 3_000.0;
+    let out = g.press(&mut host, &ctx, 30.0, 350.0);
+    assert_eq!(host.focused(), None);
+    let written: Vec<&Vec<OscType>> = out
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit {
+                widget_id: 5, args, ..
+            } => Some(args),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        written,
+        vec![&vec![
+            OscType::String("text".into()),
+            OscType::String("t-title".into()),
+            OscType::String("Z".into()),
+        ]],
+        "and a page says nothing of the focus itself: {out:?}"
+    );
+}
+
 /// A press on something that reads no keyboard drops the focus -- which is how
 /// a caret disappears when you click away from a field.
 #[test]

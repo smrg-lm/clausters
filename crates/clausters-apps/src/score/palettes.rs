@@ -24,6 +24,7 @@ use serde_json::{Value, json};
 
 use clausters_core::notation::glyph_char;
 
+use super::icons;
 use super::tools::Outlines;
 
 /// The caller's widget id for each entry it numbered, by the entry's name.
@@ -131,14 +132,14 @@ fn groups() -> Vec<Group> {
                 entry(
                     "acc",
                     "acc",
-                    Some("E562"),
+                    Some(icons::APPOGGIATURA),
                     "Appoggiatura: a grace note that takes its time from the note it leans on",
                     json!({"action": "grace", "kind": "acc"}),
                 ),
                 entry(
                     "unacc",
                     "unacc",
-                    Some("E560"),
+                    Some(icons::ACCIACCATURA),
                     "Acciaccatura: a grace note crushed in before the beat",
                     json!({"action": "grace", "kind": "unacc"}),
                 ),
@@ -152,7 +153,7 @@ fn groups() -> Vec<Group> {
                 entry(
                     "voice",
                     "voice",
-                    None,
+                    Some(icons::VOICE),
                     "Voice: move the selection to the other line of its staff",
                     json!({"action": "voice"}),
                 ),
@@ -291,7 +292,7 @@ fn groups() -> Vec<Group> {
                 entry(
                     "none",
                     "-",
-                    None,
+                    Some(icons::NONE),
                     "No ornament",
                     json!({"action": "ornament"}),
                 ),
@@ -305,28 +306,28 @@ fn groups() -> Vec<Group> {
                 entry(
                     "slur",
                     "slur",
-                    None,
+                    Some(icons::SLUR),
                     "Slur: a curve over a phrase, from the first selected note to the last",
                     json!({"action": "spanner", "kind": "slur"}),
                 ),
                 entry(
                     "tie",
                     "tie",
-                    None,
+                    Some(icons::TIE),
                     "Tie: two notes of one pitch joined into one sound",
                     json!({"action": "tie"}),
                 ),
                 entry(
                     "crescendo",
                     "<",
-                    Some("E53E"),
+                    Some(icons::CRESCENDO),
                     "Crescendo: a hairpin opening, gradually louder",
                     json!({"action": "spanner", "kind": "crescendo"}),
                 ),
                 entry(
                     "diminuendo",
                     ">",
-                    Some("E53F"),
+                    Some(icons::DIMINUENDO),
                     "Diminuendo: a hairpin closing, gradually softer",
                     json!({"action": "spanner", "kind": "diminuendo"}),
                 ),
@@ -348,7 +349,7 @@ fn groups() -> Vec<Group> {
                 entry(
                     "none",
                     "-",
-                    None,
+                    Some(icons::NONE),
                     "No dynamic",
                     json!({"action": "dynamic"}),
                 ),
@@ -362,84 +363,84 @@ fn groups() -> Vec<Group> {
                 entry(
                     "insert_before",
                     "+|",
-                    None,
+                    Some(icons::MEASURE_BEFORE),
                     "Open an empty measure before the first selected",
                     json!({"action": "measures", "edit": "insert_before"}),
                 ),
                 entry(
                     "insert_after",
                     "|+",
-                    None,
+                    Some(icons::MEASURE_AFTER),
                     "Open an empty measure after the last selected",
                     json!({"action": "measures", "edit": "insert_after"}),
                 ),
                 entry(
                     "remove",
                     "x",
-                    None,
+                    Some(icons::MEASURE_REMOVE),
                     "Take out the selected measures, with what is written in them",
                     json!({"action": "measures", "edit": "remove"}),
                 ),
                 barline(
                     "single",
                     "|",
-                    Some("E030"),
+                    Some(icons::BARLINE_SINGLE),
                     "Barline: the ordinary end of a measure",
                 ),
                 barline(
                     "dbl",
                     "||",
-                    Some("E031"),
+                    Some(icons::BARLINE_DOUBLE),
                     "Double barline: the end of a section",
                 ),
                 barline(
                     "end",
                     "|]",
-                    Some("E032"),
+                    Some(icons::BARLINE_FINAL),
                     "Final barline: the end of the music",
                 ),
                 barline(
                     "rptstart",
                     "|:",
-                    Some("E040"),
+                    Some(icons::REPEAT_START),
                     "Repeat start: where a repeated passage begins",
                 ),
                 barline(
                     "rptend",
                     ":|",
-                    Some("E041"),
+                    Some(icons::REPEAT_END),
                     "Repeat end: back to the repeat start",
                 ),
                 barline(
                     "rptboth",
                     ":|:",
-                    Some("E042"),
+                    Some(icons::REPEAT_BOTH),
                     "Repeat end and start, at one barline",
                 ),
                 barline(
                     "invis",
                     "( )",
-                    None,
+                    Some(icons::BARLINE_INVISIBLE),
                     "Invisible barline: a measure with no line drawn",
                 ),
                 entry(
                     "system",
                     "sys",
-                    Some("E4CE"),
+                    Some(icons::BREAK_SYSTEM),
                     "System break: the next measure starts a new line",
                     json!({"action": "break", "kind": "system"}),
                 ),
                 entry(
                     "page",
                     "page",
-                    None,
+                    Some(icons::BREAK_PAGE),
                     "Page break: the next measure starts a new page",
                     json!({"action": "break", "kind": "page"}),
                 ),
                 entry(
                     "flow",
                     "flow",
-                    None,
+                    Some(icons::BREAK_NONE),
                     "No break: the line and the page are the engraver's to fill",
                     json!({"action": "break", "kind": "none"}),
                 ),
@@ -480,10 +481,28 @@ pub fn codes() -> Vec<&'static str> {
 }
 
 /// How wide the column of palettes is.
-pub const WIDTH: f64 = 196.0;
+pub const WIDTH: f64 = 204.0;
+
+/// The room around the palettes in their column, which is also where the
+/// column's scroll bar runs: wide enough that the bar covers no section.
+const MARGIN: f64 = 10.0;
+
+/// **The size an entry's symbol is drawn at**, as its `text_size`: a step over
+/// a tool's ([`super::tools::SYMBOL_SIZE`]), since a palette is where a symbol
+/// is looked for among others like it. The em comes to 30 logical pixels.
+pub const SYMBOL_SIZE: f64 = 3.5;
 
 /// How many entries a palette lays side by side.
 const COLS: usize = 5;
+
+/// How many the palette `group` does: one fewer where the symbols are wide --
+/// a dynamic of two letters, a line a staff long.
+fn cols_of(group: &str) -> usize {
+    match group {
+        "lines" | "dynamics" => COLS - 1,
+        _ => COLS,
+    }
+}
 
 /// **The palettes**, as the column the window holds beside the page -- or
 /// `None` when the caller numbered no entry. An entry whose symbol is in
@@ -509,6 +528,7 @@ pub fn column(ids: &Ids, outlines: &Outlines) -> Option<Value> {
                         "id": id,
                         "flat": true,
                         "label": label,
+                        "text_size": SYMBOL_SIZE,
                         "tip": entry.tip,
                     }))
                 })
@@ -520,18 +540,26 @@ pub fn column(ids: &Ids, outlines: &Outlines) -> Option<Value> {
                     "frame": true,
                     "collapsed": group.folded,
                     "flow": "grid",
-                    "cols": COLS,
+                    "cols": cols_of(group.name),
                     "hug": true,
                     "children": buttons,
                 })
             })
         })
         .collect();
+    // **The column scrolls**: how tall it is depends on which sections are
+    // open, which is the host's to know, so it is a plane that flows them and
+    // is as long as they are -- past the window's foot it is reached by the
+    // wheel, where a plain column put its last sections out of reach.
     (!sections.is_empty()).then(|| {
         json!({
-            "type": "layout",
+            "type": "plane",
             "flow": "col",
+            "axis": "y",
+            "zoom": false,
+            "bars": true,
             "w": WIDTH,
+            "margin": MARGIN,
             "pack": true,
             "children": sections,
         })
@@ -616,10 +644,60 @@ mod tests {
         assert!(sections.iter().all(|s| s["collapsed"].is_boolean()));
         assert_eq!(sections[6]["collapsed"], true);
         assert_eq!(sections[2]["children"].as_array().unwrap().len(), 13);
-        // every entry says what the element is
+        // every entry says what the element is, and is drawn at a symbol's size
         let button = &sections[2]["children"][0];
         assert_eq!(button["label"], ".");
         assert!(button["tip"].as_str().unwrap().starts_with("Staccato: "));
+        assert_eq!(button["text_size"], SYMBOL_SIZE);
+        // the column is a plane that flows its sections, so it scrolls when
+        // they are taller than the window; wide symbols get one cell fewer
+        assert_eq!(
+            (&column["type"], &column["flow"]),
+            (&json!("plane"), &json!("col"))
+        );
+        assert_eq!(column["axis"], "y");
+        assert_eq!(
+            (&sections[2]["cols"], &sections[5]["cols"]),
+            (&json!(5), &json!(4))
+        );
+    }
+
+    /// **No entry is a word where a symbol can be drawn**: with the table
+    /// completed -- as the editor completes the engraver's -- every entry of
+    /// every palette is labelled with one character.
+    #[test]
+    fn every_entry_has_a_symbol_once_the_table_is_completed() {
+        // the engraver's own answer for the glyphs of its face, stood in for
+        let mut outlines: Outlines = codes()
+            .into_iter()
+            .chain(icons::drawn_from())
+            .filter(|code| {
+                !icons::is_own(code) && !code.starts_with("E03") && !code.starts_with("E04")
+            })
+            .filter(|code| {
+                ![
+                    icons::CRESCENDO,
+                    icons::DIMINUENDO,
+                    icons::ACCIACCATURA,
+                    icons::APPOGGIATURA,
+                ]
+                .contains(code)
+            })
+            .map(|code| (code.to_string(), "M0 0h10v10h-10z".to_string()))
+            .collect();
+        icons::complete(&mut outlines);
+        let column = column(&ids(), &outlines).expect("numbered");
+        for section in column["children"].as_array().unwrap() {
+            for entry in section["children"].as_array().unwrap() {
+                let label = entry["label"].as_str().unwrap();
+                assert_eq!(label.chars().count(), 1, "{}: {label}", entry["tip"]);
+                assert!(
+                    label.chars().all(|c| c as u32 >= 0xE000),
+                    "{}",
+                    entry["tip"]
+                );
+            }
+        }
     }
 
     #[test]

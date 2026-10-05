@@ -456,6 +456,30 @@ fn a_text_of_the_page_is_written_moved_and_described() {
         editor.describe(),
         "title: \"A title\" -- head left middle, every page"
     );
+    // typed over where the page draws it: the element's id and what it says,
+    // from a page that saw the score as it stands
+    let typed = |element: &str, text: &str, seen: i64| {
+        let mut event = gesture("text", &[json!(element), json!(text)]);
+        event.args[2] = json!(seen);
+        event
+    };
+    let out = editor.event(&typed("t-title", "Another", 4), 4);
+    assert!(out.changed, "{:?}", out.answer);
+    assert_eq!(out.record.expect("an entry").label, "page text: title");
+    assert_eq!(editor.held().sheet().unwrap().header.title, "Another");
+    let seen = out.version;
+    let out = editor.event(&typed("t-note-1", "* changed", seen), seen);
+    assert_eq!(
+        editor.held().sheet().unwrap().header.notes,
+        vec!["* changed".to_string()]
+    );
+    // an element that is no page text writes nothing
+    let seen = out.version;
+    assert!(!editor.event(&typed("n1", "x", seen), seen).changed);
+    editor.act(
+        &json!({"action": "text", "field": "title", "text": "A title"}),
+        seen,
+    );
     // back where the convention puts it, the override goes
     editor.act(
         &json!({"action": "text", "field": "title", "halign": "center", "pages": "first"}),

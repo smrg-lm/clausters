@@ -169,7 +169,11 @@ repeat).
 **The toolbar holds what a hand reaches for while it writes.** Each tool is
 drawn with the engraver's own symbol — the note of that value, the accidental,
 the articulation — whose outline the editor asks the engraver for and the
-window carries, so the toolbar shows the font the page is engraved in. Three
+window carries, so the toolbar shows the font the page is engraved in; what
+that face does not hold — a slur and a tie, a hairpin, a barline, a grace note,
+a break — the editor draws itself, in the same form, so no tool and no entry is
+a word. A symbol is drawn at nearly twice the size of the words beside it, the
+proportion an icon has to a caption. Three
 tools are the *input state*, what the next item written on the page takes — the
 value, its dot (`dotted`) and whether it is a rest (`rest`) — and the
 accidental is both: with notes selected it is theirs (`accidental(alter)`), and
@@ -185,7 +189,8 @@ articulations by their MEI names, ornaments, lines (a slur, a tie, the
 hairpins), dynamics and measures (insert and remove, the barlines, the breaks).
 An entry is drawn with the engraver's symbol, says what the element is when the
 pointer rests on it, and is one of the editor's verbs over what is selected.
-Only what the score's model holds is offered.
+Only what the score's model holds is offered, and the column scrolls when its
+open groups are taller than the window.
 
 **An entry that ends in three dots opens a dialog over the window**: the page's
 text (every field of the header, and the footnotes one to a line), the page's
@@ -232,7 +237,10 @@ right, the copyright centred at the foot of the first page, the footnotes at
 the foot on the left; the page number is written from the second page on.
 `editor.set_text("title", "Eight bars")` writes one, `editor.set_text("note", "* a footnote")` adds a footnote, and
 `editor.set_text("composer", halign="left", pages="all")` moves one — each an entry of the history. A click on a text
-says which field it is, and where it is written, on the status line.
+says which field it is, and where it is written, on the status line, and **a
+double click types over it where it is drawn**: the whole of it selected, so
+the first key replaces it; Enter, or going elsewhere, writes it as one entry
+of the history, and Escape leaves it as it was.
 
 ### Playing the score
 
