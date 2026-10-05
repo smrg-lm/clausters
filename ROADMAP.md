@@ -104,7 +104,12 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-None is open now.
+- ⬜ **A looping selection does not follow a new selection**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection
+  while it loops leaves the loop on the old span, in the audio editor opened
+  from a client. The fix is named in the entry: the editor answers a new
+  selection, while a loop plays, with the playback's `set_loop`, bound for both
+  clients.
 
 
 ## 2. Fixes that need a decision first
@@ -112,7 +117,12 @@ None is open now.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-None is open now.
+- ⬜ **Two windows of one role over one structure draw on one widget**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Two editors opened over the
+  same structure ask the core's registry for the same widget id, and the host
+  skips the second window's widget. **The decision:** whether the window belongs
+  in the name, or a second editor over a structure is refused and hands back the
+  first.
 
 ## 3. Tests and reviews pending
 
@@ -150,7 +160,8 @@ its plan; the plan is where its acceptance is read.
   because each is a **decision** before it is work.
   **`N7`** — what opening somebody else's score should preserve, since the
   reader stores an engraver's beams and page breaks as though a writer had
-  chosen them. **`N8`** — which element admits which edit, where today a page
+  chosen them. **`N8`** — which element admits which edit, now taken as `X5.0`
+  (`crates/clausters-apps/PLAN.md`), where today a page
   is editable or it is not. **`N9`** — a score as a box of the multitrack,
   drawn the way a box of notes is drawn as a piano roll, since the two show
   the same notes.
@@ -162,12 +173,10 @@ its plan; the plan is where its acceptance is read.
   **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
-  the notes editor, decided to be an application, opening on what the crate
-  edits -- its recording (`X3.10`) waits for `T10`, skipped for now;
-  the points editor's range and selection, which it has no use for and which
-  go behind a mixin (`clients/gui/PLAN.md`, Found by use, "The points editor
-  carries a range and a selection it has no use for"); **`X5`** the score editor over
-  the `N` track; **`X6`** which composed views (scope, plot, waveform,
+  the notes editor, done but for its recording (`X3.10`), which waits for
+  `T10` and is skipped for now; **`X5`** the score editor,
+  planned 2026-10-05 as `X5.0`-`X5.9` and opening on `N8` (`X5.0`), which it
+  takes from the `N` track; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
@@ -314,8 +323,12 @@ Named, not enumerated: each is written where it belongs and is read there.
   steady goniometer; composed text (IME); a Tauri wrapper, only a possibility; the three heavy-view rendering questions; key bindings per window and
   a key in a tip; the page's clipboard reaching the browser's), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
-  Python client's three open questions, and the document crate's interpreter
-  inside a standalone host. Every one of them carries its own checkbox in its own
+  Python client's three open questions, the document crate's interpreter
+  inside a standalone host, and the applications' (time-stretch from a clip's
+  edge; the applications' window chrome in standalone, and the multitrack's
+  stop-at-end key that waits on it; effects in preview and several files in one
+  audio editor; whether a roll with no sequence stays; from the roll to the
+  score; a sequence as primitive data, by the keys chosen). Every one of them carries its own checkbox in its own
   plan.
 
 ---

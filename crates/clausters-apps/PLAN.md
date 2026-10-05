@@ -26,6 +26,34 @@ two applications opened in one context walk one order and one opened alone is a
 context of one. A structure the crate does not apply (a curve, a timeline, a
 score) joins as an external member and gets its legs back.
 
+**One `edit` for every application** *(the user, 2026-10-05, planning `X5`:
+the `edit` API has to stay consistent across all the applications)*. Each
+application is reached through the same verb with the same contract, and an
+application that needs to depart from it changes the contract for all of them
+or does not depart:
+
+- `edit(structure, *, sample_rate, host, open, **options)` in Python and
+  `edit(structure, options)` in TypeScript, the editor chosen by **what the
+  structure holds**, never by the class that built it.
+- It **returns the editor**, open unless `open` is false: the handle the window
+  is addressed by (`close`, `on_closed`, `undo`/`redo`). Never the data.
+- **The edited data is read on the structure passed in**, which is the edited
+  one. The two exceptions are stated in `edit`'s own docstring and are part of
+  the contract: a buffer, which the audio editor edits as a copy and writes
+  back on `save`, and a timeline, which is code and is rendered first, its
+  events being the editor's `sequence`.
+- **The options common to every editor** (`title`, `width`, `height`,
+  `base_id`, `extra`, `context`) mean the same in all of them; a domain's own
+  option (`min`/`max`/`start`/`end` for a curve, `y_axis` for a roll, `until`
+  for a timeline) is named once and documented with `edit`.
+- **Where one structure has several presentations** (a sequence as a roll or
+  as a score), `view` chooses which and the structure gives the default; it is
+  one option for every structure that has more than one, not a name per
+  application.
+
+A new application closes only when `edit` reaches it under this contract in
+both clients, with its row in `edit`'s docstring and TSDoc.
+
 ## What is already here, and where it was recorded
 
 | Application | In the crate | Recorded in |
@@ -948,12 +976,482 @@ opened it.
   took and the example already passed.
 
 - ⬜ **X5 - The score editor.** The third of the three applications over the
-  document (`crates/clausters-document/PLAN.md`, `O24`). The notation model and
-  what is still open about editing a page are the N track's
-  (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8` which
-  element admits which edit, `N9` a score as a box of the multitrack). A `Score` already
-  joins the editing context as an external member. What the application is, over
-  that track, is not written yet.
+  document (`crates/clausters-document/PLAN.md`, `O24`). *(Planned 2026-10-05
+  with the user, after a by-eye pass over `notation/score_editor`; the user's
+  observations from that pass are the requirements below.)* The notation model
+  and what is still open about editing a page are the N track's
+  (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
+  which element admits which edit, `N9` a score as a box of the multitrack);
+  `N8` is taken here, as `X5.0`.
+
+  **What is under it.** The model is `clausters_core::notation`: a `Sheet`
+  (flat content over a metric `Grid`), its operations (`Op`, listed by
+  `catalog()`), the MEI emission and the reader, the interpreter (`perform`)
+  and `Score`, the engraver-driven document with its one undo stack. **An edit
+  is a model operation and never the engraver's editor**: verovio lays the
+  page out, the model edits it (`Score::apply` says why -- one meaning of an
+  edit, reachable from a process with no engraver in it). The host's `score`
+  element draws a display list, picks an element by its MEI id, drags a pitch
+  and reports a place for note entry. A `Score` joins the editing context as an
+  external member. The four Python examples in `clients/python/examples/
+  notation/` each assemble an editor in the script -- `score_editor.py` the
+  fullest: buttons per verb, a selection, an undo -- which is what this
+  milestone moves into the crate, as `X3` moved the roll's.
+
+  **The requirements** (the user, 2026-10-05, paraphrased):
+
+  1. The edit vocabulary is organized in **palettes**, one per kind of element.
+  2. Only what has a pitch drags with **ledger lines**. Today a slur, a time
+     signature, a hairpin, a rest, even a measure's staff, drag and grow ledger
+     lines; accidentals need checking too.
+  3. Each kind of element has **its own editing behaviour**.
+  4. Two **views**, chosen alternately: a **page** view, whose size is
+     configurable and fixed until changed and comes from real paper sizes, and
+     a **continuous** view, one system scrolling left to right with no page.
+  5. In the page view, **title, subtitle, lyricist and composer** have a
+     layout of text fields, and so do **footnotes**.
+  6. A **menu bar** with every action the application has -- the
+     transformations (transpose, retrograde, inversion and the rest) among
+     them.
+  7. A **toolbar with icons** for the common input values -- notes, durations,
+     ties, accidentals, common articulations, tuplets, the voice (1 or 2 per
+     staff) -- and the **transport** (play/pause, rewind, loop).
+  8. A slur is made by choosing its **first and last notes**, not a count.
+  9. **Several elements selected at once** with ctrl+click, and an edit applied
+     over the range.
+  10. A drag that starts on **no staff and no element pans** the view, and an
+      element's **hit area follows its shape** (a spatial partition where it
+      pays).
+  11. The score **renders into an `EventSequence`**, so it plays on the
+      server's transport. The rendering is organized by **voices and channels**
+      (MPE or MIDI 2.0 where a note needs its own curve): a dynamic can belong
+      to a voice, so can a crescendo or a glissando, and what is rendered
+      divides into actions on a note, on a channel and on a group of channels.
+
+  **What verovio engraves, by palette.** verovio 6.3.0's own editor
+  (`editortoolkit_shared.cpp`, `editortoolkit_cmn.cpp`) edits little and is not
+  the edit path: `drag` moves only an element with a pitch, `keyDown` steps a
+  pitch or a value, `insertNote`/`insertRest`/`insertMeasure` and its cursor
+  write notes, `insertControl` attaches any control event to a start and an end
+  id, `set` changes any attribute and `delete` removes. What it does define is
+  the **set of elements it engraves** (its `ClassId` families: layer, control
+  and system elements), and that set is where the palettes come from. *(The
+  user, 2026-10-05: the model is ours to make, and its elements are the ones
+  verovio has.)* So the division is fixed: **the elements are verovio's** --
+  what a palette offers is an element verovio engraves, under its MEI name --
+  and **the model and its verbs are ours**. ● the model holds it today; ○ the
+  palette waits on the model growing it -- an item or a field, its emission and
+  reading, and an `Op`.
+
+  - **Notes and rests** (the toolbar's input)
+    - ● `note` -- one pitch with a written value, the element entry writes.
+    - ● `chord` -- several pitches sharing one stem and one value.
+    - ● `rest` -- a silence of a written value.
+    - ● `mRest` (read as a rest) -- a rest filling a whole measure, centred in
+      it whatever the meter.
+    - ○ `multiRest` -- several empty measures drawn as one numbered bar, the
+      usual sight in a part.
+    - ● `space` (read as a rest) -- time a voice holds without drawing
+      anything.
+    - ● `dots` -- augmentation dots, part of the value (the item's ratio).
+    - ● grace notes (`grace`: `acc`, `unacc`) -- an ornamental note that takes
+      no time from the bar.
+    - ● `tuplet` (as exact ratios) -- a group played in the time of another
+      count, three in the time of two.
+    - ● `beam` (read; the engraver's unless written, `N7`) -- notes joined
+      under one beam.
+    - ○ `bTrem` / `fTrem` -- a tremolo on one note, or alternating between two.
+  - **Accidentals and pitch**
+    - ● `accid` (`alter`, and `forced` for a courtesy sign) -- a sharp, flat,
+      natural or double, written or implied by the key.
+    - Transposition, the octave and enharmonic respelling are verbs over notes,
+      not elements (`Transpose`, `MoveSteps`, `SetPitches`).
+  - **Articulations** (`artic`)
+    - ● the marks of attack and release by their MEI names -- staccato,
+      staccatissimo, accent, tenuto, marcato, stress, spiccato -- and the
+      technique marks MEI names beside them (up-bow, down-bow, harmonic, snap,
+      open, stopped), each a sign on one note.
+  - **Ornaments**
+    - ● `trill` -- a rapid alternation with the note above, with a wavy line
+      when it lasts.
+    - ● `mordent` -- one quick alternation with the note above or below.
+    - ● `turn` -- the four-note figure around the main note.
+    - ● `fermata` (an ornament in the model, a control element in MEI) -- a hold
+      of no fixed length over a note, a rest or a barline.
+    - ○ `ornam` -- any other ornament, named by its glyph.
+    - ○ `arpeg` -- a chord rolled from its lowest note up, or down.
+    - ○ `gliss` -- a slide drawn as a line from one note to the next.
+    - ○ `breath` / `caesura` -- a breath, and a full stop of the line.
+  - **Lines between two notes** (spanners, made from a selection's first and
+    last notes)
+    - ● `slur` -- a curve over a phrase, from a first note to a last.
+    - ● `tie` (the item's `tie`) -- two notes of one pitch joined into one sound.
+    - ○ `lv` -- a tie into nothing: let it ring.
+    - ● `hairpin` (`crescendo`, `diminuendo`) -- a wedge for a gradual change of
+      loudness.
+    - ○ `phrase` -- a phrase mark distinct from a slur, for analysis.
+    - ○ `octave` -- an 8va or 8vb line moving the written notes by octaves.
+    - ○ `pedal` -- the sustain pedal pressed and released, as signs or a
+      bracket.
+    - ○ `bracketSpan` -- a bracket over a stretch of notes.
+    - ○ `beamSpan` -- a beam across a barline or across staves.
+  - **Dynamics and text over the music**
+    - ● `dynam` (one per note today) -- a level, `pp` to `ff`, `sf`, `fp`,
+      under the staff.
+    - ○ `tempo` -- a tempo mark, as words, as a metronome value or both.
+    - ○ `dir` -- a free direction ("dolce", "pizz.") at a point in time.
+    - ○ `reh` -- a rehearsal mark, a letter or number in a box.
+    - ○ `fing` -- a fingering number over a note.
+    - ○ `harm` -- a chord symbol or a figured bass over the staff.
+    - ○ `syl` / `verse` -- lyrics, a syllable under a note, verse by verse.
+  - **Measures and structure**
+    - ● `measure` (the grid) -- the bar: inserted, removed, selected as a range.
+    - ● `meterSig` (`SetMeter`) -- the time signature, at the start or as a
+      change.
+    - ● `keySig` (one key, the sheet's) / ○ a change of key inside the score.
+    - ● `clef` (one per staff) / ○ a change of clef inside a staff.
+    - ● `barLine` (`SetBarline`) -- how a measure ends: single, double, final,
+      repeat start or end, dashed, invisible.
+    - ○ `ending` -- first and second endings (voltas) over measures.
+    - ○ `repeatMark` -- segno, coda, da capo and dal segno.
+    - ○ `mRpt` / `beatRpt` -- repeat the previous measure, or beat.
+    - ● `sb` / `pb` (`SetBreak`) -- a system or page break the writer asks
+      for.
+  - **Staves**
+    - ○ a staff's line count, its label (the instrument's name, and its short
+      form) and a transposing staff ("A selected staff is edited by its line
+      count", `clients/gui/PLAN.md`, Future directions).
+    - ○ `staffGrp` -- a brace or bracket grouping staves (a grand staff, a
+      section).
+    - ● voices (`ToVoice`) -- a second line on one staff.
+  - **The page's text** (`pgHead`, `pgFoot`)
+    - ● title, subtitle, composer, lyricist (`Header`, `SetHeader`) / ○
+      arranger, translator, copyright and footnotes.
+
+  **The transformations are the menu's too.** Every operator in `catalog()`
+  -- `transpose`, `invert`, `retrograde`, `repeat`, `stretch`, `concat`,
+  `stack`, `insertMeasures`, `removeMeasures`, `setMeter` -- is an entry of a
+  **Transform** menu, acting on the selection (its `Span`: the measures it
+  covers, or all) and asking for its parameter where it has one (an interval, a
+  factor, a count) in a small dialog. Each is one undo step, as every `Op` is.
+
+  **Each kind of element, and what a hand does to it** (`N8`'s answer, for
+  this application):
+
+  | Element | Press | Drag | Ledger lines | Keys |
+  | --- | --- | --- | --- | --- |
+  | note, chord | selects | vertical: diatonic pitch | yes | up/down a step, ctrl an octave |
+  | accidental | selects its note | its note's pitch drag | its notehead's | its note's |
+  | rest | selects | none | no | -- |
+  | slur, tie, hairpin, other spanner | selects | none: its ends are notes, re-chosen from a selection | no | -- |
+  | dynamic, articulation, ornament | selects the mark on its note | none | no | delete removes the mark |
+  | clef, key, meter | selects | none | no | a palette entry or the dialog sets its value |
+  | barline | selects | none | no | a palette entry sets its kind |
+  | staff lines | selects the staff | none | no | -- |
+  | page text | selects | none | no | a double click edits it |
+  | blank paper | clears the selection | pans the view | -- | -- |
+
+  Where a page takes note entry, a press on a staff's blank space writes a
+  note (as today); a press off every staff pans. Where an element sits on the
+  page is the engraver's, so no element is placed by dragging it -- the same
+  line the N track draws when it refuses to store a layout nobody chose.
+  **The rule lives in one place**: the display list carries each id's
+  **kind** (the SVG class the walk already reads, `is_element_class`) and
+  `clausters_core::notation` holds the table of what a kind admits, which the
+  host reads -- never a list per client.
+
+  **Selection.** A click selects one element; ctrl+click adds or removes one;
+  shift+click extends a contiguous range in time, across the staves it spans
+  (the field's convention, beside the user's ctrl+click); a click on a
+  measure's empty space, where entry is off, selects the measure. The host's
+  `selected` becomes a list. Every palette and menu verb applies to the whole
+  selection, and a spanner is made from its first and last notes in time.
+
+  **The hit area.** Today each primitive is one box (an ellipse for a
+  notehead), searched linearly, with the smallest sounding element first. It
+  becomes the **shape that is drawn** (`E22`'s rule): the point is tested
+  against the element's own tessellated triangles, which `tess.rs` already
+  builds, with a hit slop for hairlines (a slur, a hairpin, a stem) measured as
+  a distance to the stroke. In front of that, an index over the boxes, built
+  once per display list since a page does not move between engravings. The
+  user named binary space partitioning; a page is static and every query is a
+  point, which a bounding-volume hierarchy or a grid per system also answers,
+  so the structure is chosen by measuring hover over a full page.
+
+  **The two views.** A `one of several` entry in the View menu and a segmented
+  control on the toolbar switch them; the selection and the measure in view
+  survive the switch.
+
+  - **Page.** The paper is fixed until it is changed: a window resize shows
+    more or less of the page and never re-flows it, and zoom is the view's
+    transform rather than a new engraving. Every page is engraved and laid out
+    in the score's `plane`, one after another. The engraver's options carry it
+    (`pageWidth`, `pageHeight`, the four `pageMargin*` and `landscape`, all in
+    tenths of a millimetre; its default, 2100 by 2970, is A4), and the staff
+    size is its `unit`, half a staff space (a staff is eight units high, so 9
+    gives a 7.2 mm staff). The paper offered, from the sizes printing and the
+    orchestral libraries' preparation guidelines use: A4 (210 by 297 mm), A3
+    (297 by 420), B4 (250 by 353), Letter (8.5 by 11 in), Tabloid (11 by 17
+    in), 9 by 12 in (the floor those guidelines set for a part), 10 by 13 in
+    (the part size they recommend), octavo (6.75 by 10.5 in, choral music), and
+    a custom size; portrait or landscape. The guidelines put a part's staff at
+    7 to 8.5 mm and a score on 11 by 17 in or B4. Which `breaks` mode honours
+    the writer's breaks and fills in the rest (`auto`, `smart`, `encoded`) is
+    settled against the engraver.
+  - **Continuous.** `breaks: none`: one system the length of the music, no
+    header or footer, the page fitted to the content; the plane scrolls
+    horizontally and the playing cursor scrolls it.
+  - **Page setup is the document's**: the writer chose the paper, so it is a
+    field of the `Sheet`, written into MEI as the `scoreDef`'s `page.width`,
+    `page.height`, `page.topmar`, `page.botmar`, `page.leftmar`,
+    `page.rightmar` and `vu.height` (the staff size), read back by the reader,
+    and turned into engraver options by `engrave_options`, one rule for every
+    client. The view (page or continuous, the zoom) is the window's, not the
+    document's.
+
+  **The page's text.** The engraver's running elements are `pgHead` and
+  `pgFoot`, each a set of text blocks placed by `halign` (left, centre, right)
+  and `valign` (top, middle, bottom), on the first page (`func="first"`) or
+  on every page (`all`). Its generated header follows the field's convention:
+  the title centred and large, the subtitle smaller under it, lyricist and
+  translator on the left, composer and arranger on the right, the page number
+  from the second page on. The model's `Header` grows into that layout: each
+  field (title, subtitle, composer, arranger, lyricist, translator, copyright,
+  footnote lines) in a cell of the head's or the foot's three by three grid,
+  first page or all, with the convention as the default and copyright at the
+  foot of the first page. It is emitted as encoded `pgHead`/`pgFoot` (the
+  engraver's `header` and `footer` set to `encoded`), so what is placed is what
+  is drawn. A double click on a text block edits it in place; a Page text
+  dialog (`G40`'s `modal`) holds a field per cell.
+
+  **The window** (`G37`-`G40`'s elements):
+
+  ```
+  menu bar
+  toolbar: [entry] [whole ... 64th] [dot] [rest] | [tie] [bb b nat # x] |
+           [stacc acc ten marc] | [tuplet] | [voice 1|2] | [page|continuous]
+           -- spring -- [rewind] [play/pause] [loop]
+  [palettes: titled, collapsible groups] | split | [plane: the score, bars]
+  status: the selection . the input value . bar:beat . the view
+  ```
+
+  - **Menus.** *File*: new, open (what the reader takes: MEI, MusicXML, ABC),
+    save (MEI), save as, export (MIDI and a clip through the sequence, below),
+    page setup, close. *Edit*: undo, redo, delete, silence, select all, select
+    measure, select staff, and ○ cut/copy/paste, which have no `Op` yet.
+    *View*: page or continuous, zoom in, out, to the width, to the page,
+    show palettes, show toolbar. *Notes*: entry, the values, dot, rest, tie,
+    the accidentals, a step or an octave up and down, respell, voice 1 or 2.
+    *Notation*: slur, crescendo, diminuendo, and a submenu each for dynamics,
+    articulations, ornaments, tuplets and grace notes. *Measures*: insert
+    before or after, remove, meter, key, clef, barline, system break, page
+    break. *Transform*: the operators above. *Text*: the page text dialog.
+    *Play*: play/pause, rewind, loop, play from the selection. The keys beside
+    the entries are `G36`'s table.
+  - **The toolbar's state is the application's**, like the notes editor's
+    cursor: the value, the dot, rest mode, the accidental, the voice and the
+    tie for the next note entered, shown by the toolbar through its props. An
+    articulation or an accidental pressed with a selection applies to it;
+    pressed with none, to the next note written.
+  - **Icons.** `G38.3`'s symbol set is seventeen shapes; note values, rests,
+    accidentals and articulations are **SMuFL** glyphs, and verovio already
+    has them as vector graphics: one SVG path per codepoint in its resources
+    (`data/<font>/<codepoint>.xml`, read through `default_resource_path`),
+    which is where a display list's glyph table comes from too. So an icon of
+    this window is a SMuFL codepoint whose outline the **application** sends
+    with the window, from the engraver's own resources, and the host draws it
+    the way the `score` element draws a glyph. The host bundles no music font,
+    and a toolbar icon is the same shape as the sign it writes on the page.
+  - **A context menu** on an element is `G37.2`'s open question, a context menu
+    per part of a heavy view; until it is answered the score answers with one.
+
+  **The `Sheet` is the reference** *(decided with the user, 2026-10-05)*.
+  The score's structure is the `Sheet` -- exact rational values, flat voices
+  over a grid of its own, spanners over item ids, the header -- and every
+  operation, the reading and the emission work on it. Events are not the
+  score's representation but its render: an `EventSequence` holding a score
+  would need rational time, the grid, spanners and the page as well, and every
+  operation written again over events. The notation keys (`X5.7`) are what the
+  events say about the page they came from, not a second model of it.
+
+  **The score into an `EventSequence`, one way.** *(The user, 2026-10-05:
+  `edit` returns what every editor returns, its handle, and not the data; the
+  notation shares the `EventSequence`, so a score is turned into a roll with
+  its automation; and that conversion goes one way only -- from the roll back
+  to a score takes decisions, and is implemented later.)*
+
+  - **What `edit` opens and returns.** `edit(score)` opens the score editor
+    over a symbolic score, the client's `Score`, and returns the editor, as
+    for every structure ("One `edit` for every application", at the top of
+    this file). The edited data is read on the score passed in, and the
+    editor adds nothing to the contract.
+  - **The conversions are the score's own methods, not `edit`'s** *(the
+    user, 2026-10-05: `edit` returns the handle to the score, and what is made
+    from it afterwards is made by other functions or methods over that
+    representation)*. `score.render_events()` renders it into an
+    `EventSequence` -- the verb a `Timeline` and a pattern already have, with
+    the same one-way meaning -- each event keeping its item's id. Opened as a
+    roll (`edit(score.render_events())`), the score is notes with their
+    automation, and what the roll does to it stays in that sequence: nothing
+    travels back to the score. The editor's own playback renders the same way,
+    inside the crate.
+  - **The score is saved as itself** *(the user, 2026-10-05: the edited score
+    can be saved as such)*. Its document is MEI, and what is saved is the
+    edited score whole -- notes, marks, spanners, the grid, the page setup and
+    the page's text -- not a render of it: reopened, it is the same page, with
+    no reading to decide. From the File menu (save, save as) and by a method
+    of the score in both clients, writing and reading a file; today the client
+    `Score` gives its MEI as text (`mei()`) and is built from text, so the file
+    verb is new, and its name follows the file verbs the other structures
+    already have, settled with the code. In a page the path is the origin
+    private file system's.
+  - **The way back** -- a sequence read into a `Sheet`: onsets snapped to
+    written values, pitches spelled, voices found, curves read as dynamics and
+    hairpins, and what a sequence edited in the roll means to the score that
+    rendered it -- is Future directions, "From the roll to the score". So is
+    opening a sequence of plain numbers in the score editor, which is that
+    reading.
+  - **As a client's data.** What the editor made is in the events, so turning
+    it into a client's primitive data is a later step, outside this milestone
+    (Future directions, "A sequence as primitive data, by the keys chosen").
+  - **Where it lives.** The conversion goes to Rust, beside the sequence's
+    others (`clausters-document`, `events`, over the core's `notation`). The
+    Python client's `sheet_from_timeline` and `to_timeline`
+    (`clausters/gui/notation/mei.py`) are a conversion written in one client;
+    `to_timeline` is replaced by this one, not ported, and
+    `sheet_from_timeline` waits for the way back.
+
+  **The notation keys, without ambiguity.** The core reserves eight
+  (`clausters_core::event::render::RESERVED`): `articulations`, `dynamic`,
+  `ornament`, `grace`, `stem`, `spelling`, `accidental`, `tie`, documented in
+  the Python book's "Seeing a timeline as a score". That was the start; for an
+  event to carry a score without loss, each key has to name one fact, in one
+  unit, with one owner. What is ambiguous or missing today:
+
+  - **The written pitch.** `spelling` (`sharp`/`flat`) is a preference, not a
+    spelling: it cannot write an F flat, an E sharp or a double sharp. And
+    `alter` already means two things -- the pitch family's alteration of a
+    `degree`, and the model's written alteration of a step. The written pitch
+    needs a key of its own (a step, an alteration and an octave as written),
+    and `spelling` stays the preference used only where there is none.
+  - **The written value against time.** `dur` is beats to the next event and
+    `sustain` the held length; the written value is a rational in whole notes
+    (a triplet eighth is exactly `1/12`). A float in beats does not say a
+    tuplet exactly, so the written value, or the tuplet, needs a key.
+  - **Where it is written.** `staff` and `voice` are what the interpreter
+    names on every note and are not reserved -- so today they would reach a
+    synth as controls. They become notation keys, and with them the channel a
+    voice renders on (below).
+  - **A level written and a level heard.** `dynamic` is the mark; `amp`,
+    `velocity` and `db` are the level. When both are on an event, the mark is
+    the source and the level is its performance, re-derived after an edit.
+  - **A grace note.** It takes no time from the bar: what its `at` and `dur`
+    mean has to be stated.
+  - **What has two ends** -- a slur, a hairpin, a glissando -- cannot be one
+    event's key alone: the start names the end by event id, or the sequence
+    keeps a list of spanners over event ids, as the `Sheet` does.
+  - **What is not any note's** -- the meter and its changes, barlines, the
+    key, the clefs, breaks, the page setup and the page's text -- is the
+    sequence's own: a notation section of the `EventSequence`, beside its
+    `tempo_map`, kept by the sequence so a round trip loses nothing.
+
+  The definition is one table, in the core, read by both clients and by the
+  books' reference -- each key, its type, its unit, and which way it is read.
+
+  **What sounds, and the curves.** The interpreter's `Note`s (`perform`: the
+  written and the held length, the level, the `staff` and the `voice`) give
+  each event its playing keys. **Today `perform` yields no curves**: a dynamic
+  and a hairpin are folded into each note's attack amplitude, read at its
+  onset, so a crescendo over a held note does not move inside it and a roll
+  would see velocities and no automation. It grows to yield curves in the
+  scopes below, the voices get their channels, and a glissando waits on the
+  model holding one (its palette entry). The sequence plays on the server's
+  transport as any sequence does (`PLAN.md` `T8`, `T9`) and is what an export
+  writes as `.mid` or as a clip. What a mark becomes is the interpretation's
+  (data, replaceable), and it is organized in **three scopes**:
+
+  - **The note**: its pitch, its two lengths, its attack level (a dynamic and
+    an accent), and its own curves -- a glissando as its bend, a swell on one
+    note as its pressure. In MPE or MIDI 2.0 these are the note's expression
+    (`X3.11`); in MIDI 1.0 a curve needs the note alone on its channel.
+  - **The voice, as a channel**: each voice is a channel, so what governs a
+    line is a lane of that channel -- the dynamic that prevails after it, a
+    hairpin as a ramp (an expression controller, by the interpretation's
+    choice), a glissando of a monophonic line as the channel's bend.
+  - **A group of channels**: what governs several voices at once -- a staff's
+    dynamic under two voices, a pedal over both staves of a piano -- is the
+    same lane on each channel of the group, made and edited as one.
+
+  The sequence's `MidiSpec` follows from what the score needs: MIDI 1.0 when
+  no note carries its own curve, MPE or 2.0 when one does (a glissando inside
+  a chord); none for a sequence played only by the server, where every curve
+  is legal. Which controller a dynamic or a hairpin moves, and whether a level
+  is the attack, a lane or both, is the interpretation's and is shown in the
+  book. A channel group is new to the sequence -- today a lane belongs to one
+  channel -- so how a group is named and kept is the render's first decision.
+
+  **The steps**, each closing with its commit, in this order:
+
+  - ⬜ **X5.0 - Which element admits which edit** (`clients/gui/PLAN.md`,
+    `N8`, taken here). The display list carries each id's kind; the table of
+    what a kind admits is in the core; a drag moves only what has a pitch, and
+    ledger lines follow only a notehead; an accidental's press is its note's.
+    The hit test on the drawn shape and its index. Host and core only, tested
+    without the application.
+  - ⬜ **X5.1 - The application in the crate.** `clausters-apps::score`: the
+    window, its props and the conversation (a gesture read, an `Op` applied, a
+    page sent back as the `Outcome`), the `Score` a member of the editing
+    context that the crate applies. The engraver is a port the caller hands
+    in (the core's `Engraver`): the standalone host links `clausters-notation`,
+    a page binds verovio in wasm, and the crate links neither. The doors over
+    the C ABI and wasm, declared in `docs/bindings.md`; both clients' editor a
+    handle over the crate; the standalone host opens a score file. The
+    script-side editor of `notation/score_editor` goes, and the example opens
+    the application.
+  - ⬜ **X5.2 - Selection.** ctrl+click, shift+click, the measure; `selected`
+    as a list; every verb over the selection; spanners from the first and last
+    notes; the Transform menu over its span.
+  - ⬜ **X5.3 - The views and the paper.** Page and continuous; page setup in
+    the model and in MEI; the paper sizes, the orientation, the margins and the
+    staff size; every page in the plane; pan from blank paper, zoom as the
+    view's transform.
+  - ⬜ **X5.4 - The page's text.** The head and foot layout in the model,
+    emitted as encoded running elements; editing in place and the dialog.
+  - ⬜ **X5.5 - The menu bar and the toolbar.** Every entry above; the input
+    state; the icons; the transport controls.
+  - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
+    groups. Each ○ entry is the model growing an item or a field with its
+    emission, its reading and its `Op`; they are taken palette by palette,
+    each its own step, and the ones not taken when this milestone closes are
+    written down as open.
+  - ⬜ **X5.7 - The notation keys.** The table above settled key by key:
+    the written pitch, the written value and the tuplet, `staff` and `voice`,
+    the mark against the level, the grace note, the spanners over event ids,
+    and the sequence's notation section. In the core, reserved, read by both
+    clients, with its reference page in the books.
+  - ⬜ **X5.8 - The score into a sequence, and its playback.** The render,
+    one way, in Rust, and the Python client's `to_timeline` replaced; the
+    interpreter yielding curves in its three scopes, a channel per voice and
+    the channel group; saving and reading the score's file;
+    `render_events` on the score in both clients, whose
+    sequence opens as a roll with its automation; the score's own playback over it on a server transport (as
+    `X3.8`'s), with the cursor following, the loop and play from the
+    selection; export to `.mid` and to a clip.
+  - ⬜ **X5.9 - The books and the example**, both clients. *(The user,
+    2026-10-05: the editing examples are gathered into one.)* `notation/
+    score.py` (a drag and an undo), `notation/score_editor.py` (every verb)
+    and `notation/compose.py` (the operators, now the Transform menu) become
+    **one example** that opens the application, in both clients; the
+    others go with the script-side editor they assembled. `score_from_data.py`
+    renders a timeline into a score rather than editing one, and stays.
+
+  **Open, each decided at its step:** the accidental's drag (proposed: it is
+  its note's); whether a spanner's end can also be dragged onto another note,
+  beside re-choosing it from a selection; the hit index's structure, by measurement; which `breaks` mode the page
+  view uses; whether pages stack vertically or side by side; how a channel
+  group is named in the sequence; each notation key's spelling (`X5.7`). `N7` (what a foreign score's layout keeps)
+  and `N9` (a score as a box of the multitrack) stay where they are; `N9`'s
+  double click opens this application.
 
 - ⬜ **X6 - The composed views: which heavy widgets get an application.**
   *(Raised by the user 2026-09-14: it may also be worth moving some composed
@@ -1451,6 +1949,29 @@ only for a choice with non-obvious context.
 ## Future directions (to fold into milestones as they firm up)
 
 Every entry carries a checkbox.
+
+- ⬜ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
+  the conversion to a roll goes one way, and the way back takes decisions
+  that can be made later)*. `X5.8` renders a score into an `EventSequence`;
+  reading one into a `Sheet` is the other direction, and each part of it is a
+  decision: snapping onsets to written values (and to tuplets), spelling
+  pitches the events do not spell, finding voices and staves, reading curves
+  back as dynamics and hairpins (a hand-drawn curve is no hairpin), and what a
+  sequence the roll edited means to the score that rendered it -- whether the
+  score is re-read from it, or the edit stays the sequence's. With it, `edit`
+  opens a sequence in the score editor (`view`, the presentation a sequence
+  has beside the roll), including one built from a client's plain numbers.
+  The notation keys (`X5.7`) are what makes the exact case exact: a sequence
+  whose events carry them is read back with nothing to decide.
+
+- ⬜ **A sequence as primitive data, by the keys chosen** *(the user,
+  2026-10-05, planning `X5`)*. A sequence the score editor or the roll made
+  holds everything in its events, and a client wants it back as its own plain
+  data -- `[(note, dur), ...]`, or any other set of keys. So the verb chooses
+  the keys and yields a list of tuples (or of rows) in that order, in both
+  clients, over the events. It waits for `X5.7`, since the keys it chooses
+  from are the ones that table settles. Open: what an event without one of the
+  chosen keys yields, and whether a chord is one row or several.
 
 - ⬜ **Time-stretch: an edge that changes the material rather than the window**
   *(moved here from `clients/gui/PLAN.md` by the user, 2026-10-04: it is the
