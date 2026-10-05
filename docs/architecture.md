@@ -1073,7 +1073,20 @@ event that states no sounding pitch sounds the first it is written with, in the
 render and in each client's own reading alike. What is not any note's -- the
 grid, the key, the clefs, the page, and whatever has two ends -- is the
 sequence's `notation` section (`clausters_document::events::EventSequence`),
-kept as it was written and read by nothing a sequence does. **The paper is the document's and the layout the
+kept as it was written and read by nothing a sequence does.
+
+**A score is rendered into a sequence in one place**
+(`clausters_document::events::score::render`, behind the crate's `notation`
+feature): the interpreter's notes as events that keep their notation keys, a
+channel to a voice, and the section above. The interpreter also reads a
+staff's dynamics and hairpins **as a function of time**
+(`notation::levels`), which the render writes as a controller lane per
+channel -- the curve's three scopes being the note's own (nothing in the model
+yields one yet), a channel's, and a **group** of channels, which is the same
+lane on each channel of a staff with several voices, each naming the group in
+its target so that everything that plays a lane by its channel needs to learn
+nothing. Both clients' `to_timeline` and `to_sequence` are this render, and a
+score's `render_events` is `to_sequence` of its sheet. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

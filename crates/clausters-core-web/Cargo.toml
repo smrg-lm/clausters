@@ -18,7 +18,7 @@ crate-type = ["cdylib", "rlib"]
 clausters-core = { path = "../clausters-core", features = ["notation"] }
 # The document: one implementation of what an edit means, bound here as it is
 # bound over the C ABI, so the web client re-derives none of it.
-clausters-document = { path = "../clausters-document" }
+clausters-document = { path = "../clausters-document", features = ["notation"] }
 # The projections, bound here as they are bound over the C ABI: a page draws a
 # structure with the props the crate hands it, never with props of its own.
 clausters-editing = { path = "../clausters-editing" }

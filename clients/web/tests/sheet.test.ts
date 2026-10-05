@@ -48,6 +48,8 @@ import {
     tie,
     toMei,
     toNotes,
+    renderEvents,
+    toSequence,
     toTimeline,
     toVoice,
     transpose,
@@ -521,6 +523,85 @@ test("written pitches and a written value reach the page as they are", () => {
         staves: { voices: { items: { pitches: { step: string }[] }[] }[] }[];
     }).staves[0].voices[0].items[0];
     assert.deepEqual(spelled.pitches.map((p) => p.step), ["e", "g"]);
+});
+
+/** One staff of two voices: p rising to f over the first, a chord in it. */
+function twoVoices(): Sheet {
+    let sheet = quarters(3);
+    sheet = setMarks(sheet, 1, marks({ dynamic: "p" }));
+    sheet = setMarks(sheet, 3, marks({ dynamic: "f" }));
+    sheet = setPitches(sheet, 2, [pitch("f", 4, -1), pitch("a", 4, -1)]);
+    sheet = addSpanner(sheet, "crescendo", 1, 3);
+    // a second line under it, held for the three beats
+    const staves = sheet.staves as { voices: { items: unknown[] }[] }[];
+    staves[0].voices.push({
+        items: [{ kind: "note", id: 9, dur: [3, 4], pitches: [pitch("c", 3)] }],
+    });
+    (sheet as unknown as { next_id: number }).next_id = 10;
+    return sheet;
+}
+
+test("a score renders into a sequence that keeps the page", () => {
+    interface Keys {
+        midinote: number;
+        value: number[];
+        pitches: { step: string; alter: number }[];
+        channel: number;
+        staff: number;
+        voice: number;
+    }
+    const sheet = twoVoices();
+    const data = renderEvents(sheet);
+    const events = data.events.map((event) => event.data as unknown as Keys);
+    // a chord is an event per note, each with the pitch it is written as
+    const chord = events.filter((e) => e.value[1] === 4 && e.pitches[0].alter === -1);
+    assert.deepEqual(chord.map((e) => e.pitches[0].step).sort(), ["a", "f"]);
+    assert.deepEqual(chord.map((e) => e.midinote).sort(), [64, 68]);
+    // a voice is a channel, and an event says where it is written
+    const low = events.find((e) => e.voice === 1)!;
+    assert.deepEqual([low.channel, low.staff, low.value], [1, 0, [3, 4]]);
+    assert.deepEqual([...new Set(events.filter((e) => e.voice === 0).map((e) => e.channel))], [0]);
+    // the staff's level is a lane of each of its channels, as one group
+    const lanes = data.automation as {
+        target: { channel: number; group: string; cc: number };
+        points: { at: number }[];
+    }[];
+    assert.deepEqual(lanes.map((lane) => lane.target.channel), [0, 1]);
+    assert.deepEqual([...new Set(lanes.map((lane) => lane.target.group))], ["staff 1"]);
+    assert.deepEqual([...new Set(lanes.map((lane) => lane.target.cc))], [11]);
+    assert.deepEqual(lanes[0].points.map((point) => point.at), [0, 2]);
+    // what is no note's is the sequence's own, the hairpin between two events
+    const section = data.notation as {
+        spanners: { kind: string; from: number; to: number }[];
+        staves: unknown;
+    };
+    const [hairpin] = section.spanners;
+    assert.equal(hairpin.kind, "crescendo");
+    const ids = new Set(data.events.map((event) => event.id));
+    assert.ok(ids.has(hairpin.from) && ids.has(hairpin.to));
+    assert.deepEqual(section.staves, [{ clef: "G2", voices: 2 }]);
+    // heard in the attack alone, a dynamic writes no lane
+    const attack = renderEvents(sheet, { ...interpretation(), dynamics_as: "attack" });
+    assert.equal(attack.automation, undefined);
+});
+
+test("a rendered score is a sequence a roll edits and a timeline plays", () => {
+    const sheet = twoVoices();
+    const sequence = toSequence(sheet, { instruments: "bell", event: { pan: 0.25 } });
+    const data = sequence.data() as {
+        events: { data: { instrument: string; pan: number } }[];
+        automation: unknown[];
+        notation: { key: string };
+    };
+    assert.equal(data.events.length, 5);
+    assert.ok(data.events.every((e) => e.data.instrument === "bell" && e.data.pan === 0.25));
+    assert.equal(data.automation.length, 2);
+    assert.equal(data.notation.key, sheet.key);
+    // the same events as a timeline, which holds the notes alone
+    const again = sheetFromTimeline(toTimeline(sheet));
+    const written = (again.staves as { voices: { items: { pitches?: { step: string }[] }[] }[] }[])[0]
+        .voices[0].items;
+    assert.deepEqual(written[1].pitches?.map((p) => p.step), ["f", "a"], "the F flat is still one");
 });
 
 test("a hairpin written to a note that is gone is refused by name", () => {

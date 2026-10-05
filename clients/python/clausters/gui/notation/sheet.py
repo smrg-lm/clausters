@@ -168,6 +168,31 @@ def interpretation() -> dict:
     return json.loads(_text(_core().clausters_core_interpretation))
 
 
+def render_events(sheet: dict, interp: dict | None = None) -> dict:
+    """Render ``sheet`` into **the data of a sequence**, one way: what
+    `clausters.seq.EventSequence.from_data` reads.
+
+    Every sounding note is an event -- a chord one event per note -- with what
+    it sounds (``midinote``, ``dur``, ``sustain``, ``amp``) and what it is on
+    the page, in the notation keys (``pitches``, ``value``, ``staff``,
+    ``voice`` and its marks). Each voice renders on a ``channel`` of its own.
+    A staff's dynamics and hairpins are a curve of its channels
+    (``interp["dynamics_as"]``: ``"attack"``, ``"curve"`` or ``"both"``, the
+    default; ``interp["dynamics_cc"]`` names the controller, 11), the lanes of
+    a staff with several voices sharing a ``group`` in their target. What is
+    no note's -- the grid, the key, the clefs, the header, the page, the
+    spanners over event ids -- is the sequence's ``notation`` section.
+
+    Nothing travels back: what a roll does to the sequence stays in it.
+    `clausters.gui.notation.Score.render_events` is this, for an open score.
+    """
+    a = json.dumps(sheet)
+    b = json.dumps(interp if interp is not None else {})
+    return _unwrap(_text(_core().clausters_core_sheet_render_events,
+                         _u8(a), len(a.encode("utf-8")),
+                         _u8(b), len(b.encode("utf-8"))))
+
+
 def to_notes(sheet: dict, interp: dict | None = None) -> list:
     """Read ``sheet`` into the notes it **sounds**, in time order.
 

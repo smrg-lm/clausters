@@ -3525,6 +3525,26 @@ pub fn sheet_perform(sheet: &str, interp: &str) -> Result<String, JsError> {
     serde_json::to_string(&notes).map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// **Render a sheet into a sequence**, one way, as JSON: the events it sounds,
+/// each still saying what it is on the page, a channel to a voice, a staff's
+/// dynamics as lanes and what is no note's as the sequence's `notation`
+/// section (`clausters_document::events::score::render`). `interp` is the
+/// reading, as [`sheet_perform`] takes it.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetRenderEvents)]
+pub fn sheet_render_events(sheet: &str, interp: &str) -> Result<String, JsError> {
+    let sheet: clausters_core::notation::Sheet =
+        serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
+    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
+        clausters_core::notation::default_interpretation()
+    } else {
+        serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
+    };
+    let sequence =
+        clausters_document::events::score::render(&sheet, &interp).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&sequence).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// The default interpretation, as JSON -- every number the reading depends on,
 /// and the value an override starts from.
 ///

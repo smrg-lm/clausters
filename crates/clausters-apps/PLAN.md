@@ -1628,7 +1628,10 @@ opened it.
     sequence does, where what has two ends names them by event id. Each
     client's `NOTATION_KEYS` is the table's names, pinned by a test, and both
     books carry the table row for row, pinned too. Core ABI 82.)*
-  - ⬜ **X5.8 - The score into a sequence, and its playback.** The render,
+  - ⬜ **X5.8 - The score into a sequence, and its playback.** *(Taken in
+    four parts: `X5.8.1` the render and its curves, done 2026-10-05 and
+    described under this entry; `X5.8.2` the score's file; `X5.8.3` its
+    playback; `X5.8.4` the export.)* The render,
     one way, in Rust, and the Python client's `to_timeline` replaced; the
     interpreter yielding curves in its three scopes, a channel per voice and
     the channel group; saving and reading the score's file;
@@ -1636,6 +1639,32 @@ opened it.
     sequence opens as a roll with its automation; the score's own playback over it on a server transport (as
     `X3.8`'s), with the cursor following, the loop and play from the
     selection; export to `.mid` and to a clip.
+    - ✅ **X5.8.1 - The render and its curves.** *(Done 2026-10-05.
+      `clausters_document::events::score::render`, behind the crate's
+      `notation` feature, bound as `clausters_core_sheet_render_events`: every
+      sounding note an event, a chord one per note, with the interpreter's
+      sounding keys and the notation keys beside them; a tie chain one event
+      of its whole written value; each voice on a channel counted from the
+      top. `notation::levels` is the interpreter grown: a staff's dynamics and
+      hairpins as a function of time, which says exactly what the attacks say
+      at the moments they are read. The render writes it as a controller lane
+      (`dynamics_cc`, 11) unless the reading hears a dynamic in the attack
+      alone (`dynamics_as`: `attack`, `curve`, `both`, the default -- an
+      instrument listens to one or the other, as the two are the same fact).
+      **The channel group, decided**: the same lane on each channel of the
+      group, each naming the `group` in its target (`"staff 1"`), so what
+      plays a lane by its channel learns nothing new and what edits them as
+      one finds them by that name; editing a group as one is not built. The
+      note's own scope yields nothing: the model holds no glissando and no
+      swell. The sequence is MIDI 1.0 while its voices fit sixteen channels.
+      What is no note's goes into the `notation` section, the spanners over
+      event ids and `items` saying which item each event came from. Both
+      clients' `to_timeline` and `to_sequence` are now this render -- the
+      Python one written in the client is gone -- and the client `Score` has
+      `render_events`. Core ABI 83.)*
+    - ⬜ **X5.8.2 - The score's file.**
+    - ⬜ **X5.8.3 - The score's playback.**
+    - ⬜ **X5.8.4 - The export.**
   - ⬜ **X5.9 - The books and the example**, both clients. *(The user,
     2026-10-05: the editing examples are gathered into one.)* `notation/
     score.py` (a drag and an undo), `notation/score_editor.py` (every verb)

@@ -21,8 +21,9 @@ import { Toolkit } from "./_verovio.ts";
 import { SCORE_PAGE } from "../guidef.ts";
 import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
-import { fromNotes, fromTimeline } from "./mei.ts";
-import type { MeiOptions } from "./mei.ts";
+import { fromNotes, fromTimeline, toSequence } from "./mei.ts";
+import type { MeiOptions, PlaybackOptions } from "./mei.ts";
+import type { EventSequence } from "../../seq/sequence.ts";
 import type { Op, Sheet } from "./sheet.ts";
 import type { Event } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
@@ -178,6 +179,25 @@ export class Score {
      */
     sheet(): Sheet {
         return JSON.parse(this.inner.sheet()) as Sheet;
+    }
+
+    /**
+     * Render the score into a `seq.EventSequence`, one way.
+     *
+     * The verb a timeline and a pattern have, with the same meaning: the
+     * sequence is what plays and what a roll edits -- `edit(score.
+     * renderEvents())` is the score as notes with their automation -- and
+     * nothing it is then made into travels back to the score.
+     *
+     * Every sounding note is an event that still says what it is on the page
+     * (`seq.NOTATION_KEYS`), each voice renders on a channel of its own, a
+     * staff's dynamics are curves of its channels, and what is no note's is
+     * the sequence's `notation` section (`gui.notation.renderEvents`).
+     * `instruments` binds a staff to what plays it, `interp` is the reading
+     * and `event` is merged into every event.
+     */
+    renderEvents(options: PlaybackOptions = {}): EventSequence {
+        return toSequence(this.sheet(), options);
     }
 
     /**

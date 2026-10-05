@@ -1110,6 +1110,8 @@ pub fn mutates(request: &str) -> bool {
 
 mod midi;
 mod scopes;
+#[cfg(feature = "notation")]
+pub mod score;
 
 #[cfg(test)]
 mod tests;

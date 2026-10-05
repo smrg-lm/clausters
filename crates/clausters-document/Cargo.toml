@@ -5,6 +5,12 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The Clausters document: the single authoritative model of a multitrack -- the tree of elements and their placements, shared by every client and by the standalone GUI host."
 
+[features]
+# A score rendered into a sequence (`events::score`): the one place this crate
+# reads the notation layer, which is a feature of the core's. Off by default,
+# since a sequence needs none of it; on wherever a score is edited.
+notation = ["clausters-core/notation"]
+
 [dependencies]
 # The document is a serde tree: it is the normative format, and every client
 # round-trips against it rather than holding handles into it. `serde_json` is

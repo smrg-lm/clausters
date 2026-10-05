@@ -134,56 +134,53 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     ``interp`` is the reading (`clausters.gui.notation.interpretation`); left
     out, the default.
 
-    **What is on the page comes with it.** Each event also carries the marks the
-    note was written with (`clausters.seq.event.NOTATION_KEYS`) -- its
-    articulations verbatim, not the ``sustain`` they produced -- so a timeline
-    read from a score and written back with `sheet_from_timeline` engraves the
-    same page. What does not survive that trip is everything that is not one
-    note's: a slur, a hairpin, a tuplet, the meter and the barlines, the title
-    -- none of them can ride an event, and they are the reason a score is a
-    score rather than a list of notes.
+    **What is on the page comes with it.** Each event also carries what the
+    note is on the page (`clausters.seq.event.NOTATION_KEYS`) -- the pitch as
+    it is written, its written value, its staff and voice, and its marks
+    verbatim, not the ``sustain`` they produced -- so a timeline read from a
+    score and written back with `sheet_from_timeline` engraves the same notes.
+    What does not survive that trip is everything that is not one note's: a
+    slur, a hairpin, the meter and the barlines, the title -- none of them can
+    ride an event. A timeline holds events alone; `to_sequence` keeps the
+    rest, in the sequence's ``notation`` section, and the dynamics as curves.
+
+    The render is the core's (`clausters.gui.notation.render_events`), the
+    same one in every client.
     """
+    from ...seq.event import Event
     from ...seq.timeline import Timeline
 
     out = Timeline()
-    for beat, event in _played(score, instruments, interp, event_keys):
-        out.add(beat, event)
+    for event in _rendered(score, instruments, interp, event_keys)["events"]:
+        out.add(event["at"], Event(event["data"]))
     return out
 
 
 def to_sequence(score, *, instruments=None, interp: dict | None = None,
                 **event_keys):
-    """Read a sheet into a `clausters.seq.EventSequence`: the same events
-    `to_timeline` reads, as concrete data a notes editor edits -- each with an
-    id, in beats. Everything `to_timeline` says about what comes with a note,
-    and what does not survive the trip, holds here too; a sequence goes back to
-    a page through `sheet_from_timeline`, which reads one as it reads a
-    timeline."""
+    """Render a sheet into a `clausters.seq.EventSequence`, one way
+    (`clausters.gui.notation.render_events`): its events as concrete data a
+    notes editor edits -- each with an id, in beats, on its voice's channel --
+    the staves' dynamics as curves of those channels, and what is no note's
+    in the sequence's ``notation`` section. ``instruments`` and ``event_keys``
+    are as `to_timeline` takes them."""
     from ...seq.sequence import EventSequence
 
-    return EventSequence(_played(score, instruments, interp, event_keys))
+    return EventSequence.from_data(_rendered(score, instruments, interp, event_keys))
 
 
-def _played(score, instruments, interp, event_keys) -> list:
-    """Each sounding note of the sheet as ``(onset, Event)``: the written value
-    as ``dur``, the heard one as ``sustain``, and the marks it was written with."""
-    from ...seq.event import Event
-
-    out = []
-    for note in sheet.to_notes(score, interp):
-        event = dict(event_keys)
-        event.update(midinote=note["pitch"], dur=note["dur"],
-                     sustain=note["sustain"], amp=note["amp"])
-        event.update(note.get("marks", {}))
-        event.pop("sounding", None)  # `sustain` already holds it, in beats
-        for key in ("spelling", "accidental"):
-            if note.get(key) is not None:
-                event[key] = note[key]
-        instrument = _instrument(instruments, note["staff"])
+def _rendered(score, instruments, interp, event_keys) -> dict:
+    """The sheet rendered (`render_events`), each event given what plays its
+    staff and the keys a score has no symbol for."""
+    data = sheet.render_events(score, interp)
+    for event in data["events"]:
+        keys = dict(event_keys)
+        keys.update(event["data"])
+        instrument = _instrument(instruments, keys["staff"])
         if instrument is not None:
-            event["instrument"] = instrument
-        out.append((note["t"], Event(event)))
-    return out
+            keys["instrument"] = instrument
+        event["data"] = keys
+    return data
 
 
 def _instrument(instruments, staff: int):

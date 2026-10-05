@@ -25,7 +25,8 @@ import { NOTATION_KEYS, Event } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import type { Interpretation, Sheet } from "./sheet.ts";
-import { fromVoice, toMei, toNotes } from "./sheet.ts";
+import { fromVoice, renderEvents, toMei } from "./sheet.ts";
+import type { RenderedSequence } from "./sheet.ts";
 
 /**
  * 32nd-note resolution: every duration snaps to an integer number of these, so
@@ -203,48 +204,39 @@ export function toTimeline(
     { instruments, interp, event = {} }: PlaybackOptions = {},
 ): Timeline {
     const out = new Timeline();
-    for (const [beat, note] of played(score, { instruments, interp, event })) out.add(beat, note);
-    return out;
-}
-
-/**
- * Reads a sheet into an `EventSequence`: the same events {@link toTimeline}
- * reads, as concrete data a notes editor edits -- each with an id, in beats.
- * Everything `toTimeline` says about what comes with a note, and what does not
- * survive the trip, holds here too; a sequence goes back to a page through
- * {@link sheetFromTimeline}, which reads one as it reads a timeline.
- */
-export function toSequence(score: Sheet, options: PlaybackOptions = {}): EventSequence {
-    return new EventSequence(played(score, options));
-}
-
-/**
- * Each sounding note of the sheet as `[onset, Event]`: the written value as
- * `dur`, the heard one as `sustain`, and the marks it was written with.
- */
-function played(
-    score: Sheet,
-    { instruments, interp, event = {} }: PlaybackOptions,
-): [number, Event][] {
-    const out: [number, Event][] = [];
-    for (const note of toNotes(score, interp)) {
-        const fields: Record<string, unknown> = {
-            ...event,
-            midinote: note.pitch,
-            dur: note.dur,
-            sustain: note.sustain,
-            amp: note.amp,
-        };
-        Object.assign(fields, note.marks ?? {});
-        delete fields.sounding; // `sustain` already holds it, in beats
-        for (const key of ["spelling", "accidental"] as const) {
-            if (note[key] !== undefined) fields[key] = note[key];
-        }
-        const instrument = instrumentFor(instruments, note.staff);
-        if (instrument !== undefined) fields.instrument = instrument;
-        out.push([note.t, new Event(fields)]);
+    for (const rendered of rendering(score, { instruments, interp, event }).events) {
+        out.add(rendered.at, new Event(rendered.data));
     }
     return out;
+}
+
+/**
+ * Renders a sheet into an `EventSequence`, one way ({@link renderEvents}): its
+ * events as concrete data a notes editor edits -- each with an id, in beats,
+ * on its voice's channel -- the staves' dynamics as curves of those channels,
+ * and what is no note's in the sequence's `notation` section. The options are
+ * {@link toTimeline}'s.
+ */
+export function toSequence(score: Sheet, options: PlaybackOptions = {}): EventSequence {
+    return EventSequence.fromData(rendering(score, options));
+}
+
+/**
+ * The sheet rendered ({@link renderEvents}), each event given what plays its
+ * staff and the keys a score has no symbol for.
+ */
+function rendering(
+    score: Sheet,
+    { instruments, interp, event = {} }: PlaybackOptions,
+): RenderedSequence {
+    const data = renderEvents(score, interp);
+    for (const rendered of data.events) {
+        const keys: Record<string, unknown> = { ...event, ...rendered.data };
+        const instrument = instrumentFor(instruments, Number(keys.staff));
+        if (instrument !== undefined) keys.instrument = instrument;
+        rendered.data = keys;
+    }
+    return data;
 }
 
 /** What plays `staff`: one name for every staff, or a mapping. */

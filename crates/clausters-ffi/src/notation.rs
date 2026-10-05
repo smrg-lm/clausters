@@ -334,6 +334,53 @@ pub unsafe extern "C" fn clausters_core_sheet_perform(
     unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
+/// **Render a sheet into a sequence**, one way: the events it sounds, each
+/// still saying what it is on the page, a channel to a voice, a staff's
+/// dynamics as lanes and what is no note's as the sequence's `notation`
+/// section (`clausters_document::events::score::render`). Written to `out` in
+/// the envelope the other sheet calls answer in -- `{"ok": <the sequence>}` or
+/// `{"error": "..."}` -- and the byte count it needs is returned, `0` when
+/// `sheet` is null.
+///
+/// `interp` is the reading, as [`clausters_core_sheet_perform`] takes it: null
+/// or `{}` for the default, and any field left out keeps its default.
+///
+/// # Safety
+/// Each pointer must be readable for its length, and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_render_events(
+    sheet: *const u8,
+    sheet_len: usize,
+    interp: *const u8,
+    interp_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees the ranges.
+    let Some(sheet) = (unsafe { text(sheet, sheet_len) }) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees the range; a null pointer is the default.
+    let interp = unsafe { text(interp, interp_len) };
+    let read = match interp.as_deref().filter(|s| !s.trim().is_empty()) {
+        None => Ok(default_interpretation()),
+        Some(text) => serde_json::from_str::<Interpretation>(text),
+    };
+    let json = match (serde_json::from_str::<Sheet>(&sheet), read) {
+        (Err(e), _) => envelope_error(&format!("the sheet could not be read: {e}")),
+        (_, Err(e)) => envelope_error(&format!("the interpretation could not be read: {e}")),
+        (Ok(sheet), Ok(interp)) => {
+            match clausters_document::events::score::render(&sheet, &interp) {
+                Ok(sequence) => serde_json::json!({ "ok": sequence }).to_string(),
+                Err(e) => envelope_error(&e),
+            }
+        }
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
 /// The default interpretation, as JSON -- every number the reading depends on.
 ///
 /// **The parity surface for the reading**, and the value an override starts

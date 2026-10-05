@@ -31,6 +31,7 @@ import {
     sheetApply,
     sheetOps,
     sheetPerform,
+    sheetRenderEvents,
     sheetToMei,
     voiceToSheet as coreVoiceToSheet,
 } from "../../core/clausters_core_web.js";
@@ -282,6 +283,41 @@ export function interpretation(): Interpretation {
  * it -- so the notes name their staff and the binding is made where the score is
  * rendered.
  */
+/**
+ * Render `sheet` into **the data of a sequence**, one way: what
+ * `seq.EventSequence.fromData` reads.
+ *
+ * Every sounding note is an event -- a chord one event per note -- with what
+ * it sounds (`midinote`, `dur`, `sustain`, `amp`) and what it is on the page,
+ * in the notation keys (`pitches`, `value`, `staff`, `voice` and its marks).
+ * Each voice renders on a `channel` of its own. A staff's dynamics and
+ * hairpins are a curve of its channels (`interp.dynamics_as`: `"attack"`,
+ * `"curve"` or `"both"`, the default; `interp.dynamics_cc` names the
+ * controller, 11), the lanes of a staff with several voices sharing a `group`
+ * in their target. What is no note's -- the grid, the key, the clefs, the
+ * header, the page, the spanners over event ids -- is the sequence's
+ * `notation` section.
+ *
+ * Nothing travels back: what a roll does to the sequence stays in it.
+ * `Score.renderEvents` is this, for an open score.
+ */
+export function renderEvents(sheet: Sheet, interp?: Interpretation): RenderedSequence {
+    return JSON.parse(
+        sheetRenderEvents(JSON.stringify(sheet), interp ? JSON.stringify(interp) : ""),
+    ) as RenderedSequence;
+}
+
+/** A sequence as {@link renderEvents} writes it: plain data. */
+export interface RenderedSequence {
+    /** The events, each with its id, its beat and its keys. */
+    events: { id: number; at: number; data: Record<string, unknown> }[];
+    /** The curves over the whole sequence: a staff's dynamics, per channel. */
+    automation?: Record<string, unknown>[];
+    /** What is no note's: the grid, the key, the page, the spanners. */
+    notation?: Record<string, unknown>;
+    [key: string]: unknown;
+}
+
 export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] {
     return JSON.parse(
         sheetPerform(JSON.stringify(sheet), interp ? JSON.stringify(interp) : ""),

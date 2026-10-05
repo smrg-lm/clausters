@@ -1733,6 +1733,15 @@ export function sheetOps(): string;
 export function sheetPerform(sheet: string, interp: string): string;
 
 /**
+ * **Render a sheet into a sequence**, one way, as JSON: the events it sounds,
+ * each still saying what it is on the page, a channel to a voice, a staff's
+ * dynamics as lanes and what is no note's as the sequence's `notation`
+ * section (`clausters_document::events::score::render`). `interp` is the
+ * reading, as [`sheet_perform`] takes it.
+ */
+export function sheetRenderEvents(sheet: string, interp: string): string;
+
+/**
  * Write a score model out as MEI.
  *
  * Throws with the emitter's own reason when the model holds something MEI
@@ -2065,6 +2074,7 @@ export interface InitOutput {
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly sheetRenderEvents: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
     readonly split_degree: (a: number) => [number, number];
     readonly steprunner_call: (a: number, b: number, c: number) => [number, number];

@@ -43,6 +43,10 @@ use serde::{Deserialize, Serialize};
 use super::model::{Item, Marks, Sheet};
 use crate::ratio::Ratio;
 
+mod levels;
+
+pub use levels::{LevelPoint, StaffLevel, levels};
+
 /// One sounding note, as the interpreter heard it.
 ///
 /// Times are in **beats**, where a beat is [`Interpretation::beat_unit`] -- the
@@ -168,6 +172,39 @@ pub struct Interpretation {
     /// Which positions in the bar are stressed.
     #[serde(default = "default_accents")]
     pub accents: Vec<Accent>,
+    /// **Where a dynamic and a hairpin are heard**: on each note's attack, as
+    /// a curve of its voice's channel, or both.
+    #[serde(default)]
+    pub dynamics_as: DynamicsAs,
+    /// Which controller the curve of a dynamic moves, where a renderer writes
+    /// one: 11, expression, unless the reading says another.
+    #[serde(default = "default_dynamics_cc")]
+    pub dynamics_cc: u8,
+}
+
+/// Where a dynamic and a hairpin are heard.
+///
+/// A level is one fact and an instrument hears it in one of two places: a
+/// struck or plucked sound in the attack of each note, a sustained one in a
+/// control that moves while the note is held. The reading says which, and
+/// the default says both -- the attack so every instrument answers a dynamic,
+/// the curve so a crescendo over a held note moves inside it -- which is what
+/// lets one render serve both kinds, each listening where it listens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DynamicsAs {
+    /// On each note's attack alone: no curve is written.
+    Attack,
+    /// As a curve alone: a note's attack is the unmarked level, stressed by
+    /// its place in the bar and its own accents.
+    Curve,
+    /// Both.
+    #[default]
+    Both,
+}
+
+fn default_dynamics_cc() -> u8 {
+    11
 }
 
 fn default_beat_unit() -> i64 {
@@ -274,6 +311,8 @@ impl Default for Interpretation {
             dynamics: default_dynamics(),
             articulations: default_articulations(),
             accents: default_accents(),
+            dynamics_as: DynamicsAs::default(),
+            dynamics_cc: default_dynamics_cc(),
         }
     }
 }
@@ -298,17 +337,9 @@ struct Placed<'a> {
     index: usize,
 }
 
-/// Read `sheet` under `interp` into the notes it sounds, in time order.
-///
-/// # Errors
-/// When a spanner names an item that is not on the sheet -- the same refusal the
-/// emitter makes, and for the same reason: a crescendo that governs nothing is
-/// a fact the caller wants back, not one to swallow.
-pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, String> {
-    sheet.assign_ids();
-
-    // Every item, with where it sits. One walk, so the passes below can index
-    // by id instead of searching the staves again.
+/// Every item of `sheet`, with where it sits. One walk, so the passes over it
+/// can index by id instead of searching the staves again.
+fn placed_of(sheet: &Sheet) -> Vec<Placed<'_>> {
     let mut placed: Vec<Placed> = Vec::new();
     for (si, staff) in sheet.staves.iter().enumerate() {
         for (vi, voice) in staff.voices.iter().enumerate() {
@@ -325,6 +356,19 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
             }
         }
     }
+    placed
+}
+
+/// Read `sheet` under `interp` into the notes it sounds, in time order.
+///
+/// # Errors
+/// When a spanner names an item that is not on the sheet -- the same refusal the
+/// emitter makes, and for the same reason: a crescendo that governs nothing is
+/// a fact the caller wants back, not one to swallow.
+pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, String> {
+    sheet.assign_ids();
+
+    let placed = placed_of(&sheet);
     let at: HashMap<u64, usize> = placed
         .iter()
         .enumerate()
@@ -383,9 +427,14 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
             }
         };
 
-        let mut amp = prevailing(&dynamics, p.staff, p.t).unwrap_or(interp.amp);
-        for hairpin in &hairpins {
-            amp *= hairpin.gain_at(p.t, p.staff);
+        // The level the staff is at, unless the reading hears a dynamic in
+        // its curve alone: the attack is then the unmarked level.
+        let mut amp = interp.amp;
+        if interp.dynamics_as != DynamicsAs::Curve {
+            amp = prevailing(&dynamics, p.staff, p.t).unwrap_or(interp.amp);
+            for hairpin in &hairpins {
+                amp *= hairpin.gain_at(p.t, p.staff);
+            }
         }
         amp *= metric_gain(&sheet, p.t, interp);
         if let Some(marks) = marks {

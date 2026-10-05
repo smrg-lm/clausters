@@ -809,6 +809,66 @@ def test_written_pitches_and_a_written_value_reach_the_page_as_they_are():
     assert [p["step"] for p in item["pitches"]] == ["e", "g"]
 
 
+def _two_voices() -> dict:
+    """One staff of two voices: p rising to f over the first, a chord in it."""
+    sheet = _quarters(3)
+    sheet = notation.set_marks(sheet, 1, notation.marks(dynamic="p"))
+    sheet = notation.set_marks(sheet, 3, notation.marks(dynamic="f"))
+    sheet = notation.set_pitches(sheet, 2, [notation.pitch("f", 4, -1),
+                                            notation.pitch("a", 4, -1)])
+    sheet = notation.add_spanner(sheet, "crescendo", 1, 3)
+    # a second line under it, held for the three beats
+    sheet["staves"][0]["voices"].append({"items": [
+        {"kind": "note", "id": 9, "dur": [3, 4], "pitches": [notation.pitch("c", 3)]}]})
+    sheet["next_id"] = 10
+    return sheet
+
+
+def test_a_score_renders_into_a_sequence_that_keeps_the_page():
+    sheet = _two_voices()
+    data = notation.render_events(sheet)
+    events = [event["data"] for event in data["events"]]
+    # a chord is an event per note, each with the pitch it is written as
+    chord = [e for e in events if e["value"] == [1, 4] and e["pitches"][0]["alter"] == -1]
+    assert sorted(e["pitches"][0]["step"] for e in chord) == ["a", "f"]
+    assert sorted(e["midinote"] for e in chord) == [64, 68]
+    # a voice is a channel, and an event says where it is written
+    low = next(e for e in events if e["voice"] == 1)
+    assert (low["channel"], low["staff"], low["value"]) == (1, 0, [3, 4])
+    assert {e["channel"] for e in events if e["voice"] == 0} == {0}
+    # the staff's level is a lane of each of its channels, as one group
+    lanes = data["automation"]
+    assert [lane["target"]["channel"] for lane in lanes] == [0, 1]
+    assert {lane["target"]["group"] for lane in lanes} == {"staff 1"}
+    assert {lane["target"]["cc"] for lane in lanes} == {11}
+    assert [point["at"] for point in lanes[0]["points"]] == [0.0, 2.0]
+    # what is no note's is the sequence's own, the hairpin between two events
+    section = data["notation"]
+    (hairpin,) = section["spanners"]
+    assert hairpin["kind"] == "crescendo"
+    ids = {event["id"] for event in data["events"]}
+    assert {hairpin["from"], hairpin["to"]} <= ids
+    assert section["staves"] == [{"clef": "G2", "voices": 2}]
+    # heard in the attack alone, a dynamic writes no lane
+    attack = notation.render_events(sheet, {"dynamics_as": "attack"})
+    assert "automation" not in attack
+
+
+def test_a_rendered_score_is_a_sequence_a_roll_edits_and_a_timeline_plays():
+    sheet = _two_voices()
+    sequence = notation.to_sequence(sheet, instruments="bell", pan=0.25)
+    data = sequence.data()
+    assert len(data["events"]) == 5
+    assert all(e["data"]["instrument"] == "bell" and e["data"]["pan"] == 0.25
+               for e in data["events"])
+    assert len(data["automation"]) == 2 and data["notation"]["key"] == sheet["key"]
+    # the same events as a timeline, which holds the notes alone
+    timeline = notation.to_timeline(sheet)
+    again = notation.sheet_from_timeline(timeline)
+    written = [item.get("pitches") for item in again["staves"][0]["voices"][0]["items"]]
+    assert [p["step"] for p in written[1]] == ["f", "a"], "the F flat is still one"
+
+
 def test_a_hairpin_written_to_a_note_that_is_gone_is_refused_by_name():
     sheet = _quarters(2)
     sheet["spanners"] = [{"kind": "crescendo", "from": 1, "to": 99}]

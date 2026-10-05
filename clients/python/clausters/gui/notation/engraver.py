@@ -220,6 +220,30 @@ class Score:
         """
         return _unwrap(_text(_native.lib().clausters_score_sheet, self._h))
 
+    def render_events(self, *, instruments=None, interp: "dict | None" = None,
+                      **event_keys):
+        """Render the score into a `clausters.seq.EventSequence`, one way.
+
+        The verb a timeline and a pattern have, with the same meaning: the
+        sequence is what plays and what a roll edits -- ``edit(score.
+        render_events())`` is the score as notes with their automation -- and
+        nothing it is then made into travels back to the score.
+
+        Every sounding note is an event that still says what it is on the page
+        (`clausters.seq.event.NOTATION_KEYS`), each voice renders on a channel
+        of its own, a staff's dynamics are curves of its channels, and what is
+        no note's is the sequence's ``notation`` section
+        (`clausters.gui.notation.render_events`). ``instruments`` binds a staff
+        to what plays it -- one def name for every staff, or a mapping from
+        staff index -- ``interp`` is the reading
+        (`clausters.gui.notation.interpretation`), and ``event_keys`` are
+        merged into every event.
+        """
+        from .mei import to_sequence
+
+        return to_sequence(self.sheet(), instruments=instruments, interp=interp,
+                           **event_keys)
+
     def apply(self, op: dict) -> bool:
         """Apply one **model** operation as a single undo step, and re-engrave.
 

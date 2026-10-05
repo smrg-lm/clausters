@@ -527,7 +527,13 @@ pub use time::*;
 /// `pitches` value sounds. Additive. An event that states no sounding pitch
 /// now sounds the first of its `pitches`, and `pitches`, `value`, `staff` and
 /// `voice` no longer reach a synth as controls.
-pub const CORE_ABI_VERSION: u32 = 82;
+/// **v83 a score renders into a sequence.**
+/// `clausters_core_sheet_render_events`: a sheet as the sequence that plays
+/// it -- events with their notation keys, a channel to a voice, the dynamics
+/// as lanes, the `notation` section. Additive. The interpretation gained
+/// `dynamics_as` and `dynamics_cc`, which a caller that sends neither does not
+/// notice.
+pub const CORE_ABI_VERSION: u32 = 83;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
