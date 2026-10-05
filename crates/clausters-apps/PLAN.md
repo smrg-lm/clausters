@@ -979,17 +979,18 @@ opened it.
   document (`crates/clausters-document/PLAN.md`, `O24`). *(Planned 2026-10-05
   with the user, after a by-eye pass over `notation/score_editor`; the user's
   observations from that pass are the requirements below.)* ***Built
-  2026-10-05, every step `X5.0` to `X5.9`, and not closed**: nothing of it
-  was looked at or listened to, and it closes with the user's eye and ear
-  pass over `notation/score_editor` (the user: "cuando termines reviso los
-  resultados y debugueamos"). What that pass is over, and what stays open
-  after it, is written under "Found by use" and in the steps' own notes: the
-  sizes set by reasoning (the icons, the dialogs' fields, the palettes'
-  column); the ○ palette entries, each the model growing; a note written
-  into the second voice; a text of the page edited where it is drawn; a
-  channel group edited as one; an edit to a sounding pitch respelling the
-  written one; New and Close in the File menu; the standalone host's export;
-  and the two loop switches told apart.* The notation model
+  2026-10-05, every step `X5.0` to `X5.9`, and not closed**: it closes with
+  the user's eye and ear pass over `notation/score_editor` (the user: "cuando
+  termines reviso los resultados y debugueamos"). The first looks of that
+  pass are under "Found by use" -- the page that was in no window, the
+  cursor, the written breaks, the symbols, the page's head, the dialogs, a
+  text typed over where it is drawn, all fixed there. What stays open: note
+  entry as a mode with a cursor, decided and not built, which is also how the
+  second voice is written; a written page break; the ○ palette entries, each
+  the model growing; a channel group edited as one; an edit to a sounding
+  pitch respelling the written one; New and Close in the File menu; the
+  standalone host's playback and export; and the sound, which nobody has
+  listened to.* The notation model
   and what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
   which element admits which edit, `N9` a score as a box of the multitrack);
