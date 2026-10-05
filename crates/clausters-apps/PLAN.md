@@ -2691,3 +2691,40 @@ wrong.
   the next system: the room it takes past a system was 0.6 of the *system's*
   height, a staff's stem room on one staff and three times it on a grand
   staff; it is a measure of the staff now (`notation::cursors::stem_room`).
+
+- ⬜ **Writing notes has no cursor, and a note written pushes the rest
+  along** *(found 2026-10-05, the user's first sitting at the page: "Tiene que
+  haber cursor de edición ... Las alturas que se ingresan no pueden desplazar
+  a las demás ni dentro del compás ni entre compases")*. Today a press on
+  empty staff, with `entry` on, calls `notation::edit::insert`, whose own doc
+  says what is wrong with it here: "everything after it moves later by its
+  value". So a note written into finished music shifts every note after it
+  in the bar and re-bars the ones after that; the place it goes is wherever
+  the pointer fell, after the nearest item; and the same press selects and
+  drags when it lands on a note, so writing and moving are one gesture told
+  apart by a pixel. What it is to be is the settled principle of notation
+  programs:
+  - **Note entry is a mode with a cursor.** Entering it puts an **edit
+    cursor** on a staff, at a time and in a voice, drawn on the page; pitches
+    are entered *at the cursor*, and outside the mode nothing is written.
+    The cursor is a second line beside the play cursor, and is the host's
+    `score` element's to draw from a place the editor names.
+  - **An entry replaces; it never adds time.** A pitch entered over a
+    **rest** makes a note of the value in hand there, and what is left of the
+    rest stays a rest. Nothing after the cursor moves, in the bar or across
+    bars: the bars keep their length and every other note its time. A value
+    longer than what is left of the bar is to be settled against the same
+    principle (split at the barline and tied, the bar never growing).
+  - **A pitch entered where a note already is joins it as a chord**, rather
+    than replacing it or pushing it.
+  - **Outside the mode a press selects and a drag moves**, as now; inside
+    it a press is an entry and never a drag.
+  What follows from it, to be decided when it is taken: the model gains the
+  verb the entry is (a write over a stretch of a voice, where `insert` adds
+  time -- `insert` then stays only as something asked for by name, if at
+  all), bound in both clients; the cursor advances by the value after an
+  entry; it is moved by a press and from the keyboard, where pitches are
+  entered too; whether the window opens in the mode or out of it; and the
+  cursor's voice is what answers "A note cannot be written into the second
+  voice", above. The example's prose and both books' paragraph on a gesture
+  change with it.
