@@ -11,6 +11,7 @@
 // Run with `npm test`; this suite needs the core staged (`./build.sh`).
 
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
@@ -1103,4 +1104,64 @@ test("the space bar plays the time range a sweep left", async () => {
     // 100 samples a second, two beats a second: beat 1 is sample 50, beat 2 is 100.
     assert.ok(sent.some(([a, v]) => a === "/transport_end" && JSON.stringify(v) === "[100,0]"), JSON.stringify(sent));
     assert.deepEqual(sent.at(-1), ["/transport_locateSample", [50]], "from the range's start");
+});
+
+// ---- the score editor plays ----
+
+const scoreEngraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
+
+test("the score plays on a transport of its own and hears an edit", {
+    skip: existsSync(scoreEngraver) ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    const { Score, setEngraverUrl } = await import("../src/gui/notation/index.ts");
+    const { ScoreEditor } = await import("../src/gui/editing/index.ts");
+    setEngraverUrl(scoreEngraver.href);
+    const score = await Score.open("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/");
+    const items = () =>
+        (score.sheet() as unknown as { staves: { voices: { items: { id: number }[] }[] }[] })
+            .staves[0]!.voices[0]!.items;
+    const server = new PlayingServer();
+    const editor = new ScoreEditor(score, { server });
+    const host = new FakeHost();
+    const window = (await editor.open(asHost(host))) as unknown as { id: number };
+    // the page's cursor is drawn from the position of the score's transport
+    const transport = editor.transport;
+    assert.deepEqual(host.clocks, [[window.id, "transport", transport.id]]);
+    const page = (function find(node: GuiNode): GuiNode | undefined {
+        return node.type === "score" ? node : (node.children ?? []).map(find).find((n) => n);
+    })(host.trees[0] as GuiNode) as unknown as { playhead_at: number };
+    assert.equal(page.playhead_at, 0);
+
+    await editor.play();
+    const addrs = server.sent.map(([addr]) => addr);
+    assert.ok(addrs.includes("/lane_new"));
+    assert.equal(addrs.at(-1), "/transport_play");
+    // the engraver's time, 120 quarters a minute, at 100 samples a second
+    assert.deepEqual(server.lane()!.slice(0, 3), [0, 50, 100]);
+    assert.equal(await editor.playing(), true);
+
+    // an edit is the lane's new data, heard on from where the position is
+    server.sent = [];
+    editor.select([`n${items()[0]!.id}`]);
+    assert.ok(editor.delete());
+    await editor.settled();
+    assert.equal(server.sent.filter(([addr]) => addr === "/lane_set").length, 1);
+    assert.equal(server.lane()!.length, items().length);
+    // and so is a step back
+    server.sent = [];
+    assert.ok(editor.undo());
+    await editor.settled();
+    assert.ok(server.sent.some(([addr]) => addr === "/lane_set"));
+
+    // the space bar over the window stops what plays, and plays from where
+    // the selection starts
+    const version = () => (editor as unknown as { version: number }).version;
+    editor.apply("/gui_event", [window.id, 1, version(), "play", 0]);
+    await editor.settled();
+    server.state.playing = false;
+    editor.select([`n${items()[2]!.id}`]);
+    server.sent = [];
+    editor.apply("/gui_event", [window.id, 2, version(), "play", 0]);
+    await editor.settled();
+    assert.equal(server.sent.map(([addr]) => addr).at(-1), "/transport_play");
 });

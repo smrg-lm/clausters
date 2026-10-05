@@ -50,7 +50,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
         "Measures"]
     # the toolbar is a row of the crate's tools, each under an id of its own
     tools = [tool for tool in toolbar["children"] if "id" in tool]
-    assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 12
+    assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 15
     # a tool is drawn with the engraver's own symbol: its label is the SMuFL
     # character, and the window carries the outline the host draws it with
     values = next(tool for tool in tools if tool.get("type") == "choice")["options"]
@@ -65,7 +65,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     assert status["type"] == "label"
     # the window carries the menu bar, which holds every action
     assert [title["label"] for title in tree["menu"]] == [
-        "File", "Edit", "View", "Notes", "Notation", "Measures", "Transform"]
+        "File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"]
 
 
 def test_opening_writes_the_page_from_the_model(score):
@@ -306,3 +306,48 @@ def test_the_file_menu_saves_and_opens_through_this_client(score, tmp_path):
     # and the two are methods
     assert editor.load(other) and len(_items(score)) == 2
     assert editor.save(tmp_path / "again.mei") == str(tmp_path / "again.mei")
+
+
+def test_the_score_plays_on_a_transport_of_its_own_and_hears_an_edit(score):
+    from test_gui_edit import FakeHost, _PlayingServer
+
+    server = _PlayingServer()
+    editor = ScoreEditor(score, server=server)
+    host = FakeHost()
+    window = editor.open(host)
+    # the page's cursor is drawn from the position of the score's transport
+    transport = editor.transport
+    assert host.clocks == [(window, "transport", transport.id)]
+    assert _page(host.trees[0])["playhead_at"] == 0
+
+    editor.play()
+    addrs = [addr for addr, _ in server.sent]
+    assert "/lane_new" in addrs and addrs[-1] == "/transport_play"
+    # the engraver's time, 120 quarters a minute, at 100 samples a second
+    assert server.lane()[:3] == [0, 50, 100]
+    assert editor.playing
+
+    # an edit is the lane's new data, heard on from where the position is
+    server.sent.clear()
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    assert editor.delete()
+    assert [addr for addr, _ in server.sent].count("/lane_set") == 1
+    assert len(server.lane()) == len(_items(score))
+    # and so is a step back
+    server.sent.clear()
+    assert editor.undo()
+    assert "/lane_set" in [addr for addr, _ in server.sent]
+
+    # the space bar over the window stops what plays, and plays from where
+    # the selection starts
+    send = lambda *payload: editor.apply("/gui_event", [window, 1, editor._version, *payload])
+    send("play", 0)
+    assert "/transport_stop" in [addr for addr, _ in server.sent] or not editor.playing
+    server.state["playing"] = False
+    third = _items(score)[2]["id"]
+    editor.select([f"n{third}"])
+    server.sent.clear()
+    send("play", 0)
+    assert [addr for addr, _ in server.sent][-1] == "/transport_play"
+    assert editor._playback.cursor == 2.0, "the third quarter is beat 2"

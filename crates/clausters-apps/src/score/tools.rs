@@ -4,7 +4,7 @@
 //! A row of light controls over the page: the **value** a note is written
 //! with, its dot, whether it is a rest, its accidental; the common
 //! articulations, a tie and a triplet for what is selected; the voice; and how
-//! the window looks at the score. Each is a widget of the host's -- a
+//! the window looks at the score; and, at the far edge, the transport. Each is a widget of the host's -- a
 //! `choice` drawn as segments, a `toggle` drawn as a button, a flat `button`
 //! -- named here ([`TOOLS`]) and numbered by the caller, as every widget id
 //! is: a window composed with no ids for them has no toolbar.
@@ -50,6 +50,9 @@ pub const TOOLS: &[&str] = &[
     "tuplet",
     "voice",
     "layout",
+    "rewind",
+    "play",
+    "loop",
 ];
 
 /// The caller's widget id for each tool it numbered.
@@ -123,6 +126,8 @@ pub struct State {
     pub voice: usize,
     /// How the window looks at the score.
     pub view: View,
+    /// Whether a pass loops.
+    pub looping: bool,
 }
 
 impl State {
@@ -151,6 +156,7 @@ impl State {
                 "layout",
                 json!({"index": usize::from(self.view == View::Continuous)}),
             ),
+            ("loop", json!({"value": i32::from(self.looping)})),
         ]
     }
 }
@@ -257,20 +263,41 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         )],
         &mut children,
     );
+    group(
+        vec![tool(
+            ids,
+            "layout",
+            segments(
+                vec!["page".into(), "line".into()],
+                "Pages of the paper, or one continuous system",
+            ),
+        )],
+        &mut children,
+    );
+    // the transport goes to the far edge, past a spring: the host's own
+    // symbols, which every face draws
+    let transport: Vec<Value> = [
+        tool(ids, "rewind", press("|<", "Back to the start")),
+        tool(
+            ids,
+            "play",
+            press("\u{25B6}", "Play, or stop (the space bar)"),
+        ),
+        tool(
+            ids,
+            "loop",
+            latch("\u{21BB}", "Loop the selection, or the score (L)"),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !transport.is_empty() {
+        children.push(json!({"type": "separator", "weight": 1, "line": false}));
+        children.extend(transport);
+    }
     if children.is_empty() {
         return None;
-    }
-    // the layout goes to the far edge, past a spring
-    if let Some(layout) = tool(
-        ids,
-        "layout",
-        segments(
-            vec!["page".into(), "line".into()],
-            "Pages of the paper, or one continuous system",
-        ),
-    ) {
-        children.push(json!({"type": "separator", "weight": 1, "line": false}));
-        children.push(layout);
     }
     let mut row = json!({
         "type": "layout",
@@ -322,6 +349,12 @@ pub enum Tool {
     Voice(usize),
     /// How the window looks at the score.
     Layout(View),
+    /// Back to the start.
+    Rewind,
+    /// Play, or stop what plays.
+    Play,
+    /// Whether a pass loops.
+    Loop(bool),
 }
 
 /// **What the tool `name` reporting `tag` asks for** -- or `None` for a name
@@ -333,10 +366,16 @@ pub enum Tool {
 /// hand, and `"click"`, which is the command -- so only the click is read.
 #[must_use]
 pub fn read(name: &str, tag: &str) -> Option<Tool> {
-    let acts = matches!(name, "tie" | "tuplet") || ARTICULATIONS.iter().any(|a| a.0 == name);
+    let acts = matches!(name, "tie" | "tuplet" | "rewind" | "play")
+        || ARTICULATIONS.iter().any(|a| a.0 == name);
     if acts {
         if tag != "click" {
             return None;
+        }
+        match name {
+            "rewind" => return Some(Tool::Rewind),
+            "play" => return Some(Tool::Play),
+            _ => {}
         }
         return Some(Tool::Act(match name {
             "tie" => json!({"action": "tie"}),
@@ -353,6 +392,7 @@ pub fn read(name: &str, tag: &str) -> Option<Tool> {
             Tool::Value(Ratio::new(*n, *d))
         }
         "dot" => Tool::Dot(on),
+        "loop" => Tool::Loop(on),
         "rest" => Tool::Rest(on),
         "accidental" => Tool::Accidental(match index {
             0 => None,
@@ -388,6 +428,7 @@ mod tests {
             accidental: Some(1),
             voice: 1,
             view: View::Continuous,
+            looping: true,
         }
     }
 
@@ -404,6 +445,10 @@ mod tests {
         assert_eq!(by_id(103)["index"], 4, "a sharp, past none, bb, b and nat");
         assert_eq!(by_id(110)["index"], 1, "the second voice");
         assert_eq!(by_id(111)["index"], 1, "continuous");
+        assert_eq!(by_id(114)["value"], 1, "looping");
+        // the transport is past the spring, at the far edge
+        let spring = children.iter().position(|c| c["weight"] == 1).unwrap();
+        assert_eq!(children[spring + 1]["id"], 112);
         // a window that numbered no tool has no toolbar
         assert!(toolbar(&Ids::new(), &state(), &Outlines::new()).is_none());
     }
@@ -440,6 +485,11 @@ mod tests {
         assert_eq!(read("layout", "1"), Some(Tool::Layout(View::Continuous)));
         assert_eq!(read("value", "99"), None);
         assert_eq!(read("zoom", "1"), None);
+        // the transport: two commands and a switch
+        assert_eq!(read("play", "click"), Some(Tool::Play));
+        assert_eq!(read("rewind", "click"), Some(Tool::Rewind));
+        assert_eq!(read("play", "1"), None);
+        assert_eq!(read("loop", "1"), Some(Tool::Loop(true)));
     }
 
     #[test]

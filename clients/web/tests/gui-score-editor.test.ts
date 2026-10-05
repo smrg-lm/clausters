@@ -65,7 +65,7 @@ if (!existsSync(engraver)) {
         // the toolbar is a row of the crate's tools, each under an id of its own
         const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
         assert.equal((toolbar as unknown as { flow: string }).flow, "row");
-        assert.equal(new Set(tools.map((tool) => tool.id)).size, 12);
+        assert.equal(new Set(tools.map((tool) => tool.id)).size, 15);
         // a tool is drawn with the engraver's own symbol: its label is the
         // SMuFL character, and the window carries the outline the host draws
         // it with
@@ -87,7 +87,7 @@ if (!existsSync(engraver)) {
         const bar = (tree as unknown as { menu: { label: string }[] }).menu;
         assert.deepEqual(
             bar.map((title) => title.label),
-            ["File", "Edit", "View", "Notes", "Notation", "Measures", "Transform"],
+            ["File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"],
         );
     });
 

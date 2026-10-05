@@ -1676,7 +1676,29 @@ opened it.
       `--save-to` is now that path, given to the editor when it opens.
       `editor.save` and `editor.load` are the two as methods. Not in it: New
       and Close, which the menu's list names and nothing here builds.)*
-    - ⬜ **X5.8.3 - The score's playback.**
+    - ✅ **X5.8.3 - The score's playback.** *(Done 2026-10-05. **The
+      editor holds no transport**: a play is a turn whose outcome is the pass
+      it asks for -- `from`, where the selection starts or the cursor was
+      left; `range`, the stretch several selected items cover; `looping` --
+      and a rewind is a `locate`. The window says its owner plays it, so the
+      space bar and `L` arrive as its own verbs; the toolbar gained the
+      transport past its spring (back to the start, play, the loop switch)
+      and the menu a Play menu; the three are one switch and one pass. What
+      plays is the score rendered at **the engraver's own tempo**, 120
+      quarters a minute, measured: the page's cursor is drawn over the
+      engraver's timemap, so the sound and the line agree with no conversion.
+      Each client plays that sequence with the playback a notes editor uses
+      (`NotesPlayback`: an event lane on a transport of the server's), keeps
+      the one sequence and hands it the next render after an edit or a step,
+      so both are heard on from where the position is, and binds the window's
+      head clock to that transport. `play`, `pause`, `resume`, `stop`,
+      `playing` and `transport` are the client's, as a notes editor has them.
+      The standalone host has no server and plays nothing. Open: the host's
+      own `L` switch and the toolbar's are told apart by nothing -- the
+      editor's is the one a play reads, and a press of `L` after the toolbar
+      turned it may ask for the state it already has; and a tempo the score
+      states is not read, since the model holds none (`tempo`, in the
+      palettes' open list).)*
     - ⬜ **X5.8.4 - The export.**
   - ⬜ **X5.9 - The books and the example**, both clients. *(The user,
     2026-10-05: the editing examples are gathered into one.)* `notation/

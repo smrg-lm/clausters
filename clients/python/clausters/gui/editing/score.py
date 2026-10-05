@@ -15,6 +15,9 @@ call into the crate, named as it names it.
 
 from __future__ import annotations
 
+from ... import _native
+from ...seq.playback import NotesPlayback
+from ...seq.sequence import EventSequence
 from .domain import Domain
 from .editor import Editor
 from .samples import _plain
@@ -69,7 +72,10 @@ class ScoreEditor(Editor):
     reaches for while it writes: the value, its dot, a rest, an accidental,
     the articulations, a tie, a triplet, the voice and the layout. Beside the
     page stand the palettes: what can be written, a kind of element to a
-    folding group, each entry a verb over what is selected. An entry
+    folding group, each entry a verb over what is selected. The space bar,
+    the toolbar's transport and the Play menu play the score on the server,
+    from where the selection starts, with the page's cursor following
+    (`play`, `stop`, `transport`). An entry
     that needs more than a pick -- the page's text, its margins, a
     transformation's parameter -- opens a dialog over the window. Ctrl+click
     adds a note to the selection or takes it out, and
@@ -84,11 +90,17 @@ class ScoreEditor(Editor):
         title: the window's title.
         value: the written value a note entered on the page takes, as
             ``(numerator, denominator)`` of a whole note; a quarter by default.
+        server: the `clausters.defs.Server` it plays on; ``None`` resolves the
+            ambient one when it first plays.
     """
 
     def __init__(self, score, *, title: str = "Score", value=None,
-                 width: int = 960, height: int = 640, **options):
+                 width: int = 960, height: int = 640, server=None, **options):
         options.pop("sample_rate", None)
+        self._server = server
+        #: The score as the sequence it plays as, rendered when it first plays
+        #: and again after every edit.
+        self._rendered: "EventSequence | None" = None
         super().__init__(score, sample_rate=48_000.0, domain=ScoreDomain(),
                          view=ScoreView(), title=title, width=width,
                          height=height, **options)
@@ -364,6 +376,180 @@ class ScoreEditor(Editor):
         ``"repeat"`` (``count``)."""
         return self._act({"action": "transform", "name": str(name), **params})
 
+    # ---- playing it ----
+
+    def open(self, host=None, id: "int | None" = None):
+        """Open the window, with its play cursor drawn from the transport.
+
+        The page draws its cursor over the engraver's timemap, anchored at 0,
+        and the counter that makes that the score's own time is the position
+        of the transport the score plays on -- stopped or rolling, the line is
+        where the sound is. With no server to play on there is no position,
+        and the page opens to be edited; nor with a server that has no
+        transport left, which is logged."""
+        window = super().open(host, id)
+        if self._host is not None and window is not None:
+            try:
+                server = self._resolve_server()
+            except RuntimeError:
+                return window
+            try:
+                transport = NotesPlayback.of(server, self._sequence()).transport_id
+            except (RuntimeError, ValueError) as refused:
+                from ...log import log
+
+                log.warning("the score has no play cursor and cannot be played: %s", refused)
+                return window
+            self._host.head_clock(window, "transport", transport)
+        return window
+
+    def _resolve_server(self):
+        if self._server is None:
+            from ...base.main import main
+
+            self._server = main.resolve_server()
+        return self._server
+
+    def _sequence(self) -> EventSequence:
+        """The score as the sequence it plays as: the crate's render, on the
+        engraver's time, made on first ask and kept -- so its playback is one,
+        and an edit is the same sequence holding the next render."""
+        if self._rendered is None:
+            self._rendered = EventSequence.from_data(self._render())
+        return self._rendered
+
+    def _render(self) -> dict:
+        answer = self._call("render")
+        if "sequence" not in answer:
+            raise ValueError(answer.get("error", "the score could not be rendered"))
+        return answer["sequence"]
+
+    def _update(self) -> None:
+        """The score changed: the sequence it plays as holds the next render,
+        and the lane takes it, so the server plays the edit on from where the
+        position is."""
+        if self._rendered is None:
+            return
+        try:
+            self._rendered._seq = _native.SequenceHandle(self._render())
+        except ValueError:
+            return
+        playback = self._held
+        if playback is not None:
+            playback.update()
+
+    @property
+    def _playback(self) -> NotesPlayback:
+        """The score's playback on the server, made when it has none -- which
+        raises when the server has no transport left."""
+        return NotesPlayback.of(self._resolve_server(), self._sequence())
+
+    @property
+    def _held(self) -> "NotesPlayback | None":
+        """The score's playback when it has one."""
+        if self._rendered is None:
+            return None
+        return NotesPlayback.held(self._server, self._rendered)
+
+    @property
+    def transport(self):
+        """**The transport the score plays on**, as the object a script plays:
+        a `clausters.defs.Transport` whose verbs (``play``, ``pause``,
+        ``stop``, ``locate``, ``loop``, ``wait``) are about this score, in its
+        beats -- a quarter to the beat. Once a script has asked for it, it is
+        the script's to free (``free()``); otherwise it goes back to the
+        server when the editor closes."""
+        playback = self._playback
+        playback.kept = True
+        return playback.transport
+
+    def play(self, beat: "float | None" = None, *, range=None,
+             looping: bool = False) -> "ScoreEditor":
+        """**Play the score** from ``beat`` -- a quarter to the beat; from the
+        start when left out -- on a transport of its own, with the page's
+        cursor following. Returns ``self``.
+
+        ``range`` -- ``(start, end)`` in beats -- plays that stretch, going
+        back to ``beat``; ``looping`` loops it, or with none the whole score.
+        The space bar, the toolbar and the Play menu ask the same, from where
+        the selection starts. An edit made while it plays is heard on from
+        where the position is."""
+        self._playback.load(float(beat if beat is not None else 0.0),
+                            range=range, looping=looping, end="contents")
+        return self
+
+    def pause(self) -> "ScoreEditor":
+        """Pause where it stands: a `resume` carries the notes on."""
+        self._playback.call("pause")
+        return self
+
+    def resume(self) -> "ScoreEditor":
+        """Roll again from where it paused."""
+        self._playback.call("resume")
+        return self
+
+    def stop(self) -> "ScoreEditor":
+        """Stop, free what sounds, and go back to where the pass started."""
+        playback = self._held
+        if playback is not None:
+            playback.call("stop", back=float(playback.cursor))
+        return self
+
+    @property
+    def playing(self) -> bool:
+        """Whether the score is sounding, as the engine answers -- a pass that
+        reached its end stopped without anybody here saying so."""
+        playback = self._held
+        return playback is not None and playback.playing()
+
+    def reflect_step(self) -> None:
+        """A history step landed: the window is corrected, and the lane takes
+        the score again, so the undo is heard."""
+        super().reflect_step()
+        self._update()
+
+    def _closed(self) -> bool:
+        closed = super()._closed()
+        self._release()
+        return closed
+
+    def close(self):
+        """Close this editor's window. **The score's transport goes back to
+        the server with it**, and what was sounding is released -- unless a
+        script holds the transport (`transport`), whose it then is to free."""
+        closed = super().close()
+        self._release()
+        return closed
+
+    def _release(self) -> None:
+        playback = self._held
+        if playback is not None and not playback.kept:
+            playback.free()
+
+    def _transport_turn(self, outcome: dict) -> None:
+        """What a turn asked of the playback: a play or a stop, the loop
+        switch, the cursor placed."""
+        if outcome.get("locate") is not None:
+            playback = self._held
+            if playback is not None:
+                playback.cue(float(outcome["locate"]))
+        if outcome.get("play") is not None:
+            # A play is play or stop: a stop goes back to where the pass began.
+            if self.playing:
+                self.stop()
+            else:
+                pass_ = outcome["play"]
+                self._playback.cursor = float(pass_.get("from") or 0.0)
+                self.play(self._playback.cursor, range=pass_.get("range"),
+                          looping=bool(pass_.get("looping")))
+        if outcome.get("loop") is not None:
+            playback = self._held
+            if playback is not None:
+                # the loop switch: followed at once by a pass in progress
+                pass_ = outcome["loop"]
+                playback.set_span(pass_.get("range"), show=False)
+                playback.set_looping(bool(pass_.get("looping")))
+
     # ---- the score's file ----
 
     def save(self, path=None) -> str:
@@ -401,6 +587,7 @@ class ScoreEditor(Editor):
             if changed:
                 self.dirty = True
                 self._editing.changed()
+                self._update()
             if self._host is not None and self._window is not None:
                 self.echo.send(outcome.get("answer"))
             return changed
@@ -436,6 +623,8 @@ class ScoreEditor(Editor):
         if changed:
             self.dirty = True
             self._editing.changed()
+            self._update()
+        self._transport_turn(outcome)
         self.echo.send(outcome.get("answer"))
         # A file is this client's to write and to read: the turn said which.
         if outcome.get("save"):

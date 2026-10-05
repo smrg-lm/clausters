@@ -501,6 +501,7 @@ fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
             "File",
             "Edit",
             "View",
+            "Play",
             "Notes",
             "Notation",
             "Measures",
@@ -1062,4 +1063,96 @@ fn a_file_is_opened_by_its_holder_and_the_document_it_read_is_one_entry() {
     let out = editor.act(&json!({"action": "open", "data": ""}), 2);
     assert!(!out.changed);
     assert_eq!(editor.held().mei(), held);
+}
+
+/// The window's own verb, as the host sends the space bar and `L`.
+fn window(tag: &str, looping: i64) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(1), json!(9), json!(1), json!(tag), json!(looping)],
+    }
+}
+
+#[test]
+fn a_play_asks_for_a_pass_from_where_the_selection_starts() {
+    let mut editor = with_tools();
+    // nothing selected: from the cursor, which is the start
+    let out = editor.event(&window("play", 0), 1);
+    assert_eq!(
+        out.play,
+        Some(json!({"looping": false, "range": null, "from": 0.0}))
+    );
+    assert!(!out.changed && out.record.is_none(), "a play is no edit");
+    // one note selected: from it, and no range to repeat
+    editor.event(&gesture("element", &[json!("n3")]), 1);
+    let out = editor.event(&tool("play", json!("click")), 1);
+    assert_eq!(
+        out.play,
+        Some(json!({"looping": false, "range": null, "from": 2.0}))
+    );
+    // several: the stretch they cover, a quarter to the beat
+    editor.event(&gesture("element", &[json!("n2")]), 1);
+    editor.event(&gesture("element", &[json!("n3"), json!("extend")]), 1);
+    let out = editor.event(&pick("play", None), 1);
+    assert_eq!(
+        out.play,
+        Some(json!({"looping": false, "range": [1.0, 3.0], "from": 1.0}))
+    );
+}
+
+#[test]
+fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
+    let mut editor = with_tools();
+    let switch = numbered()["loop"];
+    // `L` over the window: the pass in progress is told, and the toolbar's
+    // switch and the menu's check show it
+    let out = editor.event(&window("loop", 1), 1);
+    assert_eq!(out.relooped.as_ref().unwrap()["looping"], true);
+    let shown = corrections_of(&out);
+    assert!(
+        shown
+            .iter()
+            .any(|c| c.widget == i64::from(switch) && c.props == json!({"value": 1}))
+    );
+    let bar = &shown.last().expect("the window's").props["menu"];
+    let play = bar
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["label"] == "Play")
+        .unwrap();
+    assert_eq!(play["menu"][3]["checked"], true);
+    // the toolbar turns it off, and the next play does not loop
+    let out = editor.event(&tool("loop", json!(0)), 1);
+    assert_eq!(out.relooped.as_ref().unwrap()["looping"], false);
+    assert_eq!(
+        editor.event(&window("play", 1), 1).play.unwrap()["looping"],
+        false
+    );
+    // a rewind is the cursor at the first beat
+    let out = editor.event(&tool("rewind", json!("click")), 1);
+    assert_eq!(out.locate, Some(0.0));
+    assert_eq!(editor.event(&pick("rewind", None), 1).locate, Some(0.0));
+}
+
+#[test]
+fn the_score_plays_as_its_render_on_the_engravers_time() {
+    let mut editor = opened();
+    let rendered: Value =
+        serde_json::from_str(&call_json(&mut editor, r#"{"verb": "render"}"#)).unwrap();
+    let sequence = &rendered["sequence"];
+    assert_eq!(sequence["events"].as_array().unwrap().len(), 4);
+    assert_eq!(sequence["events"][1]["at"], 1.0);
+    // 120 quarters a minute, which is where the page's cursor is drawn
+    let tempo: clausters_core::tempomap::TempoMap =
+        serde_json::from_value(sequence["tempo_map"].clone()).unwrap();
+    assert_eq!(tempo.secs_at(2.0), 1.0);
+    // and an edit is in the next render
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    editor.act(&json!({"action": "delete"}), 1);
+    let again: Value =
+        serde_json::from_str(&call_json(&mut editor, r#"{"verb": "render"}"#)).unwrap();
+    assert_eq!(again["sequence"]["events"].as_array().unwrap().len(), 3);
+    // the window says its owner plays it
+    assert_eq!(editor.window(IDS, Chrome::default())["plays"], true);
 }

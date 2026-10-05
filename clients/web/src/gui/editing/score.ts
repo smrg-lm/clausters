@@ -19,6 +19,13 @@
 
 import { Score } from "../notation/engraver.ts";
 import { readFileAt } from "../../base/files.ts";
+import { area } from "../../base/log.ts";
+import type { Server } from "../../defs/server/index.ts";
+import type { Transport } from "../../defs/server/transport.ts";
+import { resolveServer } from "../../defs/wire.ts";
+import { JsEventSequence } from "../../core/clausters_core_web.js";
+import { NotesPlayback } from "../../seq/playback.ts";
+import { EventSequence } from "../../seq/sequence.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Answer } from "./echo.ts";
@@ -29,6 +36,15 @@ import { plain } from "./samples.ts";
 import { View } from "./view.ts";
 
 /** What one turn of the core came to. */
+const log = area("gui.editing");
+
+/** What a play asks of the playback, as the crate's turn says it. */
+interface Pass {
+    looping?: boolean;
+    range?: [number, number] | null;
+    from?: number;
+}
+
 interface Outcome {
     turn?: string;
     changed?: boolean;
@@ -37,6 +53,12 @@ interface Outcome {
     save?: string;
     /** The file to open in place of the score, when the turn asked for one. */
     open?: string;
+    /** What a play asks of the playback: the space bar, the toolbar, the menu. */
+    play?: Pass;
+    /** What the loop switch asks of a pass in progress. */
+    loop?: Pass;
+    /** Where the position cursor was placed, as a beat of the score. */
+    locate?: number;
 }
 
 /**
@@ -120,6 +142,8 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
     value?: readonly [number, number];
     /** Ignored: a page is engraved on beats, not on an engine's samples. */
     sampleRate?: number;
+    /** The server it plays on; absent, the ambient one when it first plays. */
+    server?: Server | null;
 }
 
 /** A score's page setup: lengths in tenths of a millimetre, the staff in hundredths. */
@@ -179,7 +203,7 @@ export class ScoreEditor extends Editor<Score> {
 
     constructor(score: Score, options: ScoreEditorOptions = {}) {
         const domain = new ScoreDomain();
-        const { value, sampleRate: _rate, ...rest } = options;
+        const { value, sampleRate: _rate, server = null, ...rest } = options;
         super(score, {
             title: "Score",
             width: 960,
@@ -198,6 +222,255 @@ export class ScoreEditor extends Editor<Score> {
         const opened = this.editing.openScore(`score:${keyOfScore(score)}`, score, request, domain);
         this.member = opened.member;
         this.structureId = opened.identity;
+        this.#server = server;
+    }
+
+    // ---- playing it ----
+
+    #server: Server | null = null;
+    /**
+     * The score as the sequence it plays as, rendered when it first plays and
+     * again after every edit.
+     */
+    #rendered: EventSequence | null = null;
+    /** The playback work under way: a turn chains on it and does not wait. */
+    #work: Promise<unknown> = Promise.resolve();
+
+    /**
+     * Opens the window, with its play cursor drawn from the transport.
+     *
+     * The page draws its cursor over the engraver's timemap, anchored at 0,
+     * and the counter that makes that the score's own time is the position of
+     * the transport the score plays on -- stopped or rolling, the line is
+     * where the sound is. With no server to play on there is no position, and
+     * the page opens to be edited; nor with a server that has no transport
+     * left, which is logged.
+     */
+    override async open(
+        host?: Parameters<Editor<Score>["open"]>[0],
+        options: Parameters<Editor<Score>["open"]>[1] = {},
+    ): ReturnType<Editor<Score>["open"]> {
+        const handle = await super.open(host, options);
+        let server: Server;
+        try {
+            server = this.#resolveServer();
+        } catch {
+            return handle;
+        }
+        let transport: number;
+        try {
+            transport = NotesPlayback.of(server, this.#sequence()).transportId;
+        } catch (refused) {
+            log.warning("the score has no play cursor and cannot be played: %s", String(refused));
+            return handle;
+        }
+        this.host?.headClock(handle, "transport", transport);
+        return handle;
+    }
+
+    #resolveServer(): Server {
+        this.#server ??= resolveServer(null) as unknown as Server;
+        return this.#server;
+    }
+
+    /**
+     * The score as the sequence it plays as: the crate's render, on the
+     * engraver's time, made on first ask and kept -- so its playback is one,
+     * and an edit is the same sequence holding the next render.
+     */
+    #sequence(): EventSequence {
+        this.#rendered ??= EventSequence.fromData(this.#render());
+        return this.#rendered;
+    }
+
+    #render(): unknown {
+        const answer = this.coreCall("render");
+        if (answer.sequence === undefined) {
+            throw new Error(String(answer.error ?? "the score could not be rendered"));
+        }
+        return answer.sequence;
+    }
+
+    /**
+     * The score changed: the sequence it plays as holds the next render, and
+     * the lane takes it, so the server plays the edit on from where the
+     * position is.
+     */
+    #update(): void {
+        const rendered = this.#rendered;
+        if (rendered === null) return;
+        try {
+            (rendered as unknown as { seq: JsEventSequence }).seq = new JsEventSequence(
+                JSON.stringify(this.#render()),
+            );
+        } catch {
+            return;
+        }
+        const playback = this.#held;
+        if (playback === null) return;
+        this.#work = this.#work.then(() => playback.update());
+        this.#work.catch(() => {});
+    }
+
+    /**
+     * The score's playback on the server, made when it has none -- which
+     * throws when the server has no transport left.
+     */
+    get #playback(): NotesPlayback {
+        return NotesPlayback.of(this.#resolveServer(), this.#sequence());
+    }
+
+    /** The score's playback when it has one. */
+    get #held(): NotesPlayback | null {
+        if (this.#rendered === null) return null;
+        return NotesPlayback.held(this.#server, this.#rendered);
+    }
+
+    /**
+     * **The transport the score plays on**, as the object a page plays: a
+     * `Transport` whose verbs (`play`, `pause`, `stop`, `locate`, `loop`,
+     * `wait`) are about this score, in its beats -- a quarter to the beat.
+     * Once a page has asked for it, it is the page's to free (`free()`);
+     * otherwise it goes back to the server when the editor closes.
+     */
+    get transport(): Transport {
+        const playback = this.#playback;
+        playback.kept = true;
+        return playback.transport;
+    }
+
+    /**
+     * **Plays the score** from `beat` -- a quarter to the beat; from the start
+     * when left out -- on a transport of its own, with the page's cursor
+     * following.
+     *
+     * `range` -- `[start, end]` in beats -- plays that stretch, going back to
+     * `beat`; `looping` loops it, or with none the whole score. The space bar,
+     * the toolbar and the Play menu ask the same, from where the selection
+     * starts. An edit made while it plays is heard on from where the position
+     * is.
+     */
+    async play(
+        beat?: number,
+        pass: { range?: readonly [number, number] | null; looping?: boolean } = {},
+    ): Promise<this> {
+        await this.#playback.load(beat ?? 0, {
+            range: pass.range ?? null,
+            looping: pass.looping ?? false,
+            end: "contents",
+        });
+        return this;
+    }
+
+    /** Pauses where it stands: a `resume` carries the notes on. */
+    async pause(): Promise<this> {
+        await this.#playback.call("pause");
+        return this;
+    }
+
+    /** Rolls again from where it paused. */
+    async resume(): Promise<this> {
+        await this.#playback.call("resume");
+        return this;
+    }
+
+    /** Stops, frees what sounds, and goes back to where the pass started. */
+    async stop(): Promise<this> {
+        const playback = this.#held;
+        if (playback !== null) await playback.call("stop", { back: playback.cursor });
+        return this;
+    }
+
+    /**
+     * Whether the score is sounding, as the engine answers. A method here, the
+     * reference client's property: asking the engine is a round trip, and a
+     * page awaits one.
+     */
+    async playing(): Promise<boolean> {
+        const playback = this.#held;
+        return playback !== null && (await playback.playing());
+    }
+
+    /**
+     * Waits for the playback work an edit or a key started.
+     *
+     * @internal
+     */
+    async settled(): Promise<void> {
+        await this.#work;
+    }
+
+    /**
+     * A history step landed: the window is corrected, and the lane takes the
+     * score again, so the undo is heard.
+     */
+    override reflectStep(): void {
+        super.reflectStep();
+        this.#update();
+    }
+
+    protected override closedWindow(): boolean {
+        const closed = super.closedWindow();
+        this.#release();
+        return closed;
+    }
+
+    /**
+     * Closes this editor's window. **The score's transport goes back to the
+     * server with it**, and what was sounding is released -- unless a page
+     * holds the transport ({@link ScoreEditor.transport}), whose it then is to
+     * free.
+     */
+    override close(): this {
+        super.close();
+        this.#release();
+        return this;
+    }
+
+    #release(): void {
+        const playback = this.#held;
+        if (playback === null || playback.kept) return;
+        this.#work = this.#work.then(() => playback.free());
+        this.#work.catch(() => {});
+    }
+
+    /**
+     * What a turn asked of the playback: a play or a stop, the loop switch,
+     * the cursor placed.
+     */
+    #transportTurn(outcome: Outcome): void {
+        const located = outcome.locate;
+        if (located !== undefined) {
+            const playback = this.#held;
+            if (playback !== null) {
+                this.#work = this.#work.then(() => playback.cue(located));
+                this.#work.catch(() => {});
+            }
+        }
+        const pass = outcome.play;
+        if (pass !== undefined) {
+            // A play is play or stop: a stop goes back to where the pass began.
+            this.#work = this.#work.then(async () => {
+                if (await this.playing()) {
+                    await this.stop();
+                    return;
+                }
+                const from = pass.from ?? 0;
+                this.#playback.cursor = from;
+                await this.play(from, { range: pass.range ?? null, looping: pass.looping ?? false });
+            });
+            this.#work.catch(() => {});
+        }
+        const relooped = outcome.loop;
+        const playback = this.#held;
+        if (relooped !== undefined && playback !== null) {
+            // the loop switch: followed at once by a pass in progress
+            this.#work = this.#work.then(async () => {
+                await playback.setSpan(relooped.range ?? null, { show: false });
+                await playback.setLooping(relooped.looping ?? false);
+            });
+            this.#work.catch(() => {});
+        }
     }
 
     /** The score the page edits -- the one the editor was opened over. */
@@ -576,6 +849,7 @@ export class ScoreEditor extends Editor<Score> {
         if (changed) {
             this.dirty = true;
             this.editing.changed();
+            this.#update();
         }
         if (this.windowId !== null) this.echo.send(outcome.answer);
         return changed;
@@ -615,7 +889,9 @@ export class ScoreEditor extends Editor<Score> {
         if (changed) {
             this.dirty = true;
             this.editing.changed();
+            this.#update();
         }
+        this.#transportTurn(outcome);
         this.echo.send(outcome.answer);
         // A file is this client's to write and to read: the turn said which.
         // Both are the page's own storage in a tab, and neither is waited for

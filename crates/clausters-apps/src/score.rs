@@ -168,6 +168,11 @@ pub fn window(w: Window<'_>) -> Value {
     picture.insert("id".into(), json!(ids.page));
     picture.insert("editable".into(), json!(true));
     picture.insert("entry".into(), json!(entry));
+    // **The play cursor is anchored at the score's start**: the page draws it
+    // over the engraver's timemap from whatever counter the window's head
+    // clock names, which is the position of the transport the score plays on
+    // -- so it needs no anchor of its own and no message per frame.
+    picture.insert("playhead_at".into(), json!(0));
     for (key, value) in [("x", 0.0), ("y", 0.0), ("w", width), ("h", height)] {
         picture.insert(key.into(), json!(value));
     }
@@ -217,6 +222,9 @@ pub fn window(w: Window<'_>) -> Value {
         "h": size.1,
         "flow": "col",
         "menu": menu,
+        // **The space bar is the application's**: it plays the score through
+        // the editor's own playback, so the host's monitor stays out.
+        "plays": true,
         "children": children,
     });
     if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {

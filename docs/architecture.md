@@ -1094,7 +1094,19 @@ one: a save or an open is a turn whose outcome names the path (`save`,
 client with the disk or a page's own storage -- writes the score's MEI there,
 or reads the file and hands its text back as the `open` verb, which is the
 edit and one entry of the history. The editor keeps the path a save goes to,
-so Ctrl+S, the menu's Save and a client's method are one path. **The paper is the document's and the layout the
+so Ctrl+S, the menu's Save and a client's method are one path.
+
+**The score editor holds no transport either.** A play -- the space bar,
+which the window says is its owner's (`plays`), the toolbar's transport or the
+menu's -- is a turn whose outcome is the **pass** it asks for: where it starts
+(where the selection starts), the stretch a loop repeats, whether it loops.
+What plays is the score rendered (`ScoreEditor::rendered`, the door's `render`)
+at the engraver's own tempo, since the page's cursor is drawn over the
+engraver's timemap; each client plays that sequence with the playback a notes
+editor uses -- an event lane on a transport of the server's -- keeps the one
+sequence and hands it the next render after every edit, and binds the
+window's head clock to that transport so the cursor is drawn from its
+position with no message per frame. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

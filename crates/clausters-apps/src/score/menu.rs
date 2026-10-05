@@ -35,6 +35,8 @@ pub struct State<'a> {
     /// Whether the window has the dialogs: an entry that opens one is
     /// disabled in a window composed without them.
     pub dialogs: bool,
+    /// Whether a pass loops.
+    pub looping: bool,
 }
 
 /// The written values a note is entered with, longest first, and their names.
@@ -157,6 +159,15 @@ pub fn menu(state: &State<'_>) -> Value {
                     "layout",
                     state.view == View::Continuous,
                 ),
+            ],
+        ),
+        sub(
+            "Play",
+            vec![
+                word("Play or stop", "play"),
+                word("Back to the start", "rewind"),
+                sep(),
+                json!({"label": "Loop", "verb": "loop", "checked": state.looping}),
             ],
         ),
         sub(
@@ -338,6 +349,12 @@ pub enum Pick {
     Dialog(Form),
     /// The score, written to its file.
     Save,
+    /// Play, or stop what plays.
+    Play,
+    /// Back to the start.
+    Rewind,
+    /// Whether a pass loops.
+    Loop(bool),
     /// The window looks at the score this way.
     Layout(View),
     /// A press on empty staff writes a note, or stops writing one.
@@ -373,6 +390,9 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "redo" => Pick::Redo,
         "select_all" => Pick::SelectAll,
         "save" => Pick::Save,
+        "play" => Pick::Play,
+        "rewind" => Pick::Rewind,
+        "loop" => Pick::Loop(state.is_none_or(|on| on != 0)),
         "entry" => Pick::Entry(state.is_none_or(|on| on != 0)),
         _ => Pick::Unknown,
     }
@@ -391,6 +411,7 @@ mod tests {
             paper: Some("A4"),
             landscape: false,
             dialogs: true,
+            looping: false,
         }
     }
 
@@ -458,6 +479,8 @@ mod tests {
         assert_eq!(read("fold", None), Pick::Unknown);
         assert_eq!(read("dialog:page", None), Pick::Dialog(Form::Page));
         assert_eq!(read("save", None), Pick::Save);
+        assert_eq!(read("play", None), Pick::Play);
+        assert_eq!(read("loop", Some(1)), Pick::Loop(true));
         assert_eq!(read("dialog:fold", None), Pick::Unknown);
     }
 }

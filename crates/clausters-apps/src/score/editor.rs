@@ -59,9 +59,33 @@ pub struct Outcome {
     /// the text and hands it back as the `open` verb, which is the edit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<String>,
+    /// **What a play asks of the playback**: `{"looping", "range", "from"}`
+    /// -- the space bar over the window, the toolbar's play or the menu's.
+    /// `from` is the beat a pass starts at, where the selection starts or
+    /// where the cursor was left; `range` is `[start, end]` in beats when
+    /// several items are selected, which a loop repeats, or `null`. Whoever
+    /// drives the editor plays or stops: the editor holds no transport.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub play: Option<Value>,
+    /// **What the loop switch asks of a pass in progress**: the same pass,
+    /// when `L`, the toolbar or the menu turned the loop on or off.
+    #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    pub relooped: Option<Value>,
+    /// Where the position cursor was placed, as a beat of the score -- a
+    /// rewind. Not an edit: a stopped playback is cued there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locate: Option<f64>,
 }
 
 turn::turned!(Outcome);
+
+/// The tempo the engraver times a score at when it states none, in beats a
+/// second: 120 quarters a minute.
+pub const ENGRAVED_TEMPO: f64 = 2.0;
+
+/// How many beats a whole note is in a rendered score: a quarter to the beat,
+/// the default interpretation's.
+const RENDER_BEAT_UNIT: f64 = 4.0;
 
 /// **A score editor**: a shared score, what is selected on its page, the value
 /// a note is written with, and its end of the conversation.
@@ -82,6 +106,10 @@ pub struct ScoreEditor {
     /// The file the score is saved to: the one it was read from, or the last
     /// one a save named. `None` for a score that has no file yet.
     path: Option<String>,
+    /// Whether a pass loops: the loop switch, the toolbar's and the menu's.
+    looping: bool,
+    /// Where a pass starts with nothing selected, as a beat of the score.
+    cursor: f64,
     /// The engraver's outlines for the symbols the tools and the palettes
     /// are drawn with: asked once, the first time a window has either, and
     /// kept -- `None` until then, and empty when the engraver handed none
@@ -178,6 +206,8 @@ impl ScoreEditor {
             palettes: palettes::Ids::new(),
             dialog: None,
             path: None,
+            looping: false,
+            cursor: 0.0,
             outlines: None,
             title: "Score".into(),
             size: (960, 640),
@@ -260,7 +290,59 @@ impl ScoreEditor {
             accidental: self.accidental,
             voice,
             view: self.view,
+            looping: self.looping,
         }
+    }
+
+    /// **The pass a play asks for**: from where the selection starts -- or
+    /// where the cursor was left, with nothing selected -- over the stretch
+    /// several selected items cover, which is what a loop repeats; and
+    /// whether it loops. In beats, a quarter to the beat, as the score is
+    /// rendered.
+    fn pass(&self) -> Value {
+        let span = {
+            let held = self.held();
+            held.sheet().and_then(|sheet| {
+                let ids = verbs::in_time(sheet, &self.items());
+                let first = verbs::locate(sheet, *ids.first()?)?;
+                let last = verbs::locate(sheet, *ids.last()?)?;
+                let beats = |whole: Ratio| whole.to_f64() * RENDER_BEAT_UNIT;
+                Some((
+                    beats(first.onset),
+                    beats(last.onset + last.item.dur()),
+                    ids.len(),
+                ))
+            })
+        };
+        match span {
+            Some((start, end, count)) => json!({
+                "looping": self.looping,
+                "range": (count > 1).then(|| json!([start, end])),
+                "from": start,
+            }),
+            None => json!({"looping": self.looping, "range": null, "from": self.cursor}),
+        }
+    }
+
+    /// **The score as the sequence it plays as** (`events::score::render`),
+    /// on the engraver's own time: a page's cursor is drawn over the
+    /// engraver's timemap, which times a score with no tempo mark at
+    /// [`ENGRAVED_TEMPO`], so the sequence takes that tempo and the cursor is
+    /// where the sound is.
+    ///
+    /// # Errors
+    /// When the document has no model, or a spanner of it names no item.
+    pub fn rendered(&self) -> Result<Value, String> {
+        let held = self.held();
+        let sheet = held
+            .sheet()
+            .ok_or_else(|| "this document has no model to render".to_string())?;
+        let mut sequence = clausters_document::events::score::render(
+            sheet,
+            &clausters_core::notation::default_interpretation(),
+        )?;
+        sequence.tempo_map = Some(clausters_core::tempomap::TempoMap::new(ENGRAVED_TEMPO));
+        serde_json::to_value(&sequence).map_err(|why| why.to_string())
     }
 
     /// The value the next item is written with: the one in hand, and half as
@@ -319,6 +401,7 @@ impl ScoreEditor {
             paper: setup.paper(),
             landscape: setup.landscape(),
             dialogs: dialogs::numbered(&self.dialogs),
+            looping: self.looping,
         })
     }
 
@@ -673,6 +756,22 @@ impl ScoreEditor {
         None
     }
 
+    /// **Back to the start**: the cursor a pass starts from is the score's
+    /// first beat, and a stopped playback is cued there.
+    fn rewind(&mut self, out: &mut Outcome) {
+        self.cursor = 0.0;
+        out.locate = Some(0.0);
+    }
+
+    /// **The loop switch**, turned: a pass in progress follows it, and the
+    /// chrome that shows it -- the toolbar's switch, the menu's check -- is
+    /// corrected.
+    fn set_looping(&mut self, on: bool, out: &mut Outcome) -> Vec<Correction> {
+        self.looping = on;
+        out.relooped = Some(self.pass());
+        self.chrome()
+    }
+
     /// **Save**: the score goes to its file, which the turn's outcome names
     /// for whoever drives the editor to write; a score with no file yet is
     /// asked for one.
@@ -718,6 +817,15 @@ impl ScoreEditor {
                 shown = Some(corrections);
             }
             menu::Pick::Save => (reason, shown) = self.save(out),
+            menu::Pick::Play => {
+                out.play = Some(self.pass());
+                shown = Some(Vec::new());
+            }
+            menu::Pick::Rewind => {
+                self.rewind(out);
+                shown = Some(Vec::new());
+            }
+            menu::Pick::Loop(on) => shown = Some(self.set_looping(on, out)),
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.entry = on,
             menu::Pick::Value(value) => self.value = value,
@@ -964,6 +1072,15 @@ impl ScoreEditor {
                 self.view = view;
                 return (None, self.corrections());
             }
+            tools::Tool::Play => {
+                out.play = Some(self.pass());
+                return (None, Vec::new());
+            }
+            tools::Tool::Rewind => {
+                self.rewind(out);
+                return (None, Vec::new());
+            }
+            tools::Tool::Loop(on) => return (None, self.set_looping(on, out)),
             tools::Tool::Act(action) => {
                 let reason = self.perform(&action, out);
                 return (reason, self.corrections());
@@ -1023,6 +1140,24 @@ impl Converse for ScoreEditor {
         }
         match message.tag.as_str() {
             "menu" => self.pick(message, args, out),
+            // the space bar and `L` are the window's own: what they ask of
+            // the playback is the pass, with the loop switch the host sends
+            "play" | "loop" => {
+                out.turn = Kind::Route;
+                let mut corrections = Vec::new();
+                if message.tag == "play" {
+                    out.play = Some(self.pass());
+                } else {
+                    let on = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
+                    corrections = self.set_looping(on, out);
+                }
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    None,
+                    corrections,
+                ));
+            }
             // the window's own save -- Ctrl+S -- is the menu's
             "save" => {
                 let (reason, shown) = self.save(out);
@@ -1086,6 +1221,8 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 ///   the name of its paper when it is a known one, which way up it is, and the
 ///   papers there are.
 /// - `mei` -- `{"mei"}`: the score as MEI.
+/// - `render` -- `{"sequence"}`: the score as the sequence it plays as, on the
+///   engraver's time, or `{"error"}`.
 ///
 /// A verb that edits (`act`) is the context's, since it leaves an entry. An
 /// unknown verb answers `{}`.
@@ -1236,6 +1373,10 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             .to_string()
         }
         "mei" => json!({"mei": editor.held().mei()}).to_string(),
+        "render" => match editor.rendered() {
+            Ok(sequence) => json!({"sequence": sequence}).to_string(),
+            Err(why) => json!({"error": why}).to_string(),
+        },
         _ => "{}".into(),
     }
 }
