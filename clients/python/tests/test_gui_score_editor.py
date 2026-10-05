@@ -57,7 +57,7 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     assert values[2] == "\ue1d5"
     assert tree["glyphs"]["E1D5"].startswith("M")
     assert len(tree["glyphs"]) > 19, "the tools' symbols, and the palettes'"
-    assert scroll["type"] == "scroll"
+    assert scroll["type"] == "plane"
     page = scroll["children"][0]
     assert page["type"] == "score"
     assert page["editable"] is True and page["entry"] is True

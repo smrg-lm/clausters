@@ -223,10 +223,14 @@ impl View {
 /// is configured with.
 ///
 /// A page view fixes the page: its size, its margins, the staff, and breaks
-/// the engraver works out wherever the writer wrote none (`auto` honours a
-/// written system or page break and fills in the rest -- measured against the
-/// engraver, not assumed). A continuous view asks for no break at all and a
-/// page fitted to what that leaves: one system, as long as the music.
+/// the engraver works out wherever the writer wrote none. That is the
+/// engraver's `smart` mode with its threshold at zero: `auto` lays the music
+/// out as if no break had been written (measured: a system break before the
+/// fifth of eight bars was drawn before the seventh), and `smart` honours a
+/// written break only on a system at least `breaksSmartSb` full, two thirds
+/// by default -- so at zero a written break always stands and the engraver
+/// fills in the rest. A continuous view asks for no break at all and a page
+/// fitted to what that leaves: one system, as long as the music.
 #[must_use]
 pub fn options(setup: &PageSetup, view: View) -> String {
     let [top, right, bottom, left] = setup.margins;
@@ -244,7 +248,8 @@ pub fn options(setup: &PageSetup, view: View) -> String {
     });
     let more = match view {
         View::Page => json!({
-            "breaks": "auto",
+            "breaks": "smart",
+            "breaksSmartSb": 0.0,
             "pageWidth": setup.width,
             "pageHeight": setup.height,
             "adjustPageHeight": false,
@@ -339,7 +344,8 @@ mod tests {
         assert_eq!(page["pageHeight"], 2970);
         assert_eq!(page["adjustPageHeight"], false);
         assert_eq!(page["scale"], 100, "paper is laid out at its own size");
-        assert_eq!(page["breaks"], "auto");
+        assert_eq!(page["breaks"], "smart");
+        assert_eq!(page["breaksSmartSb"], 0.0, "a written break always stands");
         let line: Value = serde_json::from_str(&options(&setup, View::Continuous)).unwrap();
         assert_eq!(line["breaks"], "none");
         assert_eq!(line["adjustPageWidth"], true);

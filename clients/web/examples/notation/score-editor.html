@@ -230,8 +230,12 @@ B c d e | f2 e d | c B A B | G4 |
         // The editor. The window is the application's, whole: the menu bar,
         // the toolbar, the palettes beside the page, the status line under it.
         // The session is made ambient first, so the editor plays on its engine
-        // without being told which, and `edit` opens the host it draws in.
+        // without being told which, and its host is opened wired to that
+        // engine: the page's cursor is drawn from the position of the
+        // transport the score plays on, which only a host that is a client of
+        // the engine can read.
         const session = (await Session.embed()).activate();
+        await session.gui();   // the host wired to this session's engine
 
         editor = await gui.edit(score, {
           title: "Score editor (a document, and its model)",

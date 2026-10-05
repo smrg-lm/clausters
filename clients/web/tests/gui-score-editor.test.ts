@@ -76,7 +76,7 @@ if (!existsSync(engraver)) {
         const glyphs = (tree as unknown as { glyphs: Record<string, string> }).glyphs;
         assert.ok(glyphs.E1D5.startsWith("M"));
         assert.ok(Object.keys(glyphs).length > 19, "the tools' symbols, and the palettes'");
-        assert.equal(scroll.type, "scroll");
+        assert.equal(scroll.type, "plane");
         const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
         assert.equal(page.type, "score");
         assert.equal(page.editable, true);

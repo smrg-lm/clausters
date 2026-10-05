@@ -215,6 +215,40 @@ mod tests {
         assert!(!note_ids(&score.display_list(1)).is_empty());
     }
 
+    /// **A system break the writer wrote stands, however short the system it
+    /// leaves.** Four bars fit one system of an A4, and a system break written
+    /// before the second leaves one bar on the first -- a quarter of the
+    /// width, far under what the engraver would call full.
+    #[test]
+    fn a_written_system_break_stands_on_paper() {
+        use clausters_core::notation::{
+            PageSetup, Sheet, View, layout_options, sheet_to_mei, voice_to_sheet,
+        };
+
+        let voice: Vec<Slot> = (0..16).map(|i| Slot::note(vec![60 + i % 8], 8)).collect();
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        let systems = |sheet: &Sheet| {
+            let mut score =
+                open(&sheet_to_mei(sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+            assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
+            let page = score.pages(0.0, false);
+            let tops: Vec<f64> = page.cursors.iter().map(|c| c.y0).collect();
+            (page.draw.systems.len(), tops, score.page_count())
+        };
+        let (count, tops, pages) = systems(&sheet);
+        assert_eq!((count, pages), (1, 1), "four bars fit one system");
+        assert!(tops.iter().all(|y| *y == tops[0]));
+
+        sheet.grid.breaks = vec![(1, "system".to_string())];
+        let (count, tops, pages) = systems(&sheet);
+        assert_eq!((count, pages), (2, 1));
+        assert!(tops[..4].iter().all(|y| *y == tops[0]), "the first bar");
+        assert!(
+            tops[4..].iter().all(|y| *y > tops[0]),
+            "the second bar starts the next system: {tops:?}"
+        );
+    }
+
     #[test]
     fn the_page_text_is_drawn_in_its_cells_and_survives_the_engraver() {
         use clausters_core::notation::{

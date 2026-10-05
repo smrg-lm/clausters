@@ -1749,7 +1749,9 @@ opened it.
   channel group is named in the sequence; each notation key's spelling
   (`X5.7`). *(Settled on the way: an accidental's press and drag are its
   note's, since the walk gives a note's parts its id; the hit index is a
-  uniform grid; the page view's `breaks` mode is `auto`; pages stack one under
+  uniform grid; the page view's `breaks` mode is `smart` with its threshold at zero
+  (first settled as `auto`, which the first look at the page showed ignores a
+  written break -- "Found by use"); pages stack one under
   another; the toolbar's icons are the engraver's SMuFL outlines.)* `N7` (what
   a foreign score's layout keeps) and `N9` (a score as a box of the
   multitrack) stay where they are; `N9`'s double click opens this
@@ -2631,3 +2633,45 @@ wrong.
   is set, and to set `midinote` when `pitches` is. It waits on the way back
   from the roll to the score ("From the roll to the score"), which is what
   reads a sequence edited as numbers.
+
+- ✅ **The score's page was in no window** *(found 2026-10-05, the user's
+  first look at `notation/score_editor`: "No se ve, ni puede crear, ni abrir
+  la partitura")*. The crate wrote the container the page sits in as
+  `"type": "scroll"`, a name the wire dropped when it took the model's
+  (`plane`). The host builds a type it does not know as nothing and a leaf
+  carries no children, so the page was never placed -- while every message
+  to its id was still answered by the editor, which is why the host's tests
+  (they deliver to the id) and both clients' (they read the tree) all
+  passed. Fixed by the name, and pinned where the two meet: the host's test
+  of the window it opens now refuses a tree with an unknown type in it and
+  asks that the page be found in the window.
+
+- ✅ **A written system break was laid out as if it were not there** *(the
+  same look)*. The page view asked the engraver for `breaks: auto`, on a note
+  saying it had been measured to honour a written break; it does not --
+  the example's break before the fifth of eight bars was drawn before the
+  seventh. `smart` honours one only on a system at least `breaksSmartSb`
+  full (two thirds by default: a break after one bar of four is ignored), so
+  the page view is `smart` with that threshold at zero, pinned against the
+  engraver in `clausters-notation`.
+
+- ⬜ **A written page break does not turn the page** *(the same day, measured
+  while fixing the entry above)*. The engraver's system cast-off reads `sb`
+  and has no visit for `pb`: under `auto` and `smart` a page break is neither
+  a new page nor a new system, and only `encoded` honours it -- the mode that
+  breaks nowhere else. So Measures, Break, Page writes a `pb` the page view
+  does not show. Either the engraver is taught it (a `VisitPb` beside
+  `VisitSb`, carried as a patch of the vendored build) or the break is
+  written as something the cast-off does read; undecided.
+
+- ✅ **The example's page had no play cursor** *(the same look: "Tampoco se
+  ve el cursor de reproducción")*. Two causes. The example opened the editor
+  on the ambient host, which stands alone: the cursor is the position of the
+  score's transport, and only a host that is a client of the server reads
+  one. The page had `session.gui()` and the script did not; closing `X5.9`
+  the pair was made alike by taking the call out of the page, the wrong way
+  round. Both have it now, as the notes editor's examples do, and the books
+  say which host draws a cursor. And the line itself ran from the title into
+  the next system: the room it takes past a system was 0.6 of the *system's*
+  height, a staff's stem room on one staff and three times it on a grand
+  staff; it is a measure of the staff now (`notation::cursors::stem_room`).

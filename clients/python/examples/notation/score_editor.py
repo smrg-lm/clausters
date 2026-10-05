@@ -181,10 +181,14 @@ score.apply({"op": "set_marks", "id": top[8],
 # ## The editor
 # The window is the application's, whole: the menu bar, the toolbar, the
 # palettes beside the page, the status line under it. The session is made
-# ambient first, so the editor plays on its server without being told which.
+# ambient first, so the editor plays on its server without being told which,
+# and its host is opened wired to that server: the page's cursor is drawn from
+# the position of the transport the score plays on, which only a host that is
+# a client of the server can read.
 
 # %%
 session = Session.live().activate()
+session.gui()          # the host wired to this session's server
 
 editor = edit(score, title="Score editor (a document, and its model)",
               width=1100, height=800)

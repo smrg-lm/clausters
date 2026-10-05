@@ -245,7 +245,10 @@ starts; with several notes selected the loop repeats the stretch they cover,
 and with none the whole score. What plays is the score rendered into a
 sequence, at the engraver's own time of 120 quarters a minute, which is the
 time the page's cursor is drawn over; an edit made while it plays — and an undo
-— is heard on from where the position is.
+— is heard on from where the position is. The cursor is the transport's
+position, which the host reads from the server it is a client of: the session's
+own host, opened with `session.gui()` before the editor, is one; a host that
+stands alone still edits the score and draws no cursor.
 
 ### The score's file
 

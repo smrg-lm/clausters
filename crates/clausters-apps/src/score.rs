@@ -181,7 +181,7 @@ pub fn window(w: Window<'_>) -> Value {
     // since a continuous view is as long as the music and a page zoomed in is
     // wider than the window.
     let mut scroll = json!({
-        "type": "scroll",
+        "type": "plane",
         "axis": "both",
         // the wheel turns the pages, and Ctrl with it zooms
         "zoom": "ctrl",

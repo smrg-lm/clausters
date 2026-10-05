@@ -303,6 +303,17 @@ mod tests {
         Arc::new(Mutex::new(opened))
     }
 
+    /// The type names in `widget`'s tree that this host builds as nothing.
+    fn unknown(widget: &Widget) -> Vec<String> {
+        let own = match &widget.kind {
+            WidgetKind::Unknown(name) => Some(name.clone()),
+            _ => None,
+        };
+        own.into_iter()
+            .chain(widget.children.iter().flat_map(unknown))
+            .collect()
+    }
+
     fn items(held: &clausters_apps::score::Shared) -> usize {
         held.lock().unwrap().sheet().unwrap().staves[0].voices[0]
             .items
@@ -322,6 +333,14 @@ mod tests {
             "the window is defined"
         );
         let page = host.own_widget(0, SCORE, "page").expect("the page");
+        // **Every node the crate wrote is a widget this host builds.** A type
+        // name the host does not know builds as nothing and takes its
+        // children with it -- which is how the page once stood in a window
+        // that never drew it, while every message to its id was still
+        // answered.
+        let window = &host.window_defs[&def_id];
+        assert_eq!(unknown(window), Vec::<String>::new());
+        assert!(window.find(page).is_some(), "the page is in the window");
 
         // a press on empty staff writes a quarter, on the holder's own score
         let insert = host.event_message(

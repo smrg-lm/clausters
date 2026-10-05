@@ -125,7 +125,7 @@ fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     let mut editor = ScoreEditor::new(shared(), 1);
     let window = editor.window(IDS, Chrome::default());
     let scroll = &window["children"][0];
-    assert_eq!(scroll["type"], "scroll");
+    assert_eq!(scroll["type"], "plane");
     assert_eq!(scroll["id"], 11);
     let page = &scroll["children"][0];
     assert_eq!(page["type"], "score");
@@ -377,7 +377,7 @@ fn the_window_lays_the_score_out_on_its_paper_and_the_view_is_the_windows() {
     let window = editor.window(IDS, Chrome::default());
     // a page view fixes the page, at the default nobody chose: A4
     assert_eq!(laid()["pageWidth"], 2100);
-    assert_eq!(laid()["breaks"], "auto");
+    assert_eq!(laid()["breaks"], "smart");
     let scroll = &window["children"][0];
     assert_eq!(
         scroll["axis"], "both",
@@ -610,7 +610,7 @@ fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
         "the toolbar, the scroll, the status line"
     );
     assert_eq!(children[0]["flow"], "row");
-    assert_eq!(children[1]["type"], "scroll");
+    assert_eq!(children[1]["type"], "plane");
     // the door numbers them by the names it hands out
     let names: Value =
         serde_json::from_str(&call_json(&mut editor, r#"{"verb": "tools"}"#)).unwrap();
@@ -945,7 +945,7 @@ fn the_palettes_stand_beside_the_page_and_an_entry_is_a_verb_over_the_selection(
         (Some("row"), Some(true))
     );
     assert!(work["children"][0]["children"][0]["title"].is_string());
-    assert_eq!(work["children"][1]["type"], "scroll");
+    assert_eq!(work["children"][1]["type"], "plane");
     // the door names the entries for a caller to number
     let names: Value =
         serde_json::from_str(&call_json(&mut editor, r#"{"verb": "palettes"}"#)).unwrap();

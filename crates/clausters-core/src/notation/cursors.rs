@@ -46,6 +46,7 @@ pub struct Cursor {
 pub fn cursor_track(dl: &DisplayList, timemap: &[TimemapEntry]) -> Vec<Cursor> {
     let positions = id_positions(&dl.prims);
     let systems = staff_systems(&dl.prims);
+    let pad = stem_room(&dl.prims);
     let mut track: Vec<Cursor> = timemap
         .iter()
         .filter_map(|entry| {
@@ -56,7 +57,7 @@ pub fn cursor_track(dl: &DisplayList, timemap: &[TimemapEntry]) -> Vec<Cursor> {
                 .iter()
                 .filter_map(|id| positions.get(id.as_str()).copied())
                 .min_by(|a, b| a.0.total_cmp(&b.0))?;
-            let (y0, y1) = system_bounds(&systems, lead.1);
+            let (y0, y1) = system_bounds(&systems, lead.1, pad);
             Some(Cursor {
                 t: r(t, 1),
                 x: r(lead.0, 1),
@@ -106,13 +107,7 @@ pub(super) fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     if ys.is_empty() {
         return Vec::new();
     }
-    // The staff-line spacing is the smallest gap there is: every other gap on
-    // the page is between staves or between systems.
-    let spacing = ys
-        .windows(2)
-        .map(|w| w[1] - w[0])
-        .fold(f64::INFINITY, f64::min)
-        .max(1.0);
+    let spacing = line_spacing(&ys);
 
     let mut staves: Vec<(f64, f64)> = Vec::new();
     let (mut top, mut prev) = (ys[0], ys[0]);
@@ -135,6 +130,29 @@ pub(super) fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     systems
 }
 
+/// The staff-line spacing of a page whose staff lines are at `ys`: the smallest
+/// gap there is, since every other gap on the page is between staves or between
+/// systems.
+fn line_spacing(ys: &[f64]) -> f64 {
+    ys.windows(2)
+        .map(|w| w[1] - w[0])
+        .fold(f64::INFINITY, f64::min)
+        .max(1.0)
+}
+
+/// **The room a cursor takes past its system, above and below**: what a stem
+/// reaches out of a staff, so a measure of the staff -- 0.6 of a five-line
+/// staff's height and a little. It was a share of the *system's* height, which
+/// is the same number on a single staff and three times it on a grand staff,
+/// where the line ran from the title down into the next system.
+fn stem_room(prims: &[Prim]) -> f64 {
+    let ys = staff_line_ys(prims);
+    if ys.len() < 2 {
+        return 400.0;
+    }
+    line_spacing(&ys) * 4.0 * 0.6 + 100.0
+}
+
 /// Whether a vertical line runs the whole way from `top` to `bottom` -- the
 /// barline of a braced system, and the only thing on the page that says two
 /// staves are read together.
@@ -151,17 +169,14 @@ fn barred_through(prims: &[Prim], top: f64, bottom: f64, tol: f64) -> bool {
 }
 
 /// The `(y0, y1)` cursor span for a note at page-y `y`: its system's staff
-/// extent, padded for the stems that reach above and below it.
-fn system_bounds(systems: &[(f64, f64)], y: f64) -> (f64, f64) {
+/// extent, padded by `pad` for the stems that reach above and below it.
+fn system_bounds(systems: &[(f64, f64)], y: f64, pad: f64) -> (f64, f64) {
     let nearest = systems
         .iter()
         .min_by(|a, b| distance(y, **a).total_cmp(&distance(y, **b)));
     match nearest {
-        None => (y - 400.0, y + 400.0),
-        Some(&(top, bot)) => {
-            let pad = (bot - top) * 0.6 + 100.0;
-            (top - pad, bot + pad)
-        }
+        None => (y - pad, y + pad),
+        Some(&(top, bot)) => (top - pad, bot + pad),
     }
 }
 
@@ -229,6 +244,28 @@ mod tests {
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         // The lower staff runs 3000..3360; pad = 360 * 0.6 + 100 = 316.
         assert_eq!((track[0].y0, track[0].y1), (2684.0, 3676.0));
+    }
+
+    /// **A grand staff's cursor reaches no further out than a single
+    /// staff's.** Two staves barred together are one system, 1360 high, and
+    /// the room past it is still a staff's: 316, not a share of the system.
+    #[test]
+    fn the_room_past_a_braced_system_is_a_staffs() {
+        let mut prims = staff(1000.0);
+        prims.extend(staff(2000.0));
+        // the barline through the brace: what makes the two one system
+        prims.push(Prim::Line {
+            pts: vec![[500.0, 1000.0], [500.0, 2360.0]],
+            w: 5.0,
+            id: None,
+        });
+        prims.push(glyph("n1", 400.0, 2090.0));
+        let dl = DisplayList {
+            prims,
+            ..Default::default()
+        };
+        let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
+        assert_eq!((track[0].y0, track[0].y1), (684.0, 2676.0));
     }
 
     #[test]
