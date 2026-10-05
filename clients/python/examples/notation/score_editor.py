@@ -1,80 +1,82 @@
 #!/usr/bin/env python3
-"""Editing a score **by hand**: the score editor, over a document somebody
-else typed.
+"""The **score editor**: a document somebody else typed, operated on, edited
+by hand, played, saved and rendered.
 
-The third of the notation examples, and the one that closes the loop.
-``score.py`` plays an engraved phrase and drags a note; ``compose.py`` builds a
-score by operating on it; this one opens a document *somebody else typed* in
-the **score editor** -- the application the shared crate writes once, the same
-window a page opens and a standalone host opens -- and edits it the way a score
-editor does: with the mouse on the page, and one of the editor's verbs behind
-every button.
+The notation example, whole. It opens a document in the score editor -- the
+application the shared crate writes once, the same window a page opens and a
+standalone host opens -- and goes through everything a score is here: a model
+the script operates on, a page a hand edits, a sound the server plays, a file,
+and a sequence a roll can take.
 
-What it shows, roughly in the order it does it:
+What it shows, in the order it does it:
 
 * **A document becomes a model.** The phrase below is ABC. Read into the
   model (`clausters.gui.notation.Score.sheet`), everything the model can do
   applies to it -- and the editor writes the page from that model when it
   opens, so a press on a note names an item of it at once.
 * **What was typed once can be operated on.** The bass staff under the typed
-  line is *made here*, by transposing a copy down two octaves, re-clefing it and
-  stacking the two; the title, a double bar, a system break, a slur, a
-  crescendo and two dynamics are written into the model the same way. These are the script's
-  edits, made through the score before the window opens.
+  line is *made here*, with the model's operators: a copy transposed down two
+  octaves, re-clefed and stacked under the line. The title, a double bar, a
+  system break, a slur, a crescendo and two dynamics are written into the
+  model the same way. These are the script's edits, made through the score
+  before the window opens; the same operators are the window's Transform
+  menu.
 * **`edit(score)` opens the editor over the very score the script holds.**
   It returns the editor, as `edit` does for every structure; the edited data is
   read on the score passed in, which *is* the edited one.
+* **The window is the application's.** Nothing in it is this script's:
+  - the **menu bar** holds every action the editor has -- the file, the
+    paper, the layout, the value a note is written with, the marks, the
+    measures (a meter, a barline, a break), the transformations -- and an
+    entry that ends in three dots opens a dialog over the window (the page's
+    text, its margins, a transformation's parameter, a file's path);
+  - the **toolbar** holds what a hand reaches for while it writes: the value
+    the next note takes, its dot, whether it is a rest and its accidental (the
+    input state, which is also `editor.value`, `editor.dotted`, `editor.rest`
+    and `editor.next_accidental`), the articulations, a tie and a triplet for
+    what is selected, the voice, the layout, and at the far edge the
+    transport. Each tool is drawn with the engraver's own symbol;
+  - the **palettes**, beside the page, are what can be written: a kind of
+    element to a folding group -- accidentals, articulations, ornaments,
+    lines, dynamics, measures -- each entry a verb over what is selected, and
+    what it is said in a sentence when the pointer rests on it.
 * **A gesture names a place; the editor names the note.** A click selects a
   note and the status line under the page says what it is. A drag moves it
   along the staff -- only a note drags; a slur or a time signature is selected
-  and never displaced. A press on empty staff writes a note of the editor's
-  `value` there (an eighth, below) and selects it.
+  and never displaced. A press on empty staff writes what the toolbar says:
+  a note or a rest of the value in hand (an eighth, below), and selects it.
 * **Several notes are selected at once.** Ctrl+click adds a note to the
   selection or takes it out; Shift+click extends the selection to the note
-  clicked, in time and across the staves between. With `entry` switched off
-  (the ``write`` button), a press on a staff selects the measure it fell in
-  instead of writing a note.
-* **The menu bar holds every action the editor has**, grouped as a score
-  editor's are: the paper, the layout, the value a note is written with, the
-  marks, the measures (a meter, a barline, a break), the transformations.
-  Each entry is one of the editor's verbs, so a pick and a method call are one
-  path. An entry that ends in three dots opens a dialog over the window --
-  the page's text, its margins, a transformation's parameter -- and writes
-  what it holds on OK, as one step of the history.
-* **The palettes, beside the page, are what can be written**: a kind of
-  element to a folding group -- accidentals, articulations, ornaments, lines,
-  dynamics, measures -- each entry a verb over what is selected, and what it
-  is said in a sentence when the pointer rests on it.
-* **The toolbar holds what a hand reaches for while it writes**: the value
-  the next note takes, its dot, whether it is a rest and its accidental (the
-  input state, which is also `editor.value`, `editor.dotted`, `editor.rest`
-  and `editor.next_accidental`); the articulations, a tie and a triplet for
-  what is selected; the voice of the selection; and the layout. Each tool is
-  drawn with the engraver's own symbol, in the font the page is engraved in.
-* **The verbs act on the selection.** Every button calls one method of the
-  editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
-  `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is
-  one call into the crate, which reads the score as it stands (an articulation
-  is toggled against the ones the note has) and records one entry. A slur runs
-  from the first selected note to the last, so it is made by selecting its two
-  ends.
-* **A transformation takes the measures the selection covers.** `transform`
-  hands the model's operators -- here an octave up and a retrograde -- the
-  span of what is selected, or everything with nothing selected.
-* **The paper is the score's, and the way of looking at it is the
-  window's.** The score opens as pages of A4, fixed whatever the window's
-  size: drag on blank paper to pan, turn the wheel with Ctrl to zoom. `paper`
-  lays it out on the next paper (`set_page`, an edit like any other, written
-  into the MEI); `layout` switches to one continuous system and back, which
-  edits nothing.
+  clicked, in time and across the staves between. With entry switched off
+  (Notes, Write notes), a press on a staff selects the measure it fell in.
+* **A pick and a method call are one path.** Every entry of the menu, every
+  tool and every palette entry is one of the editor's verbs, and each verb is
+  a method: the fermata on the last note is put there by this script
+  (`select`, `ornament`), as the Ornaments palette would.
+* **The score plays on the server, and the page's cursor follows it.** The
+  space bar, the toolbar's transport and the Play menu play it from where the
+  selection starts -- several notes selected are the stretch a loop repeats
+  -- on a transport of its own (`editor.play`, `editor.stop`). An edit made
+  while it plays is heard on from where the position is.
+* **The paper is the score's, and the way of looking at it is the window's.**
+  The score opens as pages of A4, fixed whatever the window's size: drag on
+  blank paper to pan, turn the wheel with Ctrl to zoom. File, Paper lays it
+  out on another (an edit like any other, written into the MEI); View switches
+  to one continuous system and back, which edits nothing.
 * **The page has text of its own.** The title and its subtitle, the composer,
   a copyright line and a footnote are fields of the score, each written in a
-  cell of the page's head or foot -- where the printed page puts it, until
-  `set_text` moves it. A click on one says which field it is on the status
-  line.
+  cell of the page's head or foot. A click on one says which field it is on
+  the status line; File, Page text edits them all.
+* **A score is saved as itself.** The script saves it once (`editor.save`),
+  so the file is the score's and Ctrl+S, or File, Save, writes it again
+  without asking; File, Open reads another document in its place, as one step
+  of the history.
+* **A score is rendered into a sequence, one way.** `score.render_events()`
+  is what plays, and `roll()` opens it in the notes editor: the notes, a
+  channel to a voice, and the crescendo as each channel's automation. File,
+  Export writes the same sequence as a MIDI file or a clip.
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
-  editor's entries and the script's alike, and so do the undo and redo
-  buttons.
+  editor's entries and the script's alike.
 
 The engraver is **libverovio**, which ships inside the installed package. In a
 source checkout, build and stage it once (``third_party/BUILD-VEROVIO.md``)::
@@ -91,10 +93,9 @@ Then, with the client importable::
 to it. **Drag** a note up or down the staff to move it (which is not
 transposition: it takes the key signature's alteration for the letter it lands
 on). **Press on empty staff** -- between two notes, or past the last one, on
-either staff -- to write an eighth there; with **write** switched off the same
-press selects the measure. The buttons act on the selection; **play** plays
-the score as it stands. Close the window to stop. Needs an audio device, a display and a
-GPU.
+either staff -- to write an eighth there. The **space bar** plays and stops.
+Close the window to stop. Needs an audio device, a display and a GPU. The file
+it saves goes to ``clients/python/examples/out/``.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
 step through it with Shift+Enter and the window stays up between cells, or run
@@ -102,10 +103,11 @@ it as a plain script.
 """
 
 # %%
+import os
 import sys
 
-from clausters import Session, TempoMap
-from clausters.gui import button, edit, notation, panel
+from clausters import Session
+from clausters.gui import edit, notation
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter
@@ -121,8 +123,9 @@ G A B c | d2 c B | A G F G | E4 |
 B c d e | f2 e d | c B A B | G4 |
 """
 
-# Two beats per second, the quarter = 120 the page is timed at.
-TEMPO = 2.0
+# Where the score is saved: the examples' own directory for what a run leaves.
+SAVED = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "out", "eight_bars.mei"))
 
 # %% [markdown]
 # ## Open it, and read it
@@ -140,7 +143,8 @@ print(f"read {sum(len(v['items']) for s in typed['staves'] for v in s['voices'])
 # verovio's ABC importer writes one staff whatever the source says, so the
 # grand staff below is not in the document: it is the model's. A copy of the
 # line goes down two octaves, takes the bass clef, and `stack` puts the two on
-# one system -- a brace and one barline through both.
+# one system -- a brace and one barline through both. `transpose` and `stack`
+# are two of the model's operators; the window's Transform menu holds them all.
 
 # %%
 lower = notation.transpose(typed, -24)
@@ -175,142 +179,57 @@ score.apply({"op": "set_marks", "id": top[8],
 
 # %% [markdown]
 # ## The editor
-# The window is the editor's: the page, in a scroll, over a status line. The
-# rows of buttons are this script's own widgets (`extra`), each calling one of
-# the editor's verbs.
+# The window is the application's, whole: the menu bar, the toolbar, the
+# palettes beside the page, the status line under it. The session is made
+# ambient first, so the editor plays on its server without being told which.
 
 # %%
-session = Session.live()
-server = session.server
-
-buttons = [
-    panel(button(name="play", label="play"),
-          button(name="stop", label="stop"),
-          button(name="up", label="up"),
-          button(name="down", label="down"),
-          button(name="longer", label="longer"),
-          button(name="shorter", label="shorter"),
-          layout="row", h=34.0),
-    panel(button(name="stacc", label="staccato"),
-          button(name="accent", label="accent"),
-          button(name="tenuto", label="tenuto"),
-          button(name="trill", label="trill"),
-          button(name="mf", label="mf"),
-          button(name="ff", label="ff"),
-          button(name="plain", label="no marks"),
-          layout="row", h=34.0),
-    panel(button(name="slur", label="slur"),
-          button(name="voice", label="other voice"),
-          button(name="tie", label="tie"),
-          button(name="silence", label="silence"),
-          button(name="delete", label="delete"),
-          button(name="undo", label="undo"),
-          button(name="redo", label="redo"),
-          layout="row", h=34.0),
-    panel(button(name="write", label="write: on"),
-          button(name="octave", label="octave up"),
-          button(name="retro", label="retrograde"),
-          button(name="layout", label="layout: page"),
-          button(name="paper", label="paper: A4"),
-          layout="row", h=34.0),
-]
+session = Session.live().activate()
 
 editor = edit(score, title="Score editor (a document, and its model)",
-              width=960, height=760, extra=buttons)
+              width=1100, height=800)
 editor.value = (1, 8)          # a press on empty staff writes an eighth
-win = editor.window
 
 # %% [markdown]
-# ## Writing, or selecting a measure
-# A press on empty staff means one of two things, and `entry` says which:
-# write a note there, or select the measure the press fell in.
+# ## A pick and a method call are one path
+# The Ornaments palette puts a fermata on what is selected. So does this: the
+# last note of the line is selected and given one, as one step of the history
+# -- Ctrl+Z over the window takes it back.
 
 # %%
-def toggle_entry() -> None:
-    editor.entry = not editor.entry
-    win["write"].set(label=f"write: {'on' if editor.entry else 'off'}")
-
+editor.select([f"n{top[-1]}"])
+editor.ornament("fermata")
+editor.select([])
 
 # %% [markdown]
-# ## The paper, and the way of looking at it
-# Two switches that look alike and are not: the **layout** is this window's
-# (pages, or one system that never breaks) and edits nothing; the **paper** is
-# the score's, so changing it is an edit -- it is undone with the rest, and it
-# is written into the MEI.
+# ## The score's file
+# Saved once, the file is the score's: Ctrl+S and File, Save write it again
+# without asking. It is the score itself, as MEI -- notes, marks, the slur and
+# the crescendo, the page and its text -- and reading it back is the same page.
 
 # %%
-def toggle_layout() -> None:
-    editor.layout = "continuous" if editor.layout == "page" else "page"
-    win["layout"].set(label=f"layout: {editor.layout}")
+os.makedirs(os.path.dirname(SAVED), exist_ok=True)
+print(f"saved to {editor.save(SAVED)}")
 
-
-def next_paper() -> None:
-    """The next paper of the ones there are, upright."""
-    setup = editor.page
-    papers = setup["papers"]
-    at = papers.index(setup["paper"]) if setup["paper"] in papers else -1
-    paper = papers[(at + 1) % len(papers)]
-    if editor.set_page(paper, landscape=False):
-        win["paper"].set(label=f"paper: {paper}")
-
-
-# %% [markdown]
-# ## Playing what is written
-# The timeline comes out of the **model**, not out of the engraving:
-# `to_timeline` reads what the symbols mean, so a staccato added a moment ago
-# is honoured and a dynamic governs the notes after it.
 
 # %%
-playing: dict = {"timeline": None}
-
-
-def play() -> None:
-    """The score as it stands right now, from the top."""
-    stop()
-    timeline = notation.to_timeline(score.sheet())
-    timeline.map = TempoMap(TEMPO)
-    playing["timeline"] = timeline.play(at=0.0, destination=server)
-
-
-def stop() -> None:
-    if playing["timeline"] is not None:
-        playing["timeline"].stop()
-        playing["timeline"] = None
-
-
-# %% [markdown]
-# ## Wire it up
-
-# %%
-win["play"].on_click(play)
-win["stop"].on_click(stop)
-win["up"].on_click(lambda: editor.move(1))
-win["down"].on_click(lambda: editor.move(-1))
-win["longer"].on_click(lambda: editor.scale(2, 1))
-win["shorter"].on_click(lambda: editor.scale(1, 2))
-win["stacc"].on_click(lambda: editor.articulation("stacc"))
-win["accent"].on_click(lambda: editor.articulation("acc"))
-win["tenuto"].on_click(lambda: editor.articulation("ten"))
-win["trill"].on_click(lambda: editor.ornament("trill"))
-win["mf"].on_click(lambda: editor.dynamic("mf"))
-win["ff"].on_click(lambda: editor.dynamic("ff"))
-win["plain"].on_click(editor.clear_marks)
-win["slur"].on_click(lambda: editor.spanner("slur"))
-win["voice"].on_click(editor.voice)
-win["tie"].on_click(editor.tie)
-win["silence"].on_click(editor.silence)
-win["delete"].on_click(editor.delete)
-win["undo"].on_click(editor.undo)
-win["redo"].on_click(editor.redo)
-win["write"].on_click(toggle_entry)
-win["octave"].on_click(lambda: editor.transform("transpose", semitones=12))
-win["retro"].on_click(lambda: editor.transform("retrograde"))
-win["layout"].on_click(toggle_layout)
-win["paper"].on_click(next_paper)
 editor.on_closed(lambda: print("window closed"))
 print("click a note to select it (Ctrl adds, Shift extends), drag one up or "
-      "down the staff, press empty staff to write an eighth; the buttons act on "
-      "the selection")
+      "down the staff, press empty staff to write an eighth; the space bar "
+      "plays, and the menus, the toolbar and the palettes act on the selection")
+
+
+# %% [markdown]
+# ## The score as a roll
+# `render_events` renders the score into a sequence, one way: the notes, each
+# on its voice's channel, and the crescendo as the automation of both staves'
+# channels. It is what the space bar plays, and `roll()` opens it in the notes
+# editor -- where what is done to it stays in that sequence.
+
+# %%
+def roll():
+    """The score as it stands, rendered and opened as a roll."""
+    return edit(score.render_events(), title="The score, rendered")
 
 
 # %%
@@ -325,7 +244,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run()
     finally:
-        stop()
         session.close()
 else:
-    print("editor up - run() to hold the window, session.close() to end")
+    print("editor up - run() to hold the window, roll() to see the score as a "
+          "roll, session.close() to end")

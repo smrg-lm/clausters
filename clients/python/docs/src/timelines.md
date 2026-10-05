@@ -405,7 +405,8 @@ signature already implies them, and not twice in a bar. A natural is a *sign*
 where the key alters that step, and `notation.pitch(..., forced=True)`-style
 courtesy accidentals are what the pitch's own `forced` flag is for.
 
-`examples/notation/compose.py` builds a whole score this way and plays it.
+`examples/notation/score_editor.py` operates on a document this way before it
+opens it in the score editor.
 
 ### Opening a score that was only a document
 
@@ -493,7 +494,7 @@ score.apply({"op": "set_marks", "id": item, "marks": notation.marks(...)})
 It comes from the core because the answer is the *emitter's*: a client reading
 the ids itself would disagree the first time a split was spelled differently.
 `examples/notation/score_editor.py` is the whole of this — a document opened,
-edited by hand through the model's verbs, and played back from it.
+edited by hand through the editor's verbs, played, saved and rendered.
 
 ### Hearing what the page says
 

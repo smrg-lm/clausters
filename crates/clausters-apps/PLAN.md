@@ -978,7 +978,18 @@ opened it.
 - ⬜ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). *(Planned 2026-10-05
   with the user, after a by-eye pass over `notation/score_editor`; the user's
-  observations from that pass are the requirements below.)* The notation model
+  observations from that pass are the requirements below.)* ***Built
+  2026-10-05, every step `X5.0` to `X5.9`, and not closed**: nothing of it
+  was looked at or listened to, and it closes with the user's eye and ear
+  pass over `notation/score_editor` (the user: "cuando termines reviso los
+  resultados y debugueamos"). What that pass is over, and what stays open
+  after it, is written under "Found by use" and in the steps' own notes: the
+  sizes set by reasoning (the icons, the dialogs' fields, the palettes'
+  column); the ○ palette entries, each the model growing; a note written
+  into the second voice; a text of the page edited where it is drawn; a
+  channel group edited as one; an edit to a sounding pitch respelling the
+  written one; New and Close in the File menu; the standalone host's export;
+  and the two loop switches told apart.* The notation model
   and what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
   which element admits which edit, `N9` a score as a box of the multitrack);
@@ -1712,13 +1723,26 @@ opened it.
       nothing**: it links no MIDI file writer, and says so; the writer is the
       clients' crate (`clausters-midi`), and giving the host the same one is
       what closing that takes.)*
-  - ⬜ **X5.9 - The books and the example**, both clients. *(The user,
+  - ✅ **X5.9 - The books and the example**, both clients. *(The user,
     2026-10-05: the editing examples are gathered into one.)* `notation/
     score.py` (a drag and an undo), `notation/score_editor.py` (every verb)
     and `notation/compose.py` (the operators, now the Transform menu) become
     **one example** that opens the application, in both clients; the
     others go with the script-side editor they assembled. `score_from_data.py`
-    renders a timeline into a score rather than editing one, and stays.
+    renders a timeline into a score rather than editing one, and stays. *(Done
+    2026-10-05. `notation/score_editor.py` and `notation/score-editor.html`
+    are the one example: a document opened and read, operated on with the
+    model's operators, opened in the application, a verb called on it from
+    the script, the score saved, and its render opened as a roll. The script's
+    own rows of buttons are gone *(the user: "quitale los botones del chrome
+    viejo que quedaron abajo de todo y no se usan")* -- the window is the
+    application's whole. `notation/score.py` and `notation/compose.py`, with
+    their pages, went with the script-side editor and the operator walk they
+    were. The pair audits call for call. Both books' chapter on composition
+    gained a section of its own for the score editor -- the page, the window,
+    the verbs, the paper and the page's text, playing, the file, the render
+    -- where the steps before this one had each added a sentence to one
+    paragraph.)*
 
   **Open, each decided at its step:** whether a spanner's end can also be
   dragged onto another note, beside re-choosing it from a selection; how a

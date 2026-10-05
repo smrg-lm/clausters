@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Engraving **sequencing data** as a score, and hearing the score back.
 
-The companion to ``score.py``, which types a phrase by hand. Here the score
-is not typed at all -- it is generated from the client's own data. A `Timeline`
+The companion to ``score_editor.py``, which opens a typed document in the
+score editor. Here the score is not typed at all -- it is generated from the client's own data. A `Timeline`
 of `Event`s (a chord progression under a melody) is turned into a score by
 `clausters.gui.notation.sheet_from_timeline`, engraved into the `score` display list,
 and shown in the window: chords stacked on the beat, the melody above them,
@@ -31,10 +31,10 @@ the D flat near the end (a printed accidental, and not the C sharp a bare MIDI
 number would have been spelled as), and the dynamics under the staff.
 
 The page here is a **read-only view** -- the default: a drag on a note does
-nothing, because this script does not apply edits. ``score.py`` is the other
-half, an *editor* that passes ``editable=True`` and handles the ``"transpose"``
-round trip. Editing is opt-in precisely so a plain plot like this one never
-offers a gesture it cannot fulfil.
+nothing, because this script does not apply edits. ``score_editor.py`` is the
+other half: the score editor, which is what edits a page. Editing is opt-in
+precisely so a plain plot like this one never offers a gesture it cannot
+fulfil.
 
 The engraver ships inside the package (``third_party/BUILD-VEROVIO.md``); in a
 source checkout build and stage it once::

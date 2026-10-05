@@ -452,13 +452,6 @@ in the middle of an example.
 | python | `ShmClient` | the two numbers the script prints for the finished take -- how many bytes of samples the region holds and how many its summary does -- are read off the mapped segment. A page maps nothing, which is the difference the whole pair is about |
 | python | `region_path` | the other half of the row above |
 
-### `notation/score`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `pause` | the script hands the button the bound method (`on_click(transport.pause)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
-| web | `stop` | the other half of the row above |
-
 ### `faust/boxes_library`
 
 | Only in | Call | Why |
@@ -467,12 +460,6 @@ in the middle of an example.
 | web | `boot` | the other half of the row above |
 | web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
-
-### `notation/score_editor`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `stop` | the script hands the stop button the bound method (`on_click(transport.stop)`); a JavaScript method reference loses its receiver, so the page wraps the same call in an arrow |
 
 ### `views/editor`
 

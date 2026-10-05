@@ -356,7 +356,7 @@ static cursor where the music stopped. `update` is the one thing a script owes
 it: a pass ends when its last item *starts*, so the transport keeps sweeping
 that last note's tail and parks only at the score's extent.
 
-The example is `examples/notation/score.html`.
+The example is `examples/notation/score-from-data.html`.
 
 ### The score behind the page
 
@@ -545,9 +545,8 @@ lets a gesture anywhere on a note reach the note. It comes from the core because
 the answer is the *emitter's*: a client reading the ids itself would disagree the
 first time a split was spelled differently.
 
-`examples/notation/compose.html` builds a whole score this way and plays it, and
-`examples/notation/score-editor.html` opens a document, edits it by hand through
-the model's verbs, and plays it back from the model.
+`examples/notation/score-editor.html` operates on a document this way, opens it
+in the score editor, edits it through the editor's verbs, and plays it.
 
 ## Bindings, and the page that runs without a script
 

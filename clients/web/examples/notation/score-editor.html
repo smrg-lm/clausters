@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: editing a score by hand</title>
+    <title>clausters: the score editor</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -16,21 +16,22 @@
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      #stage { align-self: stretch; height: min(80vh, 760px); }
-      #stage canvas { display: block; width: 100%; height: 100%; }
+      #stage { align-self: stretch; height: min(86vh, 800px); }
+      #roll { align-self: stretch; height: min(60vh, 520px); }
+      #stage canvas, #roll canvas { display: block; width: 100%; height: 100%; }
     </style>
   </head>
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>score_editor.py</code>: <b>editing a score by hand</b> -- the score
-editor, over a document somebody else typed.
+<code>score_editor.py</code>: <b>the score editor</b> -- a document somebody
+else typed, operated on, edited by hand, played, saved and rendered.
 
-<code>score.html</code> plays an engraved phrase and drags a note;
-<code>compose.html</code> builds a score by operating on it; this one opens a
-document <i>somebody else typed</i> in the <b>score editor</b> -- the
+The notation example, whole. It opens a document in the score editor -- the
 application the shared crate writes once, the same window a script opens and a
-standalone host opens -- and edits it the way a score editor does.
+standalone host opens -- and goes through everything a score is here: a model
+the page operates on, a page a hand edits, a sound the engine plays, a file,
+and a sequence a roll can take.
 
 <b>A document becomes a model.</b> The phrase below is ABC. Read into the model
 (<code>score.sheet()</code>), everything the model can do applies to it -- and
@@ -38,110 +39,120 @@ the editor writes the page from that model when it opens, so a press on a note
 names an item of it at once.
 
 <b>What was typed once can be operated on.</b> The bass staff under the typed
-line is <i>made here</i>, by transposing a copy down two octaves, re-clefing it
-and stacking the two; the title, a double bar, a system break, a slur, a
-crescendo and two dynamics are written into the model the same way. These are
-the page's edits, made through the score before the window opens.
+line is <i>made here</i>, with the model's operators: a copy transposed down
+two octaves, re-clefed and stacked under the line. The title, a double bar, a
+system break, a slur, a crescendo and two dynamics are written into the model
+the same way. These are the page's edits, made through the score before the
+window opens; the same operators are the window's Transform menu.
 
 <b><code>edit(score)</code> opens the editor over the very score the page
-holds.</b> It answers the editor, as <code>edit</code> does for every structure;
-the edited data is read on the score passed in, which <i>is</i> the edited one.
+holds.</b> It returns the editor, as <code>edit</code> does for every
+structure; the edited data is read on the score passed in, which <i>is</i> the
+edited one.
+
+<b>The window is the application's.</b> Nothing in it is this page's. The
+<b>menu bar</b> holds every action the editor has -- the file, the paper, the
+layout, the value a note is written with, the marks, the measures (a meter, a
+barline, a break), the transformations -- and an entry that ends in three dots
+opens a dialog over the window (the page's text, its margins, a
+transformation's parameter, a file's path). The <b>toolbar</b> holds what a
+hand reaches for while it writes: the value the next note takes, its dot,
+whether it is a rest and its accidental (the input state, which is also
+<code>editor.value</code>, <code>editor.dotted</code>,
+<code>editor.rest</code> and <code>editor.nextAccidental</code>), the
+articulations, a tie and a triplet for what is selected, the voice, the
+layout, and at the far edge the transport. Each tool is drawn with the
+engraver's own symbol. The <b>palettes</b>, beside the page, are what can be
+written: a kind of element to a folding group -- accidentals, articulations,
+ornaments, lines, dynamics, measures -- each entry a verb over what is
+selected, and what it is said in a sentence when the pointer rests on it.
 
 <b>A gesture names a place; the editor names the note.</b> A click selects a
 note and the status line under the page says what it is. A drag moves it along
-the staff -- only a note drags; a slur or a time signature is selected and never
-displaced. A press on empty staff writes a note of the editor's
-<code>value</code> there (an eighth, below) and selects it.
+the staff -- only a note drags; a slur or a time signature is selected and
+never displaced. A press on empty staff writes what the toolbar says: a note
+or a rest of the value in hand (an eighth, below), and selects it.
 
 <b>Several notes are selected at once.</b> Ctrl+click adds a note to the
 selection or takes it out; Shift+click extends the selection to the note
-clicked, in time and across the staves between. With <code>entry</code>
-switched off (the <code>write</code> button), a press on a staff selects the
-measure it fell in instead of writing a note.
+clicked, in time and across the staves between. With entry switched off (Notes,
+Write notes), a press on a staff selects the measure it fell in.
 
-<b>The menu bar holds every action the editor has</b>, grouped as a score
-editor's are: the paper, the layout, the value a note is written with, the
-marks, the measures (a meter, a barline, a break), the transformations. Each
-entry is one of the editor's verbs, so a pick and a method call are one path.
-An entry that ends in three dots opens a dialog over the window -- the page's
-text, its margins, a transformation's parameter -- and writes what it holds on
-OK, as one step of the history.
+<b>A pick and a method call are one path.</b> Every entry of the menu, every
+tool and every palette entry is one of the editor's verbs, and each verb is a
+method: the fermata on the last note is put there by this page
+(<code>select</code>, <code>ornament</code>), as the Ornaments palette would.
 
-<b>The palettes, beside the page, are what can be written</b>: a kind of
-element to a folding group -- accidentals, articulations, ornaments, lines,
-dynamics, measures -- each entry a verb over what is selected, and what it is
-said in a sentence when the pointer rests on it.
+<b>The score plays on the engine, and the page's cursor follows it.</b> The
+space bar, the toolbar's transport and the Play menu play it from where the
+selection starts -- several notes selected are the stretch a loop repeats --
+on a transport of its own (<code>editor.play</code>,
+<code>editor.stop</code>). An edit made while it plays is heard on from where
+the position is.
 
-<b>The toolbar holds what a hand reaches for while it writes</b>: the value
-the next note takes, its dot, whether it is a rest and its accidental (the
-input state, which is also <code>editor.value</code>,
-<code>editor.dotted</code>, <code>editor.rest</code> and
-<code>editor.nextAccidental</code>); the articulations, a tie and a triplet
-for what is selected; the voice of the selection; and the layout. Each tool
-is drawn with the engraver's own symbol, in the font the page is engraved in.
-
-<b>The verbs act on the selection.</b> Every button calls one method of the
-editor -- <code>move</code>, <code>scale</code>, <code>articulation</code>,
-<code>dynamic</code>, <code>ornament</code>, <code>clearMarks</code>,
-<code>tie</code>, <code>silence</code>, <code>delete</code>, <code>voice</code>,
-<code>spanner</code> -- and each is one call into the crate, which reads the
-score as it stands and records one entry. A slur runs from the first selected
-note to the last, so it is made by selecting its two ends.
-
-<b>A transformation takes the measures the selection covers.</b>
-<code>transform</code> hands the model's operators -- here an octave up and a
-retrograde -- the span of what is selected, or everything with nothing
-selected.
-
-<b>The paper is the score's, and the way of looking at it is the
-window's.</b> The score opens as pages of A4, fixed whatever the window's size:
-drag on blank paper to pan, turn the wheel with Ctrl to zoom. <code>paper</code>
-lays it out on the next paper (<code>setPage</code>, an edit like any other,
-written into the MEI); <code>layout</code> switches to one continuous system and
-back, which edits nothing.
+<b>The paper is the score's, and the way of looking at it is the window's.</b>
+The score opens as pages of A4, fixed whatever the window's size: drag on
+blank paper to pan, turn the wheel with Ctrl to zoom. File, Paper lays it out
+on another (an edit like any other, written into the MEI); View switches to
+one continuous system and back, which edits nothing.
 
 <b>The page has text of its own.</b> The title and its subtitle, the composer,
-a copyright line and a footnote are fields of the score, each written in a cell
-of the page's head or foot -- where the printed page puts it, until
-<code>setText</code> moves it. A click on one says which field it is on the
-status line.
+a copyright line and a footnote are fields of the score, each written in a
+cell of the page's head or foot. A click on one says which field it is on the
+status line; File, Page text edits them all.
+
+<b>A score is saved as itself.</b> The page saves it once
+(<code>editor.save</code>), so the file is the score's and Ctrl+S, or File,
+Save, writes it again without asking; File, Open reads another document in its
+place, as one step of the history. A path in a page names the page's own
+storage.
+
+<b>A score is rendered into a sequence, one way.</b>
+<code>score.renderEvents()</code> is what plays, and <b>roll</b> opens it in
+the notes editor: the notes, a channel to a voice, and the crescendo as each
+channel's automation. File, Export writes the same sequence as a MIDI file or
+a clip.
 
 <b>One undo order.</b> Ctrl+Z and Ctrl+Shift+Z over the window walk the
-editor's entries and the page's alike, and so do the undo and redo buttons.
+editor's entries and the page's alike.
 
-<b>Click</b> a note to select it; <b>Ctrl+click</b> another to add it,
-<b>Shift+click</b> one to select everything up to it. <b>Drag</b> a note up or
-down the staff to move it. <b>Press empty staff</b> -- between two notes, or
-past the last one, on either staff -- to write an eighth there; with
-<b>write</b> switched off the same press selects the measure. The buttons act
-on the selection;
-<b>play</b> plays the score as it stands. Everything runs on the <b>in-page
-engine</b>: no server process, no socket.</div>
+<b>Click</b> a note to select it; the status line says what is selected.
+<b>Ctrl+click</b> another to add it, <b>Shift+click</b> one to select
+everything up to it. <b>Drag</b> a note up or down the staff to move it (which
+is not transposition: it takes the key signature's alteration for the letter
+it lands on). <b>Press on empty staff</b> -- between two notes, or past the
+last one, on either staff -- to write an eighth there. The <b>space bar</b>
+plays and stops. Everything runs on the <b>in-page engine</b>: no server
+process, no socket.</div>
 
       <div class="row">
         <button id="start">start</button>
+        <button id="open-roll" disabled>roll</button>
       </div>
 
       <div id="stage"></div>
+      <div id="roll"></div>
       <pre id="log"></pre>
     </main>
 
     <!--
       The web sibling of clients/python/examples/notation/score_editor.py, call
-      for call: the document opened, the decisions written into the model, the
-      editor opened over the score with the same buttons, the same verbs, and
-      the playback read out of the model.
+      for call: the document opened, the model operated on, the editor opened
+      over the score, a verb called on it, the score saved and the render a
+      roll opens.
 
-      The platform's differences are the usual two -- the host is the wasm one in
-      this tab and draws into an element, and nothing is pumped -- plus the
-      engraver's own: it is fetched on demand here, so opening the score awaits
-      a download that a script's bundled library does not.
+      The platform's differences are the usual ones -- the host is the wasm one
+      in this tab and draws into an element, nothing is held open, and the file
+      is in the page's own storage -- plus the engraver's own: it is fetched on
+      demand here, so opening the score awaits a download that a script's
+      bundled library does not. The script's `roll()` is a function a reader
+      calls at the prompt; a page has no prompt, so it is a button.
 
       Serve clients/web (the package root) and open
       /examples/notation/score-editor.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, TempoMap, gui, loadCore } from "../../dist/index.js";
+      import { Session, gui, loadCore } from "../../dist/index.js";
 
       const { notation } = gui;
       const el = (id) => document.getElementById(id);
@@ -160,50 +171,18 @@ G A B c | d2 c B | A G F G | E4 |
 B c d e | f2 e d | c B A B | G4 |
 `;
 
-      // Two beats per second, the quarter = 120 the page is timed at.
-      const TEMPO = 2.0;
+      // Where the score is saved: a path in the page's own storage.
+      const SAVED = "eight_bars.mei";
 
-      let server = null, score = null, editor = null, playing = null;
+      let score = null, editor = null;
 
-      // Writing, or selecting a measure: a press on empty staff means one of
-      // two things, and `entry` says which.
-      const toggleEntry = () => {
-        editor.entry = !editor.entry;
-        editor.window.widget("write").set({ label: `write: ${editor.entry ? "on" : "off"}` });
-      };
-
-      // The paper, and the way of looking at it. Two switches that look alike
-      // and are not: the layout is this window's and edits nothing; the paper
-      // is the score's, so changing it is an edit -- undone with the rest, and
-      // written into the MEI.
-      const toggleLayout = () => {
-        editor.layout = editor.layout === "page" ? "continuous" : "page";
-        editor.window.widget("layout").set({ label: `layout: ${editor.layout}` });
-      };
-      const nextPaper = () => {
-        const setup = editor.page;
-        const at = setup.papers.indexOf(setup.paper);
-        const paper = setup.papers[(at + 1) % setup.papers.length];
-        if (editor.setPage(paper, { landscape: false })) {
-          editor.window.widget("paper").set({ label: `paper: ${paper}` });
-        }
-      };
-
-      // Playing what is written: the timeline comes out of the **model**, so a
-      // staccato added a moment ago is honoured and a dynamic governs the notes
-      // after it.
-      const stop = () => {
-        if (playing !== null) {
-          playing.stop();
-          playing = null;
-        }
-      };
-      const play = () => {
-        stop();
-        const timeline = notation.toTimeline(score.sheet());
-        timeline.map = new TempoMap(TEMPO);
-        playing = timeline.play({ at: 0.0, destination: server });
-      };
+      // The score as a roll. `renderEvents` renders the score into a sequence,
+      // one way: the notes, each on its voice's channel, and the crescendo as
+      // the automation of both staves' channels. It is what the space bar
+      // plays, and this opens it in the notes editor -- where what is done to
+      // it stays in that sequence.
+      const roll = () =>
+        gui.edit(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
 
       async function start() {
         el("start").disabled = true;
@@ -223,7 +202,8 @@ B c d e | f2 e d | c B A B | G4 |
 
         // A second staff, made rather than typed. verovio's ABC importer writes
         // one staff whatever the source says, so the grand staff is not in the
-        // document: it is the model's.
+        // document: it is the model's. `transpose` and `stack` are two of the
+        // model's operators; the window's Transform menu holds them all.
         const lower = notation.transpose(typed, -24);
         lower.staves[0].clef = "F4";
         score.apply({ op: "stack", sheet: lower, as_staff: true });
@@ -247,92 +227,41 @@ B c d e | f2 e d | c B A B | G4 |
         score.apply({ op: "set_marks", id: top[0], marks: notation.marks({ dynamic: "p" }) });
         score.apply({ op: "set_marks", id: top[8], marks: notation.marks({ dynamic: "f" }) });
 
-        // The editor. The window is the editor's: the page, in a scroll, over a
-        // status line. The rows of buttons are this page's own widgets
-        // (`extra`), each calling one of the editor's verbs.
-        const session = await Session.embed();
-        server = session.server;
-        await session.gui();
-
-        const buttons = [
-          gui.panel(
-            { layout: "row", h: 34.0 },
-            gui.button({ name: "play", label: "play" }),
-            gui.button({ name: "stop", label: "stop" }),
-            gui.button({ name: "up", label: "up" }),
-            gui.button({ name: "down", label: "down" }),
-            gui.button({ name: "longer", label: "longer" }),
-            gui.button({ name: "shorter", label: "shorter" }),
-          ),
-          gui.panel(
-            { layout: "row", h: 34.0 },
-            gui.button({ name: "stacc", label: "staccato" }),
-            gui.button({ name: "accent", label: "accent" }),
-            gui.button({ name: "tenuto", label: "tenuto" }),
-            gui.button({ name: "trill", label: "trill" }),
-            gui.button({ name: "mf", label: "mf" }),
-            gui.button({ name: "ff", label: "ff" }),
-            gui.button({ name: "plain", label: "no marks" }),
-          ),
-          gui.panel(
-            { layout: "row", h: 34.0 },
-            gui.button({ name: "slur", label: "slur" }),
-            gui.button({ name: "voice", label: "other voice" }),
-            gui.button({ name: "tie", label: "tie" }),
-            gui.button({ name: "silence", label: "silence" }),
-            gui.button({ name: "delete", label: "delete" }),
-            gui.button({ name: "undo", label: "undo" }),
-            gui.button({ name: "redo", label: "redo" }),
-          ),
-          gui.panel(
-            { layout: "row", h: 34.0 },
-            gui.button({ name: "write", label: "write: on" }),
-            gui.button({ name: "octave", label: "octave up" }),
-            gui.button({ name: "retro", label: "retrograde" }),
-            gui.button({ name: "layout", label: "layout: page" }),
-            gui.button({ name: "paper", label: "paper: A4" }),
-          ),
-        ];
+        // The editor. The window is the application's, whole: the menu bar,
+        // the toolbar, the palettes beside the page, the status line under it.
+        // The session is made ambient first, so the editor plays on its engine
+        // without being told which, and `edit` opens the host it draws in.
+        const session = (await Session.embed()).activate();
 
         editor = await gui.edit(score, {
           title: "Score editor (a document, and its model)",
-          width: 960, height: 760, extra: buttons, stage: el("stage"),
+          width: 1100, height: 800, stage: el("stage"),
         });
         editor.value = [1, 8];         // a press on empty staff writes an eighth
-        const win = editor.window;
 
-        win.widget("play").onClick(play);
-        win.widget("stop").onClick(stop);
-        win.widget("up").onClick(() => editor.move(1));
-        win.widget("down").onClick(() => editor.move(-1));
-        win.widget("longer").onClick(() => editor.scale(2, 1));
-        win.widget("shorter").onClick(() => editor.scale(1, 2));
-        win.widget("stacc").onClick(() => editor.articulation("stacc"));
-        win.widget("accent").onClick(() => editor.articulation("acc"));
-        win.widget("tenuto").onClick(() => editor.articulation("ten"));
-        win.widget("trill").onClick(() => editor.ornament("trill"));
-        win.widget("mf").onClick(() => editor.dynamic("mf"));
-        win.widget("ff").onClick(() => editor.dynamic("ff"));
-        win.widget("plain").onClick(() => editor.clearMarks());
-        win.widget("slur").onClick(() => editor.spanner("slur"));
-        win.widget("voice").onClick(() => editor.voice());
-        win.widget("tie").onClick(() => editor.tie());
-        win.widget("silence").onClick(() => editor.silence());
-        win.widget("delete").onClick(() => editor.delete());
-        win.widget("undo").onClick(() => editor.undo());
-        win.widget("redo").onClick(() => editor.redo());
-        win.widget("write").onClick(toggleEntry);
-        win.widget("octave").onClick(() => editor.transform("transpose", { semitones: 12 }));
-        win.widget("retro").onClick(() => editor.transform("retrograde"));
-        win.widget("layout").onClick(toggleLayout);
-        win.widget("paper").onClick(nextPaper);
+        // A pick and a method call are one path. The Ornaments palette puts a
+        // fermata on what is selected. So does this: the last note of the line
+        // is selected and given one, as one step of the history -- Ctrl+Z over
+        // the window takes it back.
+        editor.select([`n${top.at(-1)}`]);
+        editor.ornament("fermata");
+        editor.select([]);
+
+        // The score's file. Saved once, the file is the score's: Ctrl+S and
+        // File, Save write it again without asking. It is the score itself, as
+        // MEI -- notes, marks, the slur and the crescendo, the page and its
+        // text -- and reading it back is the same page.
+        log(`saved to ${await editor.save(SAVED)}`);
+
+        el("open-roll").disabled = false;
         editor.onClosed(() => log("window closed"));
         log("click a note to select it (Ctrl adds, Shift extends), drag one up or "
-          + "down the staff, press empty staff to write an eighth; the buttons act on "
-          + "the selection");
+          + "down the staff, press empty staff to write an eighth; the space bar "
+          + "plays, and the menus, the toolbar and the palettes act on the selection");
       }
 
       el("start").onclick = () => start().catch((e) => log(`error: ${e}`));
+      el("open-roll").onclick = () => roll().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>

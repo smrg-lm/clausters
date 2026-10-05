@@ -77,8 +77,8 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
-      const step = (id, next, act) => {
-        $(id).onclick = () => act().then(() => {
+      const step = (id, next, job) => {
+        $(id).onclick = () => job().then(() => {
           for (const n of next) $(n).disabled = false;
         }).catch((e) => log(`error: ${e}`));
       };
