@@ -799,11 +799,20 @@ fn measure_xml(
                     format!("<layer n=\"{}\">{cells}</layer>", vi + 1)
                 })
                 .collect();
-            format!("<staff n=\"{}\">{layers}</staff>", si + 1)
+            // **A staff of a measure is named by the two**, as the model counts
+            // them: a press on its lines then says which measure of which staff
+            // it was, which is what selecting a measure is.
+            format!(
+                "<staff xml:id=\"m{}s{}\" n=\"{}\">{layers}</staff>",
+                index + 1,
+                si + 1,
+                si + 1
+            )
         })
         .collect();
     format!(
-        "{brk}   <measure n=\"{}\"{right}>{staves}{attached}</measure>",
+        "{brk}   <measure xml:id=\"m{}\" n=\"{}\"{right}>{staves}{attached}</measure>",
+        index + 1,
         index + 1
     )
 }
@@ -1446,7 +1455,10 @@ mod tests {
     ///   sharp;
     /// - a rest that fills a measure is `<mRest/>`, which an engraver draws
     ///   **centred in the bar**, where a reader looks for it -- a run of values
-    ///   adding up to a measure hangs at its start instead.
+    ///   adding up to a measure hangs at its start instead;
+    /// - every measure, and every staff of it, carries an **id of its own**
+    ///   (`m3`, `m3s1`), so a press on a staff's lines names the measure and
+    ///   the staff it fell in -- which is what selecting a measure is.
     ///
     /// A diff here is either another deliberate change to the engraving, which
     /// has to be re-recorded with a reason like those, or something being lost

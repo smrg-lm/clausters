@@ -76,11 +76,7 @@ impl ScoreData {
             .get("sample_rate")
             .and_then(Value::as_f64)
             .unwrap_or(0.0);
-        data.selected = props
-            .get("selected")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
+        data.selected = props.get("selected").map(selection).unwrap_or_default();
         data.step = props
             .get("step")
             .and_then(Value::as_f64)
@@ -129,6 +125,30 @@ impl ScoreData {
             .unwrap_or_default();
         data.index();
         data
+    }
+}
+
+/// **What `selected` names**: one id, a list of them, or the list as a JSON
+/// string (the form a list takes over OSC). An empty id, or anything else, is
+/// nothing selected.
+pub fn selection(v: &Value) -> Vec<String> {
+    let ids = |list: &[Value]| {
+        list.iter()
+            .filter_map(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    match v {
+        Value::Array(list) => ids(list),
+        Value::String(s) if s.trim_start().starts_with('[') => {
+            match serde_json::from_str::<Value>(s) {
+                Ok(Value::Array(list)) => ids(&list),
+                _ => Vec::new(),
+            }
+        }
+        Value::String(s) if !s.is_empty() => vec![s.clone()],
+        _ => Vec::new(),
     }
 }
 

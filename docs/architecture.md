@@ -1022,11 +1022,16 @@ script opened natively, the one a page opened over wasm and the one a
 standalone host read itself are one type, and the crate links no engraver. Its
 window is the page in a scroll over a status line; a gesture on the page (a
 press, a pitch drag, a press on empty staff) and a **verb** a client calls over
-the selection (`score::verbs`: a move, a length, a mark, a voice, a spanner)
+the selection (`score::verbs`: a move, a length, a mark, a voice, a spanner, a
+transformation over the measures it covers)
 are each read into model operations, applied to the shared score and recorded
 with the MEI before them as the inverse — a state, which a step loads back
 whole. A verb crosses through the context's `act`, which records it as a
-gesture is recorded. The standalone host opens one with `--score`, a feature
+gesture is recorded. **The selection is the editor's**: a press names one
+element and how it was pressed (alone, with Ctrl, with Shift), and the editor
+answers with every element that is now selected — a range in time, a measure
+named by the id the emitter gives each staff of it (`m3s1`), an item as every
+part it is drawn as — which the page then highlights. The standalone host opens one with `--score`, a feature
 that links the engraver to read the file and nothing else.
 
 ### The application in each client, and the picture the host owns

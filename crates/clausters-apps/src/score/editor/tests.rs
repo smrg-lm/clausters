@@ -245,7 +245,7 @@ fn the_door_reads_and_sets_the_selection() {
 
 #[test]
 fn a_step_corrects_the_whole_window() {
-    let editor = opened();
+    let mut editor = opened();
     let Answer::Push { corrections, .. } = editor.resync_all(3) else {
         panic!("corrections")
     };
@@ -288,4 +288,69 @@ fn the_context_records_a_verb_and_walks_it_back_on_the_holders_score() {
     assert!(!tied(&held), "and the step put it back there");
     assert!(context.step(Direction::Redo).stepped);
     assert!(tied(&held));
+}
+
+#[test]
+fn ctrl_adds_and_removes_and_shift_reaches_across() {
+    let mut editor = opened();
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    // Ctrl: the note joins, and the same again takes it out
+    editor.event(&gesture("element", &[json!("n3"), json!("toggle")]), 1);
+    assert_eq!(editor.items(), vec![1, 3]);
+    editor.event(&gesture("element", &[json!("n3"), json!("toggle")]), 1);
+    assert_eq!(editor.items(), vec![1]);
+    // Shift: everything from the first selected to the one pressed, in time
+    let out = editor.event(&gesture("element", &[json!("n4"), json!("extend")]), 1);
+    assert_eq!(editor.items(), vec![1, 2, 3, 4]);
+    // the page is told the whole range, which the press alone could not know
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    assert_eq!(
+        corrections[0].props["selected"],
+        json!(["n1", "n2", "n3", "n4"])
+    );
+    assert_eq!(editor.describe(), "4 items selected");
+    // a plain press on paper clears; a modified one does not
+    editor.event(&gesture("element", &[json!(""), json!("toggle")]), 1);
+    assert_eq!(editor.items().len(), 4);
+    editor.event(&gesture("element", &[json!("")]), 1);
+    assert!(editor.items().is_empty());
+}
+
+#[test]
+fn a_press_on_a_staff_selects_its_measure_where_entry_is_off() {
+    let mut editor = opened();
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "entry"}"#),
+        r#"{"entry":true}"#
+    );
+    call_json(&mut editor, r#"{"verb": "sync", "entry": false}"#);
+    // the page learns it with the next correction
+    let Answer::Push { corrections, .. } = editor.resync_all(1) else {
+        panic!("corrections")
+    };
+    assert_eq!(corrections[0].props["entry"], json!(false));
+    // a staff's own lines are named by measure and staff
+    editor.event(&gesture("element", &[json!("m1s1")]), 1);
+    assert_eq!(editor.items(), vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn a_transformation_runs_over_what_is_selected() {
+    let mut editor = opened();
+    editor.event(&gesture("element", &[json!("n2")]), 1);
+    let out = editor.act(
+        &json!({"action": "transform", "name": "transpose", "semitones": 12}),
+        1,
+    );
+    assert!(out.changed, "{:?}", out.answer);
+    assert_eq!(out.record.expect("an entry").label, "transpose");
+    let held = editor.held();
+    let first = &held.sheet().unwrap().staves[0].voices[0].items[0];
+    assert_eq!(
+        first.pitches()[0].octave,
+        5,
+        "the bar it is in moved up an octave"
+    );
 }

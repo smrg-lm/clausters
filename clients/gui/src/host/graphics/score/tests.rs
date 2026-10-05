@@ -391,11 +391,11 @@ fn a_selected_element_is_highlighted() {
     )
     .unwrap();
     let mut data = ScoreData::parse(&props);
-    assert_eq!(data.selected.as_deref(), Some("staff"));
+    assert_eq!(data.selected, vec!["staff".to_string()]);
     let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
     let mut with = Mesh::new();
     data.render(&mut with, rect, None, -1.0, INK);
-    data.selected = None;
+    data.selected = Vec::new();
     let mut without = Mesh::new();
     data.render(&mut without, rect, None, -1.0, INK);
     assert!(

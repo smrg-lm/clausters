@@ -53,9 +53,12 @@ class ScoreEditor(Editor):
     """A symbolic score on its page, edited by hand, in place.
 
     A press on a note selects it, a drag moves it along its staff, and a press
-    on empty staff writes a note of `value` there. The verbs act on what is
-    selected (`selected`, `select`); each is one entry of the editing context's
-    history, so Ctrl+Z over the window walks them back.
+    on empty staff writes a note of `value` there (`entry`; off, it selects the
+    measure). Ctrl+click adds a note to the selection or takes it out, and
+    Shift+click extends the selection to it, in time and across the staves
+    between. The verbs act on what is selected (`selected`, `select`); each is
+    one entry of the editing context's history, so Ctrl+Z over the window walks
+    them back.
 
     Args:
         score: the `clausters.gui.notation.Score` to edit. It is the edited
@@ -117,6 +120,18 @@ class ScoreEditor(Editor):
     def value(self, value) -> None:
         self._call("sync", value=[int(value[0]), int(value[1])])
 
+    @property
+    def entry(self) -> bool:
+        """Whether a press on empty staff writes a note. On by default; off,
+        the same press on a staff selects the measure it fell in. Set it to
+        switch: ``editor.entry = False``."""
+        return bool(self._call("entry").get("entry", True))
+
+    @entry.setter
+    def entry(self, on: bool) -> None:
+        self._call("sync", entry=bool(on))
+        self.adopt()
+
     # ---- the verbs, over what is selected ----
 
     def move(self, steps: int) -> bool:
@@ -173,6 +188,14 @@ class ScoreEditor(Editor):
         """A ``slur``, a ``crescendo`` or a ``diminuendo`` from the first
         selected item to the last, in time."""
         return self._act({"action": "spanner", "kind": str(kind)})
+
+    def transform(self, name: str, **params) -> bool:
+        """A transformation over the measures the selection covers -- or over
+        everything, with nothing selected: ``"transpose"`` (``semitones``, or
+        ``steps`` for a diatonic one), ``"invert"`` (``axis``),
+        ``"retrograde"``, ``"stretch"`` (``factor``, as ``[n, d]``) or
+        ``"repeat"`` (``count``)."""
+        return self._act({"action": "transform", "name": str(name), **params})
 
     def operate(self, op: dict) -> bool:
         """A model operation, whole (`clausters.gui.notation.sheet`'s

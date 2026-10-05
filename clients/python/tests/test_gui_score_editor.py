@@ -87,3 +87,22 @@ def test_edit_opens_a_score_in_the_score_editor(score):
     editor = edit(score, open=False)
     assert isinstance(editor, ScoreEditor)
     assert editor.score is score
+
+
+def test_a_transformation_runs_over_the_measures_selected(score):
+    editor = ScoreEditor(score)
+    ids = [item["id"] for item in _items(score)]
+    before = [item["pitches"][0]["octave"] for item in _items(score)]
+    editor.select([f"n{ids[5]}"])          # a note of the second bar
+    assert editor.transform("transpose", semitones=12)
+    after = [item["pitches"][0]["octave"] for item in _items(score)]
+    assert after[:4] == before[:4], "the first bar was not selected"
+    assert after[4:] == [octave + 1 for octave in before[4:]]
+    assert editor.transform("fold") is False
+
+
+def test_entry_is_the_crates_switch(score):
+    editor = ScoreEditor(score)
+    assert editor.entry is True
+    editor.entry = False
+    assert editor.entry is False

@@ -97,6 +97,30 @@ if (!existsSync(engraver)) {
         assert.deepEqual(editor.value, [1, 2]);
     });
 
+    test("a transformation runs over the measures selected", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        const octaves = () =>
+            (items(score) as unknown as { pitches: { octave: number }[] }[]).map(
+                (item) => item.pitches[0].octave,
+            );
+        const ids = items(score).map((item) => item.id);
+        const before = octaves();
+        editor.select([`n${ids[5]}`]); // a note of the second bar
+        assert.ok(editor.transform("transpose", { semitones: 12 }));
+        const after = octaves();
+        assert.deepEqual(after.slice(0, 4), before.slice(0, 4));
+        assert.deepEqual(after.slice(4), before.slice(4).map((octave) => octave + 1));
+        assert.equal(editor.transform("fold"), false);
+    });
+
+    test("entry is the crate's switch", async () => {
+        const editor = new ScoreEditor(await Score.open(PHRASE));
+        assert.equal(editor.entry, true);
+        editor.entry = false;
+        assert.equal(editor.entry, false);
+    });
+
     test("edit opens a score in the score editor", async () => {
         const score = await Score.open(PHRASE);
         const editor = await edit(score, { open: false });

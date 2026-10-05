@@ -144,17 +144,16 @@ impl ScoreData {
     /// several (a note is a notehead plus its stem), so the whole gesture of it
     /// lights up rather than one glyph of it.
     fn draw_selection(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
-        let Some(sel) = self.selected.as_deref() else {
-            return;
-        };
-        let fit = self.prim_fit(fit, Some(sel));
-        for h in self.hits.iter().filter(|h| h.id == sel) {
-            // a hair of page-unit padding so a hairline stem still shows a band
-            let b = h.bounds.grown(20.0).transformed(fit);
-            mesh.rect(
-                Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
-                crate::host::theme::with_alpha(color, 0.30),
-            );
+        for sel in &self.selected {
+            let fit = self.prim_fit(fit, Some(sel));
+            for h in self.hits.iter().filter(|h| &h.id == sel) {
+                // a hair of page-unit padding so a hairline stem still shows a band
+                let b = h.bounds.grown(20.0).transformed(fit);
+                mesh.rect(
+                    Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
+                    crate::host::theme::with_alpha(color, 0.30),
+                );
+            }
         }
     }
 

@@ -1443,9 +1443,24 @@ opened it.
     built with it. The example opens the application, its buttons calling the
     verbs; the playback stays the script's until `X5.8`, and the slur button
     selects two notes itself until `X5.2` lets a hand do it.)*
-  - ⬜ **X5.2 - Selection.** ctrl+click, shift+click, the measure; `selected`
+  - ✅ **X5.2 - Selection.** ctrl+click, shift+click, the measure; `selected`
     as a list; every verb over the selection; spanners from the first and last
-    notes; the Transform menu over its span.
+    notes; the Transform menu over its span. *(Done 2026-10-05. The host
+    keeps a list: a plain press replaces it, Ctrl toggles the element in it,
+    Shift adds it, and a modified press reports its `mode` beside the id and
+    starts no drag; `selected` takes one id or a list and every one is
+    highlighted. The editor answers each press with the whole selection, since
+    only the model knows time: a Shift reaches from the first selected item to
+    the one pressed, across the staves between (`verbs::range`), and an item
+    is selected as every element the page draws it as. The emitter now names
+    each measure and each staff of it (`m3`, `m3s1`, read back by the core's
+    `measure_id`), so with `entry` off a press on a staff selects that measure
+    (`verbs::measure_items`). `transform` hands `transpose`, `invert`,
+    `retrograde`, `stretch` or `repeat` the measures the selection covers, or
+    everything with nothing selected; it is a verb of both clients' editor
+    here, and the menu that offers it is `X5.5`'s. Both clients gained `entry`
+    and `transform`, and the example's slur is made from a selection of its
+    two ends.)*
   - ⬜ **X5.3 - The views and the paper.** Page and continuous; page setup in
     the model and in MEI; the paper sizes, the orientation, the margins and the
     staff size; every page in the plane; pan from blank paper, zoom as the

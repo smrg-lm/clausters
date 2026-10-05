@@ -53,19 +53,34 @@ the staff -- only a note drags; a slur or a time signature is selected and never
 displaced. A press on empty staff writes a note of the editor's
 <code>value</code> there (an eighth, below) and selects it.
 
+<b>Several notes are selected at once.</b> Ctrl+click adds a note to the
+selection or takes it out; Shift+click extends the selection to the note
+clicked, in time and across the staves between. With <code>entry</code>
+switched off (the <code>write</code> button), a press on a staff selects the
+measure it fell in instead of writing a note.
+
 <b>The verbs act on the selection.</b> Every button calls one method of the
 editor -- <code>move</code>, <code>scale</code>, <code>articulation</code>,
 <code>dynamic</code>, <code>ornament</code>, <code>clearMarks</code>,
 <code>tie</code>, <code>silence</code>, <code>delete</code>, <code>voice</code>,
 <code>spanner</code> -- and each is one call into the crate, which reads the
-score as it stands and records one entry.
+score as it stands and records one entry. A slur runs from the first selected
+note to the last, so it is made by selecting its two ends.
+
+<b>A transformation takes the measures the selection covers.</b>
+<code>transform</code> hands the model's operators -- here an octave up and a
+retrograde -- the span of what is selected, or everything with nothing
+selected.
 
 <b>One undo order.</b> Ctrl+Z and Ctrl+Shift+Z over the window walk the
 editor's entries and the page's alike, and so do the undo and redo buttons.
 
-<b>Click</b> a note to select it. <b>Drag</b> one up or down the staff to move
-it. <b>Press empty staff</b> -- between two notes, or past the last one, on
-either staff -- to write an eighth there. The buttons act on the selection;
+<b>Click</b> a note to select it; <b>Ctrl+click</b> another to add it,
+<b>Shift+click</b> one to select everything up to it. <b>Drag</b> a note up or
+down the staff to move it. <b>Press empty staff</b> -- between two notes, or
+past the last one, on either staff -- to write an eighth there; with
+<b>write</b> switched off the same press selects the measure. The buttons act
+on the selection;
 <b>play</b> plays the score as it stands. Everything runs on the <b>in-page
 engine</b>: no server process, no socket.</div>
 
@@ -116,28 +131,11 @@ B c d e | f2 e d | c B A B | G4 |
 
       let server = null, score = null, editor = null, playing = null;
 
-      /**
-       * A slur from the selected note over the next three. A slur runs from one
-       * note to another, so the editor makes it from the first selected note to
-       * the last: this selects the note clicked and the third after it, and
-       * asks for the slur between them.
-       */
-      const slurFour = () => {
-        if (editor.selected.length === 0) return;
-        const first = editor.selected[0];
-        for (const staff of score.sheet().staves) {
-          for (const voice of staff.voices) {
-            const ids = voice.items.map((item) => item.id);
-            const at = ids.indexOf(first);
-            if (at < 0) continue;
-            const last = ids[Math.min(at + 3, ids.length - 1)];
-            if (last !== first) {
-              editor.select([`n${first}`, `n${last}`]);
-              editor.spanner("slur");
-            }
-            return;
-          }
-        }
+      // Writing, or selecting a measure: a press on empty staff means one of
+      // two things, and `entry` says which.
+      const toggleEntry = () => {
+        editor.entry = !editor.entry;
+        editor.window.widget("write").set({ label: `write: ${editor.entry ? "on" : "off"}` });
       };
 
       // Playing what is written: the timeline comes out of the **model**, so a
@@ -221,13 +219,19 @@ B c d e | f2 e d | c B A B | G4 |
           ),
           gui.panel(
             { layout: "row", h: 34.0 },
-            gui.button({ name: "slur", label: "slur x4" }),
+            gui.button({ name: "slur", label: "slur" }),
             gui.button({ name: "voice", label: "other voice" }),
             gui.button({ name: "tie", label: "tie" }),
             gui.button({ name: "silence", label: "silence" }),
             gui.button({ name: "delete", label: "delete" }),
             gui.button({ name: "undo", label: "undo" }),
             gui.button({ name: "redo", label: "redo" }),
+          ),
+          gui.panel(
+            { layout: "row", h: 34.0 },
+            gui.button({ name: "write", label: "write: on" }),
+            gui.button({ name: "octave", label: "octave up" }),
+            gui.button({ name: "retro", label: "retrograde" }),
           ),
         ];
 
@@ -251,16 +255,20 @@ B c d e | f2 e d | c B A B | G4 |
         win.widget("mf").onClick(() => editor.dynamic("mf"));
         win.widget("ff").onClick(() => editor.dynamic("ff"));
         win.widget("plain").onClick(() => editor.clearMarks());
-        win.widget("slur").onClick(slurFour);
+        win.widget("slur").onClick(() => editor.spanner("slur"));
         win.widget("voice").onClick(() => editor.voice());
         win.widget("tie").onClick(() => editor.tie());
         win.widget("silence").onClick(() => editor.silence());
         win.widget("delete").onClick(() => editor.delete());
         win.widget("undo").onClick(() => editor.undo());
         win.widget("redo").onClick(() => editor.redo());
+        win.widget("write").onClick(toggleEntry);
+        win.widget("octave").onClick(() => editor.transform("transpose", { semitones: 12 }));
+        win.widget("retro").onClick(() => editor.transform("retrograde"));
         editor.onClosed(() => log("window closed"));
-        log("click a note to select it, drag one up or down the staff, press empty "
-          + "staff to write an eighth; the buttons act on the selection");
+        log("click a note to select it (Ctrl adds, Shift extends), drag one up or "
+          + "down the staff, press empty staff to write an eighth; the buttons act on "
+          + "the selection");
       }
 
       el("start").onclick = () => start().catch((e) => log(`error: ${e}`));

@@ -13,6 +13,7 @@
 //! are.
 
 use serde::Deserialize;
+use serde_json::{Map, Value};
 
 use clausters_core::notation::{Item, Marks, Op, Sheet};
 use clausters_core::ratio::Ratio;
@@ -58,7 +59,19 @@ pub enum Action {
     Spanner { kind: String },
     /// A model operation, whole -- the escape hatch for what has no verb here.
     Op { op: Box<Op> },
+    /// **A transformation over the measures the selection covers** -- or over
+    /// everything, with nothing selected: `transpose` (`semitones`, `steps`),
+    /// `invert` (`axis`), `retrograde`, `stretch` (`factor`) or `repeat`
+    /// (`count`), its parameters beside the name.
+    Transform {
+        name: String,
+        #[serde(flatten)]
+        params: Map<String, Value>,
+    },
 }
+
+/// The transformations a selection's span is handed to.
+pub const TRANSFORMS: &[&str] = &["transpose", "invert", "retrograde", "stretch", "repeat"];
 
 impl Action {
     /// What an undo menu calls it.
@@ -76,6 +89,7 @@ impl Action {
             Action::Delete => "delete".into(),
             Action::Voice => "move to the other voice".into(),
             Action::Spanner { kind } => kind.clone(),
+            Action::Transform { name, .. } => name.clone(),
             Action::Op { op } => serde_json::to_value(op)
                 .ok()
                 .and_then(|v| v.get("op").and_then(|o| o.as_str()).map(str::to_string))
@@ -132,6 +146,9 @@ pub fn in_time(sheet: &Sheet, selection: &[u64]) -> Vec<u64> {
 pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>, String> {
     if let Action::Op { op } = action {
         return Ok(vec![(**op).clone()]);
+    }
+    if let Action::Transform { name, params } = action {
+        return transform(sheet, selection, name, params).map(|op| vec![op]);
     }
     let ids = in_time(sheet, selection);
     if ids.is_empty() {
@@ -256,8 +273,81 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 to,
             }]
         }
-        Action::Op { .. } => unreachable!("answered above"),
+        Action::Op { .. } | Action::Transform { .. } => unreachable!("answered above"),
     })
+}
+
+/// **The transformation `name` over the span the selection covers**: the
+/// measures from the one its earliest item starts in to the one its latest
+/// starts in, or everything with nothing selected.
+fn transform(
+    sheet: &Sheet,
+    selection: &[u64],
+    name: &str,
+    params: &Map<String, Value>,
+) -> Result<Op, String> {
+    if !TRANSFORMS.contains(&name) {
+        return Err(format!(
+            "there is no transformation called {name}; it is one of {}",
+            TRANSFORMS.join(", ")
+        ));
+    }
+    let onsets: Vec<Ratio> = in_time(sheet, selection)
+        .into_iter()
+        .filter_map(|id| locate(sheet, id).map(|l| l.onset))
+        .collect();
+    let mut op = params.clone();
+    op.insert("op".into(), Value::from(name));
+    if let (Some(first), Some(last)) = (onsets.iter().min(), onsets.iter().max()) {
+        let first = sheet.grid.position(*first).0 + 1;
+        let last = sheet.grid.position(*last).0 + 1;
+        op.insert(
+            "span".into(),
+            serde_json::json!({ "measures": [first, last] }),
+        );
+    }
+    serde_json::from_value(Value::Object(op)).map_err(|why| format!("{name}: {why}"))
+}
+
+/// **The items of measure `measure`** (1-based), on staff `staff` (1-based)
+/// or on every staff -- each item that starts inside the bar, in every voice.
+pub fn measure_items(sheet: &Sheet, measure: usize, staff: Option<usize>) -> Vec<u64> {
+    if measure == 0 {
+        return Vec::new();
+    }
+    let (start, end) = sheet.grid.span(measure - 1, measure - 1);
+    items_where(sheet, |at| {
+        at.onset >= start && at.onset < end && staff.is_none_or(|s| at.staff + 1 == s)
+    })
+}
+
+/// **Everything between two items**: the items that start from the earlier
+/// one's onset to the later one's, on the staves from the higher of the two to
+/// the lower -- what a Shift+click extends a selection to.
+pub fn range(sheet: &Sheet, from: u64, to: u64) -> Vec<u64> {
+    let (Some(a), Some(b)) = (locate(sheet, from), locate(sheet, to)) else {
+        return Vec::new();
+    };
+    let (lo, hi) = (a.onset.min(b.onset), a.onset.max(b.onset));
+    let (top, bottom) = (a.staff.min(b.staff), a.staff.max(b.staff));
+    items_where(sheet, |at| {
+        at.onset >= lo && at.onset <= hi && at.staff >= top && at.staff <= bottom
+    })
+}
+
+/// The ids of every item `keep` answers yes for, in time order.
+fn items_where(sheet: &Sheet, keep: impl Fn(&Located<'_>) -> bool) -> Vec<u64> {
+    let all: Vec<u64> = sheet
+        .staves
+        .iter()
+        .flat_map(|s| s.voices.iter())
+        .flat_map(|v| v.items.iter().map(Item::id))
+        .collect();
+    let kept: Vec<u64> = all
+        .into_iter()
+        .filter(|&id| locate(sheet, id).is_some_and(|at| keep(&at)))
+        .collect();
+    in_time(sheet, &kept)
 }
 
 #[cfg(test)]
@@ -393,6 +483,53 @@ mod tests {
                 voice: 1
             }]
         );
+    }
+
+    #[test]
+    fn a_measure_and_a_range_are_read_off_the_model() {
+        let mut sheet = sheet();
+        // a second bar: the rest and three quarters more
+        sheet.staves[0].voices[0]
+            .items
+            .extend((6..=8).map(|id| note(id, (1, 4))));
+        sheet.grid = clausters_core::notation::Grid::uniform(4, 4);
+        assert_eq!(measure_items(&sheet, 1, None), vec![1, 2, 3, 4]);
+        assert_eq!(measure_items(&sheet, 2, Some(1)), vec![5, 6, 7, 8]);
+        assert!(
+            measure_items(&sheet, 2, Some(2)).is_empty(),
+            "no second staff"
+        );
+        assert_eq!(range(&sheet, 7, 3), vec![3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn a_transformation_takes_the_span_the_selection_covers() {
+        let mut sheet = sheet();
+        sheet.grid = clausters_core::notation::Grid::uniform(2, 4);
+        let action: Action =
+            serde_json::from_str(r#"{"action": "transform", "name": "transpose", "semitones": 2}"#)
+                .unwrap();
+        let ops = ops(&sheet, &[3, 4], &action).unwrap();
+        let Op::Transpose {
+            semitones, span, ..
+        } = &ops[0]
+        else {
+            panic!("{ops:?}")
+        };
+        assert_eq!(*semitones, 2);
+        assert_eq!(*span, clausters_core::notation::Span::Measures(2, 2));
+        // with nothing selected, everything
+        let ops = super::ops(&sheet, &[], &action).unwrap();
+        assert!(matches!(
+            &ops[0],
+            Op::Transpose {
+                span: clausters_core::notation::Span::All,
+                ..
+            }
+        ));
+        let bad: Action =
+            serde_json::from_str(r#"{"action": "transform", "name": "fold"}"#).unwrap();
+        assert!(super::ops(&sheet, &[], &bad).is_err());
     }
 
     #[test]

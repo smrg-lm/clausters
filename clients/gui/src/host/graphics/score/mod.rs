@@ -135,6 +135,7 @@ impl Bounds {
 }
 
 pub use hit::{HitBox, HitGrid, HitShape};
+pub use list::selection;
 
 /// One placed element of the engraved page, in verovio page units.
 #[derive(Clone, Debug)]
@@ -334,9 +335,11 @@ pub struct ScoreData {
     /// The engraved staves, top to bottom -- derived with the hit index, and
     /// what tells a dragged pitch when it has left the staff.
     pub staves: Vec<Staff>,
-    /// The selected element's MEI `xml:id`, drawn highlighted; `None` = nothing
-    /// selected. Set by a click on the page and by `/gui_set selected`.
-    pub selected: Option<String>,
+    /// The selected elements' MEI `xml:id`s, drawn highlighted; empty =
+    /// nothing selected. Set by a press on the page (Ctrl adds or removes one,
+    /// Shift extends to one) and by `/gui_set selected`, which takes one id or
+    /// a list of them.
+    pub selected: Vec<String>,
     /// Page units per **diatonic step** -- half the staff-line spacing, the
     /// quantum a pitch drag counts in. It comes from the client with the page
     /// (it depends on verovio's `unit` option, not on the staff scale), so the
@@ -413,7 +416,7 @@ impl Default for ScoreData {
             grid: HitGrid::default(),
             staff_ids: std::collections::HashSet::new(),
             staves: Vec::new(),
-            selected: None,
+            selected: Vec::new(),
             step: STEP,
             drag: None,
             editable: false,

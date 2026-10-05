@@ -92,10 +92,13 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
  * A symbolic score on its page, edited by hand, in place.
  *
  * A press on a note selects it, a drag moves it along its staff, and a press on
- * empty staff writes a note of {@link ScoreEditor.value} there. The verbs act on
- * what is selected ({@link ScoreEditor.selected}, {@link ScoreEditor.select});
- * each is one entry of the editing context's history, so Ctrl+Z over the window
- * walks them back.
+ * empty staff writes a note of {@link ScoreEditor.value} there
+ * ({@link ScoreEditor.entry}; off, it selects the measure). Ctrl+click adds a
+ * note to the selection or takes it out, and Shift+click extends the selection
+ * to it, in time and across the staves between. The verbs act on what is
+ * selected ({@link ScoreEditor.selected}, {@link ScoreEditor.select}); each is
+ * one entry of the editing context's history, so Ctrl+Z over the window walks
+ * them back.
  */
 export class ScoreEditor extends Editor<Score> {
     /** This editor's member in its editing context. */
@@ -183,6 +186,20 @@ export class ScoreEditor extends Editor<Score> {
         this.coreCall("sync", { value: [Math.trunc(value[0]), Math.trunc(value[1])] });
     }
 
+    /**
+     * Whether a press on empty staff writes a note. On by default; off, the
+     * same press on a staff selects the measure it fell in. Set it to switch:
+     * `editor.entry = false`.
+     */
+    get entry(): boolean {
+        return this.coreCall("entry").entry !== false;
+    }
+
+    set entry(on: boolean) {
+        this.coreCall("sync", { entry: Boolean(on) });
+        this.adopt();
+    }
+
     // ---- the verbs, over what is selected ----
 
     /**
@@ -254,6 +271,16 @@ export class ScoreEditor extends Editor<Score> {
     /** A `slur`, a `crescendo` or a `diminuendo` from the first selected item to the last, in time. */
     spanner(kind: string): boolean {
         return this.#act({ action: "spanner", kind: String(kind) });
+    }
+
+    /**
+     * A transformation over the measures the selection covers -- or over
+     * everything, with nothing selected: `"transpose"` (`semitones`, or `steps`
+     * for a diatonic one), `"invert"` (`axis`), `"retrograde"`, `"stretch"`
+     * (`factor`, as `[n, d]`) or `"repeat"` (`count`).
+     */
+    transform(name: string, params: Record<string, unknown> = {}): boolean {
+        return this.#act({ action: "transform", name: String(name), ...params });
     }
 
     /**

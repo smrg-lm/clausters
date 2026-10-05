@@ -105,10 +105,10 @@ impl Element for Score {
                 .is_some(),
             "sample_rate" => v.as_f64().map(|r| data.sample_rate = r).is_some(),
             // Select an element by its MEI id; the empty string clears it.
-            "selected" => v
-                .as_str()
-                .map(|s| data.selected = (!s.is_empty()).then(|| s.to_string()))
-                .is_some(),
+            "selected" => {
+                data.selected = crate::host::graphics::score::selection(v);
+                true
+            }
             // Turn editing on or off live (a view that becomes an editor, or
             // the reverse). A drag only transposes while this is true.
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
@@ -148,10 +148,13 @@ impl Element for Score {
     fn info(&self) -> Vec<(String, Value)> {
         // The one prop a gesture changes: a click selects, and `/gui_set
         // selected` is how a script would reproduce it.
-        vec![(
-            "selected".into(),
-            Value::from(self.data.selected.clone().unwrap_or_default()),
-        )]
+        // One element reads as its id, as it always has; several as the list.
+        let selected = match self.data.selected.as_slice() {
+            [] => Value::from(""),
+            [one] => Value::from(one.clone()),
+            many => Value::from(many.to_vec()),
+        };
+        vec![("selected".into(), selected)]
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
@@ -190,10 +193,44 @@ impl Element for Score {
             Some(id) if self.data.entry && self.data.staff_ids.contains(id) => None,
             _ => picked,
         };
-        let changed = picked != self.data.selected;
-        if changed {
-            self.data.selected = picked.clone();
-        }
+        // **A modified press adds to the selection rather than replacing it**:
+        // Ctrl toggles the element in it, Shift extends it to the element --
+        // the field's two conventions. What a range *is* (the notes in time
+        // between the two, across the staves between them) is the owner's to
+        // say, since only the model knows time; the host keeps the two ends
+        // until the owner answers with the whole range.
+        let mode = if input.mods.ctrl {
+            "toggle"
+        } else if input.mods.shift {
+            "extend"
+        } else {
+            ""
+        };
+        let next: Vec<String> = match (&picked, mode) {
+            (Some(id), "toggle") => {
+                let mut next = self.data.selected.clone();
+                match next.iter().position(|s| s == id) {
+                    Some(at) => {
+                        next.remove(at);
+                    }
+                    None => next.push(id.clone()),
+                }
+                next
+            }
+            (Some(id), "extend") => {
+                let mut next = self.data.selected.clone();
+                if !next.contains(id) {
+                    next.push(id.clone());
+                }
+                next
+            }
+            (Some(id), _) => vec![id.clone()],
+            // a modified press on paper keeps the selection it would have added to
+            (None, "toggle" | "extend") => self.data.selected.clone(),
+            (None, _) => Vec::new(),
+        };
+        let changed = next != self.data.selected;
+        self.data.selected = next;
         // ...and, on an editable score, holding it drags the element's pitch. A
         // press that does not move stays a plain selection: the release emits
         // nothing more. A read-only page (the default) still selects and
@@ -203,6 +240,7 @@ impl Element for Score {
         // slur, a time signature, a rest or a staff dragged like a notehead
         // and grew ledger lines, and where those sit is the engraver's.
         let dragging = self.data.editable
+            && mode.is_empty()
             && picked
                 .as_deref()
                 .is_some_and(|id| self.data.admits(id).pitch);
@@ -221,6 +259,7 @@ impl Element for Score {
         // clicking. Both are the client's, which is the line every other score
         // gesture already draws.
         if picked.is_none()
+            && mode.is_empty()
             && self.data.entry
             && let Some(entry) = self.data.entry_at(input.rect, at.0 as f32, at.1 as f32)
         {
@@ -235,10 +274,17 @@ impl Element for Score {
             // Nothing selected, nothing to drag: the press was never this
             // page's, so it goes back to the chain.
             (false, false) => Claim::Decline,
-            (true, _) => Claim::events(Events::message(vec![
-                OscType::String("element".into()),
-                OscType::String(picked.unwrap_or_default()),
-            ])),
+            (true, _) => {
+                let mut report = vec![
+                    OscType::String("element".into()),
+                    OscType::String(picked.unwrap_or_default()),
+                ];
+                // a plain press says only what it picked, as it always has
+                if !mode.is_empty() {
+                    report.push(OscType::String(mode.into()));
+                }
+                Claim::events(Events::message(report))
+            }
             (false, true) => Claim::take(),
         }
     }
@@ -397,7 +443,7 @@ mod tests {
                 OscType::String("n1".into()),
             ]))
         );
-        assert_eq!(score.data.selected.as_deref(), Some("n1"));
+        assert_eq!(score.data.selected.first().map(String::as_str), Some("n1"));
         assert_eq!(
             score.info(),
             vec![("selected".into(), Value::from("n1"))],
@@ -413,7 +459,7 @@ mod tests {
                 OscType::String(String::new()),
             ]))
         );
-        assert_eq!(score.data.selected, None);
+        assert!(score.data.selected.is_empty());
         // ...and pressing blank paper *again* changes nothing, so the press
         // goes back to the chain instead of being swallowed.
         assert_eq!(
@@ -438,6 +484,59 @@ mod tests {
         assert_eq!(score.release((x, y - 100.0), true, &input), Events::none());
     }
 
+    /// **Ctrl adds or removes, Shift extends, and neither drags.** A plain
+    /// press replaces the selection and says only what it picked; a modified
+    /// one keeps the others and says how it changed them, so the owner can
+    /// answer a Shift with the whole range between the two.
+    #[test]
+    fn a_modified_press_adds_to_the_selection_and_says_how() {
+        let metrics = Metrics::default();
+        let mut score = page(true);
+        let plain = input(&metrics);
+        score.press(at(&score, plain.rect, 150.0, 250.0), &plain);
+        assert_eq!(score.data.selected, vec!["n1".to_string()]);
+        score.release((0.0, 0.0), true, &plain);
+
+        let mut ctrl = input(&metrics);
+        ctrl.mods.ctrl = true;
+        let claim = score.press(at(&score, ctrl.rect, 450.0, 250.0), &ctrl);
+        assert_eq!(
+            score.data.selected,
+            vec!["n1".to_string(), "n2".to_string()]
+        );
+        assert!(score.data.drag.is_none(), "a modified press does not drag");
+        let Claim::Take(take) = claim else {
+            panic!("the press is the page's")
+        };
+        assert_eq!(
+            take.events,
+            Events::message(vec![
+                OscType::String("element".into()),
+                OscType::String("n2".into()),
+                OscType::String("toggle".into()),
+            ])
+        );
+        // the same again takes it out
+        score.press(at(&score, ctrl.rect, 450.0, 250.0), &ctrl);
+        assert_eq!(score.data.selected, vec!["n1".to_string()]);
+
+        let mut shift = input(&metrics);
+        shift.mods.shift = true;
+        score.press(at(&score, shift.rect, 450.0, 250.0), &shift);
+        assert_eq!(
+            score.data.selected,
+            vec!["n1".to_string(), "n2".to_string()]
+        );
+        // a list set from the owner is drawn whole, and read back as the list
+        assert!(score.set("selected", &serde_json::json!(["n1", "n2"])));
+        assert_eq!(
+            score.info(),
+            vec![("selected".into(), serde_json::json!(["n1", "n2"]))]
+        );
+        assert!(score.set("selected", &Value::from(r#"["n2"]"#)));
+        assert_eq!(score.data.selected, vec!["n2".to_string()]);
+    }
+
     /// **Only what has a pitch drags.** A slur on an editable page is selected
     /// like any element and a drag on it moves nothing: no displacement, no
     /// ledger lines, and nothing reported -- where a slur sits is the
@@ -456,7 +555,11 @@ mod tests {
         score.data = ScoreData::parse(&props);
         let (x, y) = at(&score, input.rect, 500.0, 870.0);
         let pressed = score.press((x, y), &input);
-        assert_eq!(score.data.selected.as_deref(), Some("s1"), "it is selected");
+        assert_eq!(
+            score.data.selected.first().map(String::as_str),
+            Some("s1"),
+            "it is selected"
+        );
         assert!(!matches!(pressed, Claim::Decline), "and says so");
         assert!(score.data.drag.is_none(), "but nothing is held");
         score.drag((x, y - 100.0), &input);
@@ -473,7 +576,7 @@ mod tests {
         let mut score = page(true);
         score.data.kinds.clear();
         score.press(at(&score, input.rect, 150.0, 250.0), &input);
-        assert_eq!(score.data.selected.as_deref(), Some("n1"));
+        assert_eq!(score.data.selected.first().map(String::as_str), Some("n1"));
         assert!(score.data.drag.is_none());
     }
 
@@ -544,7 +647,7 @@ mod tests {
     #[test]
     fn a_new_display_list_keeps_the_chrome_and_retires_the_preview() {
         let mut score = page(true);
-        score.data.selected = Some("n2".into());
+        score.data.selected = vec!["n2".into()];
         score.data.playhead = 500.0;
         score.data.drag = Some(ScoreDrag {
             id: "n2".into(),
@@ -554,7 +657,7 @@ mod tests {
             "display_list",
             &Value::from(r#"{"vb":[1000,400],"prims":[]}"#)
         ));
-        assert_eq!(score.data.selected.as_deref(), Some("n2"));
+        assert_eq!(score.data.selected.first().map(String::as_str), Some("n2"));
         assert_eq!(score.data.playhead, 500.0);
         assert!(score.data.editable, "an editor stays an editor");
         assert!(score.data.drag.is_none());
@@ -621,7 +724,7 @@ mod tests {
         // A note still answers as itself: the rule reaches the furniture only.
         score.press(at(&score, input.rect, 450.0, 250.0), &input);
         assert_eq!(
-            score.data.selected.as_deref(),
+            score.data.selected.first().map(String::as_str),
             Some("n2"),
             "a press on a notehead is still the note's"
         );
@@ -673,7 +776,7 @@ mod tests {
 
         score.press(at(&score, input.rect, 750.0, 950.0), &input);
         assert_eq!(
-            score.data.selected.as_deref(),
+            score.data.selected.first().map(String::as_str),
             Some("dyn1"),
             "a press on the dynamic selects it rather than writing a note"
         );
@@ -690,7 +793,7 @@ mod tests {
         score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
         score.press(at(&score, input.rect, 700.0, 380.0), &input);
         assert_eq!(
-            score.data.selected.as_deref(),
+            score.data.selected.first().map(String::as_str),
             Some("staff1"),
             "no entry on this page: the press has nothing else to be"
         );
@@ -800,7 +903,7 @@ mod tests {
         let mut score = page(true);
         score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
         score.press(at(&score, input.rect, 150.0, 200.0), &input);
-        assert_eq!(score.data.selected.as_deref(), Some("n1"));
+        assert_eq!(score.data.selected.first().map(String::as_str), Some("n1"));
 
         let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
         assert_eq!(

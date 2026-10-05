@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_core::notation::{AnyEngraver, Op, Score, item_id, sheet_to_mei};
+use clausters_core::notation::{AnyEngraver, Op, Score, item_id, measure_id, sheet_to_mei};
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
@@ -62,6 +62,12 @@ pub struct ScoreEditor {
     selection: Vec<String>,
     /// The written value a note entered on the page takes.
     value: Ratio,
+    /// Whether a press on empty staff writes a note. Off, the same press on a
+    /// staff selects the measure it fell in.
+    entry: bool,
+    /// The ids the page last drew, so an item is selected as every element it
+    /// is drawn as -- the parts a barline split it into, a chord's pitches.
+    drawn: Vec<String>,
 }
 
 impl std::fmt::Debug for ScoreEditor {
@@ -126,6 +132,8 @@ impl ScoreEditor {
             size: (960, 640),
             selection: Vec::new(),
             value: Ratio::new(1, 4),
+            entry: true,
+            drawn: Vec::new(),
         }
     }
 
@@ -145,7 +153,104 @@ impl ScoreEditor {
     pub fn window(&mut self, ids: Ids) -> Value {
         self.ids = Some(ids);
         let page = self.held().display_list(1);
-        window(&page, ids, &self.title, self.size, &self.describe())
+        self.drawn = page.draw.kinds.keys().cloned().collect();
+        window(
+            &page,
+            ids,
+            &self.title,
+            self.size,
+            &self.describe(),
+            self.entry,
+        )
+    }
+
+    /// **The elements an item is drawn as**: every id of the page that is the
+    /// item's -- itself, the parts a barline split it into, a chord's pitches
+    /// -- or its own id where the page has not been drawn.
+    fn elements_of(&self, items: &[u64]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for &item in items {
+            let before = out.len();
+            out.extend(
+                self.drawn
+                    .iter()
+                    .filter(|id| item_id(id) == Some(item))
+                    .cloned(),
+            );
+            if out.len() == before {
+                out.push(format!("n{item}"));
+            }
+        }
+        out
+    }
+
+    /// **What a press on `element` selects**: the items of a measure, when it
+    /// fell on a staff's own lines; the item the element is part of; or the
+    /// element itself, where it is no item's (a slur, a clef).
+    fn picked(&self, element: &str) -> Vec<String> {
+        if let Some((measure, staff)) = measure_id(element) {
+            let held = self.held();
+            let items = held
+                .sheet()
+                .map(|sheet| verbs::measure_items(sheet, measure, staff))
+                .unwrap_or_default();
+            drop(held);
+            return self.elements_of(&items);
+        }
+        match item_id(element) {
+            Some(item) => self.elements_of(&[item]),
+            None => vec![element.to_string()],
+        }
+    }
+
+    /// **The selection after a press**, by how it was pressed: alone, it is
+    /// what was picked; with Ctrl (`toggle`), what was picked joins or leaves;
+    /// with Shift (`extend`), it reaches from the first selected item to the
+    /// one picked, in time and across the staves between them.
+    fn select_by(&mut self, element: &str, mode: &str) {
+        if element.is_empty() {
+            if mode.is_empty() {
+                self.selection.clear();
+            }
+            return;
+        }
+        let picked = self.picked(element);
+        match mode {
+            "toggle" => {
+                if picked.iter().all(|id| self.selection.contains(id)) {
+                    self.selection.retain(|id| !picked.contains(id));
+                } else {
+                    for id in picked {
+                        if !self.selection.contains(&id) {
+                            self.selection.push(id);
+                        }
+                    }
+                }
+            }
+            "extend" => {
+                let anchor = self.items().first().copied();
+                let target = picked.iter().rev().find_map(|id| item_id(id));
+                let between = match (anchor, target) {
+                    (Some(from), Some(to)) => {
+                        let held = self.held();
+                        held.sheet()
+                            .map(|sheet| verbs::range(sheet, from, to))
+                            .unwrap_or_default()
+                    }
+                    _ => Vec::new(),
+                };
+                self.selection = if between.is_empty() {
+                    picked
+                } else {
+                    // the anchor stays first, so a second Shift+click
+                    // extends from the same note
+                    let mut items: Vec<u64> = anchor.into_iter().collect();
+                    items.extend(between.into_iter().filter(|i| Some(*i) != anchor));
+                    self.elements_of(&items)
+                };
+            }
+            _ => self.selection = picked,
+        }
     }
 
     /// The selected items, as the model names them, each once.
@@ -200,7 +305,7 @@ impl ScoreEditor {
 
     /// What `widget` is corrected with: the page, the scroll it sits in or the
     /// status line, as the score now stands -- nothing for another widget.
-    fn resync_widget(&self, widget: i64) -> Vec<Correction> {
+    fn resync_widget(&mut self, widget: i64) -> Vec<Correction> {
         let Some(ids) = self.ids else {
             return Vec::new();
         };
@@ -216,11 +321,17 @@ impl ScoreEditor {
 
     /// **Every widget of the window, corrected**: the page re-engraved, the
     /// scroll sized to it, the selection drawn and the status line told.
-    fn corrections(&self) -> Vec<Correction> {
+    fn corrections(&mut self) -> Vec<Correction> {
         let Some(ids) = self.ids else {
             return Vec::new();
         };
         let page = self.held().display_list(1);
+        self.drawn = page.draw.kinds.keys().cloned().collect();
+        // an item re-engraved may be drawn as other parts than it was
+        let items = self.items();
+        if !items.is_empty() {
+            self.selection = self.elements_of(&items);
+        }
         let mut out: Vec<Correction> = correction(&page, ids, self.size)
             .into_iter()
             .map(|(widget, props)| Correction {
@@ -229,11 +340,8 @@ impl ScoreEditor {
             })
             .collect();
         if let Some(Value::Object(props)) = out.first_mut().map(|c| &mut c.props) {
-            // the page draws one selected element; the rest are the editor's
-            props.insert(
-                "selected".into(),
-                json!(self.selection.last().cloned().unwrap_or_default()),
-            );
+            props.insert("selected".into(), json!(self.selection));
+            props.insert("entry".into(), json!(self.entry));
         }
         if let Some(status) = ids.status {
             out.push(Correction {
@@ -246,7 +354,7 @@ impl ScoreEditor {
 
     /// **Every widget of the window, corrected** -- what a history step leaves
     /// behind.
-    pub fn resync_all(&self, version: i64) -> Answer {
+    pub fn resync_all(&mut self, version: i64) -> Answer {
         conversation::answer(0, version, None, self.corrections())
     }
 
@@ -359,13 +467,10 @@ impl ScoreEditor {
             // A press named the element under it, or nothing.
             "element" => {
                 let picked = values.first().map(text).unwrap_or_default();
-                self.selection = if picked.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![picked]
-                };
+                let mode = values.get(1).map(text).unwrap_or_default();
+                self.select_by(&picked, &mode);
                 out.selected = Some(self.selection.clone());
-                (None, self.status())
+                (None, self.selected())
             }
             // A drag named the staff position a note reaches.
             "transpose" => {
@@ -426,17 +531,25 @@ impl ScoreEditor {
             .unwrap_or_default()
     }
 
-    /// The status line, told what is selected.
-    fn status(&self) -> Vec<Correction> {
-        self.ids
-            .and_then(|ids| ids.status)
-            .map(|status| {
-                vec![Correction {
-                    widget: i64::from(status),
-                    props: json!({"text": self.describe()}),
-                }]
-            })
-            .unwrap_or_default()
+    /// **The selection, shown**: the page told every element that is selected
+    /// -- a press names one and the editor may have selected a measure or a
+    /// range -- and the status line told what that is. The page is not
+    /// engraved again: nothing was edited.
+    fn selected(&self) -> Vec<Correction> {
+        let Some(ids) = self.ids else {
+            return Vec::new();
+        };
+        let mut out = vec![Correction {
+            widget: i64::from(ids.page),
+            props: json!({"selected": self.selection}),
+        }];
+        if let Some(status) = ids.status {
+            out.push(Correction {
+                widget: i64::from(status),
+                props: json!({"text": self.describe()}),
+            });
+        }
+        out
     }
 }
 
@@ -492,11 +605,13 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 /// - `window` -- `widget` (the page), `scroll`, `status`: the GuiDef.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
-///   `value` (the written value a note is entered with, `[n, d]`): `{}`.
+///   `value` (the written value a note is entered with, `[n, d]`), `entry`
+///   (whether a press on empty staff writes a note): `{}`.
 /// - `select` -- `elements`: the page's element ids to select. `{}`.
 /// - `selected` -- `{"elements", "items"}`: what is selected, as the page and
 ///   the model name it.
 /// - `value` -- `{"value"}`: the written value a note is entered with, `[n, d]`.
+/// - `entry` -- `{"entry"}`: whether a press on empty staff writes a note.
 /// - `mei` -- `{"mei"}`: the score as MEI.
 ///
 /// A verb that edits (`act`) is the context's, since it leaves an entry. An
@@ -542,6 +657,9 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             ) {
                 editor.size = (w, h);
             }
+            if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
+                editor.entry = entry;
+            }
             if let Some(value) = request
                 .get("value")
                 .and_then(|v| serde_json::from_value::<Ratio>(v.clone()).ok())
@@ -570,6 +688,7 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         })
         .to_string(),
         "value" => json!({"value": editor.value}).to_string(),
+        "entry" => json!({"entry": editor.entry}).to_string(),
         "mei" => json!({"mei": editor.held().mei()}).to_string(),
         _ => "{}".into(),
     }

@@ -84,17 +84,24 @@ pub fn page_width(size: (i64, i64)) -> f64 {
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the page under
-/// `ids.page`, in a scroll, with the status line under it saying `status`. A
-/// script's own widgets are the client's to append, as in every application
-/// here.
-pub fn window(page: &Page, ids: Ids, title: &str, size: (i64, i64), status: &str) -> Value {
+/// `ids.page`, in a scroll, with the status line under it saying `status`;
+/// `entry` is whether a press on empty staff writes a note. A script's own
+/// widgets are the client's to append, as in every application here.
+pub fn window(
+    page: &Page,
+    ids: Ids,
+    title: &str,
+    size: (i64, i64),
+    status: &str,
+    entry: bool,
+) -> Value {
     let width = page_width(size);
     let height = drawn_height(page, width);
     let mut picture = drawing(page);
     picture.insert("type".into(), json!("score"));
     picture.insert("id".into(), json!(ids.page));
     picture.insert("editable".into(), json!(true));
-    picture.insert("entry".into(), json!(true));
+    picture.insert("entry".into(), json!(entry));
     for (key, value) in [("x", 0.0), ("y", 0.0), ("w", width), ("h", height)] {
         picture.insert(key.into(), json!(value));
     }

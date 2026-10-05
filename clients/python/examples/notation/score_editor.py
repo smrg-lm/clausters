@@ -29,11 +29,21 @@ What it shows, roughly in the order it does it:
   along the staff -- only a note drags; a slur or a time signature is selected
   and never displaced. A press on empty staff writes a note of the editor's
   `value` there (an eighth, below) and selects it.
+* **Several notes are selected at once.** Ctrl+click adds a note to the
+  selection or takes it out; Shift+click extends the selection to the note
+  clicked, in time and across the staves between. With `entry` switched off
+  (the ``write`` button), a press on a staff selects the measure it fell in
+  instead of writing a note.
 * **The verbs act on the selection.** Every button calls one method of the
   editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
   `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is
   one call into the crate, which reads the score as it stands (an articulation
-  is toggled against the ones the note has) and records one entry.
+  is toggled against the ones the note has) and records one entry. A slur runs
+  from the first selected note to the last, so it is made by selecting its two
+  ends.
+* **A transformation takes the measures the selection covers.** `transform`
+  hands the model's operators -- here an octave up and a retrograde -- the
+  span of what is selected, or everything with nothing selected.
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike, and so do the undo and redo
   buttons.
@@ -48,12 +58,14 @@ Then, with the client importable::
 
     python clients/python/examples/notation/score_editor.py
 
-**Click** a note to select it; the status line says what is selected. **Drag**
-one up or down the staff to move it (which is not transposition: it takes the
-key signature's alteration for the letter it lands on). **Press on empty
-staff** -- between two notes, or past the last one, on either staff -- to write
-an eighth there. The buttons act on the selection; **play** plays the score as
-it stands. Close the window to stop. Needs an audio device, a display and a
+**Click** a note to select it; the status line says what is selected.
+**Ctrl+click** another to add it, **Shift+click** one to select everything up
+to it. **Drag** a note up or down the staff to move it (which is not
+transposition: it takes the key signature's alteration for the letter it lands
+on). **Press on empty staff** -- between two notes, or past the last one, on
+either staff -- to write an eighth there; with **write** switched off the same
+press selects the measure. The buttons act on the selection; **play** plays
+the score as it stands. Close the window to stop. Needs an audio device, a display and a
 GPU.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
@@ -156,13 +168,17 @@ buttons = [
           button(name="ff", label="ff"),
           button(name="plain", label="no marks"),
           layout="row", h=34.0),
-    panel(button(name="slur", label="slur x4"),
+    panel(button(name="slur", label="slur"),
           button(name="voice", label="other voice"),
           button(name="tie", label="tie"),
           button(name="silence", label="silence"),
           button(name="delete", label="delete"),
           button(name="undo", label="undo"),
           button(name="redo", label="redo"),
+          layout="row", h=34.0),
+    panel(button(name="write", label="write: on"),
+          button(name="octave", label="octave up"),
+          button(name="retro", label="retrograde"),
           layout="row", h=34.0),
 ]
 
@@ -172,27 +188,14 @@ editor.value = (1, 8)          # a press on empty staff writes an eighth
 win = editor.window
 
 # %% [markdown]
-# ## A span has two ends
-# A slur cannot ride a note the way an articulation does: it runs from one note
-# to another, so the editor makes it **from the first selected note to the
-# last**. A click selects one, so this button selects the note clicked and the
-# third after it, and asks for the slur between them.
+# ## Writing, or selecting a measure
+# A press on empty staff means one of two things, and `entry` says which:
+# write a note there, or select the measure the press fell in.
 
 # %%
-def slur_four() -> None:
-    """A slur from the selected note over the next three."""
-    if not editor.selected:
-        return
-    first = editor.selected[0]
-    for staff in score.sheet()["staves"]:
-        for voice in staff["voices"]:
-            ids = [item["id"] for item in voice["items"]]
-            if first in ids:
-                last = ids[min(ids.index(first) + 3, len(ids) - 1)]
-                if last != first:
-                    editor.select([f"n{first}", f"n{last}"])
-                    editor.spanner("slur")
-                return
+def toggle_entry() -> None:
+    editor.entry = not editor.entry
+    win["write"].set(label=f"write: {'on' if editor.entry else 'off'}")
 
 
 # %% [markdown]
@@ -236,16 +239,20 @@ win["trill"].on_click(lambda: editor.ornament("trill"))
 win["mf"].on_click(lambda: editor.dynamic("mf"))
 win["ff"].on_click(lambda: editor.dynamic("ff"))
 win["plain"].on_click(editor.clear_marks)
-win["slur"].on_click(slur_four)
+win["slur"].on_click(lambda: editor.spanner("slur"))
 win["voice"].on_click(editor.voice)
 win["tie"].on_click(editor.tie)
 win["silence"].on_click(editor.silence)
 win["delete"].on_click(editor.delete)
 win["undo"].on_click(editor.undo)
 win["redo"].on_click(editor.redo)
+win["write"].on_click(toggle_entry)
+win["octave"].on_click(lambda: editor.transform("transpose", semitones=12))
+win["retro"].on_click(lambda: editor.transform("retrograde"))
 editor.on_closed(lambda: print("window closed"))
-print("click a note to select it, drag one up or down the staff, press empty "
-      "staff to write an eighth; the buttons act on the selection")
+print("click a note to select it (Ctrl adds, Shift extends), drag one up or "
+      "down the staff, press empty staff to write an eighth; the buttons act on "
+      "the selection")
 
 
 # %%

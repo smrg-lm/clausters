@@ -548,6 +548,24 @@ pub fn item_id(element_id: &str) -> Option<u64> {
         .ok()
 }
 
+/// **Which measure, and which staff of it, the engraved element `element_id`
+/// is**, 1-based as a reader counts them -- `m3s2` is measure 3 of staff 2, and
+/// `m3` the measure across every staff (`None` for the staff) -- or `None`
+/// where it was not written as one.
+///
+/// The emitter's own spelling, read back where it is written, for the reason
+/// [`item_id`] is: a client reading the ids itself would disagree the first
+/// time the spelling changed.
+pub fn measure_id(element_id: &str) -> Option<(usize, Option<usize>)> {
+    let rest = element_id.strip_prefix('m')?;
+    let (measure, staff) = match rest.split_once('s') {
+        Some((measure, staff)) => (measure, Some(staff.parse().ok()?)),
+        None => (rest, None),
+    };
+    let measure: usize = measure.parse().ok()?;
+    (measure > 0 && staff != Some(0)).then_some((measure, staff))
+}
+
 fn number(value: &serde_json::Value, key: &str) -> Option<f64> {
     value.get(key)?.as_f64()
 }
@@ -623,6 +641,15 @@ mod tests {
         }
         fn midi_values(&self, _xml_id: &str) -> Option<String> {
             None
+        }
+    }
+
+    #[test]
+    fn a_measure_and_its_staff_are_read_off_their_id() {
+        assert_eq!(measure_id("m3s2"), Some((3, Some(2))));
+        assert_eq!(measure_id("m12"), Some((12, None)));
+        for not_one in ["n3", "m", "m0", "m3s0", "m3sx", "mx", ""] {
+            assert_eq!(measure_id(not_one), None, "{not_one}");
         }
     }
 
