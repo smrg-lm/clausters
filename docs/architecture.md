@@ -1027,7 +1027,12 @@ transformation over the measures it covers)
 are each read into model operations, applied to the shared score and recorded
 with the MEI before them as the inverse — a state, which a step loads back
 whole. A verb crosses through the context's `act`, which records it as a
-gesture is recorded. **The paper is the document's and the layout the
+gesture is recorded. **The menu bar is the application's**
+(`score::menu`): the window's `menu` value, whose entries that edit carry the
+editor's verb itself as their verb, so a pick is read by the same code a
+client's method call is; what is the window's own (the layout, entry, the value
+in hand, a step of the history) is a word, and the bar is sent again whenever
+the state it shows moved. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

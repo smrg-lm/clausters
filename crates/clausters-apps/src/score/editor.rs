@@ -12,8 +12,9 @@ use clausters_core::notation::{
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
+use super::menu;
 use super::verbs::{self, Action};
-use super::{Ids, PAGE_GAP, Shared, correction, scale_for, window};
+use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
 /// The vocabulary the editor's structure is registered under.
@@ -165,15 +166,29 @@ impl ScoreEditor {
         self.ids = Some(ids);
         let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
-        window(
-            &page,
+        window(Window {
+            page: &page,
             ids,
-            &self.title,
-            self.size,
-            &self.describe(),
-            self.entry,
-            self.scale(),
-        )
+            title: &self.title,
+            size: self.size,
+            status: &self.describe(),
+            entry: self.entry,
+            scale: self.scale(),
+            menu: self.menu(),
+        })
+    }
+
+    /// **The menu bar as the editor now stands**: what is checked in it is the
+    /// editor's state -- the layout, entry, the value in hand, the paper.
+    fn menu(&self) -> Value {
+        let setup = self.setup();
+        menu::menu(&menu::State {
+            view: self.view,
+            entry: self.entry,
+            value: self.value,
+            paper: setup.paper(),
+            landscape: setup.landscape(),
+        })
     }
 
     /// The page setup the score is on: the one somebody chose, or the default.
@@ -420,6 +435,14 @@ impl ScoreEditor {
                 props: json!({"text": self.describe()}),
             });
         }
+        // the bar shows the editor's state, so it is told when that may have
+        // moved: a paper undone, a layout switched from a script
+        if let Some(window) = self.window {
+            out.push(Correction {
+                widget: i64::from(window),
+                props: json!({"menu": self.menu()}),
+            });
+        }
         out
     }
 
@@ -464,7 +487,20 @@ impl ScoreEditor {
     pub fn act(&mut self, request: &Value, version: i64) -> Outcome {
         let mut out = <Outcome as turn::Turned>::at(version);
         out.turn = Kind::Route;
-        let reason = match serde_json::from_value::<Action>(request.clone()) {
+        let reason = self.perform(request, &mut out);
+        out.answer = Some(conversation::answer(
+            0,
+            out.version,
+            reason,
+            self.corrections(),
+        ));
+        out
+    }
+
+    /// One verb, read, planned over the selection and applied; what it left
+    /// is on `out`, and the answer is why it was refused, if it was.
+    fn perform(&mut self, request: &Value, out: &mut Outcome) -> Option<String> {
+        match serde_json::from_value::<Action>(request.clone()) {
             Err(why) => Some(format!("no such verb: {why}")),
             Ok(action) => {
                 let planned = {
@@ -475,17 +511,45 @@ impl ScoreEditor {
                     }
                 };
                 planned
-                    .and_then(|ops| self.edit(&ops, &action.label(), &mut out))
+                    .and_then(|ops| self.edit(&ops, &action.label(), out))
                     .err()
             }
-        };
+        }
+    }
+
+    /// **A pick of the menu bar**, answered: a step of the history is the
+    /// context's to walk, an edit is the verb it wrote, and what is the
+    /// window's own -- the layout, entry, the value in hand, selecting
+    /// everything -- moves the editor and enters no history.
+    fn pick(&mut self, message: &conversation::Message, args: &[Value], out: &mut Outcome) {
+        let verb = args.get(4).map(text).unwrap_or_default();
+        let state = args.get(5).map(int);
+        let mut reason = None;
+        match menu::read(&verb, state) {
+            menu::Pick::Undo | menu::Pick::Redo => {
+                out.turn = Kind::Step;
+                out.seq = message.seq;
+                out.redo = verb == "redo";
+                return;
+            }
+            menu::Pick::Act(action) => reason = self.perform(&action, out),
+            menu::Pick::SelectAll => {
+                let all = self.known_items();
+                self.selection = self.elements_of(&all);
+                out.selected = Some(self.selection.clone());
+            }
+            menu::Pick::Layout(view) => self.view = view,
+            menu::Pick::Entry(on) => self.entry = on,
+            menu::Pick::Value(value) => self.value = value,
+            menu::Pick::Unknown => reason = Some(format!("the menu has no entry for {verb}")),
+        }
+        out.turn = Kind::Route;
         out.answer = Some(conversation::answer(
-            0,
+            message.seq,
             out.version,
             reason,
             self.corrections(),
         ));
-        out
     }
 
     /// Apply `ops` as one entry called `label`: the MEI before them is its
@@ -658,6 +722,21 @@ impl Converse for ScoreEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         self.gesture(widget, tag, values, out)
+    }
+
+    /// **A pick of the menu bar is the window's own verb**: the bar is the
+    /// window's, so the pick arrives addressed to it rather than to a widget.
+    fn window_verb(
+        &mut self,
+        message: &conversation::Message,
+        args: &[Value],
+        out: &mut Outcome,
+    ) -> bool {
+        if message.addr != "/gui_event" || !message.is_window || message.tag != "menu" {
+            return false;
+        }
+        self.pick(message, args, out);
+        true
     }
 }
 

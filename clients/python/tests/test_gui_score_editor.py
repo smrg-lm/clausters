@@ -37,6 +37,9 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     assert page["editable"] is True and page["entry"] is True
     assert "kinds" in page and "notes" not in page
     assert status["type"] == "label"
+    # the window carries the menu bar, which holds every action
+    assert [title["label"] for title in tree["menu"]] == [
+        "File", "Edit", "View", "Notes", "Notation", "Measures", "Transform"]
 
 
 def test_opening_writes_the_page_from_the_model(score):

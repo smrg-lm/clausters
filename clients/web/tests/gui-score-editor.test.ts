@@ -48,6 +48,12 @@ if (!existsSync(engraver)) {
         assert.equal(page.entry, true);
         assert.ok("kinds" in page && !("notes" in page));
         assert.equal(status.type, "label");
+        // the window carries the menu bar, which holds every action
+        const bar = (tree as unknown as { menu: { label: string }[] }).menu;
+        assert.deepEqual(
+            bar.map((title) => title.label),
+            ["File", "Edit", "View", "Notes", "Notation", "Measures", "Transform"],
+        );
     });
 
     test("opening writes the page from the model", async () => {

@@ -34,6 +34,11 @@ What it shows, roughly in the order it does it:
   clicked, in time and across the staves between. With `entry` switched off
   (the ``write`` button), a press on a staff selects the measure it fell in
   instead of writing a note.
+* **The menu bar holds every action the editor has**, grouped as a score
+  editor's are: the paper, the layout, the value a note is written with, the
+  marks, the measures (a meter, a barline, a break), the transformations.
+  Each entry is one of the editor's verbs, so a pick and a method call are one
+  path.
 * **The verbs act on the selection.** Every button calls one method of the
   editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
   `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is

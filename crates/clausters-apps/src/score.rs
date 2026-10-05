@@ -9,9 +9,10 @@
 //!
 //! # The window
 //!
-//! The engraved score in a scroll that pans and zooms -- every page of the
-//! paper one under another, or one system as long as the music -- and a status
-//! line under it saying what is selected. The page takes
+//! A menu bar holding every action the application has ([`menu`]); the
+//! engraved score in a scroll that pans and zooms -- every page of the paper
+//! one under another, or one system as long as the music -- and a status line
+//! under it saying what is selected. The page takes
 //! pitch edits and note entry; what a hand may do to each element is the
 //! page's own (`kinds`, read against the core's `admits`), so a slur is
 //! selected and never dragged.
@@ -27,6 +28,7 @@
 //! here ([`verbs`]) rather than in each client.
 
 pub mod editor;
+pub mod menu;
 pub mod verbs;
 
 use std::sync::{Arc, Mutex};
@@ -91,20 +93,40 @@ pub fn scale_for(setup: &PageSetup, size: (i64, i64)) -> f64 {
 /// The gap between two pages of a page view, in page units: a centimetre.
 pub const PAGE_GAP: f64 = 1000.0;
 
-/// **The window**, as a GuiDef rooted at a `window` node: the drawing under
-/// `ids.page`, in a scroll that pans both ways and zooms, with the status line
-/// under it saying `status`; `entry` is whether a press on empty staff writes
-/// a note and `scale` how big the drawing is ([`scale_for`]). A script's own
-/// widgets are the client's to append, as in every application here.
-pub fn window(
-    page: &Page,
-    ids: Ids,
-    title: &str,
-    size: (i64, i64),
-    status: &str,
-    entry: bool,
-    scale: f64,
-) -> Value {
+/// What the window is composed from.
+pub struct Window<'a> {
+    /// The drawing.
+    pub page: &'a Page,
+    /// The caller's widget ids.
+    pub ids: Ids,
+    /// The window's title and its size.
+    pub title: &'a str,
+    pub size: (i64, i64),
+    /// What the status line says.
+    pub status: &'a str,
+    /// Whether a press on empty staff writes a note.
+    pub entry: bool,
+    /// How big the drawing is ([`scale_for`]).
+    pub scale: f64,
+    /// The menu bar ([`menu::menu`]).
+    pub menu: Value,
+}
+
+/// **The window**, as a GuiDef rooted at a `window` node: the menu bar; the
+/// drawing under `ids.page`, in a scroll that pans both ways and zooms; and
+/// the status line under it. A script's own widgets are the client's to
+/// append, as in every application here.
+pub fn window(w: Window<'_>) -> Value {
+    let Window {
+        page,
+        ids,
+        title,
+        size,
+        status,
+        entry,
+        scale,
+        menu,
+    } = w;
     let (width, height) = drawn_size(page, scale);
     let mut picture = drawing(page);
     picture.insert("type".into(), json!("score"));
@@ -141,6 +163,7 @@ pub fn window(
         "w": size.0,
         "h": size.1,
         "flow": "col",
+        "menu": menu,
         "children": [scroll, line],
     })
 }

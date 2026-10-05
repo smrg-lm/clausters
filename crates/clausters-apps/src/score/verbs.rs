@@ -80,6 +80,24 @@ pub enum Action {
         #[serde(default)]
         staff: Option<u32>,
     },
+    /// **Open or take out measures at the selection**: `insert_before` and
+    /// `insert_after` open `count` empty ones (one, left out) before the first
+    /// selected measure or after the last, and `remove` takes out the measures
+    /// the selection covers, with what is written in them.
+    Measures {
+        edit: String,
+        #[serde(default)]
+        count: Option<usize>,
+    },
+    /// Give the last selected measure a right barline: `single`, `dbl`, `end`,
+    /// `rptstart`, `rptend`, `rptboth` or `invis`.
+    Barline { kind: String },
+    /// Break the line or the page before the first selected measure
+    /// (`system`, `page`), or take the break back (`none`).
+    Break { kind: String },
+    /// Change the meter from the first selected measure on: `count` beats of
+    /// `unit` (3 and 4 is three quarters).
+    Meter { count: i64, unit: i64 },
     /// **Write a text of the page, or move it**: `field` is `title`,
     /// `subtitle`, `composer`, `arranger`, `lyricist`, `translator`,
     /// `copyright` or `note` (a footnote: `index` says which, from zero, and
@@ -133,6 +151,11 @@ impl Action {
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
+            Action::Measures { edit, .. } if edit == "remove" => "remove measures".into(),
+            Action::Measures { .. } => "insert measures".into(),
+            Action::Barline { .. } => "barline".into(),
+            Action::Break { .. } => "break".into(),
+            Action::Meter { .. } => "meter".into(),
             Action::Text { field, .. } => format!("page text: {field}"),
             Action::Op { op } => serde_json::to_value(op)
                 .ok()
@@ -275,6 +298,48 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
     if ids.is_empty() {
         return Err("select a note first".into());
     }
+    // the measures the selection covers, 1-based, for the verbs asked of them
+    let measure_of = |id: u64| locate(sheet, id).map(|l| sheet.grid.position(l.onset).0 + 1);
+    let (first, last) = (
+        ids.first().copied().and_then(measure_of).unwrap_or(1),
+        ids.last().copied().and_then(measure_of).unwrap_or(1),
+    );
+    match action {
+        Action::Measures { edit, count } => {
+            let count = count.unwrap_or(1);
+            return match edit.as_str() {
+                "insert_before" => Ok(vec![Op::InsertMeasures { at: first, count }]),
+                "insert_after" => Ok(vec![Op::InsertMeasures {
+                    at: last + 1,
+                    count,
+                }]),
+                "remove" => Ok(vec![Op::RemoveMeasures { first, last }]),
+                other => Err(format!(
+                    "measures are opened with insert_before or insert_after and taken out with remove, not {other}"
+                )),
+            };
+        }
+        Action::Barline { kind } => {
+            return Ok(vec![Op::SetBarline {
+                measure: last,
+                kind: kind.clone(),
+            }]);
+        }
+        Action::Break { kind } => {
+            return Ok(vec![Op::SetBreak {
+                measure: first,
+                kind: kind.clone(),
+            }]);
+        }
+        Action::Meter { count, unit } => {
+            return Ok(vec![Op::SetMeter {
+                measure: first,
+                count: *count,
+                unit: *unit,
+            }]);
+        }
+        _ => {}
+    }
     let notes: Vec<u64> = ids
         .iter()
         .copied()
@@ -397,7 +462,11 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
         Action::Op { .. }
         | Action::Transform { .. }
         | Action::Page { .. }
-        | Action::Text { .. } => {
+        | Action::Text { .. }
+        | Action::Measures { .. }
+        | Action::Barline { .. }
+        | Action::Break { .. }
+        | Action::Meter { .. } => {
             unreachable!("answered above")
         }
     })
@@ -656,6 +725,44 @@ mod tests {
         let bad: Action =
             serde_json::from_str(r#"{"action": "transform", "name": "fold"}"#).unwrap();
         assert!(super::ops(&sheet, &[], &bad).is_err());
+    }
+
+    #[test]
+    fn the_measure_verbs_act_on_the_measures_selected() {
+        let mut sheet = sheet();
+        sheet.grid = clausters_core::notation::Grid::uniform(2, 4);
+        // items 3 and 4 are the second bar of two quarters
+        let act = |json: &str| {
+            let action: Action = serde_json::from_str(json).unwrap();
+            ops(&sheet, &[3, 4], &action)
+        };
+        assert_eq!(
+            act(r#"{"action": "measures", "edit": "insert_before"}"#).unwrap(),
+            vec![Op::InsertMeasures { at: 2, count: 1 }]
+        );
+        assert_eq!(
+            act(r#"{"action": "measures", "edit": "insert_after", "count": 2}"#).unwrap(),
+            vec![Op::InsertMeasures { at: 3, count: 2 }]
+        );
+        assert_eq!(
+            act(r#"{"action": "measures", "edit": "remove"}"#).unwrap(),
+            vec![Op::RemoveMeasures { first: 2, last: 2 }]
+        );
+        assert_eq!(
+            act(r#"{"action": "barline", "kind": "dbl"}"#).unwrap(),
+            vec![Op::SetBarline {
+                measure: 2,
+                kind: "dbl".into()
+            }]
+        );
+        assert_eq!(
+            act(r#"{"action": "break", "kind": "system"}"#).unwrap(),
+            vec![Op::SetBreak {
+                measure: 2,
+                kind: "system".into()
+            }]
+        );
+        assert!(act(r#"{"action": "measures", "edit": "fold"}"#).is_err());
     }
 
     #[test]

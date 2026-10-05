@@ -474,3 +474,87 @@ fn a_text_of_the_page_is_written_moved_and_described() {
             .changed
     );
 }
+
+/// A pick of the menu bar: the event the host sends, addressed to the window.
+fn pick(verb: &str, state: Option<i64>) -> Event {
+    let mut args = vec![json!(1), json!(7), json!(1), json!("menu"), json!(verb)];
+    args.extend(state.map(|s| json!(s)));
+    Event {
+        addr: "/gui_event".into(),
+        args,
+    }
+}
+
+#[test]
+fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    let window = editor.window(IDS);
+    let titles: Vec<&str> = window["menu"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|m| m["label"].as_str())
+        .collect();
+    assert_eq!(
+        titles,
+        vec![
+            "File",
+            "Edit",
+            "View",
+            "Notes",
+            "Notation",
+            "Measures",
+            "Transform"
+        ]
+    );
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    // an entry that edits is the editor's verb, and one entry of the history
+    let verb = json!({"action": "articulation", "name": "stacc"}).to_string();
+    let out = editor.event(&pick(&verb, None), 1);
+    assert!(out.changed, "{:?}", out.answer);
+    assert_eq!(out.record.expect("an entry").label, "articulation stacc");
+    assert_eq!(
+        first_marks(&editor).articulations,
+        vec!["stacc".to_string()]
+    );
+    // undo is the context's to walk: the editor says a step was asked for
+    let out = editor.event(&pick("undo", None), 2);
+    assert_eq!(out.turn, Kind::Step);
+    assert!(!out.redo);
+    assert_eq!(out.seq, 7);
+}
+
+#[test]
+fn what_is_the_windows_own_moves_the_editor_and_the_bar_says_so() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    editor.window(IDS);
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    let out = editor.event(&pick("layout:continuous", Some(1)), 1);
+    assert!(!out.changed && out.record.is_none(), "a layout is no edit");
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "layout"}"#),
+        r#"{"layout":"continuous"}"#
+    );
+    // the answer carries the bar again, with the layout that is now in force
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    let bar = &corrections.last().expect("the window's").props["menu"];
+    assert_eq!(
+        bar[2]["menu"][1]["checked"], true,
+        "Continuous is the one on"
+    );
+    editor.event(&pick("value:1/8", Some(1)), 1);
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "value"}"#),
+        r#"{"value":[1,8]}"#
+    );
+    editor.event(&pick("entry", Some(0)), 1);
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "entry"}"#),
+        r#"{"entry":false}"#
+    );
+    editor.event(&pick("select_all", None), 1);
+    assert_eq!(editor.items(), vec![1, 2, 3, 4]);
+}

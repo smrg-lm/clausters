@@ -1509,7 +1509,25 @@ opened it.
     state; the icons; the transport controls. With it, from `X5.4`: a dialog
     the window opens while it is up -- the page text's fields, a
     transformation's parameter, the page setup -- and a text of the page
-    edited in place on a double click.
+    edited in place on a double click. Taken in four parts, each with its
+    commit:
+    - ✅ **X5.5.1 - The menu bar.** *(Done 2026-10-05. `score::menu` is the
+      window's `menu` value: File (the paper, the orientation), Edit, View,
+      Notes, Notation, Measures and Transform. An entry that edits carries the
+      editor's verb as its verb, so a pick is read by what reads a method
+      call; the window's own -- undo and redo, select all, the layout, entry,
+      the value in hand -- is a word, and undo is handed to the context to
+      walk. The bar is sent again with every correction, since what it checks
+      is the editor's state. The measure verbs it needed are new: `measures`
+      (insert before or after, remove), `barline`, `break` and `meter`, each
+      over the measures the selection covers. Not in it yet: Save, which
+      waits for the score's file verb (`X5.8`); Play, for its playback
+      (`X5.8`); Text and the entries that ask for a parameter, for the dialog
+      (`X5.5.4`); cut, copy and paste, which have no operation.)*
+    - ⬜ **X5.5.2 - The toolbar and the input state.**
+    - ⬜ **X5.5.3 - The toolbar's icons**, the engraver's SMuFL outlines.
+    - ⬜ **X5.5.4 - A dialog while the window is up**, and a text edited in
+      place.
   - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
     groups. Each ○ entry is the model growing an item or a field with its
     emission, its reading and its `Op`; they are taken palette by palette,
