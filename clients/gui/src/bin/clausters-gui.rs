@@ -136,11 +136,9 @@ usage:
                             is the application's: its chord reports it to the
                             window's owner.
       --font <path>         draw text with this typeface (TrueType/OpenType)
-                            instead of the embedded bitmap face. Only a host
-                            built with `--features font-atlas` reads it; any
-                            other build warns and keeps its bitmap face. With
-                            the feature and no path, one of the system's own
-                            faces is used when there is one.
+                            instead of the one the host carries. A host built
+                            without `font-atlas` has no rasterizer: it warns
+                            and draws with its bitmap face.
       --follow-block <s>    how much recorded audio a picture waits for
                             before it re-reads its summary, in seconds
                             (default 0, every frame). A take being recorded
@@ -150,7 +148,7 @@ usage:
                             neither the sound nor a playhead over it is
                             affected.
       --msaa <n>            antialias every window with n-sample multisampling
-                            (1 = off, the default; 4 is the usual smoothing).
+                            (4 is the default and the usual smoothing; 1 = off).
                             One multisampled attachment per window and nothing
                             per widget; a count this GPU does not offer for the
                             surface format falls back to 1 with a warning.
@@ -446,7 +444,10 @@ fn run(args: &[String]) -> Result<(), String> {
     // The windows' antialiasing: a sample count the GPU is asked for and clamps
     // (see `Gpu::new`). 1 is no multisampling, which is what an oscilloscope
     // trace wants and what every build drew before this was a flag.
-    let msaa = cli_msaa.or(cfg.gui.msaa).unwrap_or(1).max(1);
+    let msaa = cli_msaa
+        .or(cfg.gui.msaa)
+        .unwrap_or(clausters_gui::host::DEFAULT_MSAA)
+        .max(1);
     // The host's look: the default theme, overlaid by [gui.theme] from the
     // config, then by a --theme file. Unknown roles or bad colors warn and
     // fall through, so a stale style file degrades to the default look.
@@ -663,8 +664,8 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 /// Points the host at the typeface it draws with: the path the command line or
-/// the config named, or one of the system's faces. Only a build with a
-/// rasterizer can use one -- without the feature a named path is a warning, not
+/// the config named, else the face the host carries. Only a build with a
+/// rasterizer has one -- without the feature a named path is a warning, not
 /// an error, since the bitmap face draws either way.
 fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
     #[cfg(feature = "font-atlas")]
@@ -672,23 +673,15 @@ fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
         if headless {
             return; // nothing draws; a face would be read for nobody
         }
-        let source = match &path {
-            Some(p) => Some(clausters_gui::host::fontfile::FontFile::at(p)),
-            None => clausters_gui::host::fontfile::FontFile::system(),
-        };
-        match source {
-            Some(face) => {
-                let at = face.path().display().to_string();
-                if host.load_face(&face) {
-                    tracing::info!("drawing text with the typeface at {at}");
-                } else {
-                    tracing::warn!(
-                        "{at} is not a typeface this host can read; \
-                                    drawing with the embedded bitmap face"
-                    );
-                }
+        // the host's own first: it is what draws if the named one cannot
+        host.load_default_face();
+        if let Some(path) = &path {
+            let face = clausters_gui::host::fontfile::FontFile::at(path);
+            if host.load_face(&face) {
+                tracing::info!("drawing text with the typeface at {path}");
+            } else {
+                tracing::warn!("{path} is not a typeface this host can read; drawing with its own");
             }
-            None => tracing::info!("no typeface found; drawing with the embedded bitmap face"),
         }
     }
     #[cfg(not(feature = "font-atlas"))]

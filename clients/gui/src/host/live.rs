@@ -71,6 +71,21 @@ pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> 
             .any(|child| tree_has_live_widget(child, groups))
 }
 
+/// Whether a tree shows anything **fed live** -- a bus-backed meter or scope,
+/// a view of an audio tap, a `canvas` that follows the clock: what moves on
+/// every frame whether or not a playhead does. A window that holds none of it
+/// and only a playhead is still for as long as the counter its line reads is,
+/// and is repainted when that moves ([`Host::playheads_moved`](super::Host::playheads_moved)).
+pub(crate) fn tree_is_fed(widget: &Widget) -> bool {
+    widget.descendants().any(|w| {
+        let needs = w.kind.needs();
+        needs.animated
+            || !needs.buses.is_empty()
+            || !needs.levels.is_empty()
+            || !needs.taps.is_empty()
+    })
+}
+
 /// Whether `widget` shows a live playhead -- so its window must animate, the
 /// line tracking the engine sample clock every frame.
 ///
@@ -643,6 +658,41 @@ mod tests {
     fn tree(json: &str) -> Widget {
         let node = GuiNode::parse(json.as_bytes()).unwrap();
         Widget::from_node(1, &node, &[]).unwrap()
+    }
+
+    /// **A window that shows a playhead and nothing fed live is repainted
+    /// when the playhead's counter moves, and not otherwise.** A transport
+    /// that is stopped holds its position, so an editor's window is still
+    /// while nothing plays; a meter beside the page is fed on every frame,
+    /// and such a window is painted whatever the counter does.
+    #[test]
+    fn a_playhead_repaints_its_window_only_when_its_counter_moves() {
+        use crate::host::Host;
+        use crate::host::world::HeadClocks;
+
+        let page = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"score","playhead_at":0,"vb":[100,100],"prims":[]}]}"#,
+        );
+        assert!(!tree_is_fed(&page), "a page is fed by nothing");
+        let metered = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"score","playhead_at":0,"vb":[100,100],"prims":[]},
+                {"id":6,"type":"meter","bus":0}]}"#,
+        );
+        assert!(tree_is_fed(&metered), "a meter is");
+
+        let mut host = Host::new();
+        let at = |position: f64| HeadClocks::uniform(position);
+        assert!(host.playheads_moved(1, at(0.0)), "the first frame is drawn");
+        assert!(
+            !host.playheads_moved(1, at(0.0)),
+            "stopped: the line is where it was"
+        );
+        assert!(host.playheads_moved(1, at(480.0)), "rolling, or located");
+        assert!(!host.playheads_moved(1, at(480.0)));
+        // each window has its own line
+        assert!(host.playheads_moved(2, at(480.0)));
     }
 
     /// **A window with a piano roll in it is not, by itself, animated.** The

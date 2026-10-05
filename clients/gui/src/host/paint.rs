@@ -348,6 +348,28 @@ impl Mesh {
             self.tri_raw(a, b, c, color);
             return;
         };
+        // **Most triangles are wholly in or wholly out**, and neither needs
+        // cutting: a page of notation or a row of symbols is thousands of
+        // small triangles inside one scroll area, and each was being walked
+        // round the rectangle's four edges to come out as itself. Which side
+        // of each edge a corner is on says it in a few comparisons -- all
+        // three inside every edge is the triangle as it is, all three outside
+        // one edge is nothing -- and only one that straddles an edge is cut.
+        let (x1, y1) = (clip.x + clip.w, clip.y + clip.h);
+        let out = |p: [f32; 2]| {
+            u8::from(p[0] < clip.x)
+                | u8::from(p[0] > x1) << 1
+                | u8::from(p[1] < clip.y) << 2
+                | u8::from(p[1] > y1) << 3
+        };
+        let (oa, ob, oc) = (out(a), out(b), out(c));
+        if oa | ob | oc == 0 {
+            self.tri_raw(a, b, c, color);
+            return;
+        }
+        if oa & ob & oc != 0 {
+            return;
+        }
         // Sutherland-Hodgman against the clip rect's four half-planes: a
         // triangle clips to a convex polygon of at most 7 vertices, emitted
         // as a fan.

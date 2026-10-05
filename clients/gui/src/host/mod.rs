@@ -447,19 +447,27 @@ pub trait BulkLoader {
     fn file_bytes(&self, path: &Path) -> Option<Vec<u8>>;
 }
 
+/// **The antialiasing a host draws with when nobody says**: four samples to
+/// the pixel, the usual smoothing. The chrome is hairlines on the pixel grid,
+/// which a sample count leaves as they are; what it smooths is everything
+/// that is not -- a curve of an engraved page, a symbol's outline, a trace, a
+/// cord -- and those were stepped. A GPU that does not offer the count for
+/// the surface's format draws with one, and says so.
+pub const DEFAULT_MSAA: u32 = 4;
+
 /// Where the host's **typeface** comes from -- the fifth platform seam, and the
 /// one that only exists when the crate was built with a rasterizer (the
 /// `font-atlas` feature).
 ///
 /// A face is bytes, and every platform has its own way of reaching them: a
-/// native host maps a file (`fontfile::FontFile` -- one the command line names,
-/// or one of the system's), a page fetches a URL and pushes what came back
-/// (`web::FetchedFace`). Above the seam neither is named: the host asks
-/// for bytes once ([`Host::load_face`]) and every window draws with them.
+/// native host maps a file the command line names (`fontfile::FontFile`), a
+/// client hands bytes over (`/gui_font`). Above the seam neither is named:
+/// the host asks for bytes ([`Host::load_face`]) and every window draws with
+/// them. With none named a shell draws with the face the crate carries
+/// ([`Host::load_default_face`]).
 ///
-/// Answering `None` is ordinary, not an error: the embedded bitmap face is the
-/// floor this crate always draws on, so a host with no typeface renders exactly
-/// what a host built without the feature renders.
+/// Answering `None` is ordinary, not an error: the face in use keeps drawing,
+/// and under every face the bitmap is the floor this crate always draws on.
 #[cfg(feature = "font-atlas")]
 pub trait FontSource {
     /// The bytes of the face to draw with (TrueType/OpenType), or `None` where
@@ -811,7 +819,8 @@ pub struct Host {
     /// so every gesture reaches it -- a key, a menu's pick, the middle button.
     pub clipboard: clipboard::Clip,
     /// The antialiasing every window this host opens is drawn with: the MSAA
-    /// sample count of its render pass (`1` = none, the default). Like
+    /// sample count of its render pass ([`DEFAULT_MSAA`] unless told
+    /// otherwise; `1` = none). Like
     /// [`theme`](Self::theme) and [`metrics`](Self::metrics) it is one setting
     /// per host that the *shell* consumes -- a window reads it when its GPU
     /// comes up, and a window already open keeps the pass it was built with,
@@ -858,6 +867,9 @@ pub struct Host {
     /// A widget draws from its own entry or its nearest ancestor's
     /// ([`Host::head_clocks`]); an entry goes when its widget is freed.
     head_clocks: HashMap<i32, HeadClock>,
+    /// What each window's playheads read on the last frame tick that found
+    /// them moved ([`Host::playheads_moved`]).
+    drawn_clocks: HashMap<i32, world::HeadClocks>,
     /// **What this host did on its own and a front still has to carry out**:
     /// a window it opened in answer to a gesture -- the roll a double click on
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
@@ -882,6 +894,7 @@ impl Host {
             registry: Registry::new(),
             head_clock: HeadClock::default(),
             head_clocks: HashMap::new(),
+            drawn_clocks: HashMap::new(),
             window_defs: HashMap::new(),
             watched_buses: Vec::new(),
             buffer_stream: (Vec::new(), 0),
@@ -919,7 +932,7 @@ impl Host {
             metrics: metrics::Metrics::default(),
             keys: keymap::Keymap::default(),
             clipboard: clipboard::Clip::default(),
-            msaa: 1,
+            msaa: DEFAULT_MSAA,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,
@@ -1054,6 +1067,16 @@ impl Host {
         source
             .face()
             .is_some_and(|bytes| font::atlas::set_face(&bytes))
+    }
+
+    /// **Draws text with the face the crate carries**
+    /// ([`font::atlas::EMBEDDED`]): what a shell does as it starts, before a
+    /// command line, a config or a client names another. The core does not do
+    /// it for itself -- a host is made in a hundred tests that measure the
+    /// bitmap's grid -- so it is one call of each front.
+    #[cfg(feature = "font-atlas")]
+    pub fn load_default_face(&mut self) -> bool {
+        font::atlas::set_embedded()
     }
 
     /// The GuiDef store, if persistence was configured.

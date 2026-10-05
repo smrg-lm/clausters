@@ -225,6 +225,60 @@ impl Prim {
     }
 }
 
+/// What a kept fill was tessellated from: a glyph of the page's table, by its
+/// codepoint, or a path of the page's own, by the primitive that holds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum FillOf {
+    Glyph(u32),
+    Prim(usize),
+}
+
+/// **The fills a page has tessellated, kept**: triangle corners in the path's
+/// own coordinates, by what was filled and how finely.
+///
+/// A page is drawn again on every frame its cursor moves, and it is the same
+/// page: a few dozen glyphs, placed hundreds of times. Reading each outline's
+/// path and tessellating it for every placement, every frame, was most of
+/// what drawing a page cost. A fill is made once per **level** -- the
+/// tolerance asked for, rounded down to a power of two -- so a zoom that
+/// stays within an octave reuses it and one that leaves it flattens finer,
+/// never coarser than was asked. The model is replaced when the page is, and
+/// the fills go with it.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Fills(std::cell::RefCell<HashMap<(FillOf, i16), Fill>>);
+
+/// One kept fill: triangle corners, three to a triangle.
+type Fill = std::rc::Rc<[[f32; 2]]>;
+
+impl Fills {
+    /// More levels than a page is ever zoomed through: past it everything is
+    /// dropped, so a long sitting cannot grow the table without bound.
+    const MOST: usize = 4096;
+
+    /// The fill of the path `d`, which is what `of` names, at a tolerance no
+    /// coarser than `tol` (in the path's units).
+    pub(crate) fn of(&self, of: FillOf, d: &str, tol: f32) -> Fill {
+        let level = tol.max(f32::MIN_POSITIVE).log2().floor().clamp(-64.0, 64.0) as i16;
+        let mut kept = self.0.borrow_mut();
+        if let Some(fill) = kept.get(&(of, level)) {
+            return fill.clone();
+        }
+        if kept.len() >= Self::MOST {
+            kept.clear();
+        }
+        let fill: std::rc::Rc<[[f32; 2]]> =
+            tess::triangles(d, 2.0f32.powi(i32::from(level))).into();
+        kept.insert((of, level), fill.clone());
+        fill
+    }
+
+    /// How many fills are kept.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.borrow().len()
+    }
+}
+
 /// **A text of the page being typed over where it is drawn**: the element, the
 /// string as it stands, and the caret in it. The page draws this in the place
 /// of the text it engraved under that id, at the same anchor, so a centred
@@ -305,6 +359,8 @@ pub struct ScoreData {
     /// SMuFL codepoint -> outline path `d` (font units, y-up before the flip).
     pub glyphs: HashMap<u32, String>,
     pub prims: Vec<Prim>,
+    /// The fills this page has tessellated, kept ([`Fills`]).
+    pub(crate) fills: Fills,
     /// The playback-cursor track (sorted by `t`), empty when the client sent no
     /// timemap.
     pub cursors: Vec<Cursor>,
@@ -438,6 +494,7 @@ impl Default for ScoreData {
             vb_h: 0.0,
             glyphs: HashMap::new(),
             prims: Vec::new(),
+            fills: Fills::default(),
             cursors: Vec::new(),
             playhead: -1.0,
             playhead_at: -1.0,

@@ -279,6 +279,10 @@ impl WebApp {
         // The same wasm runs everywhere, so the platform is the browser's to
         // say: on a Mac the menus show Cmd where the table says Ctrl.
         host.keys.on_mac(canvas::on_mac());
+        // Text is drawn with the face the host carries, as a native window's
+        // is, until a page hands another over (`/gui_font`).
+        #[cfg(feature = "font-atlas")]
+        host.load_default_face();
         Self {
             id,
             host,
@@ -545,7 +549,13 @@ impl WebApp {
                 },
             );
             extents.extend(refresh_slots(slot, tree));
-            slot.request_redraw();
+            // A frame is drawn for what moved: something fed live always
+            // does, and a playhead does when its counter did.
+            let fed = live::tree_is_fed(tree);
+            let clocks = self.host.head_clocks(def, Some(self.buses.as_ref()));
+            if self.host.playheads_moved(def, clocks) || fed {
+                slot.request_redraw();
+            }
             // Asked after the tick, so the mutable walk above is over: whether
             // this tree draws a moving playhead is what makes the page poll the
             // engine clock at all.

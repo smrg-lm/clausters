@@ -3,11 +3,10 @@
 //! playhead sit, what does a drag of this many pixels mean in steps -- and
 //! checks the geometry that comes back.
 
-use lyon::tessellation::FillTessellator;
 use serde_json::{Map, Value};
 
 use super::glyphs::build_path;
-use super::tess::fill_path;
+use super::tess::triangles;
 use super::*;
 use crate::host::layout::Rect;
 use crate::host::paint::Mesh;
@@ -60,18 +59,8 @@ fn parses_absolute_moveto_lineto_close() {
     // a unit triangle
     let p = build_path("M0 0 L10 0 L0 10 Z").expect("path");
     // lyon builds it; a filled triangle tessellates to >=1 triangle
-    let mut mesh = Mesh::new();
-    let mut tess = FillTessellator::new();
-    fill_path(
-        &mut mesh,
-        &mut tess,
-        "M0 0 L10 0 L0 10 Z",
-        Affine::IDENTITY,
-        0.1,
-        [1.0; 4],
-    );
     assert!(
-        !mesh.is_empty(),
+        !triangles("M0 0 L10 0 L0 10 Z", 0.1).is_empty(),
         "closed triangle should tessellate to geometry"
     );
     drop(p);
@@ -81,28 +70,15 @@ fn parses_absolute_moveto_lineto_close() {
 fn parses_relative_cubic_like_a_glyph_outline() {
     // the notehead U+E0A4 outline shape (relative cubics), from verovio
     let d = "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z";
-    let mut mesh = Mesh::new();
-    let mut tess = FillTessellator::new();
-    fill_path(&mut mesh, &mut tess, d, Affine::IDENTITY, 0.5, [1.0; 4]);
     assert!(
-        !mesh.is_empty(),
+        !triangles(d, 0.5).is_empty(),
         "glyph outline should tessellate to geometry"
     );
 }
 
 #[test]
 fn malformed_path_is_skipped_not_panicked() {
-    let mut mesh = Mesh::new();
-    let mut tess = FillTessellator::new();
-    fill_path(
-        &mut mesh,
-        &mut tess,
-        "M0 0 Q nonsense",
-        Affine::IDENTITY,
-        0.5,
-        [1.0; 4],
-    );
-    assert!(mesh.is_empty());
+    assert!(triangles("M0 0 Q nonsense", 0.5).is_empty());
 }
 
 #[test]
@@ -763,4 +739,64 @@ fn the_grid_finds_a_mark_from_any_cell_it_crosses() {
     }
     assert_eq!(data.hit(ONE, 605.0, 300.0, 0.0), Some("short"));
     assert_eq!(data.hit(ONE, 100.0, 300.0, 0.0), None);
+}
+
+/// **A page's fills are tessellated once and kept.** A glyph placed twice is
+/// one fill, a frame drawn again makes none, and the triangles are the ones
+/// the same path gives tessellated afresh; a zoom of more than an octave
+/// flattens finer, and the page replaced starts over.
+#[test]
+fn a_page_keeps_the_fills_it_tessellated() {
+    let props: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+        r#"{"vb":[1000,1000],"step":90,
+            "glyphs":{"E0A4":"M0 0c0 60 40 100 100 100s100 -40 100 -100s-40 -100 -100 -100s-100 40 -100 100z"},
+            "prims":[{"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"},
+                     {"k":"glyph","cp":"E0A4","xf":[400,200,1,-1],"id":"n2"},
+                     {"k":"fill","d":"M0 0L50 0L50 50L0 50Z","xf":[10,10,1,1],"id":"b1"}]}"#,
+    )
+    .unwrap();
+    let data = ScoreData::parse(&props);
+    let colors = ScoreColors {
+        ink: [1.0; 4],
+        playhead: [1.0; 4],
+        selection: [1.0; 4],
+    };
+    let draw = |rect: Rect| {
+        let mut mesh = Mesh::new();
+        data.render(&mut mesh, rect, None, -1.0, colors);
+        mesh.positions().collect::<Vec<_>>()
+    };
+    let small = Rect::new(0.0, 0.0, 500.0, 500.0);
+    let first = draw(small);
+    assert_eq!(
+        data.fills.len(),
+        2,
+        "the notehead once, and the page's own path"
+    );
+    assert_eq!(
+        draw(small),
+        first,
+        "the same frame, and nothing tessellated for it"
+    );
+    assert_eq!(data.fills.len(), 2);
+    // the kept triangles are the path's own, at the level the frame asked for
+    let fit = data.fit(small);
+    let tol = 0.33 / fit.sx;
+    let level = tol.log2().floor() as i32;
+    let fresh = super::tess::triangles(
+        "M0 0c0 60 40 100 100 100s100 -40 100 -100s-40 -100 -100 -100s-100 40 -100 100z",
+        2.0f32.powi(level),
+    );
+    assert_eq!(
+        first.len(),
+        fresh.len() * 2 + 6,
+        "two placements and a square"
+    );
+    // four times the size is two octaves finer: new fills, with more corners
+    let large = draw(Rect::new(0.0, 0.0, 2000.0, 2000.0));
+    assert_eq!(data.fills.len(), 4);
+    assert!(
+        large.len() > first.len(),
+        "a curve is flattened finer when it is larger"
+    );
 }

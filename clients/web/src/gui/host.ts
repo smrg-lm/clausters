@@ -705,10 +705,11 @@ export class GuiHost {
      * becomes continuous rather than quantized to half-steps of the cell, which
      * a bitmap glyph's own pixels require.
      *
-     * A host built without a rasterizer logs and keeps drawing with its
-     * embedded bitmap face -- which is what it also does with bytes it cannot
-     * read. Neither is an error here: the bitmap face is the floor every build
-     * draws on.
+     * Until then the host draws with the face it carries, a subset of DejaVu
+     * Sans that is the same in a page and in a native window. Bytes it cannot
+     * read are logged and leave it on the face it had, and so does a host
+     * built without a rasterizer, which draws with its embedded bitmap face.
+     * Neither is an error here.
      */
     font(face: Uint8Array): void {
         this.send("/gui_font", face);

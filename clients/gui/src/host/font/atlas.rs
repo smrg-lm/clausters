@@ -1,12 +1,12 @@
 //! The `font-atlas` feature's other face: an outline typeface, rasterized on
 //! demand into one coverage texture the painter samples.
 //!
-//! The embedded bitmap ([`super`]) is the floor and this is the option, which is
-//! the whole shape of the milestone: with the feature compiled in but no face
-//! loaded, every measurement and every quad is the bitmap's, unchanged. A face
-//! arrives through the [`FontSource`](crate::host::FontSource) seam -- a file
-//! natively, a fetch in the page -- and from then on [`super::text`] emits
-//! textured quads instead of one rectangle per lit font-pixel.
+//! The embedded bitmap ([`super`]) is the floor: with no face loaded, every
+//! measurement and every quad is the bitmap's, unchanged. A shell loads the
+//! face the crate carries ([`EMBEDDED`]) as it starts, and another arrives
+//! through the [`FontSource`](crate::host::FontSource) seam -- a file
+//! natively, bytes a client hands over -- and from then on [`super::text`]
+//! emits textured quads instead of one rectangle per lit font-pixel.
 //!
 //! **The cell is still declared and the face is still drawn to fit it.** The
 //! pixel size a scale rasterizes at is the one whose *cap height* lands on the
@@ -302,20 +302,25 @@ pub fn has_face() -> bool {
     with(|a| a.has_face())
 }
 
-/// A face to test against, taken from the system -- the crate embeds none (see
-/// `PLAN.md`), so the tests of both this module and [`super`] state what they
-/// need and skip where it is absent, rather than shipping a megabyte of test
-/// data.
+/// **The face the host draws with when nobody names another**: a subset of
+/// DejaVu Sans -- Latin, Greek and Cyrillic, and the punctuation, arrows and
+/// symbols an interface writes -- compiled into the host, so a native window
+/// and a page draw the same text with nothing to find and nothing to fetch.
+/// `assets/fonts/` holds it, its license and the script that makes it.
+pub const EMBEDDED: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
+
+/// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
+/// host of one page finds the first one's face, or the one a client handed
+/// over, and leaves it.
+pub fn set_embedded() -> bool {
+    has_face() || set_face(EMBEDDED)
+}
+
+/// The face the tests of this module and of [`super`] draw with: the one the
+/// host embeds, so none of them depends on what a machine has installed.
 #[cfg(test)]
 pub(crate) fn system_face() -> Option<Vec<u8>> {
-    [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-    ]
-    .iter()
-    .find_map(|p| std::fs::read(p).ok())
+    Some(EMBEDDED.to_vec())
 }
 
 #[cfg(test)]
@@ -327,6 +332,32 @@ mod tests {
     fn loaded() -> Option<Atlas> {
         let mut a = Atlas::new();
         a.set_face(&system_face()?).then_some(a)
+    }
+
+    /// **The face the host carries is a face, and writes what an interface
+    /// is written in**: Latin with its accents, Greek, Cyrillic, the arrows
+    /// and the signs -- each with ink of its own, not the face's box for a
+    /// character it lacks.
+    #[test]
+    fn the_embedded_face_writes_the_scripts_an_interface_uses() {
+        let mut a = Atlas::new();
+        assert!(a.set_face(EMBEDDED));
+        let missing = a
+            .face
+            .as_ref()
+            .unwrap()
+            .font
+            .lookup_glyph_index('\u{10FFFF}');
+        for c in [
+            'A', 'g', '7', '\u{F1}', '\u{E9}', '\u{3A9}', '\u{416}', '\u{2192}', '\u{266F}',
+        ] {
+            let index = a.face.as_ref().unwrap().font.lookup_glyph_index(c);
+            assert_ne!(index, missing, "U+{:04X} is in the face", c as u32);
+            let g = a.glyph(c, 2.0).unwrap();
+            assert!(g.w > 0.0 && g.advance > 0.0, "U+{:04X} has ink", c as u32);
+        }
+        // a quarter of a megabyte, not the megabyte the whole family is
+        assert!(EMBEDDED.len() < 300_000, "{}", EMBEDDED.len());
     }
 
     #[test]

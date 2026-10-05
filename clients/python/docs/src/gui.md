@@ -1030,11 +1030,13 @@ pipeline and keeps its own opacity, and two overlapping shapes inside a faded
 widget show through each other, because the fade is per-shape and not a layer.
 
 Antialiasing is not a prop at all: smoothing every edge is one setting of the
-**host** (`--msaa 4`, or `msaa = 4` under `[gui]`), because it is the render
-pass that is multisampled — one attachment per window, nothing per widget.
+**host** — four samples by default; `--msaa 1`, or `msaa = 1` under `[gui]`,
+turns it off — because it is the render pass that is multisampled: one
+attachment per window, nothing per widget.
 
-The **typeface** is the host's too, for the same reason, and it may be handed
-over at any point:
+The **typeface** is the host's too, for the same reason. It carries the one it
+draws with — a subset of DejaVu Sans, the same in a native window and in a
+page — and another may be handed over at any point:
 
 ```python
 gui.font(Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf").read_bytes())
@@ -1047,9 +1049,9 @@ followed the typeface, so the same tree comes up the same size before and after.
 What changes is that `text_size` becomes continuous rather than quantized to
 half-steps of the cell, which a bitmap glyph's own pixels require. The
 launch-time spelling is `GuiProcess(font=...)` (the host's `--font`), for a face
-that should be in place before the first window opens, and a host built without
-a rasterizer keeps drawing with its embedded bitmap face — the floor every build
-draws on, and what a face it cannot read leaves it on.
+that should be in place before the first window opens. A host built without
+the rasterizer draws with its embedded bitmap face, the floor under every
+build; bytes the host cannot read leave it on the face it had.
 
 Panning, sweeping a selection and locating the transport are the
 **container's** gestures, so any container may carry a `gestures` table keyed

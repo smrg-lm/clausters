@@ -241,13 +241,13 @@ order carries on — so a GuiDef mounted in the flow of a page is never a
 keyboard trap. A script points the focus itself with
 `win.widget("name").focus()`, and hears every move as a `"focus"` event.
 
-**The typeface is the page's to hand over.** The browser bundle carries the
-host's glyph rasterizer but no face — a font is hundreds of kilobytes with a
-license of its own — so text draws with the embedded bitmap one until something
-hands over an outline face. Reaching the bytes is the platform's half (a page
-fetches a URL, a native host maps a file), and *handing them over* is the
-protocol's: `host.font(bytes)` is `/gui_font`, the same call in both clients,
-and the launch-time spelling is the host's own `--font <path>`.
+**The host draws text with a typeface it carries, and a page may hand over
+another.** The face is compiled into the host — a subset of DejaVu Sans, the
+same in a page and in a native window — so text needs nothing fetched. To draw
+with another, reaching its bytes is the platform's half (a page fetches a URL,
+a native host maps a file), and *handing them over* is the protocol's:
+`host.font(bytes)` is `/gui_font`, the same call in both clients, and the
+launch-time spelling is the host's own `--font <path>`.
 
 ```ts
 const face = await fetch("/fonts/DejaVuSansMono.ttf").then((r) => r.arrayBuffer());

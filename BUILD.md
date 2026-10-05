@@ -319,14 +319,12 @@ both on by default, so the wheel's host draws every widget the protocol has; a
 build that drops one is an opt-out for a program embedding the crate, not a
 packaging choice here (`clients/gui/README.md`).
 
-One feature is deliberately **not** in the wheel: the GUI host's `font-atlas`
-(an outline typeface behind a glyph rasterizer, `clients/gui/README.md`). It is
-weight for something the embedded bitmap face already does, and it ships no
-typeface of its own — a build that wants it points at a face on the machine, so
-it is a local build rather than a packaging default. The **web** package makes
-the opposite call and compiles it in (`clients/web/build.sh`): a page cannot
-rebuild its own wasm, the cost with no face bundled is the rasterizer alone
-(+46 KB gzipped), and the page fetches whatever typeface it wants.
+The GUI host's `font-atlas` -- an outline typeface behind a glyph rasterizer
+(`clients/gui/README.md`) -- is on by default too, in the wheel's host and in
+the web package's alike, and the host carries the face it draws with: a subset
+of DejaVu Sans, a quarter of a megabyte, compiled into the binary and the wasm
+(`clients/gui/assets/fonts/`, with its license and the script that makes it).
+A build without the feature draws with the embedded bitmap face.
 
 ### Building a package with a piece left out
 

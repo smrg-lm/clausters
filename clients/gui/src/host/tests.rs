@@ -527,6 +527,13 @@ fn window_def_opens_a_window_and_stores_the_typed_def() {
     );
 }
 
+/// A host antialiases what it draws unless it is told not to.
+#[test]
+fn a_host_draws_with_four_samples_unless_told() {
+    assert_eq!(Host::new().msaa, crate::host::DEFAULT_MSAA);
+    assert_eq!(crate::host::DEFAULT_MSAA, 4);
+}
+
 /// A window asks for what it declared -- and, with `hug`, for what it holds
 /// on the axes its content settles, keeping the declared number on the
 /// others. This is the workaround it retires: a single control in a window

@@ -119,6 +119,25 @@ impl Host {
             })
     }
 
+    /// **Whether window `def_id`'s playheads moved since the frame tick last
+    /// asked**: `clocks` is what they read now ([`Host::head_clocks`]), kept
+    /// when it differs from what they read then.
+    ///
+    /// It is what a window that shows a playhead and nothing fed live
+    /// ([`live::tree_is_fed`]) is repainted by. A
+    /// playhead is drawn from a counter, and a transport that is stopped
+    /// holds its position: the line is where it was, and a frame drawn for it
+    /// is the frame already on screen. An editor's window sat at thirty
+    /// frames a second for as long as it was open, playing or not, because
+    /// its anchor said a line *could* move.
+    pub fn playheads_moved(&mut self, def_id: i32, clocks: HeadClocks) -> bool {
+        if self.drawn_clocks.get(&def_id) == Some(&clocks) {
+            return false;
+        }
+        self.drawn_clocks.insert(def_id, clocks);
+        true
+    }
+
     /// The clocks window `def_id`'s playheads sweep from this frame, read
     /// once off `bus`: the window's own counter, and the reading of each
     /// widget that draws from another ([`HeadClocks::at`]).

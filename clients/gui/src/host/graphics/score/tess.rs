@@ -17,7 +17,7 @@ use lyon::tessellation::{
 };
 
 use super::glyphs::build_path;
-use super::{Affine, Prim, ScoreColors, ScoreData, Staff};
+use super::{Affine, FillOf, Prim, ScoreColors, ScoreData, Staff};
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Mesh};
 
@@ -74,8 +74,18 @@ impl ScoreData {
                 mesh.line(fit.apply(l.x0, *y), fit.apply(l.x1, *y), w, color);
             }
         }
-        let mut tess = FillTessellator::new();
-        for prim in &self.prims {
+        // a fill mapped to the screen: font or page units, through `xf`
+        let filled = |mesh: &mut Mesh, fill: &[[f32; 2]], xf: Affine| {
+            for corner in fill.as_chunks::<3>().0 {
+                mesh.tri(
+                    xf.apply(corner[0][0], corner[0][1]),
+                    xf.apply(corner[1][0], corner[1][1]),
+                    xf.apply(corner[2][0], corner[2][1]),
+                    color,
+                );
+            }
+        };
+        for (at, prim) in self.prims.iter().enumerate() {
             if ledgers.as_ref().is_some_and(|l| l.covers(prim, self.vb_w)) {
                 continue;
             }
@@ -96,25 +106,16 @@ impl ScoreData {
                 Prim::Glyph { cp, xf, .. } => {
                     if let Some(d) = self.glyphs.get(cp) {
                         // font -> page (xf) -> screen (fit): still translate+scale.
-                        fill_path(
-                            mesh,
-                            &mut tess,
-                            d,
-                            fit.then(*xf),
-                            tol_page * xf_shrink(*xf),
-                            color,
-                        );
+                        // One fill to the glyph, however often it is placed.
+                        let tol = tol_page * xf_shrink(*xf);
+                        let fill = self.fills.of(FillOf::Glyph(*cp), d, tol);
+                        filled(mesh, &fill, fit.then(*xf));
                     }
                 }
                 Prim::Fill { d, xf, .. } => {
-                    fill_path(
-                        mesh,
-                        &mut tess,
-                        d,
-                        fit.then(*xf),
-                        tol_page * xf_shrink(*xf),
-                        color,
-                    );
+                    let tol = tol_page * xf_shrink(*xf);
+                    let fill = self.fills.of(FillOf::Prim(at), d, tol);
+                    filled(mesh, &fill, fit.then(*xf));
                 }
                 Prim::Text {
                     s,
@@ -324,9 +325,9 @@ fn intersect(rect: Rect, clip: Option<Rect>) -> Rect {
 }
 
 /// How much a glyph's own transform shrinks page units, so the tolerance passed
-/// to [`fill_path`] (expressed in the glyph's *local* font units) still lands at
-/// the same on-screen size. `fill_path` flattens in the path's own coordinates
-/// then maps, so its tolerance must be pre-divided by the local scale.
+/// to the fill (expressed in the glyph's *local* font units) still lands at
+/// the same on-screen size. A fill is flattened in the path's own coordinates
+/// and then mapped, so its tolerance must be pre-divided by the local scale.
 fn xf_shrink(xf: Affine) -> f32 {
     1.0 / xf.sx.abs().max(f32::MIN_POSITIVE)
 }
@@ -381,44 +382,4 @@ pub fn edges(d: &str, tol: f32) -> Vec<[[f32; 2]; 2]> {
         })
         .filter(|[a, b]| a != b)
         .collect()
-}
-
-/// Parse an SVG path `d`, flatten + fill it with lyon, and emit the triangles
-/// into `mesh` after mapping each vertex through `xf`. Tessellation happens in
-/// the path's own coordinate space (tolerance `tol`), then the resulting
-/// vertices are mapped -- cheaper than transforming every bezier control point,
-/// and correct because `xf` is affine.
-pub(super) fn fill_path(
-    mesh: &mut Mesh,
-    tess: &mut FillTessellator,
-    d: &str,
-    xf: Affine,
-    tol: f32,
-    color: Color,
-) {
-    let Some(path) = build_path(d) else { return };
-    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
-    let opts = FillOptions::tolerance(tol.max(f32::MIN_POSITIVE)).with_fill_rule(FillRule::NonZero);
-    let ok = tess.tessellate_path(
-        &path,
-        &opts,
-        &mut BuffersBuilder::new(&mut buffers, |v: FillVertex| {
-            let p = v.position();
-            [p.x, p.y]
-        }),
-    );
-    if ok.is_err() {
-        return;
-    }
-    for tri in buffers.indices.as_chunks::<3>().0 {
-        let a = buffers.vertices[tri[0] as usize];
-        let b = buffers.vertices[tri[1] as usize];
-        let c = buffers.vertices[tri[2] as usize];
-        mesh.tri(
-            xf.apply(a[0], a[1]),
-            xf.apply(b[0], b[1]),
-            xf.apply(c[0], c[1]),
-            color,
-        );
-    }
 }

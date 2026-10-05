@@ -26,7 +26,7 @@ use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
-use crate::host::live::{self, tree_animates, tree_has_live_widget};
+use crate::host::live::{self, tree_animates, tree_has_live_widget, tree_is_fed};
 // Only the MIDI painting reaches a roll by its navigation group.
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
@@ -707,7 +707,14 @@ impl ApplicationHandler<UserEvent> for App {
                 // audio-rate scopes refresh their triggered tap windows likewise.
                 self.advance_live();
                 for id in &animated {
-                    if let Some(ws) = self.windows.get(id) {
+                    // A frame is drawn for what moved: something fed live
+                    // always does, an edge scroll does, and a playhead does
+                    // when its counter did.
+                    let fed = self.host.window_def(*id).is_some_and(tree_is_fed)
+                        || self.window_is_edge_scrolling(*id);
+                    let clocks = self.host.head_clocks(*id, self.shm.as_deref());
+                    let moved = self.host.playheads_moved(*id, clocks);
+                    if let (true, Some(ws)) = (fed || moved, self.windows.get(id)) {
                         ws.gpu.window.request_redraw();
                     }
                 }

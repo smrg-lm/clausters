@@ -276,6 +276,7 @@ impl Host {
             self.popups.remove(&root);
             self.tree_changed(root, effects);
         }
+        self.drawn_clocks.remove(&id);
         if self.window_defs.remove(&id).is_some() {
             // The window goes, and with it the scale a shell reported for it.
             self.resolved_metrics.remove(&id);

@@ -24,14 +24,15 @@
 //! one standing whenever the letter after it takes no accent. Anything else
 //! falls back to a box.
 //!
-//! **A build may draw with a real typeface instead** (`atlas`, the `font-atlas`
-//! feature): the same entry points then measure and emit through a rasterized
-//! glyph atlas. Every one of them asks `atlas::has_face` first, so the bitmap is
-//! the floor and a face is the option -- a host built with the feature and pointed at no face
-//! draws exactly what a host built without it draws. The two differ in one
-//! visible way, and deliberately: a bitmap glyph's own pixels must stay equal,
-//! so a script's `text_size` is quantized to half-steps of the cell
-//! ([`quantize_size`]), while with an atlas the prop is continuous.
+//! **A host draws with a real typeface** (`atlas`, the `font-atlas` feature,
+//! on by default): the same entry points then measure and emit through a
+//! rasterized glyph atlas, with the face the crate carries unless another is
+//! named. Every one of them asks `atlas::has_face` first, so the bitmap is the
+//! floor -- a host with no face loaded, as one built without the feature and
+//! as every test's is, draws what this module draws. The two differ in one
+//! visible way: a bitmap glyph's own pixels must stay equal, so it is drawn at
+//! whole steps of the screen's pixels ([`bitmap_pixel`]) whatever size was
+//! asked, while with an atlas the size is continuous.
 
 use super::layout::Rect;
 use super::paint::{Color, Mesh};
@@ -691,6 +692,16 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
         });
         return;
     }
+    // **The bitmap is drawn on the pixel grid, whatever size was asked.** A
+    // widget's text is its `text_size` times the display's factor, and at a
+    // factor of 1.25 that is 1.875 screen pixels to the font pixel: drawn so,
+    // a glyph's own pixels come out one and two wide by turns. So the glyph
+    // is drawn at the whole step nearest the size ([`bitmap_pixel`]), centred
+    // in the cell the size asked for -- which every measurement still is, so
+    // nothing a layout computed moves.
+    let px = bitmap_pixel(scale);
+    let inset = (GLYPH_W as f32 * (scale - px) * 0.5).floor().max(0.0);
+    let top = (y + GLYPH_H as f32 * (scale - px) * 0.5).round();
     let mut pen_x = x;
     for ch in s.chars() {
         if let Some(step) = outline::draw(mesh, ch, pen_x, y, scale, color) {
@@ -698,10 +709,28 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
             continue;
         }
         if !symbol_shape(mesh, ch, pen_x, y, scale, color) {
-            bitmap_glyph(mesh, ch, pen_x, y, scale, color);
+            bitmap_glyph(mesh, ch, pen_x.round() + inset, top, px, color);
         }
         pen_x += advance(scale);
     }
+}
+
+/// **The size one font pixel of the bitmap face is drawn at** when text is
+/// asked for at `scale`: whole screen pixels, so a glyph's own pixels are
+/// equal -- the step nearest the size that still leaves the glyph inside its
+/// cell, a half pixel clear of the next. Under two the rungs are 1 and 1.5:
+/// the half step is the one concession, since nothing else lies between a
+/// size too small to read and one a line cannot hold.
+pub fn bitmap_pixel(scale: f32) -> f32 {
+    if scale < 1.25 {
+        return 1.0;
+    }
+    if scale < 1.75 {
+        return 1.5;
+    }
+    let near = scale.round();
+    let fits = GLYPH_W as f32 * near <= ADVANCE as f32 * scale - 0.5;
+    if fits { near } else { scale.floor().max(1.0) }
 }
 
 /// The number of glyph cells that fit in `max_w` pixels at `scale`.
@@ -882,6 +911,50 @@ mod tests {
         let mut two = Mesh::new();
         text_centered(&mut two, "WW", narrow, 4.0, [1.0; 4]);
         assert_eq!(two.vertex_count(), 0);
+    }
+
+    /// **At a fractional size the bitmap's pixels stay whole and equal.** A
+    /// default text on a display scaled by a quarter is asked for at 1.875;
+    /// its glyphs are drawn at 2, every font pixel a 2 by 2 square on the
+    /// grid, inside the cell 1.875 measures -- and at a size that is already
+    /// a step, exactly as it always was.
+    #[test]
+    fn the_bitmap_is_drawn_on_whole_pixels_at_a_fractional_size() {
+        assert_eq!(bitmap_pixel(1.875), 2.0);
+        assert_eq!(bitmap_pixel(2.25), 2.0);
+        assert_eq!(bitmap_pixel(2.5), 2.0, "three would touch the next glyph");
+        assert_eq!(bitmap_pixel(2.667), 3.0);
+        assert_eq!((bitmap_pixel(1.0), bitmap_pixel(1.5)), (1.0, 1.5));
+        assert_eq!((bitmap_pixel(2.0), bitmap_pixel(3.0)), (2.0, 3.0));
+
+        let mut mesh = Mesh::new();
+        text(&mut mesh, "Hi", 10.3, 20.4, 1.875, [1.0; 4]);
+        assert!(mesh.vertex_count() > 0);
+        assert!(
+            mesh.positions()
+                .all(|(x, y)| x.fract() == 0.0 && y.fract() == 0.0),
+            "every corner is on the pixel grid"
+        );
+        // inside the two cells the size asked for
+        let right = mesh.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
+        assert!(right <= 10.3 + width("Hi", 1.875));
+        // a whole step is drawn as it always was
+        let (mut whole, mut plain) = (Mesh::new(), Mesh::new());
+        text(&mut whole, "Hi", 10.0, 20.0, 2.0, [1.0; 4]);
+        for (i, ch) in "Hi".chars().enumerate() {
+            bitmap_glyph(
+                &mut plain,
+                ch,
+                10.0 + i as f32 * advance(2.0),
+                20.0,
+                2.0,
+                [1.0; 4],
+            );
+        }
+        assert_eq!(
+            whole.positions().collect::<Vec<_>>(),
+            plain.positions().collect::<Vec<_>>()
+        );
     }
 
     #[test]

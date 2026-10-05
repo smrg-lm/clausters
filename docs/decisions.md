@@ -5259,6 +5259,9 @@ which is a stated limit rather than a bug to find.
 
 ## The crate embeds no typeface, because a face is licensed, heavy and already installed
 
+> **Reversed 2026-10-05** -- see "A host draws with a face it carries, and
+> antialiased", at the end. What follows is the record of the first decision.
+
 A GUI host built with a rasterizer draws with a face, and the obvious way to
 ship one is to embed it: `include_bytes!`, one file, nothing to configure. That
 is not what happened, and the reason is worth keeping so the question is not
@@ -9530,3 +9533,49 @@ The half-step is not new (ruler captions shipped at 1.5), and on the bitmap
 face it is the one concession to unequal pixels; on a display scaled by a
 third, the user's, 1.5 lands on a whole step. A script that wants the old size
 says `text_size: 2`.
+
+## A host draws with a face it carries, and antialiased
+
+*(2026-10-05, the user, reversing three earlier calls at once: "fueron hechas
+para un momento específico del desarrollo".)* Three things were settings a
+build or a launch had to ask for, each decided when the host drew meters and
+waveforms and the cost of a default was the whole question: the rasterizer was
+an optional feature with no face behind it ("The crate embeds no typeface,
+because a face is licensed, heavy and already installed"), antialiasing was
+`--msaa 1`, and a script's `text_size` was scaled by the display's factor and
+drawn as it came. The host now draws applications -- a score editor whose
+window is text, symbols and an engraved page -- and what a user saw by default
+was a 5x7 bitmap, stepped curves, and at some display factors glyphs whose own
+pixels were unequal.
+
+**The rasterizer is a default feature, and the crate carries the face.** A
+subset of DejaVu Sans -- Latin, Greek, Cyrillic, punctuation, arrows, signs;
+238 KB -- is compiled into the host (`clients/gui/assets/fonts/`, with the
+license it travels under and the script that makes it), and each shell loads
+it as it starts. The three reasons of the first decision, as they stand now.
+*Licensed*: the DejaVu license permits redistribution and modification under
+its own name, and the notice is inside the file. *Heavy*: a quarter of a
+megabyte against a wasm of fourteen. *Already installed*: natively, yes --
+and a page has no installed faces to read, so "find one" was a native-only
+answer, and one that made the same window a different picture on every
+machine. The implicit search of the system's faces is gone with it: the host
+is one, and its text is the same in a window and in a page. `--font` and
+`/gui_font` still name another.
+
+**Four samples is the default.** The chrome is hairlines on the pixel grid,
+which multisampling leaves as they are; what it smooths is a curve of a page,
+a symbol's outline, a trace. Measured on the score editor's window (1620 by
+910 physical pixels) the main thread and the browser's GPU process spend the
+same with four samples as with one, within the noise of the measurement.
+
+**The bitmap is drawn on the pixel grid whatever size is asked**
+(`font::bitmap_pixel`): the whole step nearest the size, centred in the cell
+the size measures, so no layout moves. It is the floor now rather than the
+face -- a build without the feature, a host with no face loaded -- and it is
+right at every display factor instead of at the whole ones.
+
+What it cost was measured and then paid for elsewhere: a window that shows a
+playhead is repainted when its counter moves rather than thirty times a second
+for as long as it is open, a page keeps the fills it tessellated, and a
+triangle wholly inside its clip is not walked round it
+(`clients/gui/PLAN.md`, "Found by use").

@@ -22,7 +22,7 @@ crate-type = ["cdylib", "rlib"]
 # headless GUI host `clausters-gui`).
 
 [features]
-default = ["midi", "notation", "patcher"]
+default = ["midi", "notation", "patcher", "font-atlas"]
 # Live MIDI input painting piano-roll notes (a `midi_in` roll opens a virtual
 # input port other apps/devices route into). On by default -- the host must
 # paint notes when it runs standalone, with no language client to do it -- and
@@ -70,13 +70,12 @@ notation = ["dep:lyon", "clausters-core/notation", "clausters-apps/notation"]
 # shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.
 patcher = []
-# A real (outline) typeface behind a glyph atlas, instead of the embedded 5x7
-# bitmap. Off by default because it is weight: the rasterizer plus the face a
-# build points at are hundreds of kilobytes in a wasm bundle, and a page holding
-# forty canvases is the profile this crate optimizes for. With the feature on
-# but no face loaded (`--font <path>` natively, `GuiBridge::font` in the page)
-# the host draws exactly as it does without it -- the bitmap face is the floor,
-# never a fallback that has to be reasoned about.
+# A real (outline) typeface behind a glyph atlas, instead of the 5x7 bitmap --
+# the rasterizer, and the face the host draws with when nobody names another
+# (`assets/fonts/`, a quarter of a megabyte). On by default: text is most of
+# what a window shows, and the bitmap is legible and no more. A build without
+# it draws the bitmap face, which stays the floor under every build: what a
+# host with no face loaded draws with.
 font-atlas = ["dep:fontdue"]
 
 [dependencies]
