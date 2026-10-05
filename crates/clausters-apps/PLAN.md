@@ -2835,3 +2835,33 @@ wrong.
   voice, where `insert` adds time), bound in both clients; the host's `score`
   element draws the cursor and reads a press by the mode; the example's
   prose and both books' paragraph on a gesture change with it.
+
+- ⬜ **The ○ entries are notation the model does not hold** *(listed by
+  `X5.6`; taken 2026-10-05)*. Each is the model growing an item or a field,
+  with its emission, its reading, its `Op` and its palette entry.
+  **Decided 2026-10-05, by the user: notation and sound** -- what an entry
+  means to a performance is the render's as well: a tempo mark sets the
+  tempo, the pedal is controller 64, an octave line moves the sounding
+  pitch, a tremolo is its repeated notes, an arpeggio staggers its chord, a
+  glissando is a curve, and repeats and endings are played out.
+
+- ⬜ **A channel group is not edited as one** *(`X5.8.1`: "editing a group
+  as one is not built")*. The render writes a staff's dynamics as the same
+  lane on each channel of its group, each naming the group in its target;
+  an edit to one of them in the roll changes that channel alone.
+
+- ⬜ **New and Close are in the File menu and do nothing** *(`X5.8.2`)*.
+  **Decided 2026-10-05, by the user**: New replaces the score in the same
+  window, as Open does and as one entry of the history -- one staff, treble
+  clef, common time, C major, four empty bars; Close closes the window, and
+  with changes not saved asks first: save, do not save, or cancel.
+
+- ⬜ **The standalone host's score neither plays nor exports**
+  *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with
+  `--score` the host boots its embedded server, as `--session` does, and
+  plays the score with a simple def of its own; it exports with the MIDI
+  writer the clients use.
+
+- ⬜ **The toolbar's voice and layout selectors are words** *(the symbols'
+  entry, above: `v1`, `v2`; `page`, `line`)*. They take symbols, as every
+  other tool has.
