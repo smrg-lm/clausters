@@ -262,6 +262,31 @@ if (!existsSync(engraver)) {
         assert.deepEqual(editor.value, [1, 8]);
     });
 
+    test("a menu entry opens a form and OK writes one entry", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        const tree = editor.draw();
+        const stack = (tree.children ?? [])[3] as unknown as { flow: string; index: number };
+        assert.deepEqual([stack.flow, stack.index], ["stack", 0]);
+        const widget = (name: string) =>
+            editor.view!.widget(editor, "dialog", editor.structure, name);
+        const held = editor as unknown as { windowId: number | null };
+        held.windowId ??= 0;
+        const window = held.windowId;
+        // the bar's entry opens the form; its fields are typed; OK writes them
+        editor.apply("/gui_event", [window, 1, versionOf(editor), "menu", "dialog:text"]);
+        editor.apply("/gui_event", [widget("text:title"), 2, versionOf(editor), "A title"]);
+        editor.apply("/gui_event", [widget("text:notes"), 3, versionOf(editor), "* one\n* two"]);
+        const header = () => (score.sheet() as unknown as {
+            header?: { title: string; notes: string[] };
+        }).header;
+        assert.equal(header(), undefined, "nothing until OK");
+        assert.ok(editor.apply("/gui_event", [widget("text:ok"), 4, versionOf(editor), "click"]));
+        assert.deepEqual([header()?.title, header()?.notes], ["A title", ["* one", "* two"]]);
+        assert.ok(editor.undo());
+        assert.equal(header(), undefined, "the form was one entry");
+    });
+
     test("edit opens a score in the score editor", async () => {
         const score = await Score.open(PHRASE);
         const editor = await edit(score, { open: false });

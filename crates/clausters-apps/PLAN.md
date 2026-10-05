@@ -1505,12 +1505,13 @@ opened it.
     grow widgets while it is open, which is the same thing the Transform
     menu's parameter dialog needs, so the three are built there on one
     mechanism.)*
-  - ⬜ **X5.5 - The menu bar and the toolbar.** Every entry above; the input
+  - ✅ **X5.5 - The menu bar and the toolbar.** Every entry above; the input
     state; the icons; the transport controls. With it, from `X5.4`: a dialog
     the window opens while it is up -- the page text's fields, a
-    transformation's parameter, the page setup -- and a text of the page
-    edited in place on a double click. Taken in four parts, each with its
-    commit:
+    transformation's parameter, the page setup. *(A text of the page edited in
+    place on a double click was planned here and did not make it: it is the
+    host's gesture, and is open under "Found by use".)* Taken in four parts,
+    each with its commit:
     - ✅ **X5.5.1 - The menu bar.** *(Done 2026-10-05. `score::menu` is the
       window's `menu` value: File (the paper, the orientation), Edit, View,
       Notes, Notation, Measures and Transform. An entry that edits carries the
@@ -1557,8 +1558,25 @@ opened it.
       not hand out keeps its text label; the tie has none in the font and
       stays text. The size an outline is drawn at (the em 1.25 body boxes
       tall) is set by reasoning and is to be judged by eye.)*
-    - ⬜ **X5.5.4 - A dialog while the window is up**, and a text edited in
-      place.
+    - ✅ **X5.5.4 - A dialog while the window is up.** *(Done 2026-10-05.
+      An editor answers with props and never with nodes, and a dialog is a
+      node; so the three forms are **in the window from the start**, each
+      alone on a page of a `stack` that shows none, and opening one is the
+      stack's `index` corrected to its page with its fields corrected to what
+      the score holds. The host needed nothing: a hidden page is not placed,
+      and a modal `layout` on a placed one is set aside and centred as any is
+      -- pinned by a layout test and written into the protocol's reference.
+      `score::dialogs` holds the forms -- the page's text (the header's
+      fields, and the footnotes one to a line), the page's margins and staff
+      in millimetres, and the number a transformation takes (transpose,
+      stretch, repeat) -- and `editor/forms.rs` what each does: a field
+      reports its text as it is typed and the editor keeps it, `OK` writes
+      one entry, a form that cannot be read stays up with the reason, and
+      `Cancel`, Escape and the close mark take it down. The menu gained the
+      entries, disabled in a window composed without the dialogs' widgets.
+      **A text of the page edited in place is not in it** and is recorded
+      under "Found by use": it needs the page to report a double click and to
+      say where the text is drawn, which is a gesture of the host's.)*
   - ⬜ **X5.6 - The palettes.** The ● entries first, as titled, collapsible
     groups. Each ○ entry is the model growing an item or a field with its
     emission, its reading and its `Op`; they are taken palette by palette,
@@ -2440,3 +2458,18 @@ wrong.
   the selection as it was, where the accidental tool, beside them, is the
   selection's when there is one. One rule for the three, or the difference
   said in the tool's tip, is to be decided with the palettes (`X5.6`).
+
+- ⬜ **A text of the page cannot be edited where it is drawn** *(found
+  2026-10-05, closing `X5.5.4`)*. A press on a title selects it and the status
+  line says its field and its place; changing it is the page text dialog, or
+  `set_text`. Editing it in place needs two things the page does not do: to
+  report a **double click** on an element, as against the press that selects
+  it, and to hold a text field over the box the text is drawn in, which moves
+  with the scroll and the zoom. Both are the host's `score` element's, and the
+  field's commit is then the `text` verb that exists.
+
+- ⬜ **The dialogs' labels and the toolbar are not laid out by eye yet**
+  *(the same day)*. The widths of a form's captions and fields, the height of
+  the footnotes' field, and the size an outline glyph is drawn at were set by
+  reasoning, with the window not on screen; they are to be judged in the eye
+  pass that closes `X5`.

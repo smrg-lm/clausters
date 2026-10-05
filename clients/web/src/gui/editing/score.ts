@@ -55,8 +55,8 @@ export class ScoreDomain extends Domain<Score> {
 }
 
 /**
- * The toolbar, the page in the scroll it sits in and the status line under it,
- * composed by the crate.
+ * The toolbar, the page in the scroll it sits in, the status line under it and
+ * the dialogs a menu entry opens, composed by the crate.
  */
 export class ScoreView extends View<Score> {
     build(editor: Editor<Score>): GuiNode {
@@ -70,12 +70,19 @@ export class ScoreView extends View<Score> {
         for (const name of Array.isArray(names) ? names.map(String) : []) {
             tools[name] = this.widget(editor, "tool", editor.structure, name);
         }
+        // and the widgets of its dialogs, the same way
+        const named = ed.coreCall("dialogs").dialogs;
+        const dialogs: Record<string, number> = {};
+        for (const name of Array.isArray(named) ? named.map(String) : []) {
+            dialogs[name] = this.widget(editor, "dialog", editor.structure, name);
+        }
         ed.syncCore();
         const tree = ed.coreCall("window", {
             widget: page,
             scroll,
             status,
             tools,
+            dialogs,
         }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.

@@ -45,6 +45,14 @@ impl Host {
                 Some(((*name).to_string(), id))
             })
             .collect();
+        // and the dialogs' widgets the same way
+        let dialogs: clausters_apps::score::dialogs::Ids = clausters_apps::score::dialogs::names()
+            .into_iter()
+            .filter_map(|name| {
+                let id = self.own_widget(structure, SCORE, &format!("dialog:{name}"))?;
+                Some((name, id))
+            })
+            .collect();
         let owner = self.owner.as_mut()?;
         let request = serde_json::json!({"title": title, "w": size.0, "h": size.1}).to_string();
         let opened: serde_json::Value = serde_json::from_str(&owner.editing.open_score(
@@ -58,7 +66,7 @@ impl Host {
             .map(|m| m as clausters_apps::editing::MemberId)?;
         let def = match owner.editing.member_mut(member) {
             Some(Member::Score(editor)) => {
-                let def = editor.window(ids, tools);
+                let def = editor.window(ids, tools, dialogs);
                 clausters_apps::score::editor::call_json(
                     editor,
                     &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),
@@ -318,5 +326,52 @@ mod tests {
         );
         assert!(host.deliver(def_id, &delete));
         assert_eq!(items(&held), 4);
+    }
+
+    /// The index of the stack the dialogs are pages of, as the window stands.
+    fn dialog_page(host: &Host, def_id: i32) -> i32 {
+        let stack = host
+            .own_widget_id(0, SCORE, "dialog:stack")
+            .expect("the stack");
+        match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
+            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
+            other => panic!("a stack: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_form_is_opened_by_the_bar_and_written_on_ok_in_this_window() {
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let held = score();
+        let def_id = host
+            .open_score(held.clone(), "score", (960, 640), None)
+            .expect("a window");
+        assert_eq!(dialog_page(&host, def_id), 0, "no dialog is up");
+
+        // the bar's entry turns the stack to the form's page: the dialog is up
+        let open = host.event_message(
+            def_id,
+            1,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("dialog:text".into()),
+            ],
+        );
+        assert!(host.deliver(def_id, &open));
+        assert_eq!(dialog_page(&host, def_id), 1);
+
+        // a field typed and OK pressed: the score has it, and the dialog is down
+        let title = host.own_widget(0, SCORE, "dialog:text:title").unwrap();
+        let ok = host.own_widget(0, SCORE, "dialog:text:ok").unwrap();
+        let typed = host.event_message(title, 2, vec![OscType::String("A title".into())]);
+        assert!(host.deliver(def_id, &typed));
+        let click = host.event_message(ok, 3, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        assert_eq!(
+            held.lock().unwrap().sheet().unwrap().header.title,
+            "A title"
+        );
+        assert_eq!(dialog_page(&host, def_id), 0);
     }
 }

@@ -1045,7 +1045,16 @@ asked of it as a notehead, so `Score::outlines` engraves a *specimen*
 page carries, then puts the document back -- the same call under the native
 engraver and the wasm one. The window carries those outlines as its `glyphs`,
 and the host's font module draws a character that has one as a shape in the
-glyph's cell (`font::outline`), which is all an icon ever was there. **The paper is the document's and the layout the
+glyph's cell (`font::outline`), which is all an icon ever was there. **A
+dialog is in the window from the start** (`score::dialogs`): an editor answers
+with props, never with nodes, so the three forms -- the page's text, a
+transformation's parameter, the margins and the staff -- are each alone on a
+page of a `stack` that shows none, and opening one is that stack's `index`
+corrected to its page with its fields corrected to what the score holds. A
+field reports its text as it is typed and the editor keeps it
+(`editor/forms.rs`); nothing reaches the score until `OK`, which is one entry
+of the history however many fields changed, and a form that cannot be read
+stays up and says why. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

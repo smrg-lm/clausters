@@ -213,3 +213,23 @@ def test_a_tool_and_a_menu_pick_are_the_editors_verbs(score):
     value = editor.view.widget(editor, "tool", editor.structure, "value")
     editor.apply("/gui_event", [value, 2, editor._version, 3])
     assert editor.value == (1, 8)
+
+
+def test_a_menu_entry_opens_a_form_and_ok_writes_one_entry(score):
+    editor = ScoreEditor(score)
+    tree = editor.draw()
+    stack = tree["children"][3]
+    assert (stack["flow"], stack["index"]) == ("stack", 0)
+    widget = lambda name: editor.view.widget(editor, "dialog", editor.structure, name)
+    window = editor._window if editor._window is not None else 0
+    editor._window = window
+    # the bar's entry opens the form; its fields are typed; OK writes them
+    editor.apply("/gui_event", [window, 1, editor._version, "menu", "dialog:text"])
+    editor.apply("/gui_event", [widget("text:title"), 2, editor._version, "A title"])
+    editor.apply("/gui_event", [widget("text:notes"), 3, editor._version, "* one\n* two"])
+    assert "header" not in score.sheet(), "nothing until OK"
+    assert editor.apply("/gui_event", [widget("text:ok"), 4, editor._version, "click"])
+    head = score.sheet()["header"]
+    assert (head["title"], head["notes"]) == ("A title", ["* one", "* two"])
+    assert editor.undo()
+    assert "header" not in score.sheet(), "the form was one entry"

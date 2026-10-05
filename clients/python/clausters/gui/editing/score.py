@@ -31,8 +31,8 @@ class ScoreDomain(Domain):
 
 
 class ScoreView(View):
-    """The toolbar, the page in the scroll it sits in and the status line
-    under it, composed by the crate."""
+    """The toolbar, the page in the scroll it sits in, the status line under
+    it and the dialogs a menu entry opens, composed by the crate."""
 
     def build(self, editor) -> dict:
         page = self.widget(editor, "page", editor.structure)
@@ -41,9 +41,12 @@ class ScoreView(View):
         # the crate names the toolbar's tools and this numbers them
         tools = {str(name): self.widget(editor, "tool", editor.structure, str(name))
                  for name in editor._call("tools").get("tools") or ()}
+        # and the widgets of its dialogs, the same way
+        dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
+                   for name in editor._call("dialogs").get("dialogs") or ()}
         editor._sync_core()
         tree = editor._call("window", widget=page, scroll=scroll, status=status,
-                            tools=tools)
+                            tools=tools, dialogs=dialogs)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]
@@ -60,7 +63,9 @@ class ScoreEditor(Editor):
     on empty staff writes a note of `value` there (`entry`; off, it selects the
     measure). The menu bar holds every action, and the toolbar what a hand
     reaches for while it writes: the value, its dot, a rest, an accidental,
-    the articulations, a tie, a triplet, the voice and the layout. Ctrl+click
+    the articulations, a tie, a triplet, the voice and the layout. An entry
+    that needs more than a pick -- the page's text, its margins, a
+    transformation's parameter -- opens a dialog over the window. Ctrl+click
     adds a note to the selection or takes it out, and
     Shift+click extends the selection to it, in time and across the staves
     between. The verbs act on what is selected (`selected`, `select`); each is

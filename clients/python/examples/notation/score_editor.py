@@ -38,7 +38,9 @@ What it shows, roughly in the order it does it:
   editor's are: the paper, the layout, the value a note is written with, the
   marks, the measures (a meter, a barline, a break), the transformations.
   Each entry is one of the editor's verbs, so a pick and a method call are one
-  path.
+  path. An entry that ends in three dots opens a dialog over the window --
+  the page's text, its margins, a transformation's parameter -- and writes
+  what it holds on OK, as one step of the history.
 * **The toolbar holds what a hand reaches for while it writes**: the value
   the next note takes, its dot, whether it is a rest and its accidental (the
   input state, which is also `editor.value`, `editor.dotted`, `editor.rest`

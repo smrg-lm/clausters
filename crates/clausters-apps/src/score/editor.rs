@@ -14,7 +14,7 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::verbs::{self, Action};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
-use super::{menu, tools};
+use super::{dialogs, menu, tools};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
 /// The vocabulary the editor's structure is registered under.
@@ -61,6 +61,10 @@ pub struct ScoreEditor {
     ids: Option<Ids>,
     /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
     tools: tools::Ids,
+    /// The dialogs' widgets, by name ([`dialogs::names`]).
+    dialogs: dialogs::Ids,
+    /// The form that is up, and what its fields hold as they are typed.
+    dialog: Option<dialogs::Open>,
     /// The engraver's outlines for the symbols the tools are drawn with:
     /// asked once, the first time a window has a toolbar, and kept -- `None`
     /// until then, and empty when the engraver handed none out.
@@ -152,6 +156,8 @@ impl ScoreEditor {
             window: None,
             ids: None,
             tools: tools::Ids::new(),
+            dialogs: dialogs::Ids::new(),
+            dialog: None,
             outlines: None,
             title: "Score".into(),
             size: (960, 640),
@@ -178,12 +184,17 @@ impl ScoreEditor {
         self.score.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// **The window**, with the page under `ids.page` and each tool of the
-    /// toolbar under the id `tools` gives it -- which are then the widgets the
-    /// editor answers for. With no tool numbered the window has no toolbar.
-    pub fn window(&mut self, ids: Ids, tools: tools::Ids) -> Value {
+    /// **The window**, with the page under `ids.page`, each tool of the
+    /// toolbar under the id `tools` gives it and each widget of the dialogs
+    /// under the one `dialogs` does -- which are then the widgets the editor
+    /// answers for. With no tool numbered the window has no toolbar, and
+    /// without every widget of the dialogs it has none of them.
+    pub fn window(&mut self, ids: Ids, tools: tools::Ids, dialogs: dialogs::Ids) -> Value {
         self.ids = Some(ids);
         self.tools = tools;
+        self.dialogs = dialogs;
+        // a window drawn again opens with no form up
+        self.dialog = None;
         // the tools' symbols are the engraver's, asked for before the page is
         // drawn since asking loads the document again
         if !self.tools.is_empty() && self.outlines.is_none() {
@@ -204,6 +215,7 @@ impl ScoreEditor {
             scale: self.scale(),
             menu: self.menu(),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
+            dialogs: dialogs::stack(&self.dialogs),
             glyphs: &outlines,
         })
     }
@@ -275,6 +287,7 @@ impl ScoreEditor {
             value: self.value,
             paper: setup.paper(),
             landscape: setup.landscape(),
+            dialogs: dialogs::numbered(&self.dialogs),
         })
     }
 
@@ -486,6 +499,7 @@ impl ScoreEditor {
             .into_iter()
             .flatten()
             .chain(self.tools.values().copied())
+            .chain(self.dialogs.values().copied())
             .any(|id| i64::from(id) == widget);
         if !ours {
             return Vec::new();
@@ -609,6 +623,8 @@ impl ScoreEditor {
         let verb = args.get(4).map(text).unwrap_or_default();
         let state = args.get(5).map(int);
         let mut reason = None;
+        // a form opened corrects its own widgets, and no page is engraved
+        let mut shown = None;
         match menu::read(&verb, state) {
             menu::Pick::Undo | menu::Pick::Redo => {
                 out.turn = Kind::Step;
@@ -622,17 +638,23 @@ impl ScoreEditor {
                 self.selection = self.elements_of(&all);
                 out.selected = Some(self.selection.clone());
             }
+            menu::Pick::Dialog(form) => {
+                let (why, corrections) = self.open_form(form);
+                reason = why;
+                shown = Some(corrections);
+            }
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.entry = on,
             menu::Pick::Value(value) => self.value = value,
             menu::Pick::Unknown => reason = Some(format!("the menu has no entry for {verb}")),
         }
         out.turn = Kind::Route;
+        let corrections = shown.unwrap_or_else(|| self.corrections());
         out.answer = Some(conversation::answer(
             message.seq,
             out.version,
             reason,
-            self.corrections(),
+            corrections,
         ));
     }
 
@@ -714,6 +736,9 @@ impl ScoreEditor {
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.tool_of(widget).map(str::to_string) {
             return self.tool(&name, tag, out);
+        }
+        if let Some(name) = self.dialog_widget(widget).map(str::to_string) {
+            return self.form_said(&name, tag, out);
         }
         if self.ids.map(|ids| i64::from(ids.page)) != Some(widget) {
             return (None, Vec::new());
@@ -879,7 +904,9 @@ impl Converse for ScoreEditor {
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.ids.map(|ids| i64::from(ids.page)) == Some(widget) || self.tool_of(widget).is_some()
+        self.ids.map(|ids| i64::from(ids.page)) == Some(widget)
+            || self.tool_of(widget).is_some()
+            || self.dialog_widget(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -932,6 +959,9 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 ///   the GuiDef.
 /// - `tools` -- `{"tools"}`: the names of the toolbar's tools, in order, for a
 ///   caller to number.
+/// - `dialogs` -- `{"dialogs"}`: the names of the dialogs' widgets, for a
+///   caller to number and hand to `window` the same way (`dialogs`: the id
+///   of each by name; without all of them the window has no dialogs).
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
 ///   `value` (the written value a note is entered with, `[n, d]`), `entry`
@@ -977,6 +1007,15 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
                         .collect()
                 })
                 .unwrap_or_default();
+            let named: dialogs::Ids = request
+                .get("dialogs")
+                .and_then(Value::as_object)
+                .map(|map| {
+                    map.iter()
+                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                        .collect()
+                })
+                .unwrap_or_default();
             editor
                 .window(
                     Ids {
@@ -985,10 +1024,12 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
                         status: id("status"),
                     },
                     numbered,
+                    named,
                 )
                 .to_string()
         }
         "tools" => json!({"tools": tools::TOOLS}).to_string(),
+        "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "props" => {
             let widget = id("widget").unwrap_or(0);
             match editor
@@ -1088,5 +1129,6 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
     }
 }
 
+mod forms;
 #[cfg(test)]
 mod tests;

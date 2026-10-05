@@ -3,7 +3,7 @@
 //!
 //! A menu is a value of the window, and a pick reports the entry's **verb**.
 //! So a verb here is either a word of the window's own -- `undo`, `redo`,
-//! `select_all`, `layout:page`, `entry`, `value:1/8` -- or, for everything that
+//! `select_all`, `layout:page`, `entry`, `value:1/8`, `dialog:text` -- or, for everything that
 //! edits the score, the editor's verb itself as it is written
 //! ([`super::verbs::Action`], as JSON): the menu states what it asks for, and
 //! nothing between the entry and the edit has to know the two agree.
@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 
 use clausters_core::notation::{PAPERS, View};
 use clausters_core::ratio::Ratio;
+
+use super::dialogs::Form;
 
 /// What the menu shows of the editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +32,9 @@ pub struct State<'a> {
     pub paper: Option<&'a str>,
     /// Whether the page is wider than tall.
     pub landscape: bool,
+    /// Whether the window has the dialogs: an entry that opens one is
+    /// disabled in a window composed without them.
+    pub dialogs: bool,
 }
 
 /// The written values a note is entered with, longest first, and their names.
@@ -51,6 +56,12 @@ fn act(label: &str, action: Value) -> Value {
 /// An entry of the window's own.
 fn word(label: &str, verb: &str) -> Value {
     json!({"label": label, "verb": verb})
+}
+
+/// An entry that opens the form `form` ([`Form::named`]), disabled where the
+/// window has no dialogs.
+fn form(label: &str, form: &str, state: &State<'_>) -> Value {
+    json!({"label": label, "verb": format!("dialog:{form}"), "enabled": state.dialogs})
 }
 
 /// One of several: on when it is the one in force.
@@ -110,6 +121,9 @@ pub fn menu(state: &State<'_>) -> Value {
                         }),
                     ],
                 ),
+                form("Page setup...", "page", state),
+                sep(),
+                form("Page text...", "text", state),
             ],
         ),
         sub(
@@ -296,6 +310,10 @@ pub fn menu(state: &State<'_>) -> Value {
                 transform("Augment", json!({"name": "stretch", "factor": [2, 1]})),
                 transform("Diminish", json!({"name": "stretch", "factor": [1, 2]})),
                 transform("Repeat", json!({"name": "repeat", "count": 2})),
+                sep(),
+                form("Transpose...", "transpose", state),
+                form("Stretch...", "stretch", state),
+                form("Repeat...", "repeat", state),
             ],
         ),
     ])
@@ -312,6 +330,8 @@ pub enum Pick {
     Redo,
     /// Everything on the page, selected.
     SelectAll,
+    /// A form, opened over the window.
+    Dialog(Form),
     /// The window looks at the score this way.
     Layout(View),
     /// A press on empty staff writes a note, or stops writing one.
@@ -328,6 +348,9 @@ pub enum Pick {
 pub fn read(verb: &str, state: Option<i64>) -> Pick {
     if verb.starts_with('{') {
         return serde_json::from_str(verb).map_or(Pick::Unknown, Pick::Act);
+    }
+    if let Some(form) = verb.strip_prefix("dialog:") {
+        return Form::named(form).map_or(Pick::Unknown, Pick::Dialog);
     }
     if let Some(view) = verb.strip_prefix("layout:").and_then(View::parse) {
         return Pick::Layout(view);
@@ -360,6 +383,7 @@ mod tests {
             value: Ratio::new(1, 4),
             paper: Some("A4"),
             landscape: false,
+            dialogs: true,
         }
     }
 
@@ -425,5 +449,7 @@ mod tests {
         assert_eq!(read("entry", Some(0)), Pick::Entry(false));
         assert_eq!(read("value:0/8", None), Pick::Unknown);
         assert_eq!(read("fold", None), Pick::Unknown);
+        assert_eq!(read("dialog:page", None), Pick::Dialog(Form::Page));
+        assert_eq!(read("dialog:fold", None), Pick::Unknown);
     }
 }

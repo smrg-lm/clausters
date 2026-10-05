@@ -98,7 +98,7 @@ const IDS: Ids = Ids {
 
 fn opened() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, tools::Ids::new());
+    editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     editor
 }
 
@@ -123,7 +123,7 @@ fn first_marks(editor: &ScoreEditor) -> Marks {
 #[test]
 fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new());
+    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     let scroll = &window["children"][0];
     assert_eq!(scroll["type"], "scroll");
     assert_eq!(scroll["id"], 11);
@@ -374,7 +374,7 @@ fn a_transformation_runs_over_what_is_selected() {
 #[test]
 fn the_window_lays_the_score_out_on_its_paper_and_the_view_is_the_windows() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new());
+    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     // a page view fixes the page, at the default nobody chose: A4
     assert_eq!(laid()["pageWidth"], 2100);
     assert_eq!(laid()["breaks"], "auto");
@@ -488,7 +488,7 @@ fn pick(verb: &str, state: Option<i64>) -> Event {
 #[test]
 fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS, tools::Ids::new());
+    let window = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     let titles: Vec<&str> = window["menu"]
         .as_array()
         .unwrap()
@@ -528,7 +528,7 @@ fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
 #[test]
 fn what_is_the_windows_own_moves_the_editor_and_the_bar_says_so() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, tools::Ids::new());
+    editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     let out = editor.event(&pick("layout:continuous", Some(1)), 1);
     assert!(!out.changed && out.record.is_none(), "a layout is no edit");
@@ -579,7 +579,7 @@ fn tool(name: &str, report: Value) -> Event {
 
 fn with_tools() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS, numbered());
+    editor.window(IDS, numbered(), dialogs::Ids::new());
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     editor
 }
@@ -587,9 +587,9 @@ fn with_tools() -> ScoreEditor {
 #[test]
 fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let bare = editor.window(IDS, tools::Ids::new());
+    let bare = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
     assert_eq!(bare["children"].as_array().unwrap().len(), 2);
-    let tree = editor.window(IDS, numbered());
+    let tree = editor.window(IDS, numbered(), dialogs::Ids::new());
     let children = tree["children"].as_array().unwrap();
     assert_eq!(
         children.len(),
@@ -720,4 +720,176 @@ fn a_tool_that_acts_is_a_verb_over_the_selection() {
         call_json(&mut editor, r#"{"verb": "layout"}"#),
         r#"{"layout":"continuous"}"#
     );
+}
+
+/// The dialogs' widgets, numbered from 200 in the order the crate names them.
+fn named() -> dialogs::Ids {
+    dialogs::names()
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| (name, 200 + i as i32))
+        .collect()
+}
+
+/// A report from the dialogs' widget `name`: a field's text, or a button's
+/// click, where a tag is.
+fn said(name: &str, report: &str) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(named()[name]), json!(5), json!(1), json!(report)],
+    }
+}
+
+fn with_dialogs() -> ScoreEditor {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    editor.window(IDS, tools::Ids::new(), named());
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    editor
+}
+
+fn corrections_of(out: &Outcome) -> Vec<Correction> {
+    match &out.answer {
+        Some(Answer::Push { corrections, .. }) => corrections.clone(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    let bare = editor.window(IDS, tools::Ids::new(), dialogs::Ids::new());
+    assert_eq!(bare["children"].as_array().unwrap().len(), 2);
+    let entry = |tree: &Value, label: &str| {
+        tree["menu"][0]["menu"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["label"] == label)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(entry(&bare, "Page text...")["enabled"], false);
+    let tree = editor.window(IDS, tools::Ids::new(), named());
+    let children = tree["children"].as_array().unwrap();
+    assert_eq!(
+        children.len(),
+        3,
+        "the scroll, the status line, the dialogs"
+    );
+    assert_eq!(children[2]["flow"], "stack");
+    assert_eq!(entry(&tree, "Page text...")["enabled"], true);
+    // the door names them for a caller to number
+    let names: Value =
+        serde_json::from_str(&call_json(&mut editor, r#"{"verb": "dialogs"}"#)).unwrap();
+    assert_eq!(names["dialogs"].as_array().unwrap().len(), named().len());
+}
+
+#[test]
+fn the_page_text_form_opens_holding_the_header_and_writes_one_entry() {
+    let mut editor = with_dialogs();
+    {
+        // a score that came with a title: the form opens holding it
+        let mut held = editor.held();
+        let mut header = held.sheet().unwrap().header.clone();
+        header.title = "A title".into();
+        assert!(held.apply(&Op::SetHeader { header }));
+    }
+    let out = editor.event(&pick("dialog:text", None), 1);
+    assert!(!out.changed, "opening a form is no edit");
+    let shown = corrections_of(&out);
+    let ids = named();
+    assert!(shown.iter().any(
+        |c| c.widget == i64::from(ids["text:title"]) && c.props == json!({"value": "A title"})
+    ));
+    assert_eq!(
+        shown.last().map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 1})))
+    );
+    assert!(shown.iter().all(|c| c.widget != 10), "no page is engraved");
+    // two fields typed, as the host reports them: each change, whole
+    editor.event(&said("text:composer", "A. Comp"), 1);
+    editor.event(&said("text:composer", "A. Composer"), 1);
+    let typed = editor.event(&said("text:notes", "* a footnote"), 1);
+    assert!(!typed.changed && typed.record.is_none(), "nothing until OK");
+    let out = editor.event(&said("text:ok", "click"), 1);
+    assert_eq!(out.record.as_ref().expect("one entry").label, "page text");
+    {
+        let held = editor.held();
+        let header = &held.sheet().unwrap().header;
+        assert_eq!(
+            (header.title.as_str(), header.composer.as_str()),
+            ("A title", "A. Composer")
+        );
+        assert_eq!(header.notes, vec!["* a footnote".to_string()]);
+    }
+    // and the form is down
+    assert_eq!(
+        corrections_of(&out)
+            .last()
+            .map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 0})))
+    );
+    let after = editor.event(&said("text:title", "ignored"), 2);
+    assert!(corrections_of(&after).is_empty() && !after.changed);
+}
+
+#[test]
+fn a_form_is_cancelled_by_its_button_and_by_the_dialog_itself() {
+    let mut editor = with_dialogs();
+    let ids = named();
+    for (widget, report) in [("page:cancel", "click"), ("page", "cancel")] {
+        editor.event(&pick("dialog:page", None), 1);
+        editor.event(&said("page:top", "30"), 1);
+        let out = editor.event(&said(widget, report), 1);
+        assert!(!out.changed && out.record.is_none());
+        assert_eq!(
+            corrections_of(&out),
+            vec![Correction {
+                widget: i64::from(ids["stack"]),
+                props: json!({"index": 0}),
+            }]
+        );
+    }
+    assert_eq!(editor.setup().margins, [127; 4], "nothing was written");
+}
+
+#[test]
+fn a_form_that_cannot_be_read_stays_up_and_says_why() {
+    let mut editor = with_dialogs();
+    editor.event(&pick("dialog:page", None), 1);
+    editor.event(&said("page:left", "wide"), 1);
+    let out = editor.event(&said("page:ok", "click"), 1);
+    let answered = serde_json::to_value(&out.answer).unwrap();
+    let reason = answered["reason"].as_str().unwrap_or_default();
+    assert!(reason.contains("millimetres"), "{answered}");
+    assert!(!out.changed);
+    // corrected, it is written: the margins, in tenths of a millimetre
+    editor.event(&said("page:left", "20"), 1);
+    let out = editor.event(&said("page:ok", "click"), 1);
+    assert_eq!(out.record.expect("an entry").label, "page setup");
+    assert_eq!(editor.setup().margins, [127, 127, 127, 200]);
+}
+
+#[test]
+fn a_transformation_asks_for_its_parameter() {
+    let mut editor = with_dialogs();
+    let ids = named();
+    let out = editor.event(&pick("dialog:transpose", None), 1);
+    let shown = corrections_of(&out);
+    assert!(
+        shown
+            .iter()
+            .any(|c| c.widget == i64::from(ids["param:label"])
+                && c.props == json!({"text": "Semitones"}))
+    );
+    editor.event(&said("param:value", "12"), 1);
+    let before = {
+        let held = editor.held();
+        held.sheet().unwrap().staves[0].voices[0].items[0].pitches()[0].octave
+    };
+    let out = editor.event(&said("param:ok", "click"), 1);
+    assert_eq!(out.record.expect("an entry").label, "transpose");
+    let held = editor.held();
+    let after = held.sheet().unwrap().staves[0].voices[0].items[0].pitches()[0].octave;
+    assert_eq!(after, before + 1, "an octave up");
 }

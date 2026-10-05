@@ -10,8 +10,8 @@
 //! # The window
 //!
 //! A menu bar holding every action the application has ([`menu`]); a toolbar
-//! with what a hand reaches for while it writes ([`tools`]); the engraved
-//! score in a scroll that pans and zooms -- every page of the paper
+//! with what a hand reaches for while it writes ([`tools`]); the forms a
+//! menu entry opens over it ([`dialogs`]); the engraved score in a scroll that pans and zooms -- every page of the paper
 //! one under another, or one system as long as the music -- and a status line
 //! under it saying what is selected. The page takes
 //! pitch edits and note entry; what a hand may do to each element is the
@@ -28,6 +28,7 @@
 //! length, a voice) is the same: an operation over what is selected, built
 //! here ([`verbs`]) rather than in each client.
 
+pub mod dialogs;
 pub mod editor;
 pub mod menu;
 pub mod tools;
@@ -114,6 +115,8 @@ pub struct Window<'a> {
     pub menu: Value,
     /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
     pub toolbar: Option<Value>,
+    /// The dialogs ([`dialogs::stack`]), when the caller numbered them.
+    pub dialogs: Option<Value>,
     /// The outlines of the symbols the chrome is labelled with, by codepoint
     /// ([`tools::Outlines`]): the window's `glyphs`, which is what lets the
     /// host draw a character of a music font it has no face for.
@@ -135,6 +138,7 @@ pub fn window(w: Window<'_>) -> Value {
         scale,
         menu,
         toolbar,
+        dialogs,
         glyphs,
     } = w;
     let (width, height) = drawn_size(page, scale);
@@ -167,7 +171,11 @@ pub fn window(w: Window<'_>) -> Value {
     if let (Some(id), Some(map)) = (ids.status, line.as_object_mut()) {
         map.insert("id".into(), json!(id));
     }
-    let children: Vec<Value> = toolbar.into_iter().chain([scroll, line]).collect();
+    let children: Vec<Value> = toolbar
+        .into_iter()
+        .chain([scroll, line])
+        .chain(dialogs)
+        .collect();
     let mut window = json!({
         "type": "window",
         "title": title,
