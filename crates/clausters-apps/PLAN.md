@@ -2739,6 +2739,9 @@ wrong.
   - **Pitches are entered from the keyboard too, and the keyboard moves the
     cursor.**
   - **The window opens outside the mode.**
+  - **The cursor is put where the selection is**: entering the mode with a
+    note or a rest selected puts it on that note or rest, and with a staff
+    selected at the staff's start.
   - **`insert` stays, as its own verb, and it moves everything after it.**
     It is for measures above all (inserting bars) and may serve for notes;
     it is never what an entry does.
