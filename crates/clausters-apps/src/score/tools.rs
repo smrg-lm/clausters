@@ -21,7 +21,7 @@
 //! selection's.
 //!
 //! **A tool is drawn with the engraver's own symbol** where it has one: its
-//! label is the SMuFL character ([`CODES`]), and the window carries the
+//! label is the SMuFL character ([`codes`]), and the window carries the
 //! outline of each ([`Outlines`], asked of the engraver once), so the host
 //! draws the shape the page would. Where the engraver handed none out -- a
 //! font without that glyph, an engraver that draws nothing -- the label is the
