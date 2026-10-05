@@ -2736,7 +2736,12 @@ wrong.
   breaks nowhere else. So Measures, Break, Page writes a `pb` the page view
   does not show. Either the engraver is taught it (a `VisitPb` beside
   `VisitSb`, carried as a patch of the vendored build) or the break is
-  written as something the cast-off does read; undecided.
+  written as something the cast-off does read. **Decided 2026-10-05, by the
+  user: the engraver is not patched** -- reading `pb` only when the encoding
+  is followed whole is its design, not a defect. The page view honours the
+  break on its own side of the engraver (for instance by casting off the
+  stretch between two page breaks as its own run of pages); which way is
+  settled when it is taken.
 
 - ✅ **The example's page had no play cursor** *(the same look: "Tampoco se
   ve el cursor de reproducción")*. Two causes. The example opened the editor
@@ -2799,12 +2804,19 @@ wrong.
     and an entry replaces in that voice alone -- which closes "A note cannot
     be written into the second voice", above, when this is built.
 
-  Still to settle when it is taken: where the cursor goes when the mode is
-  entered with nothing selected; whether the cursor advances by the value
-  after an entry (the principle says it does, and a press on another line
-  where the note is building a chord says the press, at least, does not move
-  it on); which modifier builds the chord and which keys are the pitches and
-  the cursor's moves, against the shortcuts the window already has. What it
+  **Decided later the same day**, by the user:
+  - **With nothing selected, the cursor goes where it was last left**, and
+    to the first beat of the score when it has not been anywhere yet.
+  - **The pitches are the letters `a` to `g`.**
+  - **The cursor advances by the value after each entry**, and the arrows
+    take it back or on.
+  - **Every key of note entry is a binding**, set by file like the rest of
+    the host's key table (`[gui.keys]`, `--keys`), never spelled in an
+    element.
+
+  Still to settle when it is taken: which modifier builds the chord, and the
+  rest of the cursor's moves (a bar at a time, to another staff or voice),
+  against the shortcuts the window already has. What it
   touches: the model gains the verb an entry is (a write over a stretch of a
   voice, where `insert` adds time), bound in both clients; the host's `score`
   element draws the cursor and reads a press by the mode; the example's
