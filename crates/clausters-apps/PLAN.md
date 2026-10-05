@@ -2593,7 +2593,9 @@ wrong.
   an input state. Writing into a voice directly needs the gesture to name a
   **moment** on the staff -- the measure and the onset the press fell at --
   and an operation that writes there without moving what the other voice
-  holds.
+  holds. *(2026-10-05: that is the edit cursor of "Writing notes has no
+  cursor, and a note written pushes the rest along", below -- a place in a
+  voice, and an entry that replaces there. This closes with it.)*
 
 - ✅ **The value and dot tools do not act on the selection** *(found
   2026-10-05, the same step)*. They are the input state alone: with notes
@@ -2632,13 +2634,22 @@ wrong.
   the engraver's text metrics while the host draws the text in its own,
   wider, face.
 
-- ⬜ **The palettes' symbols are too small to read, and three are not
-  symbols** *(the same look)*. An entry's outline is drawn in the body
-  text's cell, which is right for a letter and small for an articulation
-  dot or an accent. And three entries of Notes show their name cut to a
-  letter and an ellipsis, in a cell one glyph wide: the two grace notes,
-  whose codepoints the engraver handed no outline for, so the label is the
-  fallback; and the voice, which names no symbol at all.
+- ⬜ **The symbols of the toolbar and the palettes cannot be read** *(the
+  same look, and the user's own: "no se entiende bien qué es cada glifo")*.
+  Four things, in the toolbar and the palettes alike:
+  - **They are drawn too small.** An outline is drawn in the body text's
+    cell, which is right for a letter and small for an articulation dot, an
+    accent or an accidental.
+  - **At that size they deform.** The toolbar's sharp is missing one of its
+    lines: a stroke thinner than a pixel is lost, or two fall on one. An
+    outline wants a size at which its thinnest stroke is a pixel, and
+    placement on the pixel grid.
+  - **Some are text where a symbol exists.** The two grace notes of Notes
+    show their name cut to a letter and an ellipsis, in a cell one glyph
+    wide: the engraver handed no outline for their codepoint, so the label is
+    the fallback. The slur and the tie of Lines, and the toolbar's tie, are
+    words as well.
+  - **Some have no symbol at all**: the barlines of Measures, and the voice.
 
 - ⬜ **An edit to a sounding pitch does not rewrite the written one** *(found
   2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's
@@ -2712,19 +2723,35 @@ wrong.
   - **An entry replaces; it never adds time.** A pitch entered over a
     **rest** makes a note of the value in hand there, and what is left of the
     rest stays a rest. Nothing after the cursor moves, in the bar or across
-    bars: the bars keep their length and every other note its time. A value
-    longer than what is left of the bar is to be settled against the same
-    principle (split at the barline and tied, the bar never growing).
+    bars: the bars keep their length and every other note its time.
   - **A pitch entered where a note already is joins it as a chord**, rather
     than replacing it or pushing it.
   - **Outside the mode a press selects and a drag moves**, as now; inside
     it a press is an entry and never a drag.
-  What follows from it, to be decided when it is taken: the model gains the
-  verb the entry is (a write over a stretch of a voice, where `insert` adds
-  time -- `insert` then stays only as something asked for by name, if at
-  all), bound in both clients; the cursor advances by the value after an
-  entry; it is moved by a press and from the keyboard, where pitches are
-  entered too; whether the window opens in the mode or out of it; and the
-  cursor's voice is what answers "A note cannot be written into the second
-  voice", above. The example's prose and both books' paragraph on a gesture
-  change with it.
+
+  **Decided 2026-10-05**, by the user, before it is taken:
+  - **A value longer than what is left of the bar goes on into the next
+    one**: it replaces the positions it reaches there, and the two parts are
+    joined by a tie. The bar never grows.
+  - **A chord is built two ways**: a press on another line or space where
+    the note is, or a pitch entered from the keyboard with a modifier key
+    held.
+  - **Pitches are entered from the keyboard too, and the keyboard moves the
+    cursor.**
+  - **The window opens outside the mode.**
+  - **`insert` stays, as its own verb, and it moves everything after it.**
+    It is for measures above all (inserting bars) and may serve for notes;
+    it is never what an entry does.
+  - **The cursor is how the second voice is written**: it stands in a voice,
+    and an entry replaces in that voice alone -- which closes "A note cannot
+    be written into the second voice", above, when this is built.
+
+  Still to settle when it is taken: whether the cursor advances by the value
+  after an entry (the principle says it does, and a press on another line
+  where the note is building a chord says the press, at least, does not move
+  it on); which modifier builds the chord and which keys are the pitches and
+  the cursor's moves, against the shortcuts the window already has. What it
+  touches: the model gains the verb an entry is (a write over a stretch of a
+  voice, where `insert` adds time), bound in both clients; the host's `score`
+  element draws the cursor and reads a press by the mode; the example's
+  prose and both books' paragraph on a gesture change with it.
