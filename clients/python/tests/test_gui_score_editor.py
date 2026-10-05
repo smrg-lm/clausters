@@ -23,6 +23,12 @@ def score():
     return notation.Score("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/")
 
 
+def _page(tree: dict) -> dict:
+    """The `score` widget of an editor's window: the scroll's one child."""
+    scroll = next(child for child in tree["children"] if child.get("type") == "scroll")
+    return scroll["children"][0]
+
+
 def _items(score) -> list:
     return score.sheet()["staves"][0]["voices"][0]["items"]
 
@@ -30,7 +36,10 @@ def _items(score) -> list:
 def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     editor = ScoreEditor(score)
     tree = editor.draw()
-    scroll, status = tree["children"][:2]
+    toolbar, scroll, status = tree["children"][:3]
+    # the toolbar is a row of the crate's tools, each under an id of its own
+    tools = [tool for tool in toolbar["children"] if "id" in tool]
+    assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 12
     assert scroll["type"] == "scroll"
     page = scroll["children"][0]
     assert page["type"] == "score"
@@ -115,12 +124,12 @@ def test_the_layout_is_the_windows_and_the_paper_is_fixed(score):
     editor = ScoreEditor(score)
     assert editor.layout == "page"
     tree = editor.draw()
-    page = tree["children"][0]["children"][0]
+    page = _page(tree)
     # the drawing is the paper nobody chose, A4, whatever the music needs
     assert page["vb"] == [21000.0, 29700.0]
     editor.layout = "continuous"
     assert editor.layout == "continuous"
-    line = editor.draw()["children"][0]["children"][0]
+    line = _page(editor.draw())
     assert len(line["systems"]) == 1, "one system, as long as the music"
     assert score.mei() and "page.width" not in score.mei(), "a layout writes nothing"
 
@@ -134,7 +143,7 @@ def test_the_page_setup_is_the_scores_and_walks_back(score):
     assert setup["page"]["staff"] == 800
     assert score.sheet()["page"]["width"] == 2794
     assert 'page.width="279.4mm"' in score.mei(), "it travels in the document"
-    assert editor.draw()["children"][0]["children"][0]["vb"][0] == 27940.0
+    assert _page(editor.draw())["vb"][0] == 27940.0
     assert editor.undo()
     assert "page" not in score.sheet()
     assert editor.set_page("foolscap") is False
@@ -149,10 +158,52 @@ def test_a_text_of_the_page_is_written_and_placed(score):
     assert (head["title"], head["notes"]) == ("A title", ["* a footnote"])
     assert head["places"]["composer"]["halign"] == "left"
     # each is drawn under its own id, which is what a press names
-    page = editor.draw()["children"][0]["children"][0]
+    page = _page(editor.draw())
     drawn = {p["id"]: p["s"] for p in page["prims"] if p["k"] == "text" and p.get("id")}
     assert drawn["t-title"] == "A title" and drawn["t-note-1"] == "* a footnote"
     assert page["kinds"]["t-title"] == "rend"
     assert editor.set_text("motto", "x") is False
     assert editor.undo() and editor.undo() and editor.undo()
     assert "header" not in score.sheet()
+
+
+def test_the_input_state_is_the_handles_and_a_press_writes_it(score):
+    editor = ScoreEditor(score, value=(1, 8))
+    editor.draw()
+    assert (editor.dotted, editor.rest, editor.next_accidental) == (False, False, None)
+    editor.dotted = True
+    editor.next_accidental = 1
+    assert (editor.dotted, editor.next_accidental) == (True, 1)
+    last = _items(score)[-1]["id"]
+    page = editor.view.widget(editor, "page", editor.structure)
+    assert editor.apply("/gui_event", [page, 1, editor._version, "insert", f"n{last}", -3, 0])
+    written = _items(score)[-1]
+    assert written["dur"] == [3, 16]
+    assert written["pitches"][0]["alter"] == 1
+    assert editor.next_accidental is None, "it was for that note"
+
+
+def test_a_tool_and_a_menu_pick_are_the_editors_verbs(score):
+    editor = ScoreEditor(score)
+    editor.draw()
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    # a tool that acts reports a click
+    staccato = editor.view.widget(editor, "tool", editor.structure, "stacc")
+    assert editor.apply("/gui_event", [staccato, 1, editor._version, "click"])
+    assert _items(score)[0]["marks"]["articulations"] == ["stacc"]
+    # the verbs the menu and the tools use are methods too
+    assert editor.accidental(-1)
+    assert _items(score)[0]["pitches"][0]["alter"] == -1
+    assert editor.voice(1)
+    assert len(score.sheet()["staves"][0]["voices"]) == 2
+    assert not editor.voice(1), "it is there already"
+    # a measure verb acts on the measures the selection covers
+    editor.select([f"n{first}"])
+    assert editor.set_barline("dbl")
+    assert editor.insert_measures(2)
+    assert editor.undo() and editor.undo()
+    # and a tool that holds state reports its value: an eighth
+    value = editor.view.widget(editor, "tool", editor.structure, "value")
+    editor.apply("/gui_event", [value, 2, editor._version, 3])
+    assert editor.value == (1, 8)

@@ -37,6 +37,14 @@ impl Host {
             scroll: self.own_widget(structure, SCORE, "scroll"),
             status: self.own_widget(structure, SCORE, "status"),
         };
+        // the toolbar's tools, each under an id of this host's own
+        let tools: clausters_apps::score::tools::Ids = clausters_apps::score::tools::TOOLS
+            .iter()
+            .filter_map(|name| {
+                let id = self.own_widget(structure, SCORE, &format!("tool:{name}"))?;
+                Some(((*name).to_string(), id))
+            })
+            .collect();
         let owner = self.owner.as_mut()?;
         let request = serde_json::json!({"title": title, "w": size.0, "h": size.1}).to_string();
         let opened: serde_json::Value = serde_json::from_str(&owner.editing.open_score(
@@ -50,7 +58,7 @@ impl Host {
             .map(|m| m as clausters_apps::editing::MemberId)?;
         let def = match owner.editing.member_mut(member) {
             Some(Member::Score(editor)) => {
-                let def = editor.window(ids);
+                let def = editor.window(ids, tools);
                 clausters_apps::score::editor::call_json(
                     editor,
                     &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),
@@ -260,6 +268,55 @@ mod tests {
         // and the window's undo takes it back, through the one history
         let undo = host.event_message(def_id, 2, vec![OscType::String("undo".into())]);
         assert!(host.deliver(def_id, &undo));
+        assert_eq!(items(&held), 4);
+    }
+
+    #[test]
+    fn the_toolbar_and_the_menu_bar_are_answered_by_the_editor() {
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let held = score();
+        let def_id = host
+            .open_score(held.clone(), "score", (960, 640), None)
+            .expect("a window");
+        let page = host.own_widget(0, SCORE, "page").expect("the page");
+        // every tool is a widget of this host's own, under its name
+        let rest = host.own_widget(0, SCORE, "tool:rest").expect("the tool");
+        assert!(
+            host.window_defs[&def_id].find(rest).is_some(),
+            "it is in the window"
+        );
+
+        // the tool holds state and reports its value: a press now writes a rest
+        let on = host.event_message(rest, 1, vec![OscType::Int(1)]);
+        assert!(host.deliver(def_id, &on));
+        let insert = host.event_message(
+            page,
+            2,
+            vec![
+                OscType::String("insert".into()),
+                OscType::String("n4".into()),
+                OscType::Int(-2),
+                OscType::Int(0),
+            ],
+        );
+        assert!(host.deliver(def_id, &insert));
+        let last_sounds = held.lock().unwrap().sheet().unwrap().staves[0].voices[0]
+            .items
+            .last()
+            .is_some_and(Item::sounds);
+        assert_eq!((items(&held), last_sounds), (5, false));
+
+        // what was written is selected, and a pick of the bar is a verb over it
+        let delete = host.event_message(
+            def_id,
+            3,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String(r#"{"action":"delete"}"#.into()),
+            ],
+        );
+        assert!(host.deliver(def_id, &delete));
         assert_eq!(items(&held), 4);
     }
 }

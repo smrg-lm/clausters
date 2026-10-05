@@ -1524,7 +1524,21 @@ opened it.
       waits for the score's file verb (`X5.8`); Play, for its playback
       (`X5.8`); Text and the entries that ask for a parameter, for the dialog
       (`X5.5.4`); cut, copy and paste, which have no operation.)*
-    - ⬜ **X5.5.2 - The toolbar and the input state.**
+    - ✅ **X5.5.2 - The toolbar and the input state.** *(Done 2026-10-05.
+      `score::tools` is a row over the page: the value, its dot, a rest, the
+      accidental, four articulations, a tie, a triplet, the voice, and the
+      layout past a spring. The crate names the tools and the caller numbers
+      them, so a window opened with none has no toolbar. A tool that holds
+      state reports its value and one that acts its `"click"` -- a button's
+      value rises and falls with the hand and is a control signal, not a
+      command. The **input state** is the editor's: the value, `dotted`,
+      `rest`, and an accidental **armed** for the next note and let go once it
+      is written; with notes selected the accidental tool is theirs instead.
+      Writing a note and its armed accidental is one entry. New verbs:
+      `accidental`, and `voice` to a named one; both clients gained them, the
+      input state as properties, and the methods of `X5.5.1`'s measure verbs,
+      which had none. The tools are labelled in text until `X5.5.3`. Not in
+      it: the transport controls, which wait for playback (`X5.8`).)*
     - ⬜ **X5.5.3 - The toolbar's icons**, the engraver's SMuFL outlines.
     - ⬜ **X5.5.4 - A dialog while the window is up**, and a text edited in
       place.
@@ -2390,3 +2404,22 @@ wrong.
   the lane's, sent to their own nodes -- with every table it may read, until
   the next pass gives both back; a channel whose last curve goes finishes its
   notes the same way.
+
+- ⬜ **A note cannot be written into the second voice** *(found 2026-10-05,
+  building `X5.5.2`'s voice tool)*. The page's `insert` gesture names the
+  item the new note **follows**, and an insertion after an item goes into
+  that item's voice and adds its time to it, so there is no press that writes
+  a second line against music already there. The voice tool is therefore the
+  **selection's**: it shows the voice of what is selected and moves it
+  (`voice`), which is how two lines written as one come apart, and it is not
+  an input state. Writing into a voice directly needs the gesture to name a
+  **moment** on the staff -- the measure and the onset the press fell at --
+  and an operation that writes there without moving what the other voice
+  holds.
+
+- ⬜ **The value and dot tools do not act on the selection** *(found
+  2026-10-05, the same step)*. They are the input state alone: with notes
+  selected, picking an eighth changes what the next press writes and leaves
+  the selection as it was, where the accidental tool, beside them, is the
+  selection's when there is one. One rule for the three, or the difference
+  said in the tool's tip, is to be decided with the palettes (`X5.6`).

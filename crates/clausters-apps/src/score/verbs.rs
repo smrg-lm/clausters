@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use clausters_core::notation::{
-    FIELDS, Halign, Item, Marks, NOTE, Op, PageSetup, Pages, Region, Sheet, Valign, default_place,
-    paper,
+    FIELDS, Halign, Item, Marks, NOTE, Op, PageSetup, Pages, Pitch, Region, Sheet, Valign,
+    default_place, paper,
 };
 use clausters_core::ratio::Ratio;
 
@@ -54,9 +54,16 @@ pub enum Action {
     Silence,
     /// Remove the selected items; what follows them moves earlier.
     Delete,
-    /// Move the selected items into the other voice of their staff, leaving
-    /// rests where they were.
-    Voice,
+    /// Move the selection to the other voice of its staff, or to voice `to`
+    /// (from zero) when one is named; rests are left where it was.
+    Voice {
+        #[serde(default)]
+        to: Option<usize>,
+    },
+    /// Give the selected notes an accidental: `alter` semitones from the
+    /// letter (`1` a sharp, `-1` a flat, `0` a natural), printed whatever the
+    /// key says.
+    Accidental { alter: i32 },
     /// A slur, a crescendo or a diminuendo from the first selected item to the
     /// last, in time.
     Spanner { kind: String },
@@ -147,7 +154,8 @@ impl Action {
             Action::Tie => "tie".into(),
             Action::Silence => "silence".into(),
             Action::Delete => "delete".into(),
-            Action::Voice => "move to the other voice".into(),
+            Action::Voice { .. } => "move to the other voice".into(),
+            Action::Accidental { .. } => "accidental".into(),
             Action::Spanner { kind } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
@@ -437,12 +445,41 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
             notes.iter().map(|&id| Op::Silence { id }).collect()
         }
         Action::Delete => ids.iter().map(|&id| Op::Delete { id }).collect(),
-        Action::Voice => {
+        Action::Voice { to } => {
             let first = locate(sheet, ids[0]).map(|l| l.voice).unwrap_or(0);
+            let voice = to.unwrap_or(if first == 0 { 1 } else { 0 });
+            if voice == first {
+                // already there: the state asked for holds
+                return Ok(Vec::new());
+            }
             vec![Op::ToVoice {
                 ids: ids.clone(),
-                voice: if first == 0 { 1 } else { 0 },
+                voice,
             }]
+        }
+        Action::Accidental { alter } => {
+            need_notes("an accidental")?;
+            if !(-2..=2).contains(alter) {
+                return Err(format!(
+                    "an accidental is two flats to two sharps, -2 to 2, not {alter}"
+                ));
+            }
+            notes
+                .iter()
+                .filter_map(|&id| {
+                    let pitches = locate(sheet, id)?
+                        .item
+                        .pitches()
+                        .iter()
+                        .map(|p| Pitch {
+                            alter: *alter,
+                            forced: true,
+                            ..*p
+                        })
+                        .collect();
+                    Some(Op::SetPitches { id, pitches })
+                })
+                .collect()
         }
         Action::Spanner { kind } => {
             let (Some(&from), Some(&to)) = (ids.first(), ids.last()) else {
@@ -672,7 +709,7 @@ mod tests {
     #[test]
     fn a_voice_move_goes_to_the_other_voice() {
         assert_eq!(
-            ops(&sheet(), &[2], &Action::Voice).unwrap(),
+            ops(&sheet(), &[2], &Action::Voice { to: None }).unwrap(),
             vec![Op::ToVoice {
                 ids: vec![2],
                 voice: 1
@@ -763,6 +800,35 @@ mod tests {
             }]
         );
         assert!(act(r#"{"action": "measures", "edit": "fold"}"#).is_err());
+    }
+
+    #[test]
+    fn an_accidental_is_written_on_every_selected_note_and_printed() {
+        let sheet = sheet();
+        let action: Action =
+            serde_json::from_str(r#"{"action": "accidental", "alter": 1}"#).unwrap();
+        let planned = ops(&sheet, &[1], &action).unwrap();
+        let [Op::SetPitches { id: 1, pitches }] = planned.as_slice() else {
+            panic!("one note, set: {planned:?}")
+        };
+        assert!(pitches.iter().all(|p| p.alter == 1 && p.forced));
+        let out_of_range: Action =
+            serde_json::from_str(r#"{"action": "accidental", "alter": 3}"#).unwrap();
+        assert!(ops(&sheet, &[1], &out_of_range).is_err());
+    }
+
+    #[test]
+    fn a_voice_named_is_gone_to_and_one_already_held_is_left() {
+        let sheet = sheet();
+        let to = |voice: usize| ops(&sheet, &[2], &Action::Voice { to: Some(voice) }).unwrap();
+        assert_eq!(
+            to(1),
+            vec![Op::ToVoice {
+                ids: vec![2],
+                voice: 1
+            }]
+        );
+        assert!(to(0).is_empty(), "it is in the first voice already");
     }
 
     #[test]

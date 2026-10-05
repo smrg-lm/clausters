@@ -22,8 +22,19 @@ await loadCore();
 
 interface Item {
     id: number;
+    dur: [number, number];
+    pitches?: { alter?: number }[];
     marks?: { articulations?: string[] };
 }
+
+/** The `score` widget of an editor's window: the scroll's one child. */
+function pageOf(tree: GuiNode): GuiNode {
+    const scroll = (tree.children ?? []).find((child) => child.type === "scroll");
+    return (scroll?.children ?? [])[0];
+}
+
+/** The document version an event is made against, which the editor keeps. */
+const versionOf = (editor: ScoreEditor) => (editor as unknown as { version: number }).version;
 
 function items(score: Score): Item[] {
     const sheet = score.sheet() as unknown as {
@@ -40,7 +51,11 @@ if (!existsSync(engraver)) {
     test("the window is the page in a scroll over a status line", async () => {
         const editor = new ScoreEditor(await Score.open(PHRASE));
         const tree = editor.draw();
-        const [scroll, status] = tree.children ?? [];
+        const [toolbar, scroll, status] = tree.children ?? [];
+        // the toolbar is a row of the crate's tools, each under an id of its own
+        const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
+        assert.equal((toolbar as unknown as { flow: string }).flow, "row");
+        assert.equal(new Set(tools.map((tool) => tool.id)).size, 12);
         assert.equal(scroll.type, "scroll");
         const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
         assert.equal(page.type, "score");
@@ -128,7 +143,7 @@ if (!existsSync(engraver)) {
     });
 
     const drawnPage = (editor: ScoreEditor) =>
-        ((editor.draw().children ?? [])[0].children ?? [])[0] as unknown as {
+        pageOf(editor.draw()) as unknown as {
             vb: number[];
             systems: number[][];
         };
@@ -174,7 +189,7 @@ if (!existsSync(engraver)) {
         assert.deepEqual([head.title, head.notes], ["A title", ["* a footnote"]]);
         assert.equal(head.places.composer.halign, "left");
         // each is drawn under its own id, which is what a press names
-        const page = ((editor.draw().children ?? [])[0].children ?? [])[0] as unknown as {
+        const page = pageOf(editor.draw()) as unknown as {
             prims: { k: string; id?: string; s?: string }[];
             kinds: Record<string, string>;
         };
@@ -187,6 +202,54 @@ if (!existsSync(engraver)) {
         assert.equal(editor.setText("motto", "x"), false);
         assert.ok(editor.undo() && editor.undo() && editor.undo());
         assert.equal((score.sheet() as unknown as { header?: unknown }).header, undefined);
+    });
+
+    test("the input state is the handle's and a press writes it", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score, { value: [1, 8] });
+        editor.draw();
+        assert.deepEqual([editor.dotted, editor.rest, editor.nextAccidental], [false, false, null]);
+        editor.dotted = true;
+        editor.nextAccidental = 1;
+        assert.deepEqual([editor.dotted, editor.nextAccidental], [true, 1]);
+        const last = items(score).at(-1)!.id;
+        const page = editor.view!.widget(editor, "page", editor.structure);
+        assert.ok(
+            editor.apply("/gui_event", [page, 1, versionOf(editor), "insert", `n${last}`, -3, 0]),
+        );
+        const written = items(score).at(-1)!;
+        assert.deepEqual(written.dur, [3, 16]);
+        assert.equal(written.pitches?.[0].alter, 1);
+        assert.equal(editor.nextAccidental, null, "it was for that note");
+    });
+
+    test("a tool and a menu pick are the editor's verbs", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        const first = items(score)[0].id;
+        editor.select([`n${first}`]);
+        // a tool that acts reports a click
+        const staccato = editor.view!.widget(editor, "tool", editor.structure, "stacc");
+        assert.ok(editor.apply("/gui_event", [staccato, 1, versionOf(editor), "click"]));
+        assert.deepEqual(items(score)[0].marks?.articulations, ["stacc"]);
+        // the verbs the menu and the tools use are methods too
+        assert.ok(editor.accidental(-1));
+        assert.equal(items(score)[0].pitches?.[0].alter, -1);
+        assert.ok(editor.voice(1));
+        const voices = (score.sheet() as unknown as { staves: { voices: unknown[] }[] }).staves[0]
+            .voices;
+        assert.equal(voices.length, 2);
+        assert.equal(editor.voice(1), false, "it is there already");
+        // a measure verb acts on the measures the selection covers
+        editor.select([`n${first}`]);
+        assert.ok(editor.setBarline("dbl"));
+        assert.ok(editor.insertMeasures(2));
+        assert.ok(editor.undo() && editor.undo());
+        // and a tool that holds state reports its value: an eighth
+        const value = editor.view!.widget(editor, "tool", editor.structure, "value");
+        editor.apply("/gui_event", [value, 2, versionOf(editor), 3]);
+        assert.deepEqual(editor.value, [1, 8]);
     });
 
     test("edit opens a score in the score editor", async () => {

@@ -39,6 +39,11 @@ What it shows, roughly in the order it does it:
   marks, the measures (a meter, a barline, a break), the transformations.
   Each entry is one of the editor's verbs, so a pick and a method call are one
   path.
+* **The toolbar holds what a hand reaches for while it writes**: the value
+  the next note takes, its dot, whether it is a rest and its accidental (the
+  input state, which is also `editor.value`, `editor.dotted`, `editor.rest`
+  and `editor.next_accidental`); the articulations, a tie and a triplet for
+  what is selected; the voice of the selection; and the layout.
 * **The verbs act on the selection.** Every button calls one method of the
   editor -- `move`, `scale`, `articulation`, `dynamic`, `ornament`,
   `clear_marks`, `tie`, `silence`, `delete`, `voice`, `spanner` -- and each is

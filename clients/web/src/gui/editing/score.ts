@@ -54,15 +54,29 @@ export class ScoreDomain extends Domain<Score> {
     }
 }
 
-/** The page, the scroll it sits in and the status line under it, composed by the crate. */
+/**
+ * The toolbar, the page in the scroll it sits in and the status line under it,
+ * composed by the crate.
+ */
 export class ScoreView extends View<Score> {
     build(editor: Editor<Score>): GuiNode {
         const ed = editor as unknown as ScoreEditor;
         const page = this.widget(editor, "page", editor.structure);
         const scroll = this.widget(editor, "scroll", editor.structure);
         const status = this.widget(editor, "status", editor.structure);
+        // the crate names the toolbar's tools and this numbers them
+        const names = ed.coreCall("tools").tools;
+        const tools: Record<string, number> = {};
+        for (const name of Array.isArray(names) ? names.map(String) : []) {
+            tools[name] = this.widget(editor, "tool", editor.structure, name);
+        }
         ed.syncCore();
-        const tree = ed.coreCall("window", { widget: page, scroll, status }) as unknown as GuiNode;
+        const tree = ed.coreCall("window", {
+            widget: page,
+            scroll,
+            status,
+            tools,
+        }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.
         tree.children = [...(tree.children ?? []), ...editor.extra];
@@ -239,6 +253,49 @@ export class ScoreEditor extends Editor<Score> {
         this.adopt();
     }
 
+    /**
+     * Whether the value a note is entered with is dotted: half as long again.
+     * Set it to switch: `editor.dotted = true`.
+     */
+    get dotted(): boolean {
+        return this.coreCall("input").dotted === true;
+    }
+
+    set dotted(on: boolean) {
+        this.coreCall("sync", { dotted: Boolean(on) });
+        this.adopt();
+    }
+
+    /**
+     * Whether a press on empty staff writes a rest of `value` rather than a
+     * note. Set it to switch: `editor.rest = true`.
+     */
+    get rest(): boolean {
+        return this.coreCall("input").rest === true;
+    }
+
+    set rest(on: boolean) {
+        this.coreCall("sync", { rest: Boolean(on) });
+        this.adopt();
+    }
+
+    /**
+     * The accidental the next note entered takes, in semitones from its letter
+     * (`1` a sharp, `-1` a flat, `0` a natural), or `null`. It is for that one
+     * note: writing it lets the accidental go. Set it to arm one:
+     * `editor.nextAccidental = 1`. (`accidental` is the verb over what is
+     * selected.)
+     */
+    get nextAccidental(): number | null {
+        const armed = this.coreCall("input").accidental;
+        return typeof armed === "number" ? armed : null;
+    }
+
+    set nextAccidental(alter: number | null) {
+        this.coreCall("sync", { accidental: alter === null ? null : Math.trunc(alter) });
+        this.adopt();
+    }
+
     // ---- the layout, which is the window's, and the page, the document's ----
 
     /**
@@ -371,9 +428,64 @@ export class ScoreEditor extends Editor<Score> {
         return this.#act({ action: "delete" });
     }
 
-    /** Move the selected items into the other voice of their staff, leaving rests where they were. */
-    voice(): boolean {
-        return this.#act({ action: "voice" });
+    /**
+     * Move the selected items into the other voice of their staff, or into
+     * voice `to` (from zero) when one is named, leaving rests where they were.
+     */
+    voice(to: number | null = null): boolean {
+        const call: Record<string, unknown> = { action: "voice" };
+        if (to !== null) call.to = Math.trunc(to);
+        return this.#act(call);
+    }
+
+    /**
+     * Give the selected notes an accidental: `alter` semitones from the letter
+     * (`1` a sharp, `-1` a flat, `0` a natural, `2` and `-2` the doubles),
+     * printed whatever the key says.
+     */
+    accidental(alter: number): boolean {
+        return this.#act({ action: "accidental", alter: Math.trunc(alter) });
+    }
+
+    /**
+     * Open `count` empty measures before the first selected measure, or after
+     * the last with `after`; the music past them moves along.
+     */
+    insertMeasures(count = 1, options: { after?: boolean } = {}): boolean {
+        return this.#act({
+            action: "measures",
+            edit: options.after ? "insert_after" : "insert_before",
+            count: Math.trunc(count),
+        });
+    }
+
+    /** Take out the measures the selection covers, with what is written in them. */
+    removeMeasures(): boolean {
+        return this.#act({ action: "measures", edit: "remove" });
+    }
+
+    /**
+     * Give the last selected measure a right barline: `single`, `dbl`, `end`,
+     * `rptstart`, `rptend`, `rptboth` or `invis`.
+     */
+    setBarline(kind: string): boolean {
+        return this.#act({ action: "barline", kind: String(kind) });
+    }
+
+    /**
+     * Break the line or the page before the first selected measure (`system`,
+     * `page`), or take the break back (`none`).
+     */
+    setBreak(kind: string): boolean {
+        return this.#act({ action: "break", kind: String(kind) });
+    }
+
+    /**
+     * Change the meter from the first selected measure on: `count` beats of
+     * `unit` (`setMeter(3, 4)` is three quarters).
+     */
+    setMeter(count: number, unit: number): boolean {
+        return this.#act({ action: "meter", count: Math.trunc(count), unit: Math.trunc(unit) });
     }
 
     /** A `slur`, a `crescendo` or a `diminuendo` from the first selected item to the last, in time. */

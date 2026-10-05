@@ -9,8 +9,9 @@
 //!
 //! # The window
 //!
-//! A menu bar holding every action the application has ([`menu`]); the
-//! engraved score in a scroll that pans and zooms -- every page of the paper
+//! A menu bar holding every action the application has ([`menu`]); a toolbar
+//! with what a hand reaches for while it writes ([`tools`]); the engraved
+//! score in a scroll that pans and zooms -- every page of the paper
 //! one under another, or one system as long as the music -- and a status line
 //! under it saying what is selected. The page takes
 //! pitch edits and note entry; what a hand may do to each element is the
@@ -29,6 +30,7 @@
 
 pub mod editor;
 pub mod menu;
+pub mod tools;
 pub mod verbs;
 
 use std::sync::{Arc, Mutex};
@@ -110,11 +112,13 @@ pub struct Window<'a> {
     pub scale: f64,
     /// The menu bar ([`menu::menu`]).
     pub menu: Value,
+    /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
+    pub toolbar: Option<Value>,
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the menu bar; the
-/// drawing under `ids.page`, in a scroll that pans both ways and zooms; and
-/// the status line under it. A script's own widgets are the client's to
+/// toolbar; the drawing under `ids.page`, in a scroll that pans both ways and
+/// zooms; and the status line under it. A script's own widgets are the client's to
 /// append, as in every application here.
 pub fn window(w: Window<'_>) -> Value {
     let Window {
@@ -126,6 +130,7 @@ pub fn window(w: Window<'_>) -> Value {
         entry,
         scale,
         menu,
+        toolbar,
     } = w;
     let (width, height) = drawn_size(page, scale);
     let mut picture = drawing(page);
@@ -157,6 +162,7 @@ pub fn window(w: Window<'_>) -> Value {
     if let (Some(id), Some(map)) = (ids.status, line.as_object_mut()) {
         map.insert("id".into(), json!(id));
     }
+    let children: Vec<Value> = toolbar.into_iter().chain([scroll, line]).collect();
     json!({
         "type": "window",
         "title": title,
@@ -164,7 +170,7 @@ pub fn window(w: Window<'_>) -> Value {
         "h": size.1,
         "flow": "col",
         "menu": menu,
-        "children": [scroll, line],
+        "children": children,
     })
 }
 

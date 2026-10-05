@@ -98,7 +98,7 @@ const IDS: Ids = Ids {
 
 fn opened() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS);
+    editor.window(IDS, tools::Ids::new());
     editor
 }
 
@@ -123,7 +123,7 @@ fn first_marks(editor: &ScoreEditor) -> Marks {
 #[test]
 fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS);
+    let window = editor.window(IDS, tools::Ids::new());
     let scroll = &window["children"][0];
     assert_eq!(scroll["type"], "scroll");
     assert_eq!(scroll["id"], 11);
@@ -374,7 +374,7 @@ fn a_transformation_runs_over_what_is_selected() {
 #[test]
 fn the_window_lays_the_score_out_on_its_paper_and_the_view_is_the_windows() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS);
+    let window = editor.window(IDS, tools::Ids::new());
     // a page view fixes the page, at the default nobody chose: A4
     assert_eq!(laid()["pageWidth"], 2100);
     assert_eq!(laid()["breaks"], "auto");
@@ -488,7 +488,7 @@ fn pick(verb: &str, state: Option<i64>) -> Event {
 #[test]
 fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    let window = editor.window(IDS);
+    let window = editor.window(IDS, tools::Ids::new());
     let titles: Vec<&str> = window["menu"]
         .as_array()
         .unwrap()
@@ -528,7 +528,7 @@ fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
 #[test]
 fn what_is_the_windows_own_moves_the_editor_and_the_bar_says_so() {
     let mut editor = ScoreEditor::new(shared(), 1);
-    editor.window(IDS);
+    editor.window(IDS, tools::Ids::new());
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     let out = editor.event(&pick("layout:continuous", Some(1)), 1);
     assert!(!out.changed && out.record.is_none(), "a layout is no edit");
@@ -557,4 +557,167 @@ fn what_is_the_windows_own_moves_the_editor_and_the_bar_says_so() {
     );
     editor.event(&pick("select_all", None), 1);
     assert_eq!(editor.items(), vec![1, 2, 3, 4]);
+}
+
+/// The toolbar's tools, numbered from 100 in their order.
+fn numbered() -> tools::Ids {
+    tools::TOOLS
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ((*name).to_string(), 100 + i as i32))
+        .collect()
+}
+
+/// A tool's report: a state tool's value, or a button's click, where a tag is.
+fn tool(name: &str, report: Value) -> Event {
+    let id = numbered()[name];
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(id), json!(3), json!(1), report],
+    }
+}
+
+fn with_tools() -> ScoreEditor {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    editor.window(IDS, numbered());
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    editor
+}
+
+#[test]
+fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    let bare = editor.window(IDS, tools::Ids::new());
+    assert_eq!(bare["children"].as_array().unwrap().len(), 2);
+    let tree = editor.window(IDS, numbered());
+    let children = tree["children"].as_array().unwrap();
+    assert_eq!(
+        children.len(),
+        3,
+        "the toolbar, the scroll, the status line"
+    );
+    assert_eq!(children[0]["flow"], "row");
+    assert_eq!(children[1]["type"], "scroll");
+    // the door numbers them by the names it hands out
+    let names: Value =
+        serde_json::from_str(&call_json(&mut editor, r#"{"verb": "tools"}"#)).unwrap();
+    assert_eq!(names["tools"].as_array().unwrap().len(), tools::TOOLS.len());
+    let tree: Value = serde_json::from_str(&call_json(
+        &mut editor,
+        r#"{"verb": "window", "widget": 10, "tools": {"value": 100, "fold": 7}}"#,
+    ))
+    .unwrap();
+    assert_eq!(tree["children"][0]["children"][0]["id"], 100);
+    assert_eq!(tree["children"][0]["children"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn the_input_state_is_what_the_next_press_writes() {
+    let mut editor = with_tools();
+    // an eighth, dotted: the chrome is corrected and no page is engraved
+    let out = editor.event(&tool("value", json!(3)), 1);
+    assert!(
+        !out.changed && out.record.is_none(),
+        "the value in hand is no edit"
+    );
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    assert!(
+        corrections.iter().all(|c| c.widget != 10),
+        "the page is left"
+    );
+    assert!(
+        corrections
+            .iter()
+            .any(|c| c.widget == 100 && c.props == json!({"index": 3}))
+    );
+    editor.event(&tool("dot", json!(1)), 1);
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "input"}"#),
+        r#"{"accidental":null,"dotted":true,"rest":false,"value":[1,8]}"#
+    );
+    // a press writes a dotted eighth
+    let out = editor.event(&gesture("insert", &[json!("n4"), json!(-3), json!(0)]), 1);
+    assert_eq!(out.record.expect("an entry").label, "write a note");
+    let written = |editor: &ScoreEditor| {
+        let held = editor.held();
+        held.sheet().unwrap().staves[0].voices[0].items[4].clone()
+    };
+    assert_eq!(written(&editor).dur(), Ratio::new(3, 16));
+    assert!(written(&editor).sounds());
+    // and with rest on, a rest of that value
+    editor.event(&tool("rest", json!(1)), 2);
+    let out = editor.event(&gesture("insert", &[json!("n1"), json!(-3), json!(0)]), 2);
+    assert_eq!(out.record.expect("an entry").label, "write a rest");
+    let held = editor.held();
+    let second = &held.sheet().unwrap().staves[0].voices[0].items[1];
+    assert!(!second.sounds());
+    assert_eq!(second.dur(), Ratio::new(3, 16));
+}
+
+#[test]
+fn an_accidental_is_the_selections_or_armed_for_the_next_note() {
+    let mut editor = with_tools();
+    // nothing selected: a sharp is armed, and the note written takes it
+    let out = editor.event(&tool("accidental", json!(4)), 1);
+    assert!(!out.changed);
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "input"}"#),
+        r#"{"accidental":1,"dotted":false,"rest":false,"value":[1,4]}"#
+    );
+    let out = editor.event(&gesture("insert", &[json!("n4"), json!(-3), json!(0)]), 1);
+    assert!(out.changed);
+    let alter_of = |editor: &ScoreEditor, at: usize| {
+        let held = editor.held();
+        held.sheet().unwrap().staves[0].voices[0].items[at].pitches()[0].alter
+    };
+    assert_eq!(
+        alter_of(&editor, 4),
+        1,
+        "one entry wrote the note and its sharp"
+    );
+    assert!(
+        call_json(&mut editor, r#"{"verb": "input"}"#).contains(r#""accidental":null"#),
+        "it was for that note"
+    );
+    // the note written is selected, so a flat now is its own
+    let out = editor.event(&tool("accidental", json!(2)), 2);
+    assert_eq!(out.record.expect("an entry").label, "accidental");
+    assert_eq!(alter_of(&editor, 4), -1);
+    assert!(call_json(&mut editor, r#"{"verb": "input"}"#).contains(r#""accidental":null"#));
+}
+
+#[test]
+fn a_tool_that_acts_is_a_verb_over_the_selection() {
+    let mut editor = with_tools();
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    // the button's value rises with the hand and asks nothing
+    let out = editor.event(&tool("stacc", json!(1)), 1);
+    assert!(!out.changed);
+    let out = editor.event(&tool("stacc", json!("click")), 1);
+    assert_eq!(out.record.expect("an entry").label, "articulation stacc");
+    assert_eq!(
+        first_marks(&editor).articulations,
+        vec!["stacc".to_string()]
+    );
+    // the voice tool sends the selection there, and then shows it
+    let out = editor.event(&tool("voice", json!(1)), 2);
+    assert!(out.changed, "{:?}", out.answer);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("corrections")
+    };
+    let voice = numbered()["voice"];
+    assert!(
+        corrections
+            .iter()
+            .any(|c| c.widget == i64::from(voice) && c.props == json!({"index": 1}))
+    );
+    // and the layout tool is the window's, entering no history
+    let out = editor.event(&tool("layout", json!(1)), 3);
+    assert!(out.record.is_none());
+    assert_eq!(
+        call_json(&mut editor, r#"{"verb": "layout"}"#),
+        r#"{"layout":"continuous"}"#
+    );
 }

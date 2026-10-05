@@ -1032,7 +1032,13 @@ gesture is recorded. **The menu bar is the application's**
 editor's verb itself as their verb, so a pick is read by the same code a
 client's method call is; what is the window's own (the layout, entry, the value
 in hand, a step of the history) is a word, and the bar is sent again whenever
-the state it shows moved. **The paper is the document's and the layout the
+the state it shows moved. **The toolbar is the application's too**
+(`score::tools`): a row of the host's light controls, named by the crate and
+numbered by whoever opens the window, as every widget id is. A tool that holds
+state reports its value and one that acts reports a click, and both are read
+into the same verbs; the *input state* they set -- the value, its dot, a rest,
+an armed accidental -- is the editor's, so a press on the page writes it
+whichever client is driving. **The paper is the document's and the layout the
 window's** (`notation::layout`): a `PageSetup` — the paper as it is turned, the
 margins, the staff — is a field of the sheet, written into the MEI's score
 definition, and a `View` is how one window looks at it; the two come to the

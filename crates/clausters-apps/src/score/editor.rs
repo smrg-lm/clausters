@@ -12,9 +12,9 @@ use clausters_core::notation::{
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
-use super::menu;
 use super::verbs::{self, Action};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
+use super::{menu, tools};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
 /// The vocabulary the editor's structure is registered under.
@@ -59,13 +59,22 @@ pub struct ScoreEditor {
     conversation: Conversation,
     window: Option<i32>,
     ids: Option<Ids>,
+    /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
+    tools: tools::Ids,
     title: String,
     size: (i64, i64),
     /// The selected elements, as the page names them (`n7`, `n7-2`), in the
     /// order they were picked.
     selection: Vec<String>,
-    /// The written value a note entered on the page takes.
+    /// The written value a note entered on the page takes, undotted.
     value: Ratio,
+    /// Whether that value is dotted.
+    dotted: bool,
+    /// Whether a press on empty staff writes a rest rather than a note.
+    rest: bool,
+    /// The accidental armed for the next note written, in semitones; it is
+    /// let go once that note is.
+    accidental: Option<i32>,
     /// Whether a press on empty staff writes a note. Off, the same press on a
     /// staff selects the measure it fell in.
     entry: bool,
@@ -138,10 +147,14 @@ impl ScoreEditor {
             conversation: Conversation::new(version),
             window: None,
             ids: None,
+            tools: tools::Ids::new(),
             title: "Score".into(),
             size: (960, 640),
             selection: Vec::new(),
             value: Ratio::new(1, 4),
+            dotted: false,
+            rest: false,
+            accidental: None,
             entry: true,
             drawn: Vec::new(),
             view: View::Page,
@@ -160,10 +173,12 @@ impl ScoreEditor {
         self.score.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// **The window**, with the page under `ids.page` -- which is then the
-    /// widget the editor answers for.
-    pub fn window(&mut self, ids: Ids) -> Value {
+    /// **The window**, with the page under `ids.page` and each tool of the
+    /// toolbar under the id `tools` gives it -- which are then the widgets the
+    /// editor answers for. With no tool numbered the window has no toolbar.
+    pub fn window(&mut self, ids: Ids, tools: tools::Ids) -> Value {
         self.ids = Some(ids);
+        self.tools = tools;
         let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
         window(Window {
@@ -175,7 +190,65 @@ impl ScoreEditor {
             entry: self.entry,
             scale: self.scale(),
             menu: self.menu(),
+            toolbar: tools::toolbar(&self.tools, &self.input()),
         })
+    }
+
+    /// **What the toolbar shows**: the input state, and the voice of what is
+    /// selected.
+    fn input(&self) -> tools::State {
+        let voice = {
+            let held = self.held();
+            self.items()
+                .first()
+                .and_then(|&id| held.sheet().and_then(|sheet| verbs::locate(sheet, id)))
+                .map_or(0, |located| located.voice)
+        };
+        tools::State {
+            value: self.value,
+            dotted: self.dotted,
+            rest: self.rest,
+            accidental: self.accidental,
+            voice,
+            view: self.view,
+        }
+    }
+
+    /// The value the next item is written with: the one in hand, and half as
+    /// much again when it is dotted.
+    fn written(&self) -> Ratio {
+        if self.dotted {
+            self.value * Ratio::new(3, 2)
+        } else {
+            self.value
+        }
+    }
+
+    /// The tool the widget `widget` is, when it is one of the toolbar's.
+    fn tool_of(&self, widget: i64) -> Option<&str> {
+        self.tools
+            .iter()
+            .find(|(_, id)| i64::from(**id) == widget)
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// **The chrome, corrected**: the tools and the menu bar told the state
+    /// they show, with no page engraved -- what moving the input state takes.
+    fn chrome(&self) -> Vec<Correction> {
+        let mut out: Vec<Correction> = tools::corrections(&self.tools, &self.input())
+            .into_iter()
+            .map(|(widget, props)| Correction {
+                widget: i64::from(widget),
+                props,
+            })
+            .collect();
+        if let Some(window) = self.window {
+            out.push(Correction {
+                widget: i64::from(window),
+                props: json!({"menu": self.menu()}),
+            });
+        }
+        out
     }
 
     /// **The menu bar as the editor now stands**: what is checked in it is the
@@ -398,6 +471,7 @@ impl ScoreEditor {
         let ours = [Some(ids.page), ids.scroll, ids.status]
             .into_iter()
             .flatten()
+            .chain(self.tools.values().copied())
             .any(|id| i64::from(id) == widget);
         if !ours {
             return Vec::new();
@@ -435,14 +509,10 @@ impl ScoreEditor {
                 props: json!({"text": self.describe()}),
             });
         }
-        // the bar shows the editor's state, so it is told when that may have
-        // moved: a paper undone, a layout switched from a script
-        if let Some(window) = self.window {
-            out.push(Correction {
-                widget: i64::from(window),
-                props: json!({"menu": self.menu()}),
-            });
-        }
+        // the bar and the tools show the editor's state, so they are told
+        // when that may have moved: a paper undone, a layout switched from a
+        // script, another voice selected
+        out.extend(self.chrome());
         out
     }
 
@@ -570,6 +640,39 @@ impl ScoreEditor {
         Ok(())
     }
 
+    /// **Write one item**, as one entry: `insert` applied, the accidental that
+    /// was armed given to the note it made -- and let go, since it was for
+    /// that note -- and the new item selected.
+    fn write(&mut self, insert: Op, label: &str, out: &mut Outcome) -> Result<(), String> {
+        let before = self.held().mei();
+        let known = self.known_items();
+        if !self.held().apply(&insert) {
+            self.held().load(&before);
+            return Err(format!("{label}: the score refused it"));
+        }
+        let new = self.known_items().into_iter().find(|i| !known.contains(i));
+        if let (Some(id), Some(alter), false) = (new, self.accidental, self.rest) {
+            let planned = {
+                let held = self.held();
+                held.sheet()
+                    .map(|sheet| verbs::ops(sheet, &[id], &Action::Accidental { alter }))
+            };
+            if let Some(Ok(ops)) = planned {
+                let mut held = self.held();
+                for op in &ops {
+                    held.apply(op);
+                }
+            }
+            self.accidental = None;
+        }
+        if let Some(id) = new {
+            self.selection = vec![format!("n{id}")];
+            out.selected = Some(self.selection.clone());
+        }
+        self.recorded(before, label, out);
+        Ok(())
+    }
+
     /// The score moved from `before`: the entry, and the version.
     fn recorded(&mut self, before: String, label: &str, out: &mut Outcome) {
         let after = self.held().mei();
@@ -595,6 +698,9 @@ impl ScoreEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if let Some(name) = self.tool_of(widget).map(str::to_string) {
+            return self.tool(&name, tag, out);
+        }
         if self.ids.map(|ids| i64::from(ids.page)) != Some(widget) {
             return (None, Vec::new());
         }
@@ -626,8 +732,9 @@ impl ScoreEditor {
                 self.recorded(before, "move", out);
                 (None, self.corrections())
             }
-            // A press on empty staff named a place: a note of the value in
-            // hand is written there, and selected.
+            // A press on empty staff named a place: what the input state
+            // says is written there -- a note or a rest, of the value in
+            // hand, with the accidental that was armed -- and selected.
             "insert" => {
                 let after = values.first().map(text).unwrap_or_default();
                 let position = values.get(1).map(int).unwrap_or(0) as i32;
@@ -635,18 +742,18 @@ impl ScoreEditor {
                 let op = Op::Insert {
                     after: item_id(&after),
                     pitches: Vec::new(),
-                    position: Some(position),
-                    dur: self.value,
+                    position: (!self.rest).then_some(position),
+                    dur: self.written(),
                     staff,
                     voice: 0,
                 };
-                let known = self.known_items();
-                if let Err(why) = self.edit(&[op], "write a note", out) {
+                let label = if self.rest {
+                    "write a rest"
+                } else {
+                    "write a note"
+                };
+                if let Err(why) = self.write(op, label, out) {
                     return (Some(why), self.corrections());
-                }
-                if let Some(new) = self.known_items().into_iter().find(|i| !known.contains(i)) {
-                    self.selection = vec![format!("n{new}")];
-                    out.selected = Some(self.selection.clone());
                 }
                 (None, self.corrections())
             }
@@ -687,7 +794,58 @@ impl ScoreEditor {
                 props: json!({"text": self.describe()}),
             });
         }
+        // the voice tool shows the selection's
+        out.extend(
+            tools::corrections(&self.tools, &self.input())
+                .into_iter()
+                .filter(|(widget, _)| self.tools.get("voice") == Some(widget))
+                .map(|(widget, props)| Correction {
+                    widget: i64::from(widget),
+                    props,
+                }),
+        );
         out
+    }
+
+    /// **A tool reported**: the input state moves and the chrome says so, the
+    /// layout switches, or a verb is applied to what is selected.
+    fn tool(
+        &mut self,
+        name: &str,
+        tag: &str,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        let Some(tool) = tools::read(name, tag) else {
+            return (None, Vec::new());
+        };
+        match tool {
+            tools::Tool::Value(value) => self.value = value,
+            tools::Tool::Dot(on) => self.dotted = on,
+            tools::Tool::Rest(on) => self.rest = on,
+            tools::Tool::Accidental(alter) => {
+                // with notes selected it is theirs, and nothing stays armed
+                if let (Some(alter), false) = (alter, self.items().is_empty()) {
+                    let reason =
+                        self.perform(&json!({"action": "accidental", "alter": alter}), out);
+                    self.accidental = None;
+                    return (reason, self.corrections());
+                }
+                self.accidental = alter;
+            }
+            tools::Tool::Voice(to) => {
+                let reason = self.perform(&json!({"action": "voice", "to": to}), out);
+                return (reason, self.corrections());
+            }
+            tools::Tool::Layout(view) => {
+                self.view = view;
+                return (None, self.corrections());
+            }
+            tools::Tool::Act(action) => {
+                let reason = self.perform(&action, out);
+                return (reason, self.corrections());
+            }
+        }
+        (None, self.chrome())
     }
 }
 
@@ -707,7 +865,7 @@ impl Converse for ScoreEditor {
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.ids.map(|ids| i64::from(ids.page)) == Some(widget)
+        self.ids.map(|ids| i64::from(ids.page)) == Some(widget) || self.tool_of(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -755,17 +913,25 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 
 /// **One verb of the editor's own door**, over JSON:
 ///
-/// - `window` -- `widget` (the page), `scroll`, `status`: the GuiDef.
+/// - `window` -- `widget` (the page), `scroll`, `status`, `tools` (the id of
+///   each tool of the toolbar, by its name; left out, the window has none):
+///   the GuiDef.
+/// - `tools` -- `{"tools"}`: the names of the toolbar's tools, in order, for a
+///   caller to number.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `title`, `w`, `h`,
 ///   `value` (the written value a note is entered with, `[n, d]`), `entry`
-///   (whether a press on empty staff writes a note), `layout` (`"page"` or
+///   (whether a press on empty staff writes a note), `dotted`, `rest`
+///   (whether that press writes a rest), `accidental` (the one armed for the
+///   next note, in semitones, or `null`), `layout` (`"page"` or
 ///   `"continuous"`, how the window looks at the score): `{}`.
 /// - `select` -- `elements`: the page's element ids to select. `{}`.
 /// - `selected` -- `{"elements", "items"}`: what is selected, as the page and
 ///   the model name it.
 /// - `value` -- `{"value"}`: the written value a note is entered with, `[n, d]`.
 /// - `entry` -- `{"entry"}`: whether a press on empty staff writes a note.
+/// - `input` -- `{"value", "dotted", "rest", "accidental"}`: what the next
+///   item written takes.
 /// - `layout` -- `{"layout"}`: how the window looks at the score.
 /// - `page` -- `{"page", "paper", "landscape", "papers"}`: the page setup,
 ///   the name of its paper when it is a known one, which way up it is, and the
@@ -784,13 +950,31 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_default()
     {
-        "window" => editor
-            .window(Ids {
-                page: id("widget").unwrap_or(0),
-                scroll: id("scroll"),
-                status: id("status"),
-            })
-            .to_string(),
+        "window" => {
+            // the tools the caller numbered, by name; a name that is no tool
+            // numbers nothing
+            let numbered: tools::Ids = request
+                .get("tools")
+                .and_then(Value::as_object)
+                .map(|map| {
+                    map.iter()
+                        .filter(|(name, _)| tools::TOOLS.contains(&name.as_str()))
+                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            editor
+                .window(
+                    Ids {
+                        page: id("widget").unwrap_or(0),
+                        scroll: id("scroll"),
+                        status: id("status"),
+                    },
+                    numbered,
+                )
+                .to_string()
+        }
+        "tools" => json!({"tools": tools::TOOLS}).to_string(),
         "props" => {
             let widget = id("widget").unwrap_or(0);
             match editor
@@ -817,6 +1001,19 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             }
             if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
                 editor.entry = entry;
+            }
+            if let Some(dotted) = request.get("dotted").and_then(Value::as_bool) {
+                editor.dotted = dotted;
+            }
+            if let Some(rest) = request.get("rest").and_then(Value::as_bool) {
+                editor.rest = rest;
+            }
+            // `null` lets the armed accidental go; left out, it stays
+            if let Some(accidental) = request.get("accidental") {
+                editor.accidental = accidental
+                    .as_i64()
+                    .map(|alter| alter as i32)
+                    .filter(|alter| (-2..=2).contains(alter));
             }
             if let Some(view) = request
                 .get("layout")
@@ -854,6 +1051,13 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         .to_string(),
         "value" => json!({"value": editor.value}).to_string(),
         "entry" => json!({"entry": editor.entry}).to_string(),
+        "input" => json!({
+            "value": editor.value,
+            "dotted": editor.dotted,
+            "rest": editor.rest,
+            "accidental": editor.accidental,
+        })
+        .to_string(),
         "layout" => json!({"layout": editor.view.word()}).to_string(),
         "page" => {
             let setup = editor.setup();

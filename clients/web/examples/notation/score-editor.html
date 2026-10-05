@@ -64,6 +64,13 @@ editor's are: the paper, the layout, the value a note is written with, the
 marks, the measures (a meter, a barline, a break), the transformations. Each
 entry is one of the editor's verbs, so a pick and a method call are one path.
 
+<b>The toolbar holds what a hand reaches for while it writes</b>: the value
+the next note takes, its dot, whether it is a rest and its accidental (the
+input state, which is also <code>editor.value</code>,
+<code>editor.dotted</code>, <code>editor.rest</code> and
+<code>editor.nextAccidental</code>); the articulations, a tie and a triplet
+for what is selected; the voice of the selection; and the layout.
+
 <b>The verbs act on the selection.</b> Every button calls one method of the
 editor -- <code>move</code>, <code>scale</code>, <code>articulation</code>,
 <code>dynamic</code>, <code>ornament</code>, <code>clearMarks</code>,

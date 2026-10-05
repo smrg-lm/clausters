@@ -31,15 +31,19 @@ class ScoreDomain(Domain):
 
 
 class ScoreView(View):
-    """The page, the scroll it sits in and the status line under it, composed
-    by the crate."""
+    """The toolbar, the page in the scroll it sits in and the status line
+    under it, composed by the crate."""
 
     def build(self, editor) -> dict:
         page = self.widget(editor, "page", editor.structure)
         scroll = self.widget(editor, "scroll", editor.structure)
         status = self.widget(editor, "status", editor.structure)
+        # the crate names the toolbar's tools and this numbers them
+        tools = {str(name): self.widget(editor, "tool", editor.structure, str(name))
+                 for name in editor._call("tools").get("tools") or ()}
         editor._sync_core()
-        tree = editor._call("window", widget=page, scroll=scroll, status=status)
+        tree = editor._call("window", widget=page, scroll=scroll, status=status,
+                            tools=tools)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]
@@ -54,7 +58,10 @@ class ScoreEditor(Editor):
 
     A press on a note selects it, a drag moves it along its staff, and a press
     on empty staff writes a note of `value` there (`entry`; off, it selects the
-    measure). Ctrl+click adds a note to the selection or takes it out, and
+    measure). The menu bar holds every action, and the toolbar what a hand
+    reaches for while it writes: the value, its dot, a rest, an accidental,
+    the articulations, a tie, a triplet, the voice and the layout. Ctrl+click
+    adds a note to the selection or takes it out, and
     Shift+click extends the selection to it, in time and across the staves
     between. The verbs act on what is selected (`selected`, `select`); each is
     one entry of the editing context's history, so Ctrl+Z over the window walks
@@ -130,6 +137,43 @@ class ScoreEditor(Editor):
     @entry.setter
     def entry(self, on: bool) -> None:
         self._call("sync", entry=bool(on))
+        self.adopt()
+
+    @property
+    def dotted(self) -> bool:
+        """Whether the value a note is entered with is dotted: half as long
+        again. Set it to switch: ``editor.dotted = True``."""
+        return bool(self._call("input").get("dotted", False))
+
+    @dotted.setter
+    def dotted(self, on: bool) -> None:
+        self._call("sync", dotted=bool(on))
+        self.adopt()
+
+    @property
+    def rest(self) -> bool:
+        """Whether a press on empty staff writes a rest of `value` rather than
+        a note. Set it to switch: ``editor.rest = True``."""
+        return bool(self._call("input").get("rest", False))
+
+    @rest.setter
+    def rest(self, on: bool) -> None:
+        self._call("sync", rest=bool(on))
+        self.adopt()
+
+    @property
+    def next_accidental(self) -> "int | None":
+        """The accidental the next note entered takes, in semitones from its
+        letter (``1`` a sharp, ``-1`` a flat, ``0`` a natural), or ``None``.
+        It is for that one note: writing it lets the accidental go. Set it to
+        arm one: ``editor.next_accidental = 1``. (`accidental` is the verb
+        over what is selected.)"""
+        armed = self._call("input").get("accidental")
+        return None if armed is None else int(armed)
+
+    @next_accidental.setter
+    def next_accidental(self, alter: "int | None") -> None:
+        self._call("sync", accidental=None if alter is None else int(alter))
         self.adopt()
 
     # ---- the layout, which is the window's, and the page, the document's ----
@@ -246,10 +290,48 @@ class ScoreEditor(Editor):
         """Remove the selected items; what follows them moves earlier."""
         return self._act({"action": "delete"})
 
-    def voice(self) -> bool:
-        """Move the selected items into the other voice of their staff, leaving
-        rests where they were."""
-        return self._act({"action": "voice"})
+    def voice(self, to: "int | None" = None) -> bool:
+        """Move the selected items into the other voice of their staff, or into
+        voice ``to`` (from zero) when one is named, leaving rests where they
+        were."""
+        call: dict = {"action": "voice"}
+        if to is not None:
+            call["to"] = int(to)
+        return self._act(call)
+
+    def accidental(self, alter: int) -> bool:
+        """Give the selected notes an accidental: ``alter`` semitones from the
+        letter (``1`` a sharp, ``-1`` a flat, ``0`` a natural, ``2`` and ``-2``
+        the doubles), printed whatever the key says."""
+        return self._act({"action": "accidental", "alter": int(alter)})
+
+    def insert_measures(self, count: int = 1, *, after: bool = False) -> bool:
+        """Open ``count`` empty measures before the first selected measure, or
+        after the last with ``after``; the music past them moves along."""
+        return self._act({"action": "measures",
+                          "edit": "insert_after" if after else "insert_before",
+                          "count": int(count)})
+
+    def remove_measures(self) -> bool:
+        """Take out the measures the selection covers, with what is written in
+        them."""
+        return self._act({"action": "measures", "edit": "remove"})
+
+    def set_barline(self, kind: str) -> bool:
+        """Give the last selected measure a right barline: ``single``,
+        ``dbl``, ``end``, ``rptstart``, ``rptend``, ``rptboth`` or
+        ``invis``."""
+        return self._act({"action": "barline", "kind": str(kind)})
+
+    def set_break(self, kind: str) -> bool:
+        """Break the line or the page before the first selected measure
+        (``system``, ``page``), or take the break back (``none``)."""
+        return self._act({"action": "break", "kind": str(kind)})
+
+    def set_meter(self, count: int, unit: int) -> bool:
+        """Change the meter from the first selected measure on: ``count`` beats
+        of ``unit`` (``set_meter(3, 4)`` is three quarters)."""
+        return self._act({"action": "meter", "count": int(count), "unit": int(unit)})
 
     def spanner(self, kind: str) -> bool:
         """A ``slur``, a ``crescendo`` or a ``diminuendo`` from the first
