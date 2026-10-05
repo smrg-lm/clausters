@@ -2739,6 +2739,7 @@ wrong.
   - **Pitches are entered from the keyboard too, and the keyboard moves the
     cursor.**
   - **The window opens outside the mode.**
+  - **The mode is entered with a key or with a button of the toolbar.**
   - **The cursor is put where the selection is**: entering the mode with a
     note or a rest selected puts it on that note or rest, and with a staff
     selected at the staff's start.
@@ -2749,7 +2750,8 @@ wrong.
     and an entry replaces in that voice alone -- which closes "A note cannot
     be written into the second voice", above, when this is built.
 
-  Still to settle when it is taken: whether the cursor advances by the value
+  Still to settle when it is taken: where the cursor goes when the mode is
+  entered with nothing selected; whether the cursor advances by the value
   after an entry (the principle says it does, and a press on another line
   where the note is building a chord says the press, at least, does not move
   it on); which modifier builds the chord and which keys are the pitches and
