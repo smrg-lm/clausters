@@ -985,8 +985,8 @@ opened it.
   pass are under "Found by use" -- the page that was in no window, the
   cursor, the written breaks, the symbols, the page's head, the dialogs, a
   text typed over where it is drawn, all fixed there; note entry, built as a
-  mode with an edit cursor, which is also how the second voice is written.
-  What stays open: a written page break; the ○ palette entries, each
+  mode with an edit cursor, which is also how the second voice is written; a
+  written page break, laid out in runs of pages. What stays open: the ○ palette entries, each
   the model growing; a channel group edited as one; an edit to a sounding
   pitch respelling the written one; New and Close in the File menu; the
   standalone host's playback and export; and the sound, which nobody has
@@ -2735,7 +2735,7 @@ wrong.
   the page view is `smart` with that threshold at zero, pinned against the
   engraver in `clausters-notation`.
 
-- ⬜ **A written page break does not turn the page** *(the same day, measured
+- ✅ **A written page break does not turn the page** *(the same day, measured
   while fixing the entry above)*. The engraver's system cast-off reads `sb`
   and has no visit for `pb`: under `auto` and `smart` a page break is neither
   a new page nor a new system, and only `encoded` honours it -- the mode that
@@ -2748,6 +2748,14 @@ wrong.
   break on its own side of the engraver (for instance by casting off the
   stretch between two page breaks as its own run of pages); which way is
   settled when it is taken.
+  **Fixed 2026-10-05, that way**: a score with page breaks is written as one
+  document per run (`notation::sheet_to_mei_pages`), each engraved on its own,
+  and the page view stacks their pages, numbered as the whole score's
+  (`docs/decisions.md`, "A page break is honoured by laying the score out in
+  runs"). Checked in the browser: a break before the third bar of the example
+  leaves two on the first page and opens the second, numbered 2, with the
+  third. **Left open**: a slur or a hairpin that crosses a page break is drawn
+  in neither run.
 
 - ✅ **The example's page had no play cursor** *(the same look: "Tampoco se
   ve el cursor de reproducción")*. Two causes. The example opened the editor

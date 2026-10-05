@@ -724,6 +724,22 @@ pub struct Staff {
 }
 
 impl DisplayList {
+    /// **This page is page `number` of the score**: the page number its
+    /// running head writes ([`super::PAGE_NUMBER`]) says so, whatever the
+    /// engraver counted -- what a score laid out in runs of pages needs, since
+    /// each run's pages are counted from one.
+    pub fn number_page(&mut self, number: usize) {
+        for prim in &mut self.prims {
+            if let Prim::Text {
+                s, id: Some(id), ..
+            } = prim
+                && id == super::PAGE_NUMBER
+            {
+                *s = number.to_string();
+            }
+        }
+    }
+
     /// **Several pages as one drawing**: each under the one before, `gap` page
     /// units apart, and with `frame` each inside a hairline rectangle, so the
     /// paper is seen and where one page ends is too.

@@ -178,8 +178,25 @@ fn word<T: Serialize>(value: T) -> String {
 /// second page on.
 #[must_use]
 pub fn running_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
+    running(header, escape, false)
+}
+
+/// The id of the page number the running head writes: what a caller that lays
+/// a score out in runs of pages rewrites, since the engraver counts the pages
+/// of the document it was handed.
+pub const PAGE_NUMBER: &str = "page-number";
+
+/// **The running elements of a run of pages that does not start the score**:
+/// its first page is no first page, so it holds only what is written on every
+/// page, and the page number.
+#[must_use]
+pub fn continued_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
+    running(header, escape, true)
+}
+
+fn running(header: &Header, escape: impl Fn(&str) -> String, continued: bool) -> String {
     let entries = entries(header);
-    if entries.is_empty() {
+    if entries.is_empty() && !continued {
         return String::new();
     }
     let mut out = String::new();
@@ -190,8 +207,8 @@ pub fn running_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
                 let place = header.place(field);
                 // the first page's block holds every field of the region, and
                 // the other only those written on every page
-                let belongs =
-                    place.region == region && (pages == Pages::First || place.pages == Pages::All);
+                let belongs = place.region == region
+                    && ((pages == Pages::First && !continued) || place.pages == Pages::All);
                 if !belongs {
                     continue;
                 }
@@ -204,10 +221,11 @@ pub fn running_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
                     escape(text),
                 ));
             }
-            if region == Region::Head && pages == Pages::All {
-                rends.push_str(
-                    "<rend halign=\"center\" valign=\"top\"><num label=\"page\">#</num></rend>",
-                );
+            if region == Region::Head && (pages == Pages::All || continued) {
+                rends.push_str(&format!(
+                    "<rend xml:id=\"{PAGE_NUMBER}\" halign=\"center\" valign=\"top\">\
+                     <num label=\"page\">#</num></rend>"
+                ));
             }
             if !rends.is_empty() {
                 out.push_str(&format!(

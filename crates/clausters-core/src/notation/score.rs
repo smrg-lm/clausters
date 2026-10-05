@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use super::{
     Cursor, DisplayList, Op, Sheet, TimemapEntry, apply, cursor_track, mei_to_sheet, sheet_to_mei,
-    svg_to_display_list,
+    sheet_to_mei_pages, svg_to_display_list,
 };
 
 /// verovio's `keyDown` codes for the arrow keys (`vrvdef.h`): what moves a note
@@ -240,16 +240,46 @@ impl<E: Engraver> Score<E> {
     /// a score is asked of the score: a selection runs across a page turn, a
     /// cursor sweeps through it, and a widget per page would make each of
     /// those a question about which widget.
+    ///
+    /// **A written page break turns the page** in a framed view, which the
+    /// engraver does not do by itself: it turns a page where the paper is full
+    /// and nowhere else. So a score that has one is laid out in runs, each the
+    /// measures from one page break to the next ([`sheet_to_mei_pages`]), and
+    /// their pages are stacked with the numbers the whole score gives them; the
+    /// document stays the whole score, and the cursors and the notes are read
+    /// from it.
     pub fn pages(&mut self, gap: f64, frame: bool) -> Page {
         let _guard = self.engraver.lock();
-        let count = self.engraver.page_count().max(1);
-        let draw = DisplayList::stacked(
-            (1..=count)
+        let runs = self
+            .sheet
+            .as_ref()
+            .filter(|_| frame)
+            .and_then(|sheet| sheet_to_mei_pages(sheet).ok())
+            .filter(|runs| runs.len() > 1);
+        let pages = match runs {
+            Some(runs) => {
+                let whole = self.mei_locked();
+                let mut pages = Vec::new();
+                for run in &runs {
+                    if !self.engraver.load_data(run) {
+                        continue;
+                    }
+                    for page in 1..=self.engraver.page_count().max(1) {
+                        pages.push(svg_to_display_list(&self.engraver.render_svg(page)));
+                    }
+                }
+                self.engraver.load_data(&whole);
+                // the engraver counted the pages of each run from one
+                for (index, page) in pages.iter_mut().enumerate() {
+                    page.number_page(index + 1);
+                }
+                pages
+            }
+            None => (1..=self.engraver.page_count().max(1))
                 .map(|page| svg_to_display_list(&self.engraver.render_svg(page)))
                 .collect(),
-            gap,
-            frame,
-        );
+        };
+        let draw = DisplayList::stacked(pages, gap, frame);
         self.drawn = true;
         let timemap = self.timemap_locked();
         let cursors = cursor_track(&draw, &timemap);

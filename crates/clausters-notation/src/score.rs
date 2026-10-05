@@ -249,6 +249,68 @@ mod tests {
         );
     }
 
+    /// **A written page break turns the page**, which the engraver does only
+    /// where the paper is full: four bars on one page, then a break before the
+    /// third puts it on a second, numbered 2 -- and the cursors still run over
+    /// all four bars, read from the whole score.
+    #[test]
+    fn a_written_page_break_turns_the_page() {
+        use clausters_core::notation::{
+            Header, PAGE_NUMBER, PageSetup, Prim, Sheet, View, layout_options, sheet_to_mei,
+            voice_to_sheet,
+        };
+
+        let voice: Vec<Slot> = (0..16).map(|i| Slot::note(vec![60 + i % 8], 8)).collect();
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        sheet.header = Header {
+            title: "A title".into(),
+            ..Header::default()
+        };
+        let laid = |sheet: &Sheet| {
+            let mut score =
+                open(&sheet_to_mei(sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+            assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
+            score.pages(1000.0, true)
+        };
+        let one = laid(&sheet);
+        let texts = |page: &clausters_core::notation::Page| -> Vec<(String, Option<String>)> {
+            page.draw
+                .prims
+                .iter()
+                .filter_map(|p| match p {
+                    Prim::Text { s, id, .. } => Some((s.clone(), id.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert!(
+            !texts(&one)
+                .iter()
+                .any(|(_, id)| id.as_deref() == Some(PAGE_NUMBER)),
+            "one page has no number"
+        );
+
+        sheet.grid.breaks = vec![(2, "page".to_string())];
+        let two = laid(&sheet);
+        assert!(
+            two.draw.vb[1] > 1.9 * one.draw.vb[1],
+            "two pages, one under the other"
+        );
+        let numbers: Vec<String> = texts(&two)
+            .into_iter()
+            .filter(|(_, id)| id.as_deref() == Some(PAGE_NUMBER))
+            .map(|(s, _)| s)
+            .collect();
+        assert_eq!(numbers, vec!["2".to_string()], "the second page says it is");
+        let titles = texts(&two).iter().filter(|(s, _)| s == "A title").count();
+        assert_eq!(titles, 1, "and the title is the first page's alone");
+        assert_eq!(
+            two.cursors.len(),
+            one.cursors.len(),
+            "every note is still timed"
+        );
+    }
+
     #[test]
     fn the_page_text_is_drawn_in_its_cells_and_survives_the_engraver() {
         use clausters_core::notation::{

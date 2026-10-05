@@ -324,6 +324,28 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
 /// cannot be split without ceasing to be a tuplet), a group whose written
 /// values do not add up to a value at all, and an accidental past a double.
 pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
+    Ok(documents(sheet, false)?.remove(0))
+}
+
+/// **The score cut at its written page breaks**: one document per run of
+/// pages, each the measures from one page break to the next -- what a page
+/// view lays out one by one, since the engraver turns a page where the paper
+/// is full and nowhere else. The measures keep their own numbers and every
+/// element its id, so a run's pages name what the whole score names. A run
+/// after the first opens with the meter in force there, and its first page is
+/// not the score's: it carries only what is written on every page, and the
+/// page number ([`super::pagetext::PAGE_NUMBER`]), which the engraver counts
+/// from one in each document. A score with no page break is one document,
+/// the one [`sheet_to_mei`] writes.
+///
+/// # Errors
+/// As [`sheet_to_mei`].
+pub fn sheet_to_mei_pages(sheet: &Sheet) -> Result<Vec<String>, String> {
+    documents(sheet, true)
+}
+
+/// The score as one document, or -- `split` -- as one per run of pages.
+fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
     let (keysig, _) = key_signature(&sheet.key);
     let default_staff = Staff::default();
     let staves: Vec<&Staff> = if sheet.staves.is_empty() {
@@ -361,13 +383,27 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
         projected.push(per_voice);
     }
 
-    let body = (0..count)
+    let measures: Vec<String> = (0..count)
         .map(|m| {
             let extra = attached.get(&m).map(String::as_str).unwrap_or("");
             measure_xml(m, &projected, extra, m + 1 == count, &sheet.grid)
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect();
+    // where a run of pages starts: the first measure, and each one a page
+    // break was written before
+    let mut starts = vec![0];
+    if split {
+        starts.extend(
+            sheet
+                .grid
+                .breaks
+                .iter()
+                .filter(|(m, kind)| kind == "page" && *m > 0 && *m < count)
+                .map(|(m, _)| *m),
+        );
+        starts.sort_unstable();
+        starts.dedup();
+    }
 
     // A single staff keeps the shape it always had; several take a brace, which
     // is what makes two staves read as one instrument rather than two.
@@ -390,20 +426,38 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
 
     let head = header_xml(&sheet.header);
     let page = sheet.page.as_ref().map(page_attrs).unwrap_or_default();
-    let running = super::pagetext::running_xml(&sheet.header, escape);
-    Ok(format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-         <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
-         \x20<meiHead><fileDesc><titleStmt>{head}</titleStmt>\
-         <pubStmt/></fileDesc></meiHead>\n\
-         \x20<music><body><mdiv><score>\n\
-         \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\"{page}>\n\
-         \x20\x20\x20{group}{running}\n\
-         \x20\x20</scoreDef>\n\
-         \x20\x20<section>\n{body}\n\x20\x20</section>\n\
-         \x20</score></mdiv></body></music>\n\
-         </mei>\n"
-    ))
+    let ends = starts.iter().skip(1).copied().chain([count]);
+    Ok(starts
+        .iter()
+        .zip(ends)
+        .map(|(&first, end)| {
+            let running = if first == 0 {
+                super::pagetext::running_xml(&sheet.header, escape)
+            } else {
+                super::pagetext::continued_xml(&sheet.header, escape)
+            };
+            let (num, den) = if first == 0 {
+                (num, den)
+            } else {
+                let meter = sheet.grid.meter_at(first);
+                (meter.count, meter.unit)
+            };
+            let body = measures[first..end].join("\n");
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
+                 \x20<meiHead><fileDesc><titleStmt>{head}</titleStmt>\
+                 <pubStmt/></fileDesc></meiHead>\n\
+                 \x20<music><body><mdiv><score>\n\
+                 \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\"{page}>\n\
+                 \x20\x20\x20{group}{running}\n\
+                 \x20\x20</scoreDef>\n\
+                 \x20\x20<section>\n{body}\n\x20\x20</section>\n\
+                 \x20</score></mdiv></body></music>\n\
+                 </mei>\n"
+            )
+        })
+        .collect())
 }
 
 /// **The page setup as the score definition's attributes**: MEI's own places
@@ -1739,6 +1793,34 @@ mod emission {
             !mei.contains("<rest dur=\"1\""),
             "not a decomposed whole rest"
         );
+    }
+
+    #[test]
+    fn a_score_is_cut_into_runs_of_pages_at_its_page_breaks() {
+        let mut mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(vec![note(Step::C, Ratio::from(4), 1)])],
+        }]);
+        mine.header.title = "A title".into();
+        // no page break: one document, the one the score is written as
+        assert_eq!(
+            sheet_to_mei_pages(&mine).unwrap(),
+            vec![sheet_to_mei(&mine).unwrap()]
+        );
+        mine.grid.breaks = vec![(2, "page".into()), (3, "system".into())];
+        let runs = sheet_to_mei_pages(&mine).unwrap();
+        assert_eq!(runs.len(), 2);
+        // the measures keep their numbers, and the title is the first run's
+        assert!(runs[0].contains("<measure xml:id=\"m2\""), "{}", runs[0]);
+        assert!(!runs[0].contains("xml:id=\"m3\""));
+        assert!(runs[1].contains("<measure xml:id=\"m3\""));
+        assert!(runs[1].contains("<sb/>"), "a system break past it stays");
+        // (each names it in its head; only the first writes it on the page)
+        assert_eq!(runs[0].matches("A title").count(), 2);
+        assert_eq!(runs[1].matches("A title").count(), 1);
+        // a run after the first opens with the page number
+        assert!(runs[1].contains("pgHead func=\"first\""), "{}", runs[1]);
+        assert!(runs[1].contains(super::super::PAGE_NUMBER));
     }
 
     #[test]

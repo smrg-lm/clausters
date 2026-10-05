@@ -9620,3 +9620,26 @@ rather than a letter spelled in an element. Escape, the dismissal, may be bound
 in a scope and nowhere else, since leaving a mode is a dismissal; and it now
 reaches the focused element before the front's own close, which a text being
 typed over on the page had needed and never had.
+
+## A page break is honoured by laying the score out in runs
+
+The engraver turns a page where the paper is full and nowhere else: its cast
+off reads a system break and has no visit for a page break, which only its
+`encoded` mode honours -- the mode that breaks nowhere it was not told to. That
+is the engraver's design, and patching it was ruled out (the user, 2026-10-05).
+
+**So the page view lays a score with page breaks out in runs**
+(`notation::sheet_to_mei_pages`, `Score::pages`): each run is the measures from
+one page break to the next, written as a document of its own and engraved on
+its own, and the runs' pages are stacked as the page view always stacked one
+document's. A run keeps the measures' own numbers and every element its id, so
+a selection, a press and a cursor name on a run's page what they name in the
+whole score; the document the editor holds, saves and plays stays the whole
+score, and the cursors and the notes are read from it. A run after the first
+opens with the meter in force there, writes only what is on every page, and
+carries the page number, which the engraver counts from one in each document --
+so the page view writes the score's number over it (`PAGE_NUMBER`).
+
+What it costs: a score with page breaks is engraved once more per run on every
+edit, and a slur or a hairpin that crosses a page break joins two documents and
+is drawn in neither.

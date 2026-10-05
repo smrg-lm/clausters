@@ -60,7 +60,9 @@ pub use interp::{
     default_interpretation, levels, perform,
 };
 pub use layout::{PAPERS, PageSetup, Paper, View, options as layout_options, paper};
-pub use mei::{Slot, key_alteration, sheet_to_mei, voice_to_mei, voice_to_sheet};
+pub use mei::{
+    Slot, key_alteration, sheet_to_mei, sheet_to_mei_pages, voice_to_mei, voice_to_sheet,
+};
 pub use model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use operators::{
     concat, insert_measures, invert, invert_pitch, remove_measures, repeat, retrograde, set_meter,
@@ -69,7 +71,8 @@ pub use operators::{
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use outlines::{glyph_char, specimen};
 pub use pagetext::{
-    FIELDS, Halign, NOTE, Pages, Place, Region, Valign, default_place, field_id, field_of,
+    FIELDS, Halign, NOTE, PAGE_NUMBER, Pages, Place, Region, Valign, default_place, field_id,
+    field_of,
 };
 pub use read::mei_to_sheet;
 pub use score::{Engraver, NoteEvent, Page, Score, engrave_options, item_id, measure_id};
