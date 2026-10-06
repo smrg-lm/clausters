@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::gpu::Gpu;
-use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
+use crate::spectrogram::{FreqScale, SpectrogramView, Stft};
 use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
@@ -268,8 +268,9 @@ fn roll_into_slot(
 }
 
 /// One STFT per channel for a spectrogram's channel stack: de-interleaved `channels`,
-/// analyzed at `window_size`/`hop` (the hop raised by [`hop_capped`] so a long
-/// buffer fits the magnitude texture) and `sample_rate` (48 kHz when unknown,
+/// analyzed at `window_size`/`hop` (the hop raised by `stft::hop_capped` only for
+/// a buffer whose transform would take more memory than one keeps) and
+/// `sample_rate` (48 kHz when unknown,
 /// so the frequency axis is still drawable). Shared by both fronts and every
 /// data source (mapped path, fetched buffer, inline samples).
 pub(crate) fn stft_channels(
@@ -285,10 +286,10 @@ pub(crate) fn stft_channels(
     };
     channels
         .into_iter()
-        .map(|ch| {
-            let hop = hop_capped(ch.len(), window_size, hop);
-            Stft::compute(&ch, window_size, hop, sr)
-        })
+        // The one analysis every end makes, so a cache a client wrote and
+        // a take the host mapped are the same transform. A window the FFT
+        // has no size for was refused when the props were read.
+        .filter_map(|ch| Stft::analyze(&ch, window_size, hop, sr))
         .collect()
 }
 
@@ -2225,15 +2226,18 @@ mod tests {
         assert_eq!(deinterleave(&flat, 1)[0].len(), 5);
     }
 
+    /// A channel is analyzed at the hop asked for, however many textures
+    /// wide that makes it: what bounds a transform is the memory it takes
+    /// (`spectrogram::hop_capped`), and the card is shown a window of it.
     #[test]
-    fn stft_channels_cap_the_hop_for_long_buffers() {
-        // A buffer long enough that hop 8 would exceed MAX_FRAMES: the hop is
-        // raised so every channel fits the texture.
+    fn stft_channels_keep_the_hop_past_a_textures_width() {
         let n = 200_000;
         let chan: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
         let stacks = stft_channels(vec![chan], 256, 8, 48_000.0);
         assert_eq!(stacks.len(), 1);
-        assert!(stacks[0].n_frames() <= crate::spectrogram::MAX_FRAMES);
+        assert_eq!(stacks[0].hop(), 8);
+        assert!(stacks[0].n_frames() > crate::spectrogram::MAX_FRAMES);
+        assert!(stacks[0].n_frames() <= crate::spectrogram::max_frames(256));
         assert_eq!(stacks[0].total_samples(), n);
     }
 }

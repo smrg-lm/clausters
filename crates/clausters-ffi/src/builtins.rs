@@ -229,6 +229,59 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_build(
     cache.len()
 }
 
+/// The exact byte length of the **spectrogram cache** of `n` mono samples
+/// analyzed at `window_size` and `hop` -- sizes the buffer for
+/// [`clausters_core_stft_build`] without analyzing. Returns 0 for a window
+/// the FFT has no size for (a power of two from 256 to 4096) or a hop of 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_stft_cache_size(
+    n: usize,
+    window_size: usize,
+    hop: usize,
+) -> usize {
+    clausters_core::stft::cache_size(n, window_size, hop)
+}
+
+/// Analyzes `samples` (`n` mono `f32`s) into the **spectrogram cache** a
+/// `spectrogram(cache=...)` maps: a Hann window of `window_size` every `hop`
+/// samples, magnitudes normalized over the core's reference range, at
+/// `sample_rate` for the frequency axis -- the transform the GUI host computes
+/// from samples it holds, byte for byte, so a take analyzed by a client is the
+/// picture the host would have drawn. The hop is raised only for a take
+/// longer than a transform keeps. Writes the cache into `out` (capacity
+/// `out_cap`) and returns the bytes written, or 0 on a null pointer, an
+/// unsupported `window_size`, a `hop` of 0 or a too-small `out_cap`.
+///
+/// # Safety
+/// `samples` must be readable for `n` `f32`s and `out` writable for `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_stft_build(
+    samples: *const f32,
+    n: usize,
+    window_size: usize,
+    hop: usize,
+    sample_rate: f32,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if samples.is_null() || out.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees `samples` is readable for `n` `f32`s.
+    let s = unsafe { std::slice::from_raw_parts(samples, n) };
+    let Some(stft) = clausters_core::stft::Stft::analyze(s, window_size, hop, sample_rate) else {
+        return 0;
+    };
+    let cache = stft.to_bytes();
+    if cache.len() > out_cap {
+        return 0;
+    }
+    // SAFETY: out is writable for out_cap >= cache.len().
+    let o = unsafe { std::slice::from_raw_parts_mut(out, cache.len()) };
+    o.copy_from_slice(&cache);
+    cache.len()
+}
+
 /// Rewrites an existing multichannel cache over the **frame span an edit
 /// touched**, in place: `cache` is parsed, the buckets `[start, start+frames)`
 /// overlaps are rebuilt from `samples`, and the bytes are written back over the

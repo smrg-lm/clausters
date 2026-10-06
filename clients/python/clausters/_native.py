@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 83
+CORE_ABI_VERSION = 84
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -674,6 +674,17 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_multi_build.restype = ctypes.c_size_t
     lib.clausters_core_peaks_multi_build.argtypes = [
         f32p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    # The spectrogram cache (ABI v84): the transform the GUI host draws from,
+    # as the bytes it maps -- for a client that analyzes a take itself.
+    lib.clausters_core_stft_cache_size.restype = ctypes.c_size_t
+    lib.clausters_core_stft_cache_size.argtypes = [
+        ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
+    ]
+    lib.clausters_core_stft_build.restype = ctypes.c_size_t
+    lib.clausters_core_stft_build.argtypes = [
+        f32p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_float,
+        u8p, ctypes.c_size_t,
     ]
     lib.clausters_core_peaks_multi_empty.restype = ctypes.c_size_t
     lib.clausters_core_peaks_multi_empty.argtypes = [
@@ -4159,6 +4170,33 @@ def peaks_cache(samples, base_bucket: int = 256, channels: int = 1) -> bytes:
         raise ValueError(f"clausters_core_peaks_build wrote {written} of {size} bytes")
     return bytes(out)
 
+
+
+def stft_cache(samples, window_size: int = 1024, hop: int = 512,
+               sample_rate: float = 48000.0) -> bytes:
+    """The **spectrogram cache** of mono `samples`: the short-time Fourier
+    transform the GUI host draws a spectrogram from, analyzed by the shared
+    native core so it is **byte-identical** to the one the host computes from
+    samples it holds. Write the bytes to a file a ``spectrogram(cache=...)``
+    maps, so the host draws a take it never loads and never analyzes.
+
+    A Hann window of `window_size` samples (a power of two from 256 to 4096)
+    every `hop`; `sample_rate` places the frequency axis. The hop is raised
+    only for a take longer than a transform keeps (some six minutes at the
+    defaults)."""
+    a, _ = _as_array(samples)
+    n = len(a)
+    size = lib().clausters_core_stft_cache_size(n, window_size, hop)
+    if size == 0:
+        raise ValueError(
+            f"no spectrogram of window_size {window_size} and hop {hop}: the window "
+            "is a power of two from 256 to 4096 and the hop is at least 1")
+    out = (ctypes.c_ubyte * size)()
+    written = lib().clausters_core_stft_build(
+        _ptr(a), n, window_size, hop, float(sample_rate), out, size)
+    if written != size:
+        raise ValueError(f"clausters_core_stft_build wrote {written} of {size} bytes")
+    return bytes(out)
 
 
 def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:

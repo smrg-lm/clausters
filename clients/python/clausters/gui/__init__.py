@@ -85,6 +85,7 @@ from .guidef import (
     peaks_cache_file,
     peaks_cache_stream_file,
     peaks_cache_update_file,
+    spectrogram_cache_file,
     phasescope,
     piano,
     pianoroll,
@@ -247,6 +248,7 @@ __all__ = [
     "peaks_cache_empty_file",
     "peaks_cache_stream_file",
     "peaks_cache_update_file",
+    "spectrogram_cache_file",
     "correlation",
     "lissajous",
 ]

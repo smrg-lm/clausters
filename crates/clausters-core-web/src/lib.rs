@@ -2147,6 +2147,24 @@ pub fn bark_to_hz(bark: f64) -> f64 {
     scale::bark_to_hz(bark)
 }
 
+/// **The spectrogram cache of a mono take**: `samples` analyzed with a Hann
+/// window of `windowSize` every `hop` samples, at `sampleRate` for the
+/// frequency axis -- the bytes a `spectrogram`'s `cache` names, and the
+/// transform the GUI host computes from samples it holds. `undefined` for a
+/// window the FFT has no size for (a power of two from 256 to 4096) or a hop
+/// of 0. The C ABI's `clausters_core_stft_build`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = stftCache)]
+pub fn stft_cache(
+    samples: &[f32],
+    window_size: usize,
+    hop: usize,
+    sample_rate: f32,
+) -> Option<Vec<u8>> {
+    clausters_core::stft::Stft::analyze(samples, window_size, hop, sample_rate)
+        .map(|stft| stft.to_bytes())
+}
+
 /// A built min/max peak pyramid, the JS face of
 /// [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
 /// drawn from, so the drawing costs the width of the window rather than the

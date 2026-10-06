@@ -29,6 +29,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { BusStream, TapStream } from "../src/data/index.ts";
 import {
     Peaks,
+    stftCache,
     correlation,
     decodeSamples,
     deinterleave,
@@ -47,6 +48,16 @@ interface Vectors {
         baseBucket: number;
         bytes: number;
         sha256: string;
+    }[];
+    stft: {
+        signal: string;
+        windowSize: number;
+        hop: number;
+        bytes: number;
+        frames: number;
+        bins: number;
+        sum: number;
+        peakBin: number;
     }[];
     peaksStream: {
         signal: string;
@@ -127,6 +138,39 @@ test("the peak cache is byte-identical to the Python client's", () => {
         assert.equal(digest, vector.sha256, `${what}: cache bytes`);
         peaks.free();
     }
+});
+
+// ---- parity: the spectrogram cache ----
+
+test("the spectrogram cache is the analysis the Python client writes", () => {
+    for (const vector of vectors.stft) {
+        const what = `${vector.signal} @${vector.windowSize}/${vector.hop}`;
+        const bytes = stftCache(signalFor(vector.signal), {
+            windowSize: vector.windowSize,
+            hop: vector.hop,
+            sampleRate: 48000,
+        });
+        assert.equal(bytes.length, vector.bytes, `${what}: cache size`);
+        assert.equal(new TextDecoder().decode(bytes.subarray(0, 4)), "CLSG", `${what}: tag`);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const frames = Number(view.getBigUint64(16, true));
+        const bins = Number(view.getBigUint64(24, true));
+        assert.deepEqual([frames, bins], [vector.frames, vector.bins], `${what}: shape`);
+        const mags = Array.from({ length: frames * bins }, (_, i) =>
+            view.getFloat32(52 + 4 * i, true),
+        );
+        // The two builds take a cosine and a logarithm from two math
+        // libraries: what agrees is the analysis, to the last place but one.
+        const sum = mags.reduce((a, b) => a + b, 0);
+        assert.ok(Math.abs(sum - vector.sum) <= 1e-3 * Math.max(1, vector.sum), `${what}: energy`);
+        const first = mags.slice(0, bins);
+        assert.equal(first.indexOf(Math.max(...first)), vector.peakBin, `${what}: where`);
+    }
+});
+
+test("a spectrogram of a window the transform has no size for is refused", () => {
+    assert.throws(() => stftCache(SIGNALS.sine440, { windowSize: 300 }), RangeError);
+    assert.throws(() => stftCache(SIGNALS.sine440, { hop: 0 }), RangeError);
 });
 
 test("a cache written by the Python client reads back here", () => {

@@ -529,15 +529,6 @@ export class NotesPlayback {
     constructor(transport: number);
 }
 
-/**
- * A built min/max peak pyramid, the JS face of
- * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
- * drawn from, so the drawing costs the width of the window rather than the
- * length of the buffer. Built (or filled from `/buffer_stream` reports) here
- * and handed to the GUI host, which draws it; the readers below answer **what
- * the cache is** -- length, channels, bucket, levels -- and never what it says,
- * which is a drawing's question.
- */
 export class Pyramid {
     private constructor();
     free(): void;
@@ -1757,6 +1748,23 @@ export function sheetToMei(sheet: string): string;
 export function split_degree(degree: number): Float64Array;
 
 /**
+ * A built min/max peak pyramid, the JS face of
+ * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
+ * drawn from, so the drawing costs the width of the window rather than the
+ * length of the buffer. Built (or filled from `/buffer_stream` reports) here
+ * and handed to the GUI host, which draws it; the readers below answer **what
+ * the cache is** -- length, channels, bucket, levels -- and never what it says,
+ * which is a drawing's question.
+ * **The spectrogram cache of a mono take**: `samples` analyzed with a Hann
+ * window of `windowSize` every `hop` samples, at `sampleRate` for the
+ * frequency axis -- the bytes a `spectrogram`'s `cache` names, and the
+ * transform the GUI host computes from samples it holds. `undefined` for a
+ * window the FFT has no size for (a power of two from 256 to 4096) or a hop
+ * of 0. The C ABI's `clausters_core_stft_build`.
+ */
+export function stftCache(samples: Float32Array, window_size: number, hop: number, sample_rate: number): Uint8Array | undefined;
+
+/**
  * Walk a verovio SVG into a `score` display list, as JSON.
  *
  * The one-shot path: a page that only draws a score engraves once and walks
@@ -2079,6 +2087,7 @@ export interface InitOutput {
     readonly split_degree: (a: number) => [number, number];
     readonly steprunner_call: (a: number, b: number, c: number) => [number, number];
     readonly steprunner_new: () => number;
+    readonly stftCache: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
     readonly tempomap_anchored: (a: number, b: number, c: number) => number;
     readonly tempomap_beatsAt: (a: number, b: number) => number;

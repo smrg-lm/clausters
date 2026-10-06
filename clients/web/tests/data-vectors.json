@@ -36,6 +36,38 @@
       "sha256": "f2eb128cb74f1838de31b9da98946553a8a5e00b53a9785dc406166ad55b59a4"
     }
   ],
+  "stft": [
+    {
+      "signal": "sine440",
+      "windowSize": 512,
+      "hop": 128,
+      "bytes": 29748,
+      "frames": 29,
+      "bins": 256,
+      "sum": 518.7546444084146,
+      "peakBin": 5
+    },
+    {
+      "signal": "ramp",
+      "windowSize": 256,
+      "hop": 256,
+      "bytes": 8244,
+      "frames": 16,
+      "bins": 128,
+      "sum": 128.15736625672434,
+      "peakBin": 0
+    },
+    {
+      "signal": "quiet",
+      "windowSize": 1024,
+      "hop": 512,
+      "bytes": 2100,
+      "frames": 1,
+      "bins": 512,
+      "sum": 1.399657130241394,
+      "peakBin": 16
+    }
+  ],
   "peaksStream": [
     {
       "signal": "sine440",

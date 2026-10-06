@@ -9,39 +9,24 @@
 //! gives resolution-matched down-sampling when zoomed out, so we never draw more
 //! than the screen needs.
 
-use clausters_core::{bytes, fft};
+pub use clausters_core::stft::{
+    REF_FLOOR, Stft, analysis_window, column_into, hop_capped, max_frames, quantize,
+};
 
 use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::{Axis, Unit, View};
 
-const MAGIC: &[u8; 4] = b"CLSG";
-const VERSION: u32 = 2;
-/// Reference dB range the stored magnitudes are normalized over. The *display*
-/// dB window (which controls contrast) is a cheap shader uniform within this
-/// range, so it can change live without recomputing the STFT.
-const REF_FLOOR: f32 = -120.0;
-
 /// The widest magnitude texture the renderer uploads -- the WebGL2/WebGPU
-/// baseline `max_texture_dimension_2d`. [`hop_capped`] raises the hop so a
-/// long buffer's frame count stays within it.
+/// baseline `max_texture_dimension_2d`. It bounds what is **on the card at
+/// once**, not what a transform holds: a stored transform keeps every column
+/// its analysis made, and its view uploads the stretch it is showing at the
+/// level of detail the screen can show ([`SpectrogramView`]).
 pub const MAX_FRAMES: usize = 8192;
 
 /// The most columns a **rolling** transform ([`Stft::rolling`]) retains -- half
 /// [`MAX_FRAMES`], because a ring is stored twice in one texture (see
 /// [`Stft::tex_width`]) and the pair still has to fit the same dimension.
 pub const MAX_ROLLING_FRAMES: usize = MAX_FRAMES / 2;
-
-/// The hop to analyze `total_samples` with: the requested `hop`, raised just
-/// enough that the STFT yields at most [`MAX_FRAMES`] frames (one texture row
-/// per frame). A long file thus trades time resolution for fitting the GPU
-/// texture, instead of failing device validation.
-pub fn hop_capped(total_samples: usize, window_size: usize, hop: usize) -> usize {
-    let needed = total_samples
-        .saturating_sub(window_size)
-        .div_ceil(MAX_FRAMES.saturating_sub(1).max(1))
-        .max(1);
-    hop.max(needed)
-}
 
 /// Frequency axis mapping for the spectrogram's vertical axis. Beyond the
 /// classic linear/log pair, the two perceptual scales (mel and bark) map the
@@ -74,333 +59,6 @@ impl FreqScale {
             FreqScale::Mel => FreqScale::Bark,
             FreqScale::Bark => FreqScale::Linear,
         }
-    }
-}
-
-/// The analysis window and its coherent gain: a Hann window, and the sum that
-/// normalizes a full-scale sine to about 0 dB. Computed once per transform, not
-/// once per column.
-pub fn analysis_window(window_size: usize) -> (Vec<f32>, f32) {
-    let hann: Vec<f32> = (0..window_size)
-        .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / window_size as f32).cos())
-        .collect();
-    let gain = hann.iter().sum::<f32>() * 0.5;
-    (hann, gain)
-}
-
-/// **One column of a spectrogram**: `frame` windowed, transformed, and mapped
-/// to the normalized 0..1 magnitudes the texture stores.
-///
-/// It is a free function rather than a method because two paths produce
-/// columns and they must produce the *same* ones: the stored transform
-/// ([`Stft::compute`], analyzing a whole buffer at once) and the rolling one a
-/// retained live view keeps (`host::waterfall`, analyzing a column at a time as
-/// the samples arrive). A retained waterfall and an offline spectrogram of the
-/// same audio are then the same picture, which is the only reason the renderer,
-/// the frequency ruler and the cursor readout can stay one implementation.
-///
-/// `windowed` and `spectrum` are scratch the caller owns, so a rolling
-/// analysis allocates nothing per column.
-pub fn column_into(
-    frame: &[f32],
-    hann: &[f32],
-    win_gain: f32,
-    windowed: &mut [f32],
-    spectrum: &mut [f32],
-    out: &mut [f32],
-) {
-    for (i, w) in windowed.iter_mut().enumerate() {
-        *w = frame.get(i).copied().unwrap_or(0.0) * hann[i];
-    }
-    // The forward FFT lives once in the shared core (`clausters_core::fft`).
-    fft::rfft_magnitudes_into(windowed, spectrum);
-    for (o, m) in out.iter_mut().zip(spectrum.iter()) {
-        let db = 20.0 * (m / win_gain + 1e-9).log10();
-        *o = ((db - REF_FLOOR) / -REF_FLOOR).clamp(0.0, 1.0);
-    }
-}
-
-/// A short-time Fourier transform: `n_frames` x `n_bins` normalized magnitudes
-/// in `[0, 1]` (dB mapped from `[DB_FLOOR, 0]`), row-major by frame. Frame `f`
-/// is centred on samples starting at `f * hop`.
-///
-/// A transform is **stored** or **rolling**. A stored one is analyzed once and
-/// its columns are exactly the ones it holds. A rolling one ([`Stft::rolling`])
-/// is a fixed-capacity ring a live view pushes into, one column per hop, the
-/// oldest falling off the front -- the same magnitudes in the same order, read
-/// through [`Stft::column`] instead of straight off `mags`.
-pub struct Stft {
-    total_samples: usize,
-    n_frames: usize,
-    n_bins: usize,
-    hop: usize,
-    window_size: usize,
-    sample_rate: f32,
-    mags: Vec<f32>,
-    /// Ring capacity in columns, or `0` for a stored transform. A rolling
-    /// transform's `mags` is always `capacity * n_bins` long, however few
-    /// columns have landed.
-    capacity: usize,
-    /// Ring index of the oldest retained column (always `0` when stored).
-    head: usize,
-}
-
-impl Stft {
-    /// Compute the STFT of mono `samples`. `window_size` must be a power of two;
-    /// `hop` is the frame advance (e.g. `window_size / 2`); `sample_rate` is used
-    /// for the frequency axis.
-    pub fn compute(samples: &[f32], window_size: usize, hop: usize, sample_rate: f32) -> Self {
-        assert!(
-            fft::supports(window_size) && hop >= 1,
-            "window_size must be a supported FFT size {:?}",
-            fft::SUPPORTED_SIZES
-        );
-        let total_samples = samples.len();
-        let n_bins = window_size / 2;
-        let n_frames = if total_samples < window_size {
-            1
-        } else {
-            1 + (total_samples - window_size) / hop
-        };
-
-        let (hann, win_gain) = analysis_window(window_size);
-        let mut mags = vec![0.0f32; n_frames * n_bins];
-        let mut windowed = vec![0.0f32; window_size];
-        let mut spectrum = vec![0.0f32; n_bins]; // n_bins == window_size / 2
-        for f in 0..n_frames {
-            let start = f * hop;
-            let frame: Vec<f32> = (0..window_size)
-                .map(|i| samples.get(start + i).copied().unwrap_or(0.0))
-                .collect();
-            column_into(
-                &frame,
-                &hann,
-                win_gain,
-                &mut windowed,
-                &mut spectrum,
-                &mut mags[f * n_bins..(f + 1) * n_bins],
-            );
-        }
-
-        Self {
-            total_samples,
-            n_frames,
-            n_bins,
-            hop,
-            window_size,
-            sample_rate,
-            mags,
-            capacity: 0,
-            head: 0,
-        }
-    }
-
-    /// An empty **rolling** transform: a ring of `capacity` columns a retained
-    /// live view pushes into ([`push_column`]), the oldest falling off the front.
-    ///
-    /// What needs it is that a live picture is not analyzed at a moment: a
-    /// retained view adds one column per hop, and recomputing the whole
-    /// transform each tick would redo hundreds of FFTs to learn what one of them
-    /// says -- and, worse, re-upload the whole texture to show it. The ring is
-    /// what makes both costs follow the *hop* instead of the span: a landing
-    /// column is one FFT and one texel write.
-    ///
-    /// `capacity` is clamped to [`MAX_ROLLING_FRAMES`].
-    ///
-    /// [`push_column`]: Stft::push_column
-    pub fn rolling(
-        capacity: usize,
-        n_bins: usize,
-        hop: usize,
-        window_size: usize,
-        sample_rate: f32,
-    ) -> Self {
-        let capacity = capacity.clamp(1, MAX_ROLLING_FRAMES);
-        Stft {
-            total_samples: window_size,
-            n_frames: 0,
-            n_bins,
-            hop: hop.max(1),
-            window_size,
-            sample_rate,
-            mags: vec![0.0; capacity * n_bins],
-            capacity,
-            head: 0,
-        }
-    }
-
-    /// Nyquist frequency in Hz (the top of the frequency axis).
-    pub fn nyquist(&self) -> f32 {
-        self.sample_rate * 0.5
-    }
-
-    pub fn total_samples(&self) -> usize {
-        self.total_samples
-    }
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-    pub fn n_bins(&self) -> usize {
-        self.n_bins
-    }
-    pub fn hop(&self) -> usize {
-        self.hop
-    }
-    pub fn window_size(&self) -> usize {
-        self.window_size
-    }
-    pub fn sample_rate(&self) -> f32 {
-        self.sample_rate
-    }
-    /// The ring's capacity in columns, or `0` when the transform is stored.
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-    /// Whether this is a ring a live view pushes into rather than a stored
-    /// analysis.
-    pub fn is_rolling(&self) -> bool {
-        self.capacity > 0
-    }
-    /// The magnitudes as they sit in memory -- frame-major for a stored
-    /// transform, and in *ring* order (rotated by `head`) for a rolling one, so
-    /// a caller that wants columns in time order asks [`Stft::column`] instead.
-    pub fn magnitudes(&self) -> &[f32] {
-        &self.mags
-    }
-
-    /// Logical column `i` (0 = the oldest retained), whichever texel it lives in.
-    pub fn column(&self, i: usize) -> &[f32] {
-        let at = self.texel_of(i) * self.n_bins;
-        &self.mags[at..at + self.n_bins]
-    }
-
-    /// The texture column logical column `i` occupies.
-    fn texel_of(&self, i: usize) -> usize {
-        if self.capacity > 0 {
-            (self.head + i) % self.capacity
-        } else {
-            i
-        }
-    }
-
-    /// The width of the magnitude texture this transform is drawn from.
-    ///
-    /// A rolling ring is stored **twice**, back to back, which is what keeps the
-    /// visible window one contiguous run of texels however far the write cursor
-    /// has wrapped. The alternative is wrapping in the shader, and a linear
-    /// sample across the seam blends the newest column into the oldest -- a
-    /// visible stripe travelling through the picture. The doubled width is why
-    /// [`MAX_ROLLING_FRAMES`] is half [`MAX_FRAMES`].
-    pub fn tex_width(&self) -> usize {
-        if self.capacity > 0 {
-            self.capacity * 2
-        } else {
-            self.n_frames.max(1)
-        }
-    }
-
-    /// Appends one analyzed column, dropping the oldest once the ring is full.
-    /// Returns the texel column it landed in; its mirror sits `capacity` texels
-    /// to the right. A no-op (returning 0) on a stored transform.
-    pub fn push_column(&mut self, col: &[f32]) -> usize {
-        if self.capacity == 0 {
-            return 0;
-        }
-        let slot = (self.head + self.n_frames) % self.capacity;
-        let at = slot * self.n_bins;
-        let n = self.n_bins.min(col.len());
-        self.mags[at..at + n].copy_from_slice(&col[..n]);
-        self.mags[at + n..at + self.n_bins].fill(0.0);
-        if self.n_frames < self.capacity {
-            self.n_frames += 1;
-        } else {
-            self.head = (self.head + 1) % self.capacity;
-        }
-        self.total_samples = self.n_frames.saturating_sub(1) * self.hop + self.window_size;
-        slot
-    }
-
-    /// Resizes the ring to `capacity` columns, keeping the newest ones. The ring
-    /// comes back unrotated (`head` 0), so the caller reallocates the texture and
-    /// re-uploads -- this is the live `retention` change, not a per-tick cost.
-    pub fn set_capacity(&mut self, capacity: usize) {
-        let capacity = capacity.clamp(1, MAX_ROLLING_FRAMES);
-        if self.capacity == 0 || capacity == self.capacity {
-            return;
-        }
-        let keep = self.n_frames.min(capacity);
-        let first = self.n_frames - keep;
-        let mut mags = vec![0.0f32; capacity * self.n_bins];
-        for i in 0..keep {
-            let at = i * self.n_bins;
-            mags[at..at + self.n_bins].copy_from_slice(self.column(first + i));
-        }
-        self.mags = mags;
-        self.capacity = capacity;
-        self.head = 0;
-        self.n_frames = keep;
-        self.total_samples = keep.saturating_sub(1) * self.hop + self.window_size;
-    }
-
-    /// The visible sample range as a normalized horizontal `[start, start+len]`
-    /// across the texture's frame axis, for the renderer's uniform. A rolling
-    /// ring measures from its `head` over the doubled width, which is the whole
-    /// difference between the two forms as far as the shader is concerned -- a
-    /// stored transform has `head` 0 and a width of its own frame count, so this
-    /// is the plain fraction it always was.
-    fn time_fraction(&self, view: &View) -> (f32, f32) {
-        let width = self.tex_width() as f64;
-        let start = (self.head as f64 + view.start / self.hop as f64) / width;
-        let len = (view.len / self.hop as f64) / width;
-        (start as f32, len as f32)
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(MAGIC);
-        bytes::push_u32(&mut out, VERSION);
-        bytes::push_u64(&mut out, self.total_samples);
-        bytes::push_u64(&mut out, self.n_frames);
-        bytes::push_u64(&mut out, self.n_bins);
-        bytes::push_u64(&mut out, self.hop);
-        bytes::push_u64(&mut out, self.window_size);
-        bytes::push_u32(&mut out, self.sample_rate.to_bits());
-        bytes::push_f32s(&mut out, &self.mags);
-        out
-    }
-
-    pub fn from_bytes(data: &[u8]) -> Option<Self> {
-        let mut r = bytes::Reader::new(data);
-        r.tag(MAGIC)?;
-        if r.u32()? != VERSION {
-            return None;
-        }
-        let total_samples = r.usize()?;
-        let n_frames = r.usize()?;
-        let n_bins = r.usize()?;
-        let hop = r.usize()?;
-        let window_size = r.usize()?;
-        let sample_rate = f32::from_bits(r.u32()?);
-        let mags = r.f32_vec(n_frames.checked_mul(n_bins)?)?;
-        Some(Self {
-            total_samples,
-            n_frames,
-            n_bins,
-            hop,
-            window_size,
-            sample_rate,
-            mags,
-            capacity: 0,
-            head: 0,
-        })
-    }
-
-    pub fn write_cache(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
-        std::fs::write(path, self.to_bytes())
-    }
-
-    pub fn read_cache(path: impl AsRef<std::path::Path>) -> std::io::Result<Option<Self>> {
-        Ok(Self::from_bytes(&std::fs::read(path)?))
     }
 }
 
@@ -452,27 +110,25 @@ pub struct SpectrogramTexture {
 }
 
 impl SpectrogramTexture {
-    /// Uploads `stft`'s magnitudes as a texture and binds it against
-    /// `renderer`'s layout.
-    pub fn new(
+    /// A magnitude texture of `width` x `height` texels, bound against
+    /// `renderer`'s layout, with nothing written into it yet.
+    ///
+    /// Width is time and height is frequency: row 0 is bin 0 (low frequency),
+    /// and the shader flips y so low frequencies sit at the bottom. R8Unorm is
+    /// used (not R32Float) because single-channel 32-bit float is not
+    /// linearly *filterable* without an optional GPU feature, whereas R8Unorm
+    /// is filterable everywhere (including WebGPU) and is a quarter the size;
+    /// the magnitudes are already normalized to [0, 1], so 8 bits are ample
+    /// for the colormap.
+    fn sized(
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         renderer: &SpectrogramRenderer,
-        stft: &Stft,
+        width: usize,
+        height: usize,
     ) -> Self {
-        // Magnitudes -> a 2D texture: width = frames (time), height = bins
-        // (frequency). Row 0 is bin 0 (low frequency); the shader flips y so
-        // low frequencies sit at the bottom. R8Unorm is used (not R32Float)
-        // because single-channel 32-bit float is not linearly *filterable*
-        // without an optional GPU feature, whereas R8Unorm is filterable
-        // everywhere (including WebGPU) and is half the size; the magnitudes are
-        // already normalized to [0, 1], so 8 bits are ample for the colormap.
-        // The width is the *texture's*, not the frame count: a rolling ring is
-        // stored twice so its visible window never wraps (see `tex_width`). For
-        // a stored transform the two are the same number.
         let size = wgpu::Extent3d {
-            width: stft.tex_width().max(1) as u32,
-            height: stft.n_bins().max(1) as u32,
+            width: width.max(1) as u32,
+            height: height.max(1) as u32,
             depth_or_array_layers: 1,
         };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -485,42 +141,6 @@ impl SpectrogramTexture {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        // The texture is row-major by frequency bin (height rows), but a column
-        // is a run of bins, so transpose into a [bin][frame] upload buffer and
-        // quantize to u8. `write_texture` (unlike a buffer copy) does not require
-        // 256-byte row alignment, so the tight `width`-byte rows are fine.
-        //
-        // Columns are placed by `texel_of`, and a rolling one is written twice
-        // (once in each copy of the ring); a stored transform's column `f` lands
-        // at texel `f`, so it uploads exactly the bytes it always did.
-        let (w, h) = (size.width as usize, size.height as usize);
-        let mut transposed = vec![0u8; w * h];
-        for f in 0..stft.n_frames() {
-            let col = stft.column(f);
-            let slot = stft.texel_of(f);
-            for (b, m) in col.iter().enumerate().take(h) {
-                let q = (m.clamp(0.0, 1.0) * 255.0).round() as u8;
-                transposed[b * w + slot] = q;
-                if stft.capacity() > 0 {
-                    transposed[b * w + slot + stft.capacity()] = q;
-                }
-            }
-        }
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &transposed,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(size.width),
-                rows_per_image: Some(size.height),
-            },
-            size,
-        );
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("spectrogram sampler"),
@@ -560,6 +180,70 @@ impl SpectrogramTexture {
             bind_group,
             uniform_buffer,
         }
+    }
+
+    /// Writes the whole texture from `texels`, row-major by bin (`height`
+    /// rows of `width`). `write_texture` (unlike a buffer copy) does not
+    /// require 256-byte row alignment, so the tight `width`-byte rows are fine.
+    fn write_all(&self, queue: &wgpu::Queue, texels: &[u8], width: usize, height: usize) {
+        let size = wgpu::Extent3d {
+            width: width.max(1) as u32,
+            height: height.max(1) as u32,
+            depth_or_array_layers: 1,
+        };
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size.width),
+                rows_per_image: Some(size.height),
+            },
+            size,
+        );
+    }
+
+    /// Uploads **the whole of** `stft` as a texture and binds it against
+    /// `renderer`'s layout: what a rolling ring is drawn from, and a stored
+    /// transform no wider than a texture.
+    ///
+    /// The width is the *texture's*, not the frame count: a rolling ring is
+    /// stored twice so its visible window never wraps (see `tex_width`). For
+    /// a stored transform the two are the same number.
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        renderer: &SpectrogramRenderer,
+        stft: &Stft,
+    ) -> Self {
+        let (w, h) = (stft.tex_width().max(1), stft.n_bins().max(1));
+        let texture = Self::sized(device, renderer, w, h);
+        // The texture is row-major by frequency bin (height rows), but a column
+        // is a run of bins, so transpose into a [bin][frame] upload buffer and
+        // quantize to u8.
+        //
+        // Columns are placed by `texel_of`, and a rolling one is written twice
+        // (once in each copy of the ring); a stored transform's column `f` lands
+        // at texel `f`, so it uploads exactly the bytes it always did.
+        let mut transposed = vec![0u8; w * h];
+        for f in 0..stft.n_frames() {
+            let col = stft.column(f);
+            let slot = stft.texel_of(f);
+            for (b, m) in col.iter().enumerate().take(h) {
+                let q = quantize(*m);
+                transposed[b * w + slot] = q;
+                if stft.capacity() > 0 {
+                    transposed[b * w + slot + stft.capacity()] = q;
+                }
+            }
+        }
+        texture.write_all(queue, &transposed, w, h);
+        texture
     }
 
     /// Writes one already-quantized column into texel column `texel`, and into
@@ -693,9 +377,65 @@ impl SpectrogramRenderer {
 
 /// An `Stft` paired with its GPU texture and the display state (frequency window,
 /// scale, dB window), satisfying [`TimelineView`].
+/// **What of a stored transform is on the card**: a run of columns of one
+/// level of its time pyramid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Held {
+    /// The pyramid level: each column stands for `2^level` of the transform's.
+    pub level: usize,
+    /// The first column of that level in the texture, and how many follow.
+    pub first: usize,
+    pub count: usize,
+}
+
+/// **Which columns a view of `visible` level-0 frames, `width_px` wide, has
+/// to have on the card**: the level whose columns are about one to the
+/// pixel -- never finer than the screen, and coarse enough that the stretch
+/// on screen fits a texture -- and the run of it that covers the view with as
+/// much again on either side, so a pan redraws from what is there.
+///
+/// `start` is the first visible level-0 frame (it may be negative, or past
+/// the end: a view is not clipped to its data). `levels` is how many the
+/// pyramid has above the transform, and `frames_at` how many columns each has.
+pub fn hold_for(
+    start: f64,
+    visible: f64,
+    width_px: u32,
+    levels: usize,
+    frames_at: impl Fn(usize) -> usize,
+) -> Held {
+    let visible = visible.max(1.0);
+    let per_px = visible / f64::from(width_px.max(1));
+    // Between one and two columns to the pixel, where the pyramid has it.
+    let mut level = if per_px > 1.0 {
+        (per_px.log2().floor() as usize).min(levels)
+    } else {
+        0
+    };
+    // And never more on screen than half a texture, so the margins fit.
+    while level < levels && visible / (1u64 << level) as f64 > (MAX_FRAMES / 2) as f64 {
+        level += 1;
+    }
+    let scale = (1u64 << level) as f64;
+    let n = frames_at(level).max(1);
+    let a = ((start / scale).floor().max(0.0) as usize).min(n - 1);
+    let b = (((start + visible) / scale).ceil().max(0.0) as usize + 1).clamp(a + 1, n);
+    let pad = (b - a).min((MAX_FRAMES.saturating_sub(b - a)) / 2);
+    let first = a.saturating_sub(pad);
+    let count = ((b + pad).min(n) - first).min(MAX_FRAMES);
+    Held {
+        level,
+        first,
+        count,
+    }
+}
+
 pub struct SpectrogramView {
     stft: Stft,
     texture: SpectrogramTexture,
+    /// What of a **stored** transform the texture holds; `None` for a rolling
+    /// one, whose texture is its whole ring, and before the first frame.
+    held: Option<Held>,
     /// The vertical display axis: the visible slice of the frequency display
     /// coordinate, normalized (`0, 1` = the whole axis).
     freq: Axis,
@@ -721,12 +461,21 @@ impl SpectrogramView {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         renderer: &SpectrogramRenderer,
-        stft: Stft,
+        mut stft: Stft,
     ) -> Self {
-        let texture = SpectrogramTexture::new(device, queue, renderer, &stft);
+        // A rolling ring is on the card whole, and written a column at a
+        // time. A stored transform is held by the stretch a frame shows
+        // ([`Self::hold`]), so all it needs here is somewhere to bind.
+        let texture = if stft.is_rolling() {
+            SpectrogramTexture::new(device, queue, renderer, &stft)
+        } else {
+            stft.build_pyramid();
+            SpectrogramTexture::sized(device, renderer, 1, stft.n_bins())
+        };
         Self {
             stft,
             texture,
+            held: None,
             freq: Axis::normalized(Unit::Hz),
             scale: FreqScale::Log,
             db_floor: -90.0,
@@ -838,6 +587,87 @@ impl SpectrogramView {
         self.framing = framing;
     }
 
+    /// **Brings onto the card what `view` shows**, `width_px` wide: the run of
+    /// columns [`hold_for`] names, uploaded when the texture does not already
+    /// cover it at that level. A pan inside the margins and a frame that
+    /// moved nothing upload nothing.
+    ///
+    /// This is what lets a transform be longer than a texture is wide, and
+    /// what keeps a zoomed-out picture honest: the columns drawn are the
+    /// pyramid's, each the largest of the frames it stands for, where one
+    /// texture of every frame left a sampler to pick two of ten.
+    fn hold(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        renderer: &SpectrogramRenderer,
+        view: &View,
+        width_px: u32,
+    ) {
+        if self.stft.is_rolling() {
+            return;
+        }
+        let hop = self.stft.hop().max(1) as f64;
+        let want = hold_for(
+            view.start / hop,
+            view.len / hop,
+            width_px,
+            self.stft.levels(),
+            |level| self.stft.level_frames(level),
+        );
+        let covered = self.held.is_some_and(|held| {
+            // What the view needs at this level, without the margins.
+            let scale = (1u64 << want.level) as f64;
+            let n = self.stft.level_frames(want.level).max(1);
+            let a = ((view.start / hop / scale).floor().max(0.0) as usize).min(n - 1);
+            let b = (((view.start + view.len) / hop / scale).ceil().max(0.0) as usize + 1)
+                .clamp(a + 1, n);
+            held.level == want.level && held.first <= a && b <= held.first + held.count
+        });
+        if covered {
+            return;
+        }
+        let (w, h) = (want.count.max(1), self.stft.n_bins().max(1));
+        if self.held.is_none_or(|held| held.count != want.count) {
+            self.texture = SpectrogramTexture::sized(device, renderer, w, h);
+        }
+        // Row-major by bin, a column a run of bins: transposed as it is
+        // quantized, through the one scratch column.
+        let mut texels = vec![0u8; w * h];
+        self.scratch.resize(h, 0);
+        for x in 0..want.count {
+            self.stft
+                .level_column(want.level, want.first + x, &mut self.scratch);
+            for (b, q) in self.scratch.iter().enumerate() {
+                texels[b * w + x] = *q;
+            }
+        }
+        self.texture.write_all(queue, &texels, w, h);
+        self.held = Some(want);
+    }
+
+    /// What of the transform is on the card (see [`Held`]).
+    pub fn held(&self) -> Option<Held> {
+        self.held
+    }
+
+    /// The visible sample range as a normalized `[start, start+len]` across
+    /// the **texture**: over what is held of a stored transform, and over the
+    /// ring of a rolling one ([`Stft::time_fraction`]).
+    fn time_fraction(&self, view: &View) -> (f32, f32) {
+        match self.held {
+            Some(held) if !self.stft.is_rolling() => {
+                let scale = self.stft.hop().max(1) as f64 * (1u64 << held.level) as f64;
+                let width = held.count.max(1) as f64;
+                (
+                    ((view.start / scale - held.first as f64) / width) as f32,
+                    (view.len / scale / width) as f32,
+                )
+            }
+            _ => self.stft.time_fraction(view.start, view.len),
+        }
+    }
+
     /// Build the GPU uniforms from the current time `view` and display state.
     ///
     /// The frequency window is expressed in *display* coordinates `[0, 1]`
@@ -846,7 +676,7 @@ impl SpectrogramView {
     /// the full axis, so zoom/pan use a plain linear screen anchor and the
     /// point under the cursor stays fixed in both modes.
     fn uniforms(&self, view: &View) -> Uniforms {
-        let (start, len) = self.stft.time_fraction(view);
+        let (start, len) = self.time_fraction(view);
 
         let (d0, d1) = (
             self.freq.start() as f32,
@@ -880,12 +710,13 @@ impl TimelineView for SpectrogramView {
 
     fn upload(
         &mut self,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
-        _renderers: &mut Renderers,
+        renderers: &mut Renderers,
         view: &View,
-        _render_width_px: u32,
+        render_width_px: u32,
     ) {
+        self.hold(device, queue, &renderers.spectrogram, view, render_width_px);
         let u = self.uniforms(view);
         self.texture.write_uniforms(queue, &u);
     }
@@ -939,184 +770,52 @@ impl TimelineView for SpectrogramView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f32::consts::PI;
 
-    // The FFT correctness tests (impulse -> flat, cosine -> single bin) now live
-    // with the shared implementation in `clausters_core::fft`; here we test the
-    // STFT built on it.
+    // The analysis is tested where it lives (`clausters_core::stft`); here,
+    // what a view puts on the card of it.
 
+    /// **What is on the card is what the screen can show of what it shows.**
+    /// Zoomed in on a transform longer than a texture, the view holds its own
+    /// stretch of the transform's columns and as much again either side;
+    /// zoomed out, a level with about a column to the pixel; and a short
+    /// transform whole.
     #[test]
-    fn stft_locates_sine_frequency() {
-        // A 1 kHz sine at 48 kHz, window 1024 -> bin = 1000/48000*1024 ~= 21.
-        let sr = 48_000.0f32;
-        let freq = 1000.0f32;
-        let samples: Vec<f32> = (0..48_000)
-            .map(|i| (2.0 * PI * freq * i as f32 / sr).sin())
-            .collect();
-        let stft = Stft::compute(&samples, 1024, 512, sr);
-        let nb = stft.n_bins();
-        // Average magnitude per bin across frames; the max should be near bin 21.
-        let mut acc = vec![0.0f32; nb];
-        for row in stft.magnitudes().chunks_exact(nb) {
-            for (acc_b, &m) in acc.iter_mut().zip(row) {
-                *acc_b += m;
+    fn a_view_holds_the_stretch_it_shows_at_the_screens_level() {
+        // 56 250 frames, seven textures wide, with seven levels above them.
+        let frames = 56_250usize;
+        let at = |level: usize| {
+            let mut n = frames;
+            for _ in 0..level {
+                n = n.div_ceil(2);
             }
-        }
-        let peak = (0..nb)
-            .max_by(|&a, &b| acc[a].partial_cmp(&acc[b]).unwrap())
-            .unwrap();
-        let expected = (freq / sr * 1024.0).round() as usize;
+            n
+        };
+        let levels = 7;
+        // Zoomed in: 800 frames in 800 pixels, a minute into the file.
+        let near = hold_for(5000.0, 800.0, 800, levels, at);
+        assert_eq!(near.level, 0, "a column to the pixel: the transform's own");
+        assert!(near.first <= 5000 && near.first + near.count >= 5801);
         assert!(
-            (peak as i32 - expected as i32).abs() <= 1,
-            "peak bin {peak}, expected ~{expected}"
+            near.count >= 2400 && near.count <= MAX_FRAMES,
+            "with margins"
         );
-    }
-
-    #[test]
-    fn hop_capped_bounds_the_frame_count() {
-        // Short buffers keep the requested hop; long ones raise it just enough.
-        assert_eq!(hop_capped(10_000, 1024, 512), 512);
-        let long = 10_000_000;
-        let hop = hop_capped(long, 1024, 512);
-        assert!(hop > 512);
-        let n_frames = 1 + (long - 1024) / hop;
-        assert!(n_frames <= MAX_FRAMES, "{n_frames} frames");
-    }
-
-    #[test]
-    fn cache_round_trip() {
-        let samples: Vec<f32> = (0..5000).map(|i| (i as f32 * 0.02).sin()).collect();
-        let stft = Stft::compute(&samples, 256, 128, 44_100.0);
-        let back = Stft::from_bytes(&stft.to_bytes()).expect("parse");
-        assert_eq!(stft.n_frames(), back.n_frames());
-        assert_eq!(stft.n_bins(), back.n_bins());
-        assert_eq!(stft.total_samples(), back.total_samples());
-        assert_eq!(stft.nyquist(), back.nyquist());
-        assert_eq!(stft.magnitudes(), back.magnitudes());
-    }
-
-    /// A ring column for column `i` of a ramp, so a test can tell them apart.
-    fn marked(n_bins: usize, i: usize) -> Vec<f32> {
-        vec![i as f32 / 255.0; n_bins]
-    }
-
-    /// The ring keeps the newest columns in time order once the cursor has
-    /// wrapped, and reports the texel each one landed in - which is what the
-    /// texture writes against.
-    #[test]
-    fn the_ring_wraps_and_keeps_the_newest_in_order() {
-        let bins = 4;
-        let mut stft = Stft::rolling(3, bins, 32, 64, 48_000.0);
-        assert_eq!(stft.n_frames(), 0);
-        for i in 0..3 {
-            assert_eq!(stft.push_column(&marked(bins, i)), i, "fills in order");
-        }
-        assert_eq!(stft.n_frames(), 3);
-        // Two more: the oldest two fall off and their texels are reused.
-        assert_eq!(stft.push_column(&marked(bins, 3)), 0);
-        assert_eq!(stft.push_column(&marked(bins, 4)), 1);
-        assert_eq!(stft.n_frames(), 3, "the span is a cap");
-        let seen: Vec<f32> = (0..3).map(|i| stft.column(i)[0] * 255.0).collect();
-        assert_eq!(seen, vec![2.0, 3.0, 4.0], "oldest first, newest last");
-        assert_eq!(stft.total_samples(), 2 * 32 + 64);
-    }
-
-    /// The ring is stored twice so the visible window is one contiguous run of
-    /// texels - which is the invariant `time_fraction` maps against.
-    #[test]
-    fn a_rolling_window_is_contiguous_in_the_texture() {
-        let bins = 4;
-        let mut stft = Stft::rolling(4, bins, 32, 64, 48_000.0);
-        assert_eq!(stft.tex_width(), 8);
-        for i in 0..6 {
-            stft.push_column(&marked(bins, i));
-        }
-        // Head is at texel 2 with four columns retained: 2..6, past the wrap
-        // and still one run inside the doubled width.
-        let view = View {
-            start: 0.0,
-            len: (stft.n_frames() - 1) as f64 * 32.0,
-        };
-        let (start, len) = stft.time_fraction(&view);
-        assert!((start - 2.0 / 8.0).abs() < 1e-6, "{start}");
-        assert!((len - 3.0 / 8.0).abs() < 1e-6, "{len}");
-        assert!(start + len <= 1.0, "the window never leaves the texture");
-    }
-
-    /// A stored transform is the degenerate ring: no doubling, no offset, and
-    /// the same fraction the renderer always uploaded.
-    #[test]
-    fn a_stored_transform_maps_exactly_as_it_did() {
-        let samples: Vec<f32> = (0..5000).map(|i| (i as f32 * 0.02).sin()).collect();
-        let stft = Stft::compute(&samples, 256, 128, 48_000.0);
-        assert!(!stft.is_rolling());
-        assert_eq!(stft.tex_width(), stft.n_frames());
-        let view = View {
-            start: 1000.0,
-            len: 2000.0,
-        };
-        let frames = stft.n_frames() as f64;
-        let (start, len) = stft.time_fraction(&view);
-        assert_eq!(start, ((view.start / 128.0) / frames) as f32);
-        assert_eq!(len, ((view.len / 128.0) / frames) as f32);
-        // ...and its columns are read straight off the magnitudes.
-        assert_eq!(stft.column(7), &stft.magnitudes()[7 * 128..8 * 128]);
-    }
-
-    /// A live `retention` change resizes the ring around the newest columns
-    /// rather than restarting the picture.
-    #[test]
-    fn resizing_the_ring_keeps_the_newest_columns() {
-        let bins = 4;
-        let mut stft = Stft::rolling(6, bins, 32, 64, 48_000.0);
-        for i in 0..6 {
-            stft.push_column(&marked(bins, i));
-        }
-        stft.set_capacity(3);
-        assert_eq!(stft.capacity(), 3);
-        assert_eq!(stft.n_frames(), 3);
-        let seen: Vec<f32> = (0..3).map(|i| stft.column(i)[0] * 255.0).collect();
-        assert_eq!(seen, vec![3.0, 4.0, 5.0]);
-        // Growing keeps them too, and the ring goes on filling from there.
-        stft.set_capacity(5);
-        stft.push_column(&marked(bins, 6));
-        let seen: Vec<f32> = (0..stft.n_frames())
-            .map(|i| stft.column(i)[0] * 255.0)
-            .collect();
-        assert_eq!(seen, vec![3.0, 4.0, 5.0, 6.0]);
-    }
-
-    /// A rolling transform pushed the columns of a signal is the same picture
-    /// the stored analysis of it computes - the property the whole live path
-    /// rests on, now that the two hold their magnitudes differently.
-    #[test]
-    fn a_rolling_transform_is_the_stored_one() {
-        let (ws, hop, sr) = (256usize, 64usize, 48_000.0f32);
-        let samples: Vec<f32> = (0..2048)
-            .map(|i| (2.0 * PI * 3000.0 * i as f32 / sr).sin())
-            .collect();
-        let stored = Stft::compute(&samples, ws, hop, sr);
-        let (hann, gain) = analysis_window(ws);
-        let mut rolling = Stft::rolling(stored.n_frames(), ws / 2, hop, ws, sr);
-        let mut windowed = vec![0.0; ws];
-        let mut spectrum = vec![0.0; ws / 2];
-        let mut col = vec![0.0; ws / 2];
-        for f in 0..stored.n_frames() {
-            let at = f * hop;
-            column_into(
-                &samples[at..at + ws],
-                &hann,
-                gain,
-                &mut windowed,
-                &mut spectrum,
-                &mut col,
-            );
-            rolling.push_column(&col);
-        }
-        assert_eq!(rolling.n_frames(), stored.n_frames());
-        assert_eq!(rolling.total_samples(), stored.total_samples());
-        for f in 0..stored.n_frames() {
-            assert_eq!(rolling.column(f), stored.column(f), "column {f}");
-        }
+        // Zoomed out on all of it: sixty frames to the pixel is level five,
+        // where there are fewer than two.
+        let far = hold_for(0.0, frames as f64, 900, levels, at);
+        assert_eq!(far.level, 5);
+        assert_eq!((far.first, far.count), (0, at(5)), "all of that level");
+        assert!(far.count <= 2 * 900);
+        // A view wider than a texture's half of level-0 frames is never held
+        // at level 0, however many pixels it claims.
+        let wide = hold_for(0.0, 6000.0, 8000, levels, at);
+        assert!(wide.level >= 1 && wide.count <= MAX_FRAMES);
+        // A short transform, shown whole or in part, is held whole.
+        let short = hold_for(100.0, 200.0, 800, 0, |_| 500);
+        assert_eq!((short.level, short.first, short.count), (0, 0, 500));
+        // A view hanging off either end holds what there is.
+        let past = hold_for(-50.0, 100.0, 800, 0, |_| 500);
+        assert_eq!(past.first, 0);
+        let beyond = hold_for(480.0, 100.0, 800, 0, |_| 500);
+        assert_eq!(beyond.first + beyond.count, 500);
     }
 }

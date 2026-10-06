@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import pathlib
+import struct
 import sys
 from array import array
 
@@ -95,6 +96,30 @@ def main():
             "sha256": hashlib.sha256(cache).hexdigest(),
         })
     out["peaks"] = peaks
+
+    # ---- the spectrogram cache: the analysis, as what it says ----
+    # Not a digest of the bytes: the window is a cosine and the magnitudes a
+    # logarithm, and the two builds take those from two math libraries, which
+    # may differ in the last place. What has to agree is the shape, where the
+    # energy is and how much of it there is.
+    stfts = []
+    for name, window, hop in [("sine440", 512, 128), ("ramp", 256, 256), ("quiet", 1024, 512)]:
+        cache = _native.stft_cache(array("f", sines[name]), window_size=window, hop=hop,
+                                   sample_rate=48000.0)
+        frames, bins = struct.unpack_from("<2Q", cache, 16)
+        mags = struct.unpack_from(f"<{frames * bins}f", cache, 52)
+        first = mags[:bins]
+        stfts.append({
+            "signal": name,
+            "windowSize": window,
+            "hop": hop,
+            "bytes": len(cache),
+            "frames": frames,
+            "bins": bins,
+            "sum": sum(mags),
+            "peakBin": max(range(bins), key=first.__getitem__),
+        })
+    out["stft"] = stfts
 
     # ---- the streamed overview: a cache filled from reports, not samples ----
     # `/buffer_stream` sends what the writer measured, and the receiver folds

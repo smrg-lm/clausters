@@ -533,7 +533,12 @@ pub use time::*;
 /// as lanes, the `notation` section. Additive. The interpretation gained
 /// `dynamics_as` and `dynamics_cc`, which a caller that sends neither does not
 /// notice.
-pub const CORE_ABI_VERSION: u32 = 83;
+/// **v84 a client writes a spectrogram cache.**
+/// `clausters_core_stft_cache_size` and `clausters_core_stft_build`: the
+/// short-time Fourier transform the GUI host draws a spectrogram from, as the
+/// cache it maps. The analysis moved to the core from the host, which read
+/// a format nothing else could write. Additive.
+pub const CORE_ABI_VERSION: u32 = 84;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

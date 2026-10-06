@@ -2642,7 +2642,11 @@ export function waveform(
  * **frequency** display axis.
  *
  * The analysis: `windowSize` is the FFT size (a power of two, default 1024)
- * and `hop` the frame advance (default half the window). The display is live:
+ * and `hop` the frame advance (default half the window; raised only for a
+ * take longer than a transform keeps, some six minutes at the defaults -- the
+ * host shows the stretch on screen at the detail the screen can show, so a
+ * take's length does not coarsen it). A `cache` is the analysis already made
+ * (`data.stftCache` builds one). The display is live:
  * the dB window `[dbFloor, dbCeil]` sets the contrast, `freqScale` picks the
  * frequency axis (`"log"` -- the default -- `"linear"`, `"mel"` or `"bark"`)
  * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.

@@ -314,8 +314,7 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a
-  steady goniometer; a Tauri wrapper, only a possibility; the three
-  heavy-view rendering questions; a key in a tip; the page's clipboard
+  steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks; the interaction vocabulary, provisional until the
   applications exist; and, under Found by use, a window repainted whole for

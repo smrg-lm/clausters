@@ -4466,9 +4466,17 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM. *(Closed 2026-10-04.)* The one cache whose key was short was the summary the host writes beside a `path` (`<path>.<base_bucket>.peaks`): the path and the bucket are in its name, but it was checked only for its shape, so samples rewritten at the same length drew the old picture. It is now reused only when written after the samples, and written whole through a rename. The server's overviews already carry the buffer's generation in their name, and a `cache` the client names is the client's to keep current. The rest of the entry was decided against: a server buffer's region is already read where it lies, a summary is a small fraction of its samples, and a client's `path` is copied on purpose -- a file rewritten in place under a held mapping faults on the next read, in a draw.
 
-- ⬜ **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
+- ✅ **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
 
-- ⬜ **Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters`** so the signal code lives once: done for `peaks` and the forward FFT (both now in `clausters-core`, the pyramid reachable over the FFI); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
+  **Built 2026-10-06**, the three of it:
+  - **A transform is no longer as wide as a texture.** A long buffer's hop was raised until its frames fit 8192, so five minutes at 48 kHz asked for at a hop of 512 came out at 1758. What bounds a transform now is the memory it takes -- 64 MiB of magnitudes (`stft::MAX_STORED`), some six minutes at the defaults before the hop rises -- and the card is shown a **window** of it: the run of columns on screen and as much again either side (`spectrogram::hold_for`), uploaded again only when a pan leaves it or a zoom changes the level. Not tiles: one texture a channel, never wider than a card takes, whatever the take.
+  - **Mipmaps in time, as a pyramid of peaks.** A stored transform has levels above it, each column the **largest** of the two under it (`Stft::build_pyramid`), and a view draws the level that is between one and two columns to the pixel. Zoomed out, a pixel column used to be whichever two of ten frames the sampler landed between; it is now what happened in all of them, a click included. A card's own mip chain would have halved the frequency rows with the frames, which is why the levels are the transform's.
+  - **The frequency rows are interpolated with a curve** where a bin is taller than a pixel (a Catmull-Rom through four rows, in the shader): a log axis spreads its lowest bins over tens of pixels each, and the sampler's straight line between rows drew each as a ramp with a crease at its centre.
+  - **Not taken**: an analysis made on demand at the screen's resolution from the samples, which is what would take the memory bound away. A cache holds no samples, and a host does not always hold them.
+
+- ✅ **Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters`** so the signal code lives once: done for `peaks` and the forward FFT (both now in `clausters-core`, the pyramid reachable over the FFI); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
+
+  **Done 2026-10-06.** The inverse FFT had already moved (`clausters_core::fft::irfft_into`, which the server's `IFFT` calls). What was left was the transform itself, and it is `clausters_core::stft` now: the window and its gain, the normalization over the reference range the spectrum curve uses, the whole-buffer and the rolling transform, the time pyramid and the `CLSG` cache -- the host's `spectrogram.rs` keeps the display (the frequency scale, the decibel window, the colors, what is on the card). **The export had a consumer waiting**: the host has always read a spectrogram `cache`, and nothing but the host's own crate could write one. `clausters_core_stft_cache_size` and `clausters_core_stft_build` (core ABI v84), `stft_cache` in wasm, `clausters.gui.spectrogram_cache_file` and `data.stftCache` in the two clients, checked against each other by what the analysis says rather than by its bytes -- the window is a cosine and the magnitudes a logarithm, and the two builds take those from two math libraries.
 
   *(The three above are design-level questions the heavy views still leave open. They
   lived mid-plan, under "Open questions in the rendering strategy" and without
@@ -7880,7 +7888,7 @@ finished work, where a pending item reads as done.
   multitrack's playhead is in the base mesh, not the overlay, so splitting it
   out is part of that design.)*
 
-  **Built 2026-10-06** *(the user: "son optimizaciones importantes")*: **a
+  **Built 2026-10-06** *(the user called it one of the important optimizations)*: **a
   window keeps its picture, and a tick draws what moves.** A frame is four
   batches -- base, over, **live**, top -- and an element draws everything a
   clock or a fed value moves on its live layer (`Element::draw_live`,

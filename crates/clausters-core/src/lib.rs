@@ -120,6 +120,7 @@ pub mod rng;
 pub mod scale;
 pub mod shm;
 pub mod spectrum;
+pub mod stft;
 pub mod tempoclock;
 pub mod tempomap;
 pub mod warp;

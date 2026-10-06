@@ -29,6 +29,8 @@ export { BusStream, STREAM_PERIOD_MS } from "./buses.ts";
 export { TapStream, decodeSamples } from "./taps.ts";
 export type { TapWindow } from "./taps.ts";
 export { Peaks } from "./peaks.ts";
+export { stftCache } from "./stft.ts";
+export type { StftOptions } from "./stft.ts";
 export { RECORDING_PERIOD_MS, RecordingStream } from "./recording.ts";
 export type { TakeLike, TakeShape } from "./recording.ts";
 export {

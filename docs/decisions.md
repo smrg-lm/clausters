@@ -9761,8 +9761,8 @@ the frame was for: a playhead crossing a multitrack redrew its toolbar, its
 boxes and its page thirty times a second, and so did a meter at rest. The
 entries were two and old — "a window repaints whole for a line that moves in
 one view", "what a playing frame still costs" — and each had been measured
-and left, because a frame cost a millisecond. Taken 2026-10-06 (the user: "son
-optimizaciones importantes").
+and left, because a frame cost a millisecond. Taken 2026-10-06, which the
+user counted among the important optimizations.
 
 **What moves is a layer the element draws, not a region the frame tracks.**
 The obvious designs were two. A damage rectangle per view asks the card to
@@ -9804,3 +9804,45 @@ is a new *epoch*, and a picture from an earlier one is drawn again. The same
 pass found that each batch of a window held its own megabyte of sheet and
 copied all of it for every new glyph; a window has one, as high as the atlas
 has had to grow, and takes the rows that changed.
+
+## A spectrogram is as long as its take, and the card sees a window of it
+
+A stored spectrogram was one texture: a frame a texel wide, so a take's
+transform could have no more frames than a card's widest texture, 8192. A long
+file had its hop raised until it fit — five minutes at 48 kHz, asked for at a
+hop of 512, came out at 1758 — and zoomed in, the picture was as coarse as
+that. Zoomed out it was wrong the other way: ten frames to the pixel, and a
+sampler that reads two.
+
+**The transform keeps what the analysis made, and the view holds what it
+shows.** The bound on a transform is the memory it takes (64 MiB of
+magnitudes), and what is on the card is the run of columns the view is
+showing, with as much again on either side, at the level of detail the screen
+can resolve. A pan inside that run uploads nothing; one that leaves it, or a
+zoom that changes the level, uploads the new run — at most a texture's worth,
+whatever the take. Tiles were the entry's own word and are not what this is:
+tiles are a fixed cut of the whole transform, most of which no frame shows.
+
+**The levels are the transform's, and each keeps the peak.** Zoomed out, a
+column of the picture stands for many frames, and a level of the pyramid holds
+the largest of them per bin — the reduction a peak pyramid makes of a signal,
+for the same reason: what a pixel has to show of ten frames is what happened
+in them, a click included. A card's own mip chain could not be used: it halves
+both axes together, and the frequency rows are not what there are too many of.
+
+**The frequency axis is interpolated with a curve where it is stretched.** A
+log axis gives its lowest bins tens of pixels each; between two rows the
+sampler draws a straight line, so each bin was a ramp with a crease at its
+centre. The shader fits a Catmull-Rom through four rows there, and takes the
+one tap where a pixel covers a bin or more.
+
+**The analysis moved to the shared core, because a client has to write what
+the host reads.** The host has always accepted a spectrogram cache and only
+its own crate could make one. The window, the normalization, the pyramid and
+the cache format are `clausters_core::stft`, exported over the C ABI and wasm
+and bound in both clients. Their parity test compares what the analysis says
+and not its bytes: the two builds take a cosine and a logarithm from two math
+libraries, and may differ in the last place.
+
+Not taken: analyzing on demand at the screen's resolution from the samples,
+which would take the memory bound away. A cache holds no samples.

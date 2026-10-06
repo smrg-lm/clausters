@@ -1,7 +1,9 @@
 // Spectrogram shader. A single full-screen triangle samples the magnitude
 // texture (x = time/frame, y = frequency bin); `u.time` is the visible time
-// window so panning/zooming only reshapes the sampled slice - rendering cost is
-// constant regardless of zoom. Magnitude is mapped to colour with a viridis
+// window over **what the texture holds** -- the whole ring of a live view, or
+// the stretch of a stored transform its view put on the card, at the level of
+// its time pyramid the zoom asks for -- so panning/zooming only reshapes the
+// sampled slice and rendering cost is constant regardless of zoom. Magnitude is mapped to colour with a viridis
 // approximation. The same WGSL runs unchanged under WebGPU.
 
 struct Uniforms {
@@ -127,7 +129,38 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         bin_norm = bark_to_hz(mix(z0, hz_to_bark(nyq), d)) / nyq;
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
-    let mag = textureSampleLevel(tex, samp, vec2<f32>(t, clamp(bin_norm, 0.0, 1.0)), 0.0).r;
+    let v = clamp(bin_norm, 0.0, 1.0);
+    // **Where a bin is taller than a pixel, the rows are interpolated with a
+    // curve.** A log axis spreads its lowest bins over tens of pixels each,
+    // and the sampler's straight line between two rows draws every bin as a
+    // ramp with a corner at its centre -- bands with visible creases. A
+    // Catmull-Rom through four rows goes through the same magnitudes with no
+    // crease. Where a pixel covers a bin or more there is nothing to smooth,
+    // and the one tap stands.
+    let bins = f32(textureDimensions(tex).y);
+    let rows_per_px = abs(dpdy(v)) * bins;
+    var mag: f32;
+    if rows_per_px >= 1.0 {
+        mag = textureSampleLevel(tex, samp, vec2<f32>(t, v), 0.0).r;
+    } else {
+        // Row centres are at (k + 0.5) / bins: the row under this pixel, and
+        // how far past its centre the pixel is.
+        let y = v * bins - 0.5;
+        let k = floor(y);
+        let f = y - k;
+        let row = vec4<f32>(k - 1.0, k, k + 1.0, k + 2.0);
+        let at = (clamp(row, vec4<f32>(0.0), vec4<f32>(bins - 1.0)) + 0.5) / bins;
+        let m0 = textureSampleLevel(tex, samp, vec2<f32>(t, at.x), 0.0).r;
+        let m1 = textureSampleLevel(tex, samp, vec2<f32>(t, at.y), 0.0).r;
+        let m2 = textureSampleLevel(tex, samp, vec2<f32>(t, at.z), 0.0).r;
+        let m3 = textureSampleLevel(tex, samp, vec2<f32>(t, at.w), 0.0).r;
+        // Catmull-Rom, clamped: the curve may overshoot a peak, a magnitude
+        // may not.
+        let c = m1 + 0.5 * f * (m2 - m0
+            + f * (2.0 * m0 - 5.0 * m1 + 4.0 * m2 - m3
+            + f * (3.0 * (m1 - m2) + m3 - m0)));
+        mag = clamp(c, 0.0, 1.0);
+    }
 
     // Remap the stored magnitude into the display dB window for contrast.
     let c = clamp((mag - u.db.x) / max(u.db.y - u.db.x, 1e-5), 0.0, 1.0);

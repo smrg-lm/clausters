@@ -256,6 +256,7 @@ __all__ = [
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
+    "spectrogram_cache_file",
     "correlation",
     "lissajous",
 ]
@@ -2067,12 +2068,15 @@ def spectrogram(*, autofit: bool | None = None,
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
-    ``cache`` file. ``channels`` de-interleaves the source (default 1); each
-    channel gets its own analysis, drawn as stacked lanes sharing the time axis.
+    ``cache`` file (`spectrogram_cache_file` writes one). ``channels``
+    de-interleaves the source (default 1); each channel gets its own analysis,
+    drawn as stacked lanes sharing the time axis.
 
     The analysis: ``window_size`` is the FFT size (a power of two, default
-    1024) and ``hop`` the frame advance (default ``window_size // 2``; the host
-    raises it as needed so a long file fits the GPU texture). ``sample_rate``
+    1024) and ``hop`` the frame advance (default ``window_size // 2``; raised
+    only for a take longer than a transform keeps, some six minutes at the
+    defaults -- the host shows the stretch on screen at the detail the screen
+    can show, so a take's length does not coarsen it). ``sample_rate``
     places the frequency axis for ``path``/inline sources (a fetched ``buffer``
     brings its own rate). The display is live (``GuiHost.set``): the dB window
     ``[db_floor, db_ceil]`` (default ``-90``/``0``) controls contrast,
@@ -3150,6 +3154,24 @@ def peaks_cache_file(samples, path: str, base_bucket: int = 256, channels: int =
 
     with open(path, "wb") as f:
         f.write(peaks_cache(samples, base_bucket, channels))
+    return path
+
+
+def spectrogram_cache_file(samples, path: str, window_size: int = 1024, hop: int = 512,
+                           sample_rate: float = 48000.0) -> str:
+    """Analyzes mono `samples` into the **spectrogram cache** (via the shared
+    native core, so it is byte-identical to the host's own analysis) and
+    writes it to `path` -- what a ``spectrogram(cache=...)`` maps. The host
+    draws the take without loading its samples or analyzing them.
+
+    `window_size` is the analysis window (a power of two from 256 to 4096),
+    `hop` the samples between two columns, and `sample_rate` places the
+    frequency axis. One channel a file: de-interleave a multichannel take and
+    write one per channel. Returns `path`."""
+    from .._native import stft_cache  # lazy: only needs the cdylib if used
+
+    with open(path, "wb") as f:
+        f.write(stft_cache(samples, window_size, hop, sample_rate))
     return path
 
 
