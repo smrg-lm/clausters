@@ -3376,3 +3376,17 @@ wrong.
   - **the synth**: what plays a box is what its events name (their
     instrument, the server's `default` when they name none) -- a box's own
     choice of synth, beside what its events say, is a design of its own.
+
+- ✅ **A stereo take plays both its sides on the left** *(found 2026-10-06,
+  by a render, writing the test of a box of notes on a track)*. A clip's
+  readers are one per channel of its source, and its slot wired every one of
+  them to the first channel of the clip's bus: the take's right side was
+  summed onto the left and the right was silent before the balance. No test
+  held a stereo take -- the mixer's were all over a mono one. **Fixed**: a
+  reader is handed both channels of the clip's bus (`out0`, `out1`) and
+  writes each at a gain its channel says (`clausters_core::mixer::reader_def`).
+  Two buses named by controls rather than one worked out as `out + chan`,
+  which is what the audio editor's reader does: a bus index a UGen computes
+  makes its node a barrier for the group's sort, and inside a track that put
+  the meters before the strip they read (`tests/mixer_graph.rs`,
+  `a_stereo_take_keeps_its_two_sides`).

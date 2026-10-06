@@ -1066,3 +1066,103 @@ fn a_stop_fades_the_master_and_leaves_its_meter_to_fall() {
         "the master's meter fell, since nothing froze it"
     );
 }
+
+/// **A stereo take keeps its two sides.** Its readers are one per channel of
+/// the source, and each lands on its own channel of the clip: a take with
+/// sound on the right alone is heard on the right alone.
+#[test]
+fn a_stereo_take_keeps_its_two_sides() {
+    let mut s = session();
+    send_defs(&mut s, &[(2, 2)], 2);
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(4800), OscType::Int(2)],
+    );
+    s.settle_for(4);
+    // Silence on the left, a constant on the right, a run of frames at a
+    // time: the ring is not a place to put a take.
+    for start in (0..4800).step_by(512) {
+        let frames = 512.min(4800 - start) as usize;
+        let blob: Vec<u8> = (0..frames).flat_map(|_| 0.5f32.to_le_bytes()).collect();
+        send(
+            &mut s,
+            "/buffer_setRangeChannel",
+            vec![
+                OscType::Int(0),
+                OscType::Int(1),
+                OscType::Int(start),
+                OscType::Blob(blob),
+            ],
+        );
+        s.settle_for(1);
+    }
+    send(
+        &mut s,
+        "/graph_new",
+        vec![
+            OscType::String(mixer::multitrack_name(2)),
+            OscType::Int(900),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(900),
+            OscType::String(mixer::TRANSPORT_SLOT.into()),
+            OscType::Int(TRACKS),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(TRACKS),
+            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::Int(910),
+        ],
+    );
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(910),
+            OscType::String(mixer::clip_slot(2)),
+            OscType::Int(920),
+        ],
+    );
+    for channel in 0..2 {
+        send(
+            &mut s,
+            "/graph_addSlot",
+            vec![
+                OscType::Int(920),
+                OscType::String(mixer::SOURCE_SLOT.into()),
+                OscType::Int(930 + channel),
+                OscType::String(mixer::BUF.into()),
+                OscType::Float(0.0),
+                OscType::String(mixer::CHAN.into()),
+                OscType::Float(channel as f32),
+                OscType::String(mixer::SPAN.into()),
+                OscType::Float(4800.0),
+            ],
+        );
+    }
+    send(
+        &mut s,
+        "/transport_group",
+        vec![OscType::Int(0), OscType::Int(TRACKS)],
+    );
+    s.settle_for(8);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(4);
+
+    let (left, right) = peaks(&mut s, 8);
+    assert!(left < 1e-3, "nothing on the left: {left}");
+    assert!((right - 0.5).abs() < 0.01, "the take's right side: {right}");
+}

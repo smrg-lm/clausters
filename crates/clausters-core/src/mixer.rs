@@ -279,11 +279,26 @@ fn lagged(name: &str, default: f32) -> Value {
 /// buffer itself, which is the one thing that knows what rate its samples were
 /// written at; it is `PlayBuf(buf, BufRateScale(buf) * rate)` spelled inside
 /// the def that plays a box, and it needs nothing said by a client.
+///
+/// # Each reader lands on its own channel
+///
+/// The channel of the source a reader takes is the channel of the clip it
+/// fills. A slot wires every one of its instances alike, so the reader is
+/// handed both channels of the clip's bus (`out0`, `out1`) and writes each at
+/// a gain [`CHAN`] says -- all of it on the first for channel 0, all of it on
+/// the second for channel 1. One `out`, written by every reader, put both
+/// sides of a stereo take on the left and left the right silent (found
+/// 2026-10-06, by a render).
+///
+/// Two buses named by controls, and not one worked out as `out + chan`: a bus
+/// index a UGen computes is one the group's sort cannot read, and a node it
+/// cannot read is a barrier nothing is sorted across -- the clip, its track
+/// and the meters after them with it.
 pub fn reader_def() -> Value {
     json!({
         "name": reader_name(),
         "controls": [
-            control(OUT_BUS, 0.0),
+            control("out0", 0.0),
             control(BUF, 0.0),
             control(CHAN, 0.0),
             control(AT, 0.0),
@@ -292,6 +307,7 @@ pub fn reader_def() -> Value {
             control(LOOP, 0.0),
             control(RATE, 1.0),
             lagged(GAIN, 1.0),
+            control("out1", 0.0),
         ],
         "ugens": [
             // 0: engine samples since this box began; negative before it starts.
@@ -315,10 +331,17 @@ pub fn reader_def() -> Value {
             {"kind": "BufRd", "inputs": [
                 {"control": 1}, {"control": 2}, {"ugen": 9}, {"control": 6}
             ]},
-            // 11..13: gated, levelled, out.
+            // 11..12: gated and levelled.
             {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 3}]},
             {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 8}]},
-            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 12}]}
+            // 13..17: out, onto this reader's own channel of the clip's bus --
+            // `1 - chan` of it on the first and `chan` of it on the second.
+            {"kind": "BinaryOpUGen", "op": "sub",
+             "inputs": [{"const": 1.0}, {"control": 2}]},
+            {"kind": "Mul", "inputs": [{"ugen": 12}, {"ugen": 13}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 14}]},
+            {"kind": "Mul", "inputs": [{"ugen": 12}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 16}]}
         ]
     })
 }
@@ -764,7 +787,10 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
              "controls": strip_wiring("src", inputs, OUT_BUS, outputs)},
             // 1: one reader per channel of the source.
             {"def": reader_name(), "slot": SOURCE_SLOT,
-             "controls": {OUT_BUS: "src"}},
+             "controls": {
+                 "out0": "src:0",
+                 "out1": if inputs == 2 { "src:1" } else { "src:0" },
+             }},
         ],
         "surface": {
             GAIN:  [{"member": 0, "control": GAIN}],
