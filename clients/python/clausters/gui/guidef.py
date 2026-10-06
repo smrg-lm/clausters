@@ -1057,7 +1057,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
-         keys: list | str | None = None,
+         keys: list | str | None = None, ask_close: bool | None = None,
          split: bool | None = None, menu: list | None = None,
          glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
@@ -1105,7 +1105,16 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     ``keys`` names the **key table's scopes** in force in the window: a scope
     is a sub-table of the host's keys (``[gui.keys.note_entry]``), and its
     chords are read before the table's own rows -- how an application's mode
-    has keys of its own (``["score", "note_entry"]``). None by default.
+    has keys of its own (``["score", "note_entry"]``). None by default. F1
+    shows them -- every key in force in the window and what it does, on a
+    sheet in the middle of it that its close mark or Escape takes down.
+
+    ``ask_close`` says **the window's owner is asked before it closes**: the
+    close mark on its frame (and a desktop window's Escape, with nothing open)
+    reports the window's ``close`` verb -- as its menu bar's entry for it,
+    when the bar has one -- instead of closing it, and the owner frees the
+    window once nothing is left to lose. Asked again before the owner has
+    answered, it closes. Off by default.
 
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
@@ -1141,6 +1150,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["status"] = 1 if status else 0
     if plays is not None:
         extra["plays"] = 1 if plays else 0
+    if ask_close is not None:
+        extra["ask_close"] = 1 if ask_close else 0
     return node("window", children=children, **extra, **props)
 
 

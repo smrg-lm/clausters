@@ -82,12 +82,14 @@ class Editor:
             panel, a readout. They are the script's, so the editor never touches
             their ids; keep them clear of ``base_id``.
         chrome: whether the window carries the application's chrome -- a menu
-            bar, a toolbar, palettes, a status line, dialogs: whatever the
-            application composes around what is edited. ``False`` opens what
+            bar, a toolbar, palettes, dialogs: whatever the application
+            composes around what is edited. ``False`` opens what
             is edited alone, for a script that edits through this handle and
             wants the window light: none of it is composed, so none of it is
             sent or kept current. **The keys stay** -- they are the window's,
-            not the menu's -- and so does every verb of the handle. The score
+            not the menu's, and F1 lists them -- and so do every verb of the
+            handle and the status line, where a verb refused says why. The
+            score
             editor is the one application with chrome today; an editor with
             none opens the same either way.
         base_id: the first widget id a **host-less** draw counts from (tests and

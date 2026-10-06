@@ -40,6 +40,9 @@ impl Host {
         from: ClientId,
         effects: &mut Vec<HostEffect>,
     ) {
+        if matches!(msg.addr.as_str(), GUI_DEF | GUI_SET | GUI_FREE | GUI_ACK) {
+            self.owner_answered();
+        }
         match msg.addr.as_str() {
             GUI_DEF => self.on_def(&msg.args, from, effects),
             GUI_SET => self.on_set(&msg.args, from, effects),

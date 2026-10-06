@@ -83,20 +83,15 @@ nobody took. That is written down, as an open item, and the bug is not. Closing
 a checkbox that was **already** open is the other case and stays right: that
 entry was pending, and it keeps the record of what was wrong.
 
-The five sections, and the line between them:
+The three sections, and the line between them:
 
 1. **Fixes** — something is wrong, missing or duplicated, and what to do about
    it is already known. No decision stands in front of the work.
-2. **Fixes that need a decision first** — the same kind of small work, except
-   that the shape it takes depends on an answer nobody has given. Each one names
-   *which* decision.
-3. **Tests and reviews pending** — work that is not a change to the tree at all:
+2. **Tests and reviews pending** — work that is not a change to the tree at all:
    somebody has to run something and watch it. It is separate because it is the
    one kind of work nothing in CI does and nothing in a plan's checkbox implies.
-4. **Milestones left hanging** — numbered milestones in a plan whose track is
-   otherwise closed, again split by whether a decision comes first.
-5. **Tracks not started, or incomplete** — whole tracks, named and referred to
-   their plan, not enumerated here.
+3. **Milestones left hanging** — numbered milestones in a plan whose track is
+   otherwise closed, split by whether a decision comes first.
 
 ## 1. Fixes
 
@@ -112,27 +107,8 @@ already carry it.
   selection, while a loop plays, with the playback's `set_loop`, bound for both
   clients.
 
-- ⬜ **The window's close mark loses unsaved changes without asking**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The File menu's Close
-  asks; the mark on the window's frame frees the window before any owner
-  hears. The shape is named in the entry: a window prop saying an owner wants
-  to be asked, and a close request the owner confirms — the host's, for every
-  editor.
 
-
-## 2. Fixes that need a decision first
-
-Same size of work, except the shape depends on an answer. The decision is named
-on each one; none of them is being taken by this file.
-
-- ⬜ **Two windows of one role over one structure draw on one widget**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Two editors opened over the
-  same structure ask the core's registry for the same widget id, and the host
-  skips the second window's widget. **The decision:** whether the window belongs
-  in the name, or a second editor over a structure is refused and hands back the
-  first.
-
-## 3. Tests and reviews pending
+## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
 watching it, which is the one kind of verification this project has no automation
@@ -148,11 +124,11 @@ a person saw it work.
   because if the gate is misconfigured the run continues into PyPI and npm, which
   cannot be taken back. The plan carries the safe procedure (a fork or scratch
   repository, a deliberately broken tree, a `v*` tag) and says what does not
-  count as proof. **Related:** it is filed here rather than in section 4 because
+  count as proof. **Related:** it is filed here rather than in section 3 because
   the milestone's *code* is done; what is left is somebody watching it fail.
 
 
-## 4. Milestones left hanging
+## 3. Milestones left hanging
 
 Numbered milestones whose track is otherwise closed. Each is owned and written in
 its plan; the plan is where its acceptance is read.
@@ -185,9 +161,9 @@ its plan; the plan is where its acceptance is read.
   the notes editor, done but for its recording (`X3.10`), which waits for
   `T10` and is skipped for now; **`X5`** the score editor,
   built whole (`X5.0`-`X5.9`) and not closed: what is left of it is the eye
-  and ear pass over `notation/score_editor` — of the entries it wrote under
-  "Found by use" only the close mark is open (section 1), and what it left as
-  design is under Future directions; **`X6`** which composed views (scope, plot, waveform,
+  and ear pass over `notation/score_editor` — the entries it wrote under
+  "Found by use" are all closed, and what it left as design is under Future
+  directions; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
@@ -342,8 +318,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's
   edge; the applications' window chrome in standalone, and the multitrack's
-  stop-at-end key that waits on it; a bare window that does not say why a verb
-  was refused; effects in preview and several files in one
+  stop-at-end key that waits on it; what a bare window leaves to its handle;
+  effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the
   score; a sequence as primitive data, by the keys chosen; the score editor's
   editing rules as modules; what a score editor's hand expects and this one

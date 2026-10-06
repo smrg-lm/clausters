@@ -104,9 +104,10 @@ pub struct ScoreEditor {
     window: Option<i32>,
     ids: Option<Ids>,
     /// **Whether the window is the page alone**, with no chrome around it: no
-    /// menu bar, no toolbar, no palettes, no status line and no dialogs --
-    /// none of it composed, so none of it engraved for, sent or corrected.
-    /// The keys stay, since they are the window's and not the menu's. It is
+    /// menu bar, no toolbar, no palettes and no dialogs -- none of it
+    /// composed, so none of it engraved for, sent or corrected. The keys
+    /// stay, since they are the window's and not the menu's, and so does the
+    /// status line, which is where a verb refused says why. It is
     /// how a holder that edits through its own handle opens the editor; a
     /// host with no holder beside it opens the whole window, which is then
     /// the only way to reach what the editor does.
@@ -303,19 +304,10 @@ impl ScoreEditor {
     /// the editor answers for. Chrome left unnumbered is chrome the window
     /// does not have: no toolbar, no palettes, no dialogs. A bare editor
     /// ([`set_bare`](Self::set_bare)) has none whatever was numbered, and no
-    /// menu bar or status line either: its window is the page in its scroll.
+    /// menu bar either: its window is the page in its scroll, over the status
+    /// line.
     pub fn window(&mut self, ids: Ids, chrome: Chrome) -> Value {
-        let (ids, chrome) = if self.bare {
-            (
-                Ids {
-                    status: None,
-                    ..ids
-                },
-                Chrome::default(),
-            )
-        } else {
-            (ids, chrome)
-        };
+        let chrome = if self.bare { Chrome::default() } else { chrome };
         self.ids = Some(ids);
         self.tools = chrome.tools;
         self.dialogs = chrome.dialogs;
@@ -345,7 +337,7 @@ impl ScoreEditor {
             ids,
             title: &self.title,
             size: self.size,
-            status: (!self.bare).then(|| self.describe()),
+            status: Some(self.describe()),
             entry: self.entry,
             edit_cursor: self.edit_cursor(),
             keys: self.keys(),
@@ -949,12 +941,17 @@ impl ScoreEditor {
         let mut out = <Outcome as turn::Turned>::at(version);
         out.turn = Kind::Route;
         let reason = self.perform(request, &mut out);
-        out.answer = Some(conversation::answer(
-            0,
-            out.version,
-            reason,
-            self.corrections(),
-        ));
+        let mut corrections = self.corrections();
+        // **A verb a client called is refused on the status line**: no
+        // gesture of the window asked for it, so there is no edit of the
+        // host's for the reason to be said on
+        if let (Some(why), Some(status)) = (&reason, self.ids.and_then(|ids| ids.status)) {
+            corrections.push(Correction {
+                widget: i64::from(status),
+                props: json!({"text": why}),
+            });
+        }
+        out.answer = Some(conversation::answer(0, out.version, reason, corrections));
         out
     }
 
@@ -1822,9 +1819,15 @@ impl Converse for ScoreEditor {
                     corrections,
                 ));
             }
-            // the window's own save -- Ctrl+S -- is the menu's
-            "save" => {
-                let (reason, shown) = self.save(out);
+            // the window's own save -- Ctrl+S -- is the menu's, and so is
+            // its close mark, which a window that can ask reports
+            // (`ask_close`) rather than closing
+            "save" | "close" => {
+                let (reason, shown) = if message.tag == "save" {
+                    self.save(out)
+                } else {
+                    self.close(out)
+                };
                 out.turn = Kind::Route;
                 out.answer = Some(conversation::answer(
                     message.seq,

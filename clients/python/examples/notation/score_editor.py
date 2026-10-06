@@ -97,11 +97,17 @@ What it shows, in the order it does it:
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike.
 * **The chrome is optional, and the keys are not chrome.** `alone()` opens
-  the same score with ``chrome=False``: the page in its scroll and nothing
-  composed around it -- the light window of a script that edits through the
-  handle. The keys stay, and what a hand writes there is read where
-  everything else is, on the score: `on_change` is told once per gesture, and
-  prints the pitches of the sequence the score renders into.
+  the same score with ``chrome=False``: the page in its scroll over the
+  status line, and nothing else composed around it -- the light window of a
+  script that edits through the handle. The keys stay, and F1 shows them all
+  on a sheet its close mark or Escape takes down. What a hand writes there is
+  read where everything else is, on the score: `on_change` is told once per
+  gesture, and prints the pitches of the sequence the score renders into.
+  The whole window is closed first: a second editor over the score would draw
+  on the first one's widgets, so `edit` hands back the editor that is open.
+* **Closing asks first.** With something unsaved, the whole window's close
+  mark asks what the File menu's Close asks; the page alone closes at once,
+  since the score it edits is the one the script holds.
 
 The engraver is **libverovio**, which ships inside the installed package. In a
 source checkout, build and stage it once (``third_party/BUILD-VEROVIO.md``)::
@@ -267,17 +273,21 @@ def roll():
 # The chrome is how a hand reaches what the editor does when nothing else can:
 # a standalone host has only the window. A script has the handle, so it can
 # open the same score with none of it -- `chrome=False` is the page in its
-# scroll, with nothing composed around it and so nothing to send or to keep
-# current. The keys are not chrome and stay: N and the letters write, the
-# arrows and Delete act on the selection, the space bar plays, Ctrl+Z walks
-# back. What a hand writes there is read on the score, like everything else:
+# scroll over the status line, with nothing else composed around it and so
+# nothing to send or to keep current. The keys are not chrome and stay: N and
+# the letters write, the arrows and Delete act on the selection, the space bar
+# plays, Ctrl+Z walks back, and F1 lists them all. What a hand writes there is read on the score, like everything else:
 # `on_change` is told once per gesture, and what it prints is the line as the
 # code would take it on -- the pitches of the sequence the score renders into.
+# The whole window is closed first: `edit` over a score with an editor open on
+# it hands that one back, since a second window over the score would draw on
+# the first one's widgets.
 
 # %%
 def alone():
     """The same score in a window with no chrome, which prints the pitches
     it renders into after each gesture."""
+    editor.close()
     page = edit(score, chrome=False, title="The page alone", width=900, height=600)
     page.on_change = lambda: print(
         [event["midinote"] for _, event in score.render_events()])

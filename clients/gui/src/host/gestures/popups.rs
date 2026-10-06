@@ -148,7 +148,7 @@ fn report_pick(
                 .and_then(|w| w.context.as_mut())
                 .and_then(|m| menu::pick(m, path)),
         ),
-        Owner::Element(_) | Owner::Edit(_) => return,
+        Owner::Element(_) | Owner::Edit(_) | Owner::Keys => return,
     };
     let Some(picked) = picked else {
         return;
@@ -218,7 +218,35 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
                 edit_pick(host, ctx, out, id, &verb);
             }
         }
+        // a sheet is read, and nothing on it is picked
+        Owner::Keys => {}
     }
+}
+
+/// **Opens the window's key sheet** (the `keys` verb): what each key does in
+/// it, a section per scope in force and one for the table's own rows, in the
+/// middle of the window ([`popup::Owner::Keys`]).
+pub(super) fn open_keys(host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
+    let scopes = host.window_keys(ctx.def_id);
+    let mut entries = Vec::new();
+    for section in host.keys.sheet(&scopes) {
+        if !entries.is_empty() {
+            entries.push(Entry::separator());
+        }
+        entries.push(Entry::heading(&section.title));
+        entries.extend(
+            section
+                .rows
+                .iter()
+                .map(|(what, keys)| Entry::note(what, keys)),
+        );
+    }
+    let size = host.metrics_for(ctx.def_id).text_scale;
+    host.open_popup(
+        ctx.def_id,
+        Stack::new(Owner::Keys, entries, Anchor::Centre, size),
+    );
+    vec![GestureEffect::Redraw(ctx.def_id)]
 }
 
 /// **A pick in a field's edit menu is the edit itself**, done the way its key
@@ -287,6 +315,18 @@ impl Gestures {
             let placed = host
                 .popup_placed(def_id, ctx.fb_w, ctx.fb_h)
                 .unwrap_or_default();
+            // **The key sheet goes by its close mark alone**: a press
+            // anywhere else is swallowed, on it or off it.
+            if open == Owner::Keys {
+                if placed
+                    .first()
+                    .and_then(popup::Placed::close)
+                    .is_some_and(|mark| mark.contains(cx, cy))
+                {
+                    host.close_popup(def_id);
+                }
+                return true;
+            }
             let target = host
                 .popup(def_id)
                 .and_then(|stack| popup::hit(stack, &placed, cx, cy));
@@ -452,11 +492,31 @@ impl Gestures {
         key: &Key,
     ) -> Option<Vec<GestureEffect>> {
         let def_id = ctx.def_id;
+        let row = popup::row_h(host.popup(def_id)?.text_size, host.metrics_for(def_id));
+        let most = host
+            .popup_placed(def_id, ctx.fb_w, ctx.fb_h)
+            .and_then(|placed| placed.first().map(|p| p.max_scroll))
+            .unwrap_or(0.0);
         let stack = host.popup_mut(def_id)?;
         let mut out = vec![GestureEffect::Redraw(def_id)];
         let Some(key) = walk(key) else {
             return Some(Vec::new());
         };
+        // **The key sheet has no row to land on**, so the walking keys scroll
+        // it -- a row at a time, or to an end -- and the layout clamps.
+        if stack.owner == Owner::Keys && key != Walk::Escape {
+            let level = &mut stack.levels[0];
+            level.reveal = false;
+            level.scroll = match key {
+                Walk::Up => level.scroll - row,
+                Walk::Down => level.scroll + row,
+                Walk::Home => 0.0,
+                Walk::End => most,
+                _ => return Some(Vec::new()),
+            }
+            .clamp(0.0, most);
+            return Some(out);
+        }
         match stack.key(key) {
             Keyed::Moved | Keyed::Ignored => {}
             Keyed::Closed => {

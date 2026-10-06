@@ -443,7 +443,29 @@ def test_a_marker_added_in_the_roll_is_refused_and_says_why():
 
 # ---- the acceptance the track was opened with ----
 
-def test_edit_called_twice_gives_two_windows_and_one_stack():
+def test_edit_over_a_structure_with_its_editor_open_hands_that_one_back():
+    """A second window of one role over one structure would ask for the same
+    widgets as the first: `edit` hands back the editor that is open instead,
+    and opens nothing. Another role is another window -- a roll in hertz
+    beside one in MIDI notes -- and a closed editor is not handed back."""
+    host = FakeHost()
+    curve = a_curve()
+    first = edit(curve, sample_rate=SR, host=host)
+    assert edit(curve, sample_rate=SR, host=host, title="again") is first
+    assert len(host.trees) == 1, "nothing else was opened"
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    keys = edit(seq, sample_rate=SR, host=host)
+    assert edit(seq, sample_rate=SR, host=host) is keys
+    hertz = edit(seq, sample_rate=SR, host=host, y_axis="hz")
+    assert hertz is not keys and edit(seq, sample_rate=SR, host=host, y_axis="hz") is hertz
+    # one structure, two editors of their own kinds: the curve's is not the
+    # roll's, and another curve is another window
+    assert edit(a_curve(), sample_rate=SR, host=host) is not first
+    first.close()
+    assert edit(curve, sample_rate=SR, host=host) is not first
+
+
+def test_two_editors_over_one_structure_share_one_stack():
     curve = a_curve()
     left = edit(curve, sample_rate=SR, open=False)
     right = edit(curve, sample_rate=SR, open=False)

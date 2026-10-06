@@ -1459,9 +1459,20 @@ export function view(
      * The **key table's scopes** in force in the window: a scope is a
      * sub-table of the host's keys (`[gui.keys.note_entry]`), and its chords
      * are read before the table's own rows -- how an application's mode has
-     * keys of its own (`["score", "note_entry"]`). None by default.
+     * keys of its own (`["score", "note_entry"]`). None by default. F1 shows
+     * them -- every key in force in the window and what it does, on a sheet
+     * in the middle of it that its close mark or Escape takes down.
      */
     keys?: readonly string[];
+    /**
+     * **The window's owner is asked before it closes**: the close mark on its
+     * frame (and a desktop window's Escape, with nothing open) reports the
+     * window's `close` verb -- as its menu bar's entry for it, when the bar
+     * has one -- instead of closing it, and the owner frees the window once
+     * nothing is left to lose. Asked again before the owner has answered, it
+     * closes. Off by default.
+     */
+    askClose?: boolean;
     /**
      * The gaps between the window's own children are dividers a drag moves,
      * as on {@link layout}.
@@ -1491,8 +1502,8 @@ export function view(
     ...children: GuiNode[]
 ): View {
     const {
-        title, flow, layout, margin, gap, cols, hug, status, plays, keys, theme, split,
-        menu: bar, glyphs, ...rest
+        title, flow, layout, margin, gap, cols, hug, status, plays, keys, askClose, theme,
+        split, menu: bar, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1510,6 +1521,7 @@ export function view(
             ["status", flag(status)],
             ["plays", flag(plays)],
             ["keys", keys === undefined ? undefined : [...keys]],
+            ["ask_close", flag(askClose)],
         ]),
         children: [...(options.children ?? []), ...children],
     });

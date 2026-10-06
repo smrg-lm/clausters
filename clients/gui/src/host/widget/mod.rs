@@ -109,6 +109,13 @@ pub enum WidgetKind {
         /// an editor names the mode it is in, and that mode's keys are the
         /// window's. None by default.
         keys: Vec<String>,
+        /// The `ask_close` prop: **the window's owner is asked before it
+        /// closes**. The close mark on its frame (and, on the desktop, Escape
+        /// with nothing open) reports the window's `close` verb instead of
+        /// closing it, and the owner frees the window once nothing is left to
+        /// lose ([`Host::close_request`](crate::host::Host::close_request)).
+        /// Off by default: a window closes at once.
+        ask_close: bool,
     },
     /// A nestable container.
     Panel {

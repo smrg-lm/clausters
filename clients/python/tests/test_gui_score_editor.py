@@ -66,6 +66,8 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     # the window carries the menu bar, which holds every action
     assert [title["label"] for title in tree["menu"]] == [
         "File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"]
+    # ...and its close mark asks first, as the File menu's Close does
+    assert tree["ask_close"] is True
 
 
 def test_opening_writes_the_page_from_the_model(score):
@@ -188,11 +190,14 @@ def test_without_chrome_the_window_is_the_page_and_the_handle_edits(score):
     editor = edit(score, open=False, chrome=False)
     assert isinstance(editor, ScoreEditor) and editor.chrome is False
     tree = editor.draw()
-    # the page in its scroll, and nothing around it: no toolbar, no palettes,
-    # no status line, no dialogs, no menu bar, no symbol to label a tool with
-    (scroll,) = tree["children"]
+    # the page in its scroll over the status line, and nothing else: no
+    # toolbar, no palettes, no dialogs, no menu bar, no symbol to label a tool
+    # with -- and with no form to ask in, its close mark closes at once
+    scroll, status = tree["children"]
     assert scroll["type"] == "plane" and scroll["children"][0]["type"] == "score"
+    assert status["type"] == "label"
     assert "menu" not in tree and "glyphs" not in tree
+    assert tree["ask_close"] is False
     # the keys are the window's, and stay
     assert tree["keys"] == ["score"] and tree["plays"] is True
     # the handle edits, and is told of an edit a hand made on the page
@@ -211,7 +216,7 @@ def test_without_chrome_the_window_is_the_page_and_the_handle_edits(score):
     # renders into, for the code to go on from
     played = [event["midinote"] for _, event in score.render_events()]
     assert len(played) == len(_items(score)) and played[0] == 79
-    # a verb refused answers so, with no status line to say why
+    # a verb refused answers so, and the status line says why
     editor.select([])
     assert not editor.tie()
     # and the whole window is what opens when nothing asks otherwise

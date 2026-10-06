@@ -153,8 +153,9 @@ fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
 }
 
 /// A holder that edits through its handle opens the page alone: nothing
-/// around it is composed, so nothing around it is engraved for, sent or
-/// corrected -- and the keys, which are the window's, still write.
+/// around it is composed but the status line, so nothing else is engraved
+/// for, sent or corrected -- and the keys, which are the window's, still
+/// write.
 #[test]
 fn a_bare_window_is_the_page_and_its_keys() {
     let mut editor = new_json(shared(), r#"{"chrome": false}"#);
@@ -174,11 +175,16 @@ fn a_bare_window_is_the_page_and_its_keys() {
     let children = window["children"].as_array().unwrap();
     assert_eq!(
         children.len(),
-        1,
-        "the page in its scroll, and nothing else"
+        2,
+        "the page in its scroll, the status line, and nothing else"
     );
     assert_eq!(children[0]["type"], "plane");
     assert_eq!(children[0]["children"][0]["id"], 10);
+    assert_eq!(children[1]["id"], 12, "the status line");
+    assert_eq!(
+        window["ask_close"], false,
+        "with no form to ask in, it closes at once"
+    );
     assert!(window.get("menu").is_none(), "no menu bar");
     assert!(
         window.get("glyphs").is_none(),
@@ -187,7 +193,7 @@ fn a_bare_window_is_the_page_and_its_keys() {
     assert_eq!(window["keys"], json!(["score"]));
     assert_eq!(window["plays"], true);
     // a key is still the editor's verb: N enters note entry, and what the
-    // window is corrected with is its keys -- no menu, no tool, no status
+    // window is corrected with is its keys -- no menu, no tool
     call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
     let out = editor.event(&key("entry"), 1);
     let Some(Answer::Push { corrections, .. }) = out.answer else {
@@ -198,7 +204,6 @@ fn a_bare_window_is_the_page_and_its_keys() {
         of(1).expect("the window").props,
         json!({"keys": ["score", "note_entry"]})
     );
-    assert!(of(12).is_none(), "no status line to correct");
     assert_eq!(of(10).expect("the page").props["entry"], true);
     // and the letters write, as in the whole window
     let out = editor.event(&key("pitch_g"), 1);
@@ -426,6 +431,14 @@ fn a_verb_with_nothing_selected_is_refused_out_loud() {
         other => panic!("a reason: {other:?}"),
     };
     assert!(why.contains("select"), "{why}");
+    // and since no gesture asked for it, the status line says why
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("the window corrected")
+    };
+    assert_eq!(
+        corrections.last().map(|c| (c.widget, c.props.clone())),
+        Some((12, json!({"text": why})))
+    );
 }
 
 #[test]
@@ -1756,6 +1769,38 @@ fn close_asks_first_only_when_there_is_something_to_lose() {
     // a save the close form did not ask for closes nothing
     editor.act(&json!({"action": "page", "landscape": false}), 2);
     assert!(!editor.event(&stamped(window_save(), 3), 3).close);
+}
+
+/// **The window's close mark is the File menu's Close**: a window that can
+/// ask in a form says so (`ask_close`), and the `close` its mark reports
+/// asks first just as the menu does.
+#[test]
+fn the_close_mark_asks_as_the_menus_close_does() {
+    let ids = named();
+    let mut editor = with_dialogs();
+    let window = editor.window(
+        IDS,
+        Chrome {
+            dialogs: ids.clone(),
+            ..Chrome::default()
+        },
+    );
+    assert_eq!(window["ask_close"], true);
+    assert_eq!(opened().window(IDS, Chrome::default())["ask_close"], false);
+    // nothing to lose: it goes
+    assert!(editor.event(&key("close"), 1).close);
+    // something to lose: the form
+    editor.act(&json!({"action": "page", "landscape": true}), 1);
+    let mut asked = key("close");
+    asked.args[2] = json!(2);
+    let out = editor.event(&asked, 2);
+    assert!(!out.close);
+    assert_eq!(
+        corrections_of(&out)
+            .last()
+            .map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 5})))
+    );
 }
 
 #[test]

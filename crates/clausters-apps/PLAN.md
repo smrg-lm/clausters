@@ -2361,15 +2361,43 @@ Every entry carries a checkbox.
   client holds is the edited one (`sheet`, `render_events`), and `on_change`
   is told once per gesture. What it left is the entry below.
 
-- ⬜ **A bare window does not say why a verb was refused** *(left by the
+- ✅ **A bare window does not say why a verb was refused** *(left by the
   entry above, 2026-10-06)*. The reason a refused verb has is shown on the
-  status line, and a bare window has none: the verb answers `false` and the
-  reason is not on the handle either, so a client cannot tell a refusal it
-  could fix from one it could not. Beside it, waiting for a use rather than
-  for a fix: a form's question (the path of a first Ctrl+S, the close with
-  unsaved work) has no window to be asked in, and the handle's `save` is the
-  way; the chrome's parts one at a time (the status line alone); and a
-  switch while the window is open, which is the window composed again.
+  status line, and a bare window had none: the verb answered `false` and the
+  reason reached nothing. A gesture's refusal reached the host's own status
+  bar, through the acknowledgement of its stamp; a verb a client calls has no
+  stamp, so its answer settled nothing and the host dropped the reason.
+  **Decided 2026-10-06, by the user**: the bare window keeps the status line
+  the whole window has.
+  **Fixed 2026-10-06**: a bare editor composes the status line under the page
+  (the page, its scroll and the line), and a verb refused through the handle
+  corrects the line with its reason -- in the whole window as well, where the
+  same reason was dropped the same way. Pinned in the crate and in both
+  clients' tests.
+
+- ⬜ **What a bare window leaves to its handle** *(left by the entry above,
+  2026-10-06)*. The reason a verb was refused is on the status line and not on
+  the handle, so a client reading the answer cannot tell a refusal it could
+  fix from one it could not. Beside it, waiting for a use rather than for a
+  fix: a form's question (the path of a first Ctrl+S) has no window to be
+  asked in, and the handle's `save` is the way; the chrome's other parts one
+  at a time; and a switch while the window is open, which is the window
+  composed again.
+
+- ✅ **A window shows its keys with F1** *(asked for by the user 2026-10-06:
+  a window with no chrome shows its shortcuts with F1, in a modal window that
+  scrolls, to look them up quickly; the modal closes with its own close mark
+  or Escape)*. **Done 2026-10-06, in the host**, where the key table is: `keys`
+  is a host verb bound to F1, and it opens a sheet in the popup layer, in the
+  middle of the window, under a title strip that ends in its close mark. It
+  lists every key in force in the window -- a section per scope the window
+  names, the one read first at the top, then the table's own rows -- with a
+  chord a scope takes over listed only where it holds; the table's own verbs
+  read in words and any other verb as its name. Nothing on it is picked: a
+  press anywhere but the close mark is swallowed, the arrows, Home and End
+  scroll it, and the close mark and Escape take it down. Every window has it,
+  since the table is every window's; a bare one has no menu to show a chord
+  beside an entry, which is why it was asked for there.
 
 - ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
@@ -2595,7 +2623,7 @@ wrong.
   `play(range=, looping=)` in both clients). The standalone host plays the
   same, and learns from the engine when a pass stopped on its end mark.
 
-- ⬜ **Two windows of one role over one structure draw on one widget**
+- ✅ **Two windows of one role over one structure draw on one widget**
   *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the
   one in MIDI notes: "gui_def: widget id 1000 already in use, skipping")*. A
   view names its widgets by `(structure, role, key)` in the core's registry
@@ -2608,6 +2636,13 @@ wrong.
   would any editor opened twice over one structure, since every view names
   its widgets through that one door. Open: whether the window belongs in the name,
   or a second editor over a structure is refused and hands back the first.
+  **Decided 2026-10-06, by the user**: the first is handed back.
+  **Fixed 2026-10-06**: `edit` over a structure with an editor of its kind
+  open on it -- for a roll, over the same axis, so a roll in hertz beside one
+  in MIDI notes is still two windows -- answers that editor and opens nothing,
+  found among the views of the structure's editing context, in both clients.
+  A closed editor is not handed back, and a timeline is rendered into a new
+  sequence by each call, so it never finds one.
 
 - ✅ **The roll has no play cursor, and its ruler places nothing** *(the
   user, 2026-09-28, trying `X3.9`: "El roll no tiene cursor de reproducción
@@ -3161,13 +3196,22 @@ wrong.
   where it already writes the number over the engraver's count. Pinned
   against the engraver.
 
-- ⬜ **The window's close mark loses unsaved changes without asking**
+- ✅ **The window's close mark loses unsaved changes without asking**
   *(found 2026-10-06, building Close)*. The File menu's Close asks; the mark
   on the window's frame frees the window at once, since the host closes it
   before any owner hears. Asking there means the host holding a close until
   an owner that wants to ask has answered -- a window prop saying so, and a
   close request the owner confirms -- which is the host's, for every
   editor, and not the score editor's alone.
+  **Fixed 2026-10-06**: a window carrying `ask_close` is not closed by its
+  close mark, nor by a desktop window's Escape: it reports `close`, as its
+  menu bar's entry for it where the bar has one, and its owner frees it once
+  nothing is left to lose. A second close the owner has answered nothing
+  since closes it anyway, so an owner that stopped answering cannot keep it
+  open; and a standalone host whose owner freed its last window ends, as the
+  close mark ends it. The score editor's window asks when it has its forms
+  to ask in; a bare one closes at once, since the score it edits is the one
+  its holder keeps.
 
 - ✅ **The standalone host's score neither plays nor exports**
   *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with

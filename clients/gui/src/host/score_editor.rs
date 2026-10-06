@@ -706,6 +706,9 @@ mod tests {
         menu(&mut host, 1, "new");
         assert_eq!(items(&held), 4, "four empty bars");
         menu(&mut host, 2, r#"{"action":"page","landscape":true}"#);
+        // the close mark on the frame is not a close here: the window asks
+        // its editor, as the menu's Close below does
+        assert!(!host.close_request(def_id), "the editor is asked first");
         menu(&mut host, 3, "close");
         assert_eq!(dialog_page(&host, def_id), 5);
         assert!(host.window_defs.contains_key(&def_id));

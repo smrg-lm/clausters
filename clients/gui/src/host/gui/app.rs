@@ -333,7 +333,15 @@ impl App {
                         self.pending.push((id, from));
                     }
                 }
-                HostEffect::CloseWindow(id) => self.drop_window(id),
+                HostEffect::CloseWindow(id) => {
+                    self.drop_window(id);
+                    // An owner that frees the last window of a standalone host
+                    // -- a close it was asked for -- ends it, as the close
+                    // mark does.
+                    if self.standalone && self.windows.is_empty() {
+                        event_loop.exit();
+                    }
+                }
                 HostEffect::Redraw(id) => {
                     if let Some(ws) = self.windows.get(&id) {
                         ws.gpu.window.request_redraw();

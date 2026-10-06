@@ -14,7 +14,7 @@ impl App {
     /// Snapshots the gesture context for one window: framebuffer size,
     /// modifier keys, and the heavy views' lane counts (channel/lane splits
     /// live in this front's GPU slots, so they are copied out here).
-    fn gesture_ctx(&self, def_id: i32) -> GestureCtx {
+    pub(super) fn gesture_ctx(&self, def_id: i32) -> GestureCtx {
         let (fb_w, fb_h) = self.fb(def_id);
         let mut ctx = GestureCtx::new(def_id, fb_w, fb_h);
         // The same rate the frame draws with, so a gesture over a measured
@@ -85,7 +85,7 @@ impl App {
 
     /// Carries out a gesture's effects: events over the window's transport,
     /// repaints.
-    fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
+    pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         for effect in effects {
             match effect {
                 GestureEffect::Emit {

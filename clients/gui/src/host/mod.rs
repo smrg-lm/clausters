@@ -786,6 +786,11 @@ pub struct Host {
     /// layer, per def id (see [`popup`]). The host's and not an element's,
     /// because a menu bar and a context menu have no element to live in.
     popups: HashMap<i32, popup::Popups>,
+    /// **The windows whose owner was asked to close them and has not answered
+    /// since** ([`close_request`](Self::close_request)): a second request
+    /// while one is unanswered closes the window, so an owner that stopped
+    /// answering cannot keep it open. Anything an owner sends answers.
+    close_asked: std::collections::HashSet<i32>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
@@ -924,6 +929,7 @@ impl Host {
             outbox: Default::default(),
             status: Default::default(),
             popups: HashMap::new(),
+            close_asked: Default::default(),
             owner: None,
             clock_shown: None,
             #[cfg(test)]
@@ -1158,8 +1164,6 @@ impl Host {
         self.window_defs.get(&id)
     }
 
-    /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
-    /// is then the window's own verb, and the monitor stays out.
     /// **The key table's scopes in force in window `id`** -- its `keys` prop
     /// ([`keymap`]).
     pub fn window_keys(&self, id: i32) -> Vec<String> {
@@ -1169,11 +1173,40 @@ impl Host {
         }
     }
 
+    /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
+    /// is then the window's own verb, and the monitor stays out.
     pub fn window_plays(&self, id: i32) -> bool {
         matches!(
             self.window_def(id).map(|w| &w.kind),
             Some(WidgetKind::Window { plays: true, .. })
         )
+    }
+
+    /// **Window `id` was asked to close** -- the close mark on its frame, or a
+    /// desktop window's Escape with nothing open. `true` when it closes now,
+    /// which the front does; `false` when its owner is asked first (the
+    /// `ask_close` prop) and is the one to free it, once nothing is left to
+    /// lose. A request made while the last one is still unanswered closes
+    /// the window: an owner that has stopped answering does not keep it open.
+    pub fn close_request(&mut self, id: i32) -> bool {
+        let asks = matches!(
+            self.window_def(id).map(|w| &w.kind),
+            Some(WidgetKind::Window {
+                ask_close: true,
+                ..
+            })
+        );
+        if !asks || self.close_asked.remove(&id) {
+            return true;
+        }
+        self.close_asked.insert(id);
+        false
+    }
+
+    /// The window's owner said something: whatever it asked of a close is
+    /// answered.
+    pub(super) fn owner_answered(&mut self) {
+        self.close_asked.clear();
     }
 
     /// **The window's `play` verb**, as it goes out: the verb and the loop

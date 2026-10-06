@@ -48,6 +48,11 @@ pub enum Owner {
     /// element carries no `context` of its own. A pick is an edit of that
     /// element, not a report.
     Edit(i32),
+    /// **The window's key sheet** (the `keys` verb, F1): what each key does
+    /// in the window, read and never picked. It stands in the middle of the
+    /// window under a title strip with a close mark, and only that mark and
+    /// Escape take it down -- a press anywhere else is swallowed.
+    Keys,
 }
 
 /// Where the first list of a stack hangs.
@@ -58,6 +63,8 @@ pub enum Anchor {
     Below(Rect),
     /// At this point: a context menu.
     At(f32, f32),
+    /// In the middle of the work area: the key sheet.
+    Centre,
 }
 
 /// One open list: the entries it shows and what the hand is doing in it.
@@ -123,7 +130,7 @@ impl Stack {
             Owner::Element(id) | Owner::Context(id) | Owner::Button(id) | Owner::Edit(id) => {
                 Some(id)
             }
-            Owner::Bar(_) => None,
+            Owner::Bar(_) | Owner::Keys => None,
         }
     }
 
@@ -343,8 +350,12 @@ pub fn owner_rect(
             .iter()
             .find(|p| p.widget.id == Some(id))
             .map(|p| p.rect),
+        Owner::Keys => None,
     }
 }
+
+/// What the key sheet's title strip says.
+pub const KEYS_TITLE: &str = "Keys";
 
 /// The height of one row of a list.
 pub fn row_h(text_size: f32, m: &Metrics) -> f32 {
@@ -421,13 +432,37 @@ pub struct Placed {
     pub scroll: f32,
     /// How far the list could scroll.
     pub max_scroll: f32,
+    /// **The title strip over the rows**, for a list that has one -- the key
+    /// sheet's, which ends in its close mark ([`close`](Self::close)).
+    pub strip: Option<Rect>,
 }
 
 impl Placed {
+    /// Where the rows are seen: the list under its title strip.
+    pub fn body(&self) -> Rect {
+        match self.strip {
+            Some(strip) => Rect::new(
+                self.rect.x,
+                self.rect.y + strip.h,
+                self.rect.w,
+                (self.rect.h - strip.h).max(0.0),
+            ),
+            None => self.rect,
+        }
+    }
+
+    /// The **close mark** at the right end of the title strip.
+    pub fn close(&self) -> Option<Rect> {
+        self.strip.map(|strip| {
+            let side = strip.h.min(strip.w);
+            Rect::new(strip.x + strip.w - side, strip.y, side, side)
+        })
+    }
+
     /// The row under `(x, y)`, when the point is on this list and on a row a
     /// hand can land on.
     pub fn row_at(&self, entries: &[Entry], x: f64, y: f64) -> Option<usize> {
-        if !self.rect.contains(x, y) {
+        if !self.body().contains(x, y) {
             return None;
         }
         self.rows
@@ -489,6 +524,19 @@ pub fn place_at(at: (f32, f32), size: (f32, f32), work: Rect) -> Rect {
     Rect::new(hold_x(x, w, work), hold_y(y, h, work), w, h)
 }
 
+/// The same for a list standing **in the middle** of the area -- the key
+/// sheet: centred, and cut to the area where it is bigger.
+pub fn place_centre(size: (f32, f32), work: Rect) -> Rect {
+    let w = size.0.min(work.w);
+    let h = size.1.min(work.h);
+    Rect::new(
+        work.x + (work.w - w) * 0.5,
+        work.y + (work.h - h) * 0.5,
+        w,
+        h,
+    )
+}
+
 fn hold_x(x: f32, w: f32, work: Rect) -> f32 {
     x.min(work.x + work.w - w).max(work.x)
 }
@@ -517,7 +565,19 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
     let mut out: Vec<Placed> = Vec::with_capacity(stack.levels.len());
     for (i, level) in stack.levels.iter().enumerate() {
         let (w, h) = natural(&level.entries, size, m);
-        let want = (if i == 0 { w.max(stack.min_w) } else { w }, h);
+        // A list standing on its own carries a title strip, and is as wide
+        // as its title and close mark need.
+        let strip_h = if i == 0 && stack.anchor == Anchor::Centre {
+            row_h(size, m)
+        } else {
+            0.0
+        };
+        let w = if strip_h > 0.0 {
+            w.max(font::width(KEYS_TITLE, size) + 2.0 * m.pad + strip_h)
+        } else {
+            w
+        };
+        let want = (if i == 0 { w.max(stack.min_w) } else { w }, h + strip_h);
         let rect = match (i, anchor) {
             (0, Anchor::Below(a)) => place_below(
                 Rect::new(a.x + shift.0, a.y + shift.1, a.w, a.h),
@@ -525,6 +585,7 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
                 work,
             ),
             (0, Anchor::At(x, y)) => place_at((x, y), want, work),
+            (0, Anchor::Centre) => place_centre(want, work),
             _ => {
                 // A submenu hangs off the row that opened it, in the list
                 // before it -- which is already placed.
@@ -540,7 +601,9 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
                 place_beside(row, want, work)
             }
         };
-        let max_scroll = (h - rect.h).max(0.0);
+        let strip = (strip_h > 0.0).then(|| Rect::new(rect.x, rect.y, rect.w, strip_h.min(rect.h)));
+        let seen = (rect.h - strip_h).max(0.0);
+        let max_scroll = (h - seen).max(0.0);
         let mut scroll = level.scroll.clamp(0.0, max_scroll);
         if level.reveal
             && let Some(row) = level.hover
@@ -552,12 +615,12 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
             let bottom = top + entry_h(&level.entries[row], size, m);
             if top < scroll {
                 scroll = top;
-            } else if bottom > scroll + rect.h {
-                scroll = bottom - rect.h;
+            } else if bottom > scroll + seen {
+                scroll = bottom - seen;
             }
             scroll = scroll.clamp(0.0, max_scroll);
         }
-        let mut y = rect.y - scroll;
+        let mut y = rect.y + strip_h - scroll;
         let rows = level
             .entries
             .iter()
@@ -573,6 +636,7 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
             rows,
             scroll,
             max_scroll,
+            strip,
         });
     }
     out

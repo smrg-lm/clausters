@@ -32,6 +32,12 @@ pub enum EntryKind {
     Separator,
     /// An entry that opens a list of its own.
     Submenu(Vec<Entry>),
+    /// **A line naming the rows under it**: a section of a key sheet. Read,
+    /// never picked, and never on the wire -- the host writes it.
+    Heading,
+    /// **A row that is read and never picked**: a key sheet's verb, with its
+    /// keys in [`Entry::key`]. Never on the wire either.
+    Note,
 }
 
 /// One entry of a menu.
@@ -67,6 +73,30 @@ impl Entry {
         }
     }
 
+    /// A section's title in a list that is read rather than picked from.
+    pub fn heading(label: &str) -> Entry {
+        Entry {
+            label: label.to_string(),
+            verb: None,
+            kind: EntryKind::Heading,
+            enabled: true,
+            icon: None,
+            key: None,
+        }
+    }
+
+    /// A row that is read: `label`, and `key` at its right.
+    pub fn note(label: &str, key: &str) -> Entry {
+        Entry {
+            label: label.to_string(),
+            verb: None,
+            kind: EntryKind::Note,
+            enabled: true,
+            icon: None,
+            key: Some(key.to_string()),
+        }
+    }
+
     pub fn separator() -> Entry {
         Entry {
             label: String::new(),
@@ -80,7 +110,11 @@ impl Entry {
 
     /// Whether a pointer or a key can land on this entry.
     pub fn pickable(&self) -> bool {
-        self.enabled && !matches!(self.kind, EntryKind::Separator)
+        self.enabled
+            && !matches!(
+                self.kind,
+                EntryKind::Separator | EntryKind::Heading | EntryKind::Note
+            )
     }
 
     pub fn is_separator(&self) -> bool {
@@ -179,7 +213,7 @@ impl Entry {
             EntryKind::Submenu(entries) => {
                 o.insert("menu".into(), to_json(entries));
             }
-            EntryKind::Action | EntryKind::Separator => {}
+            EntryKind::Action | EntryKind::Separator | EntryKind::Heading | EntryKind::Note => {}
         }
         if !self.enabled {
             o.insert("enabled".into(), Value::from(false));
@@ -275,7 +309,7 @@ pub fn show_keys(entries: &mut [Entry], chord: &dyn Fn(&str) -> Option<String>) 
     for e in entries {
         match &mut e.kind {
             EntryKind::Submenu(sub) => show_keys(sub, chord),
-            EntryKind::Separator => {}
+            EntryKind::Separator | EntryKind::Heading | EntryKind::Note => {}
             _ => e.key = e.verb.as_deref().and_then(chord),
         }
     }
@@ -343,7 +377,9 @@ pub fn pick(entries: &mut Vec<Entry>, path: &[usize]) -> Option<Pick> {
             }
             Some(true)
         }
-        EntryKind::Separator | EntryKind::Submenu(_) => return None,
+        EntryKind::Separator | EntryKind::Heading | EntryKind::Note | EntryKind::Submenu(_) => {
+            return None;
+        }
     };
     Some(Pick { verb, state })
 }

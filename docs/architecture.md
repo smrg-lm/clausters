@@ -1104,9 +1104,11 @@ host opens the window whole, since with no holder beside it the window is the
 only way to reach what the editor does. A client has the handle, and may open
 the editor *bare* (`"chrome": false` in the open request,
 `ScoreEditor::set_bare`): the crate then names no tool, no palette entry and no
-dialog for the caller to number, and composes no menu bar and no status line
-— the window is the page in its scroll, so none of the rest is engraved for,
-sent or corrected. The window's `keys` are not chrome: they are bindings of the
+dialog for the caller to number, and composes no menu bar — the window is the
+page in its scroll over the status line, so none of the rest is engraved for,
+sent or corrected. The status line stays because it is where a verb a client
+called says why it was refused: no gesture asked for it, so the host has no
+edit of its own to say the reason on. The window's `keys` are not chrome: they are bindings of the
 host's key table in the scopes the window names, so every key verb is still
 the editor's. The switch is in the crate because the composition is; a client
 passes one option through and adds nothing of its own.

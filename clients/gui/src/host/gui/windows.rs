@@ -359,7 +359,17 @@ impl App {
     /// gone in standalone mode -- so the embedded audio server is dropped (and
     /// `/server_quit`ed) rather than left running with no window. A script-driven host
     /// stays alive (the script may open another window); only standalone exits.
+    ///
+    /// **A window whose owner asks first is not closed here** (`ask_close`):
+    /// the owner is told, and frees it once nothing is left to lose.
     pub(super) fn user_close(&mut self, id: i32, event_loop: &ActiveEventLoop) {
+        let ctx = self.gesture_ctx(id);
+        if let Some(ws) = self.windows.get_mut(&id)
+            && let Some(effects) = ws.gestures.close(&mut self.host, &ctx)
+        {
+            self.apply_gesture_effects(effects);
+            return;
+        }
         self.close_by_user(id);
         if self.standalone && self.windows.is_empty() {
             event_loop.exit();

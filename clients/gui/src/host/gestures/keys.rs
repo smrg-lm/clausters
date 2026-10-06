@@ -376,6 +376,7 @@ impl Gestures {
                 };
                 self.clipboard_key(host, ctx, clip, cx, cy, clipboard)
             }
+            Verb::Keys => Some(super::popups::open_keys(host, ctx)),
             Verb::Quantize | Verb::Split | Verb::Join | Verb::Delete => None,
         }
     }

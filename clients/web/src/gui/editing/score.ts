@@ -149,14 +149,16 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
     /** The server it plays on; absent, the ambient one when it first plays. */
     server?: Server | null;
     /**
-     * `false` opens the page alone, in its scroll: no menu bar, no toolbar, no
-     * palettes, no status line and no dialogs, none of them composed -- the
-     * window a page wants when it edits through this handle and reads the
-     * score back. The keys stay (N and note entry, the arrows, Delete, the
-     * space bar, Ctrl+Z), and so does every verb of the editor. A verb refused
-     * says why on the status line, which such a window does not have: the
-     * verb answers `false`. What a form asked -- the path of a first Ctrl+S
-     * -- is asked of the handle instead ({@link ScoreEditor.save}).
+     * `false` opens the page alone, in its scroll, over the status line: no
+     * menu bar, no toolbar, no palettes and no dialogs, none of them composed
+     * -- the window a page wants when it edits through this handle and reads
+     * the score back. The keys stay (N and note entry, the arrows, Delete,
+     * the space bar, Ctrl+Z; F1 shows them all), and so does every verb of
+     * the editor. A verb refused answers `false` and says why on the status
+     * line. What a form asked -- the path of a first Ctrl+S -- is asked of
+     * the handle instead ({@link ScoreEditor.save}), and the window's close
+     * mark closes it at once, since the score it edits is the one this
+     * handle holds.
      */
     chrome?: boolean;
 }

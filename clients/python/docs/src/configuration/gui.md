@@ -275,7 +275,11 @@ chord reports `"export"` from the window, which the script answers in the
 window's `on_event` like any other event. When the window *has* a menu bar with
 an entry for that verb, the key reports exactly that entry's pick
 (`"menu", "export"`), so one handler covers both; and a menu shows the chord
-beside every entry whose verb is bound.
+beside every entry whose verb is bound. **F1 shows them all** (the verb
+`keys`): a sheet over the window listing every key in force in it and what it
+does, which its close mark or Escape takes down. The host's own verbs read in
+words there; one an application or a user bound reads as its name, so
+`select_all` is *Select all*.
 
 `--keys <path>` reads the same flat table from a free-standing file, laid over
 the section, so a user's keys travel as one file. A script can also bind keys

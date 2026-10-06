@@ -21,6 +21,7 @@ impl Host {
     ///
     /// Returns whether anything was retired.
     pub fn settle(&mut self, acked: ack::Acked) -> bool {
+        self.owner_answered();
         let reason = acked.reason.clone();
         let settled = self.outbox.borrow_mut().ack(acked);
         if settled.is_empty() {

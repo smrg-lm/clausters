@@ -40,6 +40,7 @@ pub(super) fn build_kind(
             status: props.get("status").and_then(truthy).unwrap_or(true),
             plays: props.get("plays").and_then(truthy).unwrap_or(false),
             keys: props.get("keys").map(scopes).unwrap_or_default(),
+            ask_close: props.get("ask_close").and_then(truthy).unwrap_or(false),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its

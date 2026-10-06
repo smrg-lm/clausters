@@ -417,7 +417,32 @@ test("a marker added in the roll is refused and says why", async () => {
 
 // ---- the acceptance the track was opened with ----
 
-test("edit called twice gives two windows and one stack", async () => {
+test("edit over a structure with its editor open hands that one back", async () => {
+    // A second window of one role over one structure would ask for the same
+    // widgets as the first: `edit` hands back the editor that is open instead,
+    // and opens nothing. Another role is another window -- a roll in hertz
+    // beside one in MIDI notes -- and a closed editor is not handed back.
+    const fake = new FakeHost();
+    const host = asHost(fake);
+    const curve = aCurve();
+    const first = await edit(curve, { sampleRate: SR, host });
+    assert.equal(await edit(curve, { sampleRate: SR, host, title: "again" }), first);
+    assert.equal(fake.trees.length, 1, "nothing else was opened");
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const keys = await edit(seq, { sampleRate: SR, host });
+    assert.equal(await edit(seq, { sampleRate: SR, host }), keys);
+    const hertz = await edit(seq, { sampleRate: SR, host, yAxis: "hz" });
+    assert.notEqual(hertz, keys);
+    assert.equal(await edit(seq, { sampleRate: SR, host, yAxis: "hz" }), hertz);
+    // one structure, two editors of their own kinds: the curve's is not the
+    // roll's, and another curve is another window
+    assert.notEqual(await edit(aCurve(), { sampleRate: SR, host }), first);
+    first.close();
+    assert.notEqual(await edit(curve, { sampleRate: SR, host }), first);
+});
+
+test("two editors over one structure share one stack", async () => {
     const curve = aCurve();
     const left = await edit(curve, { sampleRate: SR, open: false });
     const right = await edit(curve, { sampleRate: SR, open: false });

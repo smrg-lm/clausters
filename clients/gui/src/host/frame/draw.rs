@@ -951,8 +951,37 @@ fn draw_list(
     let rect = at.rect;
     over.set_clip(None);
     over.rect(rect, theme.popup);
-    over.set_clip(Some(rect));
     let glyph = font::height(size);
+    // A list standing on its own says what it is on a strip, which ends in
+    // its close mark -- a dialog's, drawn the same way.
+    if let Some(strip) = at.strip {
+        over.set_clip(Some(strip));
+        over.rect(strip, theme.header);
+        let ty = strip.y + (strip.h - glyph) * 0.5;
+        let close = at.close();
+        let end = close.map_or(strip.x + strip.w, |c| c.x);
+        font::text_ellipsis(
+            over,
+            popup::KEYS_TITLE,
+            strip.x + m.pad,
+            ty,
+            (end - m.pad - strip.x - m.pad).max(0.0),
+            size,
+            theme.text,
+        );
+        if let Some(c) = close {
+            font::text_centered(
+                over,
+                &font::symbol::CLOSE.to_string(),
+                c,
+                size,
+                theme.text_dim,
+            );
+        }
+    }
+    // the rows, cut to where they are seen: under the strip
+    let rect = at.body();
+    over.set_clip(Some(rect));
     let gutter = popup::gutter(size, m);
     let left = if level
         .entries
@@ -989,10 +1018,13 @@ fn draw_list(
         if level.hover == Some(i) && entry.pickable() {
             over.rect(*row, theme.hover);
         }
-        let ink = if entry.enabled {
-            theme.text
-        } else {
+        let ink = if !entry.enabled {
             theme.text_disabled
+        } else if matches!(entry.kind, crate::host::menu::EntryKind::Heading) {
+            // a section's name reads apart from the rows it names
+            theme.accent
+        } else {
+            theme.text
         };
         let cy = row.y + row.h * 0.5;
         let ty = row.y + (row.h - glyph) * 0.5;
@@ -1042,7 +1074,7 @@ fn draw_list(
         over.tri([x - s, y - s], [x + s, y - s], [x, y], theme.accent);
     }
     over.set_clip(None);
-    over.border(rect, m.divider_w, theme.frame);
+    over.border(at.rect, m.divider_w, theme.frame);
 }
 
 /// Draws the **status bar** into `band`: the window's newest line, or -- open --

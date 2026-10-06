@@ -1260,3 +1260,140 @@ fn a_windows_key_scopes_are_read_before_the_table() {
     assert!(host.window_keys(1).is_empty());
     assert!(g.press_key(&mut host, &ctx, Key::Escape, None).is_none());
 }
+
+/// **F1 shows the window's keys**, in the middle of the window: a section
+/// per scope in force and the table's own, read and never picked. A press
+/// anywhere but its close mark is swallowed; the close mark and Escape take
+/// it down.
+#[test]
+fn f1_shows_the_windows_keys_until_its_close_mark_or_escape() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","keys":["score"],"children":[
+            {"id":6,"type":"button","label":"under","weight":1}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let effects = g
+        .press_key(&mut host, &ctx, Key::F(1), None)
+        .expect("consumed");
+    assert!(
+        emitted(&effects, 1).is_empty(),
+        "the host's, not the owner's"
+    );
+    let stack = host.popup(1).expect("the sheet is up");
+    assert_eq!(stack.owner, Owner::Keys);
+    let labels: Vec<&str> = stack.levels[0]
+        .entries
+        .iter()
+        .map(|e| e.label.as_str())
+        .collect();
+    assert!(labels.contains(&"Score") && labels.contains(&"Window"));
+    assert!(labels.contains(&"Note entry on or off"));
+    assert!(stack.levels[0].entries.iter().all(|e| !e.pickable()));
+    // centred, with a strip that ends in the close mark
+    let placed = host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap();
+    let sheet = &placed[0];
+    let mark = sheet.close().expect("the sheet has a close mark");
+    let work = host.content_area(1, ctx.fb_w, ctx.fb_h);
+    assert!(
+        ((sheet.rect.x + sheet.rect.w * 0.5) - (work.x + work.w * 0.5)).abs() < 1.0,
+        "{:?} stands in the middle of {work:?}",
+        sheet.rect
+    );
+    // a press on a row, and one off the sheet, leave it up and reach nothing
+    let row = sheet.rows[1];
+    let effects = click(&mut g, &mut host, &ctx, mid(row));
+    assert!(emitted(&effects, 6).is_empty());
+    assert!(host.popup(1).is_some(), "a row does not take it down");
+    let effects = click(&mut g, &mut host, &ctx, (2.0, 2.0));
+    assert!(
+        emitted(&effects, 6).is_empty(),
+        "the button under it is not reached"
+    );
+    assert!(host.popup(1).is_some(), "a press off it does not either");
+    click(&mut g, &mut host, &ctx, mid(mark));
+    assert!(host.popup(1).is_none(), "its close mark does");
+    g.press_key(&mut host, &ctx, Key::F(1), None);
+    assert!(host.popup(1).is_some());
+    g.press_key(&mut host, &ctx, Key::Escape, None);
+    assert!(host.popup(1).is_none(), "and so does Escape");
+}
+
+/// **A sheet taller than the window scrolls**: the arrows a row at a time,
+/// Home and End to its ends, and never past them.
+#[test]
+fn the_key_sheet_scrolls_by_the_arrows_and_the_ends() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","keys":["score","note_entry"],
+            "children":[{"id":6,"type":"label","text":"x","weight":1}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 240);
+    g.press_key(&mut host, &ctx, Key::F(1), None);
+    let placed = |host: &Host| host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap()[0].clone();
+    let first = placed(&host);
+    assert!(
+        first.max_scroll > 0.0,
+        "the sheet is longer than the window"
+    );
+    assert!(
+        first.rows[0].y >= first.body().y,
+        "the rows start under the strip"
+    );
+    g.press_key(&mut host, &ctx, Key::Down, None);
+    assert!(placed(&host).scroll > 0.0);
+    g.press_key(&mut host, &ctx, Key::End, None);
+    assert_eq!(placed(&host).scroll, first.max_scroll);
+    g.press_key(&mut host, &ctx, Key::Down, None);
+    assert_eq!(placed(&host).scroll, first.max_scroll, "no further");
+    g.press_key(&mut host, &ctx, Key::Up, None);
+    assert!(placed(&host).scroll < first.max_scroll);
+    g.press_key(&mut host, &ctx, Key::Home, None);
+    assert_eq!(placed(&host).scroll, 0.0);
+    assert!(host.popup(1).is_some(), "walking it never takes it down");
+}
+
+/// **A window whose owner asks first is not closed by its close mark**: the
+/// window reports `close` -- its bar's entry, where it has one -- and stays
+/// until the owner frees it. A second request the owner has not answered
+/// closes it; a window that does not ask closes at once.
+#[test]
+fn a_window_that_asks_first_reports_its_close_to_the_owner() {
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let mut host = host_from(r#"{"type":"window","ask_close":true,"children":[]}"#);
+    let effects = g.close(&mut host, &ctx).expect("the owner is asked");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![OscType::String("close".into())]]
+    );
+    assert!(
+        g.close(&mut host, &ctx).is_none(),
+        "asked again with no answer, it closes"
+    );
+    // an owner that answered is asked again
+    g.close(&mut host, &ctx).expect("asked");
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: super::super::GUI_ACK.into(),
+            args: vec![OscType::Int(1), OscType::Int(0)],
+        }),
+        from(),
+    );
+    assert!(g.close(&mut host, &ctx).is_some(), "asked, not closed");
+    // a bar with a Close entry: the mark is that entry's pick
+    let mut host = host_from(
+        r#"{"type":"window","ask_close":true,
+            "menu":[{"label":"File","menu":[{"label":"Close","verb":"close"}]}],"children":[]}"#,
+    );
+    let effects = g.close(&mut host, &ctx).expect("asked");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![
+            OscType::String("menu".into()),
+            OscType::String("close".into())
+        ]]
+    );
+    let mut host = host_from(r#"{"type":"window","children":[]}"#);
+    assert!(g.close(&mut host, &ctx).is_none(), "it does not ask");
+}

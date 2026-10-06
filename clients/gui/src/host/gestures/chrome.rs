@@ -1,7 +1,8 @@
 //! The gestures of what a container shows of itself ([`crate::host::chrome`]):
 //! folding a section by its title strip, moving a divider of a split strip,
 //! dragging a plane's scroll bar -- and the one rule a dialog adds, that nothing
-//! behind it can be reached.
+//! behind it can be reached. And the window's own close, which a window whose
+//! owner asks first reports rather than performs ([`Gestures::close`]).
 //!
 //! They run before the tree's own hit test for the reason the status bar does:
 //! a title strip, a gap and a scroll bar are not widgets, so no widget is under
@@ -23,6 +24,11 @@ pub const COLLAPSED: &str = "collapsed";
 /// The tag a dialog reports when it is asked to go -- its close mark, or
 /// Escape.
 pub const CANCEL: &str = "cancel";
+
+/// The verb a window whose owner asks before it closes (`ask_close`) reports
+/// when it is asked to close: the File menu's Close, whose entry it is picked
+/// as when the window's bar has one.
+pub const CLOSE: &str = "close";
 
 /// The tag a moved divider reports: `"split"` and the size of each child of
 /// the strip along it, in logical pixels.
@@ -119,6 +125,30 @@ fn write(host: &mut Host, def_id: i32, split: &Split, sizes: &[f32]) {
 }
 
 impl Gestures {
+    /// **The window was asked to close** -- the close mark on its frame, or a
+    /// desktop window's Escape with nothing open. `None` when it closes now,
+    /// which the front does. With `ask_close` its owner is asked instead: the
+    /// window reports [`CLOSE`] -- as its bar's entry for it, when the bar has
+    /// one, so the mark and the menu are one command -- and stays up until
+    /// the owner frees it ([`Host::close_request`]).
+    pub fn close(&mut self, host: &mut Host, ctx: &GestureCtx) -> Option<Vec<GestureEffect>> {
+        if host.close_request(ctx.def_id) {
+            return None;
+        }
+        let mut out = vec![GestureEffect::Redraw(ctx.def_id)];
+        host.close_popup(ctx.def_id);
+        if super::popups::pick_verb(host, ctx, &mut out, CLOSE).is_none() {
+            emit(
+                host,
+                &mut out,
+                ctx.def_id,
+                ctx.def_id,
+                vec![OscType::String(CLOSE.into())],
+            );
+        }
+        Some(out)
+    }
+
     /// Whether a dialog is up and `(cx, cy)` is **behind** it: a press there
     /// reaches nothing, since nothing behind a dialog can be reached.
     pub(super) fn behind_dialog(&self, host: &Host, ctx: &GestureCtx, cx: f64, cy: f64) -> bool {

@@ -252,8 +252,7 @@ read keeps the dialog up and the status bar says why.
 
 ### Without the chrome: the page and the handle
 
-The chrome — the menu bar, the toolbar, the palettes, the status line, the
-dialogs — is how a hand reaches what the editor does when nothing else can: a
+The chrome — the menu bar, the toolbar, the palettes, the dialogs — is how a hand reaches what the editor does when nothing else can: a
 standalone host opens the application with nobody beside it, so there the
 window is whole, always. A script has the handle, and can open the same editor
 with none of it:
@@ -263,15 +262,17 @@ editor = edit(score, chrome=False)
 editor.on_change = lambda: process(score.render_events())
 ```
 
-`chrome=False` is the page in its scroll. Nothing around it is composed, so
-nothing around it is engraved for, sent or kept current: the window of the
-example is three widgets where the whole application is over two hundred, and
+`chrome=False` is the page in its scroll, over the status line. Nothing else
+is composed, so nothing else is engraved for, sent or kept current: the window
+of the example is four widgets where the whole application is over two hundred, and
 a quarter of the bytes. **The keys are not chrome and stay** — `N` and note
 entry, the arrows and Delete over the selection, the space bar, Ctrl+Z —
-since a key is a binding of the window and not an entry of a menu. Every verb
-of the handle stays too, and with no status line to say why one was refused,
-its answer is what says so. What a dialog asked is asked of the handle: a
-score with no file yet is saved with `editor.save(path)`.
+since a key is a binding of the window and not an entry of a menu, and F1
+lists every one of them on a sheet over the window. Every verb of the handle
+stays too: one refused answers so, and the status line says why. What a
+dialog asked is asked of the handle: a score with no file yet is saved with
+`editor.save(path)`, and the window's close mark closes it at once, since the
+score is the one the handle holds.
 
 What a hand writes there is read where everything else is, on the score the
 script holds: `score.sheet()` is its model and `score.render_events()` the sequence it

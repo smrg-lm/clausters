@@ -102,6 +102,8 @@ if (!existsSync(engraver)) {
             bar.map((title) => title.label),
             ["File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"],
         );
+        // ...and its close mark asks first, as the File menu's Close does
+        assert.equal((tree as unknown as { ask_close: boolean }).ask_close, true);
     });
 
     test("opening writes the page from the model", async () => {
@@ -284,18 +286,21 @@ if (!existsSync(engraver)) {
 
     test("without chrome the window is the page and the handle edits", async () => {
         const score = await Score.open(PHRASE);
-        const editor = (await edit(score, { open: false, chrome: false })) as ScoreEditor;
+        const editor = (await edit(score, { open: false, chrome: false })) as unknown as ScoreEditor;
         assert.ok(editor instanceof ScoreEditor);
         assert.equal(editor.chrome, false);
         const tree = editor.draw() as GuiNode & Record<string, unknown>;
-        // the page in its scroll, and nothing around it: no toolbar, no
-        // palettes, no status line, no dialogs, no menu bar, no symbol to
-        // label a tool with
-        assert.equal(tree.children?.length, 1);
-        const scroll = (tree.children ?? [])[0];
+        // the page in its scroll over the status line, and nothing else: no
+        // toolbar, no palettes, no dialogs, no menu bar, no symbol to label a
+        // tool with -- and with no form to ask in, its close mark closes at
+        // once
+        assert.equal(tree.children?.length, 2);
+        const [scroll, status] = tree.children ?? [];
         assert.equal(scroll.type, "plane");
         assert.equal((scroll.children ?? [])[0].type, "score");
+        assert.equal(status.type, "label");
         assert.ok(!("menu" in tree) && !("glyphs" in tree));
+        assert.equal(tree.ask_close, false);
         // the keys are the window's, and stay
         assert.deepEqual(tree.keys, ["score"]);
         assert.equal(tree.plays, true);
@@ -318,7 +323,7 @@ if (!existsSync(engraver)) {
         const played = [...score.renderEvents()].map(([, event]) => event.get("midinote"));
         assert.equal(played.length, items(score).length);
         assert.equal(played[0], 79);
-        // a verb refused answers so, with no status line to say why
+        // a verb refused answers so, and the status line says why
         editor.select([]);
         assert.equal(editor.tie(), false);
         // and the whole window is what opens when nothing asks otherwise

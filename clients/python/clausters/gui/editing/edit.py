@@ -28,12 +28,18 @@ both. They are the crate's now
 structure with a vocabulary, a picture and an inverse like any other, and
 opening it here is what gives it the history every other editor has.
 
-Two calls over one structure give **two windows and one stack**: the editing
+**A second call over a structure hands back the editor already open on it**
+(of the same kind, and -- for a roll -- over the same axis), with its window as
+it is: a view names its widgets by what they draw, so a second window of one
+role over one structure would ask for the same widgets as the first and draw
+on them. Views of different roles over one structure are separate windows and
+**one stack** -- a roll in hertz beside one in MIDI notes -- since the editing
 context is the data's (`clausters.gui.editing.Editing`), so an undo in either
-updates both. That is not a feature of this verb -- it is what asking the data for
-its history means, and `edit` inherits it for free.
+updates both. That is not a feature of this verb -- it is what asking the data
+for its history means, and `edit` inherits it for free.
 """
 
+from ...history import Editing
 from ...seq.timeline import Timeline
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
@@ -84,7 +90,10 @@ def edit(structure, *, sample_rate: float = 0.0,
             roll's vertical axis: ``"midi"`` or ``"hz"``.
 
     Returns:
-        The editor, **open**. It is the handle the window is addressed by --
+        The editor, **open** -- the one already open over ``structure``, when
+        there is one of its kind (and, for a roll, over the same axis): then
+        nothing is opened, and the options of this call are not applied. It is
+        the handle the window is addressed by --
         `clausters.gui.editing.Editor.close`, `Editor.on_closed`, `undo`/`redo`
         -- and a caller who wants none of that may discard it: the host holds an
         open editor until its window closes, so ``edit(curve)`` on its own is a
@@ -98,6 +107,10 @@ def edit(structure, *, sample_rate: float = 0.0,
             they are -- an unopenable structure is a question about the data,
             and answering it with a bare failure teaches nothing.
     """
+    if open:
+        opened = _already_open(structure, host, options)
+        if opened is not None:
+            return opened
     if is_take(structure):
         editor = AudioEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):
@@ -128,6 +141,30 @@ def edit(structure, *, sample_rate: float = 0.0,
     if open:
         editor.open(host)
     return editor
+
+
+def _already_open(structure, host, options):
+    """**The editor already open over ``structure``** that this call would
+    open again -- the same kind, the same structure, the same axis for a roll,
+    on the same host when one is named -- or ``None``.
+
+    Found among the views of the structure's editing context, since every
+    editor attaches there when it opens. A timeline is rendered into a new
+    sequence by each call, so it never finds one."""
+    kinds = ((is_take, AudioEditor), (is_curve, PointsEditor), (is_events, NotesEditor),
+             (is_score, ScoreEditor), (is_multitrack, MultitrackEditor))
+    kind = next((k for test, k in kinds if test(structure)), None)
+    if kind is None or isinstance(structure, Timeline):
+        return None
+    context = options.get("context") or Editing.of(structure)
+    axis = str(options.get("y_axis", "midi"))
+    for view in context.views():
+        if (type(view) is kind and view.structure is structure
+                and view.window is not None
+                and (host is None or view._host is host)
+                and (kind is not NotesEditor or view.y_axis == axis)):
+            return view
+    return None
 
 
 def _ambient_rate() -> float:

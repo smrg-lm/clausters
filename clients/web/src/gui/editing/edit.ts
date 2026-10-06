@@ -16,16 +16,21 @@
  * other, and opening it here is what gives it the history every other editor
  * has.
  *
- * Two calls over one structure give **two windows and one stack**: the editing
- * context is the data's ({@link Editing}), so an undo in either updates both.
- * That is not a feature of this verb -- it is what asking the data for its history
- * means, and `edit` inherits it for free.
+ * **A second call over a structure hands back the editor already open on it**
+ * (of the same kind, and -- for a roll -- over the same axis), with its window
+ * as it is: a view names its widgets by what they draw, so a second window of
+ * one role over one structure would ask for the same widgets as the first and
+ * draw on them. Views of different roles over one structure are separate
+ * windows and **one stack** -- a roll in hertz beside one in MIDI notes --
+ * since the editing context is the data's ({@link Editing}), so an undo in
+ * either updates both. That is not a feature of this verb -- it is what asking
+ * the data for its history means, and `edit` inherits it for free.
  *
  * @module
  */
 
 import type { Application } from "./application.ts";
-import type { Editing } from "../../history.ts";
+import { Editing } from "../../history.ts";
 import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
@@ -175,7 +180,9 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
  * Opens `structure` in an editor of its own kind -- a `Buffer` (its samples), an
  * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
  * multitrack) or a `Score` (a symbolic score, on its page, in place) -- and
- * answers the open editor.
+ * answers the open editor: the one already open over `structure`, when there
+ * is one of its kind (and, for a roll, over the same axis), in which case
+ * nothing is opened and the options of this call are not applied.
  *
  * **It opens.** The window is up and listening when this resolves, so the
  * structure the caller already holds is the edited one from that moment: read
@@ -198,6 +205,10 @@ export async function edit(
     // events, as concrete data in the timeline's beats with its map. The
     // timeline itself is code and is left as it was; the sequence is the
     // editor's `sequence`.
+    if (options.open !== false) {
+        const already = alreadyOpen(structure, options);
+        if (already !== null) return already;
+    }
     const { until, ...rest } = options;
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
     // A take knows its own rate; anything else takes the ambient server's.
@@ -207,6 +218,42 @@ export async function edit(
         await editor.open(options.host, { stage: options.stage });
     }
     return editor;
+}
+
+/**
+ * **The editor already open over `structure`** that this call would open
+ * again -- the same kind, the same structure, the same axis for a roll, on the
+ * same host when one is named -- or `null`.
+ *
+ * Found among the views of the structure's editing context, since every
+ * editor attaches there when it opens. A timeline is rendered into a new
+ * sequence by each call, so it never finds one.
+ */
+function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | null {
+    const kinds: [(s: unknown) => boolean, new (...args: never[]) => object][] = [
+        [isTake, AudioEditor],
+        [isCurve, PointsEditor],
+        [isEvents, NotesEditor],
+        [isScore, ScoreEditor],
+        [isMultitrack, MultitrackEditor],
+    ];
+    const kind = kinds.find(([test]) => test(structure))?.[1];
+    if (kind === undefined || structure instanceof Timeline) return null;
+    const context = options.context ?? Editing.of(structure as object);
+    const axis = options.yAxis ?? "midi";
+    for (const view of context.views()) {
+        const editor = view as unknown as Editor<never>;
+        if (
+            editor.constructor === kind &&
+            editor.structure === structure &&
+            editor.window !== null &&
+            (options.host === undefined || editor.app.host === options.host) &&
+            (kind !== NotesEditor || (editor as unknown as NotesEditor).yAxis === axis)
+        ) {
+            return editor;
+        }
+    }
+    return null;
 }
 
 /**

@@ -51,11 +51,14 @@ pub enum Verb {
     Join,
     /// Remove what is held.
     Delete,
+    /// Show the window's keys: the sheet of what each key does in it
+    /// ([`Keymap::sheet`]).
+    Keys,
 }
 
 impl Verb {
     /// Every host verb, with the name the table and the wire spell it with.
-    pub const ALL: [(Verb, &'static str); 13] = [
+    pub const ALL: [(Verb, &'static str); 14] = [
         (Verb::ViewAll, "view_all"),
         (Verb::Play, "play"),
         (Verb::Loop, "loop"),
@@ -69,6 +72,7 @@ impl Verb {
         (Verb::Split, "split"),
         (Verb::Join, "join"),
         (Verb::Delete, "delete"),
+        (Verb::Keys, "keys"),
     ];
 
     /// The host verb a name is, or `None` for an application's.
@@ -108,7 +112,104 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     ("split", &["E"]),
     ("join", &["J"]),
     ("delete", &["Delete", "Backspace"]),
+    ("keys", &["F1"]),
 ];
+
+/// **What each verb of the default table does**, in the words a key sheet
+/// shows it with ([`Keymap::sheet`]). A verb not here -- one a config or an
+/// application bound -- is shown by its name ([`describe`]).
+const DESCRIBED: &[(&str, &str)] = &[
+    ("undo", "Undo"),
+    ("redo", "Redo"),
+    ("save", "Save"),
+    ("view_all", "Show the whole view"),
+    ("play", "Play or stop"),
+    ("loop", "Loop on or off"),
+    ("to_start", "Cursor to the start"),
+    ("to_end", "Cursor to the end"),
+    ("copy", "Copy"),
+    ("cut", "Cut"),
+    ("paste", "Paste"),
+    ("mix", "Paste onto what is there"),
+    ("quantize", "Quantize to the grid"),
+    ("split", "Split at the cursor"),
+    ("join", "Join what touches"),
+    ("delete", "Delete"),
+    ("keys", "Show the keys"),
+    ("entry", "Note entry on or off"),
+    ("entry_off", "Leave note entry"),
+    ("deselect", "Select nothing"),
+    ("select_left", "Select the item before"),
+    ("select_right", "Select the item after"),
+    ("step_up", "Up a step"),
+    ("step_down", "Down a step"),
+    ("octave_up", "Up an octave"),
+    ("octave_down", "Down an octave"),
+    ("pitch_a", "Write an A"),
+    ("pitch_b", "Write a B"),
+    ("pitch_c", "Write a C"),
+    ("pitch_d", "Write a D"),
+    ("pitch_e", "Write an E"),
+    ("pitch_f", "Write an F"),
+    ("pitch_g", "Write a G"),
+    ("chord_a", "Add an A to the chord"),
+    ("chord_b", "Add a B to the chord"),
+    ("chord_c", "Add a C to the chord"),
+    ("chord_d", "Add a D to the chord"),
+    ("chord_e", "Add an E to the chord"),
+    ("chord_f", "Add an F to the chord"),
+    ("chord_g", "Add a G to the chord"),
+    ("cursor_left", "Cursor back"),
+    ("cursor_right", "Cursor forward"),
+    ("bar_left", "Cursor to the bar before"),
+    ("bar_right", "Cursor to the bar after"),
+    ("staff_up", "Cursor to the staff above"),
+    ("staff_down", "Cursor to the staff below"),
+    ("voice_1", "Voice 1"),
+    ("voice_2", "Voice 2"),
+    ("voice_3", "Voice 3"),
+    ("voice_4", "Voice 4"),
+    ("value_64th", "Sixty-fourth note"),
+    ("value_32nd", "Thirty-second note"),
+    ("value_16th", "Sixteenth note"),
+    ("value_eighth", "Eighth note"),
+    ("value_quarter", "Quarter note"),
+    ("value_half", "Half note"),
+    ("value_whole", "Whole note"),
+    ("dot", "Dotted"),
+    ("enter_rest", "Rest"),
+];
+
+/// **What verb `verb` does**, as a key sheet says it: the default table's
+/// words for its own verbs, and for any other the name, read as words
+/// (`select_all` is "Select all").
+pub fn describe(verb: &str) -> String {
+    if let Some((_, words)) = DESCRIBED.iter().find(|(v, _)| *v == verb) {
+        return (*words).to_string();
+    }
+    words(verb)
+}
+
+/// A name as words: underscores are spaces and the first letter is a
+/// capital.
+fn words(name: &str) -> String {
+    let spaced = name.replace('_', " ");
+    let mut chars = spaced.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// One section of a window's key sheet ([`Keymap::sheet`]): what it is
+/// called, and each verb in it with the keys that perform it there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section {
+    pub title: String,
+    /// `(what the verb does, its keys)`, the keys spelled as a menu shows
+    /// them and joined by commas.
+    pub rows: Vec<(String, String)>,
+}
 
 /// A table's rows: each verb and the chords that perform it.
 type Rows = &'static [(&'static str, &'static [&'static str])];
@@ -368,6 +469,40 @@ impl Keymap {
             .map(|c| c.label(self.mac))
     }
 
+    /// **The keys of a window where `scopes` are in force**, as a sheet a
+    /// reader looks them up in: one section per scope, the one read first
+    /// first, then the table's own rows. A chord is listed only where it is
+    /// what a press does in that window -- a scope's arrow hides the table's
+    /// -- and a verb left with none is not listed, nor a section left empty.
+    pub fn sheet(&self, scopes: &[String]) -> Vec<Section> {
+        let mut named: Vec<Option<&str>> = scopes.iter().rev().map(|s| Some(s.as_str())).collect();
+        named.dedup();
+        named.push(None);
+        named
+            .into_iter()
+            .filter_map(|scope| {
+                let rows: Vec<(String, String)> = self
+                    .bindings
+                    .iter()
+                    .filter(|b| b.scope.as_deref() == scope)
+                    .filter_map(|b| {
+                        let live: Vec<String> = b
+                            .chords
+                            .iter()
+                            .filter(|c| {
+                                self.lookup_in(&c.key, c.mods, scopes) == Some(b.verb.as_str())
+                            })
+                            .map(|c| c.label(self.mac))
+                            .collect();
+                        (!live.is_empty()).then(|| (describe(&b.verb), live.join(", ")))
+                    })
+                    .collect();
+                let title = scope.map_or_else(|| "Window".to_string(), words);
+                (!rows.is_empty()).then_some(Section { title, rows })
+            })
+            .collect()
+    }
+
     /// Says the host runs on a Mac -- what a page learns from its browser,
     /// since the same wasm runs everywhere.
     pub fn on_mac(&mut self, mac: bool) {
@@ -622,6 +757,48 @@ mod tests {
         );
         assert_eq!(map.lookup(&Key::Char('e'), none), Some("split"));
         assert_eq!(map.label("pitch_c").as_deref(), Some("C"));
+    }
+
+    /// **A window's key sheet is what a press does in it**: its scopes
+    /// first, the one read first at the top, and a chord a scope takes over
+    /// listed only there.
+    #[test]
+    fn a_key_sheet_lists_what_each_key_does_in_the_window() {
+        let mut map = Keymap::default();
+        let entry = vec!["score".to_string(), "note_entry".to_string()];
+        let sheet = map.sheet(&entry);
+        let titles: Vec<&str> = sheet.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, ["Note entry", "Score", "Window"]);
+        let row = |section: usize, what: &str| {
+            sheet[section]
+                .rows
+                .iter()
+                .find(|(w, _)| w == what)
+                .map(|(_, keys)| keys.clone())
+        };
+        assert_eq!(row(0, "Write an E").as_deref(), Some("E"));
+        assert_eq!(row(0, "Cursor back").as_deref(), Some("Left"));
+        // the arrows are note entry's, so the selection's are not listed
+        assert_eq!(row(1, "Select the item before"), None);
+        // and E is a pitch, so the table's split is gone
+        assert_eq!(row(2, "Split at the cursor"), None);
+        assert_eq!(row(2, "Redo").as_deref(), Some("Ctrl+Shift+Z, Ctrl+Y"));
+        assert_eq!(row(2, "Show the keys").as_deref(), Some("F1"));
+        // a window with no scopes has the table alone, and a verb nobody
+        // described is shown by its name
+        assert!(map.bind("select_all", &["Ctrl+A"]).is_empty());
+        let plain = map.sheet(&[]);
+        assert_eq!(plain.len(), 1);
+        assert!(
+            plain[0]
+                .rows
+                .contains(&("Select all".to_string(), "Ctrl+A".to_string()))
+        );
+        assert!(
+            plain[0]
+                .rows
+                .contains(&("Split at the cursor".to_string(), "E".to_string()))
+        );
     }
 
     #[test]

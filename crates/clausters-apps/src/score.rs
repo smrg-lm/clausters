@@ -229,6 +229,10 @@ pub fn window(w: Window<'_>) -> Value {
         }),
         None => scroll,
     };
+    // **A window that can ask is asked before it closes**: its close mark is
+    // the File menu's Close, which asks first when something would be lost --
+    // and the asking is a dialog, so a window with none closes at once
+    let asks = dialogs.is_some();
     let children: Vec<Value> = toolbar
         .into_iter()
         .chain([work])
@@ -247,6 +251,7 @@ pub fn window(w: Window<'_>) -> Value {
         // **The keys are the editor's in its scopes**: `N` everywhere in the
         // window, and the letters, the arrows and the digits in note entry.
         "keys": keys,
+        "ask_close": asks,
         "children": children,
     });
     if let (Some(menu), Some(map)) = (menu, window.as_object_mut()) {
