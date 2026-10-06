@@ -332,10 +332,15 @@ Every sounding note is an event, a chord one event per note, and each still
 says what it is on the page (`clausters.seq.event.NOTATION_KEYS`): the pitch as it is written, its
 value, its staff and voice, its marks. A voice renders on a channel of its own.
 A staff's dynamics and hairpins are a curve of its channels as well as each
-note's attack, so a crescendo over a held note moves inside it; on a staff with
-two voices the same curve is on both channels, named as one group. Which of the
-two an instrument hears is the reading's: `interp={"dynamics_as": "attack"}` writes no curve,
-`"curve"` leaves the attacks unmarked, and `dynamics_cc` names the controller
+note's attack; on a staff with two voices the same curve is on both channels,
+named as one group. A hairpin is straight in amplitude from its first note's
+onset to its last one's, and one that ends on no dynamic holds the level it
+reached until the next one. A note held under it carries the hairpin as its
+own curve over `amp` too, so a crescendo moves inside a held note on a synth,
+which listens to no controller. Which of the two an instrument hears is the
+reading's — a struck sound hears the attack alone, a sustained one the curve
+as well: `interp={"dynamics_as": "attack"}` writes no curve and no
+note swells, `"curve"` leaves the attacks unmarked, and `dynamics_cc` names the controller
 (11, expression). What is no note's — the meter, the key, the clefs, the page
 and its text, a slur — is kept in the sequence's `notation` section.
 

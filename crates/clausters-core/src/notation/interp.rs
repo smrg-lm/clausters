@@ -144,6 +144,13 @@ pub struct Note {
     /// is held, to the note the slide is written to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glide: Option<f64>,
+    /// **A swell**: how the note's level moves while it is held, under a
+    /// hairpin, as `(beats from its onset, factor of its amp)` -- the level
+    /// is linear in amplitude between the points. Empty for a note whose
+    /// level holds, and for every note where the reading hears a dynamic in
+    /// the attack alone, as a struck or plucked sound does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub swell: Vec<(f64, f64)>,
 }
 
 /// **What a score sounds like, whole**: its notes, its tempo, its pedal, and
@@ -310,7 +317,8 @@ pub enum DynamicsAs {
     /// As a curve alone: a note's attack is the unmarked level, stressed by
     /// its place in the bar and its own accents.
     Curve,
-    /// Both.
+    /// Both -- and a note held under a hairpin swells with it, as its own
+    /// curve over `amp`, since a sustained sound grows inside the note.
     #[default]
     Both,
 }
@@ -660,6 +668,18 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
             }
         }
 
+        // **The level while it is held**, where the reading hears a dynamic in
+        // the attack and in the curve both: a held note under a hairpin moves
+        // with it, as a sustained sound does.
+        let swell = if interp.dynamics_as == DynamicsAs::Both {
+            swell_of(&hairpins, p.staff, p.t, sustain / beats)
+                .into_iter()
+                .map(|(after, factor)| (after * beats, factor))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let by = shifted(p.staff, p.t);
         let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch| Note {
             t,
@@ -678,6 +698,7 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
             accidental: pitch.forced.then(|| "written".to_string()),
             marks: marks.cloned().unwrap_or_default(),
             glide: glides.get(&p.item.id()).copied(),
+            swell: Vec::new(),
         };
         let pitches = p.item.pitches();
         // **Two notes alternating**, sixteenths of each in turn for the time
@@ -732,12 +753,18 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
             };
             for (k, pitch) in order.into_iter().enumerate() {
                 let late = step * k as f64;
-                notes.push(note(
+                let mut n = note(
                     t0 + late,
                     written_beats - late,
                     (sustain - late).max(step),
                     pitch,
-                ));
+                );
+                // a note rolled in late swells from where it comes in
+                n.swell = swell
+                    .iter()
+                    .map(|&(after, factor)| ((after - late).max(0.0), factor))
+                    .collect();
+                notes.push(n);
             }
         }
     }
@@ -804,6 +831,40 @@ fn prevailing(dynamics: &[Vec<(Ratio, f64)>], staff: usize, t: Ratio) -> Option<
         .map(|&(_, amp)| amp)
 }
 
+/// **How a note's level moves while it is held**, from its onset `t` for
+/// `held` whole notes: `(whole notes after the onset, factor of the level at
+/// the onset)` at the onset, wherever a hairpin turns inside it and at its
+/// end; straight between them, as a hairpin is. Empty where it holds.
+///
+/// It follows the hairpins alone. The note took the dynamic in force when it
+/// was struck, and a held note does not jump to one written while it sounds;
+/// what it reaches at a hairpin's end it keeps -- the arrival, written or not.
+fn swell_of(hairpins: &[Hairpin], staff: usize, t: Ratio, held: f64) -> Vec<(f64, f64)> {
+    let (from, to) = (t.to_f64(), t.to_f64() + held);
+    let over: Vec<&Hairpin> = hairpins.iter().filter(|h| h.staff == staff).collect();
+    let factor = |m: f64| over.iter().map(|h| h.reach(m)).product::<f64>();
+    let at_onset = factor(from);
+    if at_onset <= 0.0 || held <= 0.0 {
+        return Vec::new();
+    }
+    let mut turns: Vec<f64> = over
+        .iter()
+        .flat_map(|h| [h.start.to_f64(), h.end.to_f64()])
+        .filter(|&m| m > from && m < to)
+        .chain([to])
+        .collect();
+    turns.sort_by(f64::total_cmp);
+    turns.dedup();
+    let points: Vec<(f64, f64)> = turns
+        .into_iter()
+        .map(|m| (m - from, factor(m) / at_onset))
+        .collect();
+    if points.iter().all(|&(_, f)| (f - 1.0).abs() < 1e-9) {
+        return Vec::new();
+    }
+    std::iter::once((0.0, 1.0)).chain(points).collect()
+}
+
 /// A crescendo or diminuendo, resolved to the stretch of time it shapes.
 struct Hairpin {
     staff: usize,
@@ -816,25 +877,50 @@ struct Hairpin {
     /// dynamic is written there: that note is *at* the destination already, and
     /// ramping it as well would apply the arrival twice.
     shapes_end: bool,
+    /// Where the next dynamic written on the staff after the hairpin is, if
+    /// one is: a hairpin that ends on none leaves the level where it took it,
+    /// and that level holds until the next dynamic says another.
+    until: Option<Ratio>,
 }
 
 impl Hairpin {
-    /// The factor at `t` -- `1.0` outside the span, so a note anywhere else is
-    /// untouched by it.
+    /// The factor at `t` -- `1.0` before the span, so a note before it is
+    /// untouched; on the way, straight in amplitude from the first note's
+    /// onset to the last one's; and past it, the level it reached, held until
+    /// the next dynamic, where it ends on none.
     fn gain_at(&self, t: Ratio, staff: usize) -> f64 {
-        let past_end = if self.shapes_end {
-            t > self.end
+        self.gain(t.to_f64(), staff)
+    }
+
+    /// How far along the hairpin the level is at `t` whole notes, as a factor:
+    /// `1.0` before it, straight to `target` over it, and `target` past it --
+    /// what a note held across it hears, however the level is written after.
+    fn reach(&self, t: f64) -> f64 {
+        let (start, end) = (self.start.to_f64(), self.end.to_f64());
+        if t <= start {
+            1.0
+        } else if t >= end {
+            self.target
         } else {
-            t >= self.end
-        };
-        if staff != self.staff || t < self.start || past_end {
+            1.0 + (self.target - 1.0) * (t - start) / (end - start)
+        }
+    }
+
+    /// [`Self::gain_at`] at `t` whole notes.
+    fn gain(&self, t: f64, staff: usize) -> f64 {
+        let (start, end) = (self.start.to_f64(), self.end.to_f64());
+        if staff != self.staff || t < start {
             return 1.0;
         }
-        let span = (self.end - self.start).to_f64();
-        if span <= 0.0 {
-            return self.target;
+        if t >= end {
+            let held = self.shapes_end && self.until.is_none_or(|u| t < u.to_f64());
+            return if t == end && self.shapes_end || held {
+                self.target
+            } else {
+                1.0
+            };
         }
-        let over = (t - self.start).to_f64() / span;
+        let over = (t - start) / (end - start);
         1.0 + (self.target - 1.0) * over
     }
 }
@@ -893,12 +979,16 @@ fn spanners(
                     _ if spanner.kind == "crescendo" => interp.crescendo,
                     _ => interp.diminuendo,
                 };
+                let until = dynamics
+                    .get(a.staff)
+                    .and_then(|staff| staff.iter().map(|&(t, _)| t).find(|&t| t > end));
                 hairpins.push(Hairpin {
                     staff: a.staff,
                     start,
                     end,
                     target,
                     shapes_end: reached.is_none(),
+                    until,
                 });
             }
             // Everything else is written on the page and says nothing about how
@@ -1256,6 +1346,61 @@ mod tests {
             notes[3].amp > notes[0].amp && notes[3].amp < 0.25,
             "{notes:?}"
         );
+    }
+
+    /// **A hairpin that ends on no dynamic leaves the level where it took
+    /// it**: the notes after it keep what it reached, until the next dynamic.
+    #[test]
+    fn a_crescendo_ending_on_no_dynamic_holds_what_it_reached() {
+        let mut sheet = quarters(5);
+        sheet.spanners = vec![Spanner {
+            kind: "crescendo".into(),
+            from: 1,
+            to: 3,
+        }];
+        let mut interp = Interpretation::default();
+        interp.accents.clear();
+        let notes = perform(sheet, &interp).unwrap();
+        let reached = interp.amp * interp.crescendo;
+        // straight in amplitude from the first note's onset to the last one's
+        assert!((notes[1].amp - (interp.amp + reached) / 2.0).abs() < 1e-12);
+        for n in &notes[2..] {
+            assert!((n.amp - reached).abs() < 1e-12, "{notes:?}");
+        }
+    }
+
+    /// **A note held under a hairpin swells with it** where the reading hears
+    /// a dynamic in the curve as well as the attack, a sustained sound; where
+    /// it hears it in the attack alone, a struck one, the note holds.
+    #[test]
+    fn a_held_note_swells_under_a_hairpin_where_the_reading_hears_it() {
+        let mut sheet = quarters(3);
+        // the first two tied: a half note, held under the crescendo
+        if let Item::Note { tie, .. } = &mut sheet.staves[0].voices[0].items[0] {
+            *tie = true;
+        }
+        sheet.spanners = vec![Spanner {
+            kind: "crescendo".into(),
+            from: 1,
+            to: 3,
+        }];
+        let interp = Interpretation::default();
+        let notes = perform(sheet.clone(), &interp).unwrap();
+        let held = &notes[0];
+        assert_eq!(held.swell.first(), Some(&(0.0, 1.0)));
+        let &(at, factor) = held.swell.last().unwrap();
+        assert_eq!(at, held.sustain);
+        let expected = 1.0 + (interp.crescendo - 1.0) * held.sustain / 2.0;
+        assert!((factor - expected).abs() < 1e-12, "{:?}", held.swell);
+        // the last note is where the hairpin arrives: it does not swell
+        assert!(notes[1].swell.is_empty());
+
+        let struck = Interpretation {
+            dynamics_as: DynamicsAs::Attack,
+            ..Interpretation::default()
+        };
+        let notes = perform(sheet, &struck).unwrap();
+        assert!(notes.iter().all(|n| n.swell.is_empty()));
     }
 
     #[test]

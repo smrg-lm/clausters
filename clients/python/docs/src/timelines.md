@@ -522,8 +522,9 @@ shorter. `to_timeline` puts the pair straight onto an `Event`'s `dur` and
 
 What else is read: a **dynamic** governs every note after it until the next one
 is written; a **hairpin** is a shape over a stretch of notes rather than a mark
-on any of them, and it arrives where the dynamic at its far end says, or travels
-a default distance when nothing is written there; a **tie** is one sound of the
+on any of them, straight in amplitude from its first note's onset to its last
+one's, and it arrives where the dynamic at its far end says, or travels a
+default distance when nothing is written there and holds what it reached; a **tie** is one sound of the
 summed length; a note's **metric position** stresses it. A tuplet needs no rule
 at all — its division is already exact in the fraction the item holds.
 

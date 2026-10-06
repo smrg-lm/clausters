@@ -34,6 +34,10 @@
 //! - **What the page does to the time** is the sequence's tempo map: the
 //!   repeats, endings and jumps played out, a tempo mark the tempo from
 //!   where it is heard.
+//!   A note held under a hairpin carries the hairpin as its own curve too,
+//!   over `amp` (a **swell**), where the reading hears a dynamic in both
+//!   places: a synth listens to no controller, and a sustained sound grows
+//!   inside the note.
 //! - **The pedal is a lane**, controller 64 on each channel of its staff, and
 //!   **a glissando is a note's own curve**, a bend over the note to the one
 //!   it slides to -- which a MIDI 1.0 channel cannot carry, so a sequence
@@ -169,6 +173,22 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
                 "name": "glissando",
                 "target": {"bend": true},
                 "points": [{"at": 0.0, "value": 0.0}, {"at": note.sustain, "value": glide}],
+                "visible": true,
+            });
+            automation.push(serde_json::from_value(curve).map_err(|why| why.to_string())?);
+        }
+        // a swell: the level of a note held under a hairpin, moving with it
+        if !note.swell.is_empty() {
+            let points: Vec<Value> = note
+                .swell
+                .iter()
+                .map(|&(at, factor)| json!({"at": at, "value": note.amp * factor}))
+                .collect();
+            let curve = json!({
+                "id": 0,
+                "name": "swell",
+                "target": {"control": "amp"},
+                "points": points,
                 "visible": true,
             });
             automation.push(serde_json::from_value(curve).map_err(|why| why.to_string())?);
@@ -415,7 +435,43 @@ mod tests {
             .find(|e| !e.automation.is_empty())
             .expect("a note that slides");
         assert_eq!(slide.automation[0].target.0, json!({"bend": true}));
+        // straight in semitones, which a bend makes geometric in frequency
+        let ends: Vec<f64> = slide.automation[0].points.iter().map(|p| p.value).collect();
+        assert_eq!(ends, vec![0.0, 4.0], "C to E");
         assert_eq!(sequence.midi, Some(MidiSpec::Midi2));
+    }
+
+    /// **A note held under a hairpin swells**: its own curve over `amp`, from
+    /// its level at the attack to where the hairpin has taken it when it is
+    /// let go -- what a synth hears, since it listens to no controller.
+    #[test]
+    fn a_held_note_under_a_hairpin_carries_its_swell() {
+        let mut score = sheet(vec![(1..=3).map(plain).collect()], Vec::new());
+        if let Item::Note { tie, .. } = &mut score.staves[0].voices[0].items[0] {
+            *tie = true;
+        }
+        score.spanners = vec![Spanner {
+            kind: "crescendo".into(),
+            from: 1,
+            to: 3,
+        }];
+        let sequence = render(&score, &Interpretation::default()).unwrap();
+        let held = &sequence.events[0];
+        let swell = held
+            .automation
+            .iter()
+            .find(|c| c.target.0 == json!({"control": "amp"}))
+            .expect("a swell");
+        let amp = held.keys()["amp"].as_f64().unwrap();
+        assert_eq!(swell.points[0].value, amp, "from the attack's level");
+        assert!(swell.points.last().unwrap().value > amp, "and growing");
+        // and the lane the controller hears is still there for a MIDI port
+        assert!(
+            sequence
+                .automation
+                .iter()
+                .any(|lane| lane.target.0["cc"] == 11)
+        );
     }
 
     #[test]

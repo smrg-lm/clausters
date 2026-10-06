@@ -497,6 +497,34 @@ mod tests {
         assert!((set(&answer, 0, "freq").unwrap() - 880.0).abs() < 1e-5);
     }
 
+    /// **A glissando moves through pitch, so through frequency by ratios.**
+    /// A bend is in semitones and runs straight in time, and a semitone is a
+    /// ratio: halfway up an octave's slide the note is a tritone up -- the
+    /// geometric mean of the two frequencies, 622 Hz from 440 -- and never
+    /// the arithmetic one, 660, which is what a slide drawn straight in
+    /// hertz would play, too high all the way and heard as a sag at the end.
+    #[test]
+    fn a_glissando_is_straight_in_pitch_and_geometric_in_frequency() {
+        let octave = curve(json!({"bend": true}), &[(0.0, 0.0), (1.0, 12.0)]);
+        let mut sliding = note(vec![octave]);
+        sliding.off = Some(2.0);
+        let answer = run(&Request {
+            sample_rate: RATE,
+            to: 0.5,
+            notes: vec![sliding],
+            ..Request::default()
+        });
+        let bundles = answer["bundles"].as_array().unwrap();
+        for (at, expect) in [(0.25, 440.0 * 2f64.powf(0.25)), (0.5, 440.0 * 2f64.sqrt())] {
+            let i = bundles
+                .iter()
+                .position(|b| (b[0].as_f64().unwrap() - at).abs() < 1e-9)
+                .expect("a bundle there");
+            let freq = set(&answer, i, "freq").unwrap();
+            assert!((freq - expect).abs() < 1e-3, "{at}: {freq} for {expect}");
+        }
+    }
+
     /// A channel's curve reaches the notes of its channel while they are
     /// open, a note's own curve over the same control wins, and a released
     /// note is left with what it had.

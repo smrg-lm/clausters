@@ -12,9 +12,10 @@
 //! metric stress and the accents stay on the attack.
 //!
 //! The curve says exactly what the attacks say, at the moments they are read:
-//! a step where a dynamic is written, a ramp under a hairpin, and the drop
-//! back that [`Hairpin::gain_at`](super::Hairpin) makes after a hairpin that
-//! ends on no dynamic.
+//! a step where a dynamic is written, and a ramp under a hairpin, straight in
+//! amplitude from its first note's onset to its last one's -- after which a
+//! hairpin that ends on no dynamic holds the level it reached, until the
+//! next dynamic ([`Hairpin::gain_at`](super::Hairpin)).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -36,8 +37,8 @@ pub struct LevelPoint {
     pub ramps: bool,
 }
 
-/// The level of one staff: its points in time order, two at one moment where
-/// the level steps.
+/// The level of one staff: its points in time order, one a moment -- where the
+/// level steps, the point before holds until it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StaffLevel {
     /// The staff, 0-based from the top.
@@ -79,38 +80,22 @@ pub fn levels(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<StaffLeve
         let moments: Vec<Ratio> = moments.into_iter().collect();
 
         let base = |t: Ratio| prevailing(&dynamics, staff, t).unwrap_or(interp.amp);
-        // as a note attacking at `t` hears it
+        // as a note attacking at `t` hears it -- and so the level from `t`
+        // on: a hairpin that ends on no dynamic holds what it reached
         let at_moment =
             |t: Ratio| base(t) * over.iter().map(|h| h.gain_at(t, staff)).product::<f64>();
-        // and just past it, where a hairpin that ended at `t` has let go
-        let past_moment = |t: Ratio| {
-            base(t)
-                * over
-                    .iter()
-                    .filter(|h| h.end != t)
-                    .map(|h| h.gain_at(t, staff))
-                    .product::<f64>()
-        };
 
-        let mut points: Vec<LevelPoint> = Vec::new();
-        for (i, &t) in moments.iter().enumerate() {
-            let ramps = moments
-                .get(i + 1)
-                .is_some_and(|&next| over.iter().any(|h| h.start <= t && next <= h.end));
-            let (here, past) = (at_moment(t), past_moment(t));
-            points.push(LevelPoint {
+        let points: Vec<LevelPoint> = moments
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| LevelPoint {
                 t: t.to_f64() * beats,
-                amp: here,
-                ramps: ramps && here == past,
-            });
-            if here != past {
-                points.push(LevelPoint {
-                    t: t.to_f64() * beats,
-                    amp: past,
-                    ramps,
-                });
-            }
-        }
+                amp: at_moment(t),
+                ramps: moments
+                    .get(i + 1)
+                    .is_some_and(|&next| over.iter().any(|h| h.start <= t && next <= h.end)),
+            })
+            .collect();
         out.push(StaffLevel { staff, points });
     }
     Ok(out)
@@ -212,11 +197,19 @@ mod tests {
     }
 
     #[test]
-    fn a_hairpin_that_ends_on_no_dynamic_lets_go_after_it() {
+    fn a_hairpin_that_ends_on_no_dynamic_holds_what_it_reached() {
         let interp = Interpretation::default();
         let swell = sheet(
-            (1..=4)
-                .map(|id| note(id, (id == 1).then_some("mf")))
+            (1..=5)
+                .map(|id| {
+                    note(
+                        id,
+                        [(1, "mf"), (5, "p")]
+                            .iter()
+                            .find(|(i, _)| *i == id)
+                            .map(|(_, d)| *d),
+                    )
+                })
                 .collect(),
             vec![hairpin("crescendo", 1, 3)],
         );
@@ -225,12 +218,10 @@ mod tests {
             level.points.iter().map(|p| (p.t, p.amp, p.ramps)).collect();
         let peak = 0.12 * interp.crescendo;
         assert_eq!(said.len(), 3);
+        // straight from the first note's onset to the last one's
         assert_eq!(said[0], (0.0, 0.12, true));
+        // where it held until the next dynamic, which it steps to
         assert!((said[1].1 - peak).abs() < 1e-12 && said[1].0 == 2.0 && !said[1].2);
-        assert_eq!(
-            said[2],
-            (2.0, 0.12, false),
-            "back to the level it started from"
-        );
+        assert_eq!(said[2], (4.0, interp.dynamics["p"], false));
     }
 }

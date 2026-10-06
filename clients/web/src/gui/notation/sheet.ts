@@ -109,6 +109,12 @@ export interface PerformedNote {
     /** A glissando: the semitones the pitch slides by while it is held. */
     glide?: number;
     /**
+     * A swell: how the level moves while the note is held under a hairpin, as
+     * `[beats from its onset, factor of its amp]` pairs, straight between
+     * them; absent where the level holds.
+     */
+    swell?: [number, number][];
+    /**
      * What is written on the note beyond its pitch and value, **verbatim** --
      * not what the interpreter made of it. A staccato is already honoured in
      * `sustain` and is still here, because a client writing the note back
