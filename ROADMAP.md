@@ -318,7 +318,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's
   edge; the applications' window chrome in standalone, and the multitrack's
-  stop-at-end key that waits on it; what a bare window leaves to its handle;
+  stop-at-end key that waits on it, and the other editors' windows that close
+  without asking, which wait on it too; what a bare window leaves to its
+  handle;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the
   score; a sequence as primitive data, by the keys chosen; the score editor's

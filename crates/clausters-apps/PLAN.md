@@ -3213,6 +3213,18 @@ wrong.
   to ask in; a bare one closes at once, since the score it edits is the one
   its holder keeps.
 
+- ⬜ **The other editors' windows still close without asking** *(found
+  2026-10-06, after the entry above)*. The host holds a close for any window
+  that says `ask_close`, and only the score editor's says it, because it is
+  the only one with a form to ask in. The audio editor edits a copy of its
+  take and writes it back on a save, so its close mark lets unsaved edits go;
+  the standalone host's multitrack and roll edit the session it saves with
+  Ctrl+S, and their windows close the same way. A roll or a multitrack a
+  client opened edits the client's own structure in place and loses nothing.
+  What is missing is each owner's question -- a form with Don't save, Cancel
+  and Save, and the window saying `ask_close` -- which waits for "The
+  applications' window chrome in standalone", above, where the forms are.
+
 - ✅ **The standalone host's score neither plays nor exports**
   *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with
   `--score` the host boots its embedded server, as `--session` does, and
