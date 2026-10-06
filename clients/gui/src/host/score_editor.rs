@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn the_score_plays_through_the_player_and_exports_as_midi() {
+    fn the_score_plays_through_the_player() {
         let player = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let mut host = Host::new();
         host.set_player_link(crate::host::ServerLink::Udp(
@@ -797,8 +797,18 @@ mod tests {
         let addrs = played(&mut host, &player);
         assert!(addrs.iter().any(|a| a == "/transport_play"), "{addrs:?}");
         assert!(addrs.iter().any(|a| a.starts_with("/lane")), "{addrs:?}");
+    }
 
-        // and an export writes the render as a Standard MIDI File
+    /// An export writes the render as a Standard MIDI File, with the writer
+    /// the `midi` feature links.
+    #[cfg(feature = "midi")]
+    #[test]
+    fn the_score_exports_as_a_midi_file() {
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let def_id = host
+            .open_score(score(), "score", (960, 720), None)
+            .expect("a window");
         let dir = std::env::temp_dir().join(format!("clausters-export-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("score.mid");
