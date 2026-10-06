@@ -3211,20 +3211,46 @@ wrong.
   open; and a standalone host whose owner freed its last window ends, as the
   close mark ends it. The score editor's window asks when it has its forms
   to ask in; a bare one closes at once, since the score it edits is the one
-  its holder keeps.
+  its holder keeps. *(Narrowed the same day, by the user: a window asks only
+  where it is the work's one holder -- the entry after next.)*
 
-- ⬜ **The other editors' windows still close without asking** *(found
-  2026-10-06, after the entry above)*. The host holds a close for any window
-  that says `ask_close`, and only the score editor's says it, because it is
-  the only one with a form to ask in. The audio editor edits a copy of its
-  take and writes it back on a save, so its close mark lets unsaved edits go;
-  the standalone host's multitrack and roll edit the session it saves with
-  Ctrl+S, and their windows close the same way. A roll or a multitrack a
-  client opened edits the client's own structure in place and loses nothing.
-  What is missing is each owner's question -- a form with Don't save, Cancel
-  and Save, and the window saying `ask_close` -- which waits for "The
-  applications' window chrome in standalone", above, where the forms are.
+- ⬜ **The standalone session's windows close without asking** *(found
+  2026-10-06, after the entry above)*. A window asks only where it is the
+  work's one holder, which is a standalone host's, and there only the score
+  editor's asks: the multitrack and the rolls edit the session the host saves
+  with Ctrl+S, and their windows close and let unsaved changes go. The rule
+  is every editor's now (the entry below), so what each adds is its share of
+  it -- whether the session has changes its file does not hold, the holder
+  saying the window is the only one, and the close form in its window --
+  and the form waits for "The applications' window chrome in standalone",
+  above, where a window's forms are. A client's editor of any kind loses
+  nothing by a close: the client keeps what it edits.
 
+- ✅ **Closing and the key sheet are every application's** *(asked for by
+  the user 2026-10-06: F1 and the close are a general mechanism, and have
+  to be available equally to any application; F1 works with no chrome; and,
+  decided the same day, an editor a client holds does not ask at all --
+  "the client can close it, and it already has the data in the handle, which
+  can open the window again; what matters is that the edited information is
+  not lost, and if it is already in the client's objects it is not, and the
+  client is responsible")*. The host half was general already; the
+  application half was the score editor's alone. **Done 2026-10-06**:
+  - **The close is one rule** (`closing`): at once, unless the window is the
+    work's one holder and has something to lose, and then the editor's form
+    asks. The shared turn reads the window's `close` for every editor; an
+    application adds whether it has something to lose, whether its holder
+    said the window is the only one (`asksToClose`, which the standalone host
+    says and no client), and the form it asks in, which the module builds;
+    every editor's outcome carries `close`; both clients' `Editor` and the
+    standalone host free the window on any editor's. So a client's score
+    editor, whole or bare, closes at once by its mark and by File, Close, and
+    the standalone host's asks.
+  - **A scope is the application's** (`score::keys`): the window brings its
+    scopes, their default chords and the words F1 shows them with (its
+    `verbs` prop, bare or whole), and the host lays them into its table under
+    what the user bound -- three layers, so a config's
+    `[gui.keys.note_entry]` still wins whenever the window opens. The host's
+    table names no application now.
 - ✅ **The standalone host's score neither plays nor exports**
   *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with
   `--score` the host boots its embedded server, as `--session` does, and

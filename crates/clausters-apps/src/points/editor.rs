@@ -45,6 +45,10 @@ pub struct Outcome {
     /// on its ruler. Not an edit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
+    /// **Whether to close the window** ([`crate::closing`]): a close asked of
+    /// it, with nothing to lose or nothing to ask in.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub close: bool,
 }
 
 turn::turned!(Outcome);

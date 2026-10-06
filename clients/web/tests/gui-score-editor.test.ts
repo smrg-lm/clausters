@@ -102,8 +102,9 @@ if (!existsSync(engraver)) {
             bar.map((title) => title.label),
             ["File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"],
         );
-        // ...and its close mark asks first, as the File menu's Close does
-        assert.equal((tree as unknown as { ask_close: boolean }).ask_close, true);
+        // ...and its close mark does not ask: the score is this page's, kept
+        // whatever becomes of the window
+        assert.equal((tree as unknown as { ask_close: boolean }).ask_close, false);
     });
 
     test("opening writes the page from the model", async () => {
@@ -456,13 +457,10 @@ if (!existsSync(engraver)) {
     });
 
     test("New and Close in the File menu", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);
         editor.draw();
         (editor as unknown as { windowId: number | null }).windowId ??= 0;
-        const widget = (name: string) =>
-            editor.view!.widget(editor, "dialog", editor.structure, name);
         const send = (id: number, ...payload: unknown[]) =>
             editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
         // New: one staff, four empty bars, as one entry; nothing to lose yet
@@ -472,18 +470,14 @@ if (!existsSync(engraver)) {
             ["rest", "rest", "rest", "rest"],
         );
         assert.equal(editor.unsaved, false);
-        // a change, and Close asks: Save names a file and closes once written
+        // a change, and Close does not ask: the score is this page's, and it
+        // keeps the change -- to save, read, or open again
         assert.ok(editor.setText("title", "A title"));
         assert.equal(editor.unsaved, true);
         send(0, "menu", "close");
-        assert.equal(editor.closed, false);
-        send(widget("close:ok"), "click");
-        send(widget("file:path"), join(dir, "kept.mei"));
-        send(widget("file:ok"), "click");
-        await editor.filed;
-        assert.deepEqual((await Score.read(join(dir, "kept.mei"))).sheet(), score.sheet());
         assert.equal(editor.closed, true);
-        rmSync(dir, { recursive: true });
+        const kept = score.sheet() as unknown as { header?: { title: string } };
+        assert.equal(kept.header?.title, "A title");
     });
 
     test("Close with nothing unsaved closes at once", async () => {

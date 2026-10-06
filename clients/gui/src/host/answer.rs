@@ -260,6 +260,24 @@ impl Host {
     /// and the readers brought in step, a placed cursor cued, and the stamp
     /// settled with the reason the turn gave -- so a refusal is said in the
     /// window that asked.
+    /// **Frees window `def_id`, as its editor asked** -- a close, by the rule
+    /// every editor closes by (`clausters_apps::closing`): this host is the
+    /// window's client, so it frees what it defined, and a standalone host
+    /// whose last window goes ends.
+    pub(super) fn free_own_window(&mut self, def_id: i32) {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
+        let effects = self.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(def_id)],
+            }),
+            origin,
+        );
+        self.pending_effects.extend(effects);
+    }
+
     pub(super) fn answer_multitrack(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
 
@@ -362,6 +380,10 @@ impl Host {
         }
         if let Some(answer) = outcome.answer {
             self.tell(answer);
+        }
+        if outcome.close {
+            self.free_own_window(def_id);
+            return true;
         }
         // **A name the host minted is answered with the one the multitrack kept**:
         // once a changed turn is carried out and a minted source has its
@@ -566,6 +588,18 @@ impl Host {
         }
         if let Some(answer) = outcome.answer {
             self.tell(answer);
+        }
+        // a close the editor asked for: the roll goes as a closed one does
+        if outcome.close {
+            if let Some(owner) = self.owner.as_mut() {
+                owner.rolls.remove(&def_id);
+            }
+            self.close_notes(source);
+            let structure = i64::try_from(source.0).unwrap_or(i64::MAX);
+            self.forget_own_widget(structure, ROLL, "window");
+            self.forget_own_widget(structure, ROLL, "notes");
+            self.free_own_window(def_id);
+            return true;
         }
         if outcome.changed {
             self.sound_multitrack();

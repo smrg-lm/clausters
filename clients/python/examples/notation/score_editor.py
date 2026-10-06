@@ -105,9 +105,10 @@ What it shows, in the order it does it:
   gesture, and prints the pitches of the sequence the score renders into.
   The whole window is closed first: a second editor over the score would draw
   on the first one's widgets, so `edit` hands back the editor that is open.
-* **Closing asks first.** With something unsaved, the whole window's close
-  mark asks what the File menu's Close asks; the page alone closes at once,
-  since the score it edits is the one the script holds.
+* **Closing loses nothing.** The score is the script's: the window closes at
+  once, by its close mark or File, Close, changes and all, and the score
+  keeps them -- to save, read, or open again. Only a standalone host's
+  window, the score's one holder, asks first.
 
 The engraver is **libverovio**, which ships inside the installed package. In a
 source checkout, build and stage it once (``third_party/BUILD-VEROVIO.md``)::

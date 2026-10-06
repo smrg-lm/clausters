@@ -16,7 +16,7 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::entry::{self, Place};
 use super::verbs::{self, Action};
-use super::{Chrome, dialogs, icons, menu, palettes, selection, tools};
+use super::{Chrome, dialogs, icons, keys, menu, palettes, selection, tools};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
@@ -112,6 +112,11 @@ pub struct ScoreEditor {
     /// host with no holder beside it opens the whole window, which is then
     /// the only way to reach what the editor does.
     bare: bool,
+    /// **Whether the window is the score's only holder** -- a standalone
+    /// host's, with no client beside it -- so a close with changes not saved
+    /// asks first ([`crate::closing`]). A client holds the score itself and
+    /// loses nothing by a close, so by default no.
+    asks: bool,
     /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
     tools: tools::Ids,
     /// The dialogs' widgets, by name ([`dialogs::names`]).
@@ -206,6 +211,7 @@ struct Opened {
     value: Option<Ratio>,
     version: i64,
     chrome: bool,
+    asks_to_close: bool,
 }
 
 impl Default for Opened {
@@ -217,6 +223,7 @@ impl Default for Opened {
             value: None,
             version: 1,
             chrome: true,
+            asks_to_close: false,
         }
     }
 }
@@ -247,6 +254,7 @@ impl ScoreEditor {
             window: None,
             ids: None,
             bare: false,
+            asks: false,
             tools: tools::Ids::new(),
             dialogs: dialogs::Ids::new(),
             palettes: palettes::Ids::new(),
@@ -291,6 +299,13 @@ impl ScoreEditor {
     /// Whether the window is the page alone ([`set_bare`](Self::set_bare)).
     pub fn bare(&self) -> bool {
         self.bare
+    }
+
+    /// **The window is the score's only holder**, and asks before a close
+    /// lets unsaved changes go ([`crate::closing`]): what a standalone host
+    /// says, and no client. Read when the window is composed.
+    pub fn set_asks_to_close(&mut self, asks: bool) {
+        self.asks = asks;
     }
 
     fn held(&self) -> std::sync::MutexGuard<'_, Score<AnyEngraver>> {
@@ -345,6 +360,7 @@ impl ScoreEditor {
             menu: (!self.bare).then(|| self.menu()),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
             dialogs: dialogs::stack(&self.dialogs),
+            ask_close: crate::closing::asks(self.asks, dialogs::numbered(&self.dialogs)),
             palettes: palettes::column(&self.palettes, &outlines),
             glyphs: &outlines,
         })
@@ -493,9 +509,9 @@ impl ScoreEditor {
     /// and note entry's while the window is in it.
     fn keys(&self) -> Value {
         if self.entry {
-            json!(["score", "note_entry"])
+            json!([keys::SCORE, keys::NOTE_ENTRY])
         } else {
-            json!(["score"])
+            json!([keys::SCORE])
         }
     }
 
@@ -1077,15 +1093,9 @@ impl ScoreEditor {
         self.saved = saved;
     }
 
-    /// **Close**: the window goes, at once when nothing is unsaved, and
-    /// otherwise once the close form is answered.
+    /// **Close**, by the rule every editor closes by ([`crate::closing`]).
     fn close(&mut self, out: &mut Outcome) -> (Option<String>, Option<Vec<Correction>>) {
-        if !self.unsaved() {
-            out.close = true;
-            return (None, Some(Vec::new()));
-        }
-        // a window with no dialogs cannot ask, and so does not lose the work
-        let (reason, shown) = self.open_form(dialogs::Form::Close);
+        let (reason, shown) = crate::closing::close(self, out);
         (reason, Some(shown))
     }
 
@@ -1766,6 +1776,18 @@ impl Converse for ScoreEditor {
         self.window = None;
     }
 
+    fn asks_to_close(&self) -> bool {
+        self.asks
+    }
+
+    fn unsaved(&self) -> bool {
+        ScoreEditor::unsaved(self)
+    }
+
+    fn ask_to_close(&mut self, _out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        self.open_form(dialogs::Form::Close)
+    }
+
     fn owns(&self, widget: i64, _tag: &str) -> bool {
         self.ids.map(|ids| i64::from(ids.page)) == Some(widget)
             || self.tool_of(widget).is_some()
@@ -1819,15 +1841,9 @@ impl Converse for ScoreEditor {
                     corrections,
                 ));
             }
-            // the window's own save -- Ctrl+S -- is the menu's, and so is
-            // its close mark, which a window that can ask reports
-            // (`ask_close`) rather than closing
-            "save" | "close" => {
-                let (reason, shown) = if message.tag == "save" {
-                    self.save(out)
-                } else {
-                    self.close(out)
-                };
+            // the window's own save -- Ctrl+S -- is the menu's
+            "save" => {
+                let (reason, shown) = self.save(out);
                 out.turn = Kind::Route;
                 out.answer = Some(conversation::answer(
                     message.seq,
@@ -1860,15 +1876,17 @@ impl Converse for ScoreEditor {
 }
 
 /// **A score editor from JSON**: `{"title", "w", "h", "value", "version",
-/// "chrome"}` over `score`. `chrome`, `false`, opens the page alone
-/// ([`ScoreEditor::set_bare`]); left out, the window is the whole
-/// application's.
+/// "chrome", "asksToClose"}` over `score`. `chrome`, `false`, opens the
+/// page alone ([`ScoreEditor::set_bare`]); left out, the window is the whole
+/// application's. `asksToClose`, `true`, says the window is the score's
+/// only holder ([`ScoreEditor::set_asks_to_close`]); no client says it.
 pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = ScoreEditor::new(score, opened.version);
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
     editor.bare = !opened.chrome;
+    editor.asks = opened.asks_to_close;
     if let Some(value) = opened.value.filter(Ratio::is_positive) {
         editor.value = value;
     }

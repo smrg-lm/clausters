@@ -570,6 +570,7 @@ class AudioEditor(Marking, Editor):
             start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
             self._driver.span = (start, start + length) if length > 0 else None
         self.echo.send(outcome.get("answer"))
+        self._closing(outcome)
         return changed
 
     @property

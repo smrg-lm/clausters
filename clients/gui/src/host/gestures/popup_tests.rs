@@ -31,6 +31,18 @@ fn host_from(json: &str) -> Host {
     host
 }
 
+/// The `verbs` a score editor's window brings, the part of them these tests
+/// press: its scopes are the application's, so a window that names them
+/// declares them.
+const SCORE_VERBS: &str = r#""verbs":{
+    "score":{"entry":{"keys":"N","label":"Note entry on or off"},"deselect":"Escape"},
+    "note_entry":{"entry":"N","entry_off":"Escape","pitch_e":"E"}}"#;
+
+/// The window `json` defines, bringing [`SCORE_VERBS`].
+fn scoped(json: &str) -> String {
+    format!("{{{SCORE_VERBS},{}", &json[1..])
+}
+
 fn ctx() -> GestureCtx {
     GestureCtx::new(1, 600, 400)
 }
@@ -1191,10 +1203,10 @@ fn a_dialog_holding_heavy_views_reaches_its_last_row() {
 /// it -- is the scope's to bind rather than the front's close.
 #[test]
 fn a_windows_key_scopes_are_read_before_the_table() {
-    let mut host = host_from(
+    let mut host = host_from(&scoped(
         r#"{"type":"window","keys":["score","note_entry"],"children":[
             {"id":5,"type":"label","text":"x"}]}"#,
-    );
+    ));
     let mut g = Gestures::default();
     let ctx = ctx();
     let effects = g
@@ -1267,10 +1279,10 @@ fn a_windows_key_scopes_are_read_before_the_table() {
 /// it down.
 #[test]
 fn f1_shows_the_windows_keys_until_its_close_mark_or_escape() {
-    let mut host = host_from(
+    let mut host = host_from(&scoped(
         r#"{"type":"window","margin":0,"flow":"col","keys":["score"],"children":[
             {"id":6,"type":"button","label":"under","weight":1}]}"#,
-    );
+    ));
     let mut g = Gestures::default();
     let ctx = ctx();
     let effects = g
@@ -1326,10 +1338,10 @@ fn f1_shows_the_windows_keys_until_its_close_mark_or_escape() {
 /// Home and End to its ends, and never past them.
 #[test]
 fn the_key_sheet_scrolls_by_the_arrows_and_the_ends() {
-    let mut host = host_from(
+    let mut host = host_from(&scoped(
         r#"{"type":"window","margin":0,"flow":"col","keys":["score","note_entry"],
             "children":[{"id":6,"type":"label","text":"x","weight":1}]}"#,
-    );
+    ));
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 240);
     g.press_key(&mut host, &ctx, Key::F(1), None);

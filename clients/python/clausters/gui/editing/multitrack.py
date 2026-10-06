@@ -576,6 +576,7 @@ class MultitrackEditor(Marking, Editor):
         if outcome.get("open") is not None:
             self.open_roll(int(outcome["open"]))
         self.echo.send(outcome.get("answer"))
+        self._closing(outcome)
         return changed
 
     def open_roll(self, source: int):

@@ -66,8 +66,9 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     # the window carries the menu bar, which holds every action
     assert [title["label"] for title in tree["menu"]] == [
         "File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"]
-    # ...and its close mark asks first, as the File menu's Close does
-    assert tree["ask_close"] is True
+    # ...and its close mark does not ask: the score is this client's, kept
+    # whatever becomes of the window
+    assert tree["ask_close"] is False
 
 
 def test_opening_writes_the_page_from_the_model(score):
@@ -353,26 +354,22 @@ def test_the_file_menu_saves_and_opens_through_this_client(score, tmp_path):
     assert editor.save(tmp_path / "again.mei") == str(tmp_path / "again.mei")
 
 
-def test_new_and_close_in_the_file_menu(score, tmp_path):
+def test_new_and_close_in_the_file_menu(score):
     editor = ScoreEditor(score)
     editor.draw()
     editor._window = window = 0
-    widget = lambda name: editor.view.widget(editor, "dialog", editor.structure, name)
     send = lambda *args: editor.apply("/gui_event", [args[0], 1, editor._version, *args[1:]])
     # New: one staff, four empty bars, as one entry; nothing to lose yet
     send(window, "menu", "new")
     assert [i["kind"] for i in _items(score)] == ["rest"] * 4
     assert not editor.unsaved
-    # a change, and Close asks: Save names a file and closes once written
+    # a change, and Close does not ask: the score is this client's, and it
+    # keeps the change -- to save, read, or open again
     assert editor.set_text("title", "A title")
     assert editor.unsaved
     send(window, "menu", "close")
-    assert not editor.closed
-    send(widget("close:ok"), "click")
-    send(widget("file:path"), str(tmp_path / "kept.mei"))
-    send(widget("file:ok"), "click")
-    assert notation.Score.read(tmp_path / "kept.mei").sheet() == score.sheet()
     assert editor.closed
+    assert score.sheet()["header"]["title"] == "A title"
 
 
 def test_close_with_nothing_unsaved_closes_at_once(score, tmp_path):

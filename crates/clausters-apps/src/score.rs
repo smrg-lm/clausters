@@ -33,6 +33,7 @@ pub mod dialogs;
 pub mod editor;
 pub mod entry;
 pub mod icons;
+pub mod keys;
 pub mod menu;
 pub mod palettes;
 pub mod selection;
@@ -142,6 +143,9 @@ pub struct Window<'a> {
     pub toolbar: Option<Value>,
     /// The dialogs ([`dialogs::stack`]), when the caller numbered them.
     pub dialogs: Option<Value>,
+    /// **Whether the window asks before it closes** -- its `ask_close`
+    /// ([`crate::closing::asks`]).
+    pub ask_close: bool,
     /// The palettes ([`palettes::column`]), when the caller numbered any.
     pub palettes: Option<Value>,
     /// The outlines of the symbols the chrome is labelled with, by codepoint
@@ -174,6 +178,7 @@ pub fn window(w: Window<'_>) -> Value {
         menu,
         toolbar,
         dialogs,
+        ask_close,
         palettes,
         glyphs,
     } = w;
@@ -229,10 +234,6 @@ pub fn window(w: Window<'_>) -> Value {
         }),
         None => scroll,
     };
-    // **A window that can ask is asked before it closes**: its close mark is
-    // the File menu's Close, which asks first when something would be lost --
-    // and the asking is a dialog, so a window with none closes at once
-    let asks = dialogs.is_some();
     let children: Vec<Value> = toolbar
         .into_iter()
         .chain([work])
@@ -251,7 +252,13 @@ pub fn window(w: Window<'_>) -> Value {
         // **The keys are the editor's in its scopes**: `N` everywhere in the
         // window, and the letters, the arrows and the digits in note entry.
         "keys": keys,
-        "ask_close": asks,
+        // **...and the window brings them**, bare or not: the scopes, their
+        // chords and their words are the application's, and the host lays
+        // them under what the user bound
+        "verbs": keys::verbs(),
+        // **asked before it closes** only where it is the score's one holder
+        // ([`crate::closing`])
+        "ask_close": ask_close,
         "children": children,
     });
     if let (Some(menu), Some(map)) = (menu, window.as_object_mut()) {

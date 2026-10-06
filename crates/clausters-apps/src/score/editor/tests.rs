@@ -1168,6 +1168,22 @@ fn with_dialogs() -> ScoreEditor {
     editor
 }
 
+/// A window with its forms whose holder is it alone -- a standalone host's,
+/// which asks before a close lets unsaved changes go.
+fn holding_alone() -> ScoreEditor {
+    let mut editor = ScoreEditor::new(shared(), 1);
+    editor.set_asks_to_close(true);
+    editor.window(
+        IDS,
+        Chrome {
+            dialogs: named(),
+            ..Chrome::default()
+        },
+    );
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    editor
+}
+
 fn corrections_of(out: &Outcome) -> Vec<Correction> {
     match &out.answer {
         Some(Answer::Push { corrections, .. }) => corrections.clone(),
@@ -1716,12 +1732,19 @@ fn new_replaces_the_score_with_an_empty_one_as_one_entry() {
 #[test]
 fn close_asks_first_only_when_there_is_something_to_lose() {
     let ids = named();
-    // nothing changed: the window goes
+    // a client holds the score itself, and loses nothing: its window closes
+    // at once, changes and all, by the menu as by the mark
     let mut editor = with_dialogs();
+    editor.act(&json!({"action": "page", "landscape": true}), 1);
+    assert!(editor.unsaved());
+    assert!(editor.event(&stamped(pick("close", None), 2), 2).close);
+    assert!(editor.event(&stamped(key("close"), 2), 2).close);
+    // nothing changed: the window goes
+    let mut editor = holding_alone();
     assert!(editor.event(&pick("close", None), 1).close);
 
     // a change: the form asks, and Cancel keeps the window
-    let mut editor = with_dialogs();
+    let mut editor = holding_alone();
     editor.act(&json!({"action": "page", "landscape": true}), 1);
     assert!(editor.unsaved());
     let out = editor.event(&stamped(pick("close", None), 2), 2);
@@ -1771,13 +1794,13 @@ fn close_asks_first_only_when_there_is_something_to_lose() {
     assert!(!editor.event(&stamped(window_save(), 3), 3).close);
 }
 
-/// **The window's close mark is the File menu's Close**: a window that can
-/// ask in a form says so (`ask_close`), and the `close` its mark reports
-/// asks first just as the menu does.
+/// **The window's close mark is the File menu's Close**: a window that is
+/// the score's only holder and has a form to ask in says so (`ask_close`),
+/// and the `close` its mark reports asks first just as the menu does.
 #[test]
 fn the_close_mark_asks_as_the_menus_close_does() {
     let ids = named();
-    let mut editor = with_dialogs();
+    let mut editor = holding_alone();
     let window = editor.window(
         IDS,
         Chrome {
@@ -1787,6 +1810,17 @@ fn the_close_mark_asks_as_the_menus_close_does() {
     );
     assert_eq!(window["ask_close"], true);
     assert_eq!(opened().window(IDS, Chrome::default())["ask_close"], false);
+    // a client's window, forms and all, does not ask: the client holds it
+    assert_eq!(
+        with_dialogs().window(
+            IDS,
+            Chrome {
+                dialogs: ids.clone(),
+                ..Chrome::default()
+            }
+        )["ask_close"],
+        false
+    );
     // nothing to lose: it goes
     assert!(editor.event(&key("close"), 1).close);
     // something to lose: the form

@@ -463,6 +463,8 @@ export class MultitrackView extends View<Multitrack> {
 /** What one turn of the editor's core came to. */
 interface Outcome {
     turn?: string;
+    /** Whether to close the window, by the crate's rule for every editor. */
+    close?: boolean;
     answer?: Answer;
     seq?: number;
     redo?: boolean;
@@ -833,6 +835,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (outcome.transport !== undefined) this.transported = this.carryTransport(outcome.transport);
         if (outcome.open !== undefined) this.openRoll(outcome.open);
         this.echo.send(outcome.answer);
+        this.closing(outcome);
         return changed;
     }
 

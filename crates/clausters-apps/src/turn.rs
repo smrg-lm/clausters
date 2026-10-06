@@ -104,6 +104,8 @@ pub trait Turned: Default {
     fn set_step(&mut self, seq: i64, redo: bool);
     /// The version after the turn -- moved by a route that edited.
     fn version(&self) -> i64;
+    /// Whether its holder closes the window ([`crate::closing`]).
+    fn set_close(&mut self, close: bool);
 }
 
 /// Implements [`Turned`] for an outcome with the usual field names.
@@ -128,6 +130,9 @@ macro_rules! turned {
             }
             fn version(&self) -> i64 {
                 self.version
+            }
+            fn set_close(&mut self, close: bool) {
+                self.close = close;
             }
         }
     };
@@ -161,6 +166,27 @@ pub trait Converse {
         values: &[Value],
         out: &mut Self::Outcome,
     ) -> (Option<String>, Vec<Correction>);
+    /// **Whether the window is the work's only holder**, so a close with
+    /// something unsaved asks first ([`crate::closing`]). A client holds its
+    /// own structure and loses nothing by a close, so by default no.
+    fn asks_to_close(&self) -> bool {
+        false
+    }
+    /// Whether the structure holds changes its file does not.
+    fn unsaved(&self) -> bool {
+        false
+    }
+    /// **Ask before closing**: the editor's close form shown, or why it
+    /// could not be. An editor with no form to ask in says so, and the
+    /// window stays.
+    fn ask_to_close(&mut self, _out: &mut Self::Outcome) -> (Option<String>, Vec<Correction>) {
+        (
+            Some(
+                "this window has changes that are not saved, and no form to ask about them".into(),
+            ),
+            Vec::new(),
+        )
+    }
     /// A verb of the window itself -- a save, a play -- answered before the
     /// conversation reads the message; `true` when it was one.
     fn window_verb(
@@ -194,6 +220,18 @@ pub fn turn<E: Converse>(editor: &mut E, event: &Event, version: i64) -> E::Outc
             && (args.is_empty() || i64::from(window.unwrap_or_default()) == widget),
     };
     let mut out = E::Outcome::at(version);
+    // **The window's close is every editor's**, by one rule
+    if message.addr == "/gui_event" && message.is_window && message.tag == crate::closing::VERB {
+        let (reason, corrections) = crate::closing::close(editor, &mut out);
+        out.set_turn(Kind::Route);
+        out.set_answer(conversation::answer(
+            message.seq,
+            out.version(),
+            reason,
+            corrections,
+        ));
+        return out;
+    }
     if editor.window_verb(&message, args, &mut out) {
         return out;
     }

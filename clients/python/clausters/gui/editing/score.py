@@ -758,8 +758,7 @@ class ScoreEditor(Editor):
         # fails raises, and the window stays)
         if outcome.get("save"):
             self.save(outcome["save"])
-        if outcome.get("close"):
-            self.close()
+        if self._closing(outcome):
             return changed
         if outcome.get("export"):
             self.export(outcome["export"]["path"], outcome["export"]["format"])

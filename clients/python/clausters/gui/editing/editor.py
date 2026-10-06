@@ -539,6 +539,20 @@ class Editor:
         self._restructure()
         return changed
 
+    def _closing(self, outcome: dict) -> bool:
+        """**A turn asked for the window to close** (``close`` on any
+        editor's outcome): it closes. Answers whether it did.
+
+        Whether a close asks first is the crate's rule, the same for every
+        editor (``clausters_apps::closing``): a client holds the structure
+        it edits, so the window closes at once and the data stays here, to
+        save, read or open again.
+        """
+        if not outcome.get("close"):
+            return False
+        self.close()
+        return True
+
     def _closed(self) -> bool:
         """This editor's window closed. Answers ``False``: nothing changed.
 

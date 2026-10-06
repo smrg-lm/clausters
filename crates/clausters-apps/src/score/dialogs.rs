@@ -377,11 +377,16 @@ const FIELD_W: f64 = 340.0;
 const NOTES_H: f64 = 76.0;
 
 /// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
-/// or, closing, the question, and `Don't save` apart from `Cancel` and `Save`.
+/// or, closing, the close form every application asks in
+/// ([`crate::closing::dialog`]).
 fn dialog(form: Form, ids: &Ids) -> Value {
     let prefix = form.prefix();
     let id = |name: &str| ids.get(&format!("{prefix}:{name}")).copied();
-    let mut rows: Vec<Value> = form
+    // the close form is every application's, built where the rule is
+    if form == Form::Close {
+        return crate::closing::dialog(ids.get(prefix).copied(), UNSAVED, id);
+    }
+    let rows: Vec<Value> = form
         .fields()
         .iter()
         .map(|(name, label)| {
@@ -408,17 +413,7 @@ fn dialog(form: Form, ids: &Ids) -> Value {
         .collect();
     let spring = json!({"type": "separator", "weight": 1, "line": false});
     let cancel = json!({"type": "button", "id": id("cancel"), "label": "Cancel"});
-    let children = if form == Form::Close {
-        rows.push(json!({"type": "label", "text": UNSAVED}));
-        json!([
-            {"type": "button", "id": id("discard"), "label": "Don't save"},
-            spring,
-            cancel,
-            {"type": "button", "id": id("ok"), "label": "Save"},
-        ])
-    } else {
-        json!([spring, cancel, {"type": "button", "id": id("ok"), "label": "OK"}])
-    };
+    let children = json!([spring, cancel, {"type": "button", "id": id("ok"), "label": "OK"}]);
     let buttons = json!({
         "type": "layout",
         "flow": "row",

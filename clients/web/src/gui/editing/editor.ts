@@ -634,6 +634,21 @@ export class Editor<S = unknown> implements Adopting {
         });
     }
 
+    /**
+     * **A turn asked for the window to close** (`close` on any editor's
+     * outcome): it closes. Answers whether it did.
+     *
+     * Whether a close asks first is the crate's rule, the same for every
+     * editor (`clausters_apps::closing`): a client holds the structure it
+     * edits, so the window closes at once and the data stays here, to save,
+     * read or open again.
+     */
+    protected closing(outcome: { close?: boolean }): boolean {
+        if (outcome.close !== true) return false;
+        this.close();
+        return true;
+    }
+
     /** `apply`, without the turn around it: what the message actually does. */
     protected deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         // `<id> <seq> <version> <tag> <payload...>`: the stamp and the version the

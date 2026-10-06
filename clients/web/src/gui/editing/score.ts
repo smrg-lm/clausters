@@ -1063,12 +1063,11 @@ export class ScoreEditor extends Editor<Score> {
         if (outcome.save) {
             this.filed = this.save(outcome.save).then(
                 () => {
-                    if (outcome.close === true) this.close();
+                    this.closing(outcome);
                 },
                 (error: unknown) => console.warn(`save: ${outcome.save}:`, error),
             );
-        } else if (outcome.close === true) {
-            this.close();
+        } else if (this.closing(outcome)) {
             return changed;
         }
         if (outcome.export) {

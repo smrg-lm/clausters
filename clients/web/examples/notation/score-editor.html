@@ -148,11 +148,10 @@ The whole window is closed first: a second editor over the score would draw on
 the first one's widgets, so <code>edit</code> hands back the editor that is
 open.
 
-<b>Closing asks first</b> where a window has a close mark -- the desktop's,
-from a script: with something unsaved, the whole window's mark asks what the
-File menu's Close asks, and the page alone closes at once, since the score it
-edits is the one the script holds. A page draws in a canvas and has no close
-mark.
+<b>Closing loses nothing.</b> The score is the page's: the window closes at
+once, by File, Close, changes and all, and the score keeps them -- to save,
+read, or open again. Only a standalone host's window, the score's one holder,
+asks first. A page draws in a canvas and has no close mark.
 
 <b>Click</b> a note to select it; the status line says what is selected.
 <b>Ctrl+click</b> another to add it, <b>Shift+click</b> one to select

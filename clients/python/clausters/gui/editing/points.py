@@ -195,6 +195,7 @@ class PointsEditor(Editor):
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
         self.echo.send(outcome.get("answer"))
+        self._closing(outcome)
         return changed
 
 

@@ -1401,6 +1401,16 @@ export function signal(
 
 
 /**
+ * One verb a window's application declares in a scope ({@link view}'s
+ * `verbs`): its default chords -- one, or a list -- or those as `keys` with
+ * the words a key sheet shows it with as `label`.
+ */
+export type VerbDeclaration =
+    | string
+    | readonly string[]
+    | { readonly keys?: string | readonly string[]; readonly label?: string };
+
+/**
  * A view's **root**: a container that becomes an OS window (a canvas, in the
  * browser) when nothing holds it, and an ordinary component when something
  * does. It takes no id -- a root's id is the `/gui_def` argument.
@@ -1465,6 +1475,14 @@ export function view(
      */
     keys?: readonly string[];
     /**
+     * The **scopes the window's application brings**: a scope's name to its
+     * verbs, each verb's default chords (one, or a list) or `{ keys, label }`
+     * with the words F1 shows it with. The host lays them into its key table
+     * under whatever the user bound, so a config's `[gui.keys.note_entry]`
+     * still wins.
+     */
+    verbs?: Record<string, Record<string, VerbDeclaration>>;
+    /**
      * **The window's owner is asked before it closes**: the close mark on its
      * frame (and a desktop window's Escape, with nothing open) reports the
      * window's `close` verb -- as its menu bar's entry for it, when the bar
@@ -1502,8 +1520,8 @@ export function view(
     ...children: GuiNode[]
 ): View {
     const {
-        title, flow, layout, margin, gap, cols, hug, status, plays, keys, askClose, theme,
-        split, menu: bar, glyphs, ...rest
+        title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
+        theme, split, menu: bar, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1521,6 +1539,7 @@ export function view(
             ["status", flag(status)],
             ["plays", flag(plays)],
             ["keys", keys === undefined ? undefined : [...keys]],
+            ["verbs", verbs === undefined ? undefined : { ...verbs }],
             ["ask_close", flag(askClose)],
         ]),
         children: [...(options.children ?? []), ...children],

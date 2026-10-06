@@ -1057,7 +1057,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
-         keys: list | str | None = None, ask_close: bool | None = None,
+         keys: list | str | None = None, verbs: dict | None = None,
+         ask_close: bool | None = None,
          split: bool | None = None, menu: list | None = None,
          glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
@@ -1109,6 +1110,12 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     shows them -- every key in force in the window and what it does, on a
     sheet in the middle of it that its close mark or Escape takes down.
 
+    ``verbs`` declares the **scopes the window's application brings**: a
+    scope's name to its verbs, each verb's default chords (one, or a list) or
+    ``{"keys": ..., "label": ...}`` with the words F1 shows it with. The host
+    lays them into its key table under whatever the user bound, so a config's
+    ``[gui.keys.note_entry]`` still wins.
+
     ``ask_close`` says **the window's owner is asked before it closes**: the
     close mark on its frame (and a desktop window's Escape, with nothing open)
     reports the window's ``close`` verb -- as its menu bar's entry for it,
@@ -1141,6 +1148,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
                        cols=cols, theme=theme, color=color, menu=menu,
                        keys=[keys] if isinstance(keys, str) else keys,
+                       verbs=None if verbs is None else dict(verbs),
                        glyphs=None if glyphs is None else dict(glyphs))
     if split is not None:
         extra["split"] = 1 if split else 0

@@ -420,6 +420,7 @@ class NotesEditor(Marking, Editor):
             playback.set_span(pass_.get("range"), show=False)
             playback.set_looping(bool(pass_.get("looping")))
         self.echo.send(outcome.get("answer"))
+        self._closing(outcome)
         return changed
 
 

@@ -128,6 +128,14 @@ impl Host {
         );
         // A window root becomes a renderable typed document; the front opens it.
         if node.kind == "window" {
+            // **The application's keys arrive with its window**: the scopes
+            // its modes are, their default chords and their words, laid into
+            // the host's table under what the user bound.
+            if let Some(serde_json::Value::Object(verbs)) = node.props.get("verbs") {
+                for _warning in self.keys.declare_json(verbs) {
+                    diag::warn!("{from}: {GUI_DEF} {id}: {_warning}");
+                }
+            }
             let held = self.window_defs.get(&id);
             match self.build_tree(id, &node, blobs, held, &was) {
                 Ok(tree) => {

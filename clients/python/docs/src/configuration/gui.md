@@ -277,9 +277,22 @@ an entry for that verb, the key reports exactly that entry's pick
 (`"menu", "export"`), so one handler covers both; and a menu shows the chord
 beside every entry whose verb is bound. **F1 shows them all** (the verb
 `keys`): a sheet over the window listing every key in force in it and what it
-does, which its close mark or Escape takes down. The host's own verbs read in
-words there; one an application or a user bound reads as its name, so
-`select_all` is *Select all*.
+does, which its close mark or Escape takes down, in any window, with chrome
+or without. The host's own verbs read in words there, an application's in the
+words its window declares, and any other as its name, so `select_all` is
+*Select all*.
+
+**An application's modes are scopes of this table, and the application brings
+them.** The score editor's window declares `score` and `note_entry` -- their
+verbs, their default chords and their words -- when it opens, and the host
+lays them under this section: a `[gui.keys.note_entry]` table here rebinds a
+key of note entry and wins over the editor's default whenever the window
+opens.
+
+```toml
+[gui.keys.note_entry]
+enter_rest = "R"                # a rest on R in note entry, not on 0
+```
 
 `--keys <path>` reads the same flat table from a free-standing file, laid over
 the section, so a user's keys travel as one file. A script can also bind keys

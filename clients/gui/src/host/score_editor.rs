@@ -68,7 +68,12 @@ impl Host {
             palettes,
         };
         let owner = self.owner.as_mut()?;
-        let request = serde_json::json!({"title": title, "w": size.0, "h": size.1}).to_string();
+        // **The window is the score's only holder** here -- there is no
+        // client beside it -- so a close with changes not saved asks first
+        let request = serde_json::json!({
+            "title": title, "w": size.0, "h": size.1, "asksToClose": true,
+        })
+        .to_string();
         let opened: serde_json::Value = serde_json::from_str(&owner.editing.open_score(
             &format!("score:{structure}"),
             score,
@@ -336,20 +341,10 @@ impl Host {
     /// asked once nothing was left to lose: the window is freed, and the
     /// editor is this host's no longer.
     fn close_score(&mut self, def_id: i32) {
-        use std::net::{Ipv4Addr, SocketAddr};
-
         if let Some(owner) = self.owner.as_mut() {
             owner.scores.remove(&def_id);
         }
-        let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
-        let effects = self.handle_packet(
-            OscPacket::Message(OscMessage {
-                addr: GUI_FREE.into(),
-                args: vec![OscType::Int(def_id)],
-            }),
-            origin,
-        );
-        self.pending_effects.extend(effects);
+        self.free_own_window(def_id);
     }
 }
 

@@ -21,6 +21,16 @@
 //! a sub-table, `[gui.keys.note_entry]` in the config and a nested object on
 //! `/gui_keys`. Escape, the dismissal, may be bound in a scope -- leaving a
 //! mode is a dismissal -- and never in the table's own rows.
+//!
+//! **A scope is the application's, and so are its words.** The host knows its
+//! own verbs and the few every editor has; the scopes an application's modes
+//! are, their default chords and what each verb is called on a key sheet
+//! arrive with the window that uses them (its `verbs` prop,
+//! [`Keymap::declare_json`]), bare or not -- the host names no application.
+//! So the table is three layers, each over the one before: the host's
+//! defaults, what the applications declared, and what the user and the
+//! scripts bound (the config, a `--keys` file, `/gui_keys`). A declaration
+//! that arrives after a user's binding lands under it.
 
 use super::widget::element::{Key, Mods};
 
@@ -116,8 +126,9 @@ const DEFAULTS: &[(&str, &[&str])] = &[
 ];
 
 /// **What each verb of the default table does**, in the words a key sheet
-/// shows it with ([`Keymap::sheet`]). A verb not here -- one a config or an
-/// application bound -- is shown by its name ([`describe`]).
+/// shows it with ([`Keymap::sheet`]). An application's verbs are named by the
+/// application ([`Keymap::declare`]); a verb nobody named is shown by its name
+/// ([`describe`]).
 const DESCRIBED: &[(&str, &str)] = &[
     ("undo", "Undo"),
     ("redo", "Redo"),
@@ -136,53 +147,11 @@ const DESCRIBED: &[(&str, &str)] = &[
     ("join", "Join what touches"),
     ("delete", "Delete"),
     ("keys", "Show the keys"),
-    ("entry", "Note entry on or off"),
-    ("entry_off", "Leave note entry"),
-    ("deselect", "Select nothing"),
-    ("select_left", "Select the item before"),
-    ("select_right", "Select the item after"),
-    ("step_up", "Up a step"),
-    ("step_down", "Down a step"),
-    ("octave_up", "Up an octave"),
-    ("octave_down", "Down an octave"),
-    ("pitch_a", "Write an A"),
-    ("pitch_b", "Write a B"),
-    ("pitch_c", "Write a C"),
-    ("pitch_d", "Write a D"),
-    ("pitch_e", "Write an E"),
-    ("pitch_f", "Write an F"),
-    ("pitch_g", "Write a G"),
-    ("chord_a", "Add an A to the chord"),
-    ("chord_b", "Add a B to the chord"),
-    ("chord_c", "Add a C to the chord"),
-    ("chord_d", "Add a D to the chord"),
-    ("chord_e", "Add an E to the chord"),
-    ("chord_f", "Add an F to the chord"),
-    ("chord_g", "Add a G to the chord"),
-    ("cursor_left", "Cursor back"),
-    ("cursor_right", "Cursor forward"),
-    ("bar_left", "Cursor to the bar before"),
-    ("bar_right", "Cursor to the bar after"),
-    ("staff_up", "Cursor to the staff above"),
-    ("staff_down", "Cursor to the staff below"),
-    ("voice_1", "Voice 1"),
-    ("voice_2", "Voice 2"),
-    ("voice_3", "Voice 3"),
-    ("voice_4", "Voice 4"),
-    ("value_64th", "Sixty-fourth note"),
-    ("value_32nd", "Thirty-second note"),
-    ("value_16th", "Sixteenth note"),
-    ("value_eighth", "Eighth note"),
-    ("value_quarter", "Quarter note"),
-    ("value_half", "Half note"),
-    ("value_whole", "Whole note"),
-    ("dot", "Dotted"),
-    ("enter_rest", "Rest"),
 ];
 
-/// **What verb `verb` does**, as a key sheet says it: the default table's
-/// words for its own verbs, and for any other the name, read as words
-/// (`select_all` is "Select all").
+/// **What verb `verb` does**, as a key sheet says it where nobody declared
+/// words for it: the default table's words for its own verbs, and for any
+/// other the name, read as words (`select_all` is "Select all").
 pub fn describe(verb: &str) -> String {
     if let Some((_, words)) = DESCRIBED.iter().find(|(v, _)| *v == verb) {
         return (*words).to_string();
@@ -210,75 +179,6 @@ pub struct Section {
     /// them and joined by commas.
     pub rows: Vec<(String, String)>,
 }
-
-/// A table's rows: each verb and the chords that perform it.
-type Rows = &'static [(&'static str, &'static [&'static str])];
-
-/// The scopes the host starts with, each a table of its own: the score
-/// editor's window (`score`) and its note entry (`note_entry`), whose keys are
-/// the settled ones of notation programs.
-const SCOPED: &[(&str, Rows)] = &[
-    (
-        "score",
-        &[
-            ("entry", &["N"]),
-            // over the selection: what note entry's own rows, read first
-            // while the window is in it, give the cursor and the note written
-            ("delete", &["Delete", "Backspace"]),
-            ("deselect", &["Escape"]),
-            ("select_left", &["Left"]),
-            ("select_right", &["Right"]),
-            ("step_up", &["Up"]),
-            ("step_down", &["Down"]),
-            ("octave_up", &["Ctrl+Up"]),
-            ("octave_down", &["Ctrl+Down"]),
-        ],
-    ),
-    (
-        "note_entry",
-        &[
-            ("entry", &["N"]),
-            ("entry_off", &["Escape"]),
-            ("pitch_a", &["A"]),
-            ("pitch_b", &["B"]),
-            ("pitch_c", &["C"]),
-            ("pitch_d", &["D"]),
-            ("pitch_e", &["E"]),
-            ("pitch_f", &["F"]),
-            ("pitch_g", &["G"]),
-            ("chord_a", &["Shift+A"]),
-            ("chord_b", &["Shift+B"]),
-            ("chord_c", &["Shift+C"]),
-            ("chord_d", &["Shift+D"]),
-            ("chord_e", &["Shift+E"]),
-            ("chord_f", &["Shift+F"]),
-            ("chord_g", &["Shift+G"]),
-            ("cursor_left", &["Left"]),
-            ("cursor_right", &["Right"]),
-            ("bar_left", &["Ctrl+Left"]),
-            ("bar_right", &["Ctrl+Right"]),
-            ("staff_up", &["Alt+Up"]),
-            ("staff_down", &["Alt+Down"]),
-            ("step_up", &["Up"]),
-            ("step_down", &["Down"]),
-            ("octave_up", &["Ctrl+Up"]),
-            ("octave_down", &["Ctrl+Down"]),
-            ("voice_1", &["Ctrl+Alt+1"]),
-            ("voice_2", &["Ctrl+Alt+2"]),
-            ("voice_3", &["Ctrl+Alt+3"]),
-            ("voice_4", &["Ctrl+Alt+4"]),
-            ("value_64th", &["1"]),
-            ("value_32nd", &["2"]),
-            ("value_16th", &["3"]),
-            ("value_eighth", &["4"]),
-            ("value_quarter", &["5"]),
-            ("value_half", &["6"]),
-            ("value_whole", &["7"]),
-            ("dot", &["."]),
-            ("enter_rest", &["0"]),
-        ],
-    ),
-];
 
 /// A key and the modifiers held with it, **normalized** so the table and a
 /// press compare equal whichever way they were spelled or typed.
@@ -399,12 +299,30 @@ struct Binding {
     scope: Option<String>,
     verb: String,
     chords: Vec<Chord>,
+    /// What the verb is called on a key sheet, when its application said.
+    label: Option<String>,
+}
+
+/// One binding asked for in a layer over the host's defaults, kept so the
+/// table can be built again when a layer under it changes.
+#[derive(Debug, Clone, PartialEq)]
+struct Asked {
+    scope: Option<String>,
+    verb: String,
+    chords: Vec<String>,
 }
 
 /// **The host's key table**: verbs and the chords bound to them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Keymap {
+    /// The table as it stands: the three layers, applied in order.
     bindings: Vec<Binding>,
+    /// **What the applications declared**, the middle layer: a scope's
+    /// default chords, with the words of each verb.
+    declared: Vec<(Asked, Option<String>)>,
+    /// **What the user and the scripts bound**, the top layer, in the order
+    /// it was bound.
+    bound: Vec<Asked>,
     /// Whether the chords are shown as a Mac shows them: the host's Ctrl is
     /// Command there, so a menu says `Cmd+Z`. The front says which platform
     /// it is on ([`Keymap::on_mac`]); a native build knows at compile time.
@@ -415,18 +333,11 @@ impl Default for Keymap {
     fn default() -> Self {
         let mut map = Keymap {
             bindings: Vec::new(),
+            declared: Vec::new(),
+            bound: Vec::new(),
             mac: cfg!(target_os = "macos"),
         };
-        for (verb, chords) in DEFAULTS {
-            let warnings = map.bind(verb, chords);
-            debug_assert!(warnings.is_empty(), "{warnings:?}");
-        }
-        for (scope, rows) in SCOPED {
-            for (verb, chords) in *rows {
-                let warnings = map.bind_in(Some(scope), verb, chords);
-                debug_assert!(warnings.is_empty(), "{warnings:?}");
-            }
-        }
+        map.defaults();
         map
     }
 }
@@ -494,7 +405,8 @@ impl Keymap {
                             })
                             .map(|c| c.label(self.mac))
                             .collect();
-                        (!live.is_empty()).then(|| (describe(&b.verb), live.join(", ")))
+                        let words = b.label.clone().unwrap_or_else(|| describe(&b.verb));
+                        (!live.is_empty()).then(|| (words, live.join(", ")))
                     })
                     .collect();
                 let title = scope.map_or_else(|| "Window".to_string(), words);
@@ -521,6 +433,119 @@ impl Keymap {
     /// chord means one verb **within** a scope, and Escape is refused outside
     /// one.
     pub fn bind_in(&mut self, scope: Option<&str>, verb: &str, chords: &[&str]) -> Vec<String> {
+        let asked = Asked {
+            scope: scope.map(str::to_string),
+            verb: verb.trim().to_string(),
+            chords: chords.iter().map(|c| (*c).to_string()).collect(),
+        };
+        self.bound
+            .retain(|b| !(b.scope == asked.scope && b.verb == asked.verb));
+        self.bound.push(asked);
+        self.apply(scope, verb, chords)
+    }
+
+    /// **An application declares a verb of one of its scopes**: the chords
+    /// that perform it unless the user bound others, and what a key sheet
+    /// calls it. It goes under what the user and the scripts bound, whenever
+    /// it arrives, and declaring the same thing again changes nothing.
+    /// Returns a warning per chord it could not read.
+    pub fn declare(
+        &mut self,
+        scope: &str,
+        verb: &str,
+        chords: &[&str],
+        label: Option<&str>,
+    ) -> Vec<String> {
+        let asked = Asked {
+            scope: Some(scope.to_string()),
+            verb: verb.trim().to_string(),
+            chords: chords.iter().map(|c| (*c).to_string()).collect(),
+        };
+        let label = label.map(str::to_string);
+        if self.declared.contains(&(asked.clone(), label.clone())) {
+            return Vec::new();
+        }
+        self.declared
+            .retain(|(d, _)| !(d.scope == asked.scope && d.verb == asked.verb));
+        self.declared.push((asked, label));
+        self.rebuild()
+    }
+
+    /// **An application's declaration, as its window carries it** (the
+    /// `verbs` prop): a scope's name to its verbs, each verb's chords -- one,
+    /// or a list -- or an object holding them as `keys` and its words as
+    /// `label`. Returns a warning per entry it could not read.
+    pub fn declare_json(
+        &mut self,
+        table: &serde_json::Map<String, serde_json::Value>,
+    ) -> Vec<String> {
+        use serde_json::Value;
+        let mut warnings = Vec::new();
+        for (scope, verbs) in table {
+            let Value::Object(verbs) = verbs else {
+                warnings.push(format!("verbs: {scope}: a scope is a table of verbs"));
+                continue;
+            };
+            for (verb, value) in verbs {
+                let (keys, label) = match value {
+                    Value::Object(entry) => (
+                        entry.get("keys").cloned().unwrap_or(Value::Null),
+                        entry.get("label").and_then(Value::as_str),
+                    ),
+                    other => (other.clone(), None),
+                };
+                let chords: Vec<&str> = match &keys {
+                    Value::String(one) => vec![one.as_str()],
+                    Value::Array(many) => many.iter().filter_map(Value::as_str).collect(),
+                    Value::Null => Vec::new(),
+                    _ => {
+                        warnings.push(format!("verbs: {scope}.{verb}: a chord or a list"));
+                        continue;
+                    }
+                };
+                warnings.extend(self.declare(scope, verb, &chords, label));
+            }
+        }
+        warnings
+    }
+
+    /// The host's own rows, the bottom layer.
+    fn defaults(&mut self) {
+        for (verb, chords) in DEFAULTS {
+            let warnings = self.apply(None, verb, chords);
+            debug_assert!(warnings.is_empty(), "{warnings:?}");
+        }
+    }
+
+    /// **The table built again from its layers**, when one under the top
+    /// changed: what the user bound is laid over a declaration whenever the
+    /// declaration arrived. Answers the declarations' warnings; the top
+    /// layer's were said when it was bound.
+    fn rebuild(&mut self) -> Vec<String> {
+        self.bindings.clear();
+        self.defaults();
+        let mut warnings = Vec::new();
+        for (asked, label) in self.declared.clone() {
+            let chords: Vec<&str> = asked.chords.iter().map(String::as_str).collect();
+            warnings.extend(self.apply(asked.scope.as_deref(), &asked.verb, &chords));
+            if let Some(b) = self
+                .bindings
+                .iter_mut()
+                .find(|b| b.scope == asked.scope && b.verb == asked.verb)
+            {
+                b.label = label;
+            }
+        }
+        for asked in self.bound.clone() {
+            let chords: Vec<&str> = asked.chords.iter().map(String::as_str).collect();
+            let _ = self.apply(asked.scope.as_deref(), &asked.verb, &chords);
+        }
+        warnings
+    }
+
+    /// One verb bound to exactly `chords` in `scope`, a chord taken from the
+    /// scope's other verbs: what every layer does to the table.
+    fn apply(&mut self, scope: Option<&str>, verb: &str, chords: &[&str]) -> Vec<String> {
         let mut warnings = Vec::new();
         let verb = verb.trim();
         if verb.is_empty() {
@@ -555,6 +580,7 @@ impl Keymap {
                 scope: scope.map(str::to_string),
                 verb: verb.to_string(),
                 chords: parsed,
+                label: None,
             }),
         }
         warnings
@@ -641,6 +667,34 @@ mod tests {
         }
     }
 
+    /// **A table with an application's scopes in it**, declared the way a
+    /// window brings them: a score editor's two, the part of them these
+    /// tests read.
+    fn with_scopes() -> Keymap {
+        let mut map = Keymap::default();
+        let verbs = serde_json::json!({
+            "score": {
+                "entry": {"keys": "N", "label": "Note entry on or off"},
+                "delete": ["Delete", "Backspace"],
+                "deselect": "Escape",
+                "select_left": {"keys": "Left", "label": "Select the item before"},
+                "select_right": "Right",
+                "step_up": "Up",
+            },
+            "note_entry": {
+                "entry": "N",
+                "entry_off": "Escape",
+                "pitch_c": {"keys": "C", "label": "Write a C"},
+                "pitch_e": {"keys": "E", "label": "Write an E"},
+                "cursor_left": {"keys": "Left", "label": "Cursor back"},
+                "cursor_right": "Right",
+                "step_up": "Up",
+            },
+        });
+        assert!(map.declare_json(verbs.as_object().unwrap()).is_empty());
+        map
+    }
+
     /// The defaults are the keys the views answered to before the table: a
     /// letter alone, a chord, a named key, and a verb with two chords.
     #[test]
@@ -710,7 +764,7 @@ mod tests {
     /// the scope is in force, and Escape is a scope's alone.
     #[test]
     fn a_scope_binds_over_the_table_where_it_is_in_force() {
-        let mut map = Keymap::default();
+        let mut map = with_scopes();
         let none = Mods::default();
         let entry = vec!["score".to_string(), "note_entry".to_string()];
         assert_eq!(map.lookup(&Key::Char('e'), none), Some("split"));
@@ -764,7 +818,7 @@ mod tests {
     /// listed only there.
     #[test]
     fn a_key_sheet_lists_what_each_key_does_in_the_window() {
-        let mut map = Keymap::default();
+        let mut map = with_scopes();
         let entry = vec!["score".to_string(), "note_entry".to_string()];
         let sheet = map.sheet(&entry);
         let titles: Vec<&str> = sheet.iter().map(|s| s.title.as_str()).collect();
@@ -799,6 +853,54 @@ mod tests {
                 .rows
                 .contains(&("Split at the cursor".to_string(), "E".to_string()))
         );
+    }
+
+    /// **What the user bound wins over what an application declares**,
+    /// whichever arrived first: a config is read before any window is open,
+    /// and a declaration that arrives later goes under it. Declaring the same
+    /// thing again changes nothing.
+    #[test]
+    fn a_declaration_goes_under_what_the_user_bound() {
+        let mut map = Keymap::default();
+        let none = Mods::default();
+        let entry = vec!["note_entry".to_string()];
+        // the user's [gui.keys.note_entry], before any window declared it
+        assert!(
+            map.bind_in(Some("note_entry"), "pitch_e", &["Shift+E"])
+                .is_empty()
+        );
+        assert!(
+            map.declare("note_entry", "pitch_e", &["E"], Some("Write an E"))
+                .is_empty()
+        );
+        assert!(
+            map.declare("note_entry", "pitch_d", &["D"], None)
+                .is_empty()
+        );
+        assert_eq!(
+            map.lookup_in(&Key::Char('e'), shift(), &entry),
+            Some("pitch_e")
+        );
+        assert_eq!(map.lookup_in(&Key::Char('e'), none, &entry), Some("split"));
+        assert_eq!(
+            map.lookup_in(&Key::Char('d'), none, &entry),
+            Some("pitch_d")
+        );
+        // and the sheet calls it what the application called it
+        let sheet = map.sheet(&entry);
+        assert!(
+            sheet[0]
+                .rows
+                .contains(&("Write an E".into(), "Shift+E".into()))
+        );
+        assert!(sheet[0].rows.contains(&("Pitch d".into(), "D".into())));
+        // a window defined again declares again, and nothing moves
+        let before = map.clone();
+        assert!(
+            map.declare("note_entry", "pitch_e", &["E"], Some("Write an E"))
+                .is_empty()
+        );
+        assert_eq!(map, before);
     }
 
     #[test]

@@ -57,6 +57,10 @@ pub struct Outcome {
     /// it to the playback, whose span it is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<Value>,
+    /// **Whether to close the window** ([`crate::closing`]): a close asked of
+    /// it, with nothing to lose or nothing to ask in.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub close: bool,
 }
 
 turn::turned!(Outcome);

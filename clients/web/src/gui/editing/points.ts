@@ -51,6 +51,8 @@ export interface EditableCurve {
 /** What one turn of the core came to. */
 interface Outcome {
     turn?: string;
+    /** Whether to close the window, by the crate's rule for every editor. */
+    close?: boolean;
     changed?: boolean;
     answer?: Answer;
     points?: number[];
@@ -283,6 +285,7 @@ export class PointsEditor extends Editor<EditableCurve> {
             this.onLocate?.(this.cursor);
         }
         this.echo.send(outcome.answer);
+        this.closing(outcome);
         return changed;
     }
 }

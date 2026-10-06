@@ -55,6 +55,8 @@ const log = area("gui.editing");
 /** What one turn of the core came to. */
 interface Outcome {
     turn?: string;
+    /** Whether to close the window, by the crate's rule for every editor. */
+    close?: boolean;
     changed?: boolean;
     answer?: Answer;
     play?: { looping: boolean; range?: [number, number] | null };
@@ -561,6 +563,7 @@ export class NotesEditor extends Editor<EventSequence> {
             this.#work.catch(() => {});
         }
         this.echo.send(outcome.answer);
+        this.closing(outcome);
         return changed;
     }
 }

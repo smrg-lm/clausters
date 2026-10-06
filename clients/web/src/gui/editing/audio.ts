@@ -60,6 +60,8 @@ const SPARE = 2;
 /** What one turn of the core came to. */
 interface Outcome {
     turn?: string;
+    /** Whether to close the window, by the crate's rule for every editor. */
+    close?: boolean;
     answer?: Answer;
     changed?: boolean;
     version?: number;
@@ -785,7 +787,10 @@ export class AudioEditor extends Editor<Buffer> {
         // The answer asks the window to read the join again, so it goes once
         // the steps that replace the join have landed.
         const answer = outcome.answer;
-        (this.domain as AudioDomain).after(() => this.echo.send(answer));
+        (this.domain as AudioDomain).after(() => {
+            this.echo.send(answer);
+            this.closing(outcome);
+        });
         return changed;
     }
 
