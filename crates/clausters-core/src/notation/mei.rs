@@ -367,7 +367,20 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
     // are questions about a whole staff, so both are answered before any voice
     // is projected.
     let (printed, placed) = layout(sheet);
-    let mut attached = attachments(sheet, &placed)?;
+    // where a run of pages starts: the first measure, and each one a page
+    // break was written before
+    let mut starts = vec![0];
+    if split {
+        starts.extend(
+            grid.breaks
+                .iter()
+                .filter(|(m, kind)| kind == "page" && *m > 0 && *m < count)
+                .map(|(m, _)| *m),
+        );
+        starts.sort_unstable();
+        starts.dedup();
+    }
+    let (mut attached, timed) = attachments(sheet, &placed, &starts, count)?;
     for (m, kind) in &grid.marks {
         let xml = repeat_mark_xml(grid, *m, kind)?;
         attached.entry(*m).or_default().push_str(&xml);
@@ -397,20 +410,6 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
             per_voice.push(cells);
         }
         projected.push(per_voice);
-    }
-
-    // where a run of pages starts: the first measure, and each one a page
-    // break was written before
-    let mut starts = vec![0];
-    if split {
-        starts.extend(
-            grid.breaks
-                .iter()
-                .filter(|(m, kind)| kind == "page" && *m > 0 && *m < count)
-                .map(|(m, _)| *m),
-        );
-        starts.sort_unstable();
-        starts.dedup();
     }
 
     // **Each measure, or a run of empty ones as one numbered rest**: where
@@ -456,6 +455,18 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
         }
         pieces.push((m, k));
         m += k;
+    }
+    // a line that ends at a beat says how many measures on that is, and a
+    // run of empty ones written as one numbered rest is one
+    for line in timed {
+        let across = pieces
+            .iter()
+            .filter(|(at, _)| *at > line.measure && *at <= line.to)
+            .count();
+        attached.entry(line.measure).or_default().push_str(&format!(
+            "{} tstamp2=\"{across}m+{}\"{}",
+            line.head, line.beat, line.tail
+        ));
     }
     let piece_xml = |first: usize, k: usize, run_start: usize| -> String {
         // a change of meter or key stands before the measure it starts at,
@@ -1284,11 +1295,49 @@ fn single_value(ticks: i32) -> Option<(i32, i32)> {
 /// # Errors
 /// When a spanner names an item that is not in the score. Silently dropping it
 /// would leave a caller with a crescendo that never appears and no reason why.
+#[allow(clippy::type_complexity)]
 fn attachments(
     sheet: &Sheet,
     placed: &std::collections::HashMap<u64, (usize, usize)>,
-) -> Result<std::collections::HashMap<usize, String>, String> {
+    starts: &[usize],
+    count: usize,
+) -> Result<(std::collections::HashMap<usize, String>, Vec<Timed>), String> {
     let mut out: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut timed: Vec<Timed> = Vec::new();
+    let grid = &sheet.grid;
+    // each item's voice and where it starts, which is what a beat is read from
+    let mut times: std::collections::HashMap<u64, (usize, Ratio)> =
+        std::collections::HashMap::new();
+    for staff in &sheet.staves {
+        for (vi, voice) in staff.voices.iter().enumerate() {
+            let mut onset = Ratio::ZERO;
+            for item in &voice.items {
+                times.insert(item.id(), (vi, onset));
+                onset = onset + item.dur();
+            }
+        }
+    }
+    // **An item of a measure drawn as a repeat has no element on the page**
+    // -- the sign stands for it -- so what is written at it is written at
+    // its beat of that measure, which the sign's measure still has.
+    let anchor = |id: u64, layer: bool| -> Option<(Anchor, usize, usize)> {
+        let &(measure, si) = placed.get(&id)?;
+        if !grid.repeats.contains(&measure) {
+            return Some((Anchor::Item(id), measure, si));
+        }
+        let &(vi, onset) = times.get(&id)?;
+        let (_, offset) = grid.position(onset);
+        let beat = beat_of(offset, grid.meter_at(measure).unit);
+        let at = Anchor::Beat {
+            measure,
+            beat,
+            layer: layer.then_some(vi),
+        };
+        Some((at, measure, si))
+    };
+    let run_of = |measure: usize| starts.iter().rposition(|s| *s <= measure).unwrap_or(0);
+    // the ties of the notes let ring, each with the measure it is written in
+    let mut rings: Vec<(usize, String)> = Vec::new();
 
     for staff in &sheet.staves {
         for voice in &staff.voices {
@@ -1325,14 +1374,10 @@ fn attachments(
                     };
                     here.push_str(&format!("<{kind}{at}/>"));
                 }
-                if marks.ring {
-                    // let it ring: a tie into the next item, or into nothing
-                    let end = voice
-                        .items
-                        .get(index + 1)
-                        .map(|next| format!(" endid=\"#n{}\"", next.id()))
-                        .unwrap_or_default();
-                    here.push_str(&format!("<lv{at}{end}/>"));
+                if marks.ring
+                    && let Some(&(_, onset)) = times.get(&item.id())
+                {
+                    rings.extend(ring_xml(grid, voice, index, onset, si));
                 }
                 if let Some(fingering) = &marks.fingering {
                     here.push_str(&format!(
@@ -1350,14 +1395,18 @@ fn attachments(
         }
     }
 
+    for (measure, xml) in rings {
+        out.entry(measure).or_default().push_str(&xml);
+    }
+
     for control in &sheet.controls {
-        let &(measure, si) = placed.get(&control.on).ok_or_else(|| {
+        let (point, measure, si) = anchor(control.on, false).ok_or_else(|| {
             format!(
                 "a {} is written at item {}, which is not in this score",
                 control.kind, control.on
             )
         })?;
-        let at = format!(" staff=\"{}\" startid=\"#n{}\"", si + 1, control.on);
+        let at = format!(" staff=\"{}\"{}", si + 1, point.start());
         let text = escape(&control.text);
         let xml = match control.kind.as_str() {
             "tempo" => {
@@ -1385,37 +1434,34 @@ fn attachments(
         if spanner.kind == "beam" || spanner.kind == "ftrem" {
             continue;
         }
-        let &(measure, si) = placed.get(&spanner.from).ok_or_else(|| {
+        let (from, measure, si) = anchor(spanner.from, true).ok_or_else(|| {
             format!(
                 "a {} starts on item {}, which is not in this score",
                 spanner.kind, spanner.from
             )
         })?;
-        let Some(&(to_measure, _)) = placed.get(&spanner.to) else {
+        let Some((to, to_measure, _)) = anchor(spanner.to, true) else {
             return Err(format!(
                 "a {} ends on item {}, which is not in this score",
                 spanner.kind, spanner.to
             ));
         };
         let staff = format!(" staff=\"{}\"", si + 1);
-        let ends = format!(
-            "{staff} startid=\"#n{}\" endid=\"#n{}\"",
-            spanner.from, spanner.to
-        );
-        let xml = match spanner.kind.as_str() {
-            "slur" => format!("<slur{ends}/>"),
-            "crescendo" => format!("<hairpin form=\"cres\"{ends}/>"),
-            "diminuendo" => format!("<hairpin form=\"dim\"{ends}/>"),
-            "phrase" => format!("<phrase{ends}/>"),
-            "gliss" => format!("<gliss{ends}/>"),
-            "bracket" => format!("<bracketSpan{ends} lform=\"solid\"/>"),
+        // the element's name with what it says before its ends, and after
+        let (name, tail) = match spanner.kind.as_str() {
+            "slur" => ("slur".to_string(), String::new()),
+            "crescendo" => ("hairpin form=\"cres\"".to_string(), String::new()),
+            "diminuendo" => ("hairpin form=\"dim\"".to_string(), String::new()),
+            "phrase" => ("phrase".to_string(), String::new()),
+            "gliss" => ("gliss".to_string(), String::new()),
+            "bracket" => ("bracketSpan".to_string(), " lform=\"solid\"".to_string()),
             "beamspan" => {
                 let plist = items_between(sheet, spanner.from, spanner.to)
                     .iter()
                     .map(|id| format!("#n{id}"))
                     .collect::<Vec<_>>()
                     .join(" ");
-                format!("<beamSpan{ends} plist=\"{plist}\"/>")
+                ("beamSpan".to_string(), format!(" plist=\"{plist}\""))
             }
             octave if OCTAVES.iter().any(|(name, ..)| *name == octave) => {
                 let (_, dis, place) = OCTAVES
@@ -1423,19 +1469,20 @@ fn attachments(
                     .find(|(name, ..)| *name == octave)
                     .copied()
                     .unwrap_or(("8va", 8, "above"));
-                format!("<octave{ends} dis=\"{dis}\" dis.place=\"{place}\"/>")
+                (
+                    "octave".to_string(),
+                    format!(" dis=\"{dis}\" dis.place=\"{place}\""),
+                )
             }
             // pressed at the first note and let go at the last: two signs,
             // the second in the measure it is let go in
             "pedal" => {
-                out.entry(measure).or_default().push_str(&format!(
-                    "<pedal{staff} startid=\"#n{}\" dir=\"down\"/>",
-                    spanner.from
-                ));
-                out.entry(to_measure).or_default().push_str(&format!(
-                    "<pedal{staff} startid=\"#n{}\" dir=\"up\"/>",
-                    spanner.to
-                ));
+                out.entry(measure)
+                    .or_default()
+                    .push_str(&format!("<pedal{staff}{} dir=\"down\"/>", from.start()));
+                out.entry(to_measure)
+                    .or_default()
+                    .push_str(&format!("<pedal{staff}{} dir=\"up\"/>", to.start()));
                 continue;
             }
             other => {
@@ -1446,9 +1493,214 @@ fn attachments(
                 ));
             }
         };
-        out.entry(measure).or_default().push_str(&xml);
+        // **A line across a written page break is written once in each run
+        // of pages it is in**: to the end of the run it starts in, through
+        // the whole of one it passes, and from the start of the run it ends
+        // in -- as the engraver itself draws one across a system break, open
+        // at the edge. A glissando is a line between two noteheads and a
+        // beam between its notes, so neither has an end the page could
+        // stand in for.
+        let (first, last) = (run_of(measure), run_of(to_measure));
+        let cut = first < last && !matches!(spanner.kind.as_str(), "gliss" | "beamspan");
+        let parts: Vec<(Anchor, Anchor)> = if cut {
+            (first..=last)
+                .map(|run| {
+                    let opens = starts[run];
+                    let closes = starts.get(run + 1).copied().unwrap_or(count) - 1;
+                    let start = if run == first {
+                        from.clone()
+                    } else {
+                        Anchor::Beat {
+                            measure: opens,
+                            beat: "0".to_string(),
+                            layer: None,
+                        }
+                    };
+                    let end = if run == last {
+                        to.clone()
+                    } else {
+                        Anchor::Beat {
+                            measure: closes,
+                            beat: (grid.meter_at(closes).count + 1).to_string(),
+                            layer: None,
+                        }
+                    };
+                    (start, end)
+                })
+                .collect()
+        } else {
+            vec![(from, to)]
+        };
+        for (start, end) in parts {
+            let at = match &start {
+                Anchor::Item(_) => measure,
+                Anchor::Beat { measure, .. } => *measure,
+            };
+            let head = format!("<{name}{staff}{}", start.start());
+            let here = out.entry(at).or_default();
+            match end {
+                Anchor::Item(id) => here.push_str(&format!("{head} endid=\"#n{id}\"{tail}/>")),
+                Anchor::Beat { measure, beat, .. } => timed.push(Timed {
+                    measure: at,
+                    head,
+                    to: measure,
+                    beat,
+                    tail: format!("{tail}/>"),
+                }),
+            }
+        }
     }
-    Ok(out)
+    Ok((out, timed))
+}
+
+/// **Let it ring**: a tie that leaves the notehead and goes nowhere -- a rest
+/// after the note is the common case, which is where the sign comes from.
+///
+/// The engraver draws one only inside a measure and only from a note, so it
+/// is written from each notehead of the item's last written part to a beat
+/// of that part's measure, with no item at its end: a beat on, or half the
+/// way to the next note or to the barline where either is nearer -- so it
+/// reaches neither. A chord split across a barline keeps its pitches' ids
+/// in every part, so its ties hang from the first.
+fn ring_xml(
+    grid: &Grid,
+    voice: &Voice,
+    index: usize,
+    onset: Ratio,
+    si: usize,
+) -> Vec<(usize, String)> {
+    let item = &voice.items[index];
+    let pitches = item.pitches().len();
+    let (measure, part, from) = match last_part(grid, onset, item.dur()) {
+        (_, part, _) if part > 1 && pitches > 1 => (grid.position(onset).0, 1, onset),
+        last => last,
+    };
+    let (opens, closes) = grid.span(measure, measure);
+    let unit = grid.meter_at(measure).unit;
+    // where the next note of the voice sounds, if one does
+    let mut next = onset + item.dur();
+    let mut sounds = false;
+    for later in &voice.items[index + 1..] {
+        if later.sounds() {
+            sounds = true;
+            break;
+        }
+        next = next + later.dur();
+    }
+    let beat = Ratio::new(1, unit.max(1));
+    // what stops it: the next note, which a tie that goes nowhere never
+    // reaches, or the barline
+    let limit = if sounds && next > from && next < closes {
+        next
+    } else {
+        closes
+    };
+    let end = from + beat.min((limit - from) * Ratio::new(1, 2));
+    let end = beat_of(end - opens, unit);
+    let id = item.id();
+    let heads: Vec<String> = match (pitches, part) {
+        (2.., _) => (1..=pitches).map(|p| format!("n{id}-p{p}")).collect(),
+        (_, 1) => vec![format!("n{id}")],
+        (_, part) => vec![format!("n{id}-{part}")],
+    };
+    heads
+        .into_iter()
+        .map(|head| {
+            let xml = format!(
+                "<lv staff=\"{}\" startid=\"#{head}\" tstamp2=\"0m+{end}\"/>",
+                si + 1
+            );
+            (measure, xml)
+        })
+        .collect()
+}
+
+/// The last written part of an item that starts at `onset`: the measure it
+/// is in, which part of the item it is (from one), and where it starts. An
+/// item is one part unless a barline or its own value splits it, as
+/// [`project`] writes it.
+fn last_part(grid: &Grid, onset: Ratio, dur: Ratio) -> (usize, usize, Ratio) {
+    let (mut measure, offset) = grid.position(onset);
+    let whole = (measure, 1, onset);
+    if tuplet_ratio(dur).is_some() {
+        return whole;
+    }
+    let (Ok(mut pos), Ok(mut remaining)) = (ticks(offset), ticks(dur)) else {
+        return whole;
+    };
+    let (mut count, mut last) = (0, 0);
+    while remaining > 0 {
+        let Ok(bar) = bar_ticks(grid, measure) else {
+            return whole;
+        };
+        if pos >= bar {
+            measure += 1;
+            pos = 0;
+            continue;
+        }
+        let take = remaining.min(bar - pos);
+        let written = parts(take);
+        count += written.len();
+        // a dotted value is its value and half of it
+        last = written.last().map_or(take, |&(value, dots)| {
+            let plain = TPW / value;
+            plain + if dots != 0 { plain / 2 } else { 0 }
+        });
+        pos += take;
+        remaining -= take;
+    }
+    let start = grid.measure_start(measure) + Ratio::from_ticks((pos - last) as i64, TPW as i64);
+    (measure, count.max(1), start)
+}
+
+/// Where an end of something written beside the notes is: at an item, or --
+/// where the page holds no element for the item, or the end is a page's own
+/// -- at a beat of a measure.
+#[derive(Clone)]
+enum Anchor {
+    Item(u64),
+    Beat {
+        measure: usize,
+        beat: String,
+        /// The voice the item is in, where the beat is an item's.
+        layer: Option<usize>,
+    },
+}
+
+impl Anchor {
+    /// The attributes that say something starts here.
+    fn start(&self) -> String {
+        match self {
+            Anchor::Item(id) => format!(" startid=\"#n{id}\""),
+            Anchor::Beat { beat, layer, .. } => {
+                let layer = layer
+                    .map(|vi| format!(" layer=\"{}\"", vi + 1))
+                    .unwrap_or_default();
+                format!(" tstamp=\"{beat}\"{layer}")
+            }
+        }
+    }
+}
+
+/// A line between notes whose end is written as a beat of a measure. How
+/// many measures on that measure is depends on how the measures between are
+/// written, so the element is finished once that is known: `head`, the end,
+/// `tail`.
+struct Timed {
+    /// The measure the element is written in.
+    measure: usize,
+    head: String,
+    /// The measure it ends in, and the beat of it.
+    to: usize,
+    beat: String,
+    tail: String,
+}
+
+/// A place in a measure as MEI counts it: in the meter's unit, from one.
+fn beat_of(offset: Ratio, unit: i64) -> String {
+    let beat = 1.0 + (offset * Ratio::new(unit, 1)).to_f64();
+    let text = format!("{beat:.4}");
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// The ornaments MEI names an element for; any other is an `ornam`.
@@ -2335,6 +2587,154 @@ mod emission {
         // a run after the first opens with the page number
         assert!(runs[1].contains("pgHead func=\"first\""), "{}", runs[1]);
         assert!(runs[1].contains(super::super::PAGE_NUMBER));
+    }
+
+    /// A slur or a hairpin across a written page break is in both runs of
+    /// pages: each holds the part of it that is its own, ending where the
+    /// run ends and starting where the next one opens.
+    #[test]
+    fn a_line_across_a_page_break_is_written_in_each_run_it_is_in() {
+        use super::super::model::Spanner;
+        let quarter = Ratio::new(1, 4);
+        let mut mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(
+                (1..=12).map(|id| note(Step::C, quarter, id)).collect(),
+            )],
+            ..Staff::default()
+        }]);
+        let line = |kind: &str, from, to| Spanner {
+            kind: kind.into(),
+            from,
+            to,
+        };
+        mine.spanners = vec![line("slur", 2, 11), line("crescendo", 2, 6)];
+        // one document: the two ends are the two notes
+        let whole = sheet_to_mei(&mine).unwrap();
+        assert!(whole.contains("<slur staff=\"1\" startid=\"#n2\" endid=\"#n11\"/>"));
+        mine.grid.breaks = vec![(1, "page".into()), (2, "page".into())];
+        assert_eq!(sheet_to_mei(&mine).unwrap().matches("<slur").count(), 1);
+
+        let runs = sheet_to_mei_pages(&mine).unwrap();
+        assert_eq!(runs.len(), 3);
+        // from its note to the end of the first run's last measure
+        let first = "<slur staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
+        assert!(runs[0].contains(first), "{}", runs[0]);
+        // through the whole of the run it passes
+        let through = "<slur staff=\"1\" tstamp=\"0\" tstamp2=\"0m+5\"/>";
+        assert!(runs[1].contains(through), "{}", runs[1]);
+        // and from where the last opens to its note
+        let last = "<slur staff=\"1\" tstamp=\"0\" endid=\"#n11\"/>";
+        assert!(runs[2].contains(last), "{}", runs[2]);
+        // the hairpin ends in the second run and is no part of the third
+        let opens = "<hairpin form=\"cres\" staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
+        let closes = "<hairpin form=\"cres\" staff=\"1\" tstamp=\"0\" endid=\"#n6\"/>";
+        assert!(runs[0].contains(opens), "{}", runs[0]);
+        assert!(runs[1].contains(closes), "{}", runs[1]);
+        assert!(!runs[2].contains("<hairpin"));
+    }
+
+    /// Let it ring is a tie from the notehead to nowhere: it ends at a beat
+    /// of its own measure, short of the next note and of the barline, hangs
+    /// from the last part of a note tied across one, and from each notehead
+    /// of a chord.
+    #[test]
+    fn let_it_ring_is_a_short_tie_that_ends_inside_its_measure() {
+        let ring = |item: Item| match item {
+            Item::Note {
+                id,
+                pitches,
+                dur,
+                tie,
+                ..
+            } => Item::Note {
+                id,
+                pitches,
+                dur,
+                tie,
+                marks: Marks {
+                    ring: true,
+                    ..Marks::default()
+                },
+            },
+            other => other,
+        };
+        let quarter = Ratio::new(1, 4);
+        let chord = Item::Note {
+            id: 7,
+            pitches: vec![pitch(Step::C, 4), pitch(Step::E, 4)],
+            dur: quarter,
+            tie: false,
+            marks: Marks::default(),
+        };
+        let mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(vec![
+                // a quarter before a rest: a beat on
+                ring(note(Step::C, quarter, 1)),
+                Item::Rest {
+                    id: 2,
+                    dur: quarter,
+                },
+                // an eighth before a note: half the way to it
+                ring(note(Step::C, Ratio::new(1, 8), 3)),
+                note(Step::D, Ratio::new(1, 8), 4),
+                // the last quarter of the measure: half the way to the barline
+                ring(note(Step::C, quarter, 5)),
+                note(Step::C, Ratio::new(1, 2), 6),
+                // a chord before a note: each notehead's, half the way to it
+                ring(chord),
+                // a whole note from the last beat: tied across the barline,
+                // and the tie hangs from its second part, a beat on
+                ring(note(Step::C, Ratio::ONE, 8)),
+            ])],
+            ..Staff::default()
+        }]);
+        let mei = sheet_to_mei(&mine).expect("writes it");
+        for tie in [
+            "<lv staff=\"1\" startid=\"#n1\" tstamp2=\"0m+2\"/>",
+            "<lv staff=\"1\" startid=\"#n3\" tstamp2=\"0m+3.25\"/>",
+            "<lv staff=\"1\" startid=\"#n5\" tstamp2=\"0m+4.5\"/>",
+            "<lv staff=\"1\" startid=\"#n7-p1\" tstamp2=\"0m+3.5\"/>",
+            "<lv staff=\"1\" startid=\"#n7-p2\" tstamp2=\"0m+3.5\"/>",
+            "<lv staff=\"1\" startid=\"#n8-2\" tstamp2=\"0m+2\"/>",
+        ] {
+            assert!(mei.contains(tie), "{tie} in {mei}");
+        }
+        assert!(!mei.contains("<lv staff=\"1\" startid=\"#n8\""), "{mei}");
+        // the second measure holds the chord's two, the third the last part's
+        let third = mei.split("xml:id=\"m3\"").nth(1).unwrap();
+        assert_eq!(third.matches("<lv").count(), 1, "{third}");
+    }
+
+    /// The end of a run is counted in measures as they are written: a run of
+    /// empty ones drawn as one numbered rest is one measure on.
+    #[test]
+    fn a_line_to_the_end_of_a_run_counts_a_numbered_rest_as_one_measure() {
+        use super::super::model::Spanner;
+        let quarter = Ratio::new(1, 4);
+        let mut items: Vec<Item> = (1..=4).map(|id| note(Step::C, quarter, id)).collect();
+        items.push(Item::Rest {
+            id: 5,
+            dur: Ratio::from(3),
+        });
+        items.extend((6..=9).map(|id| note(Step::C, quarter, id)));
+        let mut mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(items)],
+            ..Staff::default()
+        }]);
+        mine.grid.multirests = true;
+        mine.grid.breaks = vec![(4, "page".into())];
+        mine.spanners = vec![Spanner {
+            kind: "slur".into(),
+            from: 3,
+            to: 7,
+        }];
+        let runs = sheet_to_mei_pages(&mine).unwrap();
+        assert!(runs[0].contains("<multiRest num=\"3\"/>"), "{}", runs[0]);
+        let first = "<slur staff=\"1\" startid=\"#n3\" tstamp2=\"1m+5\"/>";
+        assert!(runs[0].contains(first), "{}", runs[0]);
     }
 
     #[test]

@@ -106,13 +106,19 @@ struct Reader {
     /// Where each voice's last measure is in its items, which a measure
     /// written as a repeat of it copies.
     last: HashMap<(usize, usize), (usize, usize)>,
+    /// The measure each `<measure>` starts at, in the order they are
+    /// written: a numbered rest is one of them and several measures.
+    elements: Vec<usize>,
 }
 
-/// Something that hangs off a measure, by the element it starts at.
+/// Something that hangs off a measure, by the element it starts at -- or,
+/// where it names none, by its beat of the measure it is written in.
 struct Attached {
     name: String,
-    start: String,
+    start: Option<String>,
     end: Option<String>,
+    /// Which `<measure>` it is written in, counted as they are written.
+    element: usize,
     text: String,
     attrs: BTreeMap<String, String>,
 }
@@ -159,6 +165,8 @@ impl Reader {
         if let Some(kind) = self.pending_break.take() {
             self.sheet.grid.breaks.push((self.measure, kind));
         }
+        let element = self.elements.len();
+        self.elements.push(self.measure);
         let mut span = 1i64;
         let mut repeated = false;
         for staff in measure.children().filter(|n| n.has_tag_name("staff")) {
@@ -245,20 +253,22 @@ impl Reader {
                 }
                 continue;
             }
-            let Some(start) = node.attribute("startid").map(strip_hash) else {
-                continue;
-            };
+            let start = node.attribute("startid").map(strip_hash);
             let end = node.attribute("endid").map(strip_hash);
             if name == "tie" {
-                if let Some(end) = end {
+                if let (Some(start), Some(end)) = (start, end) {
                     self.ties.push((start, end));
                 }
+                continue;
+            }
+            if start.is_none() && node.attribute("tstamp").is_none() {
                 continue;
             }
             self.attached.push(Attached {
                 name: name.to_string(),
                 start,
                 end,
+                element,
                 text: text_in(node),
                 attrs: node
                     .attributes()
@@ -345,7 +355,7 @@ impl Reader {
             };
             sheet.staves[si].clefs.push((t, clef));
         }
-        apply_attachments(&mut sheet, &self.attached);
+        apply_attachments(&mut sheet, &self.attached, &self.elements);
         apply_ties(&mut sheet, &self.ties);
         sheet
     }
@@ -1046,7 +1056,12 @@ fn rejoin(sheet: &mut Sheet) {
 
 /// Put back what hung off the measures: the spanners, the marks a note
 /// carries that MEI writes beside it, and what is written at a point.
-fn apply_attachments(sheet: &mut Sheet, attached: &[Attached]) {
+///
+/// **An end is an element's id, or a beat of a measure**: what is written at
+/// an item of a measure drawn as a repeat is written at its beat, the sign
+/// standing where the item's element would be, and it comes back on the item
+/// the measure holds there.
+fn apply_attachments(sheet: &mut Sheet, attached: &[Attached], elements: &[usize]) {
     let ids: BTreeMap<String, u64> = sheet
         .voices()
         .flat_map(|v| v.items.iter())
@@ -1064,11 +1079,40 @@ fn apply_attachments(sheet: &mut Sheet, attached: &[Attached]) {
     let mut pedals: Vec<(u64, bool)> = Vec::new();
 
     for a in attached {
-        let Some(from) = resolve(&a.start) else {
+        let attr = |name: &str| a.attrs.get(name).map(String::as_str);
+        let count = |name: &str| attr(name).and_then(|n| n.parse::<usize>().ok());
+        let staff = count("staff").map(|n| n.saturating_sub(1));
+        let layer = count("layer").map(|n| n.saturating_sub(1));
+        let from = match a.start.as_deref() {
+            Some(reference) => resolve(reference),
+            None => attr("tstamp")
+                .and_then(|beat| beat.parse::<f64>().ok())
+                .zip(elements.get(a.element))
+                .and_then(|(beat, measure)| item_at(sheet, *measure, staff, layer, beat)),
+        };
+        let Some(from) = from else {
             continue;
         };
-        let to = a.end.as_deref().and_then(&resolve);
-        let attr = |name: &str| a.attrs.get(name).map(String::as_str);
+        // an end by its beat is in the voice the start is in, unless the
+        // element names another
+        let to = match a.end.as_deref() {
+            Some(reference) => resolve(reference),
+            None => attr("tstamp2").and_then(|end| {
+                let (across, beat) = match end.split_once("m+") {
+                    Some((across, beat)) => (across.trim().parse::<usize>().ok()?, beat),
+                    None => (0, end),
+                };
+                let measure = *elements.get(a.element + across)?;
+                let (si, vi, _) = sheet.locate(from)?;
+                item_at(
+                    sheet,
+                    measure,
+                    staff.or(Some(si)),
+                    layer.or(Some(vi)),
+                    beat.trim().parse().ok()?,
+                )
+            }),
+        };
         let spanner = match a.name.as_str() {
             "slur" => Some("slur".to_string()),
             "hairpin" => Some(if attr("form") == Some("dim") {
@@ -1180,6 +1224,46 @@ fn apply_attachments(sheet: &mut Sheet, attached: &[Attached]) {
             }
         }
     }
+}
+
+/// The item sounding at `beat` of `measure` -- MEI's count, in the meter's
+/// unit from one -- on a staff, in the voice named or the first that has one
+/// there. A beat past what the voice holds of the measure is its last item
+/// in it.
+fn item_at(
+    sheet: &Sheet,
+    measure: usize,
+    staff: Option<usize>,
+    voice: Option<usize>,
+    beat: f64,
+) -> Option<u64> {
+    const NEAR: f64 = 1e-3;
+    let grid = &sheet.grid;
+    let (opens, closes) = grid.span(measure, measure);
+    let (opens, closes) = (opens.to_f64(), closes.to_f64());
+    let unit = grid.meter_at(measure).unit.max(1) as f64;
+    let t = (opens + (beat - 1.0) / unit).clamp(opens, closes);
+    let voices = &sheet.staves.get(staff.unwrap_or(0))?.voices;
+    let mut last = None;
+    for (vi, items) in voices.iter().enumerate() {
+        if voice.is_some_and(|v| v != vi) {
+            continue;
+        }
+        let mut inside = None;
+        let mut onset = 0.0;
+        for item in &items.items {
+            let end = onset + item.dur().to_f64();
+            if onset - NEAR <= t && t < end - NEAR {
+                return Some(item.id());
+            }
+            if onset >= opens - NEAR && onset < closes - NEAR {
+                inside = Some(item.id());
+            }
+            onset = end;
+        }
+        last = last.or(inside);
+    }
+    last
 }
 
 /// Ties written as `<tie startid endid>` rather than as `@tie`.
@@ -1383,6 +1467,57 @@ mod tests {
         assert_eq!(back.groups, sheet.groups);
         // and the two-note tremolo's notes keep their own values
         assert_eq!(back.len(), sheet.len());
+    }
+
+    /// What is written at an item of a measure drawn as a repeat is written
+    /// at its beat of that measure -- the sign stands where the item's element
+    /// would be -- and comes back on the item the measure holds there.
+    #[test]
+    fn what_is_written_into_a_measure_drawn_as_a_repeat_comes_back() {
+        use crate::notation::model::Control;
+        let mut sheet = quarters(12);
+        sheet.grid.repeats = vec![1];
+        // into the repeated measure, out of it, and a mark at a point of it
+        sheet = add_spanner(sheet, "slur", 2, 6).unwrap();
+        sheet = add_spanner(sheet, "crescendo", 7, 10).unwrap();
+        sheet = add_spanner(sheet, "pedal", 5, 9).unwrap();
+        sheet.controls.push(Control {
+            kind: "reh".into(),
+            on: 5,
+            text: "B".into(),
+            bpm: None,
+        });
+        let mei = sheet_to_mei(&sheet).unwrap();
+        assert!(mei.contains("<mRpt/>"), "{mei}");
+        let slur = "<slur staff=\"1\" startid=\"#n2\" tstamp2=\"1m+2\"/>";
+        assert!(mei.contains(slur), "{mei}");
+        let hairpin =
+            "<hairpin form=\"cres\" staff=\"1\" tstamp=\"3\" layer=\"1\" endid=\"#n10\"/>";
+        assert!(mei.contains(hairpin), "{mei}");
+        assert!(mei.contains("<reh staff=\"1\" tstamp=\"1\" place=\"above\">"));
+        assert!(mei.contains("<pedal staff=\"1\" tstamp=\"1\" layer=\"1\" dir=\"down\"/>"));
+
+        // the repeated measure's items are the first's again, as new items
+        let back = mei_to_sheet(&mei).unwrap();
+        let ids: Vec<u64> = back.staves[0].voices[0]
+            .items
+            .iter()
+            .map(Item::id)
+            .collect();
+        let repeated = &ids[4..8];
+        let ends = |kind: &str| -> (u64, u64) {
+            let found = back.spanners.iter().find(|s| s.kind == kind);
+            found
+                .map(|s| (s.from, s.to))
+                .unwrap_or_else(|| panic!("no {kind} in {:?}", back.spanners))
+        };
+        assert_eq!(ends("slur"), (2, repeated[1]));
+        assert_eq!(ends("crescendo"), (repeated[2], 10));
+        assert_eq!(ends("pedal"), (repeated[0], 9));
+        assert_eq!(back.controls.len(), 1);
+        assert_eq!(back.controls[0].on, repeated[0]);
+        // and it is written again as it was read
+        round_trips(&back).unwrap();
     }
 
     /// A measure written as a repeat holds what the one before held, and a run

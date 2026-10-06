@@ -518,6 +518,101 @@ mod tests {
         );
     }
 
+    /// How many elements of `kind` a page draws.
+    fn drawn(page: &Page, kind: &str) -> usize {
+        page.draw.kinds.values().filter(|k| *k == kind).count()
+    }
+
+    /// A slur and a hairpin across a written page break are drawn on both
+    /// pages, each run of pages holding the part that is its own: the
+    /// engraver matches an end written as a beat of the run's last measure,
+    /// and one written before the first beat of the run's first.
+    #[test]
+    fn a_line_across_a_page_break_is_drawn_on_both_pages() {
+        use clausters_core::notation::{
+            PageSetup, Sheet, View, add_spanner, layout_options, sheet_to_mei, voice_to_sheet,
+        };
+
+        let voice: Vec<Slot> = (0..16).map(|i| Slot::note(vec![60 + i % 8], 8)).collect();
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        sheet = add_spanner(sheet, "slur", 6, 11).unwrap();
+        sheet = add_spanner(sheet, "crescendo", 6, 11).unwrap();
+        let laid = |sheet: &Sheet| {
+            let mut score =
+                open(&sheet_to_mei(sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+            assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
+            score.pages(1000.0, true)
+        };
+        let one = laid(&sheet);
+        assert_eq!((drawn(&one, "slur"), drawn(&one, "hairpin")), (1, 1));
+        sheet.grid.breaks = vec![(2, "page".to_string())];
+        let two = laid(&sheet);
+        assert_eq!((drawn(&two, "slur"), drawn(&two, "hairpin")), (2, 2));
+    }
+
+    /// A slur into a measure drawn as a repeat, and a hairpin out of it, are
+    /// drawn: their ends there are beats of the measure, which the engraver
+    /// places under the sign.
+    #[test]
+    fn a_line_into_a_measure_drawn_as_a_repeat_is_drawn() {
+        use clausters_core::notation::{Sheet, add_spanner, sheet_to_mei, voice_to_sheet};
+
+        let voice: Vec<Slot> = (0..12).map(|i| Slot::note(vec![60 + i % 8], 8)).collect();
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        sheet.grid.repeats = vec![1];
+        sheet = add_spanner(sheet, "slur", 2, 6).unwrap();
+        sheet = add_spanner(sheet, "crescendo", 7, 10).unwrap();
+        let mut score =
+            open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+        let page = score.display_list(1);
+        assert_eq!(drawn(&page, "mRpt"), 1);
+        assert_eq!((drawn(&page, "slur"), drawn(&page, "hairpin")), (1, 1));
+        // and the engraver's own document still holds both
+        let back = clausters_core::notation::mei_to_sheet(&score.mei()).unwrap();
+        let kinds: Vec<&str> = back.spanners.iter().map(|s| s.kind.as_str()).collect();
+        assert_eq!(kinds, ["slur", "crescendo"]);
+    }
+
+    /// Let it ring is drawn wherever it is written: the engraver draws one
+    /// only when it ends inside its own measure, which is how it is written
+    /// -- on the last note of a measure, on the last of the score, on each
+    /// notehead of a chord, and after a tie across a barline.
+    #[test]
+    fn let_it_ring_is_drawn_wherever_it_is_written() {
+        use clausters_core::notation::{Item, Sheet, mei_to_sheet, sheet_to_mei, voice_to_sheet};
+
+        let mut voice: Vec<Slot> = (0..8).map(|i| Slot::note(vec![60 + i], 8)).collect();
+        voice[2] = Slot::note(vec![60, 64], 8);
+        // the last quarter of the second bar, held a bar longer
+        voice[7] = Slot::note(vec![67], 40);
+        let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        // the chord, the last note of the first bar, and the tied one
+        let rung = [3u64, 4, 8];
+        for item in &mut sheet.staves[0].voices[0].items {
+            if let Item::Note { id, marks, .. } = item
+                && rung.contains(id)
+            {
+                marks.ring = true;
+            }
+        }
+        let mut score =
+            open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+        let page = score.display_list(1);
+        assert_eq!(
+            drawn(&page, "lv"),
+            4,
+            "two of the chord, and one of each note"
+        );
+        let back = mei_to_sheet(&score.mei()).unwrap();
+        let rings: Vec<u64> = back.staves[0].voices[0]
+            .items
+            .iter()
+            .filter(|i| i.marks().is_some_and(|m| m.ring))
+            .map(Item::id)
+            .collect();
+        assert_eq!(rings, rung);
+    }
+
     #[test]
     fn the_page_text_is_drawn_in_its_cells_and_survives_the_engraver() {
         use clausters_core::notation::{

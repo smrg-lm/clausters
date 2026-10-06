@@ -9640,9 +9640,26 @@ opens with the meter in force there, writes only what is on every page, and
 carries the page number, which the engraver counts from one in each document --
 so the page view writes the score's number over it (`PAGE_NUMBER`).
 
+**A line across a page break is written once in each run it is in.** A slur,
+a hairpin, a phrase mark, a bracket or an octave line joins two documents, and
+an end naming a note of another one is an end the engraver cannot match -- it
+drew the line in neither. So each run holds the part that is its own: to the
+end of the run's last measure (`tstamp2`, the beat after its last), through the
+whole of a run it only passes, and from before the first beat of the run it
+ends in (`tstamp="0"`). That is the picture the engraver itself draws across a
+system break, open at the edge. The measures on to that end are counted as they
+are written, since a run of empty ones drawn as one numbered rest is one
+measure of the document.
+
+The same writing serves **an item of a measure drawn as a repeat**, in the one
+document too: the sign stands where the item's element would be, so a line or
+a mark at that item is written at its beat of the measure, and the reader puts
+it back on the item the measure holds there -- which is the repeated measure's
+copy of it, since reading a repeat makes its items again.
+
 What it costs: a score with page breaks is engraved once more per run on every
-edit, and a slur or a hairpin that crosses a page break joins two documents and
-is drawn in neither.
+edit. A glissando is a line between two noteheads and a beam across a barline
+is between its notes, so across a page break neither is drawn.
 
 ## What a page writes is what it plays, and the cursor follows the reading
 

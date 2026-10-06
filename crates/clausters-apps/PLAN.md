@@ -2853,6 +2853,14 @@ wrong.
   leaves two on the first page and opens the second, numbered 2, with the
   third. **Left open**: a slur or a hairpin that crosses a page break is drawn
   in neither run.
+  **Fixed 2026-10-06**: a line across a page break is written once in each
+  run it is in -- to the end of the run it starts in, through one it passes,
+  from the start of the one it ends in -- each end a beat of the run's own
+  measure, which the engraver matches and draws open at the edge as it does
+  across a system break. A slur, a hairpin, a phrase mark, a bracket and an
+  octave line are; pinned against the engraver. Still open: a glissando and a
+  beam across a barline, which are lines between two notes and have no end a
+  page could stand in for.
 
 - ✅ **The example's page had no play cursor** *(the same look: "Tampoco se
   ve el cursor de reproducción")*. Two causes. The example opened the editor
@@ -2989,6 +2997,21 @@ wrong.
   drawn under nothing visible on a note with a caesura; a slur or a hairpin
   into a measure that becomes a repeat is dropped with the items the repeat
   replaces.
+  **Fixed 2026-10-06, the last**: what is written at an item of a measure
+  drawn as a repeat -- a line's end, the pedal, a tempo, a direction, a
+  rehearsal mark -- is written at its beat of that measure, the sign standing
+  where the item's element would be, and read back onto the item the measure
+  holds there. Pinned in the model and against the engraver.
+  **Fixed 2026-10-06, let it ring**: the caesura was where it was seen and
+  not the cause. The tie was written to the next item, and the engraver
+  draws one only when it ends inside its own measure and starts on a note:
+  so it drew none on the last note of a measure -- where a caesura stands --
+  none on the last note of a voice, and none on a chord. It is now written
+  as what it is (the user, the same day: "a tie that leaves the notehead and
+  goes nowhere; a rest after the note is the common case"; "one never
+  arrives at a note"): from each notehead of the item's last written part
+  to a beat of that measure -- a beat on, or half the way to the next note
+  or the barline where either is nearer. Pinned against the engraver.
 
 - ✅ **A channel group is not edited as one** *(`X5.8.1`: "editing a group
   as one is not built")*. The render writes a staff's dynamics as the same
