@@ -54,7 +54,7 @@ SR = 48000.0
 def py_default(name="py_default") -> SynthDef:
     """The client-side twin of the server's built-in `default`: a subtractive
     voice with a control for each dimension an MPE zone plays.
-    `freq`/`amp`/`gate`/`pan`/`press`/`slide` are named controls (the
+    `freq`/`amp`/`gate`/`pan`/`press`/`slide`/`out` are named controls (the
     `/synth_new`/`/node_set` parameters a `Pbind` drives).
 
     The tone is two saws detuned by +/-0.4 %, through a resonant lowpass whose cutoff sits half an octave above the
@@ -65,13 +65,15 @@ def py_default(name="py_default") -> SynthDef:
     The envelope is the built-in's own: a gated ASR on equal-power sine ramps
     (0.01 s attack, sustain at 1.0 while the gate is held, 0.3 s release) with
     `done_action = FREE_SELF`, so the note ramps in and out without a click and
-    frees itself once the release finishes. `pan2` places it at equal power."""
+    frees itself once the release finishes. `pan2` places it at equal power,
+    on the bus `out` names and the one after it."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     gate = control("gate", 1.0)
     pan = control("pan", 0.0)
     press = lag(control("press", 0.0), 0.05)
     slide = lag(control("slide", 0.5), 0.05)
+    bus = control("out", 0.0)
     env = env_gen(
         Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
         gate=gate,
@@ -83,7 +85,10 @@ def py_default(name="py_default") -> SynthDef:
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
-    return SynthDef(name, out(0.0, pan2(sig, pan)))
+    # One `out` control, so each side is written on its own: a channel list
+    # is laid on consecutive buses from a constant, not from a control.
+    left, right = pan2(sig, pan).items
+    return SynthDef(name, out(bus, left), out(bus + 1.0, right))
 
 def render_pbind(instrument: str, sdef: SynthDef | None):
     """Render the arpeggio on `instrument`; if `sdef` is given, score its

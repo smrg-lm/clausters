@@ -543,7 +543,7 @@ fn query_tree_reports_structure_and_controls() {
         OscType::Int(1001),         // the synth
         OscType::Int(-1),           // synth marker
         OscType::String("default".into()),
-        OscType::Int(6), // control count
+        OscType::Int(7), // control count
         OscType::String("freq".into()),
         OscType::Float(220.0), // /synth_new override, mirrored
         OscType::String("amp".into()),
@@ -556,6 +556,8 @@ fn query_tree_reports_structure_and_controls() {
         OscType::Float(0.0), // default
         OscType::String("slide".into()),
         OscType::Float(0.5), // default
+        OscType::String("out".into()),
+        OscType::Float(0.0), // default
     ];
     assert_eq!(reply.args, expected);
     server.quit();
@@ -683,6 +685,68 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
         "dump must flag the barrier:\n{dump}"
     );
     assert!(dump.contains("group 100 (auto)"), "dump header:\n{dump}");
+    server.quit();
+}
+
+/// **A bus index that is arithmetic over controls is static.** A def with one
+/// `out` control writes its second channel on `out + 1`; that is a function
+/// of the node's controls alone, so the node is sorted like any other -- its
+/// reader goes after it, and follows it when `out` is set -- and is no
+/// barrier.
+#[test]
+fn a_bus_index_worked_out_from_a_control_is_static() {
+    let server = Server::spawn();
+    for add in [
+        json!({"kind": "Add", "inputs": [{"control": 0}, {"const": 1.0}]}),
+        json!({"kind": "BinaryOpUGen", "op": "add",
+               "inputs": [{"control": 0}, {"const": 1.0}]}),
+    ] {
+        let name = format!("pair.{}", add["kind"].as_str().unwrap());
+        server.d_recv(&json!({
+            "name": name,
+            "controls": [{"name": "out", "default": 16.0}],
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 330.0}]},
+                {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 0}]},
+                add,
+                {"kind": "Out", "inputs": [{"ugen": 2}, {"ugen": 0}]}
+            ]
+        }));
+        // Reads the pair's **second** channel at its default, bus 17.
+        server.d_recv(&json!({
+            "name": "second",
+            "controls": [{"name": "in", "default": 17.0}],
+            "ugens": [
+                {"kind": "In", "inputs": [{"control": 0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }));
+        server.send(
+            "/group_new",
+            vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+        );
+        server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+        // Reader first, writer second: the edge has to move the writer up.
+        for (def, id) in [("second", 1001), (name.as_str(), 1002)] {
+            server.send(
+                "/synth_new",
+                vec![
+                    OscType::String(def.into()),
+                    OscType::Int(id),
+                    OscType::Int(1),
+                    OscType::Int(100),
+                ],
+            );
+        }
+        server.wait_for_order(100, &[1002, 1001]);
+        server.send("/group_dumpGraph", vec![OscType::Int(100)]);
+        let reply = server.recv_until("/group_dumpGraph.reply");
+        let OscType::String(dump) = &reply.args[1] else {
+            panic!("expected a string dump");
+        };
+        assert!(!dump.contains("dynamic"), "{name} is no barrier:\n{dump}");
+        server.send("/node_free", vec![OscType::Int(100)]);
+    }
     server.quit();
 }
 

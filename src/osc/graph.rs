@@ -19,7 +19,12 @@
 //! - A bus index that is a **constant or a control** is static and
 //!   contributes edges (writer before reader). A `/node_set` on a control used
 //!   as a bus index re-analyzes and re-sorts.
-//! - A bus index computed by a **signal** makes the node *dynamic*: a
+//! - So is one that is **arithmetic over constants and controls** -- a
+//!   binary op of them (`BinaryOpUGen`, `Add`, `Sub`, `Mul`), nested -- which
+//!   is how a def with one `out` control writes its second channel
+//!   (`out + 1`): the value is worked out from the node's controls, and every
+//!   control in it is one a `/node_set` re-analyzes on.
+//! - A bus index computed by any other **signal** makes the node *dynamic*: a
 //!   conservative barrier that keeps its position, with nothing sorted
 //!   across it.
 //! - `ReplaceOut` counts as read+write (it consumes what is on the bus), so
@@ -62,16 +67,13 @@ pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
             BusRole::WriteControl => (false, true, true),
             BusRole::None => continue,
         };
-        let value = match ugen.inputs[0] {
-            InputRef::Const(c) => def.constants[c],
-            InputRef::Control(c) => {
-                bus_controls.push(c as u32);
-                controls.get(c).copied().unwrap_or(0.0)
-            }
-            InputRef::Wire(_) => {
-                usage.dynamic = true;
-                continue;
-            }
+        let mark = bus_controls.len();
+        let Some(value) = static_value(def, ugen.inputs[0], controls, &mut bus_controls) else {
+            // Not a function of the controls alone: nothing it read on the
+            // way makes it one.
+            bus_controls.truncate(mark);
+            usage.dynamic = true;
+            continue;
         };
         if control {
             usage.mark_control(value.max(0.0) as usize, read, write);
@@ -80,6 +82,46 @@ pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
         }
     }
     (usage, bus_controls)
+}
+
+/// **What an input is worth, when the node's controls alone say**: a
+/// constant, a control (noted in `bus_controls`), or a binary op of two such
+/// (`BinaryOpUGen`, and `Add`, `Sub` and `Mul`, its aliases) -- `None` for
+/// anything a signal computes.
+///
+/// A def is topologically ordered and an input only names an earlier UGen,
+/// so the walk ends.
+#[cfg(feature = "synth")]
+fn static_value(
+    def: &SynthDef,
+    input: InputRef,
+    controls: &[f32],
+    bus_controls: &mut Vec<u32>,
+) -> Option<f32> {
+    match input {
+        InputRef::Const(c) => Some(def.constants[c]),
+        InputRef::Control(c) => {
+            bus_controls.push(c as u32);
+            Some(controls.get(c).copied().unwrap_or(0.0))
+        }
+        InputRef::Wire(u) => {
+            let ugen = def.ugens.get(u)?;
+            use clausters_core::builtins::{BinaryOp, apply_binary};
+            let op = match ugen.desc.name {
+                "Add" => BinaryOp::Add,
+                "Sub" => BinaryOp::Sub,
+                "Mul" => BinaryOp::Mul,
+                "BinaryOpUGen" => BinaryOp::from_u32(ugen.config.op?)?,
+                _ => return None,
+            };
+            let [a, b] = ugen.inputs.as_slice() else {
+                return None;
+            };
+            let a = static_value(def, *a, controls, bus_controls)?;
+            let b = static_value(def, *b, controls, bus_controls)?;
+            Some(apply_binary(op, a, b))
+        }
+    }
 }
 
 /// Faust synths read `in..in+inputs` and sum into `out..out+outputs`; the

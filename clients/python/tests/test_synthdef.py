@@ -54,14 +54,15 @@ def _py_default_env(name="py_default_env") -> SynthDef:
     saws detuned +/-0.4 % and a sine through a resonant lowpass whose cutoff
     follows the key and opens with ``slide``, ``press`` and a velocity bloom,
     under a gated ASR (equal-power sine ramps, 0.01 s attack, 0.3 s release,
-    ``FREE_SELF``) and placed by ``pan`` -- the same graph the server
-    registers, so it must render sample-identically."""
+    ``FREE_SELF``) and placed by ``pan`` on the bus ``out`` names -- the same
+    graph the server registers, so it must render sample-identically."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     gate = control("gate", 1.0)
     pan = control("pan", 0.0)
     press = lag(control("press", 0.0), 0.05)
     slide = lag(control("slide", 0.5), 0.05)
+    bus = control("out", 0.0)
     env = env_gen(
         Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
         gate=gate,
@@ -72,7 +73,10 @@ def _py_default_env(name="py_default_env") -> SynthDef:
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
-    return SynthDef(name, out(0.0, pan2(sig, pan)))
+    # One `out` control, so each side is written on its own: a channel list
+    # is laid on consecutive buses from a constant, not from a control.
+    left, right = pan2(sig, pan).items
+    return SynthDef(name, out(bus, left), out(bus + 1.0, right))
 
 
 # ---- structure (no server) ----

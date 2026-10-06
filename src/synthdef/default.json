@@ -6,7 +6,8 @@
     {"name": "gate", "default": 1.0},
     {"name": "pan", "default": 0.0},
     {"name": "press", "default": 0.0},
-    {"name": "slide", "default": 0.5}
+    {"name": "slide", "default": 0.5},
+    {"name": "out", "default": 0.0}
   ],
   "ugens": [
     {"kind": "Mul", "inputs": [{"control": 0}, {"const": 0.996}]},
@@ -38,8 +39,9 @@
     {"kind": "Mul", "inputs": [{"ugen": 23}, {"ugen": 25}]},
     {"kind": "Mul", "inputs": [{"ugen": 26}, {"const": 1.6}]},
     {"kind": "Pan2", "inputs": [{"ugen": 27}, {"control": 3}, {"const": 1.0}, {"const": 0.0}]},
-    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 28}]},
+    {"kind": "Out", "inputs": [{"control": 6}, {"ugen": 28}]},
     {"kind": "Pan2", "inputs": [{"ugen": 27}, {"control": 3}, {"const": 1.0}, {"const": 1.0}]},
-    {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 30}]}
+    {"kind": "Add", "inputs": [{"control": 6}, {"const": 1.0}]},
+    {"kind": "Out", "inputs": [{"ugen": 31}, {"ugen": 30}]}
   ]
 }

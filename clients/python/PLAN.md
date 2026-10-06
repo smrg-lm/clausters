@@ -5544,6 +5544,21 @@ work, where a pending item reads as done.)*
   and the dict is its `span` -- the time range, its own since a curve has no
   transport -- and `selected`, the points the sweep covers.)*
 
+- ⬜ **A channel list cannot be laid on a control's bus** *(found
+  2026-10-06, giving the built-in `default` its `out` control;
+  `crates/clausters-apps/PLAN.md`, "A track's gain automation does not reach
+  its notes")*. `out(bus, [left, right])` lays the channels on `bus`,
+  `bus + 1`, ... and refuses a `bus` that is not a number (`_out_channels`,
+  and `outChannels` in `clients/web/src/defs/ugens/io.ts`): "a signal bus
+  cannot be offset per channel client-side". So an instrument with an `out`
+  control -- what a note needs to sound into a track, and the convention an
+  event's `out` key assumes -- writes each side by hand
+  (`out(bus, left), out(bus + 1.0, right)`), as the twins of `default` now
+  do. The refusal predates the server reading `control + constant` as a
+  static bus index (`docs/auto-order.md`); with that, a channel list on a
+  control can be `Add(bus, i)` per channel and stay sortable. Both clients,
+  in one change, with `replace_out` and `out_ctl`.
+
 ## Future directions (a design that is not a fix)
 
 - ✅ **A timeline of concrete events could play from an event lane**

@@ -945,7 +945,10 @@ fn insert_lags(
 ///
 /// The cutoff stops at 16 kHz. `press` and `slide` are smoothed over 50 ms,
 /// so a controller moves the tone without stepping. `pan` places the voice
-/// at equal power (`Pan2`, -1 left to 1 right) on buses 0 and 1.
+/// at equal power (`Pan2`, -1 left to 1 right) on the bus `out` names and the
+/// one after it -- buses 0 and 1, the hardware's first two, unless set: the
+/// control an event's `out` key writes, and the one a box of notes on a
+/// track sets to reach that track's strip.
 ///
 /// The level follows a gated ASR (equal-power sine ramps: 0.01 s attack,
 /// sustain at 1.0 while the gate is held, 0.3 s release) with
