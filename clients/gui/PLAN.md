@@ -4804,6 +4804,27 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **A press lands off its mark in a page whose density changed after it
+  opened** *(found 2026-10-06, driving the score editor's page from an
+  automated browser, and seen the same day by the user in that window: "the
+  mouse coordinates inside the canvas are failing")*. Measured: a canvas 1216
+  CSS pixels wide held a backing store 1297 wide -- a ratio of 1.0667 --
+  while the page reported a `devicePixelRatio` of 0.8, and a press reached
+  the element a third further from the canvas' corner than the pointer was
+  (1.0667 / 0.8). The drawing was right; only the pointer was off. The
+  pointer is read at the density of the moment, and the surface is sized by
+  the one it was last fitted at: the fit follows a layout change and a media
+  query on the ratio, and the automation's resize changed the ratio without
+  the query firing.
+  Measured again with the density changed on purpose: neither that query nor
+  an observer of the element's box in device pixels is told, so there is no
+  moment to fit at.
+  **Fixed 2026-10-06**: a pointer's place is read back into CSS pixels by the
+  density it came in and out by the surface's own (`host/web/input.rs`,
+  `at_fit`), so the two cannot disagree, told or not. Checked in a page with
+  the density set to 1.6, 0.6 and 1.2 under a surface fitted at 1.0667: the
+  same point names the same note each time.
+
 - ✅ **The same theme is two sets of colours, one per build** *(found 2026-09-26, asked how the meter's gradient is computed)*. No shader corrects gamma, so a vertex colour reaches the screen through whatever the surface format does with it, and `Gpu::new` takes `get_default_config`'s first format. Measured: natively (Vulkan) that is `Bgra8UnormSrgb`, so the theme's numbers are read as **linear** and encoded to sRGB on write; in a page (WebGPU) it is `Rgba8Unorm`, so they reach the screen **as they are**. `meter_low` `[0.24, 0.78, 0.44]` is `(61, 199, 112)` in the browser and `(134, 229, 177)` in a window, and every colour of the host shifts the same way -- and so does what a `canvas` shader writes, and every blend and gradient, which are done in linear light on one build and on the encoded values on the other. A behaviour that differs between the two builds is a defect. Not measured: the WebGL2 fallback's format. **The decision:** which picture is the intended one -- ask for a non-sRGB surface natively (it is offered, `Bgra8Unorm`), so both read the theme as sRGB values as a page does; or keep sRGB surfaces in both (a page reaches one through an sRGB view format) and state the theme in linear terms.
 
   **Correction and fix, 2026-09-26.** The page measured above ran on WebGPU, which the user's browsers do not use: both run the WebGL2 fallback, whose surface offers `[Rgba8UnormSrgb, Rgba8Unorm, Rgba16Float]` in Chrome and in Firefox alike, and `get_default_config` took the sRGB one, which each browser then resolved its own way -- Chrome's picture matched the page above and Firefox's matched the window. Decided (the user, preferring Chrome's): the theme's numbers reach the screen as written, in every build. `Gpu::new` now asks for the plain twin of the default format (`plain_format`), measured to be `Bgra8Unorm` in a Vulkan window and `Rgba8Unorm` on WebGL2 in both browsers; a surface offering no plain format warns.

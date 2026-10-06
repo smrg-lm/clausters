@@ -358,6 +358,7 @@ impl WebApp {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                let fitted = self.host.ui_scale(def);
                 let Some(slot) = self.canvases.get_mut(&def) else {
                     return;
                 };
@@ -376,7 +377,7 @@ impl WebApp {
                     self.on_release(def);
                     return;
                 }
-                slot.cursor = Some((position.x, position.y));
+                slot.cursor = Some(at_fit(&slot.window, fitted, position.x, position.y));
                 if slot.gestures.dragging() {
                     self.on_move(def);
                 } else {
@@ -449,28 +450,30 @@ impl WebApp {
             // arm a phone reaches every DOM control on the page and nothing at
             // all inside a canvas.
             WindowEvent::Touch(touch) => {
+                let fitted = self.host.ui_scale(def);
                 let Some(slot) = self.canvases.get_mut(&def) else {
                     return;
                 };
                 let owned = slot.touch == Some(touch.id);
+                let at = at_fit(&slot.window, fitted, touch.location.x, touch.location.y);
                 match touch.phase {
                     TouchPhase::Started if slot.touch.is_none() => {
                         slot.touch = Some(touch.id);
-                        slot.cursor = Some((touch.location.x, touch.location.y));
+                        slot.cursor = Some(at);
                         self.on_press(def);
                         // A finger held still is its context request, which is
                         // a timer: the tick has to run to see it expire.
                         self.ensure_timers(def);
                     }
                     TouchPhase::Moved if owned => {
-                        slot.cursor = Some((touch.location.x, touch.location.y));
+                        slot.cursor = Some(at);
                         if slot.gestures.dragging() {
                             self.on_move(def);
                         }
                     }
                     TouchPhase::Ended | TouchPhase::Cancelled if owned => {
                         slot.touch = None;
-                        slot.cursor = Some((touch.location.x, touch.location.y));
+                        slot.cursor = Some(at);
                         self.on_release(def);
                     }
                     // Another finger while one is already down, or a stray
@@ -499,5 +502,24 @@ impl WebApp {
             }
             _ => {}
         }
+    }
+}
+
+/// **A pointer's place in the pixels the surface was fitted at.** The shell
+/// hands a position in the page's density *of the moment*, read at each
+/// event, and the surface is as dense as its last fit made it
+/// (`WebEvent::Resize`). The two agree but for the time between a change of
+/// density and the fit that follows it -- and for good where the page is
+/// never told of the change, as under a browser's own emulation of another
+/// screen: every press then landed off its mark by the ratio of the two. So
+/// a position is read back into CSS pixels by the density it came in, and
+/// out by the surface's own.
+fn at_fit(window: &winit::window::Window, fitted: f32, x: f64, y: f64) -> (f64, f64) {
+    let live = window.scale_factor();
+    if live > 0.0 && fitted > 0.0 {
+        let to_fit = f64::from(fitted) / live;
+        (x * to_fit, y * to_fit)
+    } else {
+        (x, y)
     }
 }
