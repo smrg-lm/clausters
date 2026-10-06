@@ -536,7 +536,8 @@ export class SeqEvent {
 
     /**
      * Writes one key, with its family's coherence: a moved `midinote` moves the
-     * `freq` and the `degree` the event holds.
+     * `freq`, the `degree` and the written `pitches` the event holds, and
+     * written `pitches` move what it sounds.
      */
     set(key: string, value: unknown): void {
         this.#held().edit({ intent: "set", id: this.#id, key: String(key), value }, `set ${key}`);

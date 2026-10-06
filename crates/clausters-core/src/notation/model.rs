@@ -117,47 +117,14 @@ impl Pitch {
     /// a MIDI file, a client's `midinote` -- and the reason a caller has to say
     /// which world it wants.
     pub fn from_midi(midi: i32, flats: bool) -> Pitch {
-        // (step index, alter) per pitch class, one table per accidental world.
-        const SHARP: [(usize, i32); 12] = [
-            (0, 0),
-            (0, 1),
-            (1, 0),
-            (1, 1),
-            (2, 0),
-            (3, 0),
-            (3, 1),
-            (4, 0),
-            (4, 1),
-            (5, 0),
-            (5, 1),
-            (6, 0),
-        ];
-        const FLAT: [(usize, i32); 12] = [
-            (0, 0),
-            (1, -1),
-            (1, 0),
-            (2, -1),
-            (2, 0),
-            (3, 0),
-            (4, -1),
-            (4, 0),
-            (5, -1),
-            (5, 0),
-            (6, -1),
-            (6, 0),
-        ];
-        let table = if flats { &FLAT } else { &SHARP };
-        let (step, alter) = table[midi.rem_euclid(12) as usize];
+        let (step, alter, octave) = crate::event::notation::spell(midi, flats);
         Pitch {
             step: Step::ALL[step],
             alter,
             // A spelling chosen from a bare number is never a courtesy sign:
             // the writer said nothing about wanting it printed.
             forced: false,
-            // The octave is the sounding one: a `cb4` sounds in octave 3 but is
-            // written in 4, so it is derived from the *natural* the spelling
-            // sits on rather than from the MIDI number directly.
-            octave: (midi - alter).div_euclid(12) - 1,
+            octave,
         }
     }
 }

@@ -161,7 +161,23 @@ pub fn spelling_of(keys: &Map<String, Value>) -> Spelling {
 /// Writes `key` into an event's map with its family's coherence: the pitch and
 /// level keys the event holds are rewritten to agree, and any other key is
 /// written as it is. What an editor calls when a hand moves one key of a note.
+///
+/// The written pitch is in the pitch family too. Moving what a note sounds
+/// moves what it is written as -- `pitches` is spelled again by `spelling`,
+/// or keeps its letters when the move is by octaves -- and writing `pitches`
+/// on an event that states a sounding pitch moves its `midinote` there.
 pub fn set_key(keys: &mut Map<String, Value>, key: &str, value: Value) {
+    if key == "pitches" {
+        let sounds = ["freq", "midinote", "degree"]
+            .iter()
+            .any(|k| keys.contains_key(*k));
+        let written = super::notation::written_midinote(&value);
+        keys.insert(key.into(), value);
+        if sounds && let Some(midinote) = written {
+            sound(keys, PitchKey::Midinote, "midinote", midinote.into());
+        }
+        return;
+    }
     let Some(pitch_key) = PitchKey::from_name(key) else {
         if let (Some(level_key), Some(v)) = (LevelKey::from_name(key), value.as_f64()) {
             let mut level = level_of(keys);
@@ -178,6 +194,24 @@ pub fn set_key(keys: &mut Map<String, Value>, key: &str, value: Value) {
         keys.insert(key.into(), value);
         return;
     };
+    let Some(written) = keys.get("pitches").cloned() else {
+        sound(keys, pitch_key, key, value);
+        return;
+    };
+    let before = pitch_of(keys).midinote(&scale_of(keys));
+    sound(keys, pitch_key, key, value);
+    let after = pitch_of(keys).midinote(&scale_of(keys));
+    let semitones = (after.round() - before.round()) as i32;
+    if semitones != 0 {
+        let flats = spelling_of(keys) == Spelling::Flat;
+        let moved = super::notation::transposed(&written, semitones, flats);
+        keys.insert("pitches".into(), moved);
+    }
+}
+
+/// A sounding pitch key written, and the rest of the family it holds made to
+/// agree.
+fn sound(keys: &mut Map<String, Value>, pitch_key: PitchKey, key: &str, value: Value) {
     let v = value.as_f64();
     if pitch_key == PitchKey::Scale {
         // The scale is a list: written first, so the degree reads through it.
@@ -717,5 +751,53 @@ mod tests {
         let mut by_degree = keys(json!({"degree": 2, "midinote": 64}));
         set_key(&mut by_degree, "scale", json!([0, 2, 3, 5, 7, 8, 10]));
         assert_eq!(by_degree["midinote"], 63.0, "a new scale moves the note");
+    }
+
+    #[test]
+    fn the_written_pitch_moves_with_the_sounding_one() {
+        let c4 = json!([{"step": "c", "alter": 0, "octave": 4}]);
+        let mut e = keys(json!({"midinote": 60, "pitches": c4}));
+        set_key(&mut e, "midinote", json!(61));
+        assert_eq!(
+            e["pitches"],
+            json!([{"step": "c", "alter": 1, "octave": 4}])
+        );
+        // spelled by the event's spelling, and from a frequency too
+        e.insert("spelling".into(), json!("flat"));
+        set_key(&mut e, "freq", json!(311.127));
+        assert_eq!(
+            e["pitches"],
+            json!([{"step": "e", "alter": -1, "octave": 4}])
+        );
+        // by octaves a note keeps its letter and its forced sign
+        let forced = json!([{"step": "d", "alter": -1, "octave": 4, "forced": true}]);
+        let mut e = keys(json!({"midinote": 61, "pitches": forced}));
+        set_key(&mut e, "midinote", json!(73));
+        assert_eq!(
+            e["pitches"],
+            json!([{"step": "d", "alter": -1, "octave": 5, "forced": true}])
+        );
+        // a move under a semitone writes nothing new
+        set_key(&mut e, "midinote", json!(73.2));
+        assert_eq!(e["pitches"][0]["octave"], 5);
+        // a note that sounds its written pitch is moved by a sounding key
+        let mut e = keys(json!({"pitches": c4}));
+        set_key(&mut e, "midinote", json!(64));
+        assert_eq!(
+            e["pitches"],
+            json!([{"step": "e", "alter": 0, "octave": 4}])
+        );
+    }
+
+    #[test]
+    fn writing_the_pitch_moves_what_it_sounds() {
+        let mut e = keys(json!({"midinote": 60, "freq": 261.63}));
+        set_key(&mut e, "pitches", json!([{"step": "a", "octave": 4}]));
+        assert_eq!(e["midinote"], 69.0);
+        assert!((e["freq"].as_f64().unwrap() - 440.0).abs() < 1e-9);
+        // one that sounds its written pitch gains no sounding key
+        let mut e = keys(json!({"dur": 1}));
+        set_key(&mut e, "pitches", json!([{"step": "a", "octave": 4}]));
+        assert!(!e.contains_key("midinote"));
     }
 }

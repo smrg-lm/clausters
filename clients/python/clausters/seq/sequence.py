@@ -415,7 +415,8 @@ class SeqEvent:
 
     def __setitem__(self, key: str, value) -> None:
         """Write one key, with its family's coherence: a moved ``midinote``
-        moves the ``freq`` and the ``degree`` the event holds."""
+        moves the ``freq``, the ``degree`` and the written ``pitches`` the
+        event holds, and written ``pitches`` move what it sounds."""
         self._held()._edit({"intent": "set", "id": self._id, "key": str(key),
                             "value": value}, f"set {key}")
 

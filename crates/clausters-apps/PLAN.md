@@ -987,9 +987,9 @@ opened it.
   text typed over where it is drawn, all fixed there; note entry, built as a
   mode with an edit cursor, which is also how the second voice is written; a
   written page break, laid out in runs of pages; the ○ palette entries, each
-  the model grown with its sound. What stays open: an edit to a sounding
-  pitch respelling the written one; New and Close in the File menu; the
-  standalone host's playback and export; and the sound, which nobody has
+  the model grown with its sound; a channel group edited as one; a written
+  pitch that moves with the sounding one. What stays open: New and Close in
+  the File menu; the standalone host's playback and export; and the sound, which nobody has
   listened to.* The notation model
   and what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
@@ -2705,7 +2705,7 @@ wrong.
   Left as they are: the voice selector and the layout selector of the
   toolbar are words (`v1`, `v2`; `page`, `line`).
 
-- ⬜ **An edit to a sounding pitch does not rewrite the written one** *(found
+- ✅ **An edit to a sounding pitch does not rewrite the written one** *(found
   2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's
   `midinote` in a roll rewrites the `freq` and the `degree` it holds -- and
   `pitches` is outside it: an event that holds both keeps the written pitch it
@@ -2714,6 +2714,12 @@ wrong.
   is set, and to set `midinote` when `pitches` is. It waits on the way back
   from the roll to the score ("From the roll to the score"), which is what
   reads a sequence edited as numbers.
+  **Fixed 2026-10-06**, by the family's rule alone: setting a sounding key
+  on an event that holds `pitches` spells them again by `spelling` (by whole
+  octaves they keep their letters and a forced sign), and setting `pitches`
+  on an event that states a sounding pitch moves its `midinote`. What a
+  sequence edited in the roll means to the score that rendered it is still
+  "From the roll to the score".
 
 - ✅ **The score's page was in no window** *(found 2026-10-05, the user's
   first look at `notation/score_editor`: "No se ve, ni puede crear, ni abrir

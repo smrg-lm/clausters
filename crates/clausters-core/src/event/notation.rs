@@ -13,7 +13,8 @@
 //!   octave -- where `midinote` is a number that two written notes share. An
 //!   event that states no sounding pitch sounds its written one
 //!   ([`written_midinote`]); one that states both keeps both, and the page
-//!   writes `pitches`.
+//!   writes `pitches`. An edit to either moves the other
+//!   (`super::render::set_key`).
 //! - `value` is the written value, an exact fraction of a whole note, where
 //!   `dur` is time in beats. A triplet eighth is `[1, 12]` and its `dur` a
 //!   third of a beat that no float holds; a grace note has a value and takes
@@ -55,7 +56,8 @@ pub const KEYS: &[Key] = &[
         unit: "step a letter c to b, alter in semitones, octave scientific (4 holds middle C)",
         reads: "the source of the pitch on a page; an event that states no freq, midinote or \
                 degree sounds the first of them, and one with none of these is written from \
-                midinote, spelled by `spelling`",
+                midinote, spelled by `spelling`; moving what the event sounds spells them \
+                again, and writing them moves what it sounds",
     },
     Key {
         name: "value",
@@ -122,7 +124,8 @@ pub const KEYS: &[Key] = &[
         name: "spelling",
         holds: "which accidental a pitch given as a number is written with",
         unit: "sharp or flat",
-        reads: "a preference, read only where the event has no `pitches`",
+        reads: "a preference, read where the event has no `pitches` and where a moved \
+                sounding pitch spells them again",
     },
     Key {
         name: "accidental",
@@ -164,11 +167,87 @@ fn step_semitones(step: &str) -> Option<f64> {
 /// fraction of a semitone, as a degree's `alter` may.
 #[must_use]
 pub fn written_midinote(pitches: &Value) -> Option<f64> {
-    let first = pitches.as_array()?.first()?;
-    let step = step_semitones(first.get("step")?.as_str()?)?;
-    let octave = first.get("octave")?.as_f64()?;
-    let alter = first.get("alter").and_then(Value::as_f64).unwrap_or(0.0);
+    midinote_of(pitches.as_array()?.first()?)
+}
+
+/// **A MIDI number spelled**, sharps or flats for the black keys: the index of
+/// its letter from C, its alteration and its scientific octave. The octave is
+/// the one the letter is written in -- `cb4` sounds in octave 3 -- so it is
+/// derived from the natural the spelling sits on.
+#[must_use]
+pub fn spell(midi: i32, flats: bool) -> (usize, i32, i32) {
+    // (step index, alter) per pitch class, one table per accidental world.
+    const SHARP: [(usize, i32); 12] = [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+        (2, 0),
+        (3, 0),
+        (3, 1),
+        (4, 0),
+        (4, 1),
+        (5, 0),
+        (5, 1),
+        (6, 0),
+    ];
+    const FLAT: [(usize, i32); 12] = [
+        (0, 0),
+        (1, -1),
+        (1, 0),
+        (2, -1),
+        (2, 0),
+        (3, 0),
+        (4, -1),
+        (4, 0),
+        (5, -1),
+        (5, 0),
+        (6, -1),
+        (6, 0),
+    ];
+    let table = if flats { &FLAT } else { &SHARP };
+    let (step, alter) = table[midi.rem_euclid(12) as usize];
+    (step, alter, (midi - alter).div_euclid(12) - 1)
+}
+
+/// The written pitch of one entry of `pitches`, as a MIDI number.
+fn midinote_of(pitch: &Value) -> Option<f64> {
+    let step = step_semitones(pitch.get("step")?.as_str()?)?;
+    let octave = pitch.get("octave")?.as_f64()?;
+    let alter = pitch.get("alter").and_then(Value::as_f64).unwrap_or(0.0);
     Some((octave + 1.0) * 12.0 + step + alter)
+}
+
+/// **`pitches` moved by `semitones`**, as a written note moves when what it
+/// sounds is moved: by whole octaves each pitch keeps its letter and its sign,
+/// and otherwise it is spelled again -- sharps, or flats when `flats` -- and a
+/// sign the writer forced is not carried to a note it was not written for. A
+/// value that is not a list of pitches comes back as it is.
+#[must_use]
+pub fn transposed(pitches: &Value, semitones: i32, flats: bool) -> Value {
+    let Some(list) = pitches.as_array() else {
+        return pitches.clone();
+    };
+    let moved = list.iter().map(|pitch| {
+        if semitones % 12 == 0 {
+            let mut pitch = pitch.clone();
+            if let Some(octave) = pitch.get("octave").and_then(Value::as_i64) {
+                pitch["octave"] = (octave + i64::from(semitones / 12)).into();
+            }
+            return pitch;
+        }
+        let Some(midi) = midinote_of(pitch) else {
+            return pitch.clone();
+        };
+        let (step, alter, octave) = spell(midi.round() as i32 + semitones, flats);
+        let step = ["c", "d", "e", "f", "g", "a", "b"][step];
+        serde_json::json!({
+            "step": step,
+            "alter": alter,
+            "octave": octave,
+        })
+    });
+    Value::Array(moved.collect())
 }
 
 #[cfg(test)]

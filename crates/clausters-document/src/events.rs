@@ -233,7 +233,8 @@ pub enum EventsIntent {
         at: Beat,
     },
     /// One key of an event, written with its family's coherence: a moved
-    /// `midinote` moves the `freq` and the `degree` the event holds.
+    /// `midinote` moves the `freq`, the `degree` and the written `pitches` the
+    /// event holds, and written `pitches` move what it sounds.
     Set {
         /// Which event.
         id: u64,

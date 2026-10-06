@@ -507,7 +507,7 @@ the core's, and `seq.NOTATION_KEYS` is its names:
 | `grace` | that this is a grace note, and of which kind | `acc`, an appoggiatura, or `unacc`, an acciaccatura | on a page it takes no time of the bar and stands before the next note of its voice; its `dur` is how it was played and its `value` what it is written as |
 | `stem` | a stem direction the writer forced | `up` or `down` | the page's alone |
 | `tie` | that this note ties into the next of its pitch | true or false | the two are one sound on a page; each event keeps its own length |
-| `spelling` | which accidental a pitch given as a number is written with | `sharp` or `flat` | a preference, read only where the event has no `pitches` |
+| `spelling` | which accidental a pitch given as a number is written with | `sharp` or `flat` | a preference, read where the event has no `pitches` and where a moved sounding pitch spells them again |
 | `accidental` | whether the accidental is printed where the key or the measure implies it | `written` or `sounding` | read only where the event has no `pitches`, whose own `forced` says it |
 
 Every one is a **musical fact rather than an instruction to the engraver**
@@ -522,7 +522,9 @@ is the note as it is written — a letter, an alteration, an octave, as
 `notation.pitch` makes it — where `midinote` is a number two written notes
 share: no spelling of 64 is an F flat. An event that states only `pitches`
 sounds it; one that states a sounding pitch beside it sounds that, and the page
-still writes `pitches`. A chord is one event per note, each with its own pitch,
+still writes `pitches`. The two move together: setting a sounding key on an
+event that holds `pitches` spells them again by `spelling` (a move by octaves
+keeps their letters), and setting `pitches` moves what it sounds. A chord is one event per note, each with its own pitch,
 as it sounds. `value` is the written value as an exact fraction of a whole note,
 where `dur` is time in beats: a triplet eighth is a third of a beat that no
 float holds, and a grace note has a value and takes no time of the bar at all.
