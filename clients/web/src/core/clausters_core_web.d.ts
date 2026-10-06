@@ -529,6 +529,15 @@ export class NotesPlayback {
     constructor(transport: number);
 }
 
+/**
+ * A built min/max peak pyramid, the JS face of
+ * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
+ * drawn from, so the drawing costs the width of the window rather than the
+ * length of the buffer. Built (or filled from `/buffer_stream` reports) here
+ * and handed to the GUI host, which draws it; the readers below answer **what
+ * the cache is** -- length, channels, bucket, levels -- and never what it says,
+ * which is a drawing's question.
+ */
 export class Pyramid {
     private constructor();
     free(): void;
@@ -1748,13 +1757,6 @@ export function sheetToMei(sheet: string): string;
 export function split_degree(degree: number): Float64Array;
 
 /**
- * A built min/max peak pyramid, the JS face of
- * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
- * drawn from, so the drawing costs the width of the window rather than the
- * length of the buffer. Built (or filled from `/buffer_stream` reports) here
- * and handed to the GUI host, which draws it; the readers below answer **what
- * the cache is** -- length, channels, bucket, levels -- and never what it says,
- * which is a drawing's question.
  * **The spectrogram cache of a mono take**: `samples` analyzed with a Hann
  * window of `windowSize` every `hop` samples, at `sampleRate` for the
  * frequency axis -- the bytes a `spectrogram`'s `cache` names, and the
