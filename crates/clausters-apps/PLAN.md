@@ -987,7 +987,7 @@ opened it.
   text typed over where it is drawn, all fixed there; note entry, built as a
   mode with an edit cursor, which is also how the second voice is written; a
   written page break, laid out in runs of pages; the ○ palette entries, each
-  the model grown with its sound. What stays open: a channel group edited as one; an edit to a sounding
+  the model grown with its sound. What stays open: an edit to a sounding
   pitch respelling the written one; New and Close in the File menu; the
   standalone host's playback and export; and the sound, which nobody has
   listened to.* The notation model
@@ -1666,7 +1666,8 @@ opened it.
       **The channel group, decided**: the same lane on each channel of the
       group, each naming the `group` in its target (`"staff 1"`), so what
       plays a lane by its channel learns nothing new and what edits them as
-      one finds them by that name; editing a group as one is not built. The
+      one finds them by that name; an edit to one of them is an edit to the
+      group (the entry under "Found by use"). The
       note's own scope yields nothing: the model holds no glissando and no
       swell. The sequence is MIDI 1.0 while its voices fit sixteen channels.
       What is no note's goes into the `notation` section, the spanners over
@@ -2893,10 +2894,13 @@ wrong.
   into a measure that becomes a repeat is dropped with the items the repeat
   replaces.
 
-- ⬜ **A channel group is not edited as one** *(`X5.8.1`: "editing a group
+- ✅ **A channel group is not edited as one** *(`X5.8.1`: "editing a group
   as one is not built")*. The render writes a staff's dynamics as the same
   lane on each channel of its group, each naming the group in its target;
   an edit to one of them in the roll changes that channel alone.
+  **Fixed 2026-10-06**: the sequence's edit to a lane gives every other lane
+  of its group -- the same target but for the channel -- the edited lane's
+  points, and removing one removes the group.
 
 - ⬜ **New and Close are in the File menu and do nothing** *(`X5.8.2`)*.
   **Decided 2026-10-05, by the user**: New replaces the score in the same

@@ -640,6 +640,15 @@ impl EventSequence {
                     self.next_id = self.next_id.max(automation.id.0);
                 }
                 added = Some(automation.id.0);
+                // **A channel group is edited as one**: the same lane on the
+                // group's other channels takes the points this one was given.
+                for other in self
+                    .automation
+                    .iter_mut()
+                    .filter(|a| a.id != automation.id && same_group(a, &automation))
+                {
+                    other.points = automation.points.clone();
+                }
                 match self.automation.iter_mut().find(|a| a.id == automation.id) {
                     Some(held) => *held = automation,
                     None => self.automation.push(automation),
@@ -651,7 +660,9 @@ impl EventSequence {
                     .iter()
                     .position(|a| a.id == curve)
                     .ok_or_else(|| format!("the sequence holds no curve {}", curve.0))?;
-                self.automation.remove(i);
+                let removed = self.automation.remove(i);
+                // and a group's lane goes with the group
+                self.automation.retain(|a| !same_group(a, &removed));
             }
             EventsIntent::EventAutomation { id, mut automation } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
@@ -847,6 +858,28 @@ impl EventSequence {
                 })
         })
     }
+}
+
+/// Whether two curves are one **channel group**'s: each names the same
+/// `group` in its target, and they aim at the same thing but for the channel
+/// -- the lanes a render writes for a staff of several voices.
+fn same_group(a: &Automation, b: &Automation) -> bool {
+    let (Some(x), Some(y)) = (a.target.0.as_object(), b.target.0.as_object()) else {
+        return false;
+    };
+    let Some(group) = x.get("group").filter(|g| !g.is_null()) else {
+        return false;
+    };
+    if y.get("group") != Some(group) {
+        return false;
+    }
+    let but_channel = |m: &serde_json::Map<String, Value>| {
+        m.iter()
+            .filter(|(k, _)| k.as_str() != "channel")
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    but_channel(x) == but_channel(y)
 }
 
 fn no_event(id: u64) -> String {

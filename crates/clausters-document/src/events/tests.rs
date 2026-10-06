@@ -957,3 +957,59 @@ fn the_notation_section_is_kept_as_it_was_written() {
     let bare = serde_json::to_value(EventSequence::new(vec![at(0.0)])).unwrap();
     assert!(bare.get("notation").is_none());
 }
+
+/// **A channel group is edited as one**: the same lane on each channel of a
+/// staff of several voices, each naming the group -- a point given to one is
+/// given to all, a lane of another group or target is left alone, and taking
+/// one away takes the group.
+#[test]
+fn a_channel_group_is_edited_and_removed_as_one() {
+    use crate::NodeId;
+    use crate::multitrack::Automation;
+    let mut sequence = EventSequence::new(vec![Event::new(0.0, json!({"midinote": 60}))]);
+    let lane = |channel: i64, group: &str| {
+        Automation::new(
+            NodeId(0),
+            Opaque(json!({"cc": 11, "channel": channel, "group": group})),
+        )
+    };
+    let mut ids = Vec::new();
+    for automation in [lane(0, "staff 1"), lane(1, "staff 1"), lane(2, "staff 2")] {
+        ids.push(
+            sequence
+                .edit(EventsIntent::Automation { automation })
+                .unwrap()
+                .added
+                .unwrap(),
+        );
+    }
+    let mut edited = lane(0, "staff 1");
+    edited.id = NodeId(ids[0]);
+    edited.points.push(crate::Point {
+        at: 2.0,
+        value: 64.0,
+        data: Opaque::none(),
+    });
+    sequence
+        .edit(EventsIntent::Automation { automation: edited })
+        .unwrap();
+    let points = |sequence: &EventSequence, id: u64| {
+        sequence
+            .automation
+            .iter()
+            .find(|a| a.id == NodeId(id))
+            .map(|a| a.points.len())
+    };
+    assert_eq!(
+        points(&sequence, ids[1]),
+        Some(1),
+        "the group's other channel"
+    );
+    assert_eq!(points(&sequence, ids[2]), Some(0), "another group's lane");
+    sequence
+        .edit(EventsIntent::RemoveAutomation {
+            curve: NodeId(ids[1]),
+        })
+        .unwrap();
+    assert_eq!(sequence.automation.len(), 1, "the group went whole");
+}
