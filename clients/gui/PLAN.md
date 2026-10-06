@@ -3987,6 +3987,14 @@ Whatever symbols the model itself needs owe their rows either way
   each direction. *(Found 2026-08-29 reading an ABC phrase into the model, as
   the beam half; the break half fell out of the `N5` editor example on
   2026-08-30, which is what made it a milestone rather than an entry.)*
+  *(Re-read 2026-10-06, with the score editor built (`X5`,
+  `crates/clausters-apps/PLAN.md`): still so, and no longer invisible. The
+  same ABC phrase still reads with a page break at its first measure and
+  eight beams the engraver chose. The score editor opens a foreign file,
+  writes and removes breaks (the Measures palette), lays a score out in runs
+  at its page breaks, and changes rhythms by hand -- so a stored page break
+  is now laid out as a page turn whoever chose it, and the beams that stop suiting an edited
+  rhythm are what a hand meets first. The decision is the same.)*
 
 - ✅ **N8 — Which element admits which edit**. *(Closed 2026-10-05 as
   `X5.0`, the score editor's first step, in `crates/clausters-apps/PLAN.md`:
@@ -4042,6 +4050,14 @@ Whatever symbols the model itself needs owe their rows either way
   **Acceptance:** a box of notes on a multitrack can be drawn as a score,
   scrolls and zooms with the time axis, and opens the score editor; shown in
   an example and in both clients' composition chapter.
+
+  *(Re-read 2026-10-06: the score editor its double click opens is built
+  (`X5`), so what this waits on is elsewhere. If the box holds the notes a
+  roll draws, engraving them is reading a sequence into a `Sheet` --
+  `crates/clausters-apps/PLAN.md`, Future directions, "From the roll to the
+  score", which the user left for later; only a sheet of the box's own skips
+  it. And it is a box of the multitrack, whose development is postponed
+  (`X9`).)*
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still

@@ -52,7 +52,8 @@ context, in both clients and the standalone host. The applications after the
 multitrack — a buffer editor, the notes editor, the score
 editor, and which composed views get one — are milestones of
 `crates/clausters-apps/PLAN.md` (`X2`-`X6`), each opened on a question rather
-than on a design, and the score editor is not started.
+than on a design; the notes editor is done but for its recording, and the
+score editor is built and waits for its eye and ear pass.
 
 Where the work lives:
 
@@ -111,6 +112,13 @@ already carry it.
   selection, while a loop plays, with the playback's `set_loop`, bound for both
   clients.
 
+- ⬜ **The window's close mark loses unsaved changes without asking**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The File menu's Close
+  asks; the mark on the window's frame frees the window before any owner
+  hears. The shape is named in the entry: a window prop saying an owner wants
+  to be asked, and a close request the owner confirms — the host's, for every
+  editor.
+
 
 ## 2. Fixes that need a decision first
 
@@ -151,17 +159,21 @@ its plan; the plan is where its acceptance is read.
 
 ### Waiting on a decision
 
-- ⬜ **The `N` track's second half — notation: what a page lets a hand do**,
-  `N7` and `N9` *(`clients/gui/PLAN.md`, "N track — notation: the score model,
-  and what is written on it")*. `N1`-`N6` closed on 2026-08-29/30: the model,
-  its verbs, the emission, the interpreter, the reader and the enriched forward
-  path, and `N8` closed 2026-10-05 as the score editor's `X5.0`. The two left
-  are each a **decision** before they are work.
+- ⬜ **The `N` track's last two — a foreign score's layout, and a score as a
+  box of the multitrack**, `N7` and `N9` *(`clients/gui/PLAN.md`, "N track —
+  notation: the score model, and what is written on it")*. What a page lets a
+  hand do is answered: `N8` closed 2026-10-05 as the score editor's `X5.0`,
+  and `X5` built the rest of the hand on it. The two left are each a
+  **decision** before they are work, and neither is about the hand.
   **`N7`** — what opening somebody else's score should preserve, since the
   reader stores an engraver's beams and page breaks as though a writer had
-  chosen them. **`N9`** — a score as a box of the multitrack,
-  drawn the way a box of notes is drawn as a piano roll, since the two show
-  the same notes.
+  chosen them; no longer invisible, since the score editor opens a foreign
+  file, lays it out in runs at its page breaks and changes its rhythms.
+  **`N9`** — a score as a box of the multitrack, drawn the way a box of notes
+  is drawn as a piano roll. **Related:** the score editor its double click
+  opens is built, so `N9` waits elsewhere — on "From the roll to the score"
+  (`crates/clausters-apps/PLAN.md`, Future directions) if the box engraves a
+  roll's notes, and on the multitrack's development resuming (`X9`).
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
   continued, `X9`**
@@ -173,8 +185,9 @@ its plan; the plan is where its acceptance is read.
   the notes editor, done but for its recording (`X3.10`), which waits for
   `T10` and is skipped for now; **`X5`** the score editor,
   built whole (`X5.0`-`X5.9`) and not closed: what is left of it is the eye
-  and ear pass over `notation/score_editor`, and after it the entries the
-  milestone wrote under "Found by use"; **`X6`** which composed views (scope, plot, waveform,
+  and ear pass over `notation/score_editor` — of the entries it wrote under
+  "Found by use" only the close mark is open (section 1), and what it left as
+  design is under Future directions; **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
@@ -318,15 +331,24 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a
-  steady goniometer; composed text (IME); a Tauri wrapper, only a possibility; the three heavy-view rendering questions; key bindings per window and
-  a key in a tip; the page's clipboard reaching the browser's), the web client's (a node
+  steady goniometer; a Tauri wrapper, only a possibility; the three
+  heavy-view rendering questions; a key in a tip; the page's clipboard
+  reaching the browser's; a selected staff edited by its line count; a paste
+  that could make tracks; the interaction vocabulary, provisional until the
+  applications exist; and, under Found by use, a window repainted whole for
+  one moving line, what a playing frame still costs, and rows past what a def
+  should carry), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's
   edge; the applications' window chrome in standalone, and the multitrack's
-  stop-at-end key that waits on it; effects in preview and several files in one
+  stop-at-end key that waits on it; a bare window that does not say why a verb
+  was refused; effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the
-  score; a sequence as primitive data, by the keys chosen). Every one of them carries its own checkbox in its own
+  score; a sequence as primitive data, by the keys chosen; the score editor's
+  editing rules as modules; what a score editor's hand expects and this one
+  has not; dynamics as a model of the instrument and of hearing; a glissando
+  that arrives without a new attack). Every one of them carries its own checkbox in its own
   plan.
 
 ---

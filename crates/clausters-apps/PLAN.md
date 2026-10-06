@@ -2359,20 +2359,24 @@ Every entry carries a checkbox.
   the default is the whole window. Reading back was already there and is now
   the example's step (`alone()`, the page's *page alone*): the score the
   client holds is the edited one (`sheet`, `render_events`), and `on_change`
-  is told once per gesture. *Left open:* a bare window has no status line, so
-  a refused verb's reason is not shown and is not on the handle either -- the
-  verb answers `false`; a form's question (the path of a first Ctrl+S, the
-  close with unsaved work) has no window to be asked in, and the handle's
-  `save` is the way; parts of the chrome one at a time (the status line
-  alone) and a switch while the window is open -- which is the window
-  composed again -- are not built, and wait for a use.
+  is told once per gesture. What it left is the entry below.
+
+- ⬜ **A bare window does not say why a verb was refused** *(left by the
+  entry above, 2026-10-06)*. The reason a refused verb has is shown on the
+  status line, and a bare window has none: the verb answers `false` and the
+  reason is not on the handle either, so a client cannot tell a refusal it
+  could fix from one it could not. Beside it, waiting for a use rather than
+  for a fix: a form's question (the path of a first Ctrl+S, the close with
+  unsaved work) has no window to be asked in, and the handle's `save` is the
+  way; the chrome's parts one at a time (the status line alone); and a
+  switch while the window is open, which is the window composed again.
 
 - ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
   (`MultitrackPlayback::set_end`, bound in both clients as `Playback.end`); the
   standalone host needs a key that flips it and the session to keep it, so a
-  reopened session stops where it stopped before. Waits for the chrome entry
-  above.
+  reopened session stops where it stopped before. Waits for "The
+  applications' window chrome in standalone", above.
 
 - ⬜ **Effects in preview in the audio editor** *(out of X7)*: a chain in
   place on `dry`, between the readers and the pass, whose effects are heard
