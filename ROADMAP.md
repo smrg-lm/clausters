@@ -103,9 +103,12 @@ already carry it.
 - ⬜ **A track's gain automation does not reach its notes**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. The notes of a box over
   a sequence sound outside the tracks' strips, so a track's gain, its gain
-  curve, its fader and its meter do not act on them. The direction is named
-  in the entry: a track's voices sound into its own strip, where its
-  envelopes apply after the notes' velocities and note-level curves.
+  curve, its fader and its meter do not act on them. The direction is the
+  user's, in the entry: a box of notes makes its sound with its synth and
+  the track takes it as its input, as it takes a segment of audio -- which
+  asks for a review of the node graph first (a slot whose contents are
+  voices, one lane or one per box, a note's curves, a box moved between
+  tracks).
 
 - ⬜ **A looping selection does not follow a new selection**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection

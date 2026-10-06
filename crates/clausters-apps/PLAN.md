@@ -3349,7 +3349,30 @@ wrong.
   what is placed at all. What a track produces is what its strip shapes,
   whether it reads samples or plays notes: the notes' own velocities and
   note-level curves shape each voice, and the track's envelopes apply after
-  them, as over a take. The shape to decide: each track's voices sounding
-  into that track's strip (a lane per track, or one lane whose voices name
-  the strip they play into), so the gain, the curve, the fader and the
-  meter are one path for both kinds of box.
+  them, as over a take.
+  *(The same day, the user, on the shape: the box of notes makes its sound
+  with the synth it has, and the track takes that sound as its input the
+  way it takes a segment of audio -- and the node graph may have to be
+  reviewed for it.)* So a box of notes is a **source of sound inside its
+  track**, as a box of samples is: a slot of the track's group whose
+  output is what the strip reads, where today a box of samples is a slot
+  holding readers and a box of notes is nothing of the track's. What the
+  review has to settle, against the graph as it is
+  (`clausters_document::multitrack::nodes::plan`, `clausters_editing::instance`):
+  - **a slot whose contents are voices**: a box's slot holds readers made
+    once and kept, and a box of notes holds voices made and freed as the
+    transport plays -- whether a slot can be a group the event lane makes
+    voices in, writing to the slot's own out, or the voices stay on the
+    lane and name the bus of the track they sound into;
+  - **one lane or one per box**: the multitrack plays every sequence on one
+    event lane in the transport's group; a box's voices sounding into its
+    track either splits the lane per box (each made in its slot) or gives
+    each voice its box's bus;
+  - **the curves inside a note**: a note's own curves are graphs the lane
+    makes beside its voices (`clausters_editing::note_curves`), and they go
+    where the voices go;
+  - **a box moved to another track** carries its sound with it, as a slot of
+    samples is moved and re-wired (`/graph_moveSlot`);
+  - **the synth**: what plays a box is what its events name (their
+    instrument, the server's `default` when they name none) -- a box's own
+    choice of synth, beside what its events say, is a design of its own.
