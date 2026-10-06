@@ -275,8 +275,14 @@ impl<E: Engraver> Score<E> {
                 }
                 pages
             }
+            // one document: the engraver's count is the score's, and each
+            // number still goes to its page's outer corner
             None => (1..=self.engraver.page_count().max(1))
-                .map(|page| svg_to_display_list(&self.engraver.render_svg(page)))
+                .map(|page| {
+                    let mut drawn = svg_to_display_list(&self.engraver.render_svg(page));
+                    drawn.number_page(page as usize);
+                    drawn
+                })
                 .collect(),
         };
         let draw = DisplayList::stacked(pages, gap, frame);
@@ -609,7 +615,9 @@ impl<E: Engraver> Score<E> {
     }
 
     fn page_locked(&mut self, page: i32) -> Page {
-        let draw = svg_to_display_list(&self.engraver.render_svg(page));
+        let mut draw = svg_to_display_list(&self.engraver.render_svg(page));
+        // the number at the page's outer corner, as the page view puts it
+        draw.number_page(page.max(1) as usize);
         self.drawn = true;
         let (timemap, engraved) = self.timemap_locked();
         let cursors = cursor_track(&draw, &timemap);

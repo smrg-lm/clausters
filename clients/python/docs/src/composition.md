@@ -272,7 +272,8 @@ three columns by three rows, on the first page or on every page. Nobody having
 moved it, a field sits where the printed page puts it: the title centred with
 its subtitle under it, the words' authors on the left and the music's on the
 right, the copyright centred at the foot of the first page, the footnotes at
-the foot on the left; the page number is written from the second page on.
+the foot on the left; the page number is written from the second page on, at
+the top outer corner: an even page's on the left, an odd one's on the right.
 `editor.set_text("title", "Eight bars")` writes one, `editor.set_text("note", "* a footnote")` adds a footnote, and
 `editor.set_text("composer", halign="left", pages="all")` moves one — each an entry of the history. A click on a text
 says which field it is, and where it is written, on the status line, and **a

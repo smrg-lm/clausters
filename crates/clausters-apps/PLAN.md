@@ -3054,6 +3054,26 @@ wrong.
   ends last, though the measure holds one note; one item picked is where a
   pass starts.
 
+- ✅ **A run of pages after the first carries the engraver's own credit**
+  *(found 2026-10-06, the same look)*. The engraver signs the foot of a
+  document's first page where no foot is written, and a run that opens on a
+  page break is a document of its own: the score's second page had the
+  credit the first one, which has a foot, does not.
+  **Fixed 2026-10-06**: a run that does not start the score is written with a
+  foot, an empty one where the score has nothing on every page. Pinned
+  against the engraver.
+
+- ✅ **The page number stood in the middle of the head** *(the user,
+  2026-10-06, looking at a second page: "page numbers do not go at the top in
+  the middle")*. The running head wrote it centred, on every page from the
+  second.
+  **Fixed 2026-10-06**: it stands at the page's outer corner, as a score's
+  page numbers do. The head writes it against the right margin, which is the
+  outer one of an odd page, and the page view turns an even page's over to
+  the left, as far from the paper's left edge as it was from the right --
+  where it already writes the number over the engraver's count. Pinned
+  against the engraver.
+
 - ⬜ **The window's close mark loses unsaved changes without asking**
   *(found 2026-10-06, building Close)*. The File menu's Close asks; the mark
   on the window's frame frees the window at once, since the host closes it

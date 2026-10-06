@@ -509,8 +509,60 @@ mod tests {
             .map(|(s, _)| s)
             .collect();
         assert_eq!(numbers, vec!["2".to_string()], "the second page says it is");
+        // **at the page's outer corner**, as a score's page numbers stand:
+        // an even page's against the left margin, an odd one's against the
+        // right, and never in the middle of the head
+        let mut three = sheet.clone();
+        three.grid.breaks = vec![(1, "page".to_string()), (2, "page".to_string())];
+        let three = laid(&three);
+        let width = three.draw.vb[0];
+        let placed: Vec<(String, f64, Option<String>)> = three
+            .draw
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Text {
+                    s,
+                    x,
+                    anchor,
+                    id: Some(id),
+                    ..
+                } if id == PAGE_NUMBER => Some((s.clone(), *x, anchor.clone())),
+                _ => None,
+            })
+            .collect();
+        let [(two_s, two_x, two_anchor), (three_s, three_x, three_anchor)] = placed.as_slice()
+        else {
+            panic!("two numbered pages: {placed:?}");
+        };
+        assert_eq!((two_s.as_str(), three_s.as_str()), ("2", "3"));
+        assert!(*two_x < width * 0.25 && two_anchor.is_none(), "{placed:?}");
+        assert!(
+            *three_x > width * 0.75 && three_anchor.as_deref() == Some("end"),
+            "{placed:?}"
+        );
+        // each as far from its own edge of the paper as the other
+        assert!((two_x - (width - three_x)).abs() < 1.0, "{placed:?}");
         let titles = texts(&two).iter().filter(|(s, _)| s == "A title").count();
         assert_eq!(titles, 1, "and the title is the first page's alone");
+        // nor is the engraver's own credit at the foot of the second page:
+        // the run that opens it is a document of its own, and the engraver
+        // signs a document's first page where it has no foot written. The
+        // score's first page is where that is, on one page and on two.
+        let credit = |sheet: &Sheet| -> usize {
+            let mut run = clausters_core::notation::sheet_to_mei_pages(sheet).unwrap();
+            let last = run.pop().unwrap();
+            let drawn = |mei: &str| {
+                let mut score = open(mei, &EngraveOptions::default()).expect("opens");
+                assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
+                score.display_list(1).draw.prims.len()
+            };
+            let bare = last.replace("<pgFoot func=\"first\"/>", "");
+            assert_ne!(bare, last, "the run is written with a foot");
+            drawn(&bare) - drawn(&last)
+        };
+        assert!(credit(&sheet) > 0, "the empty foot is what keeps it off");
+
         assert_eq!(
             two.cursors.len(),
             one.cursors.len(),

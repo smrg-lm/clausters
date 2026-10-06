@@ -759,14 +759,28 @@ impl DisplayList {
     /// running head writes ([`super::PAGE_NUMBER`]) says so, whatever the
     /// engraver counted -- what a score laid out in runs of pages needs, since
     /// each run's pages are counted from one.
+    ///
+    /// **And it stands at the page's outer corner**, as a score's page
+    /// numbers do: the head writes it against the right margin, which is the
+    /// outer one of an odd page, and an even page's is turned over to the
+    /// left -- as far from the paper's left edge as it was from the right.
     pub fn number_page(&mut self, number: usize) {
+        let width = self.vb[0];
         for prim in &mut self.prims {
             if let Prim::Text {
-                s, id: Some(id), ..
+                s,
+                x,
+                anchor,
+                id: Some(id),
+                ..
             } = prim
                 && id == super::PAGE_NUMBER
             {
                 *s = number.to_string();
+                if number.is_multiple_of(2) && anchor.as_deref() == Some("end") && width > 0.0 {
+                    *x = width - *x;
+                    *anchor = None;
+                }
             }
         }
     }

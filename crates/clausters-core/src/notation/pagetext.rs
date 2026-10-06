@@ -183,7 +183,10 @@ pub fn running_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
 
 /// The id of the page number the running head writes: what a caller that lays
 /// a score out in runs of pages rewrites, since the engraver counts the pages
-/// of the document it was handed.
+/// of the document it was handed. It is written at the top against the right
+/// margin -- the outer corner of an odd page -- and a page view turns an even
+/// page's over to the left ([`super::DisplayList::number_page`]); the score's
+/// first page carries none.
 pub const PAGE_NUMBER: &str = "page-number";
 
 /// **The running elements of a run of pages that does not start the score**:
@@ -223,7 +226,7 @@ fn running(header: &Header, escape: impl Fn(&str) -> String, continued: bool) ->
             }
             if region == Region::Head && (pages == Pages::All || continued) {
                 rends.push_str(&format!(
-                    "<rend xml:id=\"{PAGE_NUMBER}\" halign=\"center\" valign=\"top\">\
+                    "<rend xml:id=\"{PAGE_NUMBER}\" halign=\"right\" valign=\"top\">\
                      <num label=\"page\">#</num></rend>"
                 ));
             }
@@ -233,6 +236,13 @@ fn running(header: &Header, escape: impl Fn(&str) -> String, continued: bool) ->
                 ));
             }
         }
+    }
+    // **A run that does not start the score has a foot, though an empty
+    // one**: with none written the engraver puts its own credit at the foot
+    // of the document's first page, which here is a page in the middle of
+    // the score.
+    if continued && !out.contains("<pgFoot") {
+        out.push_str("\n\x20\x20\x20<pgFoot func=\"first\"/>");
     }
     out
 }
