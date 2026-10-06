@@ -259,8 +259,8 @@ pub fn add_to_chord(
 }
 
 /// **The pitch the letter `step` names, in the octave nearest `near`** --
-/// what typing a letter during note entry writes: the note closest to the one
-/// before it, the key signature's alteration on it. With nothing before it,
+/// what typing a letter during note entry writes at `at`: the note closest to
+/// the one before it, the alteration of the key in force there on it. With nothing before it,
 /// the octave is the one the staff's clef sits in the middle of.
 ///
 /// # Errors
@@ -268,14 +268,16 @@ pub fn add_to_chord(
 pub fn pitch_near(
     sheet: &Sheet,
     staff: usize,
+    at: Ratio,
     step: Step,
     near: Option<Pitch>,
 ) -> Result<Pitch, String> {
     let near = match near {
         Some(pitch) => pitch,
         // the middle line of the staff
-        None => pitch_at(sheet, staff, -4)?,
+        None => pitch_when(sheet, staff, at, -4)?,
     };
+    let key = sheet.key_at(sheet.grid.position(at).0);
     let from = near.octave * 7 + near.step.index();
     // the ladder index of the letter nearest `from`: at most three steps away
     let offset = (step.index() - near.step.index()).rem_euclid(7);
@@ -286,7 +288,7 @@ pub fn pitch_near(
     };
     Ok(Pitch {
         step,
-        alter: super::mei::key_alteration(&sheet.key, step),
+        alter: super::mei::key_alteration(key, step),
         octave: ladder.div_euclid(7),
         forced: false,
     })
@@ -482,6 +484,28 @@ pub fn add_spanner(mut sheet: Sheet, kind: &str, from: u64, to: u64) -> Result<S
                 .to_string(),
         );
     }
+    if !super::mei::SPANNERS.contains(&kind) {
+        return Err(format!(
+            "there is no line called {kind} between two notes; it is one of {}",
+            super::mei::SPANNERS.join(", ")
+        ));
+    }
+    // **Two notes alternating** are two notes of one value, side by side in
+    // one voice: what the page writes as one tremolo of their two values.
+    if kind == "ftrem" {
+        let (Some((si, vi, a)), Some((sj, vj, b))) = (sheet.locate(from), sheet.locate(to)) else {
+            return Err(missing(from));
+        };
+        let items = &sheet.staves[si].voices[vi].items;
+        let next = (si, vi, a + 1) == (sj, vj, b);
+        if !next || !items[a].sounds() || !items[b].sounds() || items[a].dur() != items[b].dur() {
+            return Err(
+                "a tremolo between two notes joins two notes of one value, one right \
+                 after the other in one voice"
+                    .to_string(),
+            );
+        }
+    }
     let spanner = Spanner {
         kind: kind.to_string(),
         from,
@@ -579,6 +603,154 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
         into.items.push(item);
     }
     sheet.next_id = mint();
+    Ok(sheet)
+}
+
+/// **Change the clef of `staff` at `at`** -- whole notes from the start -- to
+/// `clef` (`"G2"`, `"F4"`, `"C3"`); at the start it is the staff's own, and
+/// `none` takes a change back.
+///
+/// # Errors
+/// When there is no such staff, or the clef is not one.
+pub fn set_clef(mut sheet: Sheet, staff: usize, at: Ratio, clef: &str) -> Result<Sheet, String> {
+    let own = sheet
+        .staves
+        .get_mut(staff)
+        .ok_or_else(|| format!("this score has no staff {staff}"))?;
+    own.clefs.retain(|(t, _)| *t != at);
+    if clef == "none" {
+        return Ok(sheet);
+    }
+    if !CLEFS.contains(&clef) {
+        return Err(format!(
+            "there is no clef called {clef}; it is one of {}",
+            CLEFS.join(", ")
+        ));
+    }
+    if at.is_zero() {
+        own.clef = clef.to_string();
+    } else {
+        own.clefs.push((at, clef.to_string()));
+        own.clefs.sort();
+    }
+    Ok(sheet)
+}
+
+/// The clefs a staff may take: the treble and the bass, the soprano, alto,
+/// tenor and baritone C clefs, and the French violin clef.
+pub const CLEFS: [&str; 7] = ["G2", "F4", "C1", "C3", "C4", "F3", "G1"];
+
+/// **What a staff is**: how many lines it has (`Some(0)` is the five of the
+/// default), what it is called and its short name, and how far what sounds is
+/// from what is written, in semitones. What is left out stays as it is.
+///
+/// # Errors
+/// When there is no such staff, or it is asked for no lines or more than five.
+pub fn set_staff(
+    mut sheet: Sheet,
+    staff: usize,
+    lines: Option<u8>,
+    label: Option<String>,
+    abbr: Option<String>,
+    transpose: Option<i32>,
+) -> Result<Sheet, String> {
+    let own = sheet
+        .staves
+        .get_mut(staff)
+        .ok_or_else(|| format!("this score has no staff {staff}"))?;
+    if let Some(lines) = lines {
+        if lines > 5 {
+            return Err(format!("a staff has one to five lines, not {lines}"));
+        }
+        own.lines = (lines != 0 && lines != 5).then_some(lines);
+    }
+    if let Some(label) = label {
+        own.label = label;
+    }
+    if let Some(abbr) = abbr {
+        own.abbr = abbr;
+    }
+    if let Some(transpose) = transpose {
+        own.transpose = transpose;
+    }
+    Ok(sheet)
+}
+
+/// **How the staves are grouped**, whole: each group from its first staff to
+/// its last under a `brace`, a `bracket` or a `line`. None is the default.
+///
+/// # Errors
+/// When a group names a staff the score does not have, runs backwards, has no
+/// sign MEI names, or overlaps another without one inside the other.
+pub fn set_groups(mut sheet: Sheet, groups: Vec<super::model::Group>) -> Result<Sheet, String> {
+    for group in &groups {
+        if group.first > group.last || group.last >= sheet.staves.len() {
+            return Err(format!(
+                "staves {} to {} are no group of this score's",
+                group.first, group.last
+            ));
+        }
+        if !["brace", "bracket", "line"].contains(&group.symbol.as_str()) {
+            return Err(format!(
+                "a group is joined by a brace, a bracket or a line, not {}",
+                group.symbol
+            ));
+        }
+    }
+    for a in &groups {
+        for b in &groups {
+            let crosses = a.first < b.first && b.first <= a.last && a.last < b.last;
+            if crosses {
+                return Err("two groups overlap without one inside the other".to_string());
+            }
+        }
+    }
+    sheet.groups = groups;
+    Ok(sheet)
+}
+
+/// **Write a tempo mark, a direction or a rehearsal mark** at the item `on`:
+/// `kind` `tempo`, `dir` or `reh`, what it says, and a tempo's speed in
+/// quarter notes a minute. It replaces one of its kind already there.
+///
+/// # Errors
+/// When the item is not there, the kind is none of those, or a tempo's speed
+/// is not a speed.
+pub fn add_control(
+    mut sheet: Sheet,
+    kind: &str,
+    on: u64,
+    text: String,
+    bpm: Option<f64>,
+) -> Result<Sheet, String> {
+    sheet.assign_ids();
+    if sheet.locate(on).is_none() {
+        return Err(missing(on));
+    }
+    if !["tempo", "dir", "reh"].contains(&kind) {
+        return Err(format!(
+            "there is nothing called {kind} written at a point; it is tempo, dir or reh"
+        ));
+    }
+    if let Some(bpm) = bpm
+        && !(bpm.is_finite() && bpm > 0.0)
+    {
+        return Err(format!("{bpm} is not a tempo"));
+    }
+    sheet.controls.retain(|c| !(c.kind == kind && c.on == on));
+    sheet.controls.push(super::model::Control {
+        kind: kind.to_string(),
+        on,
+        text,
+        bpm: bpm.filter(|_| kind == "tempo"),
+    });
+    Ok(sheet)
+}
+
+/// Take back what [`add_control`] wrote at `on`. Taking back one that is not
+/// there changes nothing.
+pub fn remove_control(mut sheet: Sheet, kind: &str, on: u64) -> Result<Sheet, String> {
+    sheet.controls.retain(|c| !(c.kind == kind && c.on == on));
     Ok(sheet)
 }
 
@@ -722,11 +894,21 @@ pub fn move_steps(mut sheet: Sheet, id: u64, steps: i32) -> Result<Sheet, String
 /// # Errors
 /// When there is no such staff.
 pub fn pitch_at(sheet: &Sheet, staff: usize, position: i32) -> Result<Pitch, String> {
+    pitch_when(sheet, staff, Ratio::ZERO, position)
+}
+
+/// [`pitch_at`] **at a time**, `at` whole notes from the start: the clef and
+/// the key in force there read the place.
+///
+/// # Errors
+/// When there is no such staff.
+pub fn pitch_when(sheet: &Sheet, staff: usize, at: Ratio, position: i32) -> Result<Pitch, String> {
     let clef = sheet
         .staves
         .get(staff)
-        .map(|s| s.clef.as_str())
+        .map(|s| s.clef_at(at))
         .ok_or_else(|| format!("this score has no staff {staff}"))?;
+    let key = sheet.key_at(sheet.grid.position(at).0);
     // A clef puts one pitch on one line, counted from the bottom. The top line
     // is line 5, two diatonic steps above line 4, and so on up.
     let (shape, line) = clef.split_at(1);
@@ -741,7 +923,7 @@ pub fn pitch_at(sheet: &Sheet, staff: usize, position: i32) -> Result<Pitch, Str
     let step = Step::ALL[ladder.rem_euclid(7) as usize];
     Ok(Pitch {
         step,
-        alter: super::mei::key_alteration(&sheet.key, step),
+        alter: super::mei::key_alteration(key, step),
         octave: ladder.div_euclid(7),
         forced: false,
     })
@@ -777,6 +959,7 @@ mod tests {
                         })
                         .collect(),
                 }],
+                ..Staff::default()
             }],
             ..Default::default()
         };
@@ -926,19 +1109,19 @@ mod tests {
     fn a_letter_is_written_in_the_octave_nearest_the_note_before() {
         let sheet = three();
         // from C4, a G is the one below and an E the one above
-        let g = pitch_near(&sheet, 0, Step::G, Some(c4())).unwrap();
+        let g = pitch_near(&sheet, 0, Ratio::ZERO, Step::G, Some(c4())).unwrap();
         assert_eq!((g.step, g.octave), (Step::G, 3));
-        let e = pitch_near(&sheet, 0, Step::E, Some(c4())).unwrap();
+        let e = pitch_near(&sheet, 0, Ratio::ZERO, Step::E, Some(c4())).unwrap();
         assert_eq!((e.step, e.octave), (Step::E, 4));
         // from B4, a C is the one above
         let b = Pitch {
             step: Step::B,
             ..c4()
         };
-        let c = pitch_near(&sheet, 0, Step::C, Some(b)).unwrap();
+        let c = pitch_near(&sheet, 0, Ratio::ZERO, Step::C, Some(b)).unwrap();
         assert_eq!((c.step, c.octave), (Step::C, 5));
         // with nothing before, around the treble staff's middle line, B4
-        let first = pitch_near(&sheet, 0, Step::A, None).unwrap();
+        let first = pitch_near(&sheet, 0, Ratio::ZERO, Step::A, None).unwrap();
         assert_eq!((first.step, first.octave), (Step::A, 4));
     }
 

@@ -51,22 +51,27 @@ pub use admits::{Admits, admits};
 pub use any::AnyEngraver;
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
-    At, add_spanner, add_to_chord, delete, enter, insert, move_steps, onset, pitch_at, pitch_near,
-    remove_spanner, set_barline, set_break, set_dur, set_header, set_marks, set_page, set_pitches,
+    At, CLEFS, add_control, add_spanner, add_to_chord, delete, enter, insert, move_steps, onset,
+    pitch_at, pitch_near, pitch_when, remove_control, remove_spanner, set_barline, set_break,
+    set_clef, set_dur, set_groups, set_header, set_marks, set_page, set_pitches, set_staff,
     silence, tie, to_voice,
 };
 pub use interp::{
-    Accent, Articulation, DynamicsAs, Interpretation, LevelPoint, Note, StaffLevel,
-    default_interpretation, levels, perform,
+    Accent, Articulation, DynamicsAs, Interpretation, LevelPoint, Note, Performance, Played,
+    StaffLevel, default_interpretation, heard_beats, levels, measure_count, perform, performance,
+    unroll,
 };
 pub use layout::{PAPERS, PageSetup, Paper, View, options as layout_options, paper};
 pub use mei::{
-    Slot, key_alteration, sheet_to_mei, sheet_to_mei_pages, voice_to_mei, voice_to_sheet,
+    KEYS, OCTAVES, ORNAMENTS, REPEAT_MARKS, SPANNERS, Slot, key_alteration, sheet_to_mei,
+    sheet_to_mei_pages, voice_to_mei, voice_to_sheet,
 };
-pub use model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
+pub use model::{
+    Control, Grid, Group, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice,
+};
 pub use operators::{
-    concat, insert_measures, invert, invert_pitch, remove_measures, repeat, retrograde, set_meter,
-    stack, stretch,
+    concat, insert_measures, invert, invert_pitch, remove_measures, repeat, retrograde, set_ending,
+    set_key, set_mark, set_meter, set_multirests, set_repeat, stack, stretch,
 };
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use outlines::{glyph_char, specimen};

@@ -123,6 +123,8 @@ pub(super) fn prune_spanners(sheet: &mut Sheet) {
     sheet
         .spanners
         .retain(|s| live.contains(&s.from) && live.contains(&s.to));
+    // what is written at a point goes with the item it stood on
+    sheet.controls.retain(|c| live.contains(&c.on));
 }
 
 /// One score after another.
@@ -193,8 +195,8 @@ pub fn concat(mut a: Sheet, b: &Sheet) -> Result<Sheet, String> {
     };
     while a.staves.len() < b.staves.len() {
         a.staves.push(Staff {
-            clef: b.staves[a.staves.len()].clef.clone(),
             voices: Vec::new(),
+            ..b.staves[a.staves.len()].clone()
         });
     }
     for (si, staff) in a.staves.iter_mut().enumerate() {
@@ -471,6 +473,145 @@ pub fn set_meter(mut sheet: Sheet, measure: usize, count: i64, unit: i64) -> Res
     Ok(sheet)
 }
 
+/// **Change the key from `measure` on** (counting from 1) to `key`, a tonic
+/// name; the first measure's is the sheet's own key. `none` takes a change
+/// back.
+///
+/// # Errors
+/// When the measure is 0, or the key is not one the signature names.
+pub fn set_key(mut sheet: Sheet, measure: usize, key: &str) -> Result<Sheet, String> {
+    let at = measure
+        .checked_sub(1)
+        .ok_or_else(|| "measures are numbered from 1, so there is no measure 0".to_string())?;
+    sheet.grid.keys.retain(|(m, _)| *m != at);
+    if key == "none" {
+        return Ok(sheet);
+    }
+    if !super::mei::KEYS.contains(&key) {
+        return Err(format!(
+            "there is no key called {key}; it is one of {}",
+            super::mei::KEYS.join(", ")
+        ));
+    }
+    if at == 0 {
+        sheet.key = key.to_string();
+    } else {
+        sheet.grid.keys.push((at, key.to_string()));
+        sheet.grid.keys.sort();
+    }
+    Ok(sheet)
+}
+
+/// **Mark measures `first` to `last` as an ending** played in the passes
+/// `label` names (`"1"`, `"2"`, `"1, 2"`); an empty label takes back every
+/// ending over them.
+///
+/// # Errors
+/// When the range is backwards or starts at 0.
+pub fn set_ending(
+    mut sheet: Sheet,
+    first: usize,
+    last: usize,
+    label: &str,
+) -> Result<Sheet, String> {
+    if first == 0 || last < first {
+        return Err(format!(
+            "measures {first} to {last} are no range of measures"
+        ));
+    }
+    let (a, b) = (first - 1, last - 1);
+    sheet.grid.endings.retain(|(x, y, _)| *y < a || *x > b);
+    if !label.trim().is_empty() {
+        sheet.grid.endings.push((a, b, label.trim().to_string()));
+        sheet.grid.endings.sort();
+    }
+    Ok(sheet)
+}
+
+/// **Put a navigation mark on `measure`** -- `segno`, `coda`, `fine`,
+/// `dacapo`, `dalsegno`, `tocoda` -- or take its marks away with `none`.
+///
+/// # Errors
+/// When the measure is 0 or the kind is none of those.
+pub fn set_mark(mut sheet: Sheet, measure: usize, kind: &str) -> Result<Sheet, String> {
+    let at = measure
+        .checked_sub(1)
+        .ok_or_else(|| "measures are numbered from 1, so there is no measure 0".to_string())?;
+    if kind == "none" {
+        sheet.grid.marks.retain(|(m, _)| *m != at);
+        return Ok(sheet);
+    }
+    if !super::mei::REPEAT_MARKS.contains(&kind) {
+        return Err(format!(
+            "there is no navigation mark called {kind}; it is one of {}",
+            super::mei::REPEAT_MARKS.join(", ")
+        ));
+    }
+    if !sheet.grid.marks.iter().any(|(m, k)| *m == at && k == kind) {
+        sheet.grid.marks.push((at, kind.to_string()));
+        sheet.grid.marks.sort();
+    }
+    Ok(sheet)
+}
+
+/// **Write `measure` as a repeat of the one before it**: what that one holds
+/// is written into it again, on every staff, and it is drawn as the
+/// measure-repeat sign. Off, it keeps what it holds and is drawn as itself.
+///
+/// # Errors
+/// When the measure is the first, which has nothing before it to repeat.
+pub fn set_repeat(mut sheet: Sheet, measure: usize, on: bool) -> Result<Sheet, String> {
+    if measure < 2 {
+        return Err("the first measure has no measure before it to repeat".into());
+    }
+    let at = measure - 1;
+    sheet.grid.repeats.retain(|m| *m != at);
+    if !on {
+        return Ok(sheet);
+    }
+    sheet.assign_ids();
+    let (from, start) = (
+        sheet.grid.measure_start(at - 1),
+        sheet.grid.measure_start(at),
+    );
+    let end = start + sheet.grid.bar_len(at);
+    let mut next = sheet.next_id;
+    let mut mint = move || {
+        next += 1;
+        next - 1
+    };
+    for voice in sheet.voices_mut() {
+        let items = std::mem::take(&mut voice.items);
+        let (before, rest) = split_at(&items, from, &mut mint);
+        let (copied, rest) = split_at(&rest, start - from, &mut mint);
+        let (_, after) = split_at(&rest, end - start, &mut mint);
+        let mut out = before;
+        out.extend(copied.iter().cloned());
+        let had = out.iter().fold(Ratio::ZERO, |acc, i| acc + i.dur());
+        if had < start {
+            out.push(Item::Rest {
+                id: mint(),
+                dur: start - had,
+            });
+        }
+        out.extend(copied.iter().map(|item| item.with_id(mint())));
+        out.extend(after);
+        voice.items = out;
+    }
+    sheet.next_id = mint();
+    sheet.grid.repeats.push(at);
+    sheet.grid.repeats.sort_unstable();
+    prune_spanners(&mut sheet);
+    Ok(sheet)
+}
+
+/// Draw runs of empty measures as **one numbered rest** each, or each as
+/// itself.
+pub fn set_multirests(mut sheet: Sheet, on: bool) -> Result<Sheet, String> {
+    sheet.grid.multirests = on;
+    Ok(sheet)
+}
+
 /// Open `count` empty measures before measure `at`.
 ///
 /// Time is added, so both structures move: the content is cut at that barline
@@ -511,6 +652,13 @@ pub fn insert_measures(mut sheet: Sheet, at: usize, count: usize) -> Result<Shee
         voice.items = out;
     }
     shift_grid(&mut sheet.grid, index, count as isize);
+    for staff in &mut sheet.staves {
+        for (t, _) in &mut staff.clefs {
+            if *t >= start {
+                *t = *t + added;
+            }
+        }
+    }
     tidy(&mut sheet.grid);
     sheet.next_id = mint();
     Ok(sheet)
@@ -547,7 +695,24 @@ pub fn remove_measures(mut sheet: Sheet, first: usize, last: usize) -> Result<Sh
         .grid
         .irregular
         .retain(|(m, _)| *m < first - 1 || *m > last - 1);
+    let gone = |m: usize| m + 1 >= first && m < last;
+    let grid = &mut sheet.grid;
+    grid.barlines.retain(|(m, _)| !gone(*m));
+    grid.breaks.retain(|(m, _)| !gone(*m));
+    grid.keys.retain(|(m, _)| !gone(*m));
+    grid.marks.retain(|(m, _)| !gone(*m));
+    grid.repeats.retain(|m| !gone(*m));
+    grid.endings
+        .retain(|(a, b, _)| *b + 1 < first || *a >= last);
     shift_grid(&mut sheet.grid, last, -(removed as isize));
+    for staff in &mut sheet.staves {
+        staff.clefs.retain(|(t, _)| *t < start || *t >= end);
+        for (t, _) in &mut staff.clefs {
+            if *t >= end {
+                *t = *t - (end - start);
+            }
+        }
+    }
     tidy(&mut sheet.grid);
     sheet.next_id = mint();
     prune_spanners(&mut sheet);
@@ -570,6 +735,22 @@ fn shift_grid(grid: &mut Grid, from: usize, by: isize) {
     }
     for (m, _) in &mut grid.irregular {
         *m = moved(*m);
+    }
+    for (m, _) in grid
+        .barlines
+        .iter_mut()
+        .chain(grid.breaks.iter_mut())
+        .chain(grid.keys.iter_mut())
+        .chain(grid.marks.iter_mut())
+    {
+        *m = moved(*m);
+    }
+    for m in &mut grid.repeats {
+        *m = moved(*m);
+    }
+    for (a, b, _) in &mut grid.endings {
+        *a = moved(*a);
+        *b = moved(*b);
     }
 }
 
@@ -667,6 +848,7 @@ mod tests {
                         })
                         .collect(),
                 }],
+                ..Staff::default()
             }],
             ..Default::default()
         };

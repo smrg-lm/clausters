@@ -188,13 +188,29 @@ voice of what is selected). At the far edge is the transport.
 
 **Beside the page stand the palettes**: what can be written on a score, a kind
 of element to a group that folds on its title — notes (a triplet, the two grace
-notes, which is the `grace` verb, and the other voice), accidentals, the
-articulations by their MEI names, ornaments, lines (a slur, a tie, the
-hairpins), dynamics and measures (insert and remove, the barlines, the breaks).
-An entry is drawn with the engraver's symbol, says what the element is when the
-pointer rests on it, and is one of the editor's verbs over what is selected.
-Only what the score's model holds is offered, and the column scrolls when its
-open groups are taller than the window.
+notes, which is the `grace` verb, the other voice, the tremolos on one note and
+between two, a beat repeat), accidentals, the articulations by their MEI names,
+ornaments (and a rolled chord, a glissando, a breath and a caesura), lines (a
+slur, a tie, the hairpins, let it ring, a phrase mark, the octave lines, the
+pedal, a bracket, a beam across a barline), text (a tempo mark, a direction, a
+rehearsal mark, a fingering, a chord symbol, a syllable of the lyrics),
+dynamics, measures (insert and remove, the barlines, the breaks, the endings,
+segno and coda, fine, da capo and dal segno, a measure repeat, and empty
+measures drawn as one numbered rest), keys and clefs changed from the
+selection on, and staves (one line or five, a name, a transposition, a brace,
+a bracket or a line over the selected staves). An entry is drawn with the
+engraver's symbol, says what the element is when the pointer rests on it, and
+is one of the editor's verbs over what is selected; one that needs words opens
+a field for them. Only what the score's model holds is offered, and the column
+scrolls when its open groups are taller than the window.
+
+**What is written is also what is heard.** The repeats, the endings and the
+jumps are played out in order, a tempo mark is the tempo from where it is
+heard, the pedal is the sustain controller, an octave line and a transposing
+staff move the pitch, a tremolo is its repeated notes, a rolled chord is
+staggered, a glissando bends the note to the one it slides to, a breath lets
+the note go early and let it ring holds it — and the page's cursor follows the
+same reading.
 
 **An entry that ends in three dots opens a dialog over the window**: the page's
 text (every field of the header, and the footnotes one to a line), the page's
@@ -207,10 +223,15 @@ read keeps the dialog up and the status bar says why.
 ### The verbs, over what is selected
 
 `move`, `scale`, `articulation`, `dynamic`, `ornament`, `grace`,
-`accidental`, `clearMarks`, `tie`, `silence`, `delete`, `voice` and
-`spanner` (from the first selected note to the last) act on what is selected,
-and `operate` applies any model operation. The measure verbs —
-`insertMeasures`, `removeMeasures`, `setBarline`, `setBreak` and `setMeter` — act on the measures the selection covers. Each is one call
+`accidental`, `clearMarks`, `tie`, `silence`, `delete`, `voice`, `mark` (a
+tremolo, a roll, a breath, let it ring, a fingering, a chord symbol), `lyric`,
+`beatRepeat`, `control` (a tempo mark, a direction, a rehearsal mark),
+`setClef` and `spanner` (from the first selected note to the last) act on
+what is selected, and `operate` applies any model operation. The measure
+verbs — `insertMeasures`, `removeMeasures`, `setBarline`, `setBreak`,
+`setMeter`, `setKey`, `setEnding`, `navigation` and
+`measureRepeat` — act on the measures the selection covers, `setStaff` and
+`group` on its staves, and `multirests` on the whole score. Each is one call
 into the crate and one entry of the editing context's history, so Ctrl+Z over
 the window walks it back.
 
@@ -279,7 +300,8 @@ one step of the history. The same two are `editor.save()` and
 and **Export clip...** — `await editor.export(path)`, which takes the format from the
 extension or as `"smf"` or `"clip"` — write the rendered sequence as a Standard
 MIDI File or a MIDI 2.0 Clip File: the notes, a channel to a voice, the
-dynamics as each channel's expression, at the engraver's tempo. It is the same
+dynamics as each channel's expression, the pedal on controller 64, at the
+score's own tempo. It is the same
 writing a sequence does (`toSmf`, `toClip`), so what is
 exported is what the roll shows.
 

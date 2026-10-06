@@ -51,11 +51,12 @@ from .mei import (
     to_sequence, to_timeline,
 )
 from .sheet import (
-    add_spanner, apply, concat, delete, enter, header, insert, insert_measures,
+    add_control, add_spanner, apply, concat, delete, enter, header, insert, insert_measures,
     interpretation, invert, item_id, marks, measures, move_steps, ops, pitch,
     remove_measures,
-    remove_spanner, render_events, repeat, retrograde, set_barline, set_break,
-    set_dur,
+    remove_control, remove_spanner, render_events, repeat, retrograde, set_barline, set_break,
+    set_clef, set_dur, set_ending, set_groups, set_key, set_mark, set_multirests, set_repeat,
+    set_staff,
     set_header, set_marks, set_meter, set_page, set_pitches, silence, stack,
     stretch, tie,
     to_mei, to_notes, to_voice, transpose,
@@ -65,6 +66,16 @@ from .sheet import from_voice as sheet_from_voice
 from .view import playhead_sync, score_view
 
 __all__ = [
+    "set_staff",
+    "set_repeat",
+    "set_multirests",
+    "set_mark",
+    "set_key",
+    "set_groups",
+    "set_ending",
+    "set_clef",
+    "remove_control",
+    "add_control",
     "Score",
     "add_spanner",
     "apply",

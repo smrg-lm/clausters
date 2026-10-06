@@ -678,3 +678,85 @@ def set_break(sheet: dict, measure: int, kind: str) -> dict:
     a statement about the page that no recomputation recovers.
     """
     return apply(sheet, {"op": "set_break", "measure": measure, "kind": kind})
+
+
+def set_key(sheet: dict, measure: int, key: str) -> dict:
+    """Change the key from ``measure`` (1-based) on to ``key``, a tonic name
+    (``"D"``, ``"Bb"``); at measure 1 it is the score's own key, and ``"none"``
+    takes a change back."""
+    return apply(sheet, {"op": "set_key", "measure": measure, "key": key})
+
+
+def set_clef(sheet: dict, at, clef: str, *, staff: int = 0) -> dict:
+    """Change the clef of ``staff`` at ``at`` -- whole notes from the start,
+    as ``(num, den)`` or a whole number -- to ``clef`` (``"G2"``, ``"F4"``,
+    ``"C3"``); at the start it is the staff's own, and ``"none"`` takes a
+    change back."""
+    num, den = at if isinstance(at, (tuple, list)) else (at, 1)
+    return apply(sheet, {"op": "set_clef", "staff": staff, "at": [num, den], "clef": clef})
+
+
+def set_ending(sheet: dict, first: int, last: int, label: str = "") -> dict:
+    """Mark measures ``first`` to ``last`` (1-based) as an ending played in
+    the passes ``label`` names (``"1"``, ``"2"``, ``"1, 2"``); an empty label
+    takes back the endings over them. The performance plays it out."""
+    return apply(sheet, {"op": "set_ending", "first": first, "last": last, "label": label})
+
+
+def set_mark(sheet: dict, measure: int, kind: str) -> dict:
+    """Put a navigation mark on ``measure`` (1-based): ``"segno"``, ``"coda"``,
+    ``"fine"``, ``"dacapo"``, ``"dalsegno"`` or ``"tocoda"``; ``"none"`` takes
+    its marks away. The performance plays the jumps out."""
+    return apply(sheet, {"op": "set_mark", "measure": measure, "kind": kind})
+
+
+def set_repeat(sheet: dict, measure: int, on: bool = True) -> dict:
+    """Write ``measure`` (1-based) as a repeat of the one before: what that one
+    holds is written into it again and it is drawn as the measure-repeat sign.
+    Off, it keeps what it holds and is drawn as itself."""
+    return apply(sheet, {"op": "set_repeat", "measure": measure, "on": on})
+
+
+def set_multirests(sheet: dict, on: bool = True) -> dict:
+    """Draw runs of empty measures as one numbered rest each, as a part shows
+    them -- or each as itself."""
+    return apply(sheet, {"op": "set_multirests", "on": on})
+
+
+def set_staff(sheet: dict, staff: int = 0, *, lines: int | None = None,
+              label: str | None = None, abbr: str | None = None,
+              transpose: int | None = None) -> dict:
+    """Say what ``staff`` is: how many ``lines`` it has (``1`` for a percussion
+    line, ``5`` the ordinary), what it is called (``label``, and ``abbr`` after
+    the first system), and how many semitones it sounds from what it writes
+    (``transpose``: ``-2`` for a clarinet in B flat). What is left out stays."""
+    op: dict = {"op": "set_staff", "staff": staff}
+    for key, value in (("lines", lines), ("label", label), ("abbr", abbr),
+                       ("transpose", transpose)):
+        if value is not None:
+            op[key] = value
+    return apply(sheet, op)
+
+
+def set_groups(sheet: dict, groups: list) -> dict:
+    """Group the staves, whole: each group a ``{"first", "last", "symbol"}``
+    -- staves from zero, joined by a ``"brace"``, a ``"bracket"`` or a
+    ``"line"``. None is the default, a brace over several staves."""
+    return apply(sheet, {"op": "set_groups", "groups": list(groups)})
+
+
+def add_control(sheet: dict, kind: str, on: int, text: str = "", *,
+                bpm: float | None = None) -> dict:
+    """Write a tempo mark (``"tempo"``, with its speed ``bpm`` in quarter notes
+    a minute), a direction (``"dir"``) or a rehearsal mark (``"reh"``) at the
+    item ``on``, which may be a rest. It replaces one of its kind there. A
+    tempo mark is the tempo the score is played at from where it is heard."""
+    op: dict = {"op": "add_control", "kind": kind, "on": on, "text": text}
+    if bpm is not None:
+        op["bpm"] = bpm
+    return apply(sheet, op)
+
+
+def remove_control(sheet: dict, kind: str, on: int) -> dict:
+    """Take back what `add_control` wrote at ``on``."""
+    return apply(sheet, {"op": "remove_control", "kind": kind, "on": on})

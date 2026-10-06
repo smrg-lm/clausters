@@ -25,11 +25,14 @@
 //! one accent common to the styles that have any. "One and three in a 4/4"
 //! belongs to a style, and a style says so by passing its own accents.
 //!
-//! **What is not here, and why it is not missing.** A *repeat* is not a symbol
-//! this model carries: repetition is written out, by [`super::Op::Repeat`], so
-//! by the time a sheet exists there is nothing left to expand. A *tuplet* needs
-//! no rule either -- its division is already exact in the rational the item
-//! holds, so onsets land on it without the interpreter knowing tuplets exist.
+//! **A page is played in another order than it is read**: its repeats, its
+//! endings and its jumps are played out ([`unroll`]), and every item is heard
+//! once a pass. What it says about the time and the pitch is heard too -- a
+//! tempo mark is the tempo, an octave line and a transposing staff move the
+//! pitch, a tremolo is its repeated notes, a rolled chord is staggered, a
+//! glissando is a slide, the pedal is held ([`Performance`]). A *tuplet* needs
+//! no rule -- its division is already exact in the rational the item holds, so
+//! onsets land on it without the interpreter knowing tuplets exist.
 //!
 //! **The instrument is not in the notation.** A staff does not say what plays
 //! it, so every note names the `staff` and `voice` it was written on and the
@@ -40,12 +43,50 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{Item, Marks, Sheet};
+use super::model::{Item, Marks, Pitch, Sheet};
 use crate::ratio::Ratio;
 
 mod levels;
+mod unroll;
 
 pub use levels::{LevelPoint, StaffLevel, levels};
+pub use unroll::{Played, unroll};
+
+/// **Where a moment of the score is heard**: `beat`, in beats as the page
+/// counts them from its start, at each pass the performance plays it -- once
+/// for a score with no repeats, twice inside a repeated stretch.
+pub fn heard_beats(sheet: &Sheet, beat_unit: i64, beat: f64) -> Vec<f64> {
+    let beats = beat_unit as f64;
+    let grid = &sheet.grid;
+    let count = measures_of(sheet);
+    // the measure the moment falls in, counting on past the music
+    let mut measure = 0;
+    let mut start = 0.0;
+    loop {
+        let len = grid.bar_len(measure).to_f64() * beats;
+        if beat < start + len || len <= 0.0 || measure > count + 1024 {
+            break;
+        }
+        start += len;
+        measure += 1;
+    }
+    let into = beat - start;
+    let passes: Vec<f64> = unroll(grid, count)
+        .into_iter()
+        .filter(|p| p.measure == measure)
+        .map(|p| p.at.to_f64() * beats + into)
+        .collect();
+    if passes.is_empty() {
+        vec![beat]
+    } else {
+        passes
+    }
+}
+
+/// How long the score is, in measures, as [`unroll`] counts them.
+pub fn measure_count(sheet: &Sheet) -> usize {
+    measures_of(sheet)
+}
 
 /// One sounding note, as the interpreter heard it.
 ///
@@ -99,6 +140,41 @@ pub struct Note {
     /// payload produces and the one that stays byte-identical.
     #[serde(default, skip_serializing_if = "Marks::is_empty")]
     pub marks: Marks,
+    /// **A glissando**: how many semitones the pitch slides by while the note
+    /// is held, to the note the slide is written to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glide: Option<f64>,
+}
+
+/// **What a score sounds like, whole**: its notes, its tempo, its pedal, and
+/// when each of its items is heard -- in beats, each pass of a repeat a time
+/// of its own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Performance {
+    /// The notes, in time order.
+    pub notes: Vec<Note>,
+    /// The tempo, as `(beat, quarter notes a minute)` from the first beat on.
+    pub tempo: Vec<(f64, f64)>,
+    /// The sustain pedal: `(staff, beat pressed, beat let go)`.
+    pub pedals: Vec<(usize, f64, f64)>,
+    /// When every item is heard, rests too: `(item id, beat)`, once a pass.
+    pub heard: Vec<(u64, f64)>,
+}
+
+impl Performance {
+    /// **The tempo as a map of beats to seconds**, beats being `beat_unit`ths
+    /// of a whole note as the notes are.
+    pub fn tempo_map(&self, beat_unit: i64) -> crate::tempomap::TempoMap {
+        let per_second = |qpm: f64| qpm / 60.0 * beat_unit as f64 / 4.0;
+        let mut changes = self.tempo.iter();
+        let first = changes.next().map_or(120.0, |(_, qpm)| *qpm);
+        let mut map = crate::tempomap::TempoMap::new(per_second(first));
+        for (beat, qpm) in changes {
+            // a change that restates the beat it is at is a later one's
+            let _ = map.push(*beat, per_second(*qpm));
+        }
+        map
+    }
 }
 
 /// What one articulation does to a note.
@@ -180,6 +256,42 @@ pub struct Interpretation {
     /// one: 11, expression, unless the reading says another.
     #[serde(default = "default_dynamics_cc")]
     pub dynamics_cc: u8,
+    /// The tempo a score that states none is played at, in quarter notes a
+    /// minute.
+    #[serde(default = "default_tempo")]
+    pub tempo: f64,
+    /// How much longer than its value a note let ring is held.
+    #[serde(default = "default_ring")]
+    pub ring: f64,
+    /// The fraction of its value a note with a breath after it is held.
+    #[serde(default = "default_breath")]
+    pub breath: f64,
+    /// ...and with a caesura.
+    #[serde(default = "default_caesura")]
+    pub caesura: f64,
+    /// How far apart the notes of a rolled chord start, in whole notes.
+    #[serde(default = "default_roll")]
+    pub roll: Ratio,
+}
+
+fn default_tempo() -> f64 {
+    120.0
+}
+
+fn default_ring() -> f64 {
+    2.0
+}
+
+fn default_breath() -> f64 {
+    0.75
+}
+
+fn default_caesura() -> f64 {
+    0.5
+}
+
+fn default_roll() -> Ratio {
+    Ratio::new(1, 64)
 }
 
 /// Where a dynamic and a hairpin are heard.
@@ -313,6 +425,11 @@ impl Default for Interpretation {
             accents: default_accents(),
             dynamics_as: DynamicsAs::default(),
             dynamics_cc: default_dynamics_cc(),
+            tempo: default_tempo(),
+            ring: default_ring(),
+            breath: default_breath(),
+            caesura: default_caesura(),
+            roll: default_roll(),
         }
     }
 }
@@ -359,13 +476,32 @@ fn placed_of(sheet: &Sheet) -> Vec<Placed<'_>> {
     placed
 }
 
-/// Read `sheet` under `interp` into the notes it sounds, in time order.
+/// Read `sheet` under `interp` into the notes it sounds, in time order --
+/// [`performance`]'s notes.
 ///
 /// # Errors
 /// When a spanner names an item that is not on the sheet -- the same refusal the
 /// emitter makes, and for the same reason: a crescendo that governs nothing is
 /// a fact the caller wants back, not one to swallow.
-pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, String> {
+pub fn perform(sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, String> {
+    Ok(performance(sheet, interp)?.notes)
+}
+
+/// How many measures the sheet's music fills.
+fn measures_of(sheet: &Sheet) -> usize {
+    let (m, into) = sheet.grid.position(sheet.len());
+    (if into.is_positive() { m + 1 } else { m }).max(1)
+}
+
+/// **Read `sheet` under `interp` into what it sounds like** (see
+/// [`Performance`]): the repeats, endings and jumps played out, the tempo
+/// marks as the tempo, the pedal, an octave line and a transposing staff on
+/// the pitch, a tremolo as its repeated notes, a rolled chord staggered, a
+/// glissando as a slide.
+///
+/// # Errors
+/// As [`perform`].
+pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performance, String> {
     sheet.assign_ids();
 
     let placed = placed_of(&sheet);
@@ -378,10 +514,79 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
     let dynamics = dynamic_map(&placed, interp);
     let (slurred, hairpins) = spanners(&sheet, &placed, &at, &dynamics, interp)?;
 
+    // **Where each measure is heard**: once a pass, in the order the page
+    // is played.
+    let mut passes: HashMap<usize, Vec<Ratio>> = HashMap::new();
+    for played in unroll(&sheet.grid, measures_of(&sheet)) {
+        passes.entry(played.measure).or_default().push(played.at);
+    }
+    let heard_at = |t: Ratio| -> Vec<Ratio> {
+        let (m, into) = sheet.grid.position(t);
+        passes
+            .get(&m)
+            .map(|starts| starts.iter().map(|s| *s + into).collect())
+            .unwrap_or_default()
+    };
     let beats = interp.beat_unit as f64;
+    let beat = |t: Ratio| t.to_f64() * beats;
+
+    // what the lines between two notes do to what sounds
+    let onset_of = |id: u64| at.get(&id).map(|&i| placed[i].t);
+    let end_of = |id: u64| at.get(&id).map(|&i| placed[i].t + placed[i].item.dur());
+    let mut octaves: Vec<(usize, Ratio, Ratio, i32)> = Vec::new();
+    let mut glides: HashMap<u64, f64> = HashMap::new();
+    let mut alternating: HashMap<u64, u64> = HashMap::new();
+    let mut pedals = Vec::new();
+    for spanner in &sheet.spanners {
+        let (Some(from), Some(end)) = (onset_of(spanner.from), end_of(spanner.to)) else {
+            continue;
+        };
+        let staff = at.get(&spanner.from).map_or(0, |&i| placed[i].staff);
+        let first_pitch = |id: u64| {
+            at.get(&id)
+                .and_then(|&i| placed[i].item.pitches().first().map(|p| p.midi()))
+        };
+        match spanner.kind.as_str() {
+            "8va" => octaves.push((staff, from, end, 12)),
+            "8vb" => octaves.push((staff, from, end, -12)),
+            "15ma" => octaves.push((staff, from, end, 24)),
+            "15mb" => octaves.push((staff, from, end, -24)),
+            "gliss" => {
+                if let (Some(a), Some(b)) = (first_pitch(spanner.from), first_pitch(spanner.to)) {
+                    glides.insert(spanner.from, f64::from(b - a));
+                }
+            }
+            "ftrem" => {
+                alternating.insert(spanner.from, spanner.to);
+            }
+            "pedal" => {
+                let downs = heard_at(from);
+                let ups = heard_at(end);
+                for (down, up) in downs.into_iter().zip(ups) {
+                    if up > down {
+                        pedals.push((staff, beat(down), beat(up)));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let shifted = |staff: usize, t: Ratio| -> i32 {
+        let octave: i32 = octaves
+            .iter()
+            .filter(|(s, a, b, _)| *s == staff && t >= *a && t < *b)
+            .map(|(.., by)| *by)
+            .sum();
+        octave + sheet.staves.get(staff).map_or(0, |s| s.transpose)
+    };
+
     let mut notes: Vec<Note> = Vec::new();
+    let mut heard: Vec<(u64, f64)> = Vec::new();
     let mut merged: HashSet<usize> = HashSet::new();
     for (i, p) in placed.iter().enumerate() {
+        for t in heard_at(p.t) {
+            heard.push((p.item.id(), beat(t)));
+        }
         if !p.item.sounds() || merged.contains(&i) {
             continue;
         }
@@ -403,7 +608,7 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
 
         let marks = p.item.marks();
         let written_beats = written.to_f64() * beats;
-        let sustain = match marks.and_then(|m| m.sounding) {
+        let mut sustain = match marks.and_then(|m| m.sounding) {
             // What the writer stated outright; no table is consulted.
             Some(sounding) => sounding.to_f64() * beats,
             None => {
@@ -426,6 +631,16 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
                 written_beats * factor
             }
         };
+        if let Some(marks) = marks {
+            match marks.breath.as_deref() {
+                Some("caesura") => sustain *= interp.caesura,
+                Some(_) => sustain *= interp.breath,
+                None => {}
+            }
+            if marks.ring {
+                sustain = sustain.max(written_beats * interp.ring);
+            }
+        }
 
         // The level the staff is at, unless the reading hears a dynamic in
         // its curve alone: the attack is then the unmarked level.
@@ -445,24 +660,85 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
             }
         }
 
-        for pitch in p.item.pitches() {
-            notes.push(Note {
-                t: p.t.to_f64() * beats,
-                dur: written_beats,
-                sustain,
-                pitch: pitch.midi(),
-                amp,
-                staff: p.staff,
-                voice: p.voice,
-                id: p.item.id(),
-                spelling: match pitch.alter {
-                    0 => None,
-                    n if n > 0 => Some("sharp".into()),
-                    _ => Some("flat".into()),
-                },
-                accidental: pitch.forced.then(|| "written".to_string()),
-                marks: marks.cloned().unwrap_or_default(),
-            });
+        let by = shifted(p.staff, p.t);
+        let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch| Note {
+            t,
+            dur,
+            sustain,
+            pitch: pitch.midi() + by,
+            amp,
+            staff: p.staff,
+            voice: p.voice,
+            id: p.item.id(),
+            spelling: match pitch.alter {
+                0 => None,
+                n if n > 0 => Some("sharp".into()),
+                _ => Some("flat".into()),
+            },
+            accidental: pitch.forced.then(|| "written".to_string()),
+            marks: marks.cloned().unwrap_or_default(),
+            glide: glides.get(&p.item.id()).copied(),
+        };
+        let pitches = p.item.pitches();
+        // **Two notes alternating**, sixteenths of each in turn for the time
+        // the two take together; the second note is heard only in it.
+        let partner = alternating
+            .get(&p.item.id())
+            .and_then(|id| at.get(id))
+            .map(|&j| placed[j].item);
+        if let Some(other) = partner {
+            merged.insert(at[&other.id()]);
+        }
+        for start in heard_at(p.t) {
+            let t0 = beat(start);
+            if let Some(other) = partner {
+                let unit = Ratio::new(1, 16).to_f64() * beats;
+                let total = written_beats + other.dur().to_f64() * beats;
+                let count = (total / unit).round().max(2.0) as usize;
+                for k in 0..count {
+                    let these = if k % 2 == 0 { pitches } else { other.pitches() };
+                    for pitch in these {
+                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch));
+                    }
+                }
+                continue;
+            }
+            // **A tremolo** is its repeated notes, the value each stroke
+            // halves, for the note's whole length.
+            if let Some(strokes) = marks.and_then(|m| m.tremolo) {
+                let unit =
+                    (Ratio::new(1, 4) / Ratio::from(1i64 << strokes.clamp(1, 3))).to_f64() * beats;
+                let count = (written_beats / unit).floor().max(1.0) as usize;
+                for k in 0..count {
+                    for pitch in pitches {
+                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch));
+                    }
+                }
+                continue;
+            }
+            // **A rolled chord** starts each note a little after the one
+            // below it -- above it, rolled down -- and lets go with the rest.
+            let mut order: Vec<&Pitch> = pitches.iter().collect();
+            let rolled = marks.and_then(|m| m.arpeggio.as_deref());
+            if rolled == Some("down") {
+                order.sort_by_key(|p| std::cmp::Reverse(p.midi()));
+            } else {
+                order.sort_by_key(|p| p.midi());
+            }
+            let step = if rolled.is_some() && order.len() > 1 {
+                (interp.roll.to_f64() * beats).min(written_beats / (2.0 * order.len() as f64))
+            } else {
+                0.0
+            };
+            for (k, pitch) in order.into_iter().enumerate() {
+                let late = step * k as f64;
+                notes.push(note(
+                    t0 + late,
+                    written_beats - late,
+                    (sustain - late).max(step),
+                    pitch,
+                ));
+            }
         }
     }
 
@@ -472,7 +748,27 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
             .then(a.voice.cmp(&b.voice))
             .then(a.pitch.cmp(&b.pitch))
     });
-    Ok(notes)
+    heard.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+    // **The tempo marks are the tempo**, wherever each is heard.
+    let mut tempo: Vec<(f64, f64)> = sheet
+        .controls
+        .iter()
+        .filter(|c| c.kind == "tempo")
+        .filter_map(|c| Some((onset_of(c.on)?, c.bpm?)))
+        .flat_map(|(t, bpm)| heard_at(t).into_iter().map(move |at| (beat(at), bpm)))
+        .collect();
+    tempo.sort_by(|a, b| a.0.total_cmp(&b.0));
+    tempo.dedup_by(|a, b| a.0 == b.0);
+    if tempo.first().is_none_or(|(b, _)| *b > 0.0) {
+        tempo.insert(0, (0.0, interp.tempo));
+    }
+    Ok(Performance {
+        notes,
+        tempo,
+        pedals,
+        heard,
+    })
 }
 
 /// Every dynamic written on the sheet, per staff, as `(onset, amplitude)` in
@@ -663,6 +959,130 @@ mod tests {
                 *m = marks.clone();
             }
         }
+    }
+
+    fn spanner(kind: &str, from: u64, to: u64) -> Spanner {
+        Spanner {
+            kind: kind.into(),
+            from,
+            to,
+        }
+    }
+
+    #[test]
+    fn a_repeat_is_played_out_and_every_pass_is_heard() {
+        let mut sheet = quarters(8);
+        sheet.grid.barlines = vec![(0, "rptend".into())];
+        let played = performance(sheet, &Interpretation::default()).unwrap();
+        // the first bar twice, then the second
+        let onsets: Vec<f64> = played.notes.iter().map(|n| n.t).collect();
+        assert_eq!(onsets.len(), 12);
+        assert_eq!(onsets[4], 4.0);
+        assert_eq!(played.notes[4].id, 1, "the first note again");
+        assert_eq!(played.notes[8].id, 5);
+        assert_eq!(played.heard.iter().filter(|(id, _)| *id == 1).count(), 2);
+    }
+
+    #[test]
+    fn a_tempo_mark_is_the_tempo_and_none_is_the_readings() {
+        let mut sheet = quarters(8);
+        let plain = performance(sheet.clone(), &Interpretation::default()).unwrap();
+        assert_eq!(plain.tempo, vec![(0.0, 120.0)]);
+        sheet.controls = vec![crate::notation::model::Control {
+            kind: "tempo".into(),
+            on: 5,
+            text: "Presto".into(),
+            bpm: Some(180.0),
+        }];
+        let fast = performance(sheet, &Interpretation::default()).unwrap();
+        assert_eq!(fast.tempo, vec![(0.0, 120.0), (4.0, 180.0)]);
+        let map = fast.tempo_map(4);
+        // four beats at two a second, then three a second
+        assert!((map.secs_at(7.0) - (2.0 + 1.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_lines_between_notes_are_heard() {
+        let mut sheet = quarters(8);
+        sheet.spanners = vec![
+            spanner("8va", 1, 2),
+            spanner("gliss", 3, 4),
+            spanner("pedal", 5, 6),
+        ];
+        sheet.staves[0].transpose = -2;
+        let played = performance(sheet, &Interpretation::default()).unwrap();
+        assert_eq!(
+            played.notes[0].pitch,
+            60 + 12 - 2,
+            "an octave up, a tone down"
+        );
+        assert_eq!(played.notes[2].pitch, 58);
+        assert_eq!(played.notes[2].glide, Some(0.0), "a slide to the same C");
+        assert_eq!(played.pedals, vec![(0, 4.0, 6.0)]);
+    }
+
+    #[test]
+    fn a_tremolo_a_roll_and_two_notes_alternating_are_their_notes() {
+        let mut sheet = quarters(4);
+        mark(
+            &mut sheet,
+            1,
+            Marks {
+                tremolo: Some(2),
+                ..Marks::default()
+            },
+        );
+        if let Item::Note { pitches, marks, .. } = &mut sheet.staves[0].voices[0].items[1] {
+            pitches.push(Pitch {
+                step: Step::E,
+                alter: 0,
+                octave: 4,
+                forced: false,
+            });
+            marks.arpeggio = Some("up".into());
+        }
+        sheet.spanners = vec![spanner("ftrem", 3, 4)];
+        let played = performance(sheet, &Interpretation::default()).unwrap();
+        // a quarter in sixteenths is four
+        assert_eq!(played.notes.iter().filter(|n| n.id == 1).count(), 4);
+        let rolled: Vec<&Note> = played.notes.iter().filter(|n| n.id == 2).collect();
+        assert!(rolled[1].t > rolled[0].t, "the E after the C");
+        // two quarters alternating in sixteenths: eight, the two in turn
+        let alternate: Vec<u64> = played
+            .notes
+            .iter()
+            .filter(|n| n.t >= 2.0)
+            .map(|n| n.id)
+            .collect();
+        assert_eq!(alternate.len(), 8);
+        assert!(
+            alternate.iter().all(|id| *id == 3),
+            "both heard under the first"
+        );
+    }
+
+    #[test]
+    fn a_breath_shortens_and_let_it_ring_holds() {
+        let mut sheet = quarters(2);
+        mark(
+            &mut sheet,
+            1,
+            Marks {
+                breath: Some("breath".into()),
+                ..Marks::default()
+            },
+        );
+        mark(
+            &mut sheet,
+            2,
+            Marks {
+                ring: true,
+                ..Marks::default()
+            },
+        );
+        let played = performance(sheet, &Interpretation::default()).unwrap();
+        assert_eq!(played.notes[0].sustain, 0.75);
+        assert_eq!(played.notes[1].sustain, 2.0);
     }
 
     #[test]

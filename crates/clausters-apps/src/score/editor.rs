@@ -86,13 +86,9 @@ pub struct Outcome {
 
 turn::turned!(Outcome);
 
-/// The tempo the engraver times a score at when it states none, in beats a
-/// second: 120 quarters a minute.
-pub const ENGRAVED_TEMPO: f64 = 2.0;
-
 /// How many beats a whole note is in a rendered score: a quarter to the beat,
 /// the default interpretation's.
-const RENDER_BEAT_UNIT: f64 = 4.0;
+const RENDER_BEAT_UNIT: i64 = 4;
 
 /// **A score editor**: a shared score, what is selected on its page, the value
 /// a note is written with, and its end of the conversation.
@@ -335,7 +331,14 @@ impl ScoreEditor {
                 let ids = verbs::in_time(sheet, &self.items());
                 let first = verbs::locate(sheet, *ids.first()?)?;
                 let last = verbs::locate(sheet, *ids.last()?)?;
-                let beats = |whole: Ratio| whole.to_f64() * RENDER_BEAT_UNIT;
+                // where it is first heard: a repeat is played out before it
+                let beats = |whole: Ratio| {
+                    let written = whole.to_f64() * RENDER_BEAT_UNIT as f64;
+                    clausters_core::notation::heard_beats(sheet, RENDER_BEAT_UNIT, written)
+                        .first()
+                        .copied()
+                        .unwrap_or(written)
+                };
                 Some((
                     beats(first.onset),
                     beats(last.onset + last.item.dur()),
@@ -353,11 +356,10 @@ impl ScoreEditor {
         }
     }
 
-    /// **The score as the sequence it plays as** (`events::score::render`),
-    /// on the engraver's own time: a page's cursor is drawn over the
-    /// engraver's timemap, which times a score with no tempo mark at
-    /// [`ENGRAVED_TEMPO`], so the sequence takes that tempo and the cursor is
-    /// where the sound is.
+    /// **The score as the sequence it plays as** (`events::score::render`):
+    /// its repeats played out and its tempo marks its tempo map -- the same
+    /// reading a page's cursor is drawn over, so the cursor is where the sound
+    /// is.
     ///
     /// # Errors
     /// When the document has no model, or a spanner of it names no item.
@@ -366,11 +368,10 @@ impl ScoreEditor {
         let sheet = held
             .sheet()
             .ok_or_else(|| "this document has no model to render".to_string())?;
-        let mut sequence = clausters_document::events::score::render(
+        let sequence = clausters_document::events::score::render(
             sheet,
             &clausters_core::notation::default_interpretation(),
         )?;
-        sequence.tempo_map = Some(clausters_core::tempomap::TempoMap::new(ENGRAVED_TEMPO));
         serde_json::to_value(&sequence).map_err(|why| why.to_string())
     }
 
@@ -1063,6 +1064,13 @@ impl ScoreEditor {
         // an entry of a palette is a verb over what is selected
         if let Some(name) = self.palette_entry(widget) {
             return match palettes::read(name, tag) {
+                // an entry that needs words opens the form that asks for them
+                Some(action) if action.get("dialog").is_some() => {
+                    match action["dialog"].as_str().and_then(dialogs::Form::named) {
+                        Some(form) => self.open_form(form),
+                        None => (None, Vec::new()),
+                    }
+                }
                 Some(action) => {
                     let reason = self.perform(&action, out);
                     (reason, self.corrections())
@@ -1249,7 +1257,7 @@ impl ScoreEditor {
             let step = entry::step_of(letter)?;
             let entered = self.entered.and_then(|id| verbs::locate(&sheet, id));
             let near = entry::near(&sheet, place, entered.map(|at| at.item));
-            let pitch = match pitch_near(&sheet, place.staff, step, near) {
+            let pitch = match pitch_near(&sheet, place.staff, place.at, step, near) {
                 Ok(pitch) => pitch,
                 Err(why) => return Some((Some(why), Vec::new())),
             };
@@ -1292,7 +1300,7 @@ impl ScoreEditor {
             };
             // the letter above the chord's top note
             let top = item.pitches().iter().max_by_key(|p| p.midi()).copied();
-            let mut pitch = match pitch_near(&sheet, staff, step, top) {
+            let mut pitch = match pitch_near(&sheet, staff, at, step, top) {
                 Ok(pitch) => pitch,
                 Err(why) => return Some((Some(why), Vec::new())),
             };

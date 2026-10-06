@@ -805,6 +805,106 @@ export class ScoreEditor extends Editor<Score> {
     }
 
     /**
+     * A mark on the selected notes, by its name: `tremolo` (strokes, 1 to 3),
+     * `arpeggio` (`up`, `down`), `breath` (`breath`, `caesura`), `ring`
+     * (`true`), `fingering` and `harmony` (text). A value every one of them has
+     * already takes it away, and so does `null`.
+     */
+    mark(name: string, value: unknown = true): boolean {
+        return this.#act({ action: "mark", mark: String(name), value });
+    }
+
+    /**
+     * A syllable of the lyrics under the first selected note, in `verse`; one
+     * that ends in `-` runs on into the next, and an empty one takes it away.
+     */
+    lyric(text: string, verse = 1): boolean {
+        return this.#act({ action: "lyric", text: String(text), verse: Math.trunc(verse) });
+    }
+
+    /**
+     * Draw the selected notes as repeats of the beat before each, which they
+     * then hold -- or as themselves again.
+     */
+    beatRepeat(): boolean {
+        return this.#act({ action: "beat_repeat" });
+    }
+
+    /**
+     * Write at the first selected item a `tempo` (with its speed `bpm`, in
+     * quarter notes a minute), a `dir` or a `reh`; with no text and no speed,
+     * take it back.
+     */
+    control(kind: string, text = "", bpm: number | null = null): boolean {
+        return this.#act({ action: "control", kind: String(kind), text: String(text), bpm });
+    }
+
+    /**
+     * Change the key from the first selected measure on (`"D"`, `"Bb"`), or
+     * take a change back with `"none"`.
+     */
+    setKey(key: string): boolean {
+        return this.#act({ action: "key", key: String(key) });
+    }
+
+    /**
+     * Change the clef where the first selected item starts, on its staff
+     * (`"G2"`, `"F4"`, `"C3"`), or take it back with `"none"`.
+     */
+    setClef(clef: string): boolean {
+        return this.#act({ action: "clef", clef: String(clef) });
+    }
+
+    /**
+     * Mark the selected measures as an ending played in the passes `label`
+     * names (`"1"`, `"2"`); empty takes it back.
+     */
+    setEnding(label = ""): boolean {
+        return this.#act({ action: "ending", label: String(label) });
+    }
+
+    /**
+     * A navigation mark: `segno` and `coda` on the first selected measure,
+     * `fine`, `dacapo`, `dalsegno` and `tocoda` on the last; `none` takes them
+     * off both.
+     */
+    navigation(kind: string): boolean {
+        return this.#act({ action: "navigation", kind: String(kind) });
+    }
+
+    /**
+     * Write each selected measure as a repeat of the one before, or as itself
+     * again when every one already is.
+     */
+    measureRepeat(): boolean {
+        return this.#act({ action: "measure_repeat" });
+    }
+
+    /** Draw runs of empty measures as one numbered rest, or each as itself. */
+    multirests(): boolean {
+        return this.#act({ action: "multirests" });
+    }
+
+    /**
+     * Say what the selected staves are -- the first, with nothing selected:
+     * their `lines`, their name (`label`, `abbr`), how many semitones they
+     * sound from what they write. What is left out stays.
+     */
+    setStaff(
+        options: { lines?: number; label?: string; abbr?: string; transpose?: number } = {},
+    ): boolean {
+        return this.#act({ action: "staff", ...options });
+    }
+
+    /**
+     * Group the staves the selection covers under a `brace`, a `bracket` or a
+     * `line`; `none` takes away the groups over them.
+     */
+    group(symbol: string): boolean {
+        return this.#act({ action: "group", symbol: String(symbol) });
+    }
+
+    /**
      * A transformation over the measures the selection covers -- or over
      * everything, with nothing selected: `"transpose"` (`semitones`, or `steps`
      * for a diatonic one), `"invert"` (`axis`), `"retrograde"`, `"stretch"`

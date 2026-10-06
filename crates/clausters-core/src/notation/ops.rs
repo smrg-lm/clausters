@@ -88,7 +88,7 @@ impl Span {
 ///
 /// The JSON form is the verb under `"op"` and the parameters beside it, so
 /// `{"op": "transpose", "semitones": -3, "span": {"measures": [3, 10]}}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
     /// Move every note in the span by an interval.
@@ -336,6 +336,100 @@ pub enum Op {
         /// The voice they go to.
         voice: usize,
     },
+    /// Change the key from a measure on; `none` takes a change back.
+    SetKey {
+        /// Which measure, 1-based.
+        measure: usize,
+        /// The tonic (`"D"`, `"Bb"`), or `none`.
+        key: String,
+    },
+    /// Change a staff's clef at a time; `none` takes a change back.
+    SetClef {
+        /// Which staff, from zero.
+        #[serde(default)]
+        staff: usize,
+        /// Where, in whole notes from the start.
+        at: Ratio,
+        /// The clef (`"G2"`, `"F4"`, `"C3"`), or `none`.
+        clef: String,
+    },
+    /// Mark measures as an ending played in the passes the label names; an
+    /// empty label takes it back.
+    SetEnding {
+        /// The first measure, 1-based.
+        first: usize,
+        /// The last, inclusive.
+        last: usize,
+        /// The passes (`"1"`, `"2"`), or empty.
+        #[serde(default)]
+        label: String,
+    },
+    /// Put a navigation mark on a measure, or take its marks away with
+    /// `none`.
+    SetMark {
+        /// Which measure, 1-based.
+        measure: usize,
+        /// `segno`, `coda`, `fine`, `dacapo`, `dalsegno`, `tocoda` or `none`.
+        kind: String,
+    },
+    /// Write a measure as a repeat of the one before, or as itself again.
+    SetRepeat {
+        /// Which measure, 1-based.
+        measure: usize,
+        /// Whether it repeats the one before.
+        #[serde(default)]
+        on: bool,
+    },
+    /// Draw runs of empty measures as one numbered rest each.
+    SetMultirests {
+        /// Whether they are.
+        #[serde(default)]
+        on: bool,
+    },
+    /// Say what a staff is: its lines, its names, its transposition.
+    SetStaff {
+        /// Which staff, from zero.
+        #[serde(default)]
+        staff: usize,
+        /// How many lines; `0` is the five of the default.
+        #[serde(default)]
+        lines: Option<u8>,
+        /// Its name at the first system.
+        #[serde(default)]
+        label: Option<String>,
+        /// Its short name after it.
+        #[serde(default)]
+        abbr: Option<String>,
+        /// Semitones from what is written to what sounds.
+        #[serde(default)]
+        transpose: Option<i32>,
+    },
+    /// How the staves are grouped, whole.
+    SetGroups {
+        /// Each group's first and last staff and its sign.
+        #[serde(default)]
+        groups: Vec<super::model::Group>,
+    },
+    /// Write a tempo mark, a direction or a rehearsal mark at an item.
+    AddControl {
+        /// `tempo`, `dir` or `reh`.
+        kind: String,
+        /// The item it stands at.
+        on: u64,
+        /// What it says.
+        #[serde(default)]
+        text: String,
+        /// A tempo's speed, in quarter notes a minute.
+        #[serde(default)]
+        bpm: Option<f64>,
+    },
+    /// Take one back.
+    RemoveControl {
+        /// Which kind.
+        kind: String,
+        /// Where it stands.
+        on: u64,
+    },
 }
 
 /// The diatonic size a chromatic interval is ordinarily read as: 4 semitones is
@@ -442,15 +536,15 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
             voice,
             chord,
         } => {
-            let pitches = match (pitches.is_empty(), position) {
-                (true, Some(position)) => vec![edit::pitch_at(&sheet, *staff, *position)?],
-                _ => pitches.clone(),
-            };
             let at = match (at, item) {
                 (Some(at), _) => *at,
                 (None, Some(id)) => edit::onset(&sheet, *id)
                     .ok_or_else(|| format!("no item with id {id} is in this score"))?,
                 (None, None) => Ratio::ZERO,
+            };
+            let pitches = match (pitches.is_empty(), position) {
+                (true, Some(position)) => vec![edit::pitch_when(&sheet, *staff, at, *position)?],
+                _ => pitches.clone(),
             };
             if *chord {
                 let [pitch] = pitches.as_slice() else {
@@ -475,6 +569,34 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::AddSpanner { kind, from, to } => edit::add_spanner(sheet, kind, *from, *to),
         Op::RemoveSpanner { kind, from, to } => edit::remove_spanner(sheet, kind, *from, *to),
         Op::ToVoice { ids, voice } => edit::to_voice(sheet, ids, *voice),
+        Op::SetKey { measure, key } => operators::set_key(sheet, *measure, key),
+        Op::SetClef { staff, at, clef } => edit::set_clef(sheet, *staff, *at, clef),
+        Op::SetEnding { first, last, label } => operators::set_ending(sheet, *first, *last, label),
+        Op::SetMark { measure, kind } => operators::set_mark(sheet, *measure, kind),
+        Op::SetRepeat { measure, on } => operators::set_repeat(sheet, *measure, *on),
+        Op::SetMultirests { on } => operators::set_multirests(sheet, *on),
+        Op::SetStaff {
+            staff,
+            lines,
+            label,
+            abbr,
+            transpose,
+        } => edit::set_staff(
+            sheet,
+            *staff,
+            *lines,
+            label.clone(),
+            abbr.clone(),
+            *transpose,
+        ),
+        Op::SetGroups { groups } => edit::set_groups(sheet, groups.clone()),
+        Op::AddControl {
+            kind,
+            on,
+            text,
+            bpm,
+        } => edit::add_control(sheet, kind, *on, text.clone(), *bpm),
+        Op::RemoveControl { kind, on } => edit::remove_control(sheet, kind, *on),
     }
 }
 
@@ -656,6 +778,56 @@ pub fn catalog() -> &'static [OpSpec] {
             required: &["ids", "voice"],
             optional: &[],
         },
+        OpSpec {
+            op: "set_key",
+            required: &["measure", "key"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "set_clef",
+            required: &["at", "clef"],
+            optional: &["staff"],
+        },
+        OpSpec {
+            op: "set_ending",
+            required: &["first", "last"],
+            optional: &["label"],
+        },
+        OpSpec {
+            op: "set_mark",
+            required: &["measure", "kind"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "set_repeat",
+            required: &["measure"],
+            optional: &["on"],
+        },
+        OpSpec {
+            op: "set_multirests",
+            required: &[],
+            optional: &["on"],
+        },
+        OpSpec {
+            op: "set_staff",
+            required: &[],
+            optional: &["staff", "lines", "label", "abbr", "transpose"],
+        },
+        OpSpec {
+            op: "set_groups",
+            required: &[],
+            optional: &["groups"],
+        },
+        OpSpec {
+            op: "add_control",
+            required: &["kind", "on"],
+            optional: &["text", "bpm"],
+        },
+        OpSpec {
+            op: "remove_control",
+            required: &["kind", "on"],
+            optional: &[],
+        },
     ]
 }
 
@@ -689,6 +861,7 @@ mod tests {
                         })
                         .collect(),
                 }],
+                ..Staff::default()
             }],
             ..Default::default()
         }

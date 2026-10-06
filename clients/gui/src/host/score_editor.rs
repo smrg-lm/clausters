@@ -295,6 +295,7 @@ mod tests {
             staves: vec![Staff {
                 clef: "G2".into(),
                 voices: vec![Voice { items: items_of(4) }],
+                ..Staff::default()
             }],
             ..Sheet::default()
         };
@@ -498,6 +499,7 @@ mod tests {
             staves: vec![Staff {
                 clef: "F4".into(),
                 voices: vec![Voice { items: items_of(2) }],
+                ..Staff::default()
             }],
             ..Sheet::default()
         };

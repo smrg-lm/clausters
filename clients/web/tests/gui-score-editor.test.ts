@@ -26,7 +26,7 @@ interface Item {
     id: number;
     dur: [number, number];
     pitches?: { alter?: number }[];
-    marks?: { articulations?: string[]; ornament?: string; grace?: string };
+    marks?: { articulations?: string[]; ornament?: string; grace?: string; tremolo?: number };
 }
 
 /** The `score` widget of an editor's window, wherever the chrome put it. */
@@ -60,7 +60,19 @@ if (!existsSync(engraver)) {
         assert.equal((work as unknown as { split: boolean }).split, true);
         assert.deepEqual(
             (palettes.children ?? []).map((group) => (group as unknown as { title: string }).title),
-            ["Notes", "Accidentals", "Articulations", "Ornaments", "Lines", "Dynamics", "Measures"],
+            [
+                "Notes",
+                "Accidentals",
+                "Articulations",
+                "Ornaments",
+                "Lines",
+                "Text",
+                "Dynamics",
+                "Measures",
+                "Repeats and jumps",
+                "Keys and clefs",
+                "Staves",
+            ],
         );
         // the toolbar is a row of the crate's tools, each under an id of its own
         const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
@@ -249,6 +261,26 @@ if (!existsSync(engraver)) {
         assert.equal(editor.nextAccidental, null, "it was for that note");
     });
 
+    test("the marks, signs and staves are methods too", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        editor.select([`n${items(score)[0].id}`]);
+        assert.ok(editor.mark("tremolo", 2));
+        assert.equal(items(score)[0].marks?.tremolo, 2);
+        assert.ok(editor.lyric("la"));
+        assert.ok(editor.control("tempo", "Lento", 60));
+        assert.ok(editor.setKey("D"));
+        assert.ok(editor.navigation("segno"));
+        assert.ok(editor.multirests());
+        assert.ok(editor.setStaff({ label: "Flute" }));
+        const sheet = score.sheet() as unknown as Record<string, any>;
+        assert.equal(sheet.controls[0].bpm, 60);
+        assert.equal(sheet.key, "D");
+        assert.deepEqual(sheet.grid.marks, [[0, "segno"]]);
+        assert.equal(sheet.staves[0].label, "Flute");
+    });
+
     test("a tool and a menu pick are the editor's verbs", async () => {
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);
@@ -382,7 +414,7 @@ if (!existsSync(engraver)) {
         editor.draw();
         (editor as unknown as { windowId: number | null }).windowId ??= 0;
         const notes = items(score).length;
-        // a MIDI file, by its extension: the notes, at the engraver's tempo
+        // a MIDI file, by its extension: the notes, at the score's own tempo
         const path = await editor.export(join(dir, "a.mid"));
         const read = EventSequence.fromSmf(new Uint8Array(readFileSync(path)));
         assert.equal(read.length, notes);

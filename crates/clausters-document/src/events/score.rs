@@ -31,18 +31,27 @@
 //!   whose two ends are named by event id. `items` there says which item of
 //!   the sheet each event came from, since a chord's events share one.
 //!
+//! - **What the page does to the time** is the sequence's tempo map: the
+//!   repeats, endings and jumps played out, a tempo mark the tempo from
+//!   where it is heard.
+//! - **The pedal is a lane**, controller 64 on each channel of its staff, and
+//!   **a glissando is a note's own curve**, a bend over the note to the one
+//!   it slides to -- which a MIDI 1.0 channel cannot carry, so a sequence
+//!   with one is MIDI 2.0.
+//!
 //! A tie is one sound, as the interpreter reads it: the chain is one event,
 //! whose `value` is the chain's whole written length -- two tied quarters
 //! render as a half, which is what they sound and what a page written back
-//! from the event shows. A note's own curves -- a glissando, a swell on one
-//! note -- have nothing to come from yet: the model holds neither.
+//! from the event shows.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::SHAPE_HOLD;
-use clausters_core::notation::{DynamicsAs, Interpretation, Item, Sheet, levels, perform};
+use clausters_core::notation::{
+    DynamicsAs, Interpretation, Item, Sheet, heard_beats, levels, performance,
+};
 use clausters_core::ratio::Ratio;
 
 use super::{Event, EventSequence, MidiSpec};
@@ -97,7 +106,8 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
     let mut sheet = sheet.clone();
     sheet.assign_ids();
     let channel_of = channels(&sheet);
-    let notes = perform(sheet.clone(), interp)?;
+    let played = performance(sheet.clone(), interp)?;
+    let notes = &played.notes;
 
     // An item's pitches are handed out one to each of its notes, in the
     // order the interpreter sounds them, so two notes of one number in a
@@ -151,11 +161,25 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         }
         first_event.entry(note.id).or_insert(id);
         items.push(json!([id, note.id]));
+        // a glissando: the pitch bent over the held note to where it slides
+        let mut automation = Vec::new();
+        if let Some(glide) = note.glide.filter(|g| *g != 0.0) {
+            let curve = json!({
+                "id": 0,
+                "name": "glissando",
+                "target": {"bend": true},
+                "points": [{"at": 0.0, "value": 0.0}, {"at": note.sustain, "value": glide}],
+                "visible": true,
+            });
+            automation.push(serde_json::from_value(curve).map_err(|why| why.to_string())?);
+        }
         events.push(Event {
             id,
+            automation,
             ..Event::new(note.t, Value::Object(keys))
         });
     }
+    let glides = notes.iter().any(|n| n.glide.is_some_and(|g| g != 0.0));
 
     // What is no note's: the sheet, without its items.
     let spanners: Vec<Value> = sheet
@@ -189,19 +213,26 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
     notation.insert("spanners".into(), Value::Array(spanners));
     notation.insert("items".into(), Value::Array(items));
 
-    let lanes = if interp.dynamics_as == DynamicsAs::Attack {
+    let mut lanes = if interp.dynamics_as == DynamicsAs::Attack {
         Vec::new()
     } else {
         dynamics(&sheet, interp, &channel_of)?
     };
+    lanes.extend(pedals(&played.pedals, &channel_of)?);
     let mut sequence = EventSequence {
         next_id: events.len() as u64,
         events,
         automation: lanes,
         // Every curve a render writes is a channel's, which MIDI 1.0 says --
-        // as long as there are channels for the voices.
-        midi: (channel_of.len() <= MIDI_CHANNELS).then_some(MidiSpec::Midi1),
+        // as long as there are channels for the voices, and no note bends on
+        // its own.
+        midi: if glides {
+            Some(MidiSpec::Midi2)
+        } else {
+            (channel_of.len() <= MIDI_CHANNELS).then_some(MidiSpec::Midi1)
+        },
         notation: Some(Value::Object(notation)),
+        tempo_map: Some(played.tempo_map(interp.beat_unit)),
         ..EventSequence::default()
     };
     sequence.hold();
@@ -217,15 +248,25 @@ fn dynamics(
 ) -> Result<Vec<Automation>, String> {
     let mut lanes = Vec::new();
     for level in levels(sheet.clone(), interp)? {
-        let points: Vec<Value> = level
+        // each point where it is heard: a repeated stretch twice
+        let mut heard: Vec<(f64, f64, bool)> = level
             .points
             .iter()
-            .map(|point| {
+            .flat_map(|point| {
                 let value = (point.amp * 127.0).clamp(0.0, 127.0);
-                if point.ramps {
-                    json!({"at": point.t, "value": value})
+                heard_beats(sheet, interp.beat_unit, point.t)
+                    .into_iter()
+                    .map(move |at| (at, value, point.ramps))
+            })
+            .collect();
+        heard.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let points: Vec<Value> = heard
+            .into_iter()
+            .map(|(at, value, ramps)| {
+                if ramps {
+                    json!({"at": at, "value": value})
                 } else {
-                    json!({"at": point.t, "value": value, "data": {"shape": SHAPE_HOLD}})
+                    json!({"at": at, "value": value, "data": {"shape": SHAPE_HOLD}})
                 }
             })
             .collect();
@@ -244,6 +285,42 @@ fn dynamics(
                 "id": 0,
                 "name": "dynamics",
                 "target": target,
+                "points": points,
+                "visible": true,
+            });
+            lanes.push(serde_json::from_value(lane).map_err(|why| why.to_string())?);
+        }
+    }
+    Ok(lanes)
+}
+
+/// The sustain pedal as lanes: controller 64 on each channel of the staff it
+/// is written on, pressed and let go.
+fn pedals(
+    pedals: &[(usize, f64, f64)],
+    channel_of: &BTreeMap<(usize, usize), usize>,
+) -> Result<Vec<Automation>, String> {
+    let mut by_staff: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
+    for &(staff, down, up) in pedals {
+        by_staff.entry(staff).or_default().push((down, up));
+    }
+    let mut lanes = Vec::new();
+    for (staff, mut spans) in by_staff {
+        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let points: Vec<Value> = spans
+            .iter()
+            .flat_map(|(down, up)| {
+                [
+                    json!({"at": down, "value": 127.0, "data": {"shape": SHAPE_HOLD}}),
+                    json!({"at": up, "value": 0.0, "data": {"shape": SHAPE_HOLD}}),
+                ]
+            })
+            .collect();
+        for (_, channel) in channel_of.iter().filter(|((s, _), _)| *s == staff) {
+            let lane = json!({
+                "id": 0,
+                "name": "pedal",
+                "target": {"cc": 64, "channel": channel},
                 "points": points,
                 "visible": true,
             });
@@ -287,11 +364,58 @@ mod tests {
             staves: vec![Staff {
                 clef: "G2".into(),
                 voices: voices.into_iter().map(|items| Voice { items }).collect(),
+                ..Staff::default()
             }],
             spanners,
             key: "C".into(),
             ..Sheet::default()
         }
+    }
+
+    #[test]
+    fn the_page_plays_its_repeats_its_tempo_its_pedal_and_its_slides() {
+        let mut score = sheet(vec![(1..=8).map(plain).collect()], Vec::new());
+        score.grid.barlines = vec![(0, "rptend".into())];
+        score.spanners = vec![
+            Spanner {
+                kind: "pedal".into(),
+                from: 5,
+                to: 6,
+            },
+            Spanner {
+                kind: "gliss".into(),
+                from: 7,
+                to: 8,
+            },
+        ];
+        if let Item::Note { pitches, .. } = &mut score.staves[0].voices[0].items[7] {
+            pitches[0] = pitch(Step::E, 0);
+        }
+        score.controls = vec![clausters_core::notation::Control {
+            kind: "tempo".into(),
+            on: 5,
+            text: "Adagio".into(),
+            bpm: Some(60.0),
+        }];
+        let sequence = render(&score, &Interpretation::default()).unwrap();
+        // the first bar twice, then the second
+        assert_eq!(sequence.events.len(), 12);
+        let tempo = sequence.tempo_map.as_ref().expect("a tempo map");
+        // eight beats at two a second, then one a second
+        assert!((tempo.secs_at(9.0) - 5.0).abs() < 1e-9);
+        let pedal = sequence
+            .automation
+            .iter()
+            .find(|lane| lane.target.0["cc"] == 64)
+            .expect("a pedal lane");
+        assert_eq!(pedal.points.len(), 2);
+        let slide = sequence
+            .events
+            .iter()
+            .find(|e| !e.automation.is_empty())
+            .expect("a note that slides");
+        assert_eq!(slide.automation[0].target.0, json!({"bend": true}));
+        assert_eq!(sequence.midi, Some(MidiSpec::Midi2));
     }
 
     #[test]

@@ -46,114 +46,309 @@ pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
     let score = find(doc.root_element(), "score")
         .ok_or_else(|| "the document carries no <score> to read".to_string())?;
 
-    let mut sheet = Sheet {
-        header: read_header(doc.root_element()),
-        ..Sheet::default()
+    let mut reader = Reader {
+        sheet: Sheet {
+            header: read_header(doc.root_element()),
+            ..Sheet::default()
+        },
+        ..Reader::default()
     };
-    let mut clefs: Vec<String> = Vec::new();
-    let mut meters: Vec<Meter> = Vec::new();
-    // [staff][voice] -> the items read so far, appended measure by measure.
-    let mut content: Vec<Vec<Vec<Item>>> = Vec::new();
-    let mut beams: Vec<(usize, usize, usize, usize)> = Vec::new();
-    let mut ties: Vec<(String, String)> = Vec::new();
-    let mut attached: Vec<(String, String, Option<String>)> = Vec::new();
-    let mut pending_break: Option<String> = None;
-    let mut measure = 0usize;
-
     for child in score.children().filter(Node::is_element) {
         match child.tag_name().name() {
             "scoreDef" => {
-                if clefs.is_empty() {
-                    clefs = read_clefs(child);
-                    sheet.key = read_key(child);
-                    sheet.page = read_page(child);
+                if reader.staves.is_empty() {
+                    reader.staves = read_staves(child);
+                    reader.sheet.groups = read_groups(child, reader.staves.len());
+                    reader.sheet.key = read_key(child);
+                    reader.key = reader.sheet.key.clone();
+                    reader.sheet.page = read_page(child);
                     // the page's own text, where this layer wrote it: the
                     // fields the document head has no place for, and where
                     // each one sits
-                    super::pagetext::read_running(child, &mut sheet.header);
+                    super::pagetext::read_running(child, &mut reader.sheet.header);
                 }
-                if let Some(meter) = read_meter(child, measure) {
-                    meters.push(meter);
+                if let Some(meter) = read_meter(child, reader.measure) {
+                    reader.meters.push(meter);
                 }
             }
             "section" => {
+                if child.attribute("type") == Some("multirests") {
+                    reader.sheet.grid.multirests = true;
+                }
                 for node in child.children().filter(Node::is_element) {
-                    match node.tag_name().name() {
-                        "pb" => pending_break = Some("page".to_string()),
-                        "sb" => pending_break = Some("system".to_string()),
-                        "scoreDef" => {
-                            if let Some(meter) = read_meter(node, measure) {
-                                meters.push(meter);
-                            }
-                        }
-                        "measure" => {
-                            if let Some(kind) = pending_break.take() {
-                                sheet.grid.breaks.push((measure, kind));
-                            }
-                            if let Some(right) = node.attribute("right")
-                                && right != "single"
-                            {
-                                sheet.grid.barlines.push((measure, right.to_string()));
-                            }
-                            let key = sheet.key.clone();
-                            read_measure(
-                                node,
-                                &key,
-                                &mut content,
-                                &mut beams,
-                                &mut ties,
-                                &mut attached,
-                            );
-                            measure += 1;
-                        }
-                        _ => {}
-                    }
+                    reader.section_child(node);
                 }
             }
             _ => {}
         }
     }
+    Ok(reader.finish())
+}
 
-    sheet.grid.meters = if meters.is_empty() {
-        Grid::default().meters
-    } else {
-        meters
-    };
-    // The last measure's barline is `end` by default and the emitter writes it
-    // unasked, so keeping it would make every read-back carry an override
-    // nobody wrote.
-    if let Some(last) = measure.checked_sub(1) {
+/// A document being read: the sheet so far, and what is collected on the way
+/// to be put back once every item has its id.
+#[derive(Default)]
+struct Reader {
+    sheet: Sheet,
+    staves: Vec<Staff>,
+    meters: Vec<Meter>,
+    /// The key in force where the reading is.
+    key: String,
+    // [staff][voice] -> the items read so far, appended measure by measure.
+    content: Vec<Vec<Vec<Item>>>,
+    beams: Vec<(usize, usize, usize, usize)>,
+    ftrems: Vec<(usize, usize, usize)>,
+    clefs: Vec<(usize, usize, String)>,
+    ties: Vec<(String, String)>,
+    attached: Vec<Attached>,
+    pending_break: Option<String>,
+    measure: usize,
+    /// Where each voice's last measure is in its items, which a measure
+    /// written as a repeat of it copies.
+    last: HashMap<(usize, usize), (usize, usize)>,
+}
+
+/// Something that hangs off a measure, by the element it starts at.
+struct Attached {
+    name: String,
+    start: String,
+    end: Option<String>,
+    text: String,
+    attrs: BTreeMap<String, String>,
+}
+
+impl Reader {
+    fn section_child(&mut self, node: Node) {
+        match node.tag_name().name() {
+            "pb" => self.pending_break = Some("page".to_string()),
+            "sb" => self.pending_break = Some("system".to_string()),
+            "scoreDef" => {
+                if let Some(meter) = read_meter(node, self.measure) {
+                    self.meters.push(meter);
+                }
+                if let Some(key) = read_key_change(node) {
+                    if self.measure == 0 {
+                        self.sheet.key = key.clone();
+                    } else {
+                        self.sheet.grid.keys.push((self.measure, key.clone()));
+                    }
+                    self.key = key;
+                }
+            }
+            "ending" => {
+                let first = self.measure;
+                for inner in node.children().filter(Node::is_element) {
+                    self.section_child(inner);
+                }
+                if self.measure > first {
+                    let label = node.attribute("n").unwrap_or("1").to_string();
+                    self.sheet
+                        .grid
+                        .endings
+                        .push((first, self.measure - 1, label));
+                }
+            }
+            "measure" => self.read_measure(node),
+            _ => {}
+        }
+    }
+
+    /// One measure: its layers appended to the content, and what hangs off it
+    /// collected for later.
+    fn read_measure(&mut self, measure: Node) {
+        if let Some(kind) = self.pending_break.take() {
+            self.sheet.grid.breaks.push((self.measure, kind));
+        }
+        let mut span = 1i64;
+        let mut repeated = false;
+        for staff in measure.children().filter(|n| n.has_tag_name("staff")) {
+            // An accidental holds for the rest of its measure, at its own step
+            // and octave, on this staff. A new measure starts again from the
+            // armature -- the ordinary convention, and the one the emitter
+            // writes with, so the two have to agree or a score means something
+            // different after a save.
+            let mut in_force: HashMap<(i32, i32), i32> = HashMap::new();
+            let si = number(staff, 1) - 1;
+            while self.content.len() <= si {
+                self.content.push(Vec::new());
+            }
+            for layer in staff.children().filter(|n| n.has_tag_name("layer")) {
+                let vi = number(layer, 1) - 1;
+                while self.content[si].len() <= vi {
+                    self.content[si].push(Vec::new());
+                }
+                let start = self.content[si][vi].len();
+                // **A measure drawn as a repeat** holds what the one before
+                // held: its items again, as new items.
+                if layer.children().any(|n| n.has_tag_name("mRpt")) {
+                    repeated = true;
+                    if let Some(&(from, to)) = self.last.get(&(si, vi)) {
+                        let copies: Vec<Item> = self.content[si][vi][from..to]
+                            .iter()
+                            .map(|item| item.with_id(0))
+                            .collect();
+                        self.content[si][vi].extend(copies);
+                    }
+                } else {
+                    let mut facts = LayerFacts::default();
+                    read_items(
+                        layer,
+                        Ratio::ONE,
+                        &self.key,
+                        &mut in_force,
+                        &mut self.content[si][vi],
+                        &mut facts,
+                    );
+                    self.beams
+                        .extend(facts.beams.into_iter().map(|(a, b)| (si, vi, a, b)));
+                    self.ftrems
+                        .extend(facts.ftrems.into_iter().map(|a| (si, vi, a)));
+                    if vi == 0 {
+                        self.clefs
+                            .extend(facts.clefs.into_iter().map(|(at, clef)| (si, at, clef)));
+                    }
+                    if let Some(num) = facts.multirest {
+                        span = span.max(num);
+                        self.sheet.grid.multirests = true;
+                    }
+                }
+                let end = self.content[si][vi].len();
+                self.last.insert((si, vi), (start, end));
+            }
+        }
+        if repeated {
+            self.sheet.grid.repeats.push(self.measure);
+        }
+        let last = self.measure + span.max(1) as usize - 1;
+        if let Some(right) = measure.attribute("right")
+            && right != "single"
+        {
+            self.sheet.grid.barlines.push((last, right.to_string()));
+        }
+        for node in measure.children().filter(Node::is_element) {
+            let name = node.tag_name().name();
+            if name == "staff" {
+                continue;
+            }
+            if name == "repeatMark" {
+                let kind = match (node.attribute("func"), node.attribute("label")) {
+                    (_, Some("tocoda")) => Some("tocoda"),
+                    (Some("segno"), _) => Some("segno"),
+                    (Some("coda"), _) => Some("coda"),
+                    (Some("fine"), _) => Some("fine"),
+                    (Some("daCapo"), _) => Some("dacapo"),
+                    (Some("dalSegno"), _) => Some("dalsegno"),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    self.sheet.grid.marks.push((self.measure, kind.to_string()));
+                }
+                continue;
+            }
+            let Some(start) = node.attribute("startid").map(strip_hash) else {
+                continue;
+            };
+            let end = node.attribute("endid").map(strip_hash);
+            if name == "tie" {
+                if let Some(end) = end {
+                    self.ties.push((start, end));
+                }
+                continue;
+            }
+            self.attached.push(Attached {
+                name: name.to_string(),
+                start,
+                end,
+                text: text_in(node),
+                attrs: node
+                    .attributes()
+                    .map(|a| (a.name().to_string(), a.value().to_string()))
+                    .collect(),
+            });
+        }
+        self.measure = last + 1;
+    }
+
+    fn finish(mut self) -> Sheet {
+        let mut sheet = std::mem::take(&mut self.sheet);
+        sheet.grid.meters = if self.meters.is_empty() {
+            Grid::default().meters
+        } else {
+            std::mem::take(&mut self.meters)
+        };
+        // The last measure's barline is `end` by default and the emitter
+        // writes it unasked, so keeping it would make every read-back carry an
+        // override nobody wrote.
+        if let Some(last) = self.measure.checked_sub(1) {
+            sheet
+                .grid
+                .barlines
+                .retain(|(m, kind)| !(*m == last && kind == "end"));
+        }
+
+        let content = std::mem::take(&mut self.content);
+        sheet.staves = content
+            .into_iter()
+            .enumerate()
+            .map(|(si, voices)| Staff {
+                voices: voices.into_iter().map(|items| Voice { items }).collect(),
+                ..self.staves.get(si).cloned().unwrap_or_default()
+            })
+            .collect();
+        if sheet.staves.is_empty() {
+            sheet.staves = vec![self.staves.first().cloned().unwrap_or_default()];
+        }
+
+        // The order matters, and each step is where it is for a reason. The
+        // emitter's padding goes first, while "it has no id" still identifies
+        // it and before anything has renumbered; it is always trailing, so
+        // dropping it moves no position anything else holds. Then ids, so a
+        // beam read as a run of *positions* can name its ends before rejoining
+        // the split parts moves them.
+        drop_padding(&mut sheet);
+        sheet.assign_ids();
+        apply_beams(&mut sheet, &self.beams);
+        let ftrem_ids: Vec<(u64, u64)> = self
+            .ftrems
+            .iter()
+            .filter_map(|&(si, vi, a)| {
+                let items = &sheet.staves.get(si)?.voices.get(vi)?.items;
+                Some((items.get(a)?.id(), items.get(a + 1)?.id()))
+            })
+            .collect();
+        let clef_ids: Vec<(usize, u64, String)> = self
+            .clefs
+            .iter()
+            .filter_map(|(si, at, clef)| {
+                let item = sheet.staves.get(*si)?.voices.first()?.items.get(*at)?;
+                Some((*si, item.id(), clef.clone()))
+            })
+            .collect();
+        rejoin(&mut sheet);
+        for (from, to) in ftrem_ids {
+            sheet.spanners.push(Spanner {
+                kind: "ftrem".to_string(),
+                from,
+                to,
+            });
+        }
+        for (si, id, clef) in clef_ids {
+            let Some(t) = sheet.staves[si].voices.first().and_then(|voice| {
+                let index = voice.items.iter().position(|i| i.id() == id)?;
+                Some(
+                    voice.items[..index]
+                        .iter()
+                        .fold(Ratio::ZERO, |acc, i| acc + i.dur()),
+                )
+            }) else {
+                continue;
+            };
+            sheet.staves[si].clefs.push((t, clef));
+        }
+        apply_attachments(&mut sheet, &self.attached);
+        apply_ties(&mut sheet, &self.ties);
         sheet
-            .grid
-            .barlines
-            .retain(|(m, kind)| !(*m == last && kind == "end"));
     }
-
-    sheet.staves = content
-        .into_iter()
-        .enumerate()
-        .map(|(si, voices)| Staff {
-            clef: clefs.get(si).cloned().unwrap_or_else(|| "G2".to_string()),
-            voices: voices.into_iter().map(|items| Voice { items }).collect(),
-        })
-        .collect();
-    if sheet.staves.is_empty() {
-        sheet.staves = vec![Staff::default()];
-    }
-
-    // The order matters, and each step is where it is for a reason. The
-    // emitter's padding goes first, while "it has no id" still identifies it
-    // and before anything has renumbered; it is always trailing, so dropping it
-    // moves no position anything else holds. Then ids, so a beam read as a run
-    // of *positions* can name its ends before rejoining the split parts moves
-    // them.
-    drop_padding(&mut sheet);
-    sheet.assign_ids();
-    apply_beams(&mut sheet, &beams);
-    rejoin(&mut sheet);
-    apply_attachments(&mut sheet, &attached);
-    apply_ties(&mut sheet, &ties);
-    Ok(sheet)
 }
 
 /// The first descendant with this tag name, at any depth.
@@ -214,8 +409,10 @@ fn read_header(root: Node) -> Header {
     }
 }
 
-/// The staves' clefs, in order, as the model spells one (`"G2"`).
-fn read_clefs(score_def: Node) -> Vec<String> {
+/// The staves, in order, as their definitions say them: the clef as the
+/// model spells one (`"G2"`), the line count, the names and the
+/// transposition.
+fn read_staves(score_def: Node) -> Vec<Staff> {
     score_def
         .descendants()
         .filter(|n| n.is_element() && n.tag_name().name() == "staffDef")
@@ -230,9 +427,92 @@ fn read_clefs(score_def: Node) -> Vec<String> {
                 .map(str::to_string)
                 .or_else(|| find(def, "clef")?.attribute("line").map(str::to_string))
                 .unwrap_or_else(|| "2".to_string());
-            format!("{shape}{line}")
+            let named = |tag: &str, attr: &str| {
+                def.children()
+                    .find(|n| n.has_tag_name(tag))
+                    .map(text_in)
+                    .or_else(|| def.attribute(attr).map(str::to_string))
+                    .unwrap_or_default()
+            };
+            Staff {
+                clef: format!("{shape}{line}"),
+                voices: Vec::new(),
+                lines: def
+                    .attribute("lines")
+                    .and_then(|n| n.parse().ok())
+                    .filter(|n| *n != 5),
+                label: named("label", "label"),
+                abbr: named("labelAbbr", "label.abbr"),
+                transpose: def
+                    .attribute("trans.semi")
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0),
+                ..Staff::default()
+            }
         })
         .collect()
+}
+
+/// The groups the staves are written in: each inner group, by the staves it
+/// spans and the sign at its left. The one group a score always has -- a
+/// brace over several staves, or none over one -- is not a choice and reads as
+/// none.
+fn read_groups(score_def: Node, staves: usize) -> Vec<super::model::Group> {
+    let Some(top) = score_def.children().find(|n| n.has_tag_name("staffGrp")) else {
+        return Vec::new();
+    };
+    let defs: Vec<Node> = top
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "staffDef")
+        .collect();
+    let index = |def: Node| defs.iter().position(|d| *d == def);
+    let mut groups = Vec::new();
+    for group in top
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "staffGrp")
+    {
+        let inner: Vec<usize> = group
+            .descendants()
+            .filter(|n| n.is_element() && n.tag_name().name() == "staffDef")
+            .filter_map(index)
+            .collect();
+        let (Some(&first), Some(&last)) = (inner.first(), inner.last()) else {
+            continue;
+        };
+        let symbol = group.attribute("symbol").map(str::to_string).or_else(|| {
+            find(group, "grpSym")?
+                .attribute("symbol")
+                .map(str::to_string)
+        });
+        let Some(symbol) = symbol else { continue };
+        let default = group == top && symbol == "brace" && first == 0 && last + 1 == staves;
+        if !default {
+            groups.push(super::model::Group {
+                first,
+                last,
+                symbol,
+            });
+        }
+    }
+    // the outer group alone, over every staff and as the score has it by
+    // default, is no choice
+    let nested = top
+        .descendants()
+        .skip(1)
+        .any(|n| n.is_element() && n.tag_name().name() == "staffGrp");
+    if !nested && groups.len() == 1 && groups[0].symbol == "brace" {
+        groups.clear();
+    }
+    groups
+}
+
+/// A change of key a score definition inside the music states, if it states
+/// one.
+fn read_key_change(score_def: Node) -> Option<String> {
+    let states = score_def.attribute("key.sig").is_some()
+        || score_def.attribute("keysig").is_some()
+        || find(score_def, "keySig").is_some();
+    states.then(|| read_key(score_def))
 }
 
 /// The key, as the tonic name the model holds.
@@ -319,64 +599,15 @@ fn read_meter(score_def: Node, measure: usize) -> Option<Meter> {
     })
 }
 
-/// One measure: its layers appended to the content, and what hangs off it
-/// collected for later.
-fn read_measure(
-    measure: Node,
-    key: &str,
-    content: &mut Vec<Vec<Vec<Item>>>,
-    beams: &mut Vec<(usize, usize, usize, usize)>,
-    ties: &mut Vec<(String, String)>,
-    attached: &mut Vec<(String, String, Option<String>)>,
-) {
-    for staff in measure.children().filter(|n| n.has_tag_name("staff")) {
-        // An accidental holds for the rest of its measure, at its own step and
-        // octave, on this staff. A new measure starts again from the armature --
-        // the ordinary convention, and the one the emitter writes with, so the
-        // two have to agree or a score means something different after a save.
-        let mut in_force: HashMap<(i32, i32), i32> = HashMap::new();
-        let si = number(staff, 1) - 1;
-        while content.len() <= si {
-            content.push(Vec::new());
-        }
-        for layer in staff.children().filter(|n| n.has_tag_name("layer")) {
-            let vi = number(layer, 1) - 1;
-            while content[si].len() <= vi {
-                content[si].push(Vec::new());
-            }
-            let mut here = Vec::new();
-            read_items(
-                layer,
-                Ratio::ONE,
-                key,
-                &mut in_force,
-                &mut content[si][vi],
-                &mut here,
-            );
-            beams.extend(here.into_iter().map(|(a, b)| (si, vi, a, b)));
-        }
-    }
-    for node in measure.children().filter(Node::is_element) {
-        let name = node.tag_name().name();
-        let start = node.attribute("startid").map(strip_hash);
-        let end = node.attribute("endid").map(strip_hash);
-        match (name, start) {
-            ("tie", Some(start)) => {
-                if let Some(end) = end {
-                    ties.push((start, end));
-                }
-            }
-            ("slur" | "hairpin", Some(start)) => attached.push((name.to_string(), start, end)),
-            ("dynam", Some(start)) => {
-                let text = node.text().unwrap_or_default().trim().to_string();
-                attached.push(("dynam".to_string(), start, Some(text)));
-            }
-            ("trill" | "mordent" | "turn" | "fermata", Some(start)) => {
-                attached.push(("ornament".to_string(), start, Some(name.to_string())))
-            }
-            _ => {}
-        }
-    }
+/// What a layer says beside its items, by their positions in the voice: the
+/// beams and the two-note tremolos around them, the changes of clef before
+/// them, and how many measures a numbered rest stands for.
+#[derive(Default)]
+struct LayerFacts {
+    beams: Vec<(usize, usize)>,
+    ftrems: Vec<usize>,
+    clefs: Vec<(usize, String)>,
+    multirest: Option<i64>,
 }
 
 /// One layer's items, descending through the containers that are not items.
@@ -389,7 +620,7 @@ fn read_items(
     key: &str,
     in_force: &mut HashMap<(i32, i32), i32>,
     out: &mut Vec<Item>,
-    beams: &mut Vec<(usize, usize)>,
+    facts: &mut LayerFacts,
 ) {
     for child in node.children().filter(Node::is_element) {
         match child.tag_name().name() {
@@ -400,9 +631,41 @@ fn read_items(
                 // elements inside it are beamed together, which the model holds
                 // as a spanner over the first and the last of them.
                 let first = out.len();
-                read_items(child, scale, key, in_force, out, beams);
+                read_items(child, scale, key, in_force, out, facts);
                 if out.len() > first {
-                    beams.push((first, out.len() - 1));
+                    facts.beams.push((first, out.len() - 1));
+                }
+            }
+            // A tremolo on one note: the note inside, its strokes the value
+            // each one halves.
+            "bTrem" => {
+                let first = out.len();
+                read_items(child, scale, key, in_force, out, facts);
+                let strokes = match child.attribute("unitdur") {
+                    Some("8") => 1,
+                    Some("16") => 2,
+                    Some("32") => 3,
+                    _ => find(child, "note")
+                        .and_then(|n| n.attribute("stem.mod"))
+                        .and_then(|m| m.chars().next()?.to_digit(10))
+                        .unwrap_or(1) as u8,
+                };
+                for item in &mut out[first..] {
+                    if let Item::Note { marks, .. } = item {
+                        marks.tremolo = Some(strokes);
+                    }
+                }
+            }
+            // Two notes alternating: each written with the value of the two
+            // together, which is MEI's spelling and not the model's.
+            "fTrem" => {
+                let first = out.len();
+                read_items(child, scale, key, in_force, out, facts);
+                for item in &mut out[first..] {
+                    *item = item.with_dur(item.dur() / Ratio::from(2));
+                }
+                if out.len() == first + 2 {
+                    facts.ftrems.push(first);
                 }
             }
             "tuplet" => {
@@ -418,7 +681,7 @@ fn read_items(
                     key,
                     in_force,
                     out,
-                    beams,
+                    facts,
                 );
             }
             "chord" => {
@@ -428,13 +691,65 @@ fn read_items(
                     .filter(|n| n.has_tag_name("note"))
                     .filter_map(|n| pitch_of(n, key, in_force))
                     .collect();
+                let mut marks = marks_of(child);
+                // the lyrics stand on the chord's first note
+                if marks.lyrics.is_empty()
+                    && let Some(note) = child.children().find(|n| n.has_tag_name("note"))
+                {
+                    marks.lyrics = lyrics_of(note);
+                }
                 out.push(Item::Note {
                     id: id_of(child),
                     pitches,
                     dur,
                     tie: false,
-                    marks: marks_of(child),
+                    marks,
                 });
+            }
+            // A beat drawn as a repeat of the one before holds what it repeats.
+            "beatRpt" => {
+                let id = id_of(child);
+                let copy = match out.last() {
+                    Some(Item::Note {
+                        pitches,
+                        dur,
+                        marks,
+                        ..
+                    }) => Item::Note {
+                        id,
+                        pitches: pitches.clone(),
+                        dur: *dur,
+                        tie: false,
+                        marks: Marks {
+                            beat_repeat: true,
+                            ..marks.clone()
+                        },
+                    },
+                    Some(other) => other.with_id(id),
+                    None => Item::Rest {
+                        id,
+                        dur: Ratio::new(1, 4),
+                    },
+                };
+                out.push(copy);
+            }
+            // A numbered rest stands for several measures, sized once the grid
+            // is known.
+            "multiRest" => {
+                let num: i64 = child
+                    .attribute("num")
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(1);
+                facts.multirest = Some(num);
+                out.push(Item::Rest {
+                    id: id_of(child),
+                    dur: Ratio::new(-num, 1),
+                });
+            }
+            "clef" => {
+                let shape = child.attribute("shape").unwrap_or("G");
+                let line = child.attribute("line").unwrap_or("2");
+                facts.clefs.push((out.len(), format!("{shape}{line}")));
             }
             "note" => {
                 let dur = duration(child, scale).unwrap_or(Ratio::new(1, 4));
@@ -570,8 +885,44 @@ fn marks_of(node: Node) -> Marks {
             .collect(),
         stem: node.attribute("stem.dir").map(str::to_string),
         grace: node.attribute("grace").map(str::to_string),
+        lyrics: lyrics_of(node),
         ..Marks::default()
     }
+}
+
+/// The lyrics an element carries, verse by verse: a syllable continued by a
+/// dash into the next ends in `-`.
+fn lyrics_of(node: Node) -> Vec<String> {
+    let mut verses: Vec<(usize, String)> = node
+        .children()
+        .filter(|n| n.has_tag_name("verse"))
+        .map(|verse| {
+            let n = number(verse, 1);
+            let syl = find(verse, "syl");
+            let text = syl.map(text_in).unwrap_or_default();
+            let dash = syl.and_then(|s| s.attribute("con")) == Some("d");
+            (n, if dash { format!("{text}-") } else { text })
+        })
+        .collect();
+    verses.sort();
+    let mut out = Vec::new();
+    for (n, text) in verses {
+        while out.len() + 1 < n {
+            out.push(String::new());
+        }
+        out.push(text);
+    }
+    out
+}
+
+/// All the text under an element, however it is nested in `rend`s.
+fn text_in(node: Node) -> String {
+    node.descendants()
+        .filter(|n| n.is_text())
+        .filter_map(|n| n.text())
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// The model id this element was written from, or `0` when it was written
@@ -665,6 +1016,15 @@ fn rejoin(sheet: &mut Sheet) {
                     let (m, _) = grid.position(at);
                     *item = item.with_dur(grid.bar_len(m.max(measure)));
                 }
+                // a numbered rest: as long as the measures it stands for
+                if item.dur() < Ratio::ZERO {
+                    let count = (-item.dur()).to_f64().round() as usize;
+                    let (m, _) = grid.position(at);
+                    let first = m.max(measure);
+                    let len =
+                        (first..first + count).fold(Ratio::ZERO, |acc, i| acc + grid.bar_len(i));
+                    *item = item.with_dur(len);
+                }
                 at = at + item.dur();
                 measure = grid.position(at).0;
             }
@@ -684,52 +1044,140 @@ fn rejoin(sheet: &mut Sheet) {
     }
 }
 
-/// Put back what hung off the measures: the spanners, the dynamics, the
-/// ornaments, and the beams read from the elements they wrapped.
-fn apply_attachments(sheet: &mut Sheet, attached: &[(String, String, Option<String>)]) {
+/// Put back what hung off the measures: the spanners, the marks a note
+/// carries that MEI writes beside it, and what is written at a point.
+fn apply_attachments(sheet: &mut Sheet, attached: &[Attached]) {
     let ids: BTreeMap<String, u64> = sheet
         .voices()
         .flat_map(|v| v.items.iter())
         .map(|i| (format!("n{}", i.id()), i.id()))
         .collect();
-    let resolve = |reference: &str| -> Option<u64> { ids.get(reference).copied() };
+    // a part of an item split across a barline, or a pitch of a chord, names
+    // the item
+    let resolve = |reference: &str| -> Option<u64> {
+        ids.get(reference).copied().or_else(|| {
+            let base = reference.split('-').next()?;
+            ids.get(base).copied()
+        })
+    };
+    let mut marked: Vec<(u64, &Attached)> = Vec::new();
+    let mut pedals: Vec<(u64, bool)> = Vec::new();
 
-    for (kind, start, extra) in attached {
-        match kind.as_str() {
-            "slur" | "hairpin" => {
-                let (Some(from), Some(to)) = (resolve(start), extra.as_deref().and_then(&resolve))
-                else {
-                    continue;
-                };
-                sheet.spanners.push(Spanner {
-                    kind: if kind == "slur" {
-                        "slur".to_string()
-                    } else {
-                        "crescendo".to_string()
-                    },
-                    from,
-                    to,
-                });
-            }
-            "dynam" | "ornament" => {
-                let (Some(id), Some(text)) = (resolve(start), extra.as_deref()) else {
-                    continue;
-                };
-                for voice in sheet.voices_mut() {
-                    for item in &mut voice.items {
-                        if item.id() == id
-                            && let Item::Note { marks, .. } = item
-                        {
-                            if kind == "dynam" {
-                                marks.dynamic = Some(text.to_string());
-                            } else {
-                                marks.ornament = Some(text.to_string());
-                            }
-                        }
+    for a in attached {
+        let Some(from) = resolve(&a.start) else {
+            continue;
+        };
+        let to = a.end.as_deref().and_then(&resolve);
+        let attr = |name: &str| a.attrs.get(name).map(String::as_str);
+        let spanner = match a.name.as_str() {
+            "slur" => Some("slur".to_string()),
+            "hairpin" => Some(if attr("form") == Some("dim") {
+                "diminuendo".to_string()
+            } else {
+                "crescendo".to_string()
+            }),
+            "phrase" => Some("phrase".to_string()),
+            "gliss" => Some("gliss".to_string()),
+            "bracketSpan" => Some("bracket".to_string()),
+            "beamSpan" => Some("beamspan".to_string()),
+            "octave" => {
+                let below = attr("dis.place") == Some("below");
+                Some(
+                    match (attr("dis"), below) {
+                        (Some("15"), false) => "15ma",
+                        (Some("15"), true) => "15mb",
+                        (_, true) => "8vb",
+                        _ => "8va",
                     }
+                    .to_string(),
+                )
+            }
+            "pedal" => {
+                pedals.push((from, attr("dir") != Some("up")));
+                None
+            }
+            "tempo" | "dir" | "reh" => {
+                sheet.controls.push(super::model::Control {
+                    kind: a.name.clone(),
+                    on: from,
+                    text: a.text.clone(),
+                    bpm: attr("midi.bpm").and_then(|b| b.parse().ok()),
+                });
+                None
+            }
+            _ => {
+                marked.push((from, a));
+                None
+            }
+        };
+        if let (Some(kind), Some(to)) = (spanner, to) {
+            sheet.spanners.push(Spanner { kind, from, to });
+        }
+    }
+    // the pedal is pressed at one note and let go at a later one: paired in
+    // time, whatever order the document wrote the two signs in
+    let onsets: HashMap<u64, Ratio> = sheet
+        .voices()
+        .flat_map(|voice| {
+            let mut t = Ratio::ZERO;
+            voice.items.iter().map(move |item| {
+                let at = t;
+                t = t + item.dur();
+                (item.id(), at)
+            })
+        })
+        .collect();
+    let when = |id: &u64| onsets.get(id).copied().unwrap_or(Ratio::ZERO);
+    pedals.sort_by(|a, b| when(&a.0).cmp(&when(&b.0)).then(b.1.cmp(&a.1)));
+    let mut down: Option<u64> = None;
+    for (id, pressed) in pedals {
+        match (pressed, down) {
+            (true, _) => down = Some(id),
+            (false, Some(from)) => {
+                sheet.spanners.push(Spanner {
+                    kind: "pedal".to_string(),
+                    from,
+                    to: id,
+                });
+                down = None;
+            }
+            (false, None) => {}
+        }
+    }
+
+    for (id, a) in marked {
+        for voice in sheet.voices_mut() {
+            for item in &mut voice.items {
+                if item.id() != id {
+                    continue;
+                }
+                let Item::Note { marks, .. } = item else {
+                    continue;
+                };
+                let text = || Some(a.text.clone()).filter(|t| !t.is_empty());
+                match a.name.as_str() {
+                    "dynam" => marks.dynamic = text(),
+                    "trill" | "mordent" | "turn" | "fermata" => {
+                        marks.ornament = Some(a.name.clone());
+                    }
+                    "ornam" => {
+                        marks.ornament = a.attrs.get("glyph.name").cloned().or_else(text);
+                    }
+                    "arpeg" => {
+                        marks.arpeggio = Some(
+                            a.attrs
+                                .get("order")
+                                .cloned()
+                                .unwrap_or_else(|| "up".to_string()),
+                        );
+                    }
+                    "breath" | "caesura" => marks.breath = Some(a.name.clone()),
+                    "lv" => marks.ring = true,
+                    "fing" => marks.fingering = text(),
+                    "harm" => marks.harmony = text(),
+                    _ => {}
                 }
             }
-            _ => {}
         }
     }
 }
@@ -779,6 +1227,185 @@ mod tests {
             return Err(format!("wrote\n{once}\nread back and wrote\n{twice}"));
         }
         Ok(())
+    }
+
+    /// **Everything the model grew comes back**: the marks a note carries,
+    /// what is written at a point, the lines between notes, the grid's
+    /// changes, endings, signs and repeats, the staves' own facts and their
+    /// groups -- written, read and written again to the same bytes.
+    #[test]
+    fn every_element_the_model_holds_comes_back() {
+        use crate::notation::model::{Control, Group};
+        let mut sheet = stack(quarters(16), &quarters(16), true).unwrap();
+        let ids = |sheet: &Sheet, staff: usize| -> Vec<u64> {
+            sheet.staves[staff].voices[0]
+                .items
+                .iter()
+                .map(Item::id)
+                .collect()
+        };
+        let top = ids(&sheet, 0);
+        let low = ids(&sheet, 1);
+        let mark = |sheet: &mut Sheet, id: u64, marks: Marks| {
+            for voice in sheet.voices_mut() {
+                for item in &mut voice.items {
+                    if item.id() == id
+                        && let Item::Note { marks: m, .. } = item
+                    {
+                        *m = marks.clone();
+                    }
+                }
+            }
+        };
+        mark(
+            &mut sheet,
+            top[0],
+            Marks {
+                tremolo: Some(2),
+                fingering: Some("3".into()),
+                harmony: Some("Cm7".into()),
+                lyrics: vec!["Hal-".into(), "".into(), "one".into()],
+                ..Marks::default()
+            },
+        );
+        mark(
+            &mut sheet,
+            top[1],
+            Marks {
+                arpeggio: Some("down".into()),
+                breath: Some("caesura".into()),
+                ring: true,
+                ornament: Some("ornamentHaydn".into()),
+                ..Marks::default()
+            },
+        );
+        // a beat repeat holds what it repeats
+        let held = sheet.staves[0].voices[0].items[1].clone();
+        if let Item::Note { pitches, marks, .. } = &mut sheet.staves[0].voices[0].items[2]
+            && let Item::Note { pitches: p, .. } = &held
+        {
+            *pitches = p.clone();
+            marks.beat_repeat = true;
+        }
+        sheet.controls = vec![
+            Control {
+                kind: "tempo".into(),
+                on: top[0],
+                text: "Allegro".into(),
+                bpm: Some(132.0),
+            },
+            Control {
+                kind: "dir".into(),
+                on: low[1],
+                text: "dolce".into(),
+                bpm: None,
+            },
+            Control {
+                kind: "reh".into(),
+                on: top[4],
+                text: "A".into(),
+                bpm: None,
+            },
+        ];
+        for (kind, from, to) in [
+            ("phrase", top[4], top[7]),
+            ("gliss", top[5], top[6]),
+            ("pedal", low[4], low[7]),
+            ("8va", top[8], top[11]),
+            ("bracket", low[8], low[10]),
+            ("ftrem", low[12], low[13]),
+            ("diminuendo", top[12], top[14]),
+        ] {
+            sheet = add_spanner(sheet, kind, from, to).unwrap();
+        }
+        sheet.grid.keys = vec![(2, "D".into())];
+        sheet.grid.meters.push(crate::notation::Meter {
+            measure: 3,
+            count: 3,
+            unit: 4,
+        });
+        sheet.grid.endings = vec![(1, 1, "1".into()), (2, 2, "2".into())];
+        sheet.grid.marks = vec![(0, "segno".into()), (3, "dalsegno".into())];
+        sheet.staves[1].lines = Some(1);
+        sheet.staves[0].label = "Flute".into();
+        sheet.staves[0].abbr = "Fl.".into();
+        sheet.staves[1].transpose = -2;
+        sheet.staves[1].clefs = vec![(Ratio::from(2), "C3".into())];
+        sheet.groups = vec![Group {
+            first: 0,
+            last: 1,
+            symbol: "bracket".into(),
+        }];
+        round_trips(&sheet).unwrap();
+        let back = mei_to_sheet(&sheet_to_mei(&sheet).unwrap()).unwrap();
+        let first = back.staves[0].voices[0].items[0].marks().unwrap().clone();
+        assert_eq!(first.tremolo, Some(2));
+        assert_eq!(first.fingering.as_deref(), Some("3"));
+        assert_eq!(first.harmony.as_deref(), Some("Cm7"));
+        assert_eq!(first.lyrics, vec!["Hal-", "", "one"]);
+        let second = back.staves[0].voices[0].items[1].marks().unwrap().clone();
+        assert_eq!(second.arpeggio.as_deref(), Some("down"));
+        assert_eq!(second.breath.as_deref(), Some("caesura"));
+        assert!(second.ring);
+        assert_eq!(second.ornament.as_deref(), Some("ornamentHaydn"));
+        assert!(
+            back.staves[0].voices[0].items[2]
+                .marks()
+                .unwrap()
+                .beat_repeat
+        );
+        assert_eq!(back.controls, sheet.controls);
+        let mut kinds: Vec<&str> = back.spanners.iter().map(|s| s.kind.as_str()).collect();
+        kinds.sort_unstable();
+        assert_eq!(
+            kinds,
+            vec![
+                "8va",
+                "bracket",
+                "diminuendo",
+                "ftrem",
+                "gliss",
+                "pedal",
+                "phrase"
+            ]
+        );
+        assert_eq!(back.grid.keys, sheet.grid.keys);
+        assert_eq!(back.grid.meters, sheet.grid.meters);
+        assert_eq!(back.grid.endings, sheet.grid.endings);
+        assert_eq!(back.grid.marks, sheet.grid.marks);
+        assert_eq!(back.staves[1].lines, Some(1));
+        assert_eq!(
+            (back.staves[0].label.as_str(), back.staves[0].abbr.as_str()),
+            ("Flute", "Fl.")
+        );
+        assert_eq!(back.staves[1].transpose, -2);
+        assert_eq!(back.staves[1].clefs, sheet.staves[1].clefs);
+        assert_eq!(back.groups, sheet.groups);
+        // and the two-note tremolo's notes keep their own values
+        assert_eq!(back.len(), sheet.len());
+    }
+
+    /// A measure written as a repeat holds what the one before held, and a run
+    /// of empty measures condensed into one numbered rest is as long as they.
+    #[test]
+    fn a_repeated_measure_and_a_numbered_rest_come_back() {
+        let mut sheet = concat(quarters(8), &quarters(0)).unwrap();
+        // two bars written, then two empty ones and two more written
+        sheet.staves[0].voices[0].items.push(Item::Rest {
+            id: 0,
+            dur: Ratio::from(2),
+        });
+        sheet = concat(sheet, &quarters(4)).unwrap();
+        sheet.grid.repeats = vec![1];
+        sheet.grid.multirests = true;
+        let mei = sheet_to_mei(&sheet).unwrap();
+        assert!(mei.contains("<mRpt/>"), "{mei}");
+        assert!(mei.contains("<multiRest num=\"2\"/>"), "{mei}");
+        let back = mei_to_sheet(&mei).unwrap();
+        assert_eq!(back.len(), sheet.len());
+        assert_eq!(back.grid.repeats, vec![1]);
+        assert!(back.grid.multirests);
+        round_trips(&sheet).unwrap();
     }
 
     #[test]

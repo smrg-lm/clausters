@@ -106,6 +106,8 @@ export interface PerformedNote {
      * though the key already implies it -- a courtesy sign.
      */
     accidental?: string;
+    /** A glissando: the semitones the pitch slides by while it is held. */
+    glide?: number;
     /**
      * What is written on the note beyond its pitch and value, **verbatim** --
      * not what the interpreter made of it. A staccato is already honoured in
@@ -820,4 +822,121 @@ export function setBarline(sheet: Sheet, measure: number, kind: string): Sheet {
  */
 export function setBreak(sheet: Sheet, measure: number, kind: string): Sheet {
     return apply(sheet, { op: "set_break", measure, kind });
+}
+
+/**
+ * Change the key from `measure` (1-based) on to `key`, a tonic name (`"D"`,
+ * `"Bb"`); at measure 1 it is the score's own key, and `"none"` takes a change
+ * back.
+ */
+export function setKey(sheet: Sheet, measure: number, key: string): Sheet {
+    return apply(sheet, { op: "set_key", measure, key });
+}
+
+/**
+ * Change the clef of `staff` at `at` -- whole notes from the start -- to `clef`
+ * (`"G2"`, `"F4"`, `"C3"`); at the start it is the staff's own, and `"none"`
+ * takes a change back.
+ */
+export function setClef(
+    sheet: Sheet,
+    at: Ratio | number,
+    clef: string,
+    { staff = 0 }: { staff?: number } = {},
+): Sheet {
+    return apply(sheet, { op: "set_clef", staff, at: ratio(at), clef });
+}
+
+/**
+ * Mark measures `first` to `last` (1-based) as an ending played in the passes
+ * `label` names (`"1"`, `"2"`, `"1, 2"`); an empty label takes back the endings
+ * over them. The performance plays it out.
+ */
+export function setEnding(sheet: Sheet, first: number, last: number, label = ""): Sheet {
+    return apply(sheet, { op: "set_ending", first, last, label });
+}
+
+/**
+ * Put a navigation mark on `measure` (1-based): `"segno"`, `"coda"`, `"fine"`,
+ * `"dacapo"`, `"dalsegno"` or `"tocoda"`; `"none"` takes its marks away. The
+ * performance plays the jumps out.
+ */
+export function setMark(sheet: Sheet, measure: number, kind: string): Sheet {
+    return apply(sheet, { op: "set_mark", measure, kind });
+}
+
+/**
+ * Write `measure` (1-based) as a repeat of the one before: what that one holds
+ * is written into it again and it is drawn as the measure-repeat sign. Off, it
+ * keeps what it holds and is drawn as itself.
+ */
+export function setRepeat(sheet: Sheet, measure: number, on = true): Sheet {
+    return apply(sheet, { op: "set_repeat", measure, on });
+}
+
+/**
+ * Draw runs of empty measures as one numbered rest each, as a part shows them
+ * -- or each as itself.
+ */
+export function setMultirests(sheet: Sheet, on = true): Sheet {
+    return apply(sheet, { op: "set_multirests", on });
+}
+
+/**
+ * Say what `staff` is: how many `lines` it has (`1` for a percussion line, `5`
+ * the ordinary), what it is called (`label`, and `abbr` after the first
+ * system), and how many semitones it sounds from what it writes (`transpose`:
+ * `-2` for a clarinet in B flat). What is left out stays.
+ */
+export function setStaff(
+    sheet: Sheet,
+    staff = 0,
+    { lines, label, abbr, transpose }: {
+        lines?: number;
+        label?: string;
+        abbr?: string;
+        transpose?: number;
+    } = {},
+): Sheet {
+    const op: Op = { op: "set_staff", staff };
+    if (lines !== undefined) op.lines = lines;
+    if (label !== undefined) op.label = label;
+    if (abbr !== undefined) op.abbr = abbr;
+    if (transpose !== undefined) op.transpose = transpose;
+    return apply(sheet, op);
+}
+
+/**
+ * Group the staves, whole: each group a `{first, last, symbol}` -- staves from
+ * zero, joined by a `"brace"`, a `"bracket"` or a `"line"`. None is the
+ * default, a brace over several staves.
+ */
+export function setGroups(
+    sheet: Sheet,
+    groups: readonly { first: number; last: number; symbol: string }[],
+): Sheet {
+    return apply(sheet, { op: "set_groups", groups: [...groups] });
+}
+
+/**
+ * Write a tempo mark (`"tempo"`, with its speed `bpm` in quarter notes a
+ * minute), a direction (`"dir"`) or a rehearsal mark (`"reh"`) at the item
+ * `on`, which may be a rest. It replaces one of its kind there. A tempo mark is
+ * the tempo the score is played at from where it is heard.
+ */
+export function addControl(
+    sheet: Sheet,
+    kind: string,
+    on: number,
+    text = "",
+    { bpm }: { bpm?: number } = {},
+): Sheet {
+    const op: Op = { op: "add_control", kind, on, text };
+    if (bpm !== undefined) op.bpm = bpm;
+    return apply(sheet, op);
+}
+
+/** Take back what {@link addControl} wrote at `on`. */
+export function removeControl(sheet: Sheet, kind: string, on: number): Sheet {
+    return apply(sheet, { op: "remove_control", kind, on });
 }

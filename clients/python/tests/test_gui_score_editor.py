@@ -46,8 +46,8 @@ def test_the_window_is_the_page_in_a_scroll_over_a_status_line(score):
     palettes, scroll = work["children"]
     assert work["split"] is True
     assert [group["title"] for group in palettes["children"]] == [
-        "Notes", "Accidentals", "Articulations", "Ornaments", "Lines", "Dynamics",
-        "Measures"]
+        "Notes", "Accidentals", "Articulations", "Ornaments", "Lines", "Text", "Dynamics",
+        "Measures", "Repeats and jumps", "Keys and clefs", "Staves"]
     # the toolbar is a row of the crate's tools, each under an id of its own
     tools = [tool for tool in toolbar["children"] if "id" in tool]
     assert toolbar["flow"] == "row" and len({tool["id"] for tool in tools}) == 16
@@ -366,7 +366,7 @@ def test_a_score_is_exported_as_the_sequence_it_renders(score, tmp_path):
     editor.draw()
     editor._window = 0
     notes = len(_items(score))
-    # a MIDI file, by its extension: the notes, at the engraver's tempo
+    # a MIDI file, by its extension: the notes, at the score's own tempo
     path = editor.export(tmp_path / "a.mid")
     read = EventSequence.from_smf(open(path, "rb").read())
     assert len(read) == notes
@@ -384,3 +384,23 @@ def test_a_score_is_exported_as_the_sequence_it_renders(score, tmp_path):
     send(widget("file:path"), str(tmp_path / "menu.mid"))
     send(widget("file:ok"), "click")
     assert len(EventSequence.from_smf((tmp_path / "menu.mid").read_bytes())) == notes
+
+
+def test_the_marks_signs_and_staves_are_methods_too(score):
+    editor = ScoreEditor(score)
+    editor.draw()
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    assert editor.mark("tremolo", 2)
+    assert _items(score)[0]["marks"]["tremolo"] == 2
+    assert editor.lyric("la")
+    assert editor.control("tempo", "Lento", bpm=60)
+    assert editor.set_key("D")
+    assert editor.navigation("segno")
+    assert editor.multirests()
+    assert editor.set_staff(label="Flute")
+    sheet = score.sheet()
+    assert sheet["controls"][0]["bpm"] == 60
+    assert sheet["key"] == "D"
+    assert sheet["grid"]["marks"] == [[0, "segno"]]
+    assert sheet["staves"][0]["label"] == "Flute"

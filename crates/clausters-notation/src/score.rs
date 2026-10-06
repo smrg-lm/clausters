@@ -249,6 +249,213 @@ mod tests {
         );
     }
 
+    /// **Everything the model grew survives the engraver.** Every edit is
+    /// written, loaded and read back from the engraver's own normalized
+    /// document, so a mark verovio rewrites in a spelling the reader does not
+    /// know is a mark lost on the next edit: each element is put on a score,
+    /// opened, and read back out of what verovio hands back.
+    #[test]
+    fn every_element_survives_the_engravers_round_trip() {
+        use clausters_core::notation::{
+            Control, Group, Item, Marks, Meter, Sheet, add_spanner, mei_to_sheet, sheet_to_mei,
+            stack, voice_to_sheet,
+        };
+        use clausters_core::ratio::Ratio;
+
+        let quarters = |n: usize| {
+            let voice: Vec<Slot> = (0..n)
+                .map(|i| Slot::note(vec![60 + (i % 5) as i32], 8))
+                .collect();
+            let mut sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+            sheet.assign_ids();
+            sheet
+        };
+        let mut sheet: Sheet = stack(quarters(16), &quarters(16), true).unwrap();
+        let ids = |sheet: &Sheet, staff: usize| -> Vec<u64> {
+            sheet.staves[staff].voices[0]
+                .items
+                .iter()
+                .map(Item::id)
+                .collect()
+        };
+        let (top, low) = (ids(&sheet, 0), ids(&sheet, 1));
+        let mark = |sheet: &mut Sheet, id: u64, marks: Marks| {
+            for voice in sheet.voices_mut() {
+                for item in &mut voice.items {
+                    if item.id() == id
+                        && let Item::Note { marks: m, .. } = item
+                    {
+                        *m = marks.clone();
+                    }
+                }
+            }
+        };
+        mark(
+            &mut sheet,
+            top[0],
+            Marks {
+                tremolo: Some(2),
+                fingering: Some("3".into()),
+                harmony: Some("Cm7".into()),
+                lyrics: vec!["Hal-".into(), "lo".into()],
+                ..Marks::default()
+            },
+        );
+        mark(
+            &mut sheet,
+            top[1],
+            Marks {
+                arpeggio: Some("down".into()),
+                breath: Some("breath".into()),
+                ring: true,
+                ..Marks::default()
+            },
+        );
+        sheet.controls = vec![
+            Control {
+                kind: "tempo".into(),
+                on: top[0],
+                text: "Allegro".into(),
+                bpm: Some(132.0),
+            },
+            Control {
+                kind: "dir".into(),
+                on: low[1],
+                text: "dolce".into(),
+                bpm: None,
+            },
+            Control {
+                kind: "reh".into(),
+                on: top[4],
+                text: "A".into(),
+                bpm: None,
+            },
+        ];
+        for (kind, from, to) in [
+            ("phrase", top[4], top[7]),
+            ("gliss", top[5], top[6]),
+            ("pedal", low[4], low[7]),
+            ("8va", top[8], top[11]),
+            ("bracket", low[8], low[10]),
+            ("ftrem", low[12], low[13]),
+        ] {
+            sheet = add_spanner(sheet, kind, from, to).unwrap();
+        }
+        sheet.grid.keys = vec![(2, "D".into())];
+        sheet.grid.meters.push(Meter {
+            measure: 3,
+            count: 3,
+            unit: 4,
+        });
+        sheet.grid.endings = vec![(1, 1, "1".into()), (2, 2, "2".into())];
+        sheet.grid.marks = vec![(0, "segno".into()), (3, "dalsegno".into())];
+        sheet.staves[0].label = "Flute".into();
+        sheet.staves[1].transpose = -2;
+        sheet.staves[1].clefs = vec![(Ratio::from(2), "C3".into())];
+        sheet.groups = vec![Group {
+            first: 0,
+            last: 1,
+            symbol: "bracket".into(),
+        }];
+
+        let score =
+            open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+        let normalized = score.mei();
+        let back = mei_to_sheet(&normalized).expect("reads the engraver's document");
+        let first = back.staves[0].voices[0].items[0].marks().unwrap().clone();
+        assert_eq!(first.tremolo, Some(2), "{normalized}");
+        assert_eq!(first.fingering.as_deref(), Some("3"));
+        assert_eq!(first.harmony.as_deref(), Some("Cm7"));
+        assert_eq!(first.lyrics, vec!["Hal-", "lo"]);
+        let second = back.staves[0].voices[0].items[1].marks().unwrap().clone();
+        assert_eq!(second.arpeggio.as_deref(), Some("down"));
+        assert_eq!(second.breath.as_deref(), Some("breath"));
+        assert!(second.ring);
+        let mut controls: Vec<(String, String)> = back
+            .controls
+            .iter()
+            .map(|c| (c.kind.clone(), c.text.clone()))
+            .collect();
+        controls.sort();
+        assert_eq!(
+            controls,
+            vec![
+                ("dir".into(), "dolce".into()),
+                ("reh".into(), "A".into()),
+                ("tempo".into(), "Allegro".into())
+            ]
+        );
+        assert!(back.controls.iter().any(|c| c.bpm == Some(132.0)));
+        let mut kinds: Vec<&str> = back.spanners.iter().map(|s| s.kind.as_str()).collect();
+        kinds.sort_unstable();
+        assert_eq!(
+            kinds,
+            vec!["8va", "bracket", "ftrem", "gliss", "pedal", "phrase"]
+        );
+        assert_eq!(back.grid.keys, sheet.grid.keys);
+        assert_eq!(back.grid.meters, sheet.grid.meters);
+        assert_eq!(back.grid.endings, sheet.grid.endings);
+        assert_eq!(back.grid.marks, sheet.grid.marks);
+        assert_eq!(back.staves[0].label, "Flute");
+        assert_eq!(back.staves[1].transpose, -2);
+        assert_eq!(back.staves[1].clefs, sheet.staves[1].clefs);
+        assert_eq!(back.groups, sheet.groups);
+        assert_eq!(back.len(), sheet.len());
+    }
+
+    /// A repeated measure, a repeated beat and a run of empty measures drawn
+    /// as one rest come back out of the engraver as what they hold.
+    #[test]
+    fn the_repeat_signs_and_a_numbered_rest_survive_the_engraver() {
+        use clausters_core::notation::{
+            Item, Sheet, concat, mei_to_sheet, sheet_to_mei, voice_to_sheet,
+        };
+        use clausters_core::ratio::Ratio;
+        let quarters = |n: usize| {
+            let voice: Vec<Slot> = (0..n)
+                .map(|i| Slot::note(vec![60 + (i % 5) as i32], 8))
+                .collect();
+            voice_to_sheet(&voice, "4/4", "G2", "C")
+        };
+        let mut sheet: Sheet = quarters(8);
+        sheet.assign_ids();
+        sheet.staves[0].voices[0].items.push(Item::Rest {
+            id: 0,
+            dur: Ratio::from(2),
+        });
+        let mut sheet = concat(sheet, &quarters(4)).unwrap();
+        sheet.assign_ids();
+        // the second beat repeats the first
+        let first = sheet.staves[0].voices[0].items[0].clone();
+        if let (Item::Note { pitches, marks, .. }, Item::Note { pitches: p, .. }) =
+            (&mut sheet.staves[0].voices[0].items[1], &first)
+        {
+            *pitches = p.clone();
+            marks.beat_repeat = true;
+        }
+        sheet.grid.repeats = vec![1];
+        sheet.grid.multirests = true;
+        // kept with no run to show it, too
+        let mut short = quarters(4);
+        short.grid.multirests = true;
+        let kept = open(&sheet_to_mei(&short).unwrap(), &EngraveOptions::default()).unwrap();
+        assert!(
+            mei_to_sheet(&kept.mei()).unwrap().grid.multirests,
+            "{}",
+            kept.mei()
+        );
+        let score =
+            open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+        let normalized = score.mei();
+        let back = mei_to_sheet(&normalized).expect("reads it");
+        assert_eq!(back.len(), sheet.len(), "{normalized}");
+        assert_eq!(back.grid.repeats, vec![1]);
+        assert!(back.grid.multirests);
+        let second = &back.staves[0].voices[0].items[1];
+        assert!(second.marks().is_some_and(|m| m.beat_repeat));
+        assert_eq!(second.pitches(), first.pitches());
+    }
+
     /// **A written page break turns the page**, which the engraver does only
     /// where the paper is full: four bars on one page, then a break before the
     /// third puts it on a second, numbered 2 -- and the cursors still run over

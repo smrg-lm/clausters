@@ -14,9 +14,9 @@
 //! them has no palettes.
 //!
 //! **Only what the model holds is offered.** An element the engraver draws
-//! and the model has no item or field for -- a tremolo, an arpeggio, a pedal,
-//! lyrics -- has no entry until the model grows it; the list of those is the
-//! plan's, not this file's.
+//! and the model has no item or field for has no entry until the model grows
+//! it. An entry that needs words -- a tempo, a direction, a syllable -- opens a
+//! one-field dialog (`{"dialog": ...}`), whose answer is the verb.
 
 use std::collections::BTreeMap;
 
@@ -116,6 +116,73 @@ fn groups() -> Vec<Group> {
             json!({"action": "barline", "kind": name}),
         )
     };
+    let mark = |name: &'static str,
+                text: &'static str,
+                code: Option<&'static str>,
+                tip: &'static str,
+                field: &'static str,
+                value: Value| {
+        entry(
+            name,
+            text,
+            code,
+            tip,
+            json!({"action": "mark", "mark": field, "value": value}),
+        )
+    };
+    let tremolo = |strokes: u8, code: &'static str, tip: &'static str| {
+        let name = ["tremolo1", "tremolo2", "tremolo3"][usize::from(strokes - 1)];
+        mark(name, "trem", Some(code), tip, "tremolo", json!(strokes))
+    };
+    let line = |name: &'static str, text: &'static str, code: Option<&'static str>, tip| {
+        entry(
+            name,
+            text,
+            code,
+            tip,
+            json!({"action": "spanner", "kind": name}),
+        )
+    };
+    let dialog =
+        |name: &'static str,
+         text: &'static str,
+         code: Option<&'static str>,
+         tip: &'static str,
+         form: &'static str| { entry(name, text, code, tip, json!({"dialog": form})) };
+    let navigation = |name: &'static str, text: &'static str, code: Option<&'static str>, tip| {
+        entry(
+            name,
+            text,
+            code,
+            tip,
+            json!({"action": "navigation", "kind": name}),
+        )
+    };
+    let key = |name: &'static str, tip: &'static str| {
+        let code = icons::KEY_SIGNS
+            .iter()
+            .find(|(key, ..)| *key == name)
+            .map(|(_, code, _)| *code);
+        entry(name, name, code, tip, json!({"action": "key", "key": name}))
+    };
+    let clef = |name: &'static str, code: Option<&'static str>, tip: &'static str| {
+        entry(
+            name,
+            name,
+            code,
+            tip,
+            json!({"action": "clef", "clef": name}),
+        )
+    };
+    let group = |name: &'static str, code: Option<&'static str>, tip: &'static str| {
+        entry(
+            name,
+            name,
+            code,
+            tip,
+            json!({"action": "group", "symbol": name}),
+        )
+    };
     vec![
         Group {
             name: "notes",
@@ -156,6 +223,23 @@ fn groups() -> Vec<Group> {
                     Some(icons::VOICE),
                     "Voice: move the selection to the other line of its staff",
                     json!({"action": "voice"}),
+                ),
+                tremolo(1, "E220", "Tremolo: the note repeated in eighths"),
+                tremolo(2, "E221", "Tremolo: the note repeated in sixteenths"),
+                tremolo(3, "E222", "Tremolo: the note repeated in thirty-seconds"),
+                entry(
+                    "ftrem",
+                    "ftrem",
+                    Some(icons::TWO_NOTE_TREMOLO),
+                    "Two-note tremolo: the two selected notes, of one value, alternating",
+                    json!({"action": "spanner", "kind": "ftrem"}),
+                ),
+                entry(
+                    "beat_repeat",
+                    "%",
+                    Some("E504"),
+                    "Beat repeat: the beat drawn as a repeat of the one before",
+                    json!({"action": "beat_repeat"}),
                 ),
             ],
         },
@@ -290,6 +374,59 @@ fn groups() -> Vec<Group> {
                 ),
                 ornament("fermata", "U", "E4C0", "Fermata: a hold of no fixed length"),
                 entry(
+                    "schleifer",
+                    "schl",
+                    Some("E587"),
+                    "Schleifer: a slide up to the note from below",
+                    json!({"action": "ornament", "name": "ornamentSchleifer"}),
+                ),
+                entry(
+                    "haydn",
+                    "haydn",
+                    Some("E56F"),
+                    "Haydn ornament: a turn or a trill, as the period read it",
+                    json!({"action": "ornament", "name": "ornamentHaydn"}),
+                ),
+                mark(
+                    "arpeggio_up",
+                    "arp",
+                    Some(icons::ARPEGGIO_UP),
+                    "Arpeggio: the chord rolled from its lowest note up",
+                    "arpeggio",
+                    json!("up"),
+                ),
+                mark(
+                    "arpeggio_down",
+                    "arp",
+                    Some(icons::ARPEGGIO_DOWN),
+                    "Arpeggio: the chord rolled from its highest note down",
+                    "arpeggio",
+                    json!("down"),
+                ),
+                entry(
+                    "gliss",
+                    "gliss",
+                    Some(icons::GLISSANDO),
+                    "Glissando: a slide from the first selected note to the last",
+                    json!({"action": "spanner", "kind": "gliss"}),
+                ),
+                mark(
+                    "breath",
+                    ",",
+                    Some("E4CE"),
+                    "Breath: the note let go a little early",
+                    "breath",
+                    json!("breath"),
+                ),
+                mark(
+                    "caesura",
+                    "//",
+                    Some("E4D1"),
+                    "Caesura: a full stop of the line",
+                    "breath",
+                    json!("caesura"),
+                ),
+                entry(
                     "none",
                     "-",
                     Some(icons::NONE),
@@ -330,6 +467,105 @@ fn groups() -> Vec<Group> {
                     Some(icons::DIMINUENDO),
                     "Diminuendo: a hairpin closing, gradually softer",
                     json!({"action": "spanner", "kind": "diminuendo"}),
+                ),
+                mark(
+                    "lv",
+                    "l.v.",
+                    Some(icons::LET_RING),
+                    "Let it ring: the note held past its value",
+                    "ring",
+                    json!(true),
+                ),
+                line(
+                    "phrase",
+                    "phr",
+                    Some(icons::PHRASE),
+                    "Phrase mark: a phrase, for analysis",
+                ),
+                line(
+                    "8va",
+                    "8va",
+                    Some("E511"),
+                    "Ottava: the notes sound an octave higher",
+                ),
+                line(
+                    "8vb",
+                    "8vb",
+                    Some("E51C"),
+                    "Ottava bassa: the notes sound an octave lower",
+                ),
+                line(
+                    "15ma",
+                    "15ma",
+                    Some("E515"),
+                    "Quindicesima: two octaves higher",
+                ),
+                line(
+                    "15mb",
+                    "15mb",
+                    Some("E51D"),
+                    "Quindicesima bassa: two octaves lower",
+                ),
+                line(
+                    "pedal",
+                    "Ped.",
+                    Some("E650"),
+                    "Pedal: the sustain pedal held from the first selected note to the last",
+                ),
+                line(
+                    "bracket",
+                    "[ ]",
+                    Some(icons::BRACKET),
+                    "Bracket over a stretch of notes",
+                ),
+                line(
+                    "beamspan",
+                    "beam",
+                    Some(icons::BEAM_SPAN),
+                    "Beam across a barline or across staves",
+                ),
+            ],
+        },
+        Group {
+            name: "text",
+            title: "Text",
+            folded: true,
+            entries: vec![
+                dialog(
+                    "tempo",
+                    "tempo",
+                    Some("E1D5"),
+                    "Tempo mark: words, and a speed",
+                    "tempo",
+                ),
+                dialog(
+                    "dir",
+                    "dir.",
+                    None,
+                    "Direction: words at a point (dolce, pizz.)",
+                    "direction",
+                ),
+                dialog(
+                    "reh",
+                    "A",
+                    Some(icons::REHEARSAL),
+                    "Rehearsal mark: a letter in a box",
+                    "rehearsal",
+                ),
+                dialog(
+                    "fing",
+                    "1",
+                    Some("ED11"),
+                    "Fingering over the note",
+                    "fingering",
+                ),
+                dialog("harm", "C7", None, "Chord symbol over the note", "harmony"),
+                dialog(
+                    "lyric",
+                    "la",
+                    None,
+                    "Lyrics: a syllable under the note",
+                    "lyric",
                 ),
             ],
         },
@@ -444,6 +680,162 @@ fn groups() -> Vec<Group> {
                     "No break: the line and the page are the engraver's to fill",
                     json!({"action": "break", "kind": "none"}),
                 ),
+                entry(
+                    "multirests",
+                    "4",
+                    Some("E4EE"),
+                    "Multirests: runs of empty measures drawn as one numbered rest",
+                    json!({"action": "multirests"}),
+                ),
+            ],
+        },
+        Group {
+            name: "jumps",
+            title: "Repeats and jumps",
+            folded: true,
+            entries: vec![
+                entry(
+                    "ending",
+                    "1.",
+                    Some(icons::ENDING),
+                    "Ending: the selected measures, played in the passes it names",
+                    json!({"dialog": "ending"}),
+                ),
+                entry(
+                    "no_ending",
+                    "-",
+                    Some(icons::NONE),
+                    "No ending over the selected measures",
+                    json!({"action": "ending", "label": ""}),
+                ),
+                navigation(
+                    "segno",
+                    "S",
+                    Some("E047"),
+                    "Segno: the sign a dal segno goes back to",
+                ),
+                navigation("coda", "O", Some("E048"), "Coda: where a to coda goes"),
+                navigation(
+                    "fine",
+                    "Fine",
+                    None,
+                    "Fine: where the piece ends after a jump",
+                ),
+                navigation("dacapo", "D.C.", Some("E046"), "Da capo: back to the start"),
+                navigation(
+                    "dalsegno",
+                    "D.S.",
+                    Some("E045"),
+                    "Dal segno: back to the sign",
+                ),
+                navigation(
+                    "tocoda",
+                    "to O",
+                    None,
+                    "To coda: after a jump, on to the coda",
+                ),
+                navigation("none", "-", Some(icons::NONE), "No navigation mark"),
+                entry(
+                    "repeat",
+                    "%",
+                    Some("E500"),
+                    "Measure repeat: the measure drawn as a repeat of the one before",
+                    json!({"action": "measure_repeat"}),
+                ),
+            ],
+        },
+        Group {
+            name: "keys",
+            title: "Keys and clefs",
+            folded: true,
+            entries: vec![
+                key(
+                    "C",
+                    "No sharps or flats, from the first selected measure on",
+                ),
+                key("G", "One sharp: G major, E minor"),
+                key("D", "Two sharps: D major, B minor"),
+                key("A", "Three sharps: A major, F sharp minor"),
+                key("E", "Four sharps: E major, C sharp minor"),
+                key("F", "One flat: F major, D minor"),
+                key("Bb", "Two flats: B flat major, G minor"),
+                key("Eb", "Three flats: E flat major, C minor"),
+                key("Ab", "Four flats: A flat major, F minor"),
+                clef(
+                    "G2",
+                    Some("E050"),
+                    "Treble clef, from the first selected note on",
+                ),
+                clef(
+                    "F4",
+                    Some("E062"),
+                    "Bass clef, from the first selected note on",
+                ),
+                clef(
+                    "C3",
+                    Some("E05C"),
+                    "Alto clef, from the first selected note on",
+                ),
+                clef(
+                    "C4",
+                    Some("E05C"),
+                    "Tenor clef, from the first selected note on",
+                ),
+            ],
+        },
+        Group {
+            name: "staves",
+            title: "Staves",
+            folded: true,
+            entries: vec![
+                entry(
+                    "one_line",
+                    "1",
+                    Some(icons::ONE_LINE),
+                    "One line: a percussion staff",
+                    json!({"action": "staff", "lines": 1}),
+                ),
+                entry(
+                    "five_lines",
+                    "5",
+                    Some(icons::FIVE_LINES),
+                    "Five lines: the ordinary staff",
+                    json!({"action": "staff", "lines": 5}),
+                ),
+                dialog(
+                    "name",
+                    "name",
+                    None,
+                    "Name: what the staff is called, and its short name",
+                    "staff_name",
+                ),
+                dialog(
+                    "transposition",
+                    "trans",
+                    None,
+                    "Transposition: semitones from what it writes to what it sounds",
+                    "transposition",
+                ),
+                group(
+                    "brace",
+                    Some("E000"),
+                    "Brace: the selected staves as one instrument",
+                ),
+                group(
+                    "bracket",
+                    Some("E002"),
+                    "Bracket: the selected staves as a section",
+                ),
+                group(
+                    "line",
+                    Some(icons::GROUP_LINE),
+                    "Line: the selected staves joined by a line",
+                ),
+                group(
+                    "none",
+                    Some(icons::NONE),
+                    "No group over the selected staves",
+                ),
             ],
         },
     ]
@@ -500,6 +892,7 @@ const COLS: usize = 5;
 fn cols_of(group: &str) -> usize {
     match group {
         "lines" | "dynamics" => COLS - 1,
+        "text" | "staves" | "jumps" => COLS - 2,
         _ => COLS,
     }
 }
@@ -518,19 +911,23 @@ pub fn column(ids: &Ids, outlines: &Outlines) -> Option<Value> {
                 .iter()
                 .filter_map(|entry| {
                     let id = *ids.get(&widget_name(group.name, entry.name))?;
-                    let label = entry
+                    let symbol = entry
                         .code
                         .filter(|code| outlines.contains_key(*code))
-                        .and_then(glyph_char)
-                        .map_or_else(|| entry.text.to_string(), String::from);
-                    Some(json!({
+                        .and_then(glyph_char);
+                    let mut button = json!({
                         "type": "button",
                         "id": id,
                         "flat": true,
-                        "label": label,
-                        "text_size": SYMBOL_SIZE,
+                        "label": symbol.map_or_else(|| entry.text.to_string(), String::from),
                         "tip": entry.tip,
-                    }))
+                    });
+                    // a symbol at a symbol's size; a word -- what has no
+                    // symbol, a direction, a chord, a name -- at a word's
+                    if symbol.is_some() || entry.code.is_some() {
+                        button["text_size"] = json!(SYMBOL_SIZE);
+                    }
+                    Some(button)
                 })
                 .collect();
             (!buttons.is_empty()).then(|| {
@@ -612,6 +1009,16 @@ mod tests {
         assert_eq!(unique.len(), names.len(), "no two entries share a name");
         for name in &names {
             let action = read(name, "click").unwrap_or_else(|| panic!("{name} asks nothing"));
+            // an entry that needs words opens the form that asks for them
+            if let Some(form) = action.get("dialog") {
+                assert!(
+                    form.as_str()
+                        .and_then(crate::score::dialogs::Form::named)
+                        .is_some(),
+                    "{name}: no form {form}"
+                );
+                continue;
+            }
             serde_json::from_value::<Action>(action.clone())
                 .unwrap_or_else(|why| panic!("{name}: {action} is no verb of the editor: {why}"));
             assert_eq!(read(name, "1"), None, "{name}: a value is no command");
@@ -636,13 +1043,17 @@ mod tests {
                 "Articulations",
                 "Ornaments",
                 "Lines",
+                "Text",
                 "Dynamics",
-                "Measures"
+                "Measures",
+                "Repeats and jumps",
+                "Keys and clefs",
+                "Staves"
             ]
         );
-        // a section folds on its title strip, and the last opens folded
+        // a section folds on its title strip, and the last ones open folded
         assert!(sections.iter().all(|s| s["collapsed"].is_boolean()));
-        assert_eq!(sections[6]["collapsed"], true);
+        assert_eq!(sections[7]["collapsed"], true);
         assert_eq!(sections[2]["children"].as_array().unwrap().len(), 13);
         // every entry says what the element is, and is drawn at a symbol's size
         let button = &sections[2]["children"][0];
@@ -657,14 +1068,16 @@ mod tests {
         );
         assert_eq!(column["axis"], "y");
         assert_eq!(
-            (&sections[2]["cols"], &sections[5]["cols"]),
+            (&sections[2]["cols"], &sections[6]["cols"]),
             (&json!(5), &json!(4))
         );
     }
 
     /// **No entry is a word where a symbol can be drawn**: with the table
     /// completed -- as the editor completes the engraver's -- every entry of
-    /// every palette is labelled with one character.
+    /// every palette that has a symbol is labelled with one character, and
+    /// what is a word by nature -- a direction, a chord, a name -- is a word
+    /// at a word's size.
     #[test]
     fn every_entry_has_a_symbol_once_the_table_is_completed() {
         // the engraver's own answer for the glyphs of its face, stood in for
@@ -672,7 +1085,16 @@ mod tests {
             .into_iter()
             .chain(icons::drawn_from())
             .filter(|code| {
-                !icons::is_own(code) && !code.starts_with("E03") && !code.starts_with("E04")
+                !icons::is_own(code)
+                    && ![
+                        icons::BARLINE_SINGLE,
+                        icons::BARLINE_DOUBLE,
+                        icons::BARLINE_FINAL,
+                        icons::REPEAT_START,
+                        icons::REPEAT_END,
+                        icons::REPEAT_BOTH,
+                    ]
+                    .contains(code)
             })
             .filter(|code| {
                 ![
@@ -690,6 +1112,10 @@ mod tests {
         for section in column["children"].as_array().unwrap() {
             for entry in section["children"].as_array().unwrap() {
                 let label = entry["label"].as_str().unwrap();
+                if entry.get("text_size").is_none() {
+                    assert!(label.is_ascii(), "{}: {label}", entry["tip"]);
+                    continue;
+                }
                 assert_eq!(label.chars().count(), 1, "{}: {label}", entry["tip"]);
                 assert!(
                     label.chars().all(|c| c as u32 >= 0xE000),

@@ -144,6 +144,7 @@ mod tests {
             staves: vec![Staff {
                 clef: "G2".into(),
                 voices: vec![Voice { items }],
+                ..Staff::default()
             }],
             spanners,
             ..Sheet::default()

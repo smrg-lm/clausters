@@ -137,6 +137,73 @@ pub enum Action {
         #[serde(default)]
         pages: Option<Pages>,
     },
+    /// **A mark on the selected notes**, by its field of the model's marks:
+    /// `tremolo` (strokes, 1 to 3), `arpeggio` (`up`, `down`), `breath`
+    /// (`breath`, `caesura`), `ring` (true), `fingering` and `harmony` (text).
+    /// A value every selected note already has takes it away, and so does
+    /// none.
+    Mark {
+        mark: String,
+        #[serde(default)]
+        value: Value,
+    },
+    /// A syllable of the lyrics under the first selected note, in verse
+    /// `verse` (from 1); empty takes it away.
+    Lyric {
+        #[serde(default = "first_verse")]
+        verse: usize,
+        #[serde(default)]
+        text: String,
+    },
+    /// Draw the selected notes as **repeats of the beat before** each, which
+    /// they then hold; again, as themselves.
+    BeatRepeat,
+    /// **Write at the first selected item** a `tempo` (with its `bpm`), a
+    /// `dir` or a `reh`; with no text and no speed, take it back.
+    Control {
+        kind: String,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        bpm: Option<f64>,
+    },
+    /// Change the key from the first selected measure on, or take a change
+    /// back with `none`.
+    Key { key: String },
+    /// Change the clef where the first selected item starts, on its staff, or
+    /// take the change back with `none`.
+    Clef { clef: String },
+    /// Mark the selected measures as an ending played in the passes `label`
+    /// names; empty takes it back.
+    Ending {
+        #[serde(default)]
+        label: String,
+    },
+    /// A navigation mark: `segno` and `coda` on the first selected measure,
+    /// `fine`, `dacapo`, `dalsegno` and `tocoda` on the last; `none` takes
+    /// them off both.
+    Navigation { kind: String },
+    /// Write each selected measure as a repeat of the one before, or as
+    /// itself again when every one already is.
+    MeasureRepeat,
+    /// Draw runs of empty measures as one numbered rest, or each as itself.
+    Multirests,
+    /// Say what the selected staves are -- the first staff, with nothing
+    /// selected: their `lines`, their name (`label`, `abbr`), their
+    /// transposition in semitones.
+    Staff {
+        #[serde(default)]
+        lines: Option<u8>,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        abbr: Option<String>,
+        #[serde(default)]
+        transpose: Option<i32>,
+    },
+    /// Group the staves the selection covers under a `brace`, a `bracket` or
+    /// a `line`; `none` takes away the groups over them.
+    Group { symbol: String },
     /// **A transformation over the measures the selection covers** -- or over
     /// everything, with nothing selected: `transpose` (`semitones`, `steps`),
     /// `invert` (`axis`), `retrograde`, `stretch` (`factor`) or `repeat`
@@ -146,6 +213,10 @@ pub enum Action {
         #[serde(flatten)]
         params: Map<String, Value>,
     },
+}
+
+fn first_verse() -> usize {
+    1
 }
 
 /// The transformations a selection's span is handed to.
@@ -178,6 +249,22 @@ impl Action {
             Action::Break { .. } => "break".into(),
             Action::Meter { .. } => "meter".into(),
             Action::Text { field, .. } => format!("page text: {field}"),
+            Action::Mark { mark, .. } => mark.clone(),
+            Action::Lyric { .. } => "lyrics".into(),
+            Action::BeatRepeat => "beat repeat".into(),
+            Action::Control { kind, .. } => match kind.as_str() {
+                "tempo" => "tempo".into(),
+                "reh" => "rehearsal mark".into(),
+                _ => "direction".into(),
+            },
+            Action::Key { .. } => "key".into(),
+            Action::Clef { .. } => "clef".into(),
+            Action::Ending { .. } => "ending".into(),
+            Action::Navigation { kind } => kind.clone(),
+            Action::MeasureRepeat => "measure repeat".into(),
+            Action::Multirests => "multirests".into(),
+            Action::Staff { .. } => "staff".into(),
+            Action::Group { .. } => "staff group".into(),
             Action::Op { op } => serde_json::to_value(op)
                 .ok()
                 .and_then(|v| v.get("op").and_then(|o| o.as_str()).map(str::to_string))
@@ -316,6 +403,57 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
         return Ok(vec![Op::SetPage { page: Some(page) }]);
     }
     let ids = in_time(sheet, selection);
+    if let Action::Multirests = action {
+        return Ok(vec![Op::SetMultirests {
+            on: !sheet.grid.multirests,
+        }]);
+    }
+    // the staves the selection covers, or the first
+    let staves: Vec<usize> = {
+        let mut on: Vec<usize> = ids
+            .iter()
+            .filter_map(|&id| locate(sheet, id).map(|l| l.staff))
+            .collect();
+        on.sort_unstable();
+        on.dedup();
+        if on.is_empty() { vec![0] } else { on }
+    };
+    if let Action::Staff {
+        lines,
+        label,
+        abbr,
+        transpose,
+    } = action
+    {
+        return Ok(staves
+            .iter()
+            .map(|&staff| Op::SetStaff {
+                staff,
+                lines: *lines,
+                label: label.clone(),
+                abbr: abbr.clone(),
+                transpose: *transpose,
+            })
+            .collect());
+    }
+    if let Action::Group { symbol } = action {
+        let (a, b) = (staves[0], staves[staves.len() - 1]);
+        let mut groups: Vec<clausters_core::notation::Group> = sheet
+            .groups
+            .iter()
+            .filter(|g| g.last < a || g.first > b)
+            .cloned()
+            .collect();
+        if symbol != "none" {
+            groups.push(clausters_core::notation::Group {
+                first: a,
+                last: b,
+                symbol: symbol.clone(),
+            });
+            groups.sort_by_key(|g| (g.first, std::cmp::Reverse(g.last)));
+        }
+        return Ok(vec![Op::SetGroups { groups }]);
+    }
     if ids.is_empty() {
         return Err("select a note first".into());
     }
@@ -358,6 +496,81 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 count: *count,
                 unit: *unit,
             }]);
+        }
+        Action::Key { key } => {
+            return Ok(vec![Op::SetKey {
+                measure: first,
+                key: key.clone(),
+            }]);
+        }
+        Action::Ending { label } => {
+            return Ok(vec![Op::SetEnding {
+                first,
+                last,
+                label: label.clone(),
+            }]);
+        }
+        Action::Navigation { kind } => {
+            return Ok(match kind.as_str() {
+                "segno" | "coda" => vec![Op::SetMark {
+                    measure: first,
+                    kind: kind.clone(),
+                }],
+                "none" => {
+                    let mut ops = vec![Op::SetMark {
+                        measure: first,
+                        kind: "none".into(),
+                    }];
+                    if last != first {
+                        ops.push(Op::SetMark {
+                            measure: last,
+                            kind: "none".into(),
+                        });
+                    }
+                    ops
+                }
+                _ => vec![Op::SetMark {
+                    measure: last,
+                    kind: kind.clone(),
+                }],
+            });
+        }
+        Action::MeasureRepeat => {
+            let measures: Vec<usize> = (first.max(2)..=last).collect();
+            if measures.is_empty() {
+                return Err("the first measure has no measure before it to repeat".into());
+            }
+            let on = !measures
+                .iter()
+                .all(|m| sheet.grid.repeats.contains(&(m - 1)));
+            return Ok(measures
+                .into_iter()
+                .map(|measure| Op::SetRepeat { measure, on })
+                .collect());
+        }
+        Action::Clef { clef } => {
+            let at = locate(sheet, ids[0]).ok_or("select a note first")?;
+            return Ok(vec![Op::SetClef {
+                staff: at.staff,
+                at: at.onset,
+                clef: clef.clone(),
+            }]);
+        }
+        Action::Control { kind, text, bpm } => {
+            let on = ids[0];
+            return Ok(if text.trim().is_empty() && bpm.is_none() {
+                vec![Op::RemoveControl {
+                    kind: kind.clone(),
+                    on,
+                }]
+            } else {
+                vec![Op::AddControl {
+                    kind: kind.clone(),
+                    on,
+                    text: text.trim().to_string(),
+                    bpm: *bpm,
+                }]
+            });
         }
         _ => {}
     }
@@ -527,6 +740,98 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 to,
             }]
         }
+        Action::Mark { mark, value } => {
+            need_notes("a mark")?;
+            let set = |marks: &mut Marks, value: &Value| -> Result<(), String> {
+                let text = || value.as_str().map(str::to_string).filter(|t| !t.is_empty());
+                match mark.as_str() {
+                    "tremolo" => {
+                        marks.tremolo = match value.as_u64() {
+                            Some(n @ 1..=3) => Some(n as u8),
+                            None if value.is_null() => None,
+                            _ => return Err("a tremolo has one to three strokes".into()),
+                        }
+                    }
+                    "arpeggio" => marks.arpeggio = text(),
+                    "breath" => marks.breath = text(),
+                    "ring" => marks.ring = value.as_bool().unwrap_or(false),
+                    "fingering" => marks.fingering = text(),
+                    "harmony" => marks.harmony = text(),
+                    other => {
+                        return Err(format!(
+                            "there is no mark called {other}; it is tremolo, arpeggio, breath, \
+                             ring, fingering or harmony"
+                        ));
+                    }
+                }
+                Ok(())
+            };
+            // a value every note already has is taken away
+            let all = notes.iter().all(|&id| {
+                let mut marks = marks_of(id);
+                let before = marks.clone();
+                set(&mut marks, value).is_ok() && marks == before
+            });
+            let value = if all && !value.is_null() {
+                match value {
+                    Value::Bool(_) => Value::Bool(false),
+                    _ => Value::Null,
+                }
+            } else {
+                value.clone()
+            };
+            notes
+                .iter()
+                .map(|&id| {
+                    let mut marks = marks_of(id);
+                    set(&mut marks, &value)?;
+                    Ok(Op::SetMarks { id, marks })
+                })
+                .collect::<Result<Vec<_>, String>>()?
+        }
+        Action::Lyric { verse, text } => {
+            need_notes("a syllable")?;
+            let id = notes[0];
+            let mut marks = marks_of(id);
+            let at = verse.max(&1) - 1;
+            while marks.lyrics.len() <= at {
+                marks.lyrics.push(String::new());
+            }
+            marks.lyrics[at] = text.trim().to_string();
+            while marks.lyrics.last().is_some_and(String::is_empty) {
+                marks.lyrics.pop();
+            }
+            vec![Op::SetMarks { id, marks }]
+        }
+        Action::BeatRepeat => {
+            need_notes("a beat repeat")?;
+            let all = notes.iter().all(|&id| marks_of(id).beat_repeat);
+            let mut ops = Vec::new();
+            for &id in &notes {
+                let mut marks = marks_of(id);
+                marks.beat_repeat = !all;
+                if !all {
+                    // what it repeats: the item before it, in its voice
+                    let at = locate(sheet, id).ok_or("select a note first")?;
+                    let before = sheet.staves[at.staff].voices[at.voice]
+                        .items
+                        .iter()
+                        .take_while(|i| i.id() != id)
+                        .last()
+                        .filter(|i| i.sounds() && i.dur() == at.item.dur())
+                        .ok_or_else(|| {
+                            "a beat repeat repeats the note before it, of the same value"
+                                .to_string()
+                        })?;
+                    ops.push(Op::SetPitches {
+                        id,
+                        pitches: before.pitches().to_vec(),
+                    });
+                }
+                ops.push(Op::SetMarks { id, marks });
+            }
+            ops
+        }
         Action::Open { .. } => {
             unreachable!("a document is opened by the editor, which holds the engraver")
         }
@@ -537,7 +842,16 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
         | Action::Measures { .. }
         | Action::Barline { .. }
         | Action::Break { .. }
-        | Action::Meter { .. } => {
+        | Action::Meter { .. }
+        | Action::Key { .. }
+        | Action::Clef { .. }
+        | Action::Ending { .. }
+        | Action::Navigation { .. }
+        | Action::MeasureRepeat
+        | Action::Multirests
+        | Action::Staff { .. }
+        | Action::Group { .. }
+        | Action::Control { .. } => {
             unreachable!("answered above")
         }
     })
@@ -647,6 +961,7 @@ mod tests {
             staves: vec![Staff {
                 clef: "G2".into(),
                 voices: vec![Voice { items }],
+                ..Staff::default()
             }],
             ..Sheet::default()
         }

@@ -826,3 +826,30 @@ test("a page can ask for note entry and says so on the wire", () => {
     assert.ok(!("entry" in kids(notation.scoreView(page, { name: "s" }))[0]));
     assert.equal(kids(notation.scoreView(page, { name: "s", entry: true }))[0].entry, true);
 });
+
+test("the signs, the staves and the marks at a point are the model's", () => {
+    const eight = sheetFromVoice(Array.from({ length: 8 }, () => ({ midis: [60], ticks: 8 })));
+    const items = (s: Sheet) =>
+        (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
+    const first = items(eight)[0].id as number;
+    let sheet = notation.addControl(eight, "tempo", first, "Lento", { bpm: 60 });
+    sheet = notation.setKey(sheet, 2, "D");
+    sheet = notation.setClef(sheet, 1, "F4");
+    sheet = notation.setEnding(sheet, 2, 2, "1");
+    sheet = notation.setMark(sheet, 2, "fine");
+    sheet = notation.setStaff(sheet, 0, { label: "Flute", transpose: -2 });
+    sheet = notation.setMultirests(sheet);
+    const s = sheet as unknown as Record<string, any>;
+    assert.equal(s.controls[0].bpm, 60);
+    assert.deepEqual(s.grid.keys, [[1, "D"]]);
+    assert.deepEqual(s.staves[0].clefs, [[[1, 1], "F4"]]);
+    assert.deepEqual(s.grid.endings, [[1, 1, "1"]]);
+    assert.equal(s.staves[0].label, "Flute");
+    const removed = notation.removeControl(sheet, "tempo", first) as unknown as Record<string, any>;
+    assert.deepEqual(removed.controls ?? [], []);
+    assert.deepEqual(
+        (notation.setRepeat(eight, 2) as unknown as Record<string, any>).grid.repeats,
+        [1],
+    );
+    assert.throws(() => notation.setGroups(eight, [{ first: 0, last: 3, symbol: "brace" }]));
+});

@@ -9643,3 +9643,39 @@ so the page view writes the score's number over it (`PAGE_NUMBER`).
 What it costs: a score with page breaks is engraved once more per run on every
 edit, and a slur or a hairpin that crosses a page break joins two documents and
 is drawn in neither.
+
+## What a page writes is what it plays, and the cursor follows the reading
+
+The score's model grew the elements the engraver draws and the model did not
+hold -- tremolos, a rolled chord, a glissando, breaths, let it ring, the octave
+lines, the pedal, phrase marks, brackets, beams across a barline, tempo marks,
+directions, rehearsal marks, fingerings, chord symbols, lyrics, changes of key
+and clef, endings, navigation marks, measure and beat repeats, numbered rests,
+a staff's lines, names and transposition, and the groups of staves. **Each is
+notation and sound** (the user, 2026-10-05): it is written, read back, edited by
+a verb of the palettes, and heard.
+
+**A page is played in another order than it is read.** The interpreter plays
+the repeats, the endings and the jumps out (`notation::unroll`), and every item
+is heard once a pass; a tempo mark is the tempo the sequence's map carries from
+where it is heard; the pedal is controller 64; an octave line and a transposing
+staff move the pitch; a tremolo is its repeated notes; a rolled chord is
+staggered; a glissando is a bend over the note, which takes a sequence to MIDI
+2.0, since a MIDI 1.0 channel cannot bend one note (`notation::performance`).
+That retires the earlier rule that a repeat is written out before a sheet
+exists.
+
+**The page's cursor is drawn over the same reading.** It used to be drawn over
+the engraver's timemap, and the playback took the engraver's tempo to agree
+with it; the engraver knows no repeat, so a score with one would play its
+second pass under a cursor standing still. A page written from the model is now
+timed by the model's own performance -- its items, the parts a barline splits,
+a chord's notes and the rests, each where it is heard -- and the engraver's
+timemap is kept for what only it knows, the MIDI values of what it drew.
+
+Two spellings were chosen against MEI's grain, for the round trip every edit
+makes through the engraver's normalized document. A two-note tremolo is two
+items of one value each, written inside `<fTrem>` with the value of the two
+together and halved again when read. Whether empty measures are drawn as
+numbered rests is the section's `type`, so it survives a score that has no run
+to show it.

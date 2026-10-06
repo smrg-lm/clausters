@@ -59,6 +59,46 @@ pub const BREAK_NONE: &str = "F000B";
 pub const REWIND: &str = "F000C";
 /// Note entry: a pencil.
 pub const ENTRY: &str = "F000D";
+/// Let it ring: a tie into nothing.
+pub const LET_RING: &str = "F000E";
+/// A glissando: a line from one note to another.
+pub const GLISSANDO: &str = "F000F";
+/// A phrase mark: a slur with its ends turned down.
+pub const PHRASE: &str = "F0010";
+/// A bracket over a stretch of notes.
+pub const BRACKET: &str = "F0011";
+/// A beam across a barline.
+pub const BEAM_SPAN: &str = "F0012";
+/// Two notes alternating: two notes joined by tremolo strokes.
+pub const TWO_NOTE_TREMOLO: &str = "F0013";
+/// A rehearsal mark: a letter in a box.
+pub const REHEARSAL: &str = "F0014";
+/// An ending: the bracket of a first-time bar.
+pub const ENDING: &str = "F0015";
+/// A staff of one line.
+pub const ONE_LINE: &str = "F0016";
+/// A staff of five lines.
+pub const FIVE_LINES: &str = "F0017";
+/// Staves joined by a line.
+pub const GROUP_LINE: &str = "F0018";
+/// A chord rolled up: a wavy line, its arrow at the top.
+pub const ARPEGGIO_UP: &str = "F0019";
+/// ...and down.
+pub const ARPEGGIO_DOWN: &str = "F001A";
+
+/// **A key signature**, by its tonic: the face's sharps or flats in a row, a
+/// natural for none -- under codepoints of the editor's own, from `F0020`.
+pub const KEY_SIGNS: [(&str, &str, i32); 9] = [
+    ("C", "F0020", 0),
+    ("G", "F0021", 1),
+    ("D", "F0022", 2),
+    ("A", "F0023", 3),
+    ("E", "F0024", 4),
+    ("F", "F0025", -1),
+    ("Bb", "F0026", -2),
+    ("Eb", "F0027", -3),
+    ("Ab", "F0028", -4),
+];
 
 /// SMuFL's own, for the symbols it names and a face may leave out.
 pub const BARLINE_SINGLE: &str = "E030";
@@ -75,12 +115,15 @@ pub const APPOGGIATURA: &str = "E562";
 /// The glyphs of the face a drawing here is written from.
 const EIGHTH_UP: &str = "E1D7";
 const QUARTER_UP: &str = "E1D5";
+const SHARP: &str = "E262";
+const FLAT: &str = "E260";
+const NATURAL: &str = "E261";
 
 /// The glyphs of the face the drawings here are written from: what the editor
 /// asks the engraver for beside the symbols its tools show.
 #[must_use]
 pub fn drawn_from() -> Vec<&'static str> {
-    vec![EIGHTH_UP, QUARTER_UP]
+    vec![EIGHTH_UP, QUARTER_UP, SHARP, FLAT, NATURAL]
 }
 
 /// Whether `code` is one of the editor's own, which no engraver is asked for.
@@ -128,6 +171,19 @@ pub fn complete(outlines: &mut Outlines) {
         (BREAK_NONE, Some(break_none())),
         (REWIND, Some(rewind())),
         (ENTRY, Some(pencil())),
+        (LET_RING, Some(let_ring())),
+        (GLISSANDO, Some(glissando())),
+        (PHRASE, Some(phrase())),
+        (BRACKET, Some(bracket())),
+        (BEAM_SPAN, Some(beam_span())),
+        (TWO_NOTE_TREMOLO, Some(two_note_tremolo())),
+        (REHEARSAL, Some(rehearsal())),
+        (ENDING, Some(ending())),
+        (ONE_LINE, Some(staff_lines(1))),
+        (FIVE_LINES, Some(staff_lines(5))),
+        (GROUP_LINE, Some(group_line())),
+        (ARPEGGIO_UP, Some(arpeggio(true))),
+        (ARPEGGIO_DOWN, Some(arpeggio(false))),
         (
             APPOGGIATURA,
             outlines.get(EIGHTH_UP).map(|eighth| grace(eighth, false)),
@@ -141,6 +197,15 @@ pub fn complete(outlines: &mut Outlines) {
             outlines.get(QUARTER_UP).map(|quarter| voices(quarter)),
         ),
     ];
+    let mut drawn = drawn;
+    for (_, code, count) in KEY_SIGNS {
+        let glyph = match count {
+            0 => NATURAL,
+            n if n > 0 => SHARP,
+            _ => FLAT,
+        };
+        drawn.push((code, outlines.get(glyph).map(|d| signature(d, count))));
+    }
     for (code, path) in drawn {
         if let (false, Some(path)) = (outlines.contains_key(code), path) {
             outlines.insert(code.to_string(), path);
@@ -620,6 +685,176 @@ fn pencil() -> String {
     ]));
     // and the graphite
     pen.polygon(&shape(&[(-315.0, -18.0), (-315.0, 18.0), (-370.0, 0.0)]));
+    pen.done()
+}
+
+/// Let it ring: a notehead and a tie that runs off into nothing.
+fn let_ring() -> String {
+    let mut pen = Pen::new();
+    pen.ellipse((90.0, 200.0), 110.0, 75.0, 0.35);
+    pen.bow(150.0, 700.0, 80.0, -110.0, 14.0, 46.0);
+    pen.done()
+}
+
+/// A glissando: two noteheads and the line between them.
+fn glissando() -> String {
+    let mut pen = Pen::new();
+    pen.ellipse((90.0, 120.0), 110.0, 75.0, 0.35);
+    pen.ellipse((620.0, 520.0), 110.0, 75.0, 0.35);
+    pen.stroke((200.0, 190.0), (510.0, 450.0), LINE);
+    pen.done()
+}
+
+/// A phrase mark: a long curve, its ends turned down.
+fn phrase() -> String {
+    let mut pen = Pen::new();
+    pen.bow(0.0, 760.0, 200.0, 260.0, 18.0, 52.0);
+    pen.stroke((0.0, 200.0), (0.0, 80.0), LINE);
+    pen.stroke((760.0, 200.0), (760.0, 80.0), LINE);
+    pen.done()
+}
+
+/// A bracket over notes: a line with its ends turned down.
+fn bracket() -> String {
+    let mut pen = Pen::new();
+    pen.rect(0.0, 440.0, 720.0, LINE);
+    pen.rect(0.0, 200.0, LINE, 280.0);
+    pen.rect(720.0 - LINE, 200.0, LINE, 280.0);
+    pen.done()
+}
+
+/// A beam across a barline: two stems joined by a beam, a barline between.
+fn beam_span() -> String {
+    let mut pen = Pen::new();
+    pen.ellipse((90.0, 60.0), 110.0, 75.0, 0.35);
+    pen.ellipse((620.0, 60.0), 110.0, 75.0, 0.35);
+    pen.rect(180.0, 60.0, LINE, 520.0);
+    pen.rect(710.0, 60.0, LINE, 520.0);
+    pen.polygon(&[
+        (180.0, 520.0),
+        (750.0, 520.0),
+        (750.0, 600.0),
+        (180.0, 600.0),
+    ]);
+    pen.rect(420.0, 0.0, LINE, 700.0);
+    pen.done()
+}
+
+/// Two notes alternating: two half notes joined by two strokes.
+fn two_note_tremolo() -> String {
+    let mut pen = Pen::new();
+    pen.ellipse((90.0, 60.0), 110.0, 75.0, 0.35);
+    pen.hole((90.0, 60.0), 70.0, 35.0);
+    pen.ellipse((620.0, 60.0), 110.0, 75.0, 0.35);
+    pen.hole((620.0, 60.0), 70.0, 35.0);
+    pen.rect(180.0, 60.0, LINE, 560.0);
+    pen.rect(710.0, 60.0, LINE, 560.0);
+    for y in [330.0, 460.0] {
+        pen.polygon(&[
+            (150.0, y),
+            (760.0, y + 60.0),
+            (760.0, y + 130.0),
+            (150.0, y + 70.0),
+        ]);
+    }
+    pen.done()
+}
+
+/// A rehearsal mark: an A in a box, the letter drawn as two strokes and a bar.
+fn rehearsal() -> String {
+    let mut pen = Pen::new();
+    pen.rect(0.0, 0.0, 600.0, LINE);
+    pen.rect(0.0, 620.0, 600.0, LINE);
+    pen.rect(0.0, 0.0, LINE, 660.0);
+    pen.rect(600.0 - LINE, 0.0, LINE, 660.0);
+    pen.stroke((140.0, 120.0), (300.0, 540.0), 60.0);
+    pen.stroke((460.0, 120.0), (300.0, 540.0), 60.0);
+    pen.rect(200.0, 260.0, 200.0, 50.0);
+    pen.done()
+}
+
+/// An ending: the bracket of a first-time bar, its number a stroke.
+fn ending() -> String {
+    let mut pen = Pen::new();
+    pen.rect(0.0, 600.0, 760.0, LINE);
+    pen.rect(0.0, 200.0, LINE, 440.0);
+    pen.stroke((180.0, 300.0), (180.0, 540.0), 60.0);
+    pen.stroke((180.0, 540.0), (110.0, 480.0), 50.0);
+    pen.done()
+}
+
+/// A staff of `lines` lines.
+fn staff_lines(lines: u32) -> String {
+    let mut pen = Pen::new();
+    let top = 4.0 * SPACE * 0.6;
+    for i in 0..lines {
+        let y = if lines == 1 {
+            top / 2.0
+        } else {
+            top * f64::from(i) / f64::from(lines - 1)
+        };
+        pen.rect(0.0, y, 760.0, LINE);
+    }
+    pen.done()
+}
+
+/// A key signature: `count` of the face's sharps (flats, below zero) in a
+/// row, each a step from the one before as a signature staggers them; a
+/// natural for none.
+fn signature(glyph: &str, count: i32) -> String {
+    const STEP: f64 = 230.0;
+    let n = count.unsigned_abs().max(1);
+    let scale = if n > 3 { 0.7 } else { 0.85 };
+    let mut d = String::new();
+    for i in 0..n {
+        let rise = if i % 2 == 0 { 120.0 } else { -60.0 };
+        d.push_str(&placed(
+            glyph,
+            (scale, scale),
+            (f64::from(i) * STEP * scale, rise),
+        ));
+    }
+    d
+}
+
+/// A rolled chord: a wavy line beside three noteheads, its arrow the way it
+/// is rolled.
+fn arpeggio(up: bool) -> String {
+    let mut pen = Pen::new();
+    // the wave, as short strokes turning left and right
+    let (bottom, top) = (-60.0, 640.0);
+    let steps = 7;
+    let rise = (top - bottom) / f64::from(steps);
+    for i in 0..steps {
+        let y0 = bottom + rise * f64::from(i);
+        let (x0, x1) = if i % 2 == 0 {
+            (60.0, 140.0)
+        } else {
+            (140.0, 60.0)
+        };
+        pen.stroke((x0, y0), (x1, y0 + rise), 46.0);
+    }
+    let (tip, base) = if up {
+        (top + 120.0, top - 10.0)
+    } else {
+        (bottom - 120.0, bottom + 10.0)
+    };
+    pen.polygon(&[(0.0, base), (200.0, base), (100.0, tip)]);
+    for y in [40.0, 290.0, 540.0] {
+        pen.ellipse((420.0, y), 110.0, 75.0, 0.35);
+    }
+    pen.done()
+}
+
+/// Staves joined by a line: two short staves and the line at their left.
+fn group_line() -> String {
+    let mut pen = Pen::new();
+    pen.rect(0.0, -260.0, 60.0, 1040.0);
+    for top in [-200.0, 420.0] {
+        for i in 0..3 {
+            pen.rect(60.0, top + f64::from(i) * 150.0, 600.0, LINE * 0.6);
+        }
+    }
     pen.done()
 }
 

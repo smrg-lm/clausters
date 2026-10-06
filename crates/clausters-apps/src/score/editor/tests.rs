@@ -70,6 +70,7 @@ fn shared() -> Shared {
             voices: vec![Voice {
                 items: (1..=4).map(note).collect(),
             }],
+            ..Staff::default()
         }],
         ..Sheet::default()
     };
@@ -1207,6 +1208,7 @@ fn a_file_is_opened_by_its_holder_and_the_document_it_read_is_one_entry() {
             voices: vec![Voice {
                 items: (1..=2).map(note).collect(),
             }],
+            ..Staff::default()
         }],
         ..Sheet::default()
     };
@@ -1352,4 +1354,35 @@ fn an_export_names_its_file_and_its_format_and_edits_nothing() {
             "the score and its file are as they were"
         );
     }
+}
+
+#[test]
+fn the_new_marks_and_signs_are_verbs_over_the_selection() {
+    let mut editor = opened();
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    let out = editor.act(&json!({"action": "mark", "mark": "tremolo", "value": 2}), 1);
+    assert!(out.changed, "{:?}", out.answer);
+    assert_eq!(first_marks(&editor).tremolo, Some(2));
+    // the same value again takes it away
+    editor.act(&json!({"action": "mark", "mark": "tremolo", "value": 2}), 2);
+    assert_eq!(first_marks(&editor).tremolo, None);
+    let out = editor.act(
+        &json!({"action": "control", "kind": "tempo", "text": "Lento", "bpm": 60.0}),
+        3,
+    );
+    assert!(out.changed, "{:?}", out.answer);
+    editor.act(&json!({"action": "key", "key": "D"}), 4);
+    editor.act(&json!({"action": "multirests"}), 5);
+    let out = editor.act(&json!({"action": "lyric", "text": "la"}), 6);
+    assert!(out.changed, "{:?}", out.answer);
+    let held = editor.held();
+    let sheet = held.sheet().unwrap();
+    assert_eq!(sheet.controls.len(), 1);
+    assert_eq!(sheet.controls[0].bpm, Some(60.0));
+    assert_eq!(sheet.key, "D");
+    assert!(sheet.grid.multirests);
+    assert_eq!(
+        sheet.staves[0].voices[0].items[0].marks().unwrap().lyrics,
+        vec!["la".to_string()]
+    );
 }

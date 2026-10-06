@@ -281,9 +281,9 @@ impl<E: Engraver> Score<E> {
         };
         let draw = DisplayList::stacked(pages, gap, frame);
         self.drawn = true;
-        let timemap = self.timemap_locked();
+        let (timemap, engraved) = self.timemap_locked();
         let cursors = cursor_track(&draw, &timemap);
-        let notes = self.note_events_locked(&timemap);
+        let notes = self.note_events_locked(&engraved);
         Page {
             draw,
             cursors,
@@ -611,9 +611,9 @@ impl<E: Engraver> Score<E> {
     fn page_locked(&mut self, page: i32) -> Page {
         let draw = svg_to_display_list(&self.engraver.render_svg(page));
         self.drawn = true;
-        let timemap = self.timemap_locked();
+        let (timemap, engraved) = self.timemap_locked();
         let cursors = cursor_track(&draw, &timemap);
-        let notes = self.note_events_locked(&timemap);
+        let notes = self.note_events_locked(&engraved);
         Page {
             draw,
             cursors,
@@ -621,9 +621,86 @@ impl<E: Engraver> Score<E> {
         }
     }
 
-    fn timemap_locked(&self) -> Vec<TimemapEntry> {
+    /// **When each element is heard**, in milliseconds, for the cursor -- and
+    /// the engraver's own timemap beside it, which names every part and pitch
+    /// it drew and is what its notes are read from. The first is the model's
+    /// own reading where there is a model -- its repeats played out and its tempo
+    /// marks the tempo, which is what the score is played as, so the cursor
+    /// is where the sound is -- and the engraver's timemap where there is not.
+    fn timemap_locked(&self) -> (Vec<TimemapEntry>, Vec<TimemapEntry>) {
+        // the engraver times its document whatever is used: it is what its
+        // MIDI values for an element are read from
         let json = self.engraver.timemap(r#"{"includeMeasures":false}"#);
-        serde_json::from_str(&json).unwrap_or_default()
+        let engraved: Vec<TimemapEntry> = serde_json::from_str(&json).unwrap_or_default();
+        // only a document written from the model names its items as the
+        // model does; one from elsewhere is timed by the engraver
+        let ours = self.sheet.as_ref().is_some_and(|sheet| {
+            let mei = self.mei_locked();
+            sheet
+                .voices()
+                .flat_map(|v| v.items.iter())
+                .find(|item| item.sounds())
+                .is_some_and(|item| mei.contains(&format!("xml:id=\"n{}\"", item.id())))
+        });
+        if let (true, Some(sheet)) = (ours, &self.sheet)
+            && let Ok(played) = super::performance(sheet.clone(), &super::default_interpretation())
+        {
+            let unit = super::default_interpretation().beat_unit;
+            let tempo = played.tempo_map(unit);
+            // each item's place, for the parts a barline splits it into
+            let mut spans: std::collections::HashMap<
+                u64,
+                (crate::ratio::Ratio, crate::ratio::Ratio),
+            > = std::collections::HashMap::new();
+            for voice in sheet.voices() {
+                let mut t = crate::ratio::Ratio::ZERO;
+                for item in &voice.items {
+                    spans.insert(item.id(), (t, item.dur()));
+                    t = t + item.dur();
+                }
+            }
+            let mut heard: Vec<(String, f64)> = Vec::new();
+            for (id, beat) in played.heard {
+                // an item is drawn under its own id, and a chord's notes under
+                // theirs
+                heard.push((format!("n{id}"), beat));
+                heard.push((format!("n{id}-p1"), beat));
+                // a part past a barline is drawn under an id of its own, and
+                // the cursor goes on to it
+                let Some(&(t, dur)) = spans.get(&id) else {
+                    continue;
+                };
+                let (first, _) = sheet.grid.position(t);
+                let mut part = 2;
+                let mut m = first + 1;
+                loop {
+                    let start = sheet.grid.measure_start(m);
+                    if start >= t + dur {
+                        break;
+                    }
+                    let later = (start - t).to_f64() * unit as f64;
+                    heard.push((format!("n{id}-{part}"), beat + later));
+                    part += 1;
+                    m += 1;
+                }
+            }
+            heard.sort_by(|a, b| a.1.total_cmp(&b.1));
+            let mut entries: Vec<TimemapEntry> = Vec::new();
+            for (name, beat) in heard {
+                let ms = tempo.secs_at(beat) * 1000.0;
+                match entries.last_mut() {
+                    Some(last) if last.tstamp.is_some_and(|t| (t - ms).abs() < 1e-6) => {
+                        last.on.push(name);
+                    }
+                    _ => entries.push(TimemapEntry {
+                        tstamp: Some(ms),
+                        on: vec![name],
+                    }),
+                }
+            }
+            return (entries, engraved);
+        }
+        (engraved.clone(), engraved)
     }
 
     /// The score's sounding events, read from the same layout the page was drawn

@@ -45,6 +45,11 @@ const VALUES: [(i32, i32); 6] = [
     (32, TPW / 32),
 ];
 
+/// The keys a signature names, by their tonic.
+pub const KEYS: [&str; 15] = [
+    "C", "G", "D", "A", "E", "B", "F#", "C#", "F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb",
+];
+
 /// A key name -> (MEI `key.sig`, prefer flats when spelling chromatic notes).
 /// Anything unrecognized falls back to C major (`"0"`, sharps).
 fn key_signature(key: &str) -> (&'static str, bool) {
@@ -204,6 +209,7 @@ impl Slot {
             sounding: self
                 .sounding
                 .map(|t| Ratio::from_ticks(t as i64, TPW as i64)),
+            ..Marks::default()
         }
     }
 }
@@ -297,9 +303,9 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
         staves: vec![Staff {
             clef: clef.to_string(),
             voices: vec![Voice { items }],
+            ..Staff::default()
         }],
-        spanners: Vec::new(),
-        page: None,
+        ..Sheet::default()
     }
 }
 
@@ -346,15 +352,13 @@ pub fn sheet_to_mei_pages(sheet: &Sheet) -> Result<Vec<String>, String> {
 
 /// The score as one document, or -- `split` -- as one per run of pages.
 fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
-    let (keysig, _) = key_signature(&sheet.key);
     let default_staff = Staff::default();
     let staves: Vec<&Staff> = if sheet.staves.is_empty() {
         vec![&default_staff]
     } else {
         sheet.staves.iter().collect()
     };
-    let meter = sheet.grid.meter_at(0);
-    let (num, den) = (meter.count, meter.unit);
+    let grid = &sheet.grid;
 
     // How many measures the longest voice needs; at least one, so an empty
     // score still draws a bar of rests.
@@ -363,7 +367,18 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
     // are questions about a whole staff, so both are answered before any voice
     // is projected.
     let (printed, placed) = layout(sheet);
-    let attached = attachments(sheet, &placed)?;
+    let mut attached = attachments(sheet, &placed)?;
+    for (m, kind) in &grid.marks {
+        let xml = repeat_mark_xml(grid, *m, kind)?;
+        attached.entry(*m).or_default().push_str(&xml);
+    }
+    let words = words_of(sheet);
+    let ftrem: std::collections::HashSet<u64> = sheet
+        .spanners
+        .iter()
+        .filter(|s| s.kind == "ftrem")
+        .map(|s| s.from)
+        .collect();
 
     // [staff][voice][measure] -> the rendered elements of that cell.
     let mut projected: Vec<Vec<Vec<Vec<String>>>> = Vec::new();
@@ -376,27 +391,20 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
         };
         let mut per_voice = Vec::new();
         for (v, voice) in voices.into_iter().enumerate() {
-            let mut cells = project(voice, &sheet.grid, count, &printed, v == 0)?;
+            let clefs: &[(Ratio, String)] = if v == 0 { &staff.clefs } else { &[] };
+            let mut cells = project(voice, grid, count, &printed, v == 0, clefs, &ftrem, &words)?;
             beam(&mut cells, voice, sheet)?;
             per_voice.push(cells);
         }
         projected.push(per_voice);
     }
 
-    let measures: Vec<String> = (0..count)
-        .map(|m| {
-            let extra = attached.get(&m).map(String::as_str).unwrap_or("");
-            measure_xml(m, &projected, extra, m + 1 == count, &sheet.grid)
-        })
-        .collect();
     // where a run of pages starts: the first measure, and each one a page
     // break was written before
     let mut starts = vec![0];
     if split {
         starts.extend(
-            sheet
-                .grid
-                .breaks
+            grid.breaks
                 .iter()
                 .filter(|(m, kind)| kind == "page" && *m > 0 && *m < count)
                 .map(|(m, _)| *m),
@@ -405,25 +413,74 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
         starts.dedup();
     }
 
-    // A single staff keeps the shape it always had; several take a brace, which
-    // is what makes two staves read as one instrument rather than two.
-    let defs = staves
-        .iter()
-        .enumerate()
-        .map(|(i, staff)| {
-            let (shape, line) = parse_clef(&staff.clef);
-            format!(
-                "<staffDef n=\"{}\" lines=\"5\" clef.shape=\"{shape}\" clef.line=\"{line}\"/>",
-                i + 1
-            )
-        })
-        .collect::<String>();
-    let group = if staves.len() > 1 {
-        format!("<staffGrp symbol=\"brace\" bar.thru=\"true\">{defs}</staffGrp>")
-    } else {
-        format!("<staffGrp>{defs}</staffGrp>")
+    // **Each measure, or a run of empty ones as one numbered rest**: where
+    // runs are condensed, a measure with nothing written on any staff, no
+    // change, no mark and nothing hanging off it is taken into the run it
+    // continues -- and a run of one is the measure it was.
+    let empty = |m: usize| {
+        !attached.contains_key(&m)
+            && !grid.repeats.contains(&m)
+            && projected.iter().all(|voices| {
+                voices.iter().all(|cells| {
+                    cells.get(m).is_none_or(|cell| {
+                        cell.iter().all(|e| {
+                            !["<note", "<chord", "<beatRpt", "<clef"]
+                                .iter()
+                                .any(|tag| e.contains(tag))
+                        })
+                    })
+                })
+            })
+    };
+    let quiet_inside = |m: usize| {
+        !starts.contains(&m)
+            && !grid.breaks.iter().any(|(b, _)| *b == m)
+            && !grid.meters.iter().any(|meter| meter.measure == m)
+            && !grid.keys.iter().any(|(k, _)| *k == m)
+            && !grid.endings.iter().any(|(a, b, _)| (*a..=*b).contains(&m))
+            && grid.bar_len(m) == grid.bar_len(m - 1)
+    };
+    // (first measure, how many it stands for)
+    let mut pieces: Vec<(usize, usize)> = Vec::new();
+    let mut m = 0;
+    while m < count {
+        let mut k = 1;
+        if grid.multirests && empty(m) {
+            while m + k < count
+                && empty(m + k)
+                && quiet_inside(m + k)
+                && !grid.barlines.iter().any(|(b, _)| *b == m + k - 1)
+            {
+                k += 1;
+            }
+        }
+        pieces.push((m, k));
+        m += k;
+    }
+    let piece_xml = |first: usize, k: usize, run_start: usize| -> String {
+        // a change of meter or key stands before the measure it starts at,
+        // except where a run of pages opens on it and says it there
+        let def = if first > 0 && first != run_start {
+            change_xml(sheet, first)
+        } else {
+            String::new()
+        };
+        let extra = attached.get(&first).map(String::as_str).unwrap_or("");
+        if k > 1 {
+            multirest_xml(first, k, staves.len(), grid, def, first + k == count)
+        } else {
+            measure_xml(first, &projected, extra, first + 1 == count, grid, &def)
+        }
     };
 
+    let groups = staff_groups(sheet, &staves);
+    // whether empty measures are drawn as numbered rests is the section's
+    // way of being drawn, kept where there is no run to show it
+    let section = if grid.multirests {
+        " type=\"multirests\""
+    } else {
+        ""
+    };
     let head = header_xml(&sheet.header);
     let page = sheet.page.as_ref().map(page_attrs).unwrap_or_default();
     let ends = starts.iter().skip(1).copied().chain([count]);
@@ -436,13 +493,26 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
             } else {
                 super::pagetext::continued_xml(&sheet.header, escape)
             };
-            let (num, den) = if first == 0 {
-                (num, den)
-            } else {
-                let meter = sheet.grid.meter_at(first);
-                (meter.count, meter.unit)
-            };
-            let body = measures[first..end].join("\n");
+            let meter = grid.meter_at(first);
+            let (num, den) = (meter.count, meter.unit);
+            let (keysig, _) = key_signature(sheet.key_at(first));
+            // the run's measures, the endings wrapped around theirs
+            let mut body: Vec<String> = Vec::new();
+            for &(at, k) in pieces.iter().filter(|(at, _)| (first..end).contains(at)) {
+                let mut xml = piece_xml(at, k, first);
+                if let Some((_, _, label)) = grid.endings.iter().find(|(a, _, _)| *a == at) {
+                    xml = format!(
+                        "   <ending xml:id=\"e{}\" n=\"{}\">\n{xml}",
+                        at + 1,
+                        escape(label)
+                    );
+                }
+                if grid.endings.iter().any(|(_, b, _)| *b >= at && *b < at + k) {
+                    xml.push_str("\n   </ending>");
+                }
+                body.push(xml);
+            }
+            let body = body.join("\n");
             format!(
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
                  <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
@@ -450,14 +520,163 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
                  <pubStmt/></fileDesc></meiHead>\n\
                  \x20<music><body><mdiv><score>\n\
                  \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\"{page}>\n\
-                 \x20\x20\x20{group}{running}\n\
+                 \x20\x20\x20{groups}{running}\n\
                  \x20\x20</scoreDef>\n\
-                 \x20\x20<section>\n{body}\n\x20\x20</section>\n\
+                 \x20\x20<section{section}>\n{body}\n\x20\x20</section>\n\
                  \x20</score></mdiv></body></music>\n\
                  </mei>\n"
             )
         })
         .collect())
+}
+
+/// **The staves' definitions, grouped**: each staff's clef, line count, name
+/// and transposition, inside the groups the sheet writes -- or, with none
+/// written, the one a single staff and a brace over several have always had.
+fn staff_groups(sheet: &Sheet, staves: &[&Staff]) -> String {
+    let def = |i: usize, staff: &Staff| {
+        let (shape, line) = parse_clef(&staff.clef);
+        let lines = staff.lines.unwrap_or(5);
+        let trans = if staff.transpose != 0 {
+            format!(
+                " trans.semi=\"{}\" trans.diat=\"{}\"",
+                staff.transpose,
+                super::ops::default_steps(staff.transpose)
+            )
+        } else {
+            String::new()
+        };
+        let mut names = String::new();
+        if !staff.label.is_empty() {
+            names.push_str(&format!("<label>{}</label>", escape(&staff.label)));
+        }
+        if !staff.abbr.is_empty() {
+            names.push_str(&format!("<labelAbbr>{}</labelAbbr>", escape(&staff.abbr)));
+        }
+        let head = format!(
+            "<staffDef n=\"{}\" lines=\"{lines}\" clef.shape=\"{shape}\" clef.line=\"{line}\"{trans}",
+            i + 1
+        );
+        if names.is_empty() {
+            format!("{head}/>")
+        } else {
+            format!("{head}>{names}</staffDef>")
+        }
+    };
+    if sheet.groups.is_empty() {
+        let defs: String = staves.iter().enumerate().map(|(i, s)| def(i, s)).collect();
+        // A single staff keeps the shape it always had; several take a brace,
+        // which is what makes two staves read as one instrument rather than
+        // two.
+        return if staves.len() > 1 {
+            format!("<staffGrp symbol=\"brace\" bar.thru=\"true\">{defs}</staffGrp>")
+        } else {
+            format!("<staffGrp>{defs}</staffGrp>")
+        };
+    }
+    let mut out = String::new();
+    for (i, staff) in staves.iter().enumerate() {
+        for group in sheet.groups.iter().filter(|g| g.first == i) {
+            out.push_str(&format!(
+                "<staffGrp symbol=\"{}\" bar.thru=\"true\">",
+                escape(&group.symbol)
+            ));
+        }
+        out.push_str(&def(i, staff));
+        for _ in sheet.groups.iter().filter(|g| g.last == i) {
+            out.push_str("</staffGrp>");
+        }
+    }
+    format!("<staffGrp>{out}</staffGrp>")
+}
+
+/// What changes at `measure` -- the meter, the key -- as a score definition
+/// standing before it, or nothing.
+fn change_xml(sheet: &Sheet, measure: usize) -> String {
+    let mut attrs = String::new();
+    if let Some(meter) = sheet.grid.meters.iter().find(|m| m.measure == measure) {
+        attrs.push_str(&format!(
+            " meter.count=\"{}\" meter.unit=\"{}\"",
+            meter.count, meter.unit
+        ));
+    }
+    if sheet.grid.keys.iter().any(|(m, _)| *m == measure) {
+        let (keysig, _) = key_signature(sheet.key_at(measure));
+        attrs.push_str(&format!(" key.sig=\"{keysig}\""));
+    }
+    if attrs.is_empty() {
+        String::new()
+    } else {
+        format!("<scoreDef{attrs}/>")
+    }
+}
+
+/// A navigation mark of `measure`, as MEI writes it: at the measure's start
+/// for a sign to come back to, at its end for an instruction to go.
+fn repeat_mark_xml(grid: &Grid, measure: usize, kind: &str) -> Result<String, String> {
+    let end = grid.meter_at(measure).count.max(1) as f64 + 0.5;
+    let (func, tstamp, text) = match kind {
+        "segno" => ("segno", 1.0, ""),
+        "coda" => ("coda", 1.0, ""),
+        "fine" => ("fine", end, "Fine"),
+        "dacapo" => ("daCapo", end, "D.C."),
+        "dalsegno" => ("dalSegno", end, "D.S."),
+        "tocoda" => ("coda", end, "To Coda"),
+        other => {
+            return Err(format!(
+                "there is no navigation mark called {other}; it is one of {}",
+                REPEAT_MARKS.join(", ")
+            ));
+        }
+    };
+    let label = if kind == "tocoda" {
+        " label=\"tocoda\""
+    } else {
+        ""
+    };
+    Ok(format!(
+        "<repeatMark staff=\"1\" tstamp=\"{tstamp}\" func=\"{func}\" place=\"above\"{label}>{text}</repeatMark>"
+    ))
+}
+
+/// The navigation marks a measure can carry.
+pub const REPEAT_MARKS: [&str; 6] = ["segno", "coda", "fine", "dacapo", "dalsegno", "tocoda"];
+
+/// `k` empty measures from `first` as **one numbered rest**, on every staff.
+fn multirest_xml(
+    first: usize,
+    k: usize,
+    staves: usize,
+    grid: &Grid,
+    def: String,
+    last: bool,
+) -> String {
+    let lastm = first + k - 1;
+    let right = match grid.barlines.iter().find(|(m, _)| *m == lastm) {
+        Some((_, kind)) => format!(" right=\"{kind}\""),
+        None if last => " right=\"end\"".to_string(),
+        None => String::new(),
+    };
+    let brk = match grid.breaks.iter().find(|(m, _)| *m == first) {
+        Some((_, kind)) if kind == "page" => "<pb/>",
+        Some(_) => "<sb/>",
+        None => "",
+    };
+    let body: String = (0..staves)
+        .map(|si| {
+            format!(
+                "<staff xml:id=\"m{}s{}\" n=\"{}\"><layer n=\"1\"><multiRest num=\"{k}\"/></layer></staff>",
+                first + 1,
+                si + 1,
+                si + 1
+            )
+        })
+        .collect();
+    format!(
+        "{brk}{def}   <measure xml:id=\"m{}\" n=\"{}\"{right}>{body}</measure>",
+        first + 1,
+        first + 1
+    )
 }
 
 /// **The page setup as the score definition's attributes**: MEI's own places
@@ -683,12 +902,16 @@ fn units(items: &[Item]) -> Vec<Unit<'_>> {
 /// Lay one voice out over `count` measures, returning the rendered elements of
 /// each measure. `first` is whether it is its staff's first voice, which is
 /// the one that keeps a measure it does not reach with a rest.
+#[allow(clippy::too_many_arguments)]
 fn project(
     voice: &Voice,
     grid: &Grid,
     count: usize,
     printed: &std::collections::HashSet<(u64, usize)>,
     first: bool,
+    clefs: &[(Ratio, String)],
+    ftrem: &std::collections::HashSet<u64>,
+    words: &Words,
 ) -> Result<Vec<Vec<String>>, String> {
     let mut measures: Vec<Vec<String>> = vec![Vec::new(); count.max(1)];
     let mut measure = 0;
@@ -697,14 +920,55 @@ fn project(
     // Whether the previous item tied into this one, so a tie the caller wrote
     // and a tie a barline forced compose instead of overwriting each other.
     let mut tied_in = false;
+    // where the unit starts, in whole notes: what a change of clef is at
+    let mut onset = Ratio::ZERO;
+    // the second note of a two-note tremolo, written with the first
+    let mut skip: Option<u64> = None;
 
-    for unit in units(&voice.items) {
+    let all = units(&voice.items);
+    for (u, unit) in all.iter().enumerate() {
+        let span = match unit {
+            Unit::Plain(item) => item.dur(),
+            Unit::Tuplet { items, .. } => items.iter().fold(Ratio::ZERO, |acc, i| acc + i.dur()),
+        };
+        let starts = onset;
+        onset = onset + span;
+        if let Unit::Plain(item) = unit
+            && skip == Some(item.id())
+        {
+            continue;
+        }
         if pos == bar && measure + 1 < measures.len() {
             measure += 1;
             pos = 0;
             bar = bar_ticks(grid, measure)?;
         }
-        match unit {
+        // a change of clef stands before the item it starts at
+        if let Some((_, clef)) = clefs.iter().find(|(at, _)| *at == starts) {
+            let (shape, line) = parse_clef(clef);
+            measures[measure].push(format!("<clef shape=\"{shape}\" line=\"{line}\"/>"));
+        }
+        // **A two-note tremolo** is written around its two notes, each with
+        // the value of the two together -- MEI's spelling of an alternation.
+        if let Unit::Plain(item) = unit
+            && ftrem.contains(&item.id())
+            && let Some(Unit::Plain(next)) = all.get(u + 1)
+            && item.sounds()
+            && next.sounds()
+        {
+            let total = ticks(item.dur() + next.dur())?;
+            if let (Some((value, dots)), true) = (single_value(total), total <= bar - pos) {
+                let a = element(item, value, dots, None, None, printed, words)?;
+                let b = element(next, value, dots, None, None, printed, words)?;
+                measures[measure].push(format!("<fTrem unitdur=\"16\">{a}{b}</fTrem>"));
+                pos += total;
+                onset = onset + next.dur();
+                skip = Some(next.id());
+                tied_in = false;
+                continue;
+            }
+        }
+        match *unit {
             Unit::Tuplet {
                 num,
                 numbase,
@@ -745,6 +1009,7 @@ fn project(
                         tie_of(opens, closes),
                         None,
                         printed,
+                        words,
                     )?);
                     tied_in = k == last && opens;
                 }
@@ -788,7 +1053,7 @@ fn project(
                         let suffix = (!first).then_some(2);
                         for (value, dots) in parts(take) {
                             measures[measure]
-                                .push(element(item, value, dots, None, suffix, printed)?);
+                                .push(element(item, value, dots, None, suffix, printed, words)?);
                         }
                     }
                     first = false;
@@ -836,6 +1101,7 @@ fn project(
                         tie_of(opens, closes),
                         suffix,
                         printed,
+                        words,
                     )?);
                 }
                 tied_in = tied_out && sounds;
@@ -869,7 +1135,7 @@ fn project(
                 dur: Ratio::ZERO,
             };
             for (value, dots) in parts(bar - pos) {
-                measures[measure].push(element(&rest, value, dots, None, None, printed)?);
+                measures[measure].push(element(&rest, value, dots, None, None, printed, words)?);
             }
         }
         pos = bar;
@@ -895,7 +1161,11 @@ fn measure_xml(
     attached: &str,
     last: bool,
     grid: &Grid,
+    def: &str,
 ) -> String {
+    // a measure drawn as a repeat of the one before is its sign, whatever
+    // it holds
+    let repeated = grid.repeats.contains(&index);
     // A barline somebody chose wins over the final one the last measure gets by
     // default: a score that ends on a repeat ends on a repeat.
     let right = match grid.barlines.iter().find(|(m, _)| *m == index) {
@@ -916,7 +1186,11 @@ fn measure_xml(
                 .iter()
                 .enumerate()
                 .map(|(vi, measures)| {
-                    let cells = measures.get(index).map(|c| c.concat()).unwrap_or_default();
+                    let cells = match (repeated, vi) {
+                        (true, 0) => "<mRpt/>".to_string(),
+                        (true, _) => "<mSpace/>".to_string(),
+                        _ => measures.get(index).map(|c| c.concat()).unwrap_or_default(),
+                    };
                     format!("<layer n=\"{}\">{cells}</layer>", vi + 1)
                 })
                 .collect();
@@ -932,7 +1206,7 @@ fn measure_xml(
         })
         .collect();
     format!(
-        "{brk}   <measure xml:id=\"m{}\" n=\"{}\"{right}>{staves}{attached}</measure>",
+        "{brk}{def}   <measure xml:id=\"m{}\" n=\"{}\"{right}>{staves}{attached}</measure>",
         index + 1,
         index + 1
     )
@@ -1017,30 +1291,98 @@ fn attachments(
     let mut out: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
 
     for staff in &sheet.staves {
-        for item in staff.voices.iter().flat_map(|v| v.items.iter()) {
-            let Some(marks) = item.marks() else { continue };
-            let Some(&(measure, si)) = placed.get(&item.id()) else {
-                continue;
-            };
-            let at = format!(" staff=\"{}\" startid=\"#n{}\"", si + 1, item.id());
-            if let Some(dynamic) = &marks.dynamic {
-                out.entry(measure)
-                    .or_default()
-                    .push_str(&format!("<dynam{at} place=\"below\">{dynamic}</dynam>"));
-            }
-            if let Some(ornament) = &marks.ornament {
-                // An ornament is its own element in MEI, named for what it is.
-                out.entry(measure)
-                    .or_default()
-                    .push_str(&format!("<{ornament}{at}/>"));
+        for voice in &staff.voices {
+            for (index, item) in voice.items.iter().enumerate() {
+                let Some(marks) = item.marks() else { continue };
+                let Some(&(measure, si)) = placed.get(&item.id()) else {
+                    continue;
+                };
+                let at = format!(" staff=\"{}\" startid=\"#n{}\"", si + 1, item.id());
+                let here = out.entry(measure).or_default();
+                if let Some(dynamic) = &marks.dynamic {
+                    here.push_str(&format!("<dynam{at} place=\"below\">{dynamic}</dynam>"));
+                }
+                if let Some(ornament) = &marks.ornament {
+                    // An ornament is its own element in MEI, named for what it
+                    // is; any other is an `ornam` named by its glyph.
+                    if ORNAMENTS.contains(&ornament.as_str()) {
+                        here.push_str(&format!("<{ornament}{at}/>"));
+                    } else {
+                        here.push_str(&format!(
+                            "<ornam{at} glyph.auth=\"smufl\" glyph.name=\"{}\"/>",
+                            escape(ornament)
+                        ));
+                    }
+                }
+                if let Some(order) = &marks.arpeggio {
+                    here.push_str(&format!("<arpeg{at} order=\"{}\"/>", escape(order)));
+                }
+                if let Some(kind) = &marks.breath {
+                    let kind = if kind == "caesura" {
+                        "caesura"
+                    } else {
+                        "breath"
+                    };
+                    here.push_str(&format!("<{kind}{at}/>"));
+                }
+                if marks.ring {
+                    // let it ring: a tie into the next item, or into nothing
+                    let end = voice
+                        .items
+                        .get(index + 1)
+                        .map(|next| format!(" endid=\"#n{}\"", next.id()))
+                        .unwrap_or_default();
+                    here.push_str(&format!("<lv{at}{end}/>"));
+                }
+                if let Some(fingering) = &marks.fingering {
+                    here.push_str(&format!(
+                        "<fing{at} place=\"above\">{}</fing>",
+                        escape(fingering)
+                    ));
+                }
+                if let Some(harmony) = &marks.harmony {
+                    here.push_str(&format!(
+                        "<harm{at} place=\"above\">{}</harm>",
+                        escape(harmony)
+                    ));
+                }
             }
         }
     }
 
+    for control in &sheet.controls {
+        let &(measure, si) = placed.get(&control.on).ok_or_else(|| {
+            format!(
+                "a {} is written at item {}, which is not in this score",
+                control.kind, control.on
+            )
+        })?;
+        let at = format!(" staff=\"{}\" startid=\"#n{}\"", si + 1, control.on);
+        let text = escape(&control.text);
+        let xml = match control.kind.as_str() {
+            "tempo" => {
+                let bpm = control
+                    .bpm
+                    .map(|bpm| format!(" midi.bpm=\"{bpm}\""))
+                    .unwrap_or_default();
+                format!("<tempo{at} place=\"above\"{bpm}>{text}</tempo>")
+            }
+            "dir" => format!("<dir{at} place=\"above\">{text}</dir>"),
+            "reh" => format!("<reh{at} place=\"above\"><rend rend=\"box\">{text}</rend></reh>"),
+            other => {
+                return Err(format!(
+                    "\"{other}\" is not something this layer writes at a point; it \
+                     writes a tempo, a direction and a rehearsal mark"
+                ));
+            }
+        };
+        out.entry(measure).or_default().push_str(&xml);
+    }
+
     for spanner in &sheet.spanners {
-        // A beam is written *around* its elements, inside the layer, so it is
-        // not one of the things that hang off the measure.
-        if spanner.kind == "beam" {
+        // A beam and a two-note tremolo are written *around* their elements,
+        // inside the layer, so they are not things that hang off the measure.
+        if spanner.kind == "beam" || spanner.kind == "ftrem" {
             continue;
         }
         let &(measure, si) = placed.get(&spanner.from).ok_or_else(|| {
@@ -1049,33 +1391,107 @@ fn attachments(
                 spanner.kind, spanner.from
             )
         })?;
-        if !placed.contains_key(&spanner.to) {
+        let Some(&(to_measure, _)) = placed.get(&spanner.to) else {
             return Err(format!(
                 "a {} ends on item {}, which is not in this score",
                 spanner.kind, spanner.to
             ));
-        }
+        };
+        let staff = format!(" staff=\"{}\"", si + 1);
         let ends = format!(
-            " staff=\"{}\" startid=\"#n{}\" endid=\"#n{}\"",
-            si + 1,
-            spanner.from,
-            spanner.to
+            "{staff} startid=\"#n{}\" endid=\"#n{}\"",
+            spanner.from, spanner.to
         );
         let xml = match spanner.kind.as_str() {
             "slur" => format!("<slur{ends}/>"),
             "crescendo" => format!("<hairpin form=\"cres\"{ends}/>"),
             "diminuendo" => format!("<hairpin form=\"dim\"{ends}/>"),
+            "phrase" => format!("<phrase{ends}/>"),
+            "gliss" => format!("<gliss{ends}/>"),
+            "bracket" => format!("<bracketSpan{ends} lform=\"solid\"/>"),
+            "beamspan" => {
+                let plist = items_between(sheet, spanner.from, spanner.to)
+                    .iter()
+                    .map(|id| format!("#n{id}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("<beamSpan{ends} plist=\"{plist}\"/>")
+            }
+            octave if OCTAVES.iter().any(|(name, ..)| *name == octave) => {
+                let (_, dis, place) = OCTAVES
+                    .iter()
+                    .find(|(name, ..)| *name == octave)
+                    .copied()
+                    .unwrap_or(("8va", 8, "above"));
+                format!("<octave{ends} dis=\"{dis}\" dis.place=\"{place}\"/>")
+            }
+            // pressed at the first note and let go at the last: two signs,
+            // the second in the measure it is let go in
+            "pedal" => {
+                out.entry(measure).or_default().push_str(&format!(
+                    "<pedal{staff} startid=\"#n{}\" dir=\"down\"/>",
+                    spanner.from
+                ));
+                out.entry(to_measure).or_default().push_str(&format!(
+                    "<pedal{staff} startid=\"#n{}\" dir=\"up\"/>",
+                    spanner.to
+                ));
+                continue;
+            }
             other => {
                 return Err(format!(
                     "\"{other}\" is not something this layer knows how to write \
-                     between two notes; it writes a slur, a crescendo, a \
-                     diminuendo and a beam"
+                     between two notes; it writes {}",
+                    SPANNERS.join(", ")
                 ));
             }
         };
         out.entry(measure).or_default().push_str(&xml);
     }
     Ok(out)
+}
+
+/// The ornaments MEI names an element for; any other is an `ornam`.
+pub const ORNAMENTS: [&str; 4] = ["trill", "mordent", "turn", "fermata"];
+
+/// The octave lines: the spanner's kind, how far they move, and which way.
+pub const OCTAVES: [(&str, i32, &str); 4] = [
+    ("8va", 8, "above"),
+    ("8vb", 8, "below"),
+    ("15ma", 15, "above"),
+    ("15mb", 15, "below"),
+];
+
+/// Every kind of spanner this layer writes.
+pub const SPANNERS: [&str; 14] = [
+    "slur",
+    "crescendo",
+    "diminuendo",
+    "beam",
+    "phrase",
+    "gliss",
+    "pedal",
+    "8va",
+    "8vb",
+    "15ma",
+    "15mb",
+    "bracket",
+    "beamspan",
+    "ftrem",
+];
+
+/// The ids of the items of `from`'s voice from it to `to`, both included.
+fn items_between(sheet: &Sheet, from: u64, to: u64) -> Vec<u64> {
+    for voice in sheet.voices() {
+        let ids: Vec<u64> = voice.items.iter().map(Item::id).collect();
+        if let (Some(a), Some(b)) = (
+            ids.iter().position(|i| *i == from),
+            ids.iter().position(|i| *i == to),
+        ) {
+            return ids[a.min(b)..=a.max(b)].to_vec();
+        }
+    }
+    vec![from, to]
 }
 
 /// What the key signature alters this step by: the accidental a note written on
@@ -1143,32 +1559,32 @@ fn layout(
     std::collections::HashSet<(u64, usize)>,
     std::collections::HashMap<u64, (usize, usize)>,
 ) {
-    let (keysig, _) = key_signature(&sheet.key);
-    let armature = key_alterations(keysig);
+    let armature_at = |measure: usize| key_alterations(key_signature(sheet.key_at(measure)).0);
     let mut out = std::collections::HashSet::new();
     let mut where_ = std::collections::HashMap::new();
 
     for (si, staff) in sheet.staves.iter().enumerate() {
-        // Every sounding item of the staff, in the order a reader meets them.
+        // Every item of the staff, in the order a reader meets them: a rest
+        // is placed too, since a tempo mark may stand on one.
         let mut timed: Vec<(Ratio, usize, &Item)> = Vec::new();
         for (vi, voice) in staff.voices.iter().enumerate() {
             let mut onset = Ratio::ZERO;
             for item in &voice.items {
-                if item.sounds() {
-                    timed.push((onset, vi, item));
-                }
+                timed.push((onset, vi, item));
                 onset = onset + item.dur();
             }
         }
         timed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
         let mut measure = usize::MAX;
+        let mut armature = armature_at(0);
         let mut printed: std::collections::HashMap<(i32, i32), i32> =
             std::collections::HashMap::new();
         for (onset, _, item) in timed {
             let (m, _) = sheet.grid.position(onset);
             if m != measure {
                 measure = m;
+                armature = armature_at(m);
                 printed.clear();
             }
             where_.insert(item.id(), (m, si));
@@ -1227,6 +1643,7 @@ fn element(
     tie: Option<&str>,
     suffix: Option<usize>,
     printed: &std::collections::HashSet<(u64, usize)>,
+    words: &Words,
 ) -> Result<String, String> {
     let d = if dots != 0 { " dots=\"1\"" } else { "" };
     let id = element_id(item.id(), suffix);
@@ -1239,7 +1656,20 @@ fn element(
     // out short. Shortening a staccato is a *performance* decision and belongs
     // to whoever plays the page. The model keeps the fact
     // ([`super::model::Marks::sounding`]); the interpreter is what honours it.
-    Ok(match item.pitches() {
+    // **A beat repeat is drawn as its sign**, the item it holds being what it
+    // repeats: the sign takes the place of the note, the duration is the
+    // beat's.
+    if marks.is_some_and(|m| m.beat_repeat) && suffix.is_none() {
+        return Ok(format!("<beatRpt{id}/>"));
+    }
+    // the lyrics go on the note, or on a chord's first note, and only on the
+    // part that starts the item
+    let verses = if suffix.is_none() {
+        verses_xml(item.id(), marks, words)
+    } else {
+        String::new()
+    };
+    let drawn = match item.pitches() {
         // Nothing to sound draws as a rest, however the caller spelled it.
         [] => format!("<rest{id} dur=\"{value}\"{d}/>"),
         // Only the first part of a split item prints its accidental: the tie
@@ -1253,6 +1683,7 @@ fn element(
             &id,
             marks,
             suffix.is_none() && printed.contains(&(item.id(), 0)),
+            &verses,
         )?,
         many => {
             let inner = many
@@ -1274,6 +1705,7 @@ fn element(
                         &pid,
                         None,
                         suffix.is_none() && printed.contains(&(item.id(), i)),
+                        if i == 0 { &verses } else { "" },
                     )
                 })
                 .collect::<Result<String, _>>()?;
@@ -1283,7 +1715,80 @@ fn element(
                 stem_xml(marks)
             )
         }
+    };
+    // a tremolo on the note: the strokes through its stem, as the value each
+    // stroke halves
+    Ok(match marks.and_then(|m| m.tremolo) {
+        Some(strokes) if item.sounds() => {
+            let strokes = u32::from(strokes.clamp(1, 3));
+            format!("<bTrem unitdur=\"{}\">{drawn}</bTrem>", 8 << (strokes - 1))
+        }
+        _ => drawn,
     })
+}
+
+/// Where each syllable stands in its word, by item and verse: `i` the first,
+/// `m` one inside, `t` the last -- what draws the dash between two.
+type Words = std::collections::HashMap<(u64, usize), &'static str>;
+
+/// The place of every syllable in its word, read along each voice.
+fn words_of(sheet: &Sheet) -> Words {
+    let mut out = Words::new();
+    for voice in sheet.voices() {
+        let mut open: Vec<bool> = Vec::new();
+        for item in voice.items.iter().filter(|i| i.sounds()) {
+            let Some(marks) = item.marks() else { continue };
+            for (verse, syl) in marks.lyrics.iter().enumerate() {
+                if syl.is_empty() {
+                    continue;
+                }
+                while open.len() <= verse {
+                    open.push(false);
+                }
+                let goes_on = syl.ends_with('-');
+                let place = match (open[verse], goes_on) {
+                    (false, true) => "i",
+                    (true, true) => "m",
+                    (true, false) => "t",
+                    (false, false) => "",
+                };
+                if !place.is_empty() {
+                    out.insert((item.id(), verse), place);
+                }
+                open[verse] = goes_on;
+            }
+        }
+    }
+    out
+}
+
+/// The lyrics a note carries, verse by verse: a syllable each, one that ends
+/// in `-` continued by a dash into the next.
+fn verses_xml(id: u64, marks: Option<&Marks>, words: &Words) -> String {
+    marks
+        .map(|m| {
+            m.lyrics
+                .iter()
+                .enumerate()
+                .filter(|(_, syl)| !syl.is_empty())
+                .map(|(n, syl)| {
+                    let (text, con) = match syl.strip_suffix('-') {
+                        Some(head) => (head, " con=\"d\""),
+                        None => (syl.as_str(), ""),
+                    };
+                    let place = words
+                        .get(&(id, n))
+                        .map(|w| format!(" wordpos=\"{w}\""))
+                        .unwrap_or_default();
+                    format!(
+                        "<verse n=\"{}\"><syl{place}{con}>{}</syl></verse>",
+                        n + 1,
+                        escape(text)
+                    )
+                })
+                .collect::<String>()
+        })
+        .unwrap_or_default()
 }
 
 /// The `<artic>` children a note carries, if any.
@@ -1315,6 +1820,7 @@ fn note_xml(
     id: &str,
     marks: Option<&Marks>,
     print_accid: bool,
+    verses: &str,
 ) -> Result<String, String> {
     // A pitch already carries its spelling. Which accidental world a bare MIDI
     // number was spelled into was decided on the way in, before this point.
@@ -1353,7 +1859,7 @@ fn note_xml(
     } else {
         String::new()
     };
-    let inner = format!("{accid}{}", articulations_xml(marks));
+    let inner = format!("{accid}{}{verses}", articulations_xml(marks));
     Ok(if inner.is_empty() {
         format!("{head}/>")
     } else {
@@ -1568,6 +2074,7 @@ mod tests {
             staves: vec![Staff {
                 clef: "G2".into(),
                 voices: vec![Voice { items }],
+                ..Staff::default()
             }],
             ..Default::default()
         };
@@ -1709,6 +2216,7 @@ mod emission {
                 ]),
                 voice(vec![note(Step::E, Ratio::ONE, 3)]),
             ],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes polyphony");
         assert_eq!(mei.matches("<layer").count(), 2);
@@ -1723,10 +2231,12 @@ mod emission {
             Staff {
                 clef: "G2".into(),
                 voices: vec![voice(vec![note(Step::C, Ratio::ONE, 1)])],
+                ..Staff::default()
             },
             Staff {
                 clef: "F4".into(),
                 voices: vec![voice(vec![note(Step::C, Ratio::ONE, 2)])],
+                ..Staff::default()
             },
         ]);
         let mei = sheet_to_mei(&mine).expect("writes a grand staff");
@@ -1748,6 +2258,7 @@ mod emission {
                 voice(vec![note(Step::C, Ratio::ONE, 1)]),
                 voice(vec![note(Step::E, Ratio::new(1, 4), 2)]),
             ],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
         let second = mei.split("<layer n=\"2\">").nth(1).unwrap();
@@ -1769,6 +2280,7 @@ mod emission {
                     dur: Ratio::from(3),
                 }]),
             ],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
         assert_eq!(mei.matches("<mRest").count(), 3, "{mei}");
@@ -1786,6 +2298,7 @@ mod emission {
                 voice(vec![note(Step::E, Ratio::ONE, 2)]),
                 voice(vec![note(Step::C, Ratio::from(2), 1)]),
             ],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
         assert!(mei.contains("<mRest/>"), "{mei}");
@@ -1800,6 +2313,7 @@ mod emission {
         let mut mine = sheet(vec![Staff {
             clef: "G2".into(),
             voices: vec![voice(vec![note(Step::C, Ratio::from(4), 1)])],
+            ..Staff::default()
         }]);
         mine.header.title = "A title".into();
         // no page break: one document, the one the score is written as
@@ -1833,6 +2347,7 @@ mod emission {
                 voice(vec![note(Step::C, Ratio::from(3), 1)]),
                 voice(vec![note(Step::E, Ratio::new(1, 2), 2)]),
             ],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
         let second: Vec<&str> = mei.split("<layer n=\"2\">").skip(1).collect();
@@ -1859,6 +2374,7 @@ mod emission {
                 note(Step::E, triplet, 3),
                 note(Step::F, Ratio::new(3, 4), 4),
             ])],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes a triplet");
         assert!(mei.contains("<tuplet num=\"3\" numbase=\"2\">"), "{mei}");
@@ -1879,6 +2395,7 @@ mod emission {
         let mine = sheet(vec![Staff {
             clef: "G2".into(),
             voices: vec![voice((0..5).map(|i| note(Step::C, fifth, i + 1)).collect())],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes a quintuplet");
         assert!(mei.contains("num=\"5\" numbase=\"4\""), "{mei}");
@@ -1897,6 +2414,7 @@ mod emission {
                 note(Step::E, triplet, 3),
                 note(Step::F, triplet, 4),
             ])],
+            ..Staff::default()
         }]);
         mine.grid = Grid::uniform(4, 4);
         let err = sheet_to_mei(&mine).expect_err("refuses to split a tuplet");
@@ -1912,6 +2430,7 @@ mod emission {
                 note(Step::C, Ratio::new(1, 2), 1),
                 note(Step::G, Ratio::new(1, 2), 2),
             ])],
+            ..Staff::default()
         }]);
         mine.spanners = vec![
             Spanner {
@@ -1949,12 +2468,12 @@ mod emission {
 
         // and so is a kind this layer cannot write
         mine.spanners = vec![Spanner {
-            kind: "octave".into(),
+            kind: "zigzag".into(),
             from: 1,
             to: 2,
         }];
         let err = sheet_to_mei(&mine).expect_err("refuses an unknown kind");
-        assert!(err.contains("slur, a crescendo"), "{err}");
+        assert!(err.contains("slur, crescendo"), "{err}");
     }
 
     #[test]
@@ -1973,6 +2492,7 @@ mod emission {
                 // written a quarter, sounding an eighth -- kept in the model
                 // and deliberately *not* written to the page
                 sounding: Some(Ratio::new(1, 8)),
+                ..Marks::default()
             },
         };
         let grace = Item::Note {
@@ -1992,6 +2512,7 @@ mod emission {
                 grace,
                 note(Step::E, Ratio::new(5, 8), 3),
             ])],
+            ..Staff::default()
         }]);
         let mei = sheet_to_mei(&mine).expect("writes the marks");
         assert!(mei.contains("<artic artic=\"stacc\"/>"), "{mei}");

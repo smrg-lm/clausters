@@ -199,6 +199,36 @@ pub struct Marks {
     /// the written value would be a different rhythm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sounding: Option<Ratio>,
+    /// A **tremolo** on this one note, as the strokes through its stem (`1`
+    /// to `3`): the note is played as repeated eighths, sixteenths or
+    /// thirty-seconds for its whole value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tremolo: Option<u8>,
+    /// That the chord is **rolled** -- `up` from its lowest note, or `down`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arpeggio: Option<String>,
+    /// A **breath** after the note (`breath`), or a full stop of the line
+    /// (`caesura`): what is heard is the note let go early.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breath: Option<String>,
+    /// **Let it ring**: a tie into nothing, the note held past its value.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ring: bool,
+    /// That the note is drawn as a **repeat of the beat before** it -- the
+    /// slashes of a beat repeat -- while it still holds, and sounds, what it
+    /// repeats.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub beat_repeat: bool,
+    /// A **fingering** over the note: a digit, or several for a chord.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingering: Option<String>,
+    /// A **chord symbol** over the note (`Cm7`, `G/B`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harmony: Option<String>,
+    /// The **lyrics** under the note, verse by verse: a syllable each, one
+    /// that ends in `-` running on into the next note's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lyrics: Vec<String>,
 }
 
 impl Marks {
@@ -211,6 +241,14 @@ impl Marks {
             && self.grace.is_none()
             && self.stem.is_none()
             && self.sounding.is_none()
+            && self.tremolo.is_none()
+            && self.arpeggio.is_none()
+            && self.breath.is_none()
+            && !self.ring
+            && !self.beat_repeat
+            && self.fingering.is_none()
+            && self.harmony.is_none()
+            && self.lyrics.is_empty()
     }
 }
 
@@ -227,6 +265,10 @@ impl Marks {
 /// [`super::Slot`] does spell a rest as an empty pitch list, because a wire form
 /// with no discriminator has to be total; the model is not a wire and can be
 /// exact.)
+// A voice is mostly notes, so the larger variant is the common item's size
+// rather than space a rest wastes; boxing the marks would cost every note an
+// allocation to save it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Item {
@@ -358,7 +400,54 @@ pub struct Staff {
     /// The voices sharing this staff.
     #[serde(default)]
     pub voices: Vec<Voice>,
+    /// **Changes of clef inside the staff**, as `(time, clef)` -- the time in
+    /// whole notes from the start, the clef as [`Staff::clef`] spells one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clefs: Vec<(Ratio, String)>,
+    /// How many lines it has, when not five: one for a percussion line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<u8>,
+    /// What it is called at its first system -- the instrument's name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// ...and at every one after, the short name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub abbr: String,
+    /// **A transposing staff**: how many semitones what sounds is from what is
+    /// written -- `-2` for a clarinet in B flat, `-12` for a guitar.
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub transpose: i32,
 }
+
+fn is_zero_i32(n: &i32) -> bool {
+    *n == 0
+}
+
+/// **A group of staves**, from `first` to `last` (both counted from zero),
+/// joined at the left by a `brace`, a `bracket` or a `line`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Group {
+    pub first: usize,
+    pub last: usize,
+    pub symbol: String,
+}
+
+/// **Something written at one point of the music** rather than on a note:
+/// a tempo mark, a direction, a rehearsal mark -- `kind` `tempo`, `dir` or
+/// `reh` -- at the item `on`, which may be a rest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Control {
+    pub kind: String,
+    pub on: u64,
+    /// What it says.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    /// A tempo mark's speed, in quarter notes a minute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bpm: Option<f64>,
+}
+
+impl Eq for Control {}
 
 fn default_clef() -> String {
     "G2".to_string()
@@ -369,6 +458,11 @@ impl Default for Staff {
         Staff {
             clef: default_clef(),
             voices: vec![Voice::default()],
+            clefs: Vec::new(),
+            lines: None,
+            label: String::new(),
+            abbr: String::new(),
+            transpose: 0,
         }
     }
 }
@@ -386,6 +480,15 @@ impl Staff {
     /// Whether the staff holds no voice with anything in it.
     pub fn is_empty(&self) -> bool {
         self.voices.iter().all(Voice::is_empty)
+    }
+
+    /// The clef in force at `t`, whole notes from the start.
+    pub fn clef_at(&self, t: Ratio) -> &str {
+        self.clefs
+            .iter()
+            .filter(|(at, _)| *at <= t)
+            .max_by_key(|(at, _)| *at)
+            .map_or(self.clef.as_str(), |(_, clef)| clef.as_str())
     }
 }
 
@@ -437,6 +540,27 @@ pub struct Grid {
     /// What the engraver decides when nobody decided stays the engraver's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub breaks: Vec<(usize, String)>,
+    /// **Changes of key**, as `(measure, tonic)`: the key the sheet states
+    /// stands until the first of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<(usize, String)>,
+    /// **Endings** -- first and second time bars -- as `(first measure, last
+    /// measure, label)`, the label the passes they are played in (`"1"`,
+    /// `"2"`, `"1, 2"`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endings: Vec<(usize, usize, String)>,
+    /// **Navigation marks**, as `(measure, kind)`: `segno` and `coda` at a
+    /// measure's start, `fine`, `dacapo`, `dalsegno` and `tocoda` at its end.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<(usize, String)>,
+    /// Measures drawn as a **repeat of the one before** -- the measure-repeat
+    /// sign -- while they still hold, and sound, what they repeat.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repeats: Vec<usize>,
+    /// Whether runs of empty measures are drawn as **one numbered rest** each,
+    /// as a part shows them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multirests: bool,
 }
 
 impl Default for Grid {
@@ -450,6 +574,11 @@ impl Default for Grid {
             irregular: Vec::new(),
             barlines: Vec::new(),
             breaks: Vec::new(),
+            keys: Vec::new(),
+            endings: Vec::new(),
+            marks: Vec::new(),
+            repeats: Vec::new(),
+            multirests: false,
         }
     }
 }
@@ -467,6 +596,11 @@ impl Grid {
             irregular: Vec::new(),
             barlines: Vec::new(),
             breaks: Vec::new(),
+            keys: Vec::new(),
+            endings: Vec::new(),
+            marks: Vec::new(),
+            repeats: Vec::new(),
+            multirests: false,
         }
     }
 
@@ -693,6 +827,14 @@ pub struct Sheet {
     /// the default ([`super::PageSetup::default`]) and writes nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<super::PageSetup>,
+    /// **What is written at a point** rather than on a note: tempo marks,
+    /// directions, rehearsal marks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controls: Vec<Control>,
+    /// **How the staves are grouped**: none written is the default, a brace
+    /// over every staff when there are several.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Group>,
 }
 
 fn default_key() -> String {
@@ -713,11 +855,24 @@ impl Default for Sheet {
             staves: vec![Staff::default()],
             spanners: Vec::new(),
             page: None,
+            controls: Vec::new(),
+            groups: Vec::new(),
         }
     }
 }
 
 impl Sheet {
+    /// The key in force in `measure`: the last change at or before it, or the
+    /// sheet's own.
+    pub fn key_at(&self, measure: usize) -> &str {
+        self.grid
+            .keys
+            .iter()
+            .filter(|(m, _)| *m <= measure)
+            .max_by_key(|(m, _)| *m)
+            .map_or(self.key.as_str(), |(_, key)| key.as_str())
+    }
+
     /// The written length of the longest staff.
     pub fn len(&self) -> Ratio {
         self.staves
@@ -913,6 +1068,7 @@ mod tests {
                         marks: Marks::default(),
                     }],
                 }],
+                ..Staff::default()
             }],
             ..Default::default()
         };

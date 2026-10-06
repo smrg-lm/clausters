@@ -986,8 +986,8 @@ opened it.
   cursor, the written breaks, the symbols, the page's head, the dialogs, a
   text typed over where it is drawn, all fixed there; note entry, built as a
   mode with an edit cursor, which is also how the second voice is written; a
-  written page break, laid out in runs of pages. What stays open: the ○ palette entries, each
-  the model growing; a channel group edited as one; an edit to a sounding
+  written page break, laid out in runs of pages; the ○ palette entries, each
+  the model grown with its sound. What stays open: a channel group edited as one; an edit to a sounding
   pitch respelling the written one; New and Close in the File menu; the
   standalone host's playback and export; and the sound, which nobody has
   listened to.* The notation model
@@ -2865,7 +2865,7 @@ wrong.
   second voice, the arrows, Escape. Left as found: overwriting the note a slur
   or a hairpin starts on takes the spanner with it, as a deleted note does.
 
-- ⬜ **The ○ entries are notation the model does not hold** *(listed by
+- ✅ **The ○ entries are notation the model does not hold** *(listed by
   `X5.6`; taken 2026-10-05)*. Each is the model growing an item or a field,
   with its emission, its reading, its `Op` and its palette entry.
   **Decided 2026-10-05, by the user: notation and sound** -- what an entry
@@ -2873,6 +2873,25 @@ wrong.
   tempo, the pedal is controller 64, an octave line moves the sounding
   pitch, a tremolo is its repeated notes, an arpeggio staggers its chord, a
   glissando is a curve, and repeats and endings are played out.
+  **Built 2026-10-05**, every ○ entry of the list above: the model's marks
+  (a tremolo, a roll, a breath or a caesura, let it ring, a beat repeat, a
+  fingering, a chord symbol, lyrics), its spanners (a phrase mark, a
+  glissando, the pedal, the four octave lines, a bracket, a beam across a
+  barline, two notes alternating), what is written at a point (`Control`: a
+  tempo mark, a direction, a rehearsal mark), the grid's changes of key,
+  endings, navigation marks, measure repeats and numbered rests, a staff's
+  changes of clef, lines, names and transposition, and the groups of staves
+  -- each written and read through the engraver's own document, a verb of the
+  palettes (three new groups: Text, Repeats and jumps, Keys and clefs, and
+  Staves), a method in both clients and an operation in both shells. The
+  interpreter plays them (`notation::performance`), the render carries the
+  tempo map, the pedal lane and a glissando's bend, and the page's cursor is
+  drawn over the same reading (`docs/decisions.md`, "What a page writes is
+  what it plays"). Checked in the browser, each drawn as the engraver draws
+  it. **Left open**: the sound, which nobody has listened to; let it ring
+  drawn under nothing visible on a note with a caesura; a slur or a hairpin
+  into a measure that becomes a repeat is dropped with the items the repeat
+  replaces.
 
 - ⬜ **A channel group is not edited as one** *(`X5.8.1`: "editing a group
   as one is not built")*. The render writes a staff's dynamics as the same

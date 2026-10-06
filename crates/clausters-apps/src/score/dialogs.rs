@@ -83,6 +83,24 @@ pub enum Param {
     Repeat,
     /// By what factor the values are scaled: `3/2`, `2`.
     Stretch,
+    /// A tempo mark: its words, and its speed in quarter notes a minute.
+    Tempo,
+    /// A direction: words written at a point.
+    Direction,
+    /// A rehearsal mark: a letter or a number.
+    Rehearsal,
+    /// A fingering over the note.
+    Fingering,
+    /// A chord symbol over the note.
+    Harmony,
+    /// A syllable of the lyrics under the note.
+    Lyric,
+    /// What a staff is called.
+    StaffName,
+    /// How far a staff sounds from what it writes.
+    Transposition,
+    /// The passes an ending is played in.
+    Ending,
 }
 
 impl Param {
@@ -93,6 +111,14 @@ impl Param {
             Param::Transpose => "Semitones",
             Param::Repeat => "Times",
             Param::Stretch => "Factor",
+            Param::Tempo => "Tempo (words, then speed)",
+            Param::Direction | Param::Rehearsal => "Text",
+            Param::Fingering => "Finger",
+            Param::Harmony => "Chord",
+            Param::Lyric => "Syllable (2: for verse 2)",
+            Param::StaffName => "Name, short name",
+            Param::Transposition => "Semitones",
+            Param::Ending => "Passes",
         }
     }
 
@@ -103,6 +129,15 @@ impl Param {
             Param::Transpose => "2",
             Param::Repeat => "2",
             Param::Stretch => "3/2",
+            Param::Tempo => "Allegro 120",
+            Param::Direction => "dolce",
+            Param::Rehearsal => "A",
+            Param::Fingering => "1",
+            Param::Harmony => "C",
+            Param::Lyric => "",
+            Param::StaffName => "",
+            Param::Transposition => "-2",
+            Param::Ending => "1",
         }
     }
 
@@ -135,6 +170,39 @@ impl Param {
                     )),
                 }
             }
+            // the speed is the number it ends with, the words what is before
+            Param::Tempo => {
+                let (words, last) = typed.rsplit_once(' ').unwrap_or(("", typed));
+                let (text, bpm) = match last.trim_start_matches('=').parse::<f64>() {
+                    Ok(bpm) if bpm > 0.0 => (words.trim().trim_end_matches('=').trim(), Some(bpm)),
+                    _ => (typed, None),
+                };
+                Ok(json!({"action": "control", "kind": "tempo", "text": text, "bpm": bpm}))
+            }
+            Param::Direction => Ok(json!({"action": "control", "kind": "dir", "text": typed})),
+            Param::Rehearsal => Ok(json!({"action": "control", "kind": "reh", "text": typed})),
+            Param::Fingering => {
+                Ok(json!({"action": "mark", "mark": "fingering", "value": typed}))
+            }
+            Param::Harmony => Ok(json!({"action": "mark", "mark": "harmony", "value": typed})),
+            Param::Lyric => {
+                let (verse, text) = match typed.split_once(':') {
+                    Some((n, text)) if n.trim().parse::<usize>().is_ok() => {
+                        (n.trim().parse::<usize>().unwrap_or(1), text.trim())
+                    }
+                    _ => (1, typed),
+                };
+                Ok(json!({"action": "lyric", "verse": verse, "text": text}))
+            }
+            Param::StaffName => {
+                let (label, abbr) = typed.split_once(',').unwrap_or((typed, ""));
+                Ok(json!({"action": "staff", "label": label.trim(), "abbr": abbr.trim()}))
+            }
+            Param::Transposition => typed
+                .parse::<i32>()
+                .map(|semitones| json!({"action": "staff", "transpose": semitones}))
+                .map_err(|_| format!("semitones are a whole number, not {typed:?}")),
+            Param::Ending => Ok(json!({"action": "ending", "label": typed})),
         }
     }
 }
@@ -153,6 +221,15 @@ impl Form {
             "transpose" => Form::Param(Param::Transpose),
             "repeat" => Form::Param(Param::Repeat),
             "stretch" => Form::Param(Param::Stretch),
+            "tempo" => Form::Param(Param::Tempo),
+            "direction" => Form::Param(Param::Direction),
+            "rehearsal" => Form::Param(Param::Rehearsal),
+            "fingering" => Form::Param(Param::Fingering),
+            "harmony" => Form::Param(Param::Harmony),
+            "lyric" => Form::Param(Param::Lyric),
+            "staff_name" => Form::Param(Param::StaffName),
+            "transposition" => Form::Param(Param::Transposition),
+            "ending" => Form::Param(Param::Ending),
             _ => return None,
         })
     }
@@ -214,6 +291,15 @@ impl Form {
             Form::Param(Param::Transpose) => "Transpose",
             Form::Param(Param::Repeat) => "Repeat",
             Form::Param(Param::Stretch) => "Stretch",
+            Form::Param(Param::Tempo) => "Tempo",
+            Form::Param(Param::Direction) => "Direction",
+            Form::Param(Param::Rehearsal) => "Rehearsal mark",
+            Form::Param(Param::Fingering) => "Fingering",
+            Form::Param(Param::Harmony) => "Chord symbol",
+            Form::Param(Param::Lyric) => "Lyrics",
+            Form::Param(Param::StaffName) => "Staff name",
+            Form::Param(Param::Transposition) => "Transposition",
+            Form::Param(Param::Ending) => "Ending",
             Form::Page => "Page setup",
             Form::File(File::Open) => "Open",
             Form::File(File::SaveAs) => "Save as",
@@ -530,6 +616,24 @@ pub fn page_action(form: &Open) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_tempo_is_read_as_its_words_and_its_speed() {
+        assert_eq!(
+            Param::Tempo.action("Allegro 132").unwrap(),
+            json!({"action": "control", "kind": "tempo", "text": "Allegro", "bpm": 132.0})
+        );
+        assert_eq!(Param::Tempo.action("Andante").unwrap()["bpm"], Value::Null);
+        assert_eq!(
+            Param::Lyric.action("2: la-").unwrap(),
+            json!({"action": "lyric", "verse": 2, "text": "la-"})
+        );
+        assert_eq!(
+            Param::StaffName.action("Clarinet in B flat, Cl.").unwrap()["abbr"],
+            "Cl."
+        );
+        assert!(Param::Transposition.action("two").is_err());
+    }
     use super::*;
 
     fn ids() -> Ids {

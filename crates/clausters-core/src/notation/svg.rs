@@ -384,6 +384,27 @@ fn walk(
                 });
             }
         }
+        // **A box that is not filled is its outline** -- a rehearsal mark's
+        // enclosure -- and filling it would cover what it encloses.
+        "rect" if hollow(node) => {
+            let attr = |k: &str| {
+                node.attribute(k)
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+            };
+            let (x, y, w, h) = (attr("x"), attr("y"), attr("width"), attr("height"));
+            prims.push(Prim::Line {
+                pts: [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+                    .iter()
+                    .map(|&(x, y)| {
+                        let p = apply(xf, x, y);
+                        [r(p.0, 1), r(p.1, 1)]
+                    })
+                    .collect(),
+                w: stroke_width(node, xf),
+                id: nid.map(str::to_string),
+            });
+        }
         "rect" => prims.push(Prim::Fill {
             d: rect_to_path(node),
             xf: xf_list(xf),
@@ -584,6 +605,16 @@ fn ellipse_to_path(node: Node) -> String {
         pt(cx + rx, cy - ry * k),
         pt(cx + rx, cy),
     )
+}
+
+/// Whether a shape is drawn by its outline alone: no fill, or a fill that
+/// cannot be seen.
+fn hollow(node: Node) -> bool {
+    node.attribute("fill") == Some("none")
+        || node
+            .attribute("fill-opacity")
+            .and_then(|o| o.parse::<f64>().ok())
+            .is_some_and(|o| o == 0.0)
 }
 
 fn rect_to_path(node: Node) -> String {
@@ -896,6 +927,20 @@ mod tests {
         <text id="dyn-1" x="500" y="300"><tspan font-size="0px"><tspan font-size="80px">mf</tspan></tspan></text>
       </svg>
     </svg>"##;
+
+    /// A box with no fill is its outline -- a rehearsal mark's enclosure --
+    /// and one with a fill is a fill.
+    #[test]
+    fn a_hollow_box_is_its_outline() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <svg class="definition-scale" viewBox="0 0 1000 400">
+            <g id="reh-1"><rect x="10" y="20" width="100" height="50" fill-opacity="0.0" stroke-width="5"/></g>
+            <g id="beam-1"><rect x="10" y="20" width="100" height="50"/></g>
+          </svg></svg>"##;
+        let dl = svg_to_display_list(svg);
+        assert!(matches!(&dl.prims[0], Prim::Line { pts, .. } if pts.len() == 5));
+        assert!(matches!(&dl.prims[1], Prim::Fill { .. }));
+    }
 
     #[test]
     fn walks_the_viewbox_and_glyph_table() {

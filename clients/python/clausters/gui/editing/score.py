@@ -375,6 +375,81 @@ class ScoreEditor(Editor):
         selected item to the last, in time."""
         return self._act({"action": "spanner", "kind": str(kind)})
 
+    def mark(self, name: str, value=True) -> bool:
+        """A mark on the selected notes, by its name: ``tremolo`` (strokes, 1
+        to 3), ``arpeggio`` (``up``, ``down``), ``breath`` (``breath``,
+        ``caesura``), ``ring`` (``True``), ``fingering`` and ``harmony``
+        (text). A value every one of them has already takes it away, and so
+        does ``None``."""
+        return self._act({"action": "mark", "mark": str(name), "value": value})
+
+    def lyric(self, text: str, verse: int = 1) -> bool:
+        """A syllable of the lyrics under the first selected note, in
+        ``verse``; one that ends in ``-`` runs on into the next, and an empty
+        one takes it away."""
+        return self._act({"action": "lyric", "text": str(text), "verse": int(verse)})
+
+    def beat_repeat(self) -> bool:
+        """Draw the selected notes as repeats of the beat before each, which
+        they then hold -- or as themselves again."""
+        return self._act({"action": "beat_repeat"})
+
+    def control(self, kind: str, text: str = "", bpm: float | None = None) -> bool:
+        """Write at the first selected item a ``tempo`` (with its speed
+        ``bpm``, in quarter notes a minute), a ``dir`` or a ``reh``; with no
+        text and no speed, take it back."""
+        return self._act({"action": "control", "kind": str(kind), "text": str(text),
+                          "bpm": None if bpm is None else float(bpm)})
+
+    def set_key(self, key: str) -> bool:
+        """Change the key from the first selected measure on (``"D"``,
+        ``"Bb"``), or take a change back with ``"none"``."""
+        return self._act({"action": "key", "key": str(key)})
+
+    def set_clef(self, clef: str) -> bool:
+        """Change the clef where the first selected item starts, on its staff
+        (``"G2"``, ``"F4"``, ``"C3"``), or take it back with ``"none"``."""
+        return self._act({"action": "clef", "clef": str(clef)})
+
+    def set_ending(self, label: str = "") -> bool:
+        """Mark the selected measures as an ending played in the passes
+        ``label`` names (``"1"``, ``"2"``); empty takes it back."""
+        return self._act({"action": "ending", "label": str(label)})
+
+    def navigation(self, kind: str) -> bool:
+        """A navigation mark: ``segno`` and ``coda`` on the first selected
+        measure, ``fine``, ``dacapo``, ``dalsegno`` and ``tocoda`` on the last;
+        ``none`` takes them off both."""
+        return self._act({"action": "navigation", "kind": str(kind)})
+
+    def measure_repeat(self) -> bool:
+        """Write each selected measure as a repeat of the one before, or as
+        itself again when every one already is."""
+        return self._act({"action": "measure_repeat"})
+
+    def multirests(self) -> bool:
+        """Draw runs of empty measures as one numbered rest, or each as
+        itself."""
+        return self._act({"action": "multirests"})
+
+    def set_staff(self, *, lines: int | None = None, label: str | None = None,
+                  abbr: str | None = None, transpose: int | None = None) -> bool:
+        """Say what the selected staves are -- the first, with nothing
+        selected: their ``lines``, their name (``label``, ``abbr``), how many
+        semitones they sound from what they write. What is left out stays."""
+        call: dict = {"action": "staff"}
+        for key, value in (("lines", lines), ("label", label), ("abbr", abbr),
+                           ("transpose", transpose)):
+            if value is not None:
+                call[key] = value
+        return self._act(call)
+
+    def group(self, symbol: str) -> bool:
+        """Group the staves the selection covers under a ``brace``, a
+        ``bracket`` or a ``line``; ``none`` takes away the groups over
+        them."""
+        return self._act({"action": "group", "symbol": str(symbol)})
+
     def transform(self, name: str, **params) -> bool:
         """A transformation over the measures the selection covers -- or over
         everything, with nothing selected: ``"transpose"`` (``semitones``, or
@@ -585,7 +660,7 @@ class ScoreEditor(Editor):
         method.
 
         It is the sequence `clausters.gui.notation.Score.render_events`
-        answers, at the engraver's tempo, written as a sequence writes either
+        answers, at the score's own tempo, written as a sequence writes either
         (`clausters.seq.EventSequence.to_smf`, ``to_clip``): its notes, a
         channel to a voice, the dynamics as each channel's expression."""
         import os

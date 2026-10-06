@@ -1039,3 +1039,25 @@ def test_the_page_carries_which_ids_are_sounding_elements():
     # and a new note can follow
     assert len(dl["elements"]) == 3, dl["elements"]
     assert dl["elements"][:2] == ["n1", "n2"]
+
+
+def test_the_signs_the_staves_and_the_marks_at_a_point_are_the_models():
+    eight = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 8)
+    first = _items(eight)[0]["id"]
+    sheet = notation.add_control(eight, "tempo", first, "Lento", bpm=60)
+    sheet = notation.set_key(sheet, 2, "D")
+    sheet = notation.set_clef(sheet, 1, "F4")
+    sheet = notation.set_ending(sheet, 2, 2, "1")
+    sheet = notation.set_mark(sheet, 2, "fine")
+    sheet = notation.set_staff(sheet, 0, label="Flute", transpose=-2)
+    sheet = notation.set_multirests(sheet)
+    assert sheet["controls"][0]["bpm"] == 60
+    assert sheet["grid"]["keys"] == [[1, "D"]]
+    assert sheet["staves"][0]["clefs"] == [[[1, 1], "F4"]]
+    assert sheet["grid"]["endings"] == [[1, 1, "1"]]
+    assert sheet["staves"][0]["label"] == "Flute"
+    assert notation.remove_control(sheet, "tempo", first).get("controls", []) == []
+    # a measure repeat holds what it repeats, and grouping needs staves
+    assert notation.set_repeat(eight, 2)["grid"]["repeats"] == [1]
+    with pytest.raises(ValueError):
+        notation.set_groups(eight, [{"first": 0, "last": 3, "symbol": "brace"}])

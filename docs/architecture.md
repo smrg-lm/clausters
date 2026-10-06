@@ -1112,8 +1112,10 @@ which the window says is its owner's (`plays`), the toolbar's transport or the
 menu's -- is a turn whose outcome is the **pass** it asks for: where it starts
 (where the selection starts), the stretch a loop repeats, whether it loops.
 What plays is the score rendered (`ScoreEditor::rendered`, the door's `render`)
-at the engraver's own tempo, since the page's cursor is drawn over the
-engraver's timemap; each client plays that sequence with the playback a notes
+as the interpreter reads it (`notation::performance`: its repeats played out,
+its tempo marks its tempo map), and the page's cursor is drawn over the same
+reading -- a page written from the model is timed by it rather than by the
+engraver's timemap, which knows no repeat; each client plays that sequence with the playback a notes
 editor uses -- an event lane on a transport of the server's -- keeps the one
 sequence and hands it the next render after every edit, and binds the
 window's head clock to that transport so the cursor is drawn from its
