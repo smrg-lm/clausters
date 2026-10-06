@@ -3335,3 +3335,21 @@ wrong.
   no note carries it. What a good reading of dynamics needs beyond this is
   "Dynamics need a model of the instrument and of hearing", under Future
   directions.
+
+- ⬜ **A track's gain automation does not reach its notes** *(the user,
+  2026-10-06, trying the standalone session: the track's envelope -- its
+  gain -- has to act on a sequence of notes too, whatever the MIDI
+  automations and the velocities say; a track's envelopes apply over them,
+  and here they do not act, because one is the audio's and the other the
+  MIDI's)*. The notes of every box over a sequence play on the multitrack's
+  one event lane, and its voices sound through their own `out`, **outside
+  the tracks' strips** (`clausters_editing::playback`, `notes`): the strip is
+  where a track's gain, its gain curve, its mute and its meters are, so none
+  of them reaches a track of notes -- only mute and solo do, by deciding
+  what is placed at all. What a track produces is what its strip shapes,
+  whether it reads samples or plays notes: the notes' own velocities and
+  note-level curves shape each voice, and the track's envelopes apply after
+  them, as over a take. The shape to decide: each track's voices sounding
+  into that track's strip (a lane per track, or one lane whose voices name
+  the strip they play into), so the gain, the curve, the fader and the
+  meter are one path for both kinds of box.

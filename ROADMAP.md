@@ -100,6 +100,13 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
+- ⬜ **A track's gain automation does not reach its notes**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The notes of a box over
+  a sequence sound outside the tracks' strips, so a track's gain, its gain
+  curve, its fader and its meter do not act on them. The direction is named
+  in the entry: a track's voices sound into its own strip, where its
+  envelopes apply after the notes' velocities and note-level curves.
+
 - ⬜ **A looping selection does not follow a new selection**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection
   while it loops leaves the loop on the old span, in the audio editor opened
