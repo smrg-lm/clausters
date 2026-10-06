@@ -114,9 +114,11 @@ usage:
                             which links the engraver (libverovio); with
                             `standalone` too it plays, through a player as
                             --session does, on the server's default def
-      --save-to <file>      write the session back here when the window closes.
-                            Without it nothing is written: overwriting the file
-                            you opened is a decision, not a default
+      --save-to <file>      where Ctrl+S writes the session (or the score), and
+                            the close form's Save: a window with changes not
+                            saved asks before it closes. Without it nothing is
+                            written: overwriting the file you opened is a
+                            decision, not a default
       --standalone [name]   boot the saved GuiDef <name> against an embedded
                             audio server (no separate server or language client):
                             the embedded server loads the data directory's
@@ -181,6 +183,12 @@ struct Look {
     /// summary (`--follow-block`). Not a *look*, strictly -- it is here because
     /// it is resolved and applied with the rest, on both launch paths.
     follow_block: f64,
+    /// The typeface the command line or the config named, else `None` for
+    /// the one the host carries -- loaded on every launch path, a session's
+    /// and a score's as much as a script's ([`load_face`]).
+    font: Option<String>,
+    /// Whether nothing draws, so no face is read.
+    headless: bool,
 }
 
 impl Look {
@@ -190,6 +198,7 @@ impl Look {
         host.keys = self.keys;
         host.msaa = self.msaa;
         host.follow_block = self.follow_block;
+        load_face(host, self.font, self.headless);
     }
 }
 
@@ -500,6 +509,8 @@ fn run(args: &[String]) -> Result<(), String> {
         keys,
         msaa,
         follow_block,
+        font: font_path.or_else(|| cfg.gui.font.clone()),
+        headless,
     };
     // The data directory: an explicit flag wins; otherwise the standalone
     // section (when booting one) then the gui section provide it; finally the
@@ -587,11 +598,6 @@ fn run(args: &[String]) -> Result<(), String> {
     host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
     host.set_head_clock(cli_head.unwrap_or_default());
     look.apply(&mut host);
-    load_face(
-        &mut host,
-        font_path.or_else(|| cfg.gui.font.clone()),
-        headless,
-    );
     if let Some(store) = store {
         host = host.with_store(store);
     }

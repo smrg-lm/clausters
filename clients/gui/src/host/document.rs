@@ -1837,6 +1837,26 @@ mod window_verb_tests {
         );
         host.owner = Some(owner);
 
+        // **A box moved keeps the notes of every box drawn**: the picture
+        // after an edit is the editor's, which knows a box of notes, and not
+        // a walk of the owner's own that drew them empty
+        let notes = |host: &Host| {
+            host.registry
+                .get(view)
+                .and_then(|node| node.props.get("notes").cloned())
+                .unwrap_or_default()
+        };
+        let before = notes(&host);
+        assert!(before.as_array().is_some_and(|n| !n.is_empty()), "{before}");
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &clips(&[("20", "10", 48_000.0, 192_000.0)])
+        ));
+        assert_eq!(notes(&host), before, "the box of notes still draws them");
+
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(host.answer_own(
             def_id,

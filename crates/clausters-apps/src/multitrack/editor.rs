@@ -575,16 +575,26 @@ impl MultitrackEditor {
         def
     }
 
-    /// **Everything `widget` should be drawing**, for a correction.
+    /// **Everything `widget` should be drawing**, for a correction: the
+    /// [`picture`](Self::picture), and the names it tells the host the rows,
+    /// the boxes and the curves are called, kept as told.
     pub fn props(&mut self, widget: i32) -> Map<String, Value> {
+        let props = self.picture(widget);
+        if self.ruler != Some(widget) {
+            self.remember_names();
+        }
+        props
+    }
+
+    /// **Everything `widget` should be drawing**, with nothing kept of having
+    /// said it: what a holder that redraws the window itself reads, while the
+    /// names it tells stay this editor's to settle ([`settle`](Self::settle)).
+    pub fn picture(&self, widget: i32) -> Map<String, Value> {
         let (multitrack, ruler) = (
             self.widget.unwrap_or(widget),
             self.ruler.unwrap_or(i32::MIN),
         );
         let mut props = self.composed(multitrack, ruler, |w| super::props(w, widget));
-        if self.ruler != Some(widget) {
-            self.remember_names();
-        }
         if widget == multitrack && !props.is_empty() {
             // The time range is drawn where the hand sweeps one, so a span set
             // from the client shows as the band a sweep leaves.

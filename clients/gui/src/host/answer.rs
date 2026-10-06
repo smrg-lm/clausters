@@ -899,10 +899,27 @@ impl Host {
         // offset into a `Clip` widget, a `Configure` writing a `Track`'s header
         // -- and it went with the widgets it addressed. One widget draws the
         // multitrack; one call redraws it.
-        let Some(owner) = self.owner.as_ref() else {
+        let Some(owner) = self.owner.as_mut() else {
             return;
         };
         let Some(widget) = owner.multitrack_widget() else {
+            return;
+        };
+        // **The editor's picture, where there is an editor**: the multitrack
+        // editor draws what a client's draws -- a box of notes as its roll
+        // among them -- and the owner's own walk does not know a sequence, so
+        // redrawing from it after an edit emptied every box of notes and
+        // left nothing a double click could open
+        if owner.editor().is_some() {
+            owner.sync_editor();
+            if let Some(props) = owner.editor().map(|editor| editor.picture(widget)) {
+                let mut fx = Vec::new();
+                self.set_props(widget, props.into_iter().collect(), &mut fx);
+                self.sound_multitrack();
+                return;
+            }
+        }
+        let Some(owner) = self.owner.as_ref() else {
             return;
         };
         let shown = owner.shown();
