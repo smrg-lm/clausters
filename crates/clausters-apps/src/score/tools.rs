@@ -79,6 +79,10 @@ pub const SYMBOL_SIZE: f64 = 2.5;
 const DOT: &str = "E1E7";
 const REST: &str = "E4E5";
 const TRIPLET: &str = "E883";
+/// The voices, as a page tells them apart: the first with its stems up, the
+/// second with them down (SMuFL's quarter notes).
+const VOICE_ONE: &str = "E1D5";
+const VOICE_TWO: &str = icons::QUARTER_DOWN;
 
 /// The accidentals the toolbar offers: the text label, the symbol, and the
 /// semitones of alteration; the first segment is none.
@@ -109,6 +113,8 @@ pub fn codes() -> Vec<&'static str> {
         .chain(ACCIDENTALS.iter().map(|a| a.1))
         .chain(ARTICULATIONS.iter().map(|a| a.2))
         .chain([icons::TIE, icons::NONE, icons::REWIND, icons::ENTRY])
+        // the first voice's quarter is the value's, already asked
+        .chain([VOICE_TWO, icons::PAGE_VIEW, icons::LINE_VIEW])
         .collect()
 }
 
@@ -303,7 +309,10 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         vec![tool(
             ids,
             "voice",
-            segments(vec!["v1".into(), "v2".into()], "The voice"),
+            symbols(segments(
+                vec![shown(VOICE_ONE, "v1"), shown(VOICE_TWO, "v2")],
+                "The voice: the first, stems up, or the second, stems down",
+            )),
         )],
         &mut children,
     );
@@ -311,10 +320,13 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         vec![tool(
             ids,
             "layout",
-            segments(
-                vec!["page".into(), "line".into()],
+            symbols(segments(
+                vec![
+                    shown(icons::PAGE_VIEW, "page"),
+                    shown(icons::LINE_VIEW, "line"),
+                ],
                 "Pages of the paper, or one continuous system",
-            ),
+            )),
         )],
         &mut children,
     );
@@ -545,10 +557,18 @@ mod tests {
         // a tool that shows symbols is drawn at their size, and one that
         // shows words at the words'
         assert_eq!(by("value")["text_size"], SYMBOL_SIZE);
-        assert!(by("voice").get("text_size").is_none(), "the voice is words");
+        // the voices are the quarter's stems, up and down: the first was
+        // handed out, the second was not and stays text
+        assert_eq!(by("voice")["options"], json!(["\u{E1D5}", "v2"]));
+        assert_eq!(by("voice")["text_size"], SYMBOL_SIZE);
+        assert_eq!(by("layout")["options"], json!(["page", "line"]));
         // every symbol asked for is a codepoint, each once
         let asked = codes();
-        assert_eq!(asked.len(), 23);
+        assert_eq!(asked.len(), 26);
+        let mut once = asked.clone();
+        once.sort_unstable();
+        once.dedup();
+        assert_eq!(once.len(), asked.len());
         assert!(asked.iter().all(|code| glyph_char(code).is_some()));
     }
 

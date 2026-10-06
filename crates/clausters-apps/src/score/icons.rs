@@ -85,6 +85,10 @@ pub const GROUP_LINE: &str = "F0018";
 pub const ARPEGGIO_UP: &str = "F0019";
 /// ...and down.
 pub const ARPEGGIO_DOWN: &str = "F001A";
+/// The window as pages: a sheet with its systems.
+pub const PAGE_VIEW: &str = "F001B";
+/// The window as one system running on.
+pub const LINE_VIEW: &str = "F001C";
 
 /// **A key signature**, by its tonic: the face's sharps or flats in a row, a
 /// natural for none -- under codepoints of the editor's own, from `F0020`.
@@ -111,6 +115,8 @@ pub const CRESCENDO: &str = "E53E";
 pub const DIMINUENDO: &str = "E53F";
 pub const ACCIACCATURA: &str = "E560";
 pub const APPOGGIATURA: &str = "E562";
+/// A quarter note with its stem down: the second voice.
+pub const QUARTER_DOWN: &str = "E1D6";
 
 /// The glyphs of the face a drawing here is written from.
 const EIGHTH_UP: &str = "E1D7";
@@ -184,6 +190,8 @@ pub fn complete(outlines: &mut Outlines) {
         (GROUP_LINE, Some(group_line())),
         (ARPEGGIO_UP, Some(arpeggio(true))),
         (ARPEGGIO_DOWN, Some(arpeggio(false))),
+        (PAGE_VIEW, Some(page_view())),
+        (LINE_VIEW, Some(line_view())),
         (
             APPOGGIATURA,
             outlines.get(EIGHTH_UP).map(|eighth| grace(eighth, false)),
@@ -195,6 +203,10 @@ pub fn complete(outlines: &mut Outlines) {
         (
             VOICE,
             outlines.get(QUARTER_UP).map(|quarter| voices(quarter)),
+        ),
+        (
+            QUARTER_DOWN,
+            outlines.get(QUARTER_UP).map(|quarter| stem_down(quarter)),
         ),
     ];
     let mut drawn = drawn;
@@ -783,6 +795,32 @@ fn ending() -> String {
     pen.done()
 }
 
+/// The window as pages: a sheet, and three systems on it.
+fn page_view() -> String {
+    const W: f64 = 50.0;
+    let (w, h) = (640.0, 860.0);
+    let mut pen = Pen::new();
+    pen.rect(0.0, 0.0, W, h);
+    pen.rect(w - W, 0.0, W, h);
+    pen.rect(W, 0.0, w - 2.0 * W, W);
+    pen.rect(W, h - W, w - 2.0 * W, W);
+    for y in [600.0, 420.0, 240.0] {
+        pen.rect(140.0, y, w - 280.0, LINE);
+    }
+    pen.done()
+}
+
+/// The window as one system: three lines that run on past the edge.
+fn line_view() -> String {
+    const LONG: f64 = 760.0;
+    let mut pen = Pen::new();
+    for y in [180.0, 380.0, 580.0] {
+        pen.rect(0.0, y, LONG, LINE);
+    }
+    arrowhead(&mut pen, (1000.0, 400.0), 1.0, 0.0);
+    pen.done()
+}
+
 /// A staff of `lines` lines.
 fn staff_lines(lines: u32) -> String {
     let mut pen = Pen::new();
@@ -873,6 +911,44 @@ fn grace(eighth: &str, slashed: bool) -> String {
 
 /// The other voice: a note with its stem up and one with its stem down, the
 /// face's quarter and the same glyph turned over.
+/// The box a path's command points span: `[left, bottom, right, top]`.
+fn bounds(d: &str) -> [f64; 4] {
+    let mut at = (0.0f64, 0.0f64);
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for c in commands(d) {
+        let rel = c.letter.is_ascii_lowercase();
+        let step = match c.letter.to_ascii_uppercase() {
+            'C' => 6,
+            'S' => 4,
+            'H' | 'V' => 1,
+            'Z' => continue,
+            _ => 2,
+        };
+        for chunk in c.numbers.chunks_exact(step) {
+            at = match c.letter.to_ascii_uppercase() {
+                'H' => (if rel { at.0 + chunk[0] } else { chunk[0] }, at.1),
+                'V' => (at.0, if rel { at.1 + chunk[0] } else { chunk[0] }),
+                _ if rel => (at.0 + chunk[step - 2], at.1 + chunk[step - 1]),
+                _ => (chunk[step - 2], chunk[step - 1]),
+            };
+            b = [
+                b[0].min(at.0),
+                b[1].min(at.1),
+                b[2].max(at.0),
+                b[3].max(at.1),
+            ];
+        }
+    }
+    b
+}
+
+/// The face's quarter turned over, its stem down from the left of its head
+/// -- as a page writes it when the stem goes down.
+fn stem_down(quarter: &str) -> String {
+    let [left, bottom, right, top] = bounds(quarter);
+    placed(quarter, (-1.0, -1.0), (left + right, bottom + top))
+}
+
 fn voices(quarter: &str) -> String {
     const SMALL: f64 = 0.7;
     let mut d = placed(quarter, (SMALL, SMALL), (0.0, 0.0));
@@ -889,35 +965,22 @@ mod tests {
     const QUARTER: &str = "M275 104v735h27v-796c0 -87 -112 -172 -203 -172c-56 0 -99 32 -99 85c0 84 109 177 201 177c31 0 55 -10 74 -29z";
     const EIGHTH: &str = "M309 861c16 -73 51 -137 94 -197c54 -76 96 -166 99 -263v-7c0 -64 -16 -127 -39 -187h-27c21 53 36 110 36 167c0 113 -74 190 -163 255v-586c0 -87 -112 -172 -203 -172c-56 0 -99 32 -99 85c0 84 109 177 201 177c31 0 55 -10 74 -29v757h27z";
 
-    /// The box a path's command points span: `[left, bottom, right, top]`.
-    fn bounds(d: &str) -> [f64; 4] {
-        let mut at = (0.0f64, 0.0f64);
-        let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-        for c in commands(d) {
-            let rel = c.letter.is_ascii_lowercase();
-            let step = match c.letter.to_ascii_uppercase() {
-                'C' => 6,
-                'S' => 4,
-                'H' | 'V' => 1,
-                'Z' => continue,
-                _ => 2,
-            };
-            for chunk in c.numbers.chunks_exact(step) {
-                at = match c.letter.to_ascii_uppercase() {
-                    'H' => (if rel { at.0 + chunk[0] } else { chunk[0] }, at.1),
-                    'V' => (at.0, if rel { at.1 + chunk[0] } else { chunk[0] }),
-                    _ if rel => (at.0 + chunk[step - 2], at.1 + chunk[step - 1]),
-                    _ => (chunk[step - 2], chunk[step - 1]),
-                };
-                b = [
-                    b[0].min(at.0),
-                    b[1].min(at.1),
-                    b[2].max(at.0),
-                    b[3].max(at.1),
-                ];
-            }
+    #[test]
+    fn the_second_voice_is_the_quarter_turned_over_in_its_own_box() {
+        let mut outlines = Outlines::new();
+        outlines.insert(QUARTER_UP.into(), QUARTER.into());
+        complete(&mut outlines);
+        let down = &outlines[QUARTER_DOWN];
+        let (up, turned) = (bounds(QUARTER), bounds(down));
+        for (a, b) in up.iter().zip(turned) {
+            assert!((a - b).abs() < 1e-6, "{up:?} {turned:?}");
         }
-        b
+        // and a face that has its own keeps it
+        let mut own = Outlines::new();
+        own.insert(QUARTER_UP.into(), QUARTER.into());
+        own.insert(QUARTER_DOWN.into(), "M0 0h1v1z".into());
+        complete(&mut own);
+        assert_eq!(own[QUARTER_DOWN], "M0 0h1v1z");
     }
 
     #[test]

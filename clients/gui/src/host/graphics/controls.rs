@@ -491,12 +491,25 @@ pub fn toggle(
     size: f32,
 ) {
     if view == ToggleView::Button {
-        let look = ButtonLook {
-            active: on,
-            hovered,
-            flat: false,
+        // **A latch reads as one option of a segmented choice**: off is the
+        // well an option not chosen sits in, on is the chosen one's fill. Drawn
+        // as a button at rest, off took the fill a chosen segment has, so a
+        // row of tools showed every latch as on.
+        let (mesh, _, theme) = d.parts();
+        let fill = match (on, hovered) {
+            (true, _) => theme.accent_dim,
+            (false, true) => theme.hover,
+            (false, false) => theme.field,
         };
-        return button(d, label, icon, rect, look, size);
+        mesh.rect(rect, fill);
+        font::text_centered(
+            mesh,
+            &button_text(label, icon),
+            rect,
+            size,
+            theme.text_on(fill),
+        );
+        return;
     }
     let box_rect = toggle_box(rect, view, d.m);
     let (mesh, m, theme) = d.parts();
@@ -1000,6 +1013,30 @@ mod tests {
         );
         let max_x = m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
         assert!(max_x <= rect.x + rect.w, "single line bleeds past the rect");
+    }
+
+    /// **A latch reads as a segment of a choice**: off, the well of an option
+    /// not chosen; on, the chosen one's fill -- never the fill of a chosen
+    /// option while it is off.
+    #[test]
+    fn a_latch_is_drawn_as_an_option_chosen_or_not() {
+        let theme = Theme::default();
+        let fill = |on: bool| {
+            let mut mesh = Mesh::new();
+            toggle(
+                &mut Draw::new(&mut mesh, &Metrics::default(), &theme),
+                on,
+                Some("x"),
+                None,
+                Rect::new(0.0, 0.0, 40.0, 30.0),
+                ToggleView::Button,
+                false,
+                2.0,
+            );
+            mesh.colors_by_y().next().map(|(_, color)| color)
+        };
+        assert_eq!(fill(false), Some(theme.field));
+        assert_eq!(fill(true), Some(theme.accent_dim));
     }
 
     #[test]

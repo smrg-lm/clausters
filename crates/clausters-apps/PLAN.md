@@ -2705,7 +2705,8 @@ wrong.
   The palettes' column scrolls, which showed up as soon as the symbols had a
   size: its last groups were under the window's foot.
   Left as they are: the voice selector and the layout selector of the
-  toolbar are words (`v1`, `v2`; `page`, `line`).
+  toolbar are words (`v1`, `v2`; `page`, `line`) -- symbols since
+  2026-10-06, the entry below.
 
 - ✅ **An edit to a sounding pitch does not rewrite the written one** *(found
   2026-10-05, closing `X5.7`)*. The pitch family is coherent -- moving a note's
@@ -2948,6 +2949,15 @@ wrong.
   `clausters-midi`, the clients' writer, which the `score` feature now
   pulls in. Nobody has listened to it.
 
-- ⬜ **The toolbar's voice and layout selectors are words** *(the symbols'
+- ✅ **The toolbar's voice and layout selectors are words** *(the symbols'
   entry, above: `v1`, `v2`; `page`, `line`)*. They take symbols, as every
   other tool has.
+  **Fixed 2026-10-06**: the voices are the quarter with its stem up and
+  with it down, as a page tells two voices apart -- SMuFL's two, the second
+  drawn from the face's first turned over where the face lacks it -- and
+  the layout is a sheet with its systems and a system running on, both the
+  editor's own. Found with them, by eye: **the latches read as on when
+  off.** A toggle drawn as a button took, off, the fill a segmented
+  choice's chosen option has, so the toolbar's note entry, dot, rest and
+  loop all looked pressed; the host now draws a latch as an option chosen
+  or not -- the field's well off, the chosen fill on.
