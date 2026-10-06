@@ -548,6 +548,11 @@ mod tests {
         sheet.grid.breaks = vec![(2, "page".to_string())];
         let two = laid(&sheet);
         assert_eq!((drawn(&two, "slur"), drawn(&two, "hairpin")), (2, 2));
+        // and it has nothing to say about either run: no end it cannot match
+        for run in clausters_core::notation::sheet_to_mei_pages(&sheet).unwrap() {
+            let said = crate::complaints(&run, &EngraveOptions::default()).expect("engraves");
+            assert_eq!(said, Vec::<String>::new());
+        }
     }
 
     /// A slur into a measure drawn as a repeat, and a hairpin out of it, are
@@ -571,6 +576,9 @@ mod tests {
         let back = clausters_core::notation::mei_to_sheet(&score.mei()).unwrap();
         let kinds: Vec<&str> = back.spanners.iter().map(|s| s.kind.as_str()).collect();
         assert_eq!(kinds, ["slur", "crescendo"]);
+        drop(score);
+        let said = crate::complaints(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default());
+        assert_eq!(said.expect("engraves"), Vec::<String>::new());
     }
 
     /// Let it ring is drawn wherever it is written: the engraver draws one
@@ -611,6 +619,89 @@ mod tests {
             .map(Item::id)
             .collect();
         assert_eq!(rings, rung);
+        drop(score);
+        let said = crate::complaints(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default());
+        assert_eq!(said.expect("engraves"), Vec::<String>::new());
+    }
+
+    /// A note the barline splits is tied by the emitter, and the engraver
+    /// hands that tie back as an element: it is the page's and not the
+    /// item's, so the item ties into nothing it was not written to -- and an
+    /// insert between two tied notes leaves no tie the engraver cannot match.
+    #[test]
+    fn a_tie_the_barline_made_is_not_the_items_and_an_insert_keeps_the_written_ones() {
+        use clausters_core::notation::{
+            Item, Op, Sheet, mei_to_sheet, sheet_to_mei, voice_to_sheet,
+        };
+        use clausters_core::ratio::Ratio;
+
+        // three quarters, a half across the barline, and two tied quarters
+        let mut voice: Vec<Slot> = (0..3).map(|i| Slot::note(vec![60 + i], 8)).collect();
+        voice.push(Slot::note(vec![64], 16));
+        voice.push(Slot::note(vec![67], 8));
+        voice.push(Slot::note(vec![67], 8));
+        voice[4].tie = true;
+        let sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        let tied = |sheet: &Sheet| -> Vec<u64> {
+            sheet.staves[0].voices[0]
+                .items
+                .iter()
+                .filter(|i| matches!(i, Item::Note { tie: true, .. }))
+                .map(Item::id)
+                .collect()
+        };
+        let mut score =
+            open(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default()).expect("opens");
+        let read = mei_to_sheet(&score.mei()).unwrap();
+        assert_eq!(tied(&read), [5], "the written tie, and not the barline's");
+
+        // a rest inserted after the first note moves everything a quarter on:
+        // the half fits its bar, and the tied pair now straddles nothing
+        let rest = Op::Insert {
+            after: Some(1),
+            dur: Ratio::new(1, 4),
+            pitches: vec![],
+            position: None,
+            staff: 0,
+            voice: 0,
+        };
+        assert!(score.apply(&rest));
+        assert_eq!(tied(&mei_to_sheet(&score.mei()).unwrap()), [5]);
+        // and one inserted between the tied pair parts them
+        let between = Op::Insert {
+            after: Some(5),
+            dur: Ratio::new(1, 4),
+            pitches: vec![],
+            position: None,
+            staff: 0,
+            voice: 0,
+        };
+        assert!(score.apply(&between));
+        let after = score.mei();
+        assert_eq!(tied(&mei_to_sheet(&after).unwrap()), Vec::<u64>::new());
+        assert!(
+            !after.contains("<tie") && !after.contains("tie=\""),
+            "{after}"
+        );
+        drop(score);
+
+        // and the engraver has nothing to say about any of the three, which
+        // is the complaint this was found by: a tie it could not match
+        let said = |sheet: &Sheet| {
+            crate::complaints(&sheet_to_mei(sheet).unwrap(), &EngraveOptions::default())
+                .expect("engraves")
+        };
+        assert_eq!(said(&sheet), Vec::<String>::new());
+        assert_eq!(said(&read), Vec::<String>::new());
+        assert_eq!(said(&mei_to_sheet(&after).unwrap()), Vec::<String>::new());
+        // which is not silence by construction: a tie into another pitch is
+        // what it complains of
+        let mut wrong = sheet.clone();
+        if let Item::Note { tie, .. } = &mut wrong.staves[0].voices[0].items[1] {
+            *tie = true;
+        }
+        let heard = said(&wrong);
+        assert!(heard.iter().any(|line| line.contains("@tie")), "{heard:?}");
     }
 
     #[test]

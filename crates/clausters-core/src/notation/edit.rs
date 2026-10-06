@@ -411,6 +411,34 @@ pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
     Ok(sheet)
 }
 
+/// **A tie that has nothing to tie into is no tie.** A tie is a fact about two
+/// items -- this one sounds on through the next -- and it is stored on the
+/// first alone, so whatever changes what follows it changes what the tie
+/// says: a note inserted between the two, the second deleted or made a rest,
+/// either moved off the other's pitch. Each of those leaves a flag that names
+/// a tie the page cannot draw, and the engraver says so on a stream no
+/// client shows, at every engraving from then on.
+///
+/// So the rule [`tie`] refuses by is kept after every edit and after a
+/// reading: a tie stays where the next item of the voice shares a pitch with
+/// this one -- the letter, the alteration and the octave, whether or not its
+/// accidental is printed -- and is dropped where it does not.
+pub fn settle_ties(sheet: &mut Sheet) {
+    let same = |a: &Pitch, b: &Pitch| (a.step, a.alter, a.octave) == (b.step, b.alter, b.octave);
+    for voice in sheet.voices_mut() {
+        for index in 0..voice.items.len() {
+            let holds = voice.items.get(index + 1).is_some_and(|next| {
+                let here = voice.items[index].pitches();
+                here.iter()
+                    .any(|p| next.pitches().iter().any(|q| same(p, q)))
+            });
+            if !holds && let Item::Note { tie, .. } = &mut voice.items[index] {
+                *tie = false;
+            }
+        }
+    }
+}
+
 /// Pitches as a reader would name them, for a refusal that has to say which
 /// two it was asked to join. A rest has none and says so.
 fn spell(pitches: &[Pitch]) -> String {

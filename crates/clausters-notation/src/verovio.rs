@@ -34,6 +34,8 @@ unsafe extern "C" {
     fn vrvToolkit_edit(tkPtr: *mut c_void, editorAction: *const c_char) -> bool;
     fn vrvToolkit_getPageCount(tkPtr: *mut c_void) -> i32;
     fn vrvToolkit_editInfo(tkPtr: *mut c_void) -> *const c_char;
+    fn vrvToolkit_getLog(tkPtr: *mut c_void) -> *const c_char;
+    fn enableLogToBuffer(value: bool);
 }
 
 /// Serializes every call into libverovio for the process.
@@ -298,6 +300,45 @@ pub fn engrave_svg(data: &str, opts: &EngraveOptions) -> Result<String, EngraveE
         return Err(EngraveError::Load);
     }
     Ok(tk.render_svg(opts.page))
+}
+
+/// **What the engraver says about `data`**: the lines it logs while loading
+/// and laying the document out -- a tie it could not match, an element whose
+/// end it did not find -- which is otherwise a warning on a stream nothing
+/// reads. A document the engraver takes without a word answers nothing.
+///
+/// It is how a run is checked against the engraver's complaint: what this
+/// layer writes is meant to be a document the engraver has nothing to say
+/// about, and a test asks exactly that. The log is the library's own, one for
+/// the process, so the whole of it is under one [`ffi_lock`] and goes back to
+/// the error stream when it is done.
+///
+/// # Errors
+/// As [`engrave_svg`].
+pub fn complaints(data: &str, opts: &EngraveOptions) -> Result<Vec<String>, EngraveError> {
+    let options = options_json(opts);
+    let resources = opts.resource_path.clone().or_else(default_resource_path);
+
+    let _guard = ffi_lock();
+    let tk = Toolkit::new(resources.as_deref())?;
+    tk.set_options(&options)?;
+    // SAFETY: a process-wide switch of the library's, held under the lock
+    // every call into it takes.
+    unsafe { enableLogToBuffer(true) };
+    let loaded = tk.load_data(data);
+    // SAFETY: live toolkit; the returned pointer is copied at once.
+    let log = unsafe { cstr_to_string(vrvToolkit_getLog(tk.ptr)) };
+    // SAFETY: as above.
+    unsafe { enableLogToBuffer(false) };
+    if !loaded? {
+        return Err(EngraveError::Load);
+    }
+    Ok(log
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 /// The verovio options JSON: the fixed defaults plus the caller's scale/width,

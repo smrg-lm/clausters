@@ -474,6 +474,15 @@ pub fn transpose_pitch(pitch: &Pitch, steps: i32, semitones: i32) -> Pitch {
 /// never a partial application: an operation that cannot be carried out leaves
 /// the caller's sheet untouched, because it was never handed over.
 pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
+    let mut sheet = applied(sheet, op)?;
+    // an edit that parts two tied notes, or moves one of them off the
+    // other's pitch, leaves no tie between them
+    edit::settle_ties(&mut sheet);
+    Ok(sheet)
+}
+
+/// The operation itself, before what every edit leaves true is settled.
+fn applied(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
     match op {
         Op::Transpose {
             semitones,
@@ -865,6 +874,76 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    /// A tie is kept by every edit that leaves it two notes of one pitch,
+    /// and dropped by every one that does not: a note between the two, the
+    /// second gone or silenced, either moved off the other's pitch.
+    #[test]
+    fn an_edit_that_parts_two_tied_notes_leaves_no_tie() {
+        let c = pitch(Step::C, 0, 4);
+        let mut sheet = sheet_of(&[c, c, c, c], Ratio::new(1, 4));
+        sheet.assign_ids();
+        let sheet = apply(sheet, &Op::Tie { id: 1, tied: true }).unwrap();
+        let sheet = apply(sheet, &Op::Tie { id: 3, tied: true }).unwrap();
+        let tied = |sheet: &Sheet| -> Vec<u64> {
+            sheet.staves[0].voices[0]
+                .items
+                .iter()
+                .filter(|i| matches!(i, Item::Note { tie: true, .. }))
+                .map(Item::id)
+                .collect()
+        };
+        assert_eq!(tied(&sheet), [1, 3]);
+        let insert = |after: u64, pitches: Vec<Pitch>| Op::Insert {
+            after: Some(after),
+            dur: Ratio::new(1, 4),
+            pitches,
+            position: None,
+            staff: 0,
+            voice: 0,
+        };
+        // elsewhere: both stay
+        assert_eq!(
+            tied(&apply(sheet.clone(), &insert(2, vec![])).unwrap()),
+            [1, 3]
+        );
+        // a rest, or another pitch, between the first pair: that tie goes
+        assert_eq!(
+            tied(&apply(sheet.clone(), &insert(1, vec![])).unwrap()),
+            [3]
+        );
+        let d = pitch(Step::D, 0, 4);
+        assert_eq!(
+            tied(&apply(sheet.clone(), &insert(1, vec![d])).unwrap()),
+            [3]
+        );
+        // the same pitch between them is what the first now ties into
+        assert_eq!(
+            tied(&apply(sheet.clone(), &insert(1, vec![c])).unwrap()),
+            [1, 3]
+        );
+        // the second of a pair silenced, deleted, or moved off the pitch
+        assert_eq!(
+            tied(&apply(sheet.clone(), &Op::Silence { id: 2 }).unwrap()),
+            [3]
+        );
+        assert_eq!(
+            tied(&apply(sheet.clone(), &Op::Delete { id: 4 }).unwrap()),
+            [1]
+        );
+        let moved = apply(sheet.clone(), &Op::MoveSteps { id: 4, steps: 1 }).unwrap();
+        assert_eq!(tied(&moved), [1]);
+        // and the first of one
+        let moved = apply(sheet.clone(), &Op::MoveSteps { id: 1, steps: 1 }).unwrap();
+        assert_eq!(tied(&moved), [3]);
+        // a courtesy accidental is the same pitch still
+        let forced = Pitch { forced: true, ..c };
+        let courtesy = Op::SetPitches {
+            id: 2,
+            pitches: vec![forced],
+        };
+        assert_eq!(tied(&apply(sheet, &courtesy).unwrap()), [1, 3]);
     }
 
     #[test]

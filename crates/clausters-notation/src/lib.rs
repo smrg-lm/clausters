@@ -39,5 +39,5 @@ mod verovio;
 pub use score::{NoteEvent, Page, Score, open};
 #[cfg(feature = "verovio")]
 pub use verovio::{
-    EngraveError, EngraveOptions, Toolkit, default_resource_path, engrave_svg, ffi_lock,
+    EngraveError, EngraveOptions, Toolkit, complaints, default_resource_path, engrave_svg, ffi_lock,
 };

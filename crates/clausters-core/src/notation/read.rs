@@ -1273,10 +1273,23 @@ fn item_at(
 /// hanging off the measure instead. Reading only the attribute would therefore
 /// lose every tie the moment a score had been through the engraver once, which
 /// is the ordinary case rather than an exotic one.
+///
+/// **A tie between two parts of one item is the emitter's**, written where
+/// the item's value crosses a barline and never stored: read as the item's
+/// own it would tie the item into whatever follows it, a tie nobody wrote.
+/// And a tie the document draws to something that is not the next item of
+/// the voice has no place in the model, so what is left is settled by the
+/// rule every edit keeps ([`super::edit::settle_ties`]).
 fn apply_ties(sheet: &mut Sheet, ties: &[(String, String)]) {
+    let item = |reference: &str| -> Option<u64> {
+        reference.strip_prefix('n')?.split('-').next()?.parse().ok()
+    };
     let starts: Vec<u64> = ties
         .iter()
-        .filter_map(|(start, _)| start.strip_prefix('n')?.split('-').next()?.parse().ok())
+        .filter_map(|(start, end)| {
+            let start = item(start)?;
+            (item(end) != Some(start)).then_some(start)
+        })
         .collect();
     for voice in sheet.voices_mut() {
         for item in &mut voice.items {
@@ -1287,6 +1300,7 @@ fn apply_ties(sheet: &mut Sheet, ties: &[(String, String)]) {
             }
         }
     }
+    super::edit::settle_ties(sheet);
 }
 
 #[cfg(test)]
@@ -1593,6 +1607,44 @@ mod tests {
             "a split part rejoined into the item it came from"
         );
         round_trips(&sheet).unwrap();
+    }
+
+    /// The engraver hands a tie back as an element between two ids. One
+    /// between two parts of the same item is the barline's, written by the
+    /// emitter and never stored; one between two items is the item's.
+    #[test]
+    fn a_tie_between_two_parts_of_one_item_is_not_the_items() {
+        let doc = |ties: &str| {
+            format!(
+                "<mei xmlns=\"http://www.music-encoding.org/ns/mei\"><music><body><mdiv><score>\
+                 <scoreDef meter.count=\"2\" meter.unit=\"4\"><staffGrp>\
+                 <staffDef n=\"1\" lines=\"5\" clef.shape=\"G\" clef.line=\"2\"/></staffGrp></scoreDef>\
+                 <section><measure n=\"1\"><staff n=\"1\"><layer n=\"1\">\
+                 <note xml:id=\"n1\" dur=\"4\" pname=\"c\" oct=\"4\"/>\
+                 <note xml:id=\"n2\" dur=\"4\" pname=\"e\" oct=\"4\"/>\
+                 </layer></staff></measure><measure n=\"2\"><staff n=\"1\"><layer n=\"1\">\
+                 <note xml:id=\"n2-2\" dur=\"4\" pname=\"e\" oct=\"4\"/>\
+                 <note xml:id=\"n3\" dur=\"4\" pname=\"{}\" oct=\"4\"/>\
+                 </layer></staff>{ties}</measure></section></score></mdiv></body></music></mei>",
+                if ties.contains("#n3") { "e" } else { "g" }
+            )
+        };
+        let tied = |mei: &str| -> Vec<u64> {
+            let sheet = mei_to_sheet(mei).unwrap();
+            let items = &sheet.staves[0].voices[0].items;
+            assert_eq!(items.len(), 3, "the split note is one item");
+            items
+                .iter()
+                .filter(|i| matches!(i, Item::Note { tie: true, .. }))
+                .map(Item::id)
+                .collect()
+        };
+        // the barline's alone: the half note ties into nothing after it
+        let inner = "<tie startid=\"#n2\" endid=\"#n2-2\"/>";
+        assert_eq!(tied(&doc(inner)), Vec::<u64>::new());
+        // and with the item's own, into the note after its last part
+        let both = format!("{inner}<tie startid=\"#n2-2\" endid=\"#n3\"/>");
+        assert_eq!(tied(&doc(&both)), [2]);
     }
 
     #[test]

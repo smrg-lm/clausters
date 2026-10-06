@@ -4548,7 +4548,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
-- ⬜ **An insert does not carry the ties the document was read with**
+- ✅ **An insert does not carry the ties the document was read with**
   *(found 2026-09-07, reading `notation/score_editor`'s log during the visual
   review's second sitting; moved here from "Found by use" the same day, at the
   user's call: "no tiene sentido que estemos solucionando bugs que son cosas no
@@ -4575,6 +4575,26 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   and the whole of the evidence today is a warning on stderr that no example
   reads and no test asserts -- so whatever is done here starts by making the
   engraver's complaint something a run can be checked against.
+
+  **Fixed 2026-10-06, and the diagnosis above was wrong in its first half.**
+  The `-2` ids are not a transposed copy's: they are the second part of an
+  item a barline splits, which the emitter ties to the first and never stores.
+  The engraver hands every tie back as an element between two ids, and the
+  reader took the one between two parts of *one* item for the item's own --
+  so a note split by a barline came back tied into whatever followed it, and
+  the next writing put out a tie no two notes answered. That is why it began
+  with the first edit, an edit being what reads the engraver's document back,
+  and why it never stopped. The reader now leaves the barline's tie to the
+  emitter.
+
+  The second half was right, and is settled as a rule rather than per verb:
+  **a tie that has nothing to tie into is no tie**
+  (`notation::edit::settle_ties`), kept after every operation and after a
+  reading -- a note inserted between two tied ones, the second deleted or
+  silenced, either moved off the other's pitch, each leaves no tie. And the
+  engraver's complaint is something a run is checked against
+  (`clausters_notation::complaints`, its log for one document): the tests
+  that pin what this layer writes ask that the engraver has nothing to say.
 
 - ✅ **One cursor, it is the transport's, and the content never moves it**
   *(the user, 2026-09-07, dictated after the paste and playhead entries in
