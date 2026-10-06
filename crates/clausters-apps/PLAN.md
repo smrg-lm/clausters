@@ -2403,6 +2403,34 @@ Every entry carries a checkbox.
     the accent as a factor of the note's amp rather than an event over the
     level.
 
+- ⬜ **A glissando that arrives without a new attack** *(decided by the
+  user, 2026-10-06, after the listening pass over glissandos: a glissando
+  often means legato -- a trombone's -- and the page can say so without an
+  instrumental or interpretive model)*. The notation is Xenakis': the note a
+  glissando arrives at is written with its **notehead in parentheses**,
+  which says it is not articulated again. MEI and verovio have it:
+  `note@head.mod="paren"`, which verovio draws (and reads from MusicXML's
+  `notehead parentheses`); the project takes that name and invents none.
+  - **The rule of interpretation**: a note reached by a glissando whose head
+    is in parentheses is not attacked. It joins the event of the note the
+    glissando leaves, as a tied note does: one event for the two written
+    lengths, its pitch curve moving over the first and holding at the
+    arrival over the second -- one note-on, its pitch bend and one note-off
+    in MIDI -- and both items name that event in the render's `items`.
+  - **Glissandos chain**: notes written each with a glissando into the next,
+    every arrival in parentheses, sound as one continuous line -- one event
+    over the whole chain, its curve moving through every pitch in turn, as
+    a tie chain is one sound however many notes it has.
+  - **The palette** takes parentheses for an accidental as well as for a
+    notehead: verovio encloses an accidental too (`accid@enclose="paren"`),
+    the cautionary accidental's sign, so the entry is one family of two
+    marks.
+  - What it needs, all of it the model's growing as the ○ entries did: a
+    field of the note's marks (`head_mod`) and one of its accidental's
+    enclosure, their emission and reading, an `Op`, the palette entries, the
+    interpreter's join, the render's items, the helpers in both clients and
+    their tests.
+
 ## Found by use: the running list of fixes
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
