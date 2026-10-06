@@ -1099,6 +1099,18 @@ its target so that everything that plays a lane by its channel needs to learn
 nothing. Both clients' `to_timeline` and `to_sequence` are this render, and a
 score's `render_events` is `to_sequence` of its sheet.
 
+**The chrome is optional, and it is absent rather than hidden.** A standalone
+host opens the window whole, since with no holder beside it the window is the
+only way to reach what the editor does. A client has the handle, and may open
+the editor *bare* (`"chrome": false` in the open request,
+`ScoreEditor::set_bare`): the crate then names no tool, no palette entry and no
+dialog for the caller to number, and composes no menu bar and no status line
+— the window is the page in its scroll, so none of the rest is engraved for,
+sent or corrected. The window's `keys` are not chrome: they are bindings of the
+host's key table in the scopes the window names, so every key verb is still
+the editor's. The switch is in the crate because the composition is; a client
+passes one option through and adds nothing of its own.
+
 **A file is its holder's to read and write.** The score editor never touches
 one: a save or an open is a turn whose outcome names the path (`save`,
 `open`), and whoever drives the editor -- the native host with the disk, a

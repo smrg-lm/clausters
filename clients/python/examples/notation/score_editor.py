@@ -96,6 +96,12 @@ What it shows, in the order it does it:
   Export writes the same sequence as a MIDI file or a clip.
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike.
+* **The chrome is optional, and the keys are not chrome.** `alone()` opens
+  the same score with ``chrome=False``: the page in its scroll and nothing
+  composed around it -- the light window of a script that edits through the
+  handle. The keys stay, and what a hand writes there is read where
+  everything else is, on the score: `on_change` is told once per gesture, and
+  prints the pitches of the sequence the score renders into.
 
 The engraver is **libverovio**, which ships inside the installed package. In a
 source checkout, build and stage it once (``third_party/BUILD-VEROVIO.md``)::
@@ -256,6 +262,28 @@ def roll():
     return edit(score.render_events(), title="The score, rendered")
 
 
+# %% [markdown]
+# ## The page alone, and the notes back in the script
+# The chrome is how a hand reaches what the editor does when nothing else can:
+# a standalone host has only the window. A script has the handle, so it can
+# open the same score with none of it -- `chrome=False` is the page in its
+# scroll, with nothing composed around it and so nothing to send or to keep
+# current. The keys are not chrome and stay: N and the letters write, the
+# arrows and Delete act on the selection, the space bar plays, Ctrl+Z walks
+# back. What a hand writes there is read on the score, like everything else:
+# `on_change` is told once per gesture, and what it prints is the line as the
+# code would take it on -- the pitches of the sequence the score renders into.
+
+# %%
+def alone():
+    """The same score in a window with no chrome, which prints the pitches
+    it renders into after each gesture."""
+    page = edit(score, chrome=False, title="The page alone", width=900, height=600)
+    page.on_change = lambda: print(
+        [event["midinote"] for _, event in score.render_events()])
+    return page
+
+
 # %%
 def run():
     """Hold the window open until it is closed. Nothing is driven here: the
@@ -271,4 +299,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         session.close()
 else:
     print("editor up - run() to hold the window, roll() to see the score as a "
-          "roll, session.close() to end")
+          "roll, alone() for its page with no chrome, session.close() to end")

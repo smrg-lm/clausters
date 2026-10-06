@@ -184,6 +184,40 @@ def test_a_text_of_the_page_is_written_and_placed(score):
     assert "header" not in score.sheet()
 
 
+def test_without_chrome_the_window_is_the_page_and_the_handle_edits(score):
+    editor = edit(score, open=False, chrome=False)
+    assert isinstance(editor, ScoreEditor) and editor.chrome is False
+    tree = editor.draw()
+    # the page in its scroll, and nothing around it: no toolbar, no palettes,
+    # no status line, no dialogs, no menu bar, no symbol to label a tool with
+    (scroll,) = tree["children"]
+    assert scroll["type"] == "plane" and scroll["children"][0]["type"] == "score"
+    assert "menu" not in tree and "glyphs" not in tree
+    # the keys are the window's, and stay
+    assert tree["keys"] == ["score"] and tree["plays"] is True
+    # the handle edits, and is told of an edit a hand made on the page
+    told = []
+    editor.on_change = lambda: told.append(_items(score)[0]["pitches"][0]["step"])
+    first = _items(score)[0]["id"]
+    editor.select([f"n{first}"])
+    assert editor.move(1) and told == ["d"]
+    page = editor.view.widget(editor, "page", editor.structure)
+    # a drag names the staff position the note was let go on, here the G
+    # over the staff (a script's edit raised the floor, so the drag states no
+    # version)
+    assert editor.apply("/gui_event", [page, 1, 0, "transpose", f"n{first}", 1])
+    assert told == ["d", "g"]
+    # what was edited is read on the score: its model, and the sequence it
+    # renders into, for the code to go on from
+    played = [event["midinote"] for _, event in score.render_events()]
+    assert len(played) == len(_items(score)) and played[0] == 79
+    # a verb refused answers so, with no status line to say why
+    editor.select([])
+    assert not editor.tie()
+    # and the whole window is what opens when nothing asks otherwise
+    assert ScoreEditor(score).chrome is True
+
+
 def test_the_input_state_is_the_handles_and_a_press_writes_it(score):
     editor = ScoreEditor(score, value=(1, 8))
     editor.draw()

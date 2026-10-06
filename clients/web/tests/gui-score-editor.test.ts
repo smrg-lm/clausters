@@ -282,6 +282,49 @@ if (!existsSync(engraver)) {
         assert.equal(sheet.staves[0].label, "Flute");
     });
 
+    test("without chrome the window is the page and the handle edits", async () => {
+        const score = await Score.open(PHRASE);
+        const editor = (await edit(score, { open: false, chrome: false })) as ScoreEditor;
+        assert.ok(editor instanceof ScoreEditor);
+        assert.equal(editor.chrome, false);
+        const tree = editor.draw() as GuiNode & Record<string, unknown>;
+        // the page in its scroll, and nothing around it: no toolbar, no
+        // palettes, no status line, no dialogs, no menu bar, no symbol to
+        // label a tool with
+        assert.equal(tree.children?.length, 1);
+        const scroll = (tree.children ?? [])[0];
+        assert.equal(scroll.type, "plane");
+        assert.equal((scroll.children ?? [])[0].type, "score");
+        assert.ok(!("menu" in tree) && !("glyphs" in tree));
+        // the keys are the window's, and stay
+        assert.deepEqual(tree.keys, ["score"]);
+        assert.equal(tree.plays, true);
+        // the handle edits, and is told of an edit a hand made on the page
+        const step = () => (items(score)[0].pitches?.[0] as { step?: string }).step;
+        const told: (string | undefined)[] = [];
+        editor.onChange = () => told.push(step());
+        const first = items(score)[0].id;
+        editor.select([`n${first}`]);
+        assert.ok(editor.move(1));
+        assert.deepEqual(told, ["d"]);
+        const page = editor.view!.widget(editor, "page", editor.structure);
+        // a drag names the staff position the note was let go on, here the G
+        // over the staff (a page's edit raised the floor, so the drag states
+        // no version)
+        assert.ok(editor.apply("/gui_event", [page, 1, 0, "transpose", `n${first}`, 1]));
+        assert.deepEqual(told, ["d", "g"]);
+        // what was edited is read on the score: its model, and the sequence
+        // it renders into, for the code to go on from
+        const played = [...score.renderEvents()].map(([, event]) => event.get("midinote"));
+        assert.equal(played.length, items(score).length);
+        assert.equal(played[0], 79);
+        // a verb refused answers so, with no status line to say why
+        editor.select([]);
+        assert.equal(editor.tie(), false);
+        // and the whole window is what opens when nothing asks otherwise
+        assert.equal(new ScoreEditor(score).chrome, true);
+    });
+
     test("a tool and a menu pick are the editor's verbs", async () => {
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);

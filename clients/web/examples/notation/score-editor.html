@@ -17,8 +17,8 @@
             white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       #stage { align-self: stretch; height: min(86vh, 800px); }
-      #roll { align-self: stretch; height: min(60vh, 520px); }
-      #stage canvas, #roll canvas { display: block; width: 100%; height: 100%; }
+      #roll, #alone { align-self: stretch; height: min(60vh, 520px); }
+      #stage canvas, #roll canvas, #alone canvas { display: block; width: 100%; height: 100%; }
     </style>
   </head>
   <body>
@@ -137,6 +137,13 @@ a clip.
 <b>One undo order.</b> Ctrl+Z and Ctrl+Shift+Z over the window walk the
 editor's entries and the page's alike.
 
+<b>The chrome is optional, and the keys are not chrome.</b> <b>page alone</b>
+opens the same score with <code>chrome: false</code>: the page in its scroll
+and nothing composed around it -- the light window of a page that edits
+through the handle. The keys stay, and what a hand writes there is read where
+everything else is, on the score: <code>onChange</code> is told once per
+gesture, and logs the pitches of the sequence the score renders into.
+
 <b>Click</b> a note to select it; the status line says what is selected.
 <b>Ctrl+click</b> another to add it, <b>Shift+click</b> one to select
 everything up to it. <b>Drag</b> a note up or down the staff to move it (which
@@ -150,10 +157,12 @@ process, no socket.</div>
       <div class="row">
         <button id="start">start</button>
         <button id="open-roll" disabled>roll</button>
+        <button id="open-alone" disabled>page alone</button>
       </div>
 
       <div id="stage"></div>
       <div id="roll"></div>
+      <div id="alone"></div>
       <pre id="log"></pre>
     </main>
 
@@ -167,8 +176,9 @@ process, no socket.</div>
       in this tab and draws into an element, nothing is held open, and the file
       is in the page's own storage -- plus the engraver's own: it is fetched on
       demand here, so opening the score awaits a download that a script's
-      bundled library does not. The script's `roll()` is a function a reader
-      calls at the prompt; a page has no prompt, so it is a button.
+      bundled library does not. The script's `roll()` and `alone()` are
+      functions a reader calls at the prompt; a page has no prompt, so each is
+      a button.
 
       Serve clients/web (the package root) and open
       /examples/notation/score-editor.html. Build it first: ./build.sh
@@ -205,6 +215,27 @@ B c d e | f2 e d | c B A B | G4 |
       // it stays in that sequence.
       const roll = () =>
         gui.edit(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
+
+      // The page alone, and the notes back in the page's code. The chrome is
+      // how a hand reaches what the editor does when nothing else can: a
+      // standalone host has only the window. A page has the handle, so it can
+      // open the same score with none of it -- `chrome: false` is the page in
+      // its scroll, with nothing composed around it and so nothing to send or
+      // to keep current. The keys are not chrome and stay: N and the letters
+      // write, the arrows and Delete act on the selection, the space bar
+      // plays, Ctrl+Z walks back. What a hand writes there is read on the
+      // score, like everything else: `onChange` is told once per gesture, and
+      // what it logs is the line as the code would take it on -- the pitches
+      // of the sequence the score renders into.
+      const alone = async () => {
+        const page = await gui.edit(score, {
+          chrome: false, title: "The page alone", width: 900, height: 600,
+          stage: el("alone"),
+        });
+        page.onChange = () => log(JSON.stringify(
+          [...score.renderEvents()].map(([, event]) => event.props.midinote)));
+        return page;
+      };
 
       async function start() {
         el("start").disabled = true;
@@ -280,6 +311,7 @@ B c d e | f2 e d | c B A B | G4 |
         log(`saved to ${await editor.save(SAVED)}`);
 
         el("open-roll").disabled = false;
+        el("open-alone").disabled = false;
         editor.onClosed(() => log("window closed"));
         log("click a note to select it (Ctrl adds, Shift extends), drag one up or "
           + "down the staff, N to write (a to g, Escape leaves); the space bar "
@@ -288,6 +320,7 @@ B c d e | f2 e d | c B A B | G4 |
 
       el("start").onclick = () => start().catch((e) => log(`error: ${e}`));
       el("open-roll").onclick = () => roll().catch((e) => log(`error: ${e}`));
+      el("open-alone").onclick = () => alone().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>

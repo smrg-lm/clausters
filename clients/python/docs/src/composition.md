@@ -250,6 +250,36 @@ times to repeat — and a file's path. Nothing is written until OK, which is the
 one step of the history however many fields changed; a field that cannot be
 read keeps the dialog up and the status bar says why.
 
+### Without the chrome: the page and the handle
+
+The chrome — the menu bar, the toolbar, the palettes, the status line, the
+dialogs — is how a hand reaches what the editor does when nothing else can: a
+standalone host opens the application with nobody beside it, so there the
+window is whole, always. A script has the handle, and can open the same editor
+with none of it:
+
+```python
+editor = edit(score, chrome=False)
+editor.on_change = lambda: process(score.render_events())
+```
+
+`chrome=False` is the page in its scroll. Nothing around it is composed, so
+nothing around it is engraved for, sent or kept current: the window of the
+example is three widgets where the whole application is over two hundred, and
+a quarter of the bytes. **The keys are not chrome and stay** — `N` and note
+entry, the arrows and Delete over the selection, the space bar, Ctrl+Z —
+since a key is a binding of the window and not an entry of a menu. Every verb
+of the handle stays too, and with no status line to say why one was refused,
+its answer is what says so. What a dialog asked is asked of the handle: a
+score with no file yet is saved with `editor.save(path)`.
+
+What a hand writes there is read where everything else is, on the score the
+script holds: `score.sheet()` is its model and `score.render_events()` the sequence it
+renders into, and `on_change` is told once per gesture, whoever made it. The
+option is every editor's (`edit(x, chrome=False)`); the score editor is the one
+application with chrome today, so an editor with none opens the same either
+way.
+
 ### The verbs, over what is selected
 
 `move`, `scale`, `articulation`, `dynamic`, `ornament`, `grace`,

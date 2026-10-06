@@ -103,6 +103,14 @@ pub struct ScoreEditor {
     conversation: Conversation,
     window: Option<i32>,
     ids: Option<Ids>,
+    /// **Whether the window is the page alone**, with no chrome around it: no
+    /// menu bar, no toolbar, no palettes, no status line and no dialogs --
+    /// none of it composed, so none of it engraved for, sent or corrected.
+    /// The keys stay, since they are the window's and not the menu's. It is
+    /// how a holder that edits through its own handle opens the editor; a
+    /// host with no holder beside it opens the whole window, which is then
+    /// the only way to reach what the editor does.
+    bare: bool,
     /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
     tools: tools::Ids,
     /// The dialogs' widgets, by name ([`dialogs::names`]).
@@ -196,6 +204,7 @@ struct Opened {
     h: i64,
     value: Option<Ratio>,
     version: i64,
+    chrome: bool,
 }
 
 impl Default for Opened {
@@ -206,6 +215,7 @@ impl Default for Opened {
             h: 640,
             value: None,
             version: 1,
+            chrome: true,
         }
     }
 }
@@ -235,6 +245,7 @@ impl ScoreEditor {
             conversation: Conversation::new(version),
             window: None,
             ids: None,
+            bare: false,
             tools: tools::Ids::new(),
             dialogs: dialogs::Ids::new(),
             palettes: palettes::Ids::new(),
@@ -269,6 +280,18 @@ impl ScoreEditor {
         &self.score
     }
 
+    /// **Whether the window is the page alone**, with no chrome: what a
+    /// holder that edits through its own handle asks for. It is read when the
+    /// window is composed, so it is said before [`window`](Self::window).
+    pub fn set_bare(&mut self, bare: bool) {
+        self.bare = bare;
+    }
+
+    /// Whether the window is the page alone ([`set_bare`](Self::set_bare)).
+    pub fn bare(&self) -> bool {
+        self.bare
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, Score<AnyEngraver>> {
         // A poisoned lock is a panic elsewhere while the score was held; the
         // document is still the score, and refusing it here would lose it.
@@ -278,8 +301,21 @@ impl ScoreEditor {
     /// **The window**, with the page under `ids.page` and every widget of the
     /// chrome under the id `chrome` gives it -- which are then the widgets
     /// the editor answers for. Chrome left unnumbered is chrome the window
-    /// does not have: no toolbar, no palettes, no dialogs.
+    /// does not have: no toolbar, no palettes, no dialogs. A bare editor
+    /// ([`set_bare`](Self::set_bare)) has none whatever was numbered, and no
+    /// menu bar or status line either: its window is the page in its scroll.
     pub fn window(&mut self, ids: Ids, chrome: Chrome) -> Value {
+        let (ids, chrome) = if self.bare {
+            (
+                Ids {
+                    status: None,
+                    ..ids
+                },
+                Chrome::default(),
+            )
+        } else {
+            (ids, chrome)
+        };
         self.ids = Some(ids);
         self.tools = chrome.tools;
         self.dialogs = chrome.dialogs;
@@ -301,7 +337,7 @@ impl ScoreEditor {
             self.outlines = Some(found);
         }
         let none = tools::Outlines::new();
-        let outlines = self.outlines.clone().unwrap_or(none);
+        let outlines = self.outlines.clone().filter(|_| !self.bare).unwrap_or(none);
         let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
         window(Window {
@@ -309,12 +345,12 @@ impl ScoreEditor {
             ids,
             title: &self.title,
             size: self.size,
-            status: &self.describe(),
+            status: (!self.bare).then(|| self.describe()),
             entry: self.entry,
             edit_cursor: self.edit_cursor(),
             keys: self.keys(),
             scale: self.scale(),
-            menu: self.menu(),
+            menu: (!self.bare).then(|| self.menu()),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
             dialogs: dialogs::stack(&self.dialogs),
             palettes: palettes::column(&self.palettes, &outlines),
@@ -446,9 +482,16 @@ impl ScoreEditor {
             })
             .collect();
         if let Some(window) = self.window {
+            // a bare window has no menu bar to correct; its keys still follow
+            // the mode
+            let props = if self.bare {
+                json!({"keys": self.keys()})
+            } else {
+                json!({"menu": self.menu(), "keys": self.keys()})
+            };
             out.push(Correction {
                 widget: i64::from(window),
-                props: json!({"menu": self.menu(), "keys": self.keys()}),
+                props,
             });
         }
         out
@@ -1813,13 +1856,16 @@ impl Converse for ScoreEditor {
     }
 }
 
-/// **A score editor from JSON**: `{"title", "w", "h", "value", "version"}`
-/// over `score`.
+/// **A score editor from JSON**: `{"title", "w", "h", "value", "version",
+/// "chrome"}` over `score`. `chrome`, `false`, opens the page alone
+/// ([`ScoreEditor::set_bare`]); left out, the window is the whole
+/// application's.
 pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = ScoreEditor::new(score, opened.version);
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
+    editor.bare = !opened.chrome;
     if let Some(value) = opened.value.filter(Ratio::is_positive) {
         editor.value = value;
     }
@@ -1913,9 +1959,15 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
                 )
                 .to_string()
         }
+        // a bare editor names no chrome, so a caller numbers none
+        "tools" | "dialogs" | "palettes" if editor.bare => {
+            let verb = request["verb"].as_str().unwrap_or_default();
+            json!({verb: []}).to_string()
+        }
         "tools" => json!({"tools": tools::TOOLS}).to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "palettes" => json!({"palettes": palettes::names()}).to_string(),
+        "chrome" => json!({"chrome": !editor.bare}).to_string(),
         "props" => {
             let widget = id("widget").unwrap_or(0);
             match editor

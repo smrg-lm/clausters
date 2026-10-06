@@ -148,6 +148,17 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
     sampleRate?: number;
     /** The server it plays on; absent, the ambient one when it first plays. */
     server?: Server | null;
+    /**
+     * `false` opens the page alone, in its scroll: no menu bar, no toolbar, no
+     * palettes, no status line and no dialogs, none of them composed -- the
+     * window a page wants when it edits through this handle and reads the
+     * score back. The keys stay (N and note entry, the arrows, Delete, the
+     * space bar, Ctrl+Z), and so does every verb of the editor. A verb refused
+     * says why on the status line, which such a window does not have: the
+     * verb answers `false`. What a form asked -- the path of a first Ctrl+S
+     * -- is asked of the handle instead ({@link ScoreEditor.save}).
+     */
+    chrome?: boolean;
 }
 
 /** A score's page setup: lengths in tenths of a millimetre, the staff in hundredths. */
@@ -229,6 +240,7 @@ export class ScoreEditor extends Editor<Score> {
             h: this.size[1],
         };
         if (value !== undefined) request.value = [Math.trunc(value[0]), Math.trunc(value[1])];
+        if (!this.chrome) request.chrome = false;
         const opened = this.editing.openScore(`score:${keyOfScore(score)}`, score, request, domain);
         this.member = opened.member;
         this.structureId = opened.identity;
@@ -987,16 +999,20 @@ export class ScoreEditor extends Editor<Score> {
      * is on the window's status bar.
      */
     #act(call: Record<string, unknown>): boolean {
-        const turned = this.editing.act(this.member, plain(call) as Record<string, unknown>);
-        const outcome = (turned.outcome ?? {}) as Outcome;
-        const changed = outcome.changed === true;
-        if (changed) {
-            this.dirty = true;
-            this.editing.changed();
-            this.#update();
-        }
-        if (this.windowId !== null) this.echo.send(outcome.answer);
-        return changed;
+        // one turn, as a gesture on the page is: what closes it tells every
+        // view of the score, this one included, that the score changed
+        return this.editing.turn(this, () => {
+            const turned = this.editing.act(this.member, plain(call) as Record<string, unknown>);
+            const outcome = (turned.outcome ?? {}) as Outcome;
+            const changed = outcome.changed === true;
+            if (changed) {
+                this.dirty = true;
+                this.editing.changed();
+                this.#update();
+            }
+            if (this.windowId !== null) this.echo.send(outcome.answer);
+            return changed;
+        });
     }
 
     // ---- the crate's turns ----

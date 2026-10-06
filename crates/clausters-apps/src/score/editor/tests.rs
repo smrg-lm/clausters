@@ -152,6 +152,62 @@ fn the_window_holds_the_page_in_a_scroll_over_a_status_line() {
     assert_eq!(status["text"], HINT);
 }
 
+/// A holder that edits through its handle opens the page alone: nothing
+/// around it is composed, so nothing around it is engraved for, sent or
+/// corrected -- and the keys, which are the window's, still write.
+#[test]
+fn a_bare_window_is_the_page_and_its_keys() {
+    let mut editor = new_json(shared(), r#"{"chrome": false}"#);
+    assert!(editor.bare());
+    // it names no chrome for a caller to number...
+    for verb in ["tools", "dialogs", "palettes"] {
+        let named = call_json(&mut editor, &json!({"verb": verb}).to_string());
+        let named: Value = serde_json::from_str(&named).unwrap();
+        assert_eq!(named[verb], json!([]), "{verb}");
+    }
+    // ...and composes none, whatever was numbered anyway
+    let asked = json!({
+        "verb": "window", "widget": 10, "scroll": 11, "status": 12,
+        "tools": {"entry": 20}, "palettes": {"dynamic:f": 30},
+    });
+    let window: Value = serde_json::from_str(&call_json(&mut editor, &asked.to_string())).unwrap();
+    let children = window["children"].as_array().unwrap();
+    assert_eq!(
+        children.len(),
+        1,
+        "the page in its scroll, and nothing else"
+    );
+    assert_eq!(children[0]["type"], "plane");
+    assert_eq!(children[0]["children"][0]["id"], 10);
+    assert!(window.get("menu").is_none(), "no menu bar");
+    assert!(
+        window.get("glyphs").is_none(),
+        "no symbol to label a tool with"
+    );
+    assert_eq!(window["keys"], json!(["score"]));
+    assert_eq!(window["plays"], true);
+    // a key is still the editor's verb: N enters note entry, and what the
+    // window is corrected with is its keys -- no menu, no tool, no status
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    let out = editor.event(&key("entry"), 1);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("an answer")
+    };
+    let of = |widget: i64| corrections.iter().find(|c| c.widget == widget);
+    assert_eq!(
+        of(1).expect("the window").props,
+        json!({"keys": ["score", "note_entry"]})
+    );
+    assert!(of(12).is_none(), "no status line to correct");
+    assert_eq!(of(10).expect("the page").props["entry"], true);
+    // and the letters write, as in the whole window
+    let out = editor.event(&key("pitch_g"), 1);
+    assert!(out.changed && out.record.is_some());
+    // the whole window is still what is opened when nothing asks otherwise
+    let whole = new_json(shared(), "{}");
+    assert!(!whole.bare());
+}
+
 #[test]
 fn a_press_selects_and_the_status_line_says_what() {
     let mut editor = opened();

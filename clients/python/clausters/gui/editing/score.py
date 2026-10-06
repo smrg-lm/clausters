@@ -98,6 +98,15 @@ class ScoreEditor(Editor):
             ``(numerator, denominator)`` of a whole note; a quarter by default.
         server: the `clausters.defs.Server` it plays on; ``None`` resolves the
             ambient one when it first plays.
+        chrome: ``False`` opens the page alone, in its scroll: no menu bar,
+            no toolbar, no palettes, no status line and no dialogs, none of
+            them composed -- the window a script wants when it edits through
+            this handle and reads the score back. The keys stay (N and note
+            entry, the arrows, Delete, the space bar, Ctrl+Z), and so does
+            every verb below. A verb refused says why on the status line,
+            which such a window does not have: the verb answers ``False``.
+            What a form asked -- the path of a first Ctrl+S -- is asked of
+            the handle instead (`save`).
     """
 
     def __init__(self, score, *, title: str = "Score", value=None,
@@ -113,6 +122,8 @@ class ScoreEditor(Editor):
         request = {"title": self.title, "w": int(self.size[0]), "h": int(self.size[1])}
         if value is not None:
             request["value"] = [int(value[0]), int(value[1])]
+        if not self.chrome:
+            request["chrome"] = False
         self._member, self._structure_id = self._editing.open_score(
             f"score:{id(score)}", score, request, self.domain)
 

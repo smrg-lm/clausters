@@ -81,6 +81,15 @@ class Editor:
         extra: widgets appended to the window after the picture -- a transport
             panel, a readout. They are the script's, so the editor never touches
             their ids; keep them clear of ``base_id``.
+        chrome: whether the window carries the application's chrome -- a menu
+            bar, a toolbar, palettes, a status line, dialogs: whatever the
+            application composes around what is edited. ``False`` opens what
+            is edited alone, for a script that edits through this handle and
+            wants the window light: none of it is composed, so none of it is
+            sent or kept current. **The keys stay** -- they are the window's,
+            not the menu's -- and so does every verb of the handle. The score
+            editor is the one application with chrome today; an editor with
+            none opens the same either way.
         base_id: the first widget id a **host-less** draw counts from (tests and
             tree inspection). Once `open`ed, the ids come from the host's own
             recycling pool instead, so the two never collide and a redraw's ids
@@ -98,13 +107,16 @@ class Editor:
                  domain=None, view=None, context=None,
                  title: str = "Editor", extra=(),
                  width: int = 1000, height: int = 520, base_id: int = BASE_ID,
-                 app=None):
+                 app=None, chrome: bool = True):
         #: What is edited. A view over an arrangement calls it `element`, which is the
         #: arrangement's word for the same slot.
         self.structure = structure
         self.sample_rate = float(sample_rate)
         self.title = title
         self.size = (int(width), int(height))
+        #: Whether the window carries the application's chrome, as it was
+        #: opened: what is around what is edited, never the keys.
+        self.chrome = bool(chrome)
         #: Widgets appended to the window after the picture. They are the
         #: script's -- the editor never touches their ids -- so keep them clear of
         #: ``base_id``.

@@ -107,6 +107,17 @@ export interface GenericEditorOptions<S> {
     width?: number;
     height?: number;
     /**
+     * Whether the window carries the application's chrome -- a menu bar, a
+     * toolbar, palettes, a status line, dialogs: whatever the application
+     * composes around what is edited. `false` opens what is edited alone, for
+     * a page that edits through this handle and wants the window light: none
+     * of it is composed, so none of it is sent or kept current. **The keys
+     * stay** -- they are the window's, not the menu's -- and so does every
+     * verb of the handle. The score editor is the one application with chrome
+     * today; an editor with none opens the same either way.
+     */
+    chrome?: boolean;
+    /**
      * The first widget id a **host-less** draw counts from (tests and tree
      * inspection). Once opened, the ids come from the host's own recycling pool
      * instead, so the two never collide. Ignored when `app` is given, since the
@@ -138,6 +149,11 @@ export class Editor<S = unknown> implements Adopting {
     sampleRate: number;
     title: string;
     size: [number, number];
+    /**
+     * Whether the window carries the application's chrome, as it was opened:
+     * what is around what is edited, never the keys.
+     */
+    chrome: boolean;
     /**
      * Widgets appended to the window after the picture. They are the script's --
      * the editor never touches their ids.
@@ -253,12 +269,14 @@ export class Editor<S = unknown> implements Adopting {
             height = 520,
             baseId = BASE_ID,
             app = null,
+            chrome = true,
         }: GenericEditorOptions<S>,
     ) {
         this.structure = structure;
         this.sampleRate = Number(sampleRate);
         this.title = title;
         this.size = [Math.trunc(width), Math.trunc(height)];
+        this.chrome = Boolean(chrome);
         this.extra = [...extra];
         this.domain = domain;
         this.view = view;

@@ -2329,6 +2329,43 @@ Every entry carries a checkbox.
   sections and a dialog (`G37`–`G40`, `clients/gui/PLAN.md`; the
   `panels/chrome` example holds one of each). Which entries an application puts
   in them is still this entry's.)*
+  *(2026-10-06, the user, with the score editor the one application that has
+  chrome: an application run standalone has its chrome, since that is how it
+  is handled there; run from a client it is optional -- the entry below -- so
+  what this entry designs for each remaining application is the standalone
+  window, and a client opening it bare is part of the acceptance.)*
+
+- ✅ **An application opens without its chrome from a client** *(asked for by
+  the user 2026-10-06, over the score editor, as a rule for every editor once
+  it has chrome: it must be possible to run one from a client with no chrome,
+  the client editing through the handle; the application is lighter that way;
+  the keys are kept; and what matters most in editing a roll or a score from
+  a client is reading back the notes or the events a hand edited, to add to
+  or process in code)*. **Done 2026-10-06 for the score editor**, where the
+  chrome is: `"chrome": false` in the open request (`ScoreEditor::set_bare`)
+  opens the page in its scroll and nothing else. The switch is in the crate,
+  where the window is composed, so a client passes one option through: a bare
+  editor names no tool, palette entry or dialog for the caller to number, and
+  composes no menu bar, no status line and no symbol table. **Absent rather
+  than hidden** -- the user's condition for hiding was that it cost nothing,
+  and what is not composed is not engraved for, sent or corrected: the
+  example's window is 3 widgets where the whole one is 233, a def of 26 kB
+  where it is 113 kB, and a turn that moved the input state corrects the
+  window's `keys` alone rather than every tool and the whole menu bar. The
+  keys stay because they were never the menu's: the window's `keys` prop
+  names scopes of the host's table. Both clients: `chrome` on `Editor` and on
+  `edit` (`chrome=False`, `chrome: false`), on the base class so the option
+  is every editor's and an editor with no chrome opens the same either way;
+  the default is the whole window. Reading back was already there and is now
+  the example's step (`alone()`, the page's *page alone*): the score the
+  client holds is the edited one (`sheet`, `render_events`), and `on_change`
+  is told once per gesture. *Left open:* a bare window has no status line, so
+  a refused verb's reason is not shown and is not on the handle either -- the
+  verb answers `false`; a form's question (the path of a first Ctrl+S, the
+  close with unsaved work) has no window to be asked in, and the handle's
+  `save` is the way; parts of the chrome one at a time (the status line
+  alone) and a switch while the window is open -- which is the window
+  composed again -- are not built, and wait for a use.
 
 - ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists

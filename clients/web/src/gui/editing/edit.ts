@@ -60,6 +60,11 @@ export interface EditOptions {
      */
     extra?: GenericEditorOptions<never>["extra"];
     /**
+     * `false` opens what is edited with none of the application's chrome
+     * around it, the keys kept ({@link GenericEditorOptions.chrome}).
+     */
+    chrome?: boolean;
+    /**
      * An editing context the caller already has, for a view that joins one --
      * which is what makes a composed window undo across several structures in
      * one order.

@@ -125,8 +125,8 @@ pub struct Window<'a> {
     /// The window's title and its size.
     pub title: &'a str,
     pub size: (i64, i64),
-    /// What the status line says.
-    pub status: &'a str,
+    /// What the status line says, or `None` for a window with none.
+    pub status: Option<String>,
     /// Whether the page is in note entry.
     pub entry: bool,
     /// Where note entry writes next, as the page's `edit_cursor` prop, or
@@ -136,8 +136,8 @@ pub struct Window<'a> {
     pub keys: Value,
     /// How big the drawing is ([`scale_for`]).
     pub scale: f64,
-    /// The menu bar ([`menu::menu`]).
-    pub menu: Value,
+    /// The menu bar ([`menu::menu`]), or `None` for a window with none.
+    pub menu: Option<Value>,
     /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
     pub toolbar: Option<Value>,
     /// The dialogs ([`dialogs::stack`]), when the caller numbered them.
@@ -155,6 +155,11 @@ pub struct Window<'a> {
 /// scroll that pans both ways and zooms; the status line under them; and the
 /// dialogs. A script's own widgets are the client's to
 /// append, as in every application here.
+///
+/// **Every part but the drawing is chrome, and each is left out by being
+/// absent** -- so a window composed with none of them is the page in its
+/// scroll, and what it costs is the page. The keys are not chrome: they are
+/// the window's, and stay.
 pub fn window(w: Window<'_>) -> Value {
     let Window {
         page,
@@ -204,10 +209,13 @@ pub fn window(w: Window<'_>) -> Value {
     if let (Some(id), Some(map)) = (ids.scroll, scroll.as_object_mut()) {
         map.insert("id".into(), json!(id));
     }
-    let mut line = json!({"type": "label", "text": status, "h": STATUS_H});
-    if let (Some(id), Some(map)) = (ids.status, line.as_object_mut()) {
-        map.insert("id".into(), json!(id));
-    }
+    let line = status.map(|status| {
+        let mut line = json!({"type": "label", "text": status, "h": STATUS_H});
+        if let (Some(id), Some(map)) = (ids.status, line.as_object_mut()) {
+            map.insert("id".into(), json!(id));
+        }
+        line
+    });
     // **The palettes stand beside the page**, with a divider a drag moves
     // between them; a window without them gives the page the whole width.
     let work = match palettes {
@@ -223,7 +231,8 @@ pub fn window(w: Window<'_>) -> Value {
     };
     let children: Vec<Value> = toolbar
         .into_iter()
-        .chain([work, line])
+        .chain([work])
+        .chain(line)
         .chain(dialogs)
         .collect();
     let mut window = json!({
@@ -232,7 +241,6 @@ pub fn window(w: Window<'_>) -> Value {
         "w": size.0,
         "h": size.1,
         "flow": "col",
-        "menu": menu,
         // **The space bar is the application's**: it plays the score through
         // the editor's own playback, so the host's monitor stays out.
         "plays": true,
@@ -241,6 +249,9 @@ pub fn window(w: Window<'_>) -> Value {
         "keys": keys,
         "children": children,
     });
+    if let (Some(menu), Some(map)) = (menu, window.as_object_mut()) {
+        map.insert("menu".into(), menu);
+    }
     if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {
         map.insert("glyphs".into(), json!(glyphs));
     }

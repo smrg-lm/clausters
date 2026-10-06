@@ -75,7 +75,9 @@ def edit(structure, *, sample_rate: float = 0.0,
             `clausters.gui.editing.Editor.window`), and ``context`` for a view
             that joins an editing context the caller already has (which is what
             makes a composed window undo across several structures in one
-            order). A curve also takes ``min``/``max`` and ``start``/``end``,
+            order), and ``chrome``: ``False`` opens what is edited with none
+            of the application's chrome around it, the keys kept
+            (`clausters.gui.editing.Editor`). A curve also takes ``min``/``max`` and ``start``/``end``,
             the ranges its values and its times are kept in
             (`clausters.gui.editing.PointsEditor`). A
             sequence (or a timeline, rendered into one) takes ``y_axis``, the

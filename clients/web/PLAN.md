@@ -4712,3 +4712,13 @@ sound.
   not on its boundaries. The port's gap: the handle would keep the rate
   `/server_query` already answers and the emitter would read it.
 
+- ✅ **A verb called on the score editor's handle told nobody the score
+  changed** *(found 2026-10-06, writing the chrome-less window's test as the
+  twin of Python's)*. `ScoreEditor`'s verbs marked the turn changed and
+  closed no turn: Python's `_act` runs inside `Editing.turn`, whose way out
+  is what brings every other view of the score in step and calls
+  `on_change`, and the port's `#act` ran bare. So `onChange` stayed silent
+  after `editor.move(1)` — and fired late, with the next gesture on the
+  page, which closed the turn the verb had left marked. **Fixed 2026-10-06**:
+  `#act` runs in `editing.turn(this, ...)`, as a gesture's delivery does; the
+  two tests are now one test in two languages.
