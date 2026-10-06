@@ -234,7 +234,7 @@ B c d e | f2 e d | c B A B | G4 |
         score.apply({ op: "add_spanner", kind: "slur", from: top[0], to: top[3] });
         score.apply({ op: "add_spanner", kind: "crescendo", from: top[0], to: top[7] });
         score.apply({ op: "set_marks", id: top[0], marks: notation.marks({ dynamic: "p" }) });
-        score.apply({ op: "set_marks", id: top[8], marks: notation.marks({ dynamic: "f" }) });
+        score.apply({ op: "set_marks", id: top[7], marks: notation.marks({ dynamic: "f" }) });
 
         // The editor. The window is the application's, whole: the menu bar,
         // the toolbar, the palettes beside the page, the status line under it.

@@ -183,7 +183,7 @@ score.apply({"op": "add_spanner", "kind": "crescendo",
              "from": top[0], "to": top[7]})
 score.apply({"op": "set_marks", "id": top[0],
              "marks": notation.marks(dynamic="p")})
-score.apply({"op": "set_marks", "id": top[8],
+score.apply({"op": "set_marks", "id": top[7],
              "marks": notation.marks(dynamic="f")})
 
 # %% [markdown]
