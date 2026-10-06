@@ -2392,6 +2392,16 @@ Every entry carries a checkbox.
     each carries is a question of what the instrument does with each.
   - A dynamic written while a note is held (in another voice of its staff)
     does not move that note; whether it should is the instrument's too.
+  - **The metric accent is a model of its own, built on these**: the
+    interpretive one, which reads a meter, a phrase and a style, and is left
+    as it is for now (a downbeat's attack times 1.2). Heard in the listening
+    pass (the user, 2026-10-06): after a crescendo that ends on no dynamic,
+    the next bar's accented downbeat falls back at once, so a following
+    *subito p* sounds as if a decrescendo led into it; and inside a
+    crescendo over quarters, the downbeat's swell starts from its accented
+    attack and the next note attacks lower, a small dip in the line. Both are
+    the accent as a factor of the note's amp rather than an event over the
+    level.
 
 ## Found by use: the running list of fixes
 
