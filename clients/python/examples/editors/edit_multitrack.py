@@ -56,8 +56,11 @@ curves. Everything after that is `edit`.
 **The keys track is notes.** Its box is a window onto an `EventSequence` given
 among the `sources` like a buffer: it draws the notes its window reads and plays
 them from the transport's own event lane, so a locate, a loop and a stop are the
-transport's. A note sounds through its own output, outside the track's strip; the
-track's mute and solo decide whether it plays at all.
+transport's. **A note sounds into its box and through the track's strip**, as a
+take does: pull the keys track's fader down while it plays, or draw a gain
+curve under it, and the notes follow -- its mute and its meter are over them
+too. What plays a note is the def its events name, the built-in `default` here,
+which writes the bus its `out` control says; the track sets it.
 
 **The last box is loud on purpose**, so the meter has something to fill: it
 reaches full scale and the top of the column is red, where the boxes before it

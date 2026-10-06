@@ -599,8 +599,15 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 /// multitrack: every event a box's window reads, at the box's place plus its
 /// distance from the window's start (a second of the sequence, through its
 /// own tempo map, read at the box's playrate). A note that runs past the box
-/// is released where the box ends, and a box that is muted, or on a track the
-/// mixer's rule silences, plays nothing.
+/// is released where the box ends.
+///
+/// **A silenced box still places its notes.** A note sounds into its box and
+/// through its track (`crate::playback::MultitrackPlayback::notes`), so the
+/// box's mute and the mixer's rule over its track are its strips' -- a
+/// control of the fader, as for a take -- and a note that began under a mute
+/// is there when the mute is lifted. A MIDI message and a command go where
+/// they name, which no strip reaches, so a box that is muted, or on a track
+/// the mixer's rule silences, places none of those.
 ///
 /// **The curves go with them**: a note's own, read at the box's playrate, and
 /// the sequence's automation, placed as the box places the sequence. Each box is a
@@ -611,6 +618,7 @@ pub fn placed_notes(
     sources: &dyn Buffers,
 ) -> crate::notes_playback::Placement {
     use crate::notes_playback::{Placed, PlacedCurve, Placement};
+    use clausters_core::event::render::Type;
     let mut out = Placement::default();
     for box_ in picture::boxes(multitrack) {
         let silent = box_.muted
@@ -619,9 +627,6 @@ pub fn placed_notes(
                 .iter()
                 .find(|t| t.id == box_.row)
                 .is_none_or(|t| nodes::track_mute(multitrack, t) > 0.0);
-        if silent {
-            continue;
-        }
         let Some(sequence) = box_.source.and_then(|s| sources.sequence(s)) else {
             continue;
         };
@@ -634,6 +639,9 @@ pub fn placed_notes(
         let scope = box_.region.0.to_string();
         let placement = crate::notes_playback::placed(&sequence);
         for event in placement.events {
+            if silent && Type::of(&event.keys) != Type::Note {
+                continue;
+            }
             let from = (event.start - box_.start) / rate;
             if from < 0.0 || from >= length {
                 continue;
@@ -1238,8 +1246,13 @@ mod tests {
             clausters_document::events::Event::new(at, json!({"midinote": 60, "sustain": 1.0}))
         };
         // Before the window, inside it, and running past the box's end.
+        // And a MIDI message inside the window.
+        let message = clausters_document::events::Event::new(
+            3.0,
+            json!({"type": "midi", "midicmd": "control", "ctlNum": 1, "control": 64}),
+        );
         let sequence =
-            clausters_document::EventSequence::new(vec![note(0.0), note(2.0), note(4.5)]);
+            clausters_document::EventSequence::new(vec![note(0.0), note(2.0), message, note(4.5)]);
         let mut multitrack = multitrack();
         let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
@@ -1260,14 +1273,24 @@ mod tests {
         let held = One(source, sequence);
         let placed = placed_notes(&multitrack, &held);
         // The box sits at 4 s and lasts 4 s; its window starts 1 s in.
-        let spans: Vec<(f64, f64)> = placed.events.iter().map(|p| (p.start, p.end)).collect();
-        assert_eq!(spans, vec![(5.0, 6.0), (7.5, 8.0)]);
+        let notes = |placement: &crate::notes_playback::Placement| -> Vec<(f64, f64)> {
+            placement
+                .events
+                .iter()
+                .filter(|p| p.keys.contains_key("midinote"))
+                .map(|p| (p.start, p.end))
+                .collect()
+        };
+        assert_eq!(notes(&placed), vec![(5.0, 6.0), (7.5, 8.0)]);
+        assert_eq!(placed.events.len(), 3, "and the message between them");
 
+        // **A muted track still places its notes**: they sound into the
+        // track, whose strip is what silences them. A MIDI message goes where
+        // it names, past every strip, so it is not placed.
         multitrack.tracks[0].muted = true;
-        assert!(
-            placed_notes(&multitrack, &held).events.is_empty(),
-            "a muted track places nothing"
-        );
+        let muted = placed_notes(&multitrack, &held);
+        assert_eq!(notes(&muted), vec![(5.0, 6.0), (7.5, 8.0)]);
+        assert_eq!(muted.events.len(), 2, "the message is not placed");
     }
 
     /// **A box over a source written at another rate says so, and its window

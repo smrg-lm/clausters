@@ -886,7 +886,9 @@ editor did to it. `session.sequences()` hands the handles back, and with what
 `load` answers it is the whole table a multitrack editor is opened with:
 `edit(session.multitrack, sources={**session.load(), **session.sequences()})`.
 Such a box draws the notes it reads and plays them from the transport's event
-lane, and **a double click on it opens its roll** — a notes editor over the
+lane, into its track: the track's fader, its curves, its mute and its meter are
+over its notes as they are over a take (below, "What a multitrack is as
+nodes"). And **a double click on it opens its roll** — a notes editor over the
 same sequence, in the multitrack's undo order, which edits what the box draws:
 both hold one sequence, and nothing is copied.
 
@@ -967,6 +969,18 @@ clips, and the **master** is that strip over its tracks. A clip's gain and a
 track's gain are both real and they are different stages -- the first corrects
 the take, the second mixes it -- which is why an envelope on a clip is not
 another name for the track's fader.
+
+**A box of notes is a clip too.** Its notes are voices the transport's event
+lane makes and frees as it plays, and each is told the bus of its box as its
+`out`; the box is the same strip over that bus, where a box of samples is one
+over its readers. So the track's fader, its curves, its mute and its meter are
+after a note as they are after a take, and the box has its own. What a note is
+before that is the note's: its def, its velocity, the curves inside it. What
+this asks of a def is the convention an event already has — an `out` control
+that names the bus it writes, and the one after it for a second channel. The
+built-in `default` has one; a def without it sounds where it was written to,
+past the track. A MIDI message or a command in a box goes where it names, and
+no strip reaches it — a muted track leaves those out instead.
 
 The multitracks of it are named once, in `clausters_core::mixer`, and both clients
 bind the same names: `gain`, `pan`, `width`, `mute`, and a box's own `at`,

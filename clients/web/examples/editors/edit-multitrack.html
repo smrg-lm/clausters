@@ -68,9 +68,12 @@ multitrack edits where things are, never a take.
 <b>The keys track is notes.</b> Its box is a window onto an
 <code>EventSequence</code> given among the <code>sources</code> like a buffer: it
 draws the notes its window reads and plays them from the transport's own event
-lane, so a locate, a loop and a stop are the transport's. A note sounds through
-its own output, outside the track's strip; the track's mute and solo decide
-whether it plays at all.
+lane, so a locate, a loop and a stop are the transport's. <b>A note sounds into
+its box and through the track's strip</b>, as a take does: pull the keys track's
+fader down while it plays, or draw a gain curve under it, and the notes follow
+-- its mute and its meter are over them too. What plays a note is the def its
+events name, the built-in <code>default</code> here, which writes the bus its
+<code>out</code> control says; the track sets it.
 
 <b>Watch the meters</b> while it plays: the strip in each track's header is one
 column per channel, in decibels, over what that track produces <i>after</i> its

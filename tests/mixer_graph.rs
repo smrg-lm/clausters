@@ -1166,3 +1166,207 @@ fn a_stereo_take_keeps_its_two_sides() {
     assert!(left < 1e-3, "nothing on the left: {left}");
     assert!((right - 0.5).abs() < 0.01, "the take's right side: {right}");
 }
+
+/// A def that writes `amp` as a constant onto the bus `out` names: a voice
+/// reduced to arithmetic, sounding where an event's `out` key would put it.
+fn voice_def(s: &mut NrtSession) {
+    let def = serde_json::json!({
+        "name": "test.voice",
+        "controls": [
+            {"name": "out", "default": 0.0},
+            {"name": "amp", "default": 0.5},
+        ],
+        "ugens": [
+            {"kind": "Mul", "inputs": [{"control": 1}, {"const": 1.0}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 0}]},
+        ],
+    });
+    send(
+        s,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::String(def.to_string()),
+        ],
+    );
+    s.settle_for(4);
+}
+
+/// A multitrack with one stereo track holding one **box of notes** over the
+/// buses `bus` and `bus + 1`, and a group before the multitrack for its
+/// voices. Answers the ids `(multitrack, track, box, voices' group)`.
+fn one_box_of_notes(s: &mut NrtSession, bus: i32) -> (i32, i32, i32, i32) {
+    send(
+        s,
+        "/graph_new",
+        vec![
+            OscType::String(mixer::multitrack_name(2)),
+            OscType::Int(900),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    send(
+        s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(900),
+            OscType::String(mixer::TRANSPORT_SLOT.into()),
+            OscType::Int(TRACKS),
+        ],
+    );
+    send(
+        s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(TRACKS),
+            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::Int(910),
+        ],
+    );
+    send(
+        s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(910),
+            OscType::String(mixer::VOICE_SLOT.into()),
+            OscType::Int(940),
+            OscType::String(mixer::voice_port(0)),
+            OscType::Float(bus as f32),
+            OscType::String(mixer::voice_port(1)),
+            OscType::Float((bus + 1) as f32),
+        ],
+    );
+    // **The voices' group goes before the multitrack**, so a voice writes its
+    // bus in the block the box reads it.
+    send(
+        s,
+        "/group_new",
+        vec![OscType::Int(800), OscType::Int(2), OscType::Int(900)],
+    );
+    send(
+        s,
+        "/transport_group",
+        vec![OscType::Int(0), OscType::Int(TRACKS)],
+    );
+    s.settle_for(8);
+    (900, 910, 940, 800)
+}
+
+/// **A box of notes is a source of sound inside its track.** Its voices write
+/// the box's bus and nothing else, so what reaches the hardware is what the
+/// track's strip made of them: the track's gain scales a note and its mute
+/// silences it, as they do a take.
+#[test]
+fn a_box_of_notes_sounds_through_its_tracks_strip() {
+    let mut s = session();
+    send_defs(&mut s, &[], 2);
+    voice_def(&mut s);
+    let (_, track, _, voices) = one_box_of_notes(&mut s, 100);
+    send(
+        &mut s,
+        "/synth_new",
+        vec![
+            OscType::String("test.voice".into()),
+            OscType::Int(950),
+            OscType::Int(1),
+            OscType::Int(voices),
+            OscType::String("out".into()),
+            OscType::Float(100.0),
+            OscType::String("amp".into()),
+            OscType::Float(0.5),
+        ],
+    );
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(2);
+
+    let (left, right) = peaks(&mut s, 8);
+    assert!(
+        (left - 0.5).abs() < 0.01,
+        "the voice is heard through the track, at unity: {left}"
+    );
+    assert!(right < 1e-3, "and only where it wrote: {right}");
+
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Float(0.5),
+        ],
+    );
+    // Past the fader's lag.
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let (left, _) = peaks(&mut s, 8);
+    assert!(
+        (left - 0.25).abs() < 0.01,
+        "the track's gain scales the note: {left}"
+    );
+
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::MUTE.into()),
+            OscType::Float(1.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let (left, right) = peaks(&mut s, 8);
+    assert!(
+        left < 1e-3 && right < 1e-3,
+        "and its mute silences it: {left}, {right}"
+    );
+}
+
+/// **The built-in `default` plays where `out` says.** Sent to a box's bus it
+/// reaches the hardware through the track alone, on both sides -- it pans --
+/// and a muted track leaves nothing of it.
+#[test]
+fn the_default_def_sounds_into_the_bus_out_names() {
+    let mut s = session();
+    send_defs(&mut s, &[], 2);
+    let (_, track, _, voices) = one_box_of_notes(&mut s, 100);
+    send(
+        &mut s,
+        "/synth_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(950),
+            OscType::Int(1),
+            OscType::Int(voices),
+            OscType::String("out".into()),
+            OscType::Float(100.0),
+        ],
+    );
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(2);
+    let (left, right) = peaks(&mut s, 16);
+    assert!(
+        left > 0.01 && right > 0.01,
+        "heard on both sides: {left}, {right}"
+    );
+
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::MUTE.into()),
+            OscType::Float(1.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let (left, right) = peaks(&mut s, 16);
+    assert!(
+        left < 1e-3 && right < 1e-3,
+        "nothing of it past a muted track: {left}, {right}"
+    );
+}

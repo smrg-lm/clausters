@@ -31,6 +31,12 @@
 //! hand-wired graphs. A clip's gain and a track's gain are *both* real and they
 //! are different stages: the first corrects the take, the second mixes it.
 //!
+//! **A box of notes is a clip too** ([`voices_graph`]): the same strip, over
+//! the bus its voices sound into instead of over readers. What a track
+//! produces is what its strip shapes, whether a box reads samples or plays
+//! notes -- so the track's gain, its curves, its mute and its meter reach
+//! both, and so do the box's own.
+//!
 //! # What is deliberately not here yet
 //!
 //! **Effects**: `mt.track` and `mt.clip` declare the slot and leave it empty,
@@ -123,6 +129,18 @@ pub const SOURCE_SLOT: &str = "source";
 pub fn clip_slot(inputs: usize) -> String {
     format!("clips.{inputs}")
 }
+/// **The slot a track's boxes of notes fill** ([`voices_graph`]): one per box,
+/// each over a bus of its own that the box's voices sound into.
+pub const VOICE_SLOT: &str = "voices";
+/// **How wide the bus a box's voices sound into is.** A voice's width is its
+/// def's, which nothing here can ask, so the bus is as wide as a strip is
+/// written for: a def that pans writes both channels, and one that writes a
+/// single channel sounds on the left of a balance, as it does on the hardware.
+pub const VOICE_CHANNELS: usize = MAX_CHANNELS;
+/// The port channel `channel` of a box's voice bus is named on: `in0`, `in1`.
+pub fn voice_port(channel: usize) -> String {
+    format!("in{channel}")
+}
 /// The slot a multitrack's tracks fill -- a slot of the tracks' group
 /// ([`tracks_graph`]), not of the multitrack itself.
 pub const TRACK_SLOT: &str = "tracks";
@@ -209,6 +227,16 @@ pub fn clip_name(inputs: usize, outputs: usize) -> String {
     format!("{PREFIX}.clip.{inputs}x{outputs}")
 }
 
+/// The name of the def that takes a box's voice bus into its clip.
+pub fn input_name() -> String {
+    format!("{PREFIX}.input.{VOICE_CHANNELS}")
+}
+
+/// The name of the graph a box of notes is on a track of `outputs`.
+pub fn voices_name(outputs: usize) -> String {
+    format!("{PREFIX}.voices.{outputs}")
+}
+
 /// The name of the track graph for a track of `channels`.
 pub fn track_name(channels: usize) -> String {
     format!("{PREFIX}.track.{channels}")
@@ -290,10 +318,12 @@ fn lagged(name: &str, default: f32) -> Value {
 /// sides of a stereo take on the left and left the right silent (found
 /// 2026-10-06, by a render).
 ///
-/// Two buses named by controls, and not one worked out as `out + chan`: a bus
-/// index a UGen computes is one the group's sort cannot read, and a node it
-/// cannot read is a barrier nothing is sorted across -- the clip, its track
-/// and the meters after them with it.
+/// Two buses named by controls, and not one worked out as `out + chan`: when
+/// this was written a bus index a UGen computed was one the group's sort
+/// could not read, and a node it cannot read is a barrier nothing is sorted
+/// across -- the clip, its track and the meters after them with it. The sort
+/// reads that arithmetic now, and the two controls stay: a reader's wiring
+/// is whole in the clip's graph, with nothing worked out by the reader.
 pub fn reader_def() -> Value {
     json!({
         "name": reader_name(),
@@ -811,12 +841,80 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
     }))
 }
 
+/// **A box's voice bus onto its clip**: [`VOICE_CHANNELS`] channels read off
+/// the buses `in0..` name and written onto `out0..`, at unity.
+///
+/// Each bus index is a control of its own, as a reader's are
+/// ([`reader_def`]), rather than a base and an offset: the wiring is whole in
+/// the graph that holds it, and the group's sort orders the `In` and the
+/// `Out` by controls it reads with nothing worked out.
+pub fn input_def() -> Value {
+    let mut controls = Vec::new();
+    for channel in 0..VOICE_CHANNELS {
+        controls.push(control(&voice_port(channel), 0.0));
+    }
+    for channel in 0..VOICE_CHANNELS {
+        controls.push(control(&format!("out{channel}"), 0.0));
+    }
+    let mut ugens = Vec::new();
+    for channel in 0..VOICE_CHANNELS {
+        ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
+    }
+    for channel in 0..VOICE_CHANNELS {
+        ugens.push(json!({"kind": "Out", "inputs": [
+            {"control": VOICE_CHANNELS + channel}, {"ugen": channel}]}));
+    }
+    json!({ "name": input_name(), "controls": controls, "ugens": ugens })
+}
+
+/// **A box of notes**: the bus its voices sound into onto a private bus, then
+/// a strip onto the bus the track hands it -- [`clip_graph`] with an input
+/// where the readers are.
+///
+/// The voices are not members of it. A note is made and freed as the
+/// transport plays, by the event lane, in a group of its own before the
+/// multitrack; what makes it this box's is the bus it writes (`out`, the
+/// control an event's `out` key sets), which is the caller's to allocate and
+/// to say here, on [`voice_port`]. So the box has the clip's own surface --
+/// its gain, its image, its mute, each a port a curve may drive -- and a note
+/// keeps whatever its def and its own curves make of it before that.
+pub fn voices_graph(outputs: usize) -> Result<Value, String> {
+    check(outputs, "voices outputs")?;
+    let inputs = VOICE_CHANNELS;
+    let mut wiring = serde_json::Map::new();
+    let mut surface = json!({
+        GAIN:  [{"member": 0, "control": GAIN}],
+        PAN:   [{"member": 0, "control": PAN}],
+        WIDTH: [{"member": 0, "control": WIDTH}],
+        MUTE:  [{"member": 0, "control": MUTE}],
+    });
+    for channel in 0..inputs {
+        wiring.insert(format!("out{channel}"), json!(format!("src:{channel}")));
+        surface[voice_port(channel)] = json!([{"member": 1, "control": voice_port(channel)}]);
+    }
+    Ok(json!({
+        "name": voices_name(outputs),
+        "buses": [
+            {"name": "src", "rate": "audio", "channels": inputs},
+            {"name": OUT_BUS, "rate": "audio", "channels": outputs, "external": true},
+        ],
+        "members": [
+            {"def": strip_name(inputs, outputs),
+             "controls": strip_wiring("src", inputs, OUT_BUS, outputs)},
+            {"def": input_name(), "controls": wiring},
+        ],
+        "surface": surface,
+        "defaults": { GAIN: 1.0, WIDTH: 1.0 }
+    }))
+}
+
 /// **A track**: clips onto a private mix bus, then a strip onto the track's own
 /// output bus, and a send from there onto the bus the master hands it.
 ///
 /// The clips are a slot of **nested graphs**, which is what a clip being a
 /// thing with its own gain, its own image and its own chain amounts to; the
-/// track's own effects are the same slot shape and are empty today.
+/// track's own effects are the same slot shape and are empty today. A box of
+/// notes is one more of them ([`VOICE_SLOT`]), onto the same mix bus.
 ///
 /// The strip does not write into the master directly, and the node in between
 /// is what makes a meter mean anything -- see [`POST_BUS`] and [`send_def`].
@@ -840,6 +938,8 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
              "controls": {OUT_BUS: MIX_BUS}},
             {"def": track_meter_name(channels), "slot": METER_SLOT,
              "controls": meter_wiring(POST_BUS, channels)},
+            {"def": voices_name(channels), "kind": "graph", "slot": VOICE_SLOT,
+             "controls": {OUT_BUS: MIX_BUS}},
         ],
         "surface": surface_of(4),
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
@@ -932,7 +1032,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     strips.sort_unstable();
     strips.dedup();
 
-    let mut synth = vec![reader_def(), curve_def()];
+    let mut synth = vec![reader_def(), curve_def(), input_def()];
     for &(inputs, outputs) in &strips {
         synth.push(strip_def(inputs, outputs)?);
     }
@@ -954,6 +1054,9 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
         for inputs in 1..=MAX_CHANNELS {
             graph.push(clip_graph(inputs, channels)?);
         }
+        // And the graph a box of notes is, which a track declares a slot of
+        // whether or not it holds one today.
+        graph.push(voices_graph(channels)?);
     }
     for &channels in &tracks {
         graph.push(track_graph(channels)?);

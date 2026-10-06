@@ -123,3 +123,155 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
         "and past it, exactly zero"
     );
 }
+
+/// **A track's gain automation reaches the notes of a box on it.** A box of
+/// notes is a source of sound inside its track, so a curve over the track's
+/// gain shapes a note the way it shapes a take: closed, the note is not
+/// heard; open, it is, at the level its own `amp` says.
+///
+/// The note is a constant on the bus its `out` names, so what reaches the
+/// hardware is the track's strip and nothing else.
+#[test]
+fn a_tracks_gain_curve_reaches_the_notes_of_its_boxes() {
+    under_a_tracks_gain_curve(Vec::new());
+}
+
+/// **And a note that curves shape.** A note with a curve of its own plays in
+/// a graph, beside the readers of its curves, and that graph sounds into the
+/// box as a plain synth does: the track's curve is after the note's own.
+#[test]
+fn a_tracks_gain_curve_reaches_a_note_its_own_curves_shape() {
+    use clausters_document::{Opaque, Point};
+    use clausters_editing::notes_playback::PlacedCurve;
+
+    let level = |at: f64| Point {
+        at,
+        value: 0.5,
+        data: Opaque::none(),
+    };
+    under_a_tracks_gain_curve(vec![PlacedCurve {
+        id: "c".into(),
+        scope: String::new(),
+        target: serde_json::json!({"control": "amp"}),
+        points: vec![level(0.0), level(1.0)],
+    }]);
+}
+
+/// One note of half amplitude over a box of a second, with `curves` of its
+/// own, on a track whose gain is closed and then open: heard only once it is
+/// open, at its own level.
+fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::PlacedCurve>) {
+    use clausters_document::multitrack::Automation;
+    use clausters_document::{Opaque, Point};
+    use clausters_editing::notes_playback::{Placed, Placement};
+
+    let mut s = NrtSession::open(&SessionConfig {
+        sample_rate: SR,
+        channels: 2,
+        ..Default::default()
+    })
+    .expect("open");
+    let voice = serde_json::json!({
+        "name": "test.voice",
+        "controls": [
+            {"name": "out", "default": 0.0},
+            {"name": "amp", "default": 0.5},
+        ],
+        "ugens": [
+            {"kind": "Mul", "inputs": [{"control": 1}, {"const": 1.0}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 0}]},
+        ],
+    });
+    send(
+        &mut s,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::String(voice.to_string()),
+        ],
+    );
+    s.settle_for(4);
+
+    // A box of a second, whose source is a sequence: no buffer is behind it.
+    let opens = (64 * BLOCK) as f64 / SR;
+    let mut multitrack = Multitrack {
+        tracks: vec![Track::new(NodeId(10), NodeId(11))],
+        ..Multitrack::default()
+    };
+    multitrack.tracks[0].take_lanes[0].place(Region::new(
+        NodeId(20),
+        Second(0.0),
+        Second(1.0),
+        Content::window(SegmentRef {
+            source: SegmentSource::Samples(SourceRef {
+                source: SourceId(1),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: 1.0,
+        }),
+    ));
+    // The track's gain: closed, then open from `opens` on.
+    let point = |at: f64, value: f64| Point {
+        at,
+        value,
+        data: Opaque::none(),
+    };
+    let mut gain = Automation::new(NodeId(30), Opaque(serde_json::json!({"port": "gain"})));
+    gain.points = vec![
+        point(0.0, 0.0),
+        point(opens, 0.0),
+        point(opens + BLOCK as f64 / SR, 1.0),
+    ];
+    multitrack.tracks[0].automation = vec![gain];
+
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = MultitrackPlayback::new(Endpoint::default());
+    let steps = playback
+        .sync(&multitrack, SR, &HashMap::new(), 1.0, &mut ids)
+        .unwrap();
+    run(&mut s, steps);
+    // One note over the whole box, of the box (its scope is the region).
+    let placed = Placement {
+        events: vec![Placed {
+            start: 0.0,
+            end: 1.0,
+            keys: serde_json::from_value(serde_json::json!({
+                "instrument": "test.voice", "amp": 0.5,
+            }))
+            .unwrap(),
+            id: "1".into(),
+            scope: "20".into(),
+            curves,
+        }],
+        curves: Vec::new(),
+    };
+    let steps = playback.notes(&placed, &mut ids).unwrap();
+    run(&mut s, steps);
+    let steps = playback.play();
+    run(&mut s, steps);
+
+    // In stretches, a serving turn between them: the lane is fed ahead of
+    // the position by the turn, as a take is not.
+    let mut left = Vec::new();
+    for _ in 0..12 {
+        let out = s.run_to_vec((16 * BLOCK) as u64).expect("the render ran");
+        left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
+        s.settle_for(1);
+    }
+    let closed = &left[8 * BLOCK..56 * BLOCK];
+    let open = &left[96 * BLOCK..160 * BLOCK];
+    let peak = |frames: &[f32]| frames.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(
+        peak(closed) < 1e-3,
+        "under a closed track the note is not heard: {}",
+        peak(closed)
+    );
+    assert!(
+        (peak(open) - 0.5).abs() < 0.02,
+        "and under an open one it is, at its own level: {}",
+        peak(open)
+    );
+}

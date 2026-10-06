@@ -100,15 +100,12 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A track's gain automation does not reach its notes**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The notes of a box over
-  a sequence sound outside the tracks' strips, so a track's gain, its gain
-  curve, its fader and its meter do not act on them. The direction is the
-  user's, in the entry: a box of notes makes its sound with its synth and
-  the track takes it as its input, as it takes a segment of audio -- which
-  asks for a review of the node graph first (a slot whose contents are
-  voices, one lane or one per box, a note's curves, a box moved between
-  tracks).
+- ⬜ **A channel list cannot be laid on a control's bus**
+  *(`clients/python/PLAN.md`, Found by use)*. An instrument with an `out`
+  control -- what a note needs to sound into its track -- writes each side
+  by hand, because both clients' `out` refuse a channel list on a bus that
+  is not a number. The server now reads `control + constant` as a static bus
+  index, so the refusal can go, in both clients at once.
 
 - ⬜ **A looping selection does not follow a new selection**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection
@@ -329,7 +326,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   inside a standalone host, and the applications' (time-stretch from a clip's
   edge; the applications' window chrome in standalone, and the multitrack's
   stop-at-end key that waits on it; what a bare window leaves to its
-  handle;
+  handle; a box of notes that chooses its synth;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the
   score; a sequence as primitive data, by the keys chosen; the score editor's

@@ -2535,6 +2535,16 @@ Every entry carries a checkbox.
     interpreter's join, the render's items, the helpers in both clients and
     their tests.
 
+- ⬜ **A box of notes chooses its synth** *(noted 2026-10-06, closing "A
+  track's gain automation does not reach its notes")*. What plays a box is
+  what its events name -- their `instrument`, the server's `default` when
+  they name none -- so one sequence on two tracks sounds the same on both,
+  and changing a track's instrument means rewriting its notes. A box, or
+  its track, naming the def its notes play with (and the events' own key
+  winning or not) is the instrument track every multitrack has; it needs a
+  field of the document, a control in the header and a rule for the notes
+  that already name one.
+
 ## Found by use: the running list of fixes
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
@@ -3336,7 +3346,7 @@ wrong.
   "Dynamics need a model of the instrument and of hearing", under Future
   directions.
 
-- ⬜ **A track's gain automation does not reach its notes** *(the user,
+- ✅ **A track's gain automation does not reach its notes** *(the user,
   2026-10-06, trying the standalone session: the track's envelope -- its
   gain -- has to act on a sequence of notes too, whatever the MIDI
   automations and the velocities say; a track's envelopes apply over them,
@@ -3377,6 +3387,62 @@ wrong.
     instrument, the server's `default` when they name none) -- a box's own
     choice of synth, beside what its events say, is a design of its own.
 
+  **Built 2026-10-06, and what the review settled.** A box of notes is a
+  **clip of its track** over a bus of its own -- the clip's strip, with an
+  input where the readers are (`clausters_core::mixer::voices_graph`,
+  `VOICE_SLOT`) -- so the box has its own gain, mute and curves and the
+  track's strip, its curves and its meter are after it, as after a take.
+  - **The voices stay on the lane and name their box's bus.** A slot's
+    members are fixed by its def and a note's def is whatever its events
+    name, so a voice is not a member of the clip: it is told the bus as its
+    `out`, the control an event's `out` key already sets
+    (`MultitrackPlayback::notes`; a key of that name on a note of a box is
+    not read). The bus is the client's (`Op::AudioBus`), handed to the clip
+    on `in0`/`in1`.
+  - **One lane**, as before, its notes made in a group **before the
+    multitrack** (`instance::VOICES`): a voice has to have written its bus by
+    the block the clip reads it. It was the tail of the transport's group,
+    after the multitrack.
+  - **The curves inside a note** go with the voice: a note's graph has the
+    controls it is started with as ports, `out` now among them, and the
+    channels' instances are made in the same group.
+  - **A box moved to another track** is moved as a clip of samples is
+    (`Op::Move`), with the bus it had.
+  - **Which boxes play notes is the notes' to say.** The document names a
+    source and not what is behind it, so `nodes::plan` cannot know; the
+    playback plans each box the placed notes name
+    (`nodes::plan_voiced`), against the multitrack the last `sync` was of.
+    No door changed, so neither client did.
+  - **Mute is the strip's.** `placed_notes` no longer leaves a silenced
+    box's notes out: they sound into a muted strip, and a note that began
+    under a mute is there when it is lifted. A MIDI message and a command
+    are still left out of a silenced box, since no strip reaches them.
+  - **Two things the built-in `default` needed**, both the server's: an
+    `out` control (it wrote buses 0 and 1 as constants, so an event's `out`
+    did nothing on it), and a bus analysis that reads `out + 1` as the
+    static index it is -- arithmetic over controls and constants -- rather
+    than as a barrier the group's sort cannot cross (`docs/auto-order.md`).
+  Heard by a render: `tests/multitrack_playback.rs` (a track's gain curve
+  over a plain note and over one its own curves shape) and
+  `tests/mixer_graph.rs`.
+
+  **What is left**, each on its own:
+  - **A def with no `out` control** sounds where it was written to, past the
+    track. It is the event convention's own limit and it is stated in the
+    books; nothing reports it.
+  - **A MIDI message or a command in a box** goes where it names (a
+    channel's binding, a node). Routing a bound instrument into the track of
+    the box that plays it is not designed.
+  - **The roll's own play** (`NotesPlayback`, a transport of its own) is the
+    sequence alone, outside any track. Whether a roll opened from a box
+    plays through that box's track is part of
+    `crates/clausters-document/PLAN.md`, "An application inside another".
+  - **A box's own choice of synth** -- the entry in "Future directions"
+    below, "A box of notes chooses its synth".
+  - **The clients' builders refuse a channel list on a control's bus**
+    (`clients/python/PLAN.md`, Found by use), so a stereo instrument with an
+    `out` control is written one `out` per side.
+
 - ✅ **A stereo take plays both its sides on the left** *(found 2026-10-06,
   by a render, writing the test of a box of notes on a track)*. A clip's
   readers are one per channel of its source, and its slot wired every one of
@@ -3387,6 +3453,7 @@ wrong.
   writes each at a gain its channel says (`clausters_core::mixer::reader_def`).
   Two buses named by controls rather than one worked out as `out + chan`,
   which is what the audio editor's reader does: a bus index a UGen computes
-  makes its node a barrier for the group's sort, and inside a track that put
+  made its node a barrier for the group's sort, and inside a track that put
   the meters before the strip they read (`tests/mixer_graph.rs`,
-  `a_stereo_take_keeps_its_two_sides`).
+  `a_stereo_take_keeps_its_two_sides`). *(The sort reads that arithmetic
+  since the entry above was closed, the same day; the two controls stayed.)*

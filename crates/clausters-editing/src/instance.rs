@@ -335,6 +335,20 @@ pub const TRANSPORT: &str = "transport";
 /// and their readers freeze on a stop, and the master around them does not.
 pub const TRACKS: &str = "tracks";
 
+/// **The group the notes' voices are made in**, before the multitrack: a
+/// voice writes the bus of its box, and the box's clip reads it in the same
+/// block only if the voice ran first. Inside the transport's group, so its
+/// nodes read the transport, and outside the tracks', so a stop releases a
+/// note rather than freezing it. Made the first time a plan holds a box of
+/// notes.
+pub const VOICES: &str = "voices";
+
+/// **The bus a box's voices sound into**, by its region: what the box's clip
+/// reads, and what whoever plays its notes tells them as their `out`.
+pub fn voice_bus_handle(region: u64) -> Handle {
+    format!("voicebus:{region}")
+}
+
 fn track_handle(id: u64) -> Handle {
     format!("track:{id}")
 }
@@ -438,6 +452,12 @@ pub struct Instance {
     /// before it reaches the new one's, so the state it was in is gone by the
     /// time the making matters. A counter per region, never decremented.
     makings: BTreeMap<u64, u32>,
+    /// Whether the voices' group is up.
+    #[serde(default)]
+    voice_group: bool,
+    /// The boxes of notes holding a bus for their voices, by region.
+    #[serde(default)]
+    voices: BTreeSet<u64>,
 }
 
 /// The ports the **hand** writes: everything a curve is not driving.
@@ -489,6 +509,7 @@ impl Instance {
             || !self.clips.is_empty()
             || !self.readers.is_empty()
             || !self.curves.is_empty()
+            || self.voice_group
     }
 
     /// Which control bus run each track's meters write, by track -- what a host
@@ -566,6 +587,19 @@ impl Instance {
             });
             self.curve_group = true;
         }
+        let voiced = plan
+            .tracks
+            .iter()
+            .any(|track| track.clips.iter().any(|clip| clip.voices > 0));
+        if voiced && !self.voice_group {
+            // **Before the multitrack**, so a voice has written its box's bus
+            // by the time the box's clip reads it.
+            ops.push(Op::Group {
+                handle: VOICES.into(),
+                before: MULTITRACK.into(),
+            });
+            self.voice_group = true;
+        }
         self.tracks(&plan.tracks, &mut ops);
         self.reap_curves(plan, &mut ops);
         ops
@@ -612,15 +646,25 @@ impl Instance {
                 handle: meter_bus_handle(id),
             });
         }
+        for id in std::mem::take(&mut self.voices) {
+            ops.push(Op::FreeBus {
+                handle: voice_bus_handle(id),
+            });
+        }
         self.readers.clear();
         self.clips.clear();
         self.makings.clear();
+        let voice_group = std::mem::take(&mut self.voice_group);
         if std::mem::take(&mut self.multitrack) {
             // One free: everything the multitrack holds is inside the transport's
-            // group, the multitrack's graph and the tracks' group included.
+            // group, the multitrack's graph, the tracks' group and the
+            // voices' included.
             let mut under = under;
             under.push(MULTITRACK.into());
             under.push(TRACKS.into());
+            if voice_group {
+                under.push(VOICES.into());
+            }
             ops.push(Op::Free {
                 handle: TRANSPORT.into(),
                 forget: under,
@@ -765,7 +809,19 @@ impl Instance {
         for clip in planned {
             let id = clip.region.0;
             seen.insert(id);
-            let ports = hand_ports(&[("gain", clip.gain), ("mute", clip.mute)], &clip.curves);
+            let mut ports = hand_ports(&[("gain", clip.gain), ("mute", clip.mute)], &clip.curves);
+            // **A box of notes reads the bus its voices write**, one port per
+            // channel: the bus is this instance's to ask for, and it is asked
+            // for before the slot that names it.
+            for channel in 0..clip.voices {
+                ports.insert(
+                    mixer::voice_port(channel),
+                    Port::Bus {
+                        bus: voice_bus_handle(id),
+                        offset: channel,
+                    },
+                );
+            }
             let held = self.clips.get(&id).cloned();
             // **What a `set` cannot express.** A source of another width is
             // another clip def, so that clip is made again. A clip that changed
@@ -787,6 +843,12 @@ impl Instance {
                 }
                 other => other,
             };
+            if clip.voices > 0 && self.voices.insert(id) {
+                ops.push(Op::AudioBus {
+                    handle: voice_bus_handle(id),
+                    channels: clip.voices,
+                });
+            }
             let generation = match held {
                 None => {
                     ops.push(Op::Slot {
@@ -1112,6 +1174,12 @@ impl Instance {
                 forget: readers,
             });
         }
+        // The bus is not the group's, so it is given back either way.
+        if self.voices.remove(&id) {
+            ops.push(Op::FreeBus {
+                handle: voice_bus_handle(id),
+            });
+        }
     }
 
     /// Freeing the group frees everything inside it, so the clips and the
@@ -1408,6 +1476,121 @@ mod tests {
             Vec::new(),
             "and the table says where it is now"
         );
+    }
+
+    /// The plan with region 3 named a box of notes.
+    fn voiced(multitrack: &Multitrack) -> Plan {
+        clausters_document::multitrack::nodes::plan_voiced(
+            multitrack,
+            RATE,
+            &HashMap::new(),
+            &BTreeSet::from([NodeId(3)]),
+        )
+    }
+
+    /// **A box of notes is a clip over a bus of its own.** The voices' group
+    /// goes before the multitrack, once; the bus is asked for before the slot
+    /// that names it, a port per channel; and nothing is a reader. A second
+    /// reconcile of the same plan does nothing.
+    #[test]
+    fn a_box_of_notes_is_a_clip_over_its_own_bus() {
+        let multitrack = multitrack();
+        let mut instance = Instance::new();
+        let ops = instance.reconcile(&voiced(&multitrack), 0.5);
+
+        assert!(
+            ops.contains(&Op::Group {
+                handle: VOICES.into(),
+                before: MULTITRACK.into(),
+            }),
+            "the voices' group, before the multitrack: {ops:?}"
+        );
+        let bus = ops
+            .iter()
+            .position(|op| {
+                matches!(op, Op::AudioBus { handle, channels }
+                    if handle == "voicebus:3" && *channels == mixer::VOICE_CHANNELS)
+            })
+            .expect("the box's bus");
+        let slot = ops
+            .iter()
+            .position(|op| {
+                matches!(op, Op::Slot { handle, target, slot, ports }
+                if handle == "clip:3"
+                    && target == "track:1"
+                    && slot == mixer::VOICE_SLOT
+                    && ports.get("in1") == Some(&Port::Bus {
+                        bus: "voicebus:3".into(),
+                        offset: 1,
+                    }))
+            })
+            .expect("the clip, over the bus");
+        assert!(bus < slot, "the bus before the slot that names it");
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, Op::Slot { slot, .. } if slot == "source")),
+            "and no reader: {ops:?}"
+        );
+        assert_eq!(instance.reconcile(&voiced(&multitrack), 0.5), Vec::new());
+    }
+
+    /// **A box of notes moves with its bus and gives it back when it goes**:
+    /// dragged to another track it is moved there, not made again, and a box
+    /// that is gone -- or one whose notes are -- frees its clip and its bus.
+    #[test]
+    fn a_box_of_notes_keeps_its_bus_across_a_move_and_gives_it_back() {
+        let multitrack = multitrack();
+        let mut instance = Instance::new();
+        instance.reconcile(&voiced(&multitrack), 0.5);
+
+        let mut moved = multitrack.clone();
+        let region = moved.tracks[0].take_lanes[0].regions.remove(0);
+        moved.tracks[1].take_lanes[0].regions.push(region);
+        let ops = instance.reconcile(&voiced(&moved), 0.5);
+        assert!(
+            ops.iter().any(|op| matches!(op, Op::Move { handle, target }
+                                         if handle == "clip:3" && target == "track:10")),
+            "moved onto the new track: {ops:?}"
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, Op::AudioBus { .. } | Op::FreeBus { .. })),
+            "with the bus it had: {ops:?}"
+        );
+
+        // No box plays notes any more.
+        let ops = instance.reconcile(&planned(&moved), 0.5);
+        assert!(
+            ops.contains(&Op::Free {
+                handle: "clip:3".into(),
+                forget: Vec::new(),
+            }),
+            "the clip goes: {ops:?}"
+        );
+        assert!(
+            ops.contains(&Op::FreeBus {
+                handle: "voicebus:3".into(),
+            }),
+            "and its bus is given back: {ops:?}"
+        );
+    }
+
+    /// **A teardown gives the voices' buses back and forgets their group**,
+    /// which went with the transport's.
+    #[test]
+    fn a_teardown_gives_back_a_box_s_bus() {
+        let mut instance = Instance::new();
+        instance.reconcile(&voiced(&multitrack()), 0.5);
+        let ops = instance.teardown();
+        assert!(ops.contains(&Op::FreeBus {
+            handle: "voicebus:3".into(),
+        }));
+        assert!(
+            ops.iter().any(|op| matches!(op, Op::Free { handle, forget }
+                if handle == TRANSPORT && forget.iter().any(|h| h == VOICES))),
+            "{ops:?}"
+        );
+        assert!(!instance.is_sounding());
     }
 
     /// **A move does not depend on which track is reached first.** A box going

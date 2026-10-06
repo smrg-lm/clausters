@@ -20,14 +20,15 @@
 //! asks, and a caller that learns otherwise (another client rolled it) says so
 //! with [`MultitrackPlayback::set_rolling`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use clausters_core::event::render::Type;
 use clausters_core::ids::{IdError, IdSpaces};
 use clausters_core::osc::OscType;
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
-use clausters_document::SourceId;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
+use clausters_document::{NodeId, SourceId};
 use serde_json::{Value, json};
 
 use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_json};
@@ -107,6 +108,24 @@ pub fn pass_of(json: &str) -> (Option<(f64, f64)>, bool) {
     (range, looping)
 }
 
+/// What a multitrack was last synced from: what a plan is made of, kept so
+/// the boxes that play notes can be planned when the notes say which they
+/// are -- after the sync, and with no multitrack in hand.
+#[derive(Debug, Clone)]
+struct Synced {
+    multitrack: Multitrack,
+    sources: HashMap<SourceId, SourceInfo>,
+    gain: f32,
+}
+
+/// The box an event is of, when it is a note of one: a box of a multitrack is
+/// its events' scope, by its region.
+fn box_of(event: &crate::notes_playback::Placed) -> Option<u64> {
+    (Type::of(&event.keys) == Type::Note)
+        .then(|| event.scope.parse().ok())
+        .flatten()
+}
+
 /// **One multitrack, as it is playing.**
 #[derive(Debug, Clone)]
 pub struct MultitrackPlayback {
@@ -128,10 +147,16 @@ pub struct MultitrackPlayback {
     end_sent: Option<(i64, i64)>,
     /// The transport's ramp last sent, in samples.
     fade_sent: Option<i64>,
-    /// **The event lane the boxes over sequences play from**, once made: named
-    /// by the tracks' group's id, its notes made in the transport's group
-    /// around the multitrack, which a stop does not freeze.
-    lane: Option<i32>,
+    /// **The event lane the boxes over sequences play from**, once made: its
+    /// id, which is the tracks' group's, and the group its notes are made in
+    /// -- the voices' group before the multitrack, which follows the
+    /// transport and which a stop does not freeze.
+    lane: Option<(i32, i32)>,
+    /// **The boxes that play notes**, by region, as the last [`Self::notes`]
+    /// said: each is a clip of its track, over a bus its voices write.
+    voiced: BTreeSet<NodeId>,
+    /// What the last [`Self::sync`] was of.
+    synced: Option<Synced>,
     /// The graphs, readers and tables the notes' curves play through.
     curves: NoteCurves,
     /// Whether a pass started since the notes were last planned: a note's
@@ -154,6 +179,8 @@ impl MultitrackPlayback {
             end_sent: None,
             fade_sent: None,
             lane: None,
+            voiced: BTreeSet::new(),
+            synced: None,
             curves: NoteCurves::new("mt/notes"),
             passed: false,
         }
@@ -163,13 +190,27 @@ impl MultitrackPlayback {
     /// multitrack's transport: `placed` is `crate::multitrack::placed_notes`,
     /// in seconds of the multitrack, and the server plays it by the position --
     /// a locate, the loop and a stop are the transport's. The lane is made the
-    /// first time there is something to play, in the tracks' group, and sent
-    /// its data again on every call; a multitrack that never had notes makes
-    /// nothing. Its notes sound through their own `out`, outside the tracks'
-    /// strips, and a track's mute and solo decide what is placed at all.
+    /// first time there is something to play, named by the tracks' group, and
+    /// sent its data again on every call; a multitrack that never had notes
+    /// makes nothing.
     ///
-    /// **The curves are heard through graphs** (`crate::note_curves`), made in
-    /// the transport's group beside the notes, allocating from `ids`.
+    /// **A box of notes is a source of sound inside its track**, as a box of
+    /// samples is. Each box with notes is a clip of its track over a bus of
+    /// its own (`nodes::plan_voiced`), and its notes are told that bus as
+    /// their `out` -- the control an event's `out` key sets, and the track's
+    /// to say here, so a key of that name on a note of a box is not read. A
+    /// note's def, its velocity and the curves inside it make its sound; the
+    /// box's strip and then the track's -- gain, curves, mute, meter -- are
+    /// after it, as after a take. A def with no `out` control sounds where it
+    /// was written to, outside the track.
+    ///
+    /// The voices are made in a group before the multitrack
+    /// (`crate::instance::VOICES`), so a voice writes its bus in the block
+    /// the clip reads it; and **the curves are heard through graphs**
+    /// (`crate::note_curves`) made in the same group, allocating from `ids`.
+    ///
+    /// A MIDI message and a command are not voices of this: they go where
+    /// they name, and no strip reaches them.
     pub fn notes(&mut self, placed: &Placement, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         let Some(group) = self.applier.node(crate::instance::TRACKS) else {
             return Ok(Vec::new());
@@ -177,33 +218,35 @@ impl MultitrackPlayback {
         if placed.events.is_empty() && self.lane.is_none() {
             return Ok(Vec::new());
         }
-        let mut steps = Vec::new();
-        if self.lane != Some(group) {
-            // A tracks' group made again is a new lane.
+        let mut steps = self.voice(placed, ids)?;
+        // The voices' group, once a box of notes made it; before that -- a
+        // lane of MIDI and commands alone -- the transport's group around
+        // the multitrack. Either follows the transport and is not frozen by
+        // a stop: a stop releases the notes, and their releases ring out.
+        let parent = if self.applier.node(crate::instance::VOICES).is_some() {
+            crate::instance::VOICES
+        } else {
+            crate::instance::TRANSPORT
+        };
+        let target = self.applier.node(parent).unwrap_or(group);
+        if self.lane != Some((group, target)) {
+            // A tracks' group made again is a new lane, and so is one whose
+            // notes are made somewhere else.
             steps.extend(self.free_lane());
-            // Named by the tracks' group, its notes made in the transport's
-            // group around the multitrack, which follows the transport and
-            // is not frozen by a stop: a stop releases them, and their
-            // releases ring out.
-            let target = self
-                .applier
-                .node(crate::instance::TRANSPORT)
-                .unwrap_or(group);
             steps.extend(transport_command(
                 "/lane_new",
                 vec![OscType::Int(group), OscType::Int(target)],
             ));
-            self.lane = Some(group);
+            self.lane = Some((group, target));
         }
-        let plan = note_curves::plan(placed, self.rate).scoped(group);
-        let ops = self.curves.ops(
-            &plan,
-            crate::instance::TRANSPORT,
-            std::mem::take(&mut self.passed),
-        );
+        let routed = self.routed(placed);
+        let plan = note_curves::plan(&routed, self.rate).scoped(group);
+        let ops = self
+            .curves
+            .ops(&plan, parent, std::mem::take(&mut self.passed));
         steps.extend(self.applier.apply(ops, ids)?);
         let slots = self.curves.slots(&plan, &self.applier);
-        let data = crate::notes_playback::data(&placed.events, self.rate, &slots).to_string();
+        let data = crate::notes_playback::data(&routed.events, self.rate, &slots).to_string();
         steps.push(send(
             "/lane_set",
             vec![OscType::Int(group), OscType::String(data)],
@@ -215,9 +258,47 @@ impl MultitrackPlayback {
         Ok(steps)
     }
 
+    /// **Makes the boxes that play notes be clips of their tracks**, when
+    /// which boxes those are changed: the multitrack as it was last synced,
+    /// planned again with them, and the difference as steps. A sync after
+    /// this plans them itself.
+    fn voice(&mut self, placed: &Placement, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
+        let voiced: BTreeSet<NodeId> = placed
+            .events
+            .iter()
+            .filter_map(box_of)
+            .map(NodeId)
+            .collect();
+        if voiced == self.voiced {
+            return Ok(Vec::new());
+        }
+        self.voiced = voiced;
+        let Some(synced) = &self.synced else {
+            return Ok(Vec::new());
+        };
+        let plan = nodes::plan_voiced(&synced.multitrack, self.rate, &synced.sources, &self.voiced);
+        let ops = self.instance.reconcile(&plan, synced.gain);
+        self.applier.apply(ops, ids)
+    }
+
+    /// **`placed` with each note sounding into its box**: its `out` is the
+    /// bus the box's clip reads. A note of no box, or of a box that has no
+    /// bus yet, is left as it is.
+    fn routed(&self, placed: &Placement) -> Placement {
+        let mut routed = placed.clone();
+        for event in &mut routed.events {
+            let bus = box_of(event)
+                .and_then(|region| self.applier.bus(&crate::instance::voice_bus_handle(region)));
+            if let Some((bus, _)) = bus {
+                event.keys.insert("out".into(), json!(bus));
+            }
+        }
+        routed
+    }
+
     /// Frees the lane, when there is one: its notes are released.
     fn free_lane(&mut self) -> Vec<Step> {
-        let Some(lane) = self.lane.take() else {
+        let Some((lane, _)) = self.lane.take() else {
             return Vec::new();
         };
         vec![
@@ -242,8 +323,13 @@ impl MultitrackPlayback {
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
         self.rate = rate;
-        let plan = nodes::plan(multitrack, rate, sources);
+        let plan = nodes::plan_voiced(multitrack, rate, sources, &self.voiced);
         let ops = self.instance.reconcile(&plan, gain);
+        self.synced = Some(Synced {
+            multitrack: multitrack.clone(),
+            sources: sources.clone(),
+            gain,
+        });
         let mut steps = self.applier.apply(ops, ids)?;
         // **The transport's ramp**, so a stop rolls the tracks out while the
         // master's way out fades them and a play fades them in: the master is
@@ -461,6 +547,8 @@ impl MultitrackPlayback {
         self.rolling = false;
         self.fade_sent = None;
         let mut steps = self.free_lane();
+        self.voiced.clear();
+        self.synced = None;
         let mut ops = self.curves.teardown();
         ops.extend(self.instance.teardown());
         steps.extend(self.applier.apply(ops, ids)?);
@@ -901,6 +989,119 @@ mod tests {
         assert_eq!(addrs(&again), ["/lane_set"], "made once");
         let closed = addrs(&playback.close(&mut ids).unwrap());
         assert_eq!(closed[0], "/lane_free");
+    }
+
+    /// **A box of notes sounds into its track.** The notes say which box they
+    /// are of; the box becomes a clip of its track over a bus of its own, the
+    /// lane's notes are made in the voices' group before the multitrack, and
+    /// each note's `out` is its box's bus -- whatever its own keys said. A
+    /// note of no box is left as it was.
+    #[test]
+    fn a_box_s_notes_sound_into_its_track() {
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        let mut ids = spaces();
+        let multitrack = ending_at(4.0);
+        playback
+            .sync(&multitrack, 48_000.0, &HashMap::new(), 1.0, &mut ids)
+            .unwrap();
+        let note = |scope: &str, keys: Value| crate::notes_playback::Placed {
+            start: 1.0,
+            end: 1.5,
+            keys: serde_json::from_value(keys).unwrap(),
+            id: String::new(),
+            scope: scope.into(),
+            curves: Vec::new(),
+        };
+        let placement = Placement {
+            events: vec![
+                note("20", json!({"midinote": 60, "out": 0})),
+                note("", json!({"midinote": 62})),
+            ],
+            curves: Vec::new(),
+        };
+        let steps = playback.notes(&placement, &mut ids).unwrap();
+        let (bus, _) = playback
+            .applier
+            .bus(&crate::instance::voice_bus_handle(20))
+            .expect("the box has a bus");
+        let voices = playback
+            .applier
+            .node(crate::instance::VOICES)
+            .expect("the voices' group");
+        let slot = steps
+            .iter()
+            .find_map(|step| match step {
+                Step::Send(m)
+                    if m.addr == "/graph_addSlot"
+                        && m.args.get(1)
+                            == Some(&OscType::String(clausters_core::mixer::VOICE_SLOT.into())) =>
+                {
+                    Some(m.args.clone())
+                }
+                _ => None,
+            })
+            .expect("the box is a slot of its track");
+        let track = playback.applier.node("track:10").unwrap();
+        assert_eq!(slot[0], OscType::Int(track));
+        assert!(
+            slot.windows(2)
+                .any(|pair| pair == [OscType::String("in0".into()), OscType::Float(bus as f32)]),
+            "over its bus: {slot:?}"
+        );
+        let made = steps
+            .iter()
+            .find_map(|step| match step {
+                Step::Send(m) if m.addr == "/lane_new" => Some(m.args.clone()),
+                _ => None,
+            })
+            .expect("the lane");
+        assert_eq!(
+            made[2],
+            OscType::Int(voices),
+            "its notes are made before the multitrack"
+        );
+        let data: Value = steps
+            .iter()
+            .find_map(|step| match step {
+                Step::Send(m) if m.addr == "/lane_set" => match &m.args[1] {
+                    OscType::String(data) => serde_json::from_str(data).ok(),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .expect("the lane's data");
+        let notes = data["notes"].as_array().unwrap();
+        assert_eq!(
+            notes[0][3]["out"],
+            json!(f64::from(bus)),
+            "the box's note sounds into the box, not where its key said"
+        );
+        assert!(
+            notes[1][3].get("out").is_none(),
+            "a note of no box is left alone"
+        );
+
+        // The same notes again: nothing of the box is made twice.
+        let again = playback.notes(&placement, &mut ids).unwrap();
+        assert_eq!(addrs(&again), ["/lane_set"]);
+        // And a sync after it plans the box itself.
+        let synced = playback
+            .sync(&multitrack, 48_000.0, &HashMap::new(), 1.0, &mut ids)
+            .unwrap();
+        assert!(
+            !addrs(&synced).iter().any(|a| a == "/node_free"),
+            "the box stays: {synced:?}"
+        );
+
+        // No notes: the box is no clip any more, and its bus is given back.
+        let cleared = playback.notes(&Placement::default(), &mut ids).unwrap();
+        assert!(addrs(&cleared).iter().any(|a| a == "/node_free"));
+        assert!(
+            playback
+                .applier
+                .bus(&crate::instance::voice_bus_handle(20))
+                .is_none()
+        );
     }
 
     /// The JSON doors answer steps with 64-bit samples, and an error for what

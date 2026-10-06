@@ -9696,3 +9696,60 @@ items of one value each, written inside `<fTrem>` with the value of the two
 together and halved again when read. Whether empty measures are drawn as
 numbered rests is the section's `type`, so it survives a score that has no run
 to show it.
+
+## A box of notes is a clip over a bus its voices write
+
+A track's fader, its gain automation, its mute and its meter did not reach the
+notes of a box on it (the user, 2026-10-06): the notes of every box played on
+one event lane and each voice wrote the hardware through its own `out`, past
+the strips. The rule decided is the user's — **what a track produces is what
+its strip shapes, whether a box reads samples or plays notes** — and a box of
+notes is therefore a source of sound *inside* its track, as a box of samples
+is.
+
+**The voices are not members of the clip.** The obvious shape — the note as a
+slot of its box's graph — is not available: a slot's members are fixed by its
+def, and what plays a note is whatever its events name. So the clip is the
+strip over a **bus** (`clausters_core::mixer::voices_graph`), the bus is the
+client's to allocate, and a voice is told it as its `out`: the control an
+event's `out` key already sets, which makes it a convention a def either
+follows or not rather than a new one. A def without the control sounds where
+it was written to, and that limit is stated rather than worked around —
+capturing whatever a group writes on the hardware's buses would catch
+everything else that writes them.
+
+**One lane, and a group before the multitrack.** The lane stays one per
+multitrack, since what makes a voice its box's is the bus and not where it is
+made. But a voice has to have written its bus by the block the clip reads it,
+so the notes are made in a group before the multitrack's graph, inside the
+transport's group and outside the tracks': they read the transport, and a stop
+releases them rather than freezing them mid-release. The release itself is
+then heard only as far as the stopped track lets it, which is what a take
+does.
+
+**Which boxes play notes is said by the notes.** The document names a source
+and never what is behind it, so the node plan cannot know a box is over a
+sequence. Rather than a new argument through every door — two clients and the
+host — the playback plans a clip for each box its placed notes name, against
+the multitrack the last sync was of (`nodes::plan_voiced`). Nothing crossed a
+binding.
+
+**Mute moved to the strip.** A silenced box's notes used to be left out of the
+lane; they are now placed and sound into a muted strip, because that is what
+a mute is for a take — a control of the fader, lagged, automatable, and one a
+note that began under it comes back from. The cost is that a muted track
+still runs its voices. A MIDI message and a command are still left out of a
+silenced box: no strip reaches them.
+
+**Two things in the server made the built-in `default` usable for it.** It
+wrote buses 0 and 1 as constants, so an event's `out` did nothing on it; it
+has an `out` control now. And its second channel is `out + 1`, a bus index a
+UGen computes, which the bus analysis read as *dynamic* — a barrier the
+auto-sort cannot cross, in every graph that holds such a voice. The analysis
+now evaluates arithmetic over controls and constants (`osc::graph`), so the
+index is static and a `/node_set` on the control re-sorts as for a bare one.
+The barrier had already cost something on the way: a clip's reader that
+computed `out + chan`, as the audio editor's does, put a track's meters before
+the strip they read, so the fix for a stereo take's two sides hands the reader
+both channels of its bus as two controls instead. That holds whichever way
+the analysis reads arithmetic, and it stayed.

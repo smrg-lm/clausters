@@ -26,7 +26,7 @@
 //!   client that guessed would produce a multitrack that sounds different in the
 //!   other client.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -107,21 +107,33 @@ pub struct PlannedCurve {
     pub table: Vec<f32>,
 }
 
-/// One clip: a box, its strip and its readers.
+/// One clip: a box, its strip and what it sounds from -- its readers, for a
+/// box of samples, or the bus its voices write, for a box of notes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedClip {
     /// The region this plays, which is the identity the editor knows it by.
     pub region: NodeId,
-    /// The slot of its track it is added to -- the source's width picks it.
+    /// The slot of its track it is added to -- the source's width picks it,
+    /// and a box of notes has one of its own (`mixer::VOICE_SLOT`).
     pub slot: String,
     /// Its own gain, before the track's.
     pub gain: f32,
     /// `1.0` when this box alone is silenced.
     pub mute: f32,
-    /// One per channel of the source.
+    /// One per channel of the source. None for a box of notes.
     pub readers: Vec<PlannedReader>,
     /// The curves over **this box alone** -- its own gain, its fades.
     pub curves: Vec<PlannedCurve>,
+    /// **How wide the bus this box's voices sound into is**, for a box of
+    /// notes; `0` for a box of samples. The bus is the caller's to allocate,
+    /// as a buffer is: its voices are told it as their `out`, and the clip
+    /// reads it where a box of samples reads its source.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub voices: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// One track: its strip and the clips on it.
@@ -314,10 +326,34 @@ pub fn tempo_map(multitrack: &Multitrack, default_tempo: f64) -> TempoMap {
 ///
 /// No tempo is asked for: every position is in seconds, so the plan is the
 /// sample rate's alone.
+///
+/// A box over a sequence is not planned here: which boxes play notes is
+/// something only whoever holds the sequences knows ([`plan_voiced`]).
 pub fn plan(
     multitrack: &Multitrack,
     sample_rate: f64,
     sources: &HashMap<SourceId, SourceInfo>,
+) -> Plan {
+    plan_voiced(multitrack, sample_rate, sources, &BTreeSet::new())
+}
+
+/// **[`plan`], with the boxes that play notes**: each region `voiced` names
+/// is a clip of its track too, over the bus its voices sound into
+/// ([`PlannedClip::voices`]) where a box of samples is over its readers.
+///
+/// So a box of notes is a source of sound inside its track, as a box of
+/// samples is: the track's strip -- its gain, its curves, its mute, its meter
+/// -- is after both, and the box has a strip of its own, with the same ports
+/// and the same curves over them. What a note is before that is its own: its
+/// def, its velocity, the curves inside it.
+///
+/// `voiced` is the caller's because a sequence is: the document names a
+/// source and does not say whether samples or events are behind it.
+pub fn plan_voiced(
+    multitrack: &Multitrack,
+    sample_rate: f64,
+    sources: &HashMap<SourceId, SourceInfo>,
+    voiced: &BTreeSet<NodeId>,
 ) -> Plan {
     let frames = |secs: f64| secs * sample_rate;
     let mut widths: Vec<(usize, usize)> = Vec::new();
@@ -338,6 +374,27 @@ pub fn plan(
             continue;
         };
         for region in &lane.regions {
+            if voiced.contains(&region.id) {
+                let pair = (mixer::VOICE_CHANNELS, channels);
+                if !widths.contains(&pair) {
+                    widths.push(pair);
+                }
+                clips.push(PlannedClip {
+                    region: region.id,
+                    slot: mixer::VOICE_SLOT.to_string(),
+                    gain: 1.0,
+                    mute: if region.muted { 1.0 } else { 0.0 },
+                    readers: Vec::new(),
+                    curves: curves(
+                        &region.automation,
+                        region.position.get(),
+                        mixer::CURVE_STEP,
+                        sample_rate,
+                    ),
+                    voices: mixer::VOICE_CHANNELS,
+                });
+                continue;
+            }
             let Content::Window {
                 window,
                 looping,
@@ -405,6 +462,7 @@ pub fn plan(
                     mixer::CURVE_STEP,
                     sample_rate,
                 ),
+                voices: 0,
             });
         }
         tracks.push(PlannedTrack {
@@ -658,6 +716,50 @@ mod tests {
         p.tracks[0].level = 1.0;
         p.tracks[0].config = crate::Opaque(serde_json::json!({"level": 0.5}));
         assert_eq!(track_gain(&p.tracks[0]), 0.5);
+    }
+
+    /// **A box of notes is a clip of its track**, over a bus of its own and no
+    /// reader: named by whoever holds the sequences, since a source id does
+    /// not say what is behind it. It has the box's own mute, and no buffer is
+    /// asked of the source table -- a sequence is in none.
+    #[test]
+    fn a_box_of_notes_is_a_clip_over_the_bus_its_voices_write() {
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].take_lanes[0].regions[1].muted = true;
+        // Region 4 plays notes; region 3 reads samples.
+        let voiced = BTreeSet::from([NodeId(4)]);
+        let table = HashMap::from([(
+            SourceId(1),
+            SourceInfo {
+                buffer: 10,
+                channels: 1,
+                duration: None,
+            },
+        )]);
+        let planned = plan_voiced(&multitrack, 48_000.0, &table, &voiced);
+        let clips = &planned.tracks[0].clips;
+        assert_eq!(clips.len(), 2);
+        assert_eq!(clips[0].voices, 0, "a box of samples has readers");
+        assert_eq!(clips[0].readers.len(), 1);
+        let notes = &clips[1];
+        assert_eq!(notes.region, NodeId(4));
+        assert_eq!(notes.slot, mixer::VOICE_SLOT);
+        assert_eq!(notes.voices, mixer::VOICE_CHANNELS);
+        assert!(notes.readers.is_empty());
+        assert_eq!(notes.mute, 1.0, "the box's own mute is its strip's");
+        assert!(
+            planned
+                .widths
+                .contains(&(mixer::VOICE_CHANNELS, planned.tracks[0].channels)),
+            "and its strip's width is asked for"
+        );
+        assert!(
+            plan(&multitrack, 48_000.0, &table).tracks[0]
+                .clips
+                .iter()
+                .all(|clip| clip.voices == 0),
+            "a plan nobody named a box of notes to has none"
+        );
     }
 }
 
