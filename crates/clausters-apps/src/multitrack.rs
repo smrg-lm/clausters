@@ -125,6 +125,10 @@ pub struct Window<'a> {
     pub title: &'a str,
     /// The window's size, in logical pixels.
     pub size: (i64, i64),
+    /// The close form's widgets, when the holder numbered them.
+    pub close_form: Option<crate::closing::Ids>,
+    /// Whether the window is the work's one holder ([`crate::closing`]).
+    pub asks: bool,
 }
 
 impl Window<'_> {
@@ -153,6 +157,9 @@ impl Window<'_> {
     }
 }
 
+/// What the close form asks, in a multitrack's window.
+pub const UNSAVED: &str = "The session has changes that are not saved.";
+
 /// **The window**, as a GuiDef rooted at a `window` node.
 ///
 /// The ruler first, the multitrack under it and the transport row under that. The
@@ -173,12 +180,18 @@ pub fn window(w: &Window<'_>) -> Value {
         Transport::Unnumbered => children.push(transport(None)),
         Transport::Numbered(ids) => children.push(transport(Some(ids))),
     }
+    // **The close form, held**, where the holder numbered it -- and the
+    // window asks before it closes only where it is the work's one holder
+    if let Some(ids) = &w.close_form {
+        children.push(crate::closing::stack(ids, UNSAVED));
+    }
     json!({
         "type": "window",
         "title": w.title,
         "w": w.size.0,
         "h": w.size.1,
         "flow": "col",
+        "ask_close": crate::closing::asks(w.asks, w.close_form.is_some()),
         "children": children,
     })
 }
@@ -346,6 +359,8 @@ mod tests {
             transport,
             title: "multitrack",
             size: (1000, 560),
+            close_form: None,
+            asks: false,
         })
     }
 

@@ -791,6 +791,11 @@ pub struct Host {
     /// while one is unanswered closes the window, so an owner that stopped
     /// answering cannot keep it open. Anything an owner sends answers.
     close_asked: std::collections::HashSet<i32>,
+    /// **The windows that depend on another**, by the window they depend on:
+    /// an application opened from inside another -- a roll from the
+    /// multitrack -- is the outer one's, and closes when it closes
+    /// ([`depend`](Self::depend)).
+    dependents: HashMap<i32, Vec<i32>>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
@@ -930,6 +935,7 @@ impl Host {
             status: Default::default(),
             popups: HashMap::new(),
             close_asked: Default::default(),
+            dependents: HashMap::new(),
             owner: None,
             clock_shown: None,
             #[cfg(test)]
@@ -1201,6 +1207,26 @@ impl Host {
         }
         self.close_asked.insert(id);
         false
+    }
+
+    /// **Window `child` depends on window `parent`**: it is closed when
+    /// `parent` is, whichever way `parent` closes.
+    pub(crate) fn depend(&mut self, child: i32, parent: i32) {
+        let children = self.dependents.entry(parent).or_default();
+        if !children.contains(&child) {
+            children.push(child);
+        }
+    }
+
+    /// **The windows that depend on `parent`**, still open, taken off the
+    /// table: what closes with it. Each one's own dependents go with it when
+    /// it is closed in turn.
+    pub(crate) fn take_dependents(&mut self, parent: i32) -> Vec<i32> {
+        let children = self.dependents.remove(&parent).unwrap_or_default();
+        children
+            .into_iter()
+            .filter(|child| self.window_defs.contains_key(child))
+            .collect()
     }
 
     /// The window's owner said something: whatever it asked of a close is

@@ -3214,17 +3214,27 @@ wrong.
   its holder keeps. *(Narrowed the same day, by the user: a window asks only
   where it is the work's one holder -- the entry after next.)*
 
-- ⬜ **The standalone session's windows close without asking** *(found
+- ✅ **The standalone session's windows close without asking** *(found
   2026-10-06, after the entry above)*. A window asks only where it is the
   work's one holder, which is a standalone host's, and there only the score
-  editor's asks: the multitrack and the rolls edit the session the host saves
-  with Ctrl+S, and their windows close and let unsaved changes go. The rule
-  is every editor's now (the entry below), so what each adds is its share of
-  it -- whether the session has changes its file does not hold, the holder
-  saying the window is the only one, and the close form in its window --
-  and the form waits for "The applications' window chrome in standalone",
-  above, where a window's forms are. A client's editor of any kind loses
-  nothing by a close: the client keeps what it edits.
+  editor's asked: the multitrack and the rolls edit the session the host
+  saves with Ctrl+S, and their windows closed and let unsaved changes go.
+  This entry first said it waited for the chrome in standalone; it did not,
+  since the close form is a dialog any window holds on a page of its own,
+  with no menu bar or toolbar around it. And a roll is not a holder of its
+  own: the user, the same day, on an application inside another -- the outer
+  one governs, the multitrack here, and when its window closes every window
+  that depends on it closes too (`crates/clausters-document/PLAN.md`, "An
+  application inside another").
+  **Fixed 2026-10-06**: the session knows whether it has changes its file
+  does not hold (its history's version against the one last written or
+  opened); the multitrack's window holds the close form the closing module
+  builds (`closing::stack`), numbered by the host, and says `ask_close`; its
+  editor answers the rule like every editor, and the form's Save writes the
+  session and closes -- a save that fails says why on the status bar and
+  keeps the window. A roll opened from the multitrack depends on its window
+  (`Host::depend`), so the multitrack's window takes its rolls with it
+  whichever way it closes, and closing a roll alone loses nothing.
 
 - ✅ **Closing and the key sheet are every application's** *(asked for by
   the user 2026-10-06: F1 and the close are a general mechanism, and have

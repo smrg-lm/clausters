@@ -186,6 +186,10 @@ pub struct Owner {
     /// of [`Owner::editing`], and the file Ctrl+S writes the score to.
     #[cfg(feature = "notation")]
     pub scores: HashMap<i32, (MemberId, Option<std::path::PathBuf>)>,
+    /// **The history's version when the session was last written** -- or
+    /// opened: a session whose history has moved since has changes its file
+    /// does not hold ([`Owner::unsaved`]).
+    saved: i64,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -231,6 +235,7 @@ impl Owner {
                 domain: MULTITRACK.into(),
             },
         );
+        let saved = editing.version();
         Self {
             document,
             multitrack: Multitrack::default(),
@@ -251,7 +256,15 @@ impl Owner {
             rolls: HashMap::new(),
             #[cfg(feature = "notation")]
             scores: HashMap::new(),
+            saved,
         }
+    }
+
+    /// **Whether the session has changes its file does not hold**: its
+    /// history has moved since it was opened or last written. What the
+    /// multitrack's window asks about before a close lets them go.
+    pub fn unsaved(&self) -> bool {
+        self.editing.version() != self.saved
     }
 
     /// Whether the picture comes from the **multitrack** rather than from the tree.
@@ -348,13 +361,15 @@ impl Owner {
         self
     }
 
-    /// Writes to [`Self::save_path`], or reports that there is nowhere to write.
-    pub fn save_now(&self) -> Result<&std::path::Path, String> {
+    /// Writes to [`Self::save_path`], or reports that there is nowhere to
+    /// write. What it wrote is what the file holds from now on.
+    pub fn save_now(&mut self) -> Result<std::path::PathBuf, String> {
         let path = self
             .save_path
-            .as_deref()
+            .clone()
             .ok_or_else(|| "this session has nowhere to save to".to_string())?;
-        self.save(path)?;
+        self.save(&path)?;
+        self.saved = self.editing.version();
         Ok(path)
     }
 
@@ -537,6 +552,18 @@ impl Owner {
         editor.set_sources(self.buffer_table());
         editor.set_lengths(self.buffer_lengths());
         editor.set_segments(self.segments());
+        // **The window is the session's one holder** -- this host has no
+        // client beside it -- so a close with changes not saved asks, in the
+        // form the window holds, numbered after the transport row
+        editor.set_close_form(Some(clausters_apps::closing::Ids {
+            stack: window + 8,
+            dialog: window + 9,
+            save: window + 10,
+            discard: window + 11,
+            cancel: window + 12,
+        }));
+        editor.set_asks_to_close(true);
+        editor.set_unsaved(self.unsaved());
         for (id, sequence) in &self.sequences {
             editor.bind_sequence(*id, sequence.clone());
         }
@@ -594,10 +621,12 @@ impl Owner {
             self.buffer_table(),
             self.buffer_lengths(),
         );
+        let unsaved = self.unsaved();
         if let Some(editor) = self.editor_mut() {
             editor.set_multitrack(multitrack);
             editor.set_sources(table);
             editor.set_lengths(lengths);
+            editor.set_unsaved(unsaved);
         }
     }
 
@@ -1499,6 +1528,7 @@ mod tests {
             .expect("the session opens")
             .with_units_per_beat(1.0);
         owner.bind(50, NodeId(2));
+        assert!(!owner.unsaved(), "as opened, the file holds it");
 
         // Edited the way a gesture would edit it: the payload, translated.
         let (intent, label) = owner
@@ -1518,7 +1548,10 @@ mod tests {
         assert_eq!(owner.redo().len(), 1);
 
         let out = dir.join(format!("clausters_h3_out_{}.json", std::process::id()));
-        owner.save(&out).expect("it saves");
+        assert!(owner.unsaved(), "an edit its file does not hold");
+        let mut owner = owner.saving_to(&out);
+        assert_eq!(owner.save_now().expect("it saves"), out);
+        assert!(!owner.unsaved(), "written, the file holds it");
         let reopened = Owner::open(&out).expect("and reopens");
         let Body::Aggregate { members, .. } = &reopened.document.root.body else {
             panic!("an aggregate")
@@ -1881,6 +1914,38 @@ mod window_verb_tests {
         assert_eq!(host.ids().in_use(Space::Transports), 1);
         host.close_notes(source);
         assert_eq!(host.ids().in_use(Space::Transports), 0);
+
+        // **The multitrack is the application the roll is inside**: the note
+        // dragged is a change the session's file does not hold, so the
+        // multitrack's window asks before it closes, in the form it holds --
+        // and when it goes, the roll goes with it
+        assert!(host.owner.as_ref().unwrap().unsaved());
+        assert!(!host.close_request(def_id), "the window asks its editor");
+        let close = host.event_message(def_id, 9, vec![OscType::String("close".into())]);
+        assert!(host.deliver(def_id, &close));
+        let up = |host: &Host| match host.window_def(def_id).and_then(|t| t.find(def_id + 8)) {
+            Some(widget) => matches!(widget.kind, crate::host::WidgetKind::Stack { index: 1, .. }),
+            None => false,
+        };
+        assert!(up(&host), "the close form is up");
+        let cancel = host.event_message(def_id + 12, 10, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &cancel));
+        assert!(
+            !up(&host) && host.window_defs.contains_key(&def_id),
+            "Cancel keeps it"
+        );
+        assert!(host.deliver(def_id, &close));
+        let discard = host.event_message(def_id + 11, 11, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &discard));
+        assert!(
+            !host.window_defs.contains_key(&def_id),
+            "Don't save closes it"
+        );
+        assert!(
+            !host.window_defs.contains_key(&roll),
+            "and the roll inside it"
+        );
+        assert!(host.owner.as_ref().unwrap().rolls.is_empty());
     }
 
     /// **The transport row and the space bar are the editor's**: a click on a

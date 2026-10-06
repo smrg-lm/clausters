@@ -1127,7 +1127,13 @@ shared turn reads the window's `close` for every editor (`Converse::unsaved`,
 `asks_to_close`, `ask_to_close` are what an application adds); the window
 carries `ask_close` only where it asks, so the host holds its close mark for
 the answer; and every holder -- each client's `Editor`, the standalone host --
-frees the window on any editor's `close`.
+frees the window on any editor's `close`. An application with no dialogs of
+its own holds the form as a page of a stack that takes no room
+(`closing::stack`), which is how the standalone host's multitrack asks about
+its session. **A window opened from inside another depends on it**
+(`Host::depend`): the outer application governs, so the multitrack's window
+takes the rolls opened from it along whichever way it closes, and only the
+outer window asks.
 
 **A file is its holder's to read and write.** The score editor never touches
 one: a save or an open is a turn whose outcome names the path (`save`,

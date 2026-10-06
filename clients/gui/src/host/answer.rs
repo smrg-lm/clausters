@@ -267,6 +267,13 @@ impl Host {
     pub(super) fn free_own_window(&mut self, def_id: i32) {
         use std::net::{Ipv4Addr, SocketAddr};
 
+        // **The windows that depend on it go first**: a roll opened from the
+        // multitrack is the multitrack's, and does not outlive it
+        for dependent in self.take_dependents(def_id) {
+            self.free_own_window(dependent);
+        }
+        // a roll's window takes its roll with it
+        self.forget_roll(def_id);
         let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
         let effects = self.handle_packet(
             OscPacket::Message(OscMessage {
@@ -276,6 +283,19 @@ impl Host {
             origin,
         );
         self.pending_effects.extend(effects);
+    }
+
+    /// **The roll in window `def_id` is gone**, when it is a roll's: its
+    /// editor out of the owner's seats, its transport given back, and its
+    /// two widget names let go.
+    fn forget_roll(&mut self, def_id: i32) {
+        let Some((source, _)) = self.owner.as_mut().and_then(|o| o.rolls.remove(&def_id)) else {
+            return;
+        };
+        self.close_notes(source);
+        let structure = i64::try_from(source.0).unwrap_or(i64::MAX);
+        self.forget_own_widget(structure, ROLL, "window");
+        self.forget_own_widget(structure, ROLL, "notes");
     }
 
     pub(super) fn answer_multitrack(&mut self, def_id: i32, message: &OscMessage) -> bool {
@@ -380,6 +400,21 @@ impl Host {
         }
         if let Some(answer) = outcome.answer {
             self.tell(answer);
+        }
+        // **The close form's Save**: the session written where it is saved,
+        // and the window closed once it is -- a save that fails says why and
+        // keeps the window, and the work in it
+        if outcome.save
+            && let Some(owner) = self.owner.as_mut()
+        {
+            match owner.save_now() {
+                Ok(path) => diag::info!("session saved to {}", path.display()),
+                Err(why) => {
+                    diag::warn!("save: {why}");
+                    self.say(def_id, status::Line::of_reason(None, &why));
+                    return true;
+                }
+            }
         }
         if outcome.close {
             self.free_own_window(def_id);
@@ -507,6 +542,11 @@ impl Host {
             _ => return,
         };
         owner.rolls.insert(def_id, (id, member));
+        // **The roll is the multitrack's**: an application inside another,
+        // whose window goes when the multitrack's does
+        if let Some(parent) = owner.editor().and_then(|editor| editor.window_id()) {
+            self.depend(def_id, parent);
+        }
         let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
         let effects = self.handle_packet(
             OscPacket::Message(OscMessage {
@@ -565,11 +605,7 @@ impl Host {
             return false;
         };
         if outcome.turn == Kind::Closed {
-            owner.rolls.remove(&def_id);
-            self.close_notes(source);
-            let structure = i64::try_from(source.0).unwrap_or(i64::MAX);
-            self.forget_own_widget(structure, ROLL, "window");
-            self.forget_own_widget(structure, ROLL, "notes");
+            self.forget_roll(def_id);
             return true;
         }
         if outcome.turn == Kind::Step {
@@ -591,13 +627,6 @@ impl Host {
         }
         // a close the editor asked for: the roll goes as a closed one does
         if outcome.close {
-            if let Some(owner) = self.owner.as_mut() {
-                owner.rolls.remove(&def_id);
-            }
-            self.close_notes(source);
-            let structure = i64::try_from(source.0).unwrap_or(i64::MAX);
-            self.forget_own_widget(structure, ROLL, "window");
-            self.forget_own_widget(structure, ROLL, "notes");
             self.free_own_window(def_id);
             return true;
         }

@@ -88,6 +88,11 @@ pub struct Outcome {
     /// context. The one box the multitrack opens: it edits no take.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<u64>,
+    /// **Save before closing**: the close form's Save. The holder writes
+    /// the session where it saves it, and closes the window once it is
+    /// written -- a save that fails keeps the window.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub save: bool,
     /// **Whether to close the window** ([`crate::closing`]): a close asked of
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -113,6 +118,28 @@ impl Converse for MultitrackEditor {
 
     fn owns(&self, widget: i64, tag: &str) -> bool {
         i32::try_from(widget).is_ok_and(|w| self.answers(w, tag))
+            || self.close_form.is_some_and(|ids| ids.contains(widget))
+    }
+
+    fn asks_to_close(&self) -> bool {
+        self.asks
+    }
+
+    fn unsaved(&self) -> bool {
+        self.unsaved
+    }
+
+    fn ask_to_close(&mut self, _out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        match self.close_form {
+            Some(ids) => (None, crate::closing::shown(&ids, true)),
+            None => (
+                Some(
+                    "this window has changes that are not saved, and no form to ask about them"
+                        .into(),
+                ),
+                Vec::new(),
+            ),
+        }
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -126,6 +153,21 @@ impl Converse for MultitrackEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        // **The close form's answer**: Save writes and then closes, Don't
+        // save closes, Cancel keeps the window -- and the form goes down
+        if let Some(ids) = self.close_form.filter(|ids| ids.contains(widget)) {
+            use crate::closing::Choice;
+            match ids.read(widget, tag) {
+                Some(Choice::Save) => {
+                    out.save = true;
+                    out.close = true;
+                }
+                Some(Choice::Discard) => out.close = true,
+                Some(Choice::Cancel) => {}
+                None => return (None, Vec::new()),
+            }
+            return (None, crate::closing::shown(&ids, false));
+        }
         self.gesture(widget, tag, values, out)
     }
 }
@@ -225,6 +267,15 @@ pub struct MultitrackEditor {
     /// The transport row's ids, once they are known: numbered here, or learned
     /// by name after the window opened.
     controls: Option<TransportIds>,
+    /// **The close form's widgets**, when the holder numbered them
+    /// ([`crate::closing`]); and whether it is up.
+    close_form: Option<crate::closing::Ids>,
+    /// Whether the window is the work's one holder, so a close with
+    /// something unsaved asks first -- a standalone host's, never a client's.
+    asks: bool,
+    /// Whether the holder's work has changes its file does not hold, as the
+    /// holder last said: the session is the holder's, not this editor's.
+    unsaved: bool,
 }
 
 impl MultitrackEditor {
@@ -257,7 +308,30 @@ impl MultitrackEditor {
             conversation: Conversation::new(version),
             told: None,
             controls: None,
+            close_form: None,
+            asks: false,
+            unsaved: false,
         }
+    }
+
+    /// **The close form's widgets**, numbered by the holder: the window then
+    /// holds the form, to ask in before a close lets unsaved work go.
+    /// Said before [`window`](Self::window).
+    pub fn set_close_form(&mut self, ids: Option<crate::closing::Ids>) {
+        self.close_form = ids;
+    }
+
+    /// **The window is the work's one holder** -- a standalone host's -- and
+    /// asks before a close lets unsaved work go ([`crate::closing`]). Said
+    /// before [`window`](Self::window).
+    pub fn set_asks_to_close(&mut self, asks: bool) {
+        self.asks = asks;
+    }
+
+    /// Whether the holder's work has changes its file does not hold: what a
+    /// close asks about. The holder says so before each turn.
+    pub fn set_unsaved(&mut self, unsaved: bool) {
+        self.unsaved = unsaved;
     }
 
     /// The window's own settings: the navigation group, the transport row, the
@@ -634,6 +708,8 @@ impl MultitrackEditor {
             transport: self.transport,
             title: &self.title,
             size: self.size,
+            close_form: self.close_form,
+            asks: self.asks,
         })
     }
 
@@ -1132,6 +1208,60 @@ mod tests {
         editor.window(40, 41);
         editor.set_window(Some(39));
         editor
+    }
+
+    /// **The window that is the session's one holder asks before it closes
+    /// with something unsaved**, in the form it holds: Save writes and
+    /// closes, Don't save closes, Cancel keeps it. A window a client holds,
+    /// or one with nothing unsaved, closes at once.
+    #[test]
+    fn the_sessions_one_window_asks_before_a_close_loses_work() {
+        let ids = crate::closing::Ids {
+            stack: 50,
+            dialog: 51,
+            save: 52,
+            discard: 53,
+            cancel: 54,
+        };
+        let close = || event(39, 1, 1, crate::closing::VERB, vec![]);
+        // a client's: no form, no asking, and closing loses nothing
+        let mut client = editor();
+        assert_eq!(client.window(40, 41)["ask_close"], false);
+        client.set_unsaved(true);
+        assert!(client.event(&close(), 1).close);
+        // the standalone host's: the form is in the window, and it asks
+        let mut alone = editor();
+        alone.set_close_form(Some(ids));
+        alone.set_asks_to_close(true);
+        let window = alone.window(40, 41);
+        assert_eq!(window["ask_close"], true);
+        let held = window["children"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()
+            .clone();
+        assert_eq!(held["id"], 50);
+        assert!(alone.event(&close(), 1).close, "nothing unsaved: at once");
+        alone.set_unsaved(true);
+        let out = alone.event(&close(), 1);
+        assert!(!out.close);
+        let Some(Answer::Push { corrections, .. }) = out.answer else {
+            panic!("the form shown")
+        };
+        assert_eq!(corrections[0].props, json!({"index": 1}));
+        // Cancel keeps the window; Don't save closes; Save saves, then closes
+        let said = |editor: &mut MultitrackEditor, widget: i64| {
+            editor.event(&event(widget, 2, 1, "click", vec![]), 1)
+        };
+        let out = said(&mut alone, 54);
+        assert!(!out.close && !out.save);
+        alone.event(&close(), 1);
+        let out = said(&mut alone, 53);
+        assert!(out.close && !out.save);
+        alone.event(&close(), 1);
+        let out = said(&mut alone, 52);
+        assert!(out.close && out.save);
     }
 
     fn event(widget: i64, seq: i64, against: i64, tag: &str, values: Vec<Value>) -> Event {

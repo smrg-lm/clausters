@@ -92,6 +92,93 @@ pub fn dialog(dialog_id: Option<i32>, question: &str, id: impl Fn(&str) -> Optio
     })
 }
 
+/// **The close form's widgets, numbered by the window's holder**: the
+/// stack it is a page of, the dialog, and its three buttons. An application
+/// with no dialogs of its own composes the form with these ([`stack`]); one
+/// that has a stack of forms already puts [`dialog`] on a page of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ids {
+    /// The stack: page 0 holds nothing, page 1 the form.
+    pub stack: i32,
+    /// The dialog.
+    pub dialog: i32,
+    /// `Save`.
+    pub save: i32,
+    /// `Don't save`.
+    pub discard: i32,
+    /// `Cancel`.
+    pub cancel: i32,
+}
+
+impl Ids {
+    /// Whether `widget` is one of the form's.
+    #[must_use]
+    pub fn contains(&self, widget: i64) -> bool {
+        [
+            self.stack,
+            self.dialog,
+            self.save,
+            self.discard,
+            self.cancel,
+        ]
+        .iter()
+        .any(|id| i64::from(*id) == widget)
+    }
+
+    /// **What a report from the form answers**: a button's click, or the
+    /// dialog's own `cancel` (its close mark, Escape).
+    #[must_use]
+    pub fn read(&self, widget: i64, tag: &str) -> Option<Choice> {
+        let is = |id: i32| i64::from(id) == widget;
+        if is(self.dialog) {
+            return (tag == "cancel").then_some(Choice::Cancel);
+        }
+        if tag != "click" {
+            return None;
+        }
+        if is(self.save) {
+            Some(Choice::Save)
+        } else if is(self.discard) {
+            Some(Choice::Discard)
+        } else if is(self.cancel) {
+            Some(Choice::Cancel)
+        } else {
+            None
+        }
+    }
+}
+
+/// **The close form as a window holds it**: a stack that takes no room, page
+/// 0 empty and page 1 the form -- in the window from the start, so asking is
+/// a correction of the stack's `index` ([`shown`]) and nothing is defined.
+#[must_use]
+pub fn stack(ids: &Ids, question: &str) -> Value {
+    let form = dialog(Some(ids.dialog), question, |name| match name {
+        SAVE => Some(ids.save),
+        DISCARD => Some(ids.discard),
+        CANCEL => Some(ids.cancel),
+        _ => None,
+    });
+    json!({
+        "type": "layout",
+        "id": ids.stack,
+        "flow": "stack",
+        "index": 0,
+        "h": 0,
+        "margin": 0,
+        "children": [{"type": "layout"}, {"type": "layout", "children": [form]}],
+    })
+}
+
+/// The correction that puts the close form up, or takes it down.
+#[must_use]
+pub fn shown(ids: &Ids, up: bool) -> Vec<Correction> {
+    vec![Correction {
+        widget: i64::from(ids.stack),
+        props: json!({"index": i32::from(up)}),
+    }]
+}
+
 /// **Whether a window asks before it closes** (its `ask_close` prop): only
 /// when its holder said the window is the work's only one, and it has a form
 /// to ask in.
@@ -223,5 +310,31 @@ mod tests {
         assert_eq!(choice("cancel"), Some(Choice::Cancel));
         assert_eq!(choice("title"), None);
         assert!(asks(true, true) && !asks(false, true) && !asks(true, false));
+    }
+
+    /// The form a window holds is a page of a stack, up by a correction, and
+    /// its buttons and its own close are read back as the three answers.
+    #[test]
+    fn a_held_form_is_a_page_and_reads_its_answers() {
+        let ids = Ids {
+            stack: 20,
+            dialog: 21,
+            save: 22,
+            discard: 23,
+            cancel: 24,
+        };
+        let held = stack(&ids, "Unsaved.");
+        assert_eq!(
+            (held["id"].clone(), held["index"].clone()),
+            (json!(20), json!(0))
+        );
+        assert_eq!(held["children"][1]["children"][0]["id"], 21);
+        assert_eq!(shown(&ids, true)[0].props, json!({"index": 1}));
+        assert_eq!(ids.read(22, "click"), Some(Choice::Save));
+        assert_eq!(ids.read(23, "click"), Some(Choice::Discard));
+        assert_eq!(ids.read(24, "click"), Some(Choice::Cancel));
+        assert_eq!(ids.read(21, "cancel"), Some(Choice::Cancel));
+        assert_eq!(ids.read(22, "focus"), None);
+        assert!(ids.contains(20) && !ids.contains(25));
     }
 }

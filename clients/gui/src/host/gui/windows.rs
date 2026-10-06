@@ -370,6 +370,10 @@ impl App {
             self.apply_gesture_effects(effects);
             return;
         }
+        // the windows that depend on it close with it
+        for dependent in self.host.take_dependents(id) {
+            self.close_by_user(dependent);
+        }
         self.close_by_user(id);
         if self.standalone && self.windows.is_empty() {
             event_loop.exit();
