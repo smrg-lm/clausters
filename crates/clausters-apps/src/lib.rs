@@ -32,6 +32,7 @@
 //! projections already follow.
 
 pub mod audio;
+pub mod chrome;
 pub mod closing;
 pub mod editing;
 pub mod multitrack;

@@ -1061,7 +1061,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          keys: list | str | None = None, verbs: dict | None = None,
          ask_close: bool | None = None,
          split: bool | None = None, menu: list | None = None,
-         glyphs: dict | None = None,
+         main: int | None = None, glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
@@ -1133,8 +1133,14 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     the titles of a band the host draws along the top edge, each opening its
     list under it. It is chrome, like the status bar -- not a widget, and taken
     out of the area the children are laid out in. A pick is reported by the
-    window itself, as ``("menu", verb)``. ``split`` makes the gaps between the
-    window's own children dividers a drag moves, as on `layout`.
+    window itself, as ``("menu", verb)`` -- or, where the host performs the
+    verb (``cut``, ``play``, ``select_all``...), performed as its key would
+    be, and not reported. ``split`` makes the gaps between the window's own
+    children dividers a drag moves, as on `layout`.
+
+    ``main`` is the id of the **view the window's commands address** when
+    nothing holds the focus -- a menu entry's verb, a tool's, a key's -- so a
+    window's menu acts on what it edits before a hand has been in it.
 
     ``glyphs`` are **outlines for characters the window's text uses**: a
     codepoint in hex (``"E1D5"``) to the SVG path of its shape, in the font's
@@ -1147,7 +1153,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     character is the one drawn, in every window.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
-                       cols=cols, theme=theme, color=color, menu=menu,
+                       cols=cols, theme=theme, color=color, menu=menu, main=main,
                        keys=[keys] if isinstance(keys, str) else keys,
                        verbs=None if verbs is None else dict(verbs),
                        glyphs=None if glyphs is None else dict(glyphs))
@@ -1462,6 +1468,7 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
 def button(control=None, *, label: str | None = None, mode: str | None = None,
            on: float | None = None, off: float | None = None,
            icon: str | None = None, flat: bool | None = None, menu: list | None = None,
+           verb: str | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A push ``button``, whose **press is the event**. ``text_size`` scales its
@@ -1506,13 +1513,19 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     face draws). ``flat`` draws no box until the pointer is over the button --
     the look a row of tools wants. ``menu`` is a `menu` tree: the button then
     opens it under itself instead of firing, and what it reports is the entry
-    picked, as ``("menu", verb)``."""
+    picked, as ``("menu", verb)``.
+
+    ``verb`` makes the button a **tool**: a click performs that verb as the
+    key bound to it would -- ``"cut"``, ``"play"``, ``"select_all"`` -- on
+    what the window's focus is on, or on the view the window names as its
+    ``main``, and the window's owner hears it where the host performs no such
+    verb. A tool reports nothing of its own and takes no focus."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
             "\"press\" (one message, the bang)")
     extra = _drop_none(label=label, mode=mode, on=on, off=off, icon=icon, menu=menu,
-                       text_size=text_size, color=color)
+                       verb=verb, text_size=text_size, color=color)
     if flat is not None:
         extra["flat"] = 1 if flat else 0
     if control is not None:

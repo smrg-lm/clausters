@@ -197,10 +197,49 @@ impl Gestures {
         Some(out)
     }
 
+    /// **Performs the verb `name` for a tool or a menu entry**: what a key
+    /// bound to it would do, with no pointer -- the hand is on the tool, not on
+    /// what the tool acts on.
+    pub(super) fn command(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        name: &str,
+    ) -> Vec<GestureEffect> {
+        with_clipboard(host, |host, clip| self.perform(host, ctx, name, None, clip))
+    }
+
+    /// **An entry of element `id`'s own context menu**: its command, or the
+    /// host's verb by that name performed on it, or -- when it takes neither
+    /// -- the verb performed as a key would.
+    pub(super) fn context_command(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        id: i32,
+        name: &str,
+    ) -> Vec<GestureEffect> {
+        with_clipboard(host, |host, clip| {
+            if let Some(out) = self.command_to(host, ctx, id, name, clip) {
+                return out;
+            }
+            if let Some(verb) = Verb::named(name)
+                && let Some(at) = super::popups::at_widget(host, ctx, id)
+                && let Some(out) = self.verb_to(host, ctx, verb, id, at, clip)
+            {
+                return out;
+            }
+            self.perform(host, ctx, name, None, clip)
+        })
+    }
+
     /// **Performs the verb `name`**, offered in the order a key reaches the
     /// window: the focused element, the element under the pointer, the window
     /// itself, and -- when the host performs no such verb, or nothing here
-    /// took it -- the window's owner, as `"menu" <verb>` when the window's bar
+    /// took it -- the window's owner. The window's `main` element is asked
+    /// after the one under the pointer; a name the key table does not hold
+    /// is offered to the focused and the `main` element as a command of
+    /// their own. The owner is told as `"menu" <verb>` when the window's bar
     /// has an entry for it (the entry and its key are one command) and as the
     /// bare `<verb>` otherwise.
     fn perform(
@@ -226,9 +265,14 @@ impl Gestures {
             {
                 return out;
             }
+            if let Some(out) = self.verb_main(host, ctx, verb, clipboard) {
+                return out;
+            }
             if let Some(out) = self.window_verb(host, ctx, verb, pointer, clipboard) {
                 return out;
             }
+        } else if let Some(out) = self.command_held(host, ctx, name, clipboard) {
+            return out;
         }
         let mut out = Vec::new();
         if super::popups::pick_verb(host, ctx, &mut out, name).is_none() {
@@ -262,6 +306,74 @@ impl Gestures {
             .map(|p| (p.rect, p.scale, p.indent))?;
         let at = element::At::widget(id, rect, scale, indent);
         self.verb_to(host, ctx, verb, id, at, clipboard)
+    }
+
+    /// The verb offered to the window's **`main` element**, where it is not the
+    /// one holding the focus (which was asked already): what a menu entry or a
+    /// tool addresses before a hand has been in the window.
+    fn verb_main(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: Verb,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        let id = self.main_unfocused(host, ctx)?;
+        let at = super::popups::at_widget(host, ctx, id)?;
+        self.verb_to(host, ctx, verb, id, at, clipboard)
+    }
+
+    /// The window's `main` element, unless it holds the focus already.
+    fn main_unfocused(&self, host: &Host, ctx: &GestureCtx) -> Option<i32> {
+        host.window_main(ctx.def_id)
+            .filter(|id| host.focused() != Some((ctx.def_id, *id)))
+    }
+
+    /// **A name the key table does not hold**, offered as a command of the
+    /// element's own ([`Element::command`](crate::host::widget::Element::command))
+    /// to the focused element and then to the window's `main` one.
+    fn command_held(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        name: &str,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        let focused = host
+            .focused()
+            .filter(|(d, _)| *d == ctx.def_id)
+            .map(|(_, id)| id);
+        for id in focused.into_iter().chain(self.main_unfocused(host, ctx)) {
+            if let Some(out) = self.command_to(host, ctx, id, name, clipboard) {
+                return Some(out);
+            }
+        }
+        None
+    }
+
+    /// Element `id` asked to perform its own command `name`; what it reports
+    /// is delivered as a verb's is.
+    pub(super) fn command_to(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        id: i32,
+        name: &str,
+        clipboard: &mut Clip,
+    ) -> Option<Vec<GestureEffect>> {
+        let at = super::popups::at_widget(host, ctx, id)?;
+        let mut input = KeyInput {
+            mods: Mods::default(),
+            clipboard,
+            cursor: cursor_of(host, ctx, id),
+        };
+        let events =
+            element::with(host, ctx, at, |el, _| el.command(name, &mut input)).flatten()?;
+        let mut out = Vec::new();
+        element::report(host, &mut out, ctx, id, events);
+        host.sync_track_totals_keeping_view();
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        Some(out)
     }
 
     /// The verb offered to the **element under the pointer** -- the other
@@ -377,8 +489,60 @@ impl Gestures {
                 self.clipboard_key(host, ctx, clip, cx, cy, clipboard)
             }
             Verb::Keys => Some(super::popups::open_keys(host, ctx)),
-            Verb::Quantize | Verb::Split | Verb::Join | Verb::Delete => None,
+            Verb::SelectAll => self.take_span_key(host, ctx, cx, cy, None),
+            Verb::Delete => self.take_span_key(host, ctx, cx, cy, Some("delete")),
+            Verb::Quantize | Verb::Split | Verb::Join => None,
         }
+    }
+
+    /// **The verbs a view of samples answers over its whole extent or its
+    /// selection**: *select all* sweeps the whole take, and *delete* asks its
+    /// owner to take the selected span out -- a cut that puts nothing on the
+    /// clipboard, as a cut is a copy and a delete. Addressed as the clipboard's
+    /// verbs are: the view under the pointer, else the window's last
+    /// selection, else its one take. `tag` is what the owner is asked; `None`
+    /// is the sweep.
+    fn take_span_key(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+        tag: Option<&str>,
+    ) -> Option<Vec<GestureEffect>> {
+        let id = match hit(host, ctx, cx, cy).filter(|h| host.timeline_key(h.id).is_some()) {
+            Some(Hit { id, .. }) => id,
+            None => host
+                .selection_addressee(ctx.def_id)
+                .or_else(|| sole_take(host, ctx.def_id))?,
+        };
+        let frames = host.buffer_frames(ctx.def_id, id)?;
+        let mut out = Vec::new();
+        match tag {
+            None => {
+                super::nav::set_selection(host, &mut out, ctx.def_id, id, 0.0, frames as f64, None)
+            }
+            Some(tag) => {
+                let key = host.timeline_key(id)?;
+                let state = *host.timelines().state(key)?;
+                let (start, len) = state.selection()?;
+                if len <= 0.0 {
+                    return None;
+                }
+                emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    id,
+                    vec![
+                        OscType::String(tag.into()),
+                        OscType::Float(start as f32),
+                        OscType::Float(len as f32),
+                    ],
+                );
+            }
+        }
+        Some(out)
     }
 
     /// **Plays the contents under the cursor, or stops what is playing** -- the

@@ -52,6 +52,7 @@ use crate::viewport::View;
 // arrives with, since that is what a reader has one of at a time. `mod.rs` is
 // the type, what it holds and the table of what it answers; the bodies live
 // with their question.
+mod context;
 mod draw;
 mod hand;
 mod props;
@@ -172,6 +173,11 @@ pub struct Multitrack {
     /// from having both. One table would make zooming a row silently resize an
     /// unrelated one, which is the kind of defect nobody finds by reading.
     curve_zoom: HashMap<String, f32>,
+    /// **The heights the last payload stated**, by track name -- read before
+    /// a zoom is laid over them, and what a reset of the heights goes back to.
+    stated: HashMap<String, f32>,
+    /// The same for the automation rows, by curve name.
+    curve_stated: HashMap<String, f32>,
     /// **Where each metered track's level is read from**, by track name.
     ///
     /// A meter is a *bus*, not a value: the host reads it every frame, straight
@@ -320,6 +326,8 @@ impl Default for Multitrack {
             meters: HashMap::new(),
             zoom: HashMap::new(),
             curve_zoom: HashMap::new(),
+            stated: HashMap::new(),
+            curve_stated: HashMap::new(),
             selected: Vec::new(),
             track: None,
             scroll: 0.0,
@@ -443,6 +451,16 @@ impl Element for Multitrack {
     }
     fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
         self.verbed(verb, input)
+    }
+    fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
+        self.commanded(name)
+    }
+    fn context_menu(
+        &mut self,
+        at: (f64, f64),
+        input: &Input,
+    ) -> Option<Vec<crate::host::menu::Entry>> {
+        Some(self.context_at(at, input))
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

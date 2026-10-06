@@ -1812,6 +1812,12 @@ impl Converse for ScoreEditor {
     /// **A pick of the menu bar is the window's own verb**, and so is its
     /// save: the bar is the window's, so the pick arrives addressed to it
     /// rather than to a widget.
+    /// The score's entries say the editor's own verbs, as JSON, and are
+    /// read by its menu ([`super::menu`]).
+    fn reads_menu_as_verbs(&self) -> bool {
+        false
+    }
+
     fn window_verb(
         &mut self,
         message: &conversation::Message,

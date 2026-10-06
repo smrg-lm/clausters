@@ -97,6 +97,36 @@ impl Entry {
         }
     }
 
+    /// A command: a pick performs `verb`.
+    pub fn action(label: &str, verb: &str) -> Entry {
+        Entry {
+            label: label.to_string(),
+            verb: Some(verb.to_string()),
+            kind: EntryKind::Action,
+            enabled: true,
+            icon: None,
+            key: None,
+        }
+    }
+
+    /// A switch drawn `on` or off: a pick performs `verb`, which names the
+    /// state it asks for.
+    pub fn check(label: &str, verb: &str, on: bool) -> Entry {
+        Entry {
+            kind: EntryKind::Check(on),
+            ..Entry::action(label, verb)
+        }
+    }
+
+    /// This entry, drawn and never picked.
+    #[must_use]
+    pub fn disabled(self) -> Entry {
+        Entry {
+            enabled: false,
+            ..self
+        }
+    }
+
     pub fn separator() -> Entry {
         Entry {
             label: String::new(),

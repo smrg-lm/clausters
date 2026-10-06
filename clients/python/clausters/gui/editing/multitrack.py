@@ -436,7 +436,7 @@ class MultitrackEditor(Marking, Editor):
             f"multitrack:{id(multitrack)}", multitrack, {
                 "rate": float(sample_rate), "link": link,
                 "transport": server is not None, "title": title,
-                "w": int(self.size[0]), "h": int(self.size[1])},
+                "w": int(self.size[0]), "h": int(self.size[1]), "chrome": self.chrome},
             domain)
         for source, sequence in bridge.sources.sequences().items():
             self._editing.bind_sequence(self._member, source, sequence)

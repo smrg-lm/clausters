@@ -116,6 +116,12 @@ pub enum WidgetKind {
         /// lose ([`Host::close_request`](crate::host::Host::close_request)).
         /// Off by default: a window closes at once.
         ask_close: bool,
+        /// The `main` prop: **the element the window's commands address**
+        /// when nothing holds the focus -- a menu entry's verb, a tool's, a
+        /// key's. An application names its view (the multitrack, the roll, the
+        /// take) so that its menu acts on it before a hand has been in it.
+        /// None by default.
+        main: Option<i32>,
     },
     /// A nestable container.
     Panel {

@@ -89,9 +89,8 @@ class Editor:
             sent or kept current. **The keys stay** -- they are the window's,
             not the menu's, and F1 lists them -- and so do every verb of the
             handle and the status line, where a verb refused says why. The
-            score
-            editor is the one application with chrome today; an editor with
-            none opens the same either way.
+            score, audio, multitrack and notes editors have chrome; an editor
+            with none opens the same either way.
         base_id: the first widget id a **host-less** draw counts from (tests and
             tree inspection). Once `open`ed, the ids come from the host's own
             recycling pool instead, so the two never collide and a redraw's ids

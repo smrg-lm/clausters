@@ -33,6 +33,18 @@ import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 import { button } from "../src/gui/guidef.ts";
 
+/**
+ * The view a window edits: the node its `main` names, which stands under the
+ * toolbar of a window with chrome -- or, in one with none, its first.
+ */
+function picture(tree: unknown): Record<string, any> {
+    const root = tree as { main?: number; children?: unknown[] };
+    const find = (node: any): any =>
+        node.id === root.main ? node : (node.children ?? []).map(find).find((f: unknown) => f);
+    return (root.main !== undefined && find(root)) || (root.children as any[])[0];
+}
+
+
 await loadCore();
 
 const SR = 48_000;
@@ -107,7 +119,7 @@ async function opened(editor: { open: (h: GuiHost) => Promise<unknown> }) {
     const host = new FakeHost();
     await editor.open(asHost(host));
     const tree = host.trees[0] as GuiNode;
-    return { host, wid: (tree.children as GuiNode[])[0]?.id as number };
+    return { host, wid: picture(tree).id as number };
 }
 
 const blob = (values: number[]): Uint8Array => new Uint8Array(Float32Array.from(values).buffer);
@@ -339,7 +351,7 @@ test("a sequence is edited in place by id", async () => {
 
 test("a roll's ruler reads the sequence's own map", async () => {
     const { editor } = await aRoll();
-    const roll = (editor.view!.build(editor).children as GuiNode[])[0] as unknown as Record<string, any>;
+    const roll = picture(editor.view!.build(editor)) as unknown as Record<string, any>;
     assert.deepEqual(JSON.parse(roll.axes.x.tempo_map), JSON.parse(new TempoMap(TEMPO).dump()));
     assert.deepEqual(roll.note_ids, [1, 2]);
     assert.deepEqual(roll.notes.slice(0, 5), [0, BEAT * 0.8, 60, 13, 0]);
@@ -628,7 +640,7 @@ test("a sequence with a marker still draws its notes", async () => {
         [3.0, OscItem("/mark", 1, "cue")],
     ]);
     const editor = new NotesEditor(seq, { sampleRate: SR });
-    const roll = (editor.view!.build(editor).children as GuiNode[])[0] as unknown as Record<string, unknown>;
+    const roll = picture(editor.view!.build(editor)) as unknown as Record<string, unknown>;
     assert.equal(roll.type, "notes");
     assert.equal((roll.notes as number[]).length, 5, "the one note is on the roll");
     assert.equal((roll.osc as unknown[])[1], "/mark", "and the marker beside it, by its label");
@@ -1053,7 +1065,7 @@ test("the roll draws its play cursor from its transport and a locate cues it", a
     const { host, wid } = await opened(editor);
     assert.equal(host.clocks.length, 1);
     assert.deepEqual(host.clocks[0]!.slice(0, 2), [901, "transport"]);
-    const roll = (host.trees[0]!.children as GuiNode[])[0] as unknown as { axes: { x: { playhead_at: number } } };
+    const roll = picture(host.trees[0]) as unknown as { axes: { x: { playhead_at: number } } };
     assert.equal(roll.axes.x.playhead_at, 0);
     const placed: number[] = [];
     editor.onLocate = (beat) => placed.push(beat);
@@ -1071,7 +1083,7 @@ test("a roll in hertz draws and edits frequencies", async () => {
         { tempoMap: new TempoMap(TEMPO) });
     const editor = new NotesEditor(seq, { sampleRate: SR, yAxis: "hz" });
     const { host, wid } = await opened(editor);
-    const roll = (host.trees[0]!.children as GuiNode[])[0] as unknown as {
+    const roll = picture(host.trees[0]) as unknown as {
         axes: { y: { unit: string } };
         notes: number[];
     };

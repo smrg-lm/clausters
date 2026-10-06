@@ -19,6 +19,24 @@ from clausters.multitrack import Content, Multitrack, Tempo
 SR = 48_000.0
 
 
+def picture(tree: dict) -> dict:
+    """The view a window edits: the node its `main` names, which stands under
+    the toolbar of a window with chrome -- or, in one with none, its first."""
+    main = tree.get("main")
+
+    def find(node):
+        if node.get("id") == main:
+            return node
+        for child in node.get("children", ()):
+            found = find(child)
+            if found is not None:
+                return found
+        return None
+
+    found = find(tree) if main is not None else None
+    return found if found is not None else tree["children"][0]
+
+
 def window(source: int, start: float = 0.0, duration: float = 2.0) -> Content:
     return Content.onto({"source": {"source": source, "lifetime": "session",
                                     "generation": 0},
@@ -119,7 +137,7 @@ def test_the_multitrack_is_ruled_from_above_by_a_strip_of_its_own():
     group of one keyed by itself, so a ruler that joined nothing would pan and
     zoom away from the tracks it is ruling.
     """
-    children = editor(multitrack()).draw()["children"]
+    children = [c for c in editor(multitrack()).draw()["children"] if c["type"] != "layout"]
     ruler, multitrack_node = children[0], children[1]
     assert ruler["type"] == "field", "the free-standing time ruler, above"
     assert multitrack_node["type"] == "multitrack"
@@ -424,6 +442,22 @@ def test_a_curve_the_multitrack_hid_is_drawn_nowhere():
     written = curved()
     written.tracks[0].automation[0].visible = False
     assert props(editor(written))["hidden"] == "30"
+
+
+def test_a_curve_shown_from_the_menu_is_one_edit_and_undoes():
+    """A curve shown from a context menu's check is reported as `shown`, read
+    into the multitrack's own verb and recorded: an undo hides it again. The
+    same edit a script makes by setting `visible`."""
+    written = curved()
+    written.tracks[0].automation[0].visible = False
+    ed = editor(written)
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    assert ed._route([wid, "shown", "30", 1])
+    assert written.tracks[0].automation[0].visible
+    assert "30" not in props(ed)["hidden"].split()
+    assert ed.undo()
+    assert not written.tracks[0].automation[0].visible
 
 
 def test_a_gesture_that_changed_the_data_says_so_once():

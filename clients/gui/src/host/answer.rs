@@ -156,6 +156,16 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
+        // **A pick in the window's menu bar is its verb**, as the applications
+        // read it (`clausters_apps::turn`): Save from the menu is Ctrl+S
+        let args = match args {
+            [OscType::String(menu), verb @ OscType::String(_), ..]
+                if menu == clausters_apps::turn::MENU && widget_id == def_id =>
+            {
+                std::slice::from_ref(verb)
+            }
+            _ => args,
+        };
         // The window's own verbs, which are not intents and address no node:
         // history is a walk through the log, and a save is a file. They arrive
         // addressed to the window (`keys::history`), so they are read before
@@ -530,7 +540,7 @@ impl Host {
         else {
             return;
         };
-        let def = match owner.editing.member_mut(member) {
+        let mut def = match owner.editing.member_mut(member) {
             Some(Member::Notes(editor)) => {
                 let def = editor.window(roll);
                 clausters_apps::notes::editor::call_json(
@@ -547,6 +557,9 @@ impl Host {
         if let Some(parent) = owner.editor().and_then(|editor| editor.window_id()) {
             self.depend(def_id, parent);
         }
+        // **The tools come with no ids**, which a client gives them on the
+        // way out
+        self.number_own(&mut def, structure, ROLL);
         let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
         let effects = self.handle_packet(
             OscPacket::Message(OscMessage {

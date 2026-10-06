@@ -108,7 +108,8 @@ class NotesEditor(Marking, Editor):
         self._member, self._structure_id = self._editing.open_notes(
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
-             "domain": self.y_axis, "title": self.title, "w": int(self.size[0]), "h": int(self.size[1])},
+             "domain": self.y_axis, "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
+             "chrome": self.chrome},
             domain)
 
     @property

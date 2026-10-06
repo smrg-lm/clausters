@@ -881,6 +881,8 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
         MultitrackIntent::SplitRegion { .. } => "split a clip",
         MultitrackIntent::JoinRegions { .. } => "join the clips",
         MultitrackIntent::SetAutomation { .. } => "draw a curve",
+        MultitrackIntent::ShowAutomation { visible: true, .. } => "show a curve",
+        MultitrackIntent::ShowAutomation { visible: false, .. } => "hide a curve",
         _ => "edit the multitrack",
     }
 }
@@ -894,7 +896,7 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
 /// list was two tags short: a curve dragged in a host with no client attached
 /// reached nobody, and so did a `join`. A caller asks; nobody restates.
 pub fn answers(tag: &str) -> bool {
-    matches!(tag, "clips" | "tracks" | "points" | "join")
+    matches!(tag, "clips" | "tracks" | "points" | "join" | "shown")
 }
 
 /// **What a report came to**: the edits, or the reason there are none.
@@ -939,7 +941,7 @@ impl Reading {
 
 /// **What a gesture over a multitrack means**, in the multitrack's own vocabulary.
 ///
-/// Four tags, and three of them report the **whole** structure rather than the
+/// Five tags, and three of them report the **whole** structure rather than the
 /// gesture: every box, every row, every break-point. So a move, a block drag, a
 /// trim, a split, a delete and a paste all arrive the same way and telling them
 /// apart is one rule, [`clausters_document::multitrack::picture`]'s, written
@@ -961,6 +963,7 @@ pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look
         )),
         "tracks" => Reading::of(picture::read_rows(multitrack, &strips(values))),
         "points" => Reading::of(picture::read_points(multitrack, &curved(values, look))),
+        "shown" => Reading::of(shown(multitrack, values)),
         // **The one verb that is stated rather than differenced**, and the one
         // that can be refused on the *material*: a join and a "delete one,
         // lengthen the other" leave a take lane holding the same thing, and a box in
@@ -984,6 +987,35 @@ pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look
         }
         _ => Reading::default(),
     }
+}
+
+/// **The flat `shown` report**: `name flag` pairs, a curve by the name the
+/// picture gave it and whether it is now shown -- a menu's check, one curve at
+/// a time. Stated rather than differenced, and only what moved becomes an edit:
+/// a curve already as the report says, or one the multitrack does not hold,
+/// says nothing.
+fn shown(multitrack: &Multitrack, values: &[Value]) -> Vec<MultitrackIntent> {
+    values
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .filter_map(|pair| {
+            let name = match &pair[0] {
+                Value::String(s) => s.parse::<u64>().ok()?,
+                other => other.as_u64()?,
+            };
+            let visible = pair[1]
+                .as_f64()
+                .or_else(|| pair[1].as_bool().map(f64::from))
+                .is_some_and(|v| v != 0.0);
+            let automation = NodeId(name);
+            let held = multitrack.automation(automation)?;
+            (held.visible != visible).then_some(MultitrackIntent::ShowAutomation {
+                automation,
+                visible,
+            })
+        })
+        .collect()
 }
 
 /// [`reading`]'s edits alone, for a caller with nothing to say about a refusal.
@@ -2076,6 +2108,51 @@ mod tests {
     /// its automation as not shown, so asking to see it is asking for one --
     /// and the second press hides what the first made rather than making a
     /// second.
+    /// **One curve at a time**: a menu's check shows or hides the curve it
+    /// names and leaves the track's others as they were, and only what moved
+    /// is an edit.
+    #[test]
+    fn a_shown_report_shows_one_curve_and_leaves_the_others() {
+        use clausters_document::Opaque;
+        use clausters_document::multitrack::Automation;
+        let mut multitrack = Multitrack::default();
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        for id in [10, 11] {
+            track
+                .automation
+                .push(Automation::new(NodeId(id), Opaque(json!({"port": "gain"}))));
+        }
+        multitrack.tracks.push(track);
+        let sources = HashMap::new();
+        let look = look(&sources);
+        assert_eq!(hidden(&multitrack), "10 11");
+
+        let edits = read(&multitrack, "shown", &[json!("11"), json!(1)], &look);
+        assert_eq!(
+            edits,
+            vec![MultitrackIntent::ShowAutomation {
+                automation: NodeId(11),
+                visible: true
+            }]
+        );
+        assert!(
+            read(&multitrack, "shown", &[json!("10"), json!(0)], &look).is_empty(),
+            "a curve already hidden is not an edit"
+        );
+        assert!(
+            read(&multitrack, "shown", &[json!("99"), json!(1)], &look).is_empty(),
+            "nor is one the multitrack does not hold"
+        );
+        let rules = clausters_document::Rules::default();
+        clausters_document::multitrack::edit::apply(
+            &mut multitrack,
+            &edits[0],
+            &clausters_document::Against::default(),
+            &rules,
+        );
+        assert_eq!(hidden(&multitrack), "10", "the other curve stays hidden");
+    }
+
     #[test]
     fn asking_a_bare_track_to_show_its_automation_makes_one() {
         let mut multitrack = Multitrack::default();

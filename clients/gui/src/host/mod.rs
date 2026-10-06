@@ -1185,6 +1185,15 @@ impl Host {
         }
     }
 
+    /// The element window `id`'s commands address when nothing holds the
+    /// focus: its `main` prop.
+    pub fn window_main(&self, id: i32) -> Option<i32> {
+        match self.window_def(id).map(|w| &w.kind) {
+            Some(WidgetKind::Window { main, .. }) => *main,
+            _ => None,
+        }
+    }
+
     /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
     /// is then the window's own verb, and the monitor stays out.
     pub fn window_plays(&self, id: i32) -> bool {

@@ -473,6 +473,8 @@ use nav::*;
 pub(crate) use nav::corner_rect;
 
 #[cfg(test)]
+mod command_tests;
+#[cfg(test)]
 mod popup_tests;
 #[cfg(test)]
 mod tests;

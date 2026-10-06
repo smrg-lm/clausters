@@ -1494,7 +1494,10 @@ an entry and a tip name a verb, and the key beside an entry appeared when
   (`crates/clausters-apps/PLAN.md`, Future directions).
 
   **Open:** a context menu per *part* of a heavy view — a clip, a note, a box —
-  rather than one for the whole widget.
+  rather than one for the whole widget. *(2026-10-06: an element brings one of
+  its own, asked at the point the button landed (`Element::context_menu`); the
+  multitrack's tells a clip from a track. A note's and a box of a patcher's are
+  still open.)*
 
   **Acceptance:** the tree parsed and walked in tests; a pick, a check and a
   disabled entry through the gesture machine on both fronts; the bar's band
@@ -4330,7 +4333,7 @@ Following the project rule: code + tests, a clear commit message (the record of 
   (`crates/clausters-document/PLAN.md`, "A join takes its clips' fades, and
   invents none").
 
-- ⬜ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "estas reglas que te estoy pidiendo pueden cambiar despues. Luego, cuando hayamos hecho las otras aplicaciones vamos a tener que refactorizar y definir muchas cosas de la interaccion, cosas que no estan decididas")*.
+- ✅ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "estas reglas que te estoy pidiendo pueden cambiar despues. Luego, cuando hayamos hecho las otras aplicaciones vamos a tener que refactorizar y definir muchas cosas de la interaccion, cosas que no estan decididas")*.
 
   **This is the frame every entry below sits in**, and it is written here once so no individual gesture has to argue for itself. The multitrack is the first of the three applications over one document; the audio editor and the score editor are not built. What a hand does — which key, which modifier, which button, what a double click means, what a verb makes rather than asks about — is being settled **by use, in one application**, and a vocabulary settled in one application is a vocabulary that has been tested against one third of the problem. So these rules are the current answer and not the design, and the refactor that replaces them is expected work rather than a failure of this one.
 
@@ -4341,6 +4344,13 @@ Following the project rule: code + tests, a clear commit message (the record of 
   - **What is deliberately not decided yet**, and what the other two applications are expected to move: which keys the verbs are bound to and who owns the binding (`G36`); what a modifier addresses — a place under the pointer, or a thing — which this year already produced one defect in each direction; what a track may automate, and how one is chosen, where today one button makes the one curve every track has a port for; how a fade *inside* a box is drawn, which the join's seam and the gap and overlap cases all wait on (`crates/clausters-document/PLAN.md`, "A join's crossfade"); and how much of any of it is the **application's** rather than the widget's, which is the question the other two applications exist to answer.
 
   It does not open as a milestone: there is nothing to build until there is a second application to disagree with the first. It opens the day the audio editor or the score editor wants a gesture this one already spends.
+
+  **Decided 2026-10-06, with the audio, multitrack and notes editors all built** (the user asked for the common and the specific vocabulary to be defined now that the three exist, and for their menus to use it). What came out, and where each part lives:
+
+  - **A verb names one act in every window**, whatever the window holds. The common words are the host's `Verb`s plus the history's and the window's: `undo`, `redo`, `cut`, `copy`, `paste`, `delete`, `select_all` (new: Ctrl+A, every box, every note, the whole take), `view_all`, `play`, `to_start`, `to_end`, `loop`, `close`, `keys`. Each application adds its own: the audio editor `save` and `mix`; the multitrack and the roll `split`, `join`, `quantize`; the multitrack `add_track`, `reset_heights`, `compact_tracks`, a transport that pauses (`pause`, `stop`) and `save` where the window is the work's only holder. The table is `clausters_apps::chrome`, once, for all three.
+  - **A menu entry, its key and its tool are one command**: a bar entry holding no state is performed as its key would be, and a tool is a `button` with a `verb` (it takes no focus, and a press on it leaves the focus where it was). Both address the focused element, then the window's `main` view, then the window, and the owner hears what nobody performed -- one dispatch (`Gestures::command`).
+  - **What has a gesture and no meaning without one stays the hand's**: moving a box, trimming it, a fade, a break-point -- in no menu. **What is about one thing under the pointer is the element's own context menu** (`Element::context_menu`, asked at the point): the multitrack offers, over a clip, its curves, over a track, the track's -- each shown or hidden alone (`ShowAutomation`, recorded), as the user asked for both -- and the heights of the rows as a whole (reset, compact).
+  - **Which keys** stay `G36`'s table; **what a track may automate** and how a curve is chosen are still open, now in their own entries rather than under this one.
 
 Captured here so the depth the editor-grade vision needs is not lost; each becomes a milestone — or a track — when its design converges. **The convention, stated because the list only works if it holds:** every entry carries a `⬜`, and one that converges into numbered milestones **leaves this list** — it is not marked `✅` here, because converging is not shipping and a `✅` beside an unstarted milestone says the opposite of what is true. The milestone that absorbed it is the record, and it says where it came from, so nothing needs a pointer that would go stale. Gone that way so far: scopes, the editor-grade views, edit-back-to-data and the BPF view (G18-G21), and — 2026-08-13 — the **DAW / timeline view**, which became the whole of G22 with its dedicated note view following as G24 — while the free arrangement plane it named alongside the lane stack **stays here**, since it is a second kind of multitrack whose model differs structurally from the one that shipped and has still to be defined, not an increment on it; and **a sample as a grabbable point**, folded into the D track (D1, D2), which is where the questions it raised are answered.
 

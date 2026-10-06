@@ -155,6 +155,7 @@ export class NotesEditor extends Editor<EventSequence> {
                 title: this.title,
                 w: this.size[0],
                 h: this.size[1],
+                chrome: this.chrome,
             },
             domain,
         );

@@ -30,7 +30,7 @@ fn gesture(tag: &str, values: Vec<Value>) -> Event {
 fn the_window_draws_the_notes_with_their_ids() {
     let mut e = editor(shared());
     let tree = e.window(40);
-    let roll = &tree["children"][0];
+    let roll = &tree["children"][1];
     assert_eq!(roll["type"], "notes");
     assert_eq!(roll["id"], 40);
     assert_eq!(roll["note_ids"], json!([1, 2]));
@@ -201,7 +201,7 @@ fn a_locate_places_the_cursor_on_a_beat_and_edits_nothing() {
     assert_eq!(out.locate, Some(1.5));
     assert!(!out.changed);
     assert!(out.record.is_none());
-    let roll = &e.window(40)["children"][0];
+    let roll = &e.window(40)["children"][1];
     assert_eq!(roll["axes"]["x"]["playhead_at"], 0.0);
 }
 
@@ -218,7 +218,7 @@ fn a_roll_in_hertz_draws_and_edits_frequencies() {
     );
     let tree = e.window(40);
     call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
-    let roll = &tree["children"][0];
+    let roll = &tree["children"][1];
     assert_eq!(roll["axes"]["y"]["unit"], "hz");
     let (min, max) = (
         roll["axes"]["y"]["min"].as_f64().unwrap(),
@@ -264,7 +264,7 @@ fn a_roll_in_hertz_draws_and_edits_frequencies() {
 #[test]
 fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
     let mut midi = editor(shared());
-    let y = &midi.window(40)["children"][0]["axes"]["y"];
+    let y = &midi.window(40)["children"][1]["axes"]["y"];
     assert_eq!(
         (y["min"].as_f64(), y["max"].as_f64()),
         (Some(0.0), Some(127.0))
@@ -274,7 +274,7 @@ fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
     assert!(low <= 60.0 && high >= 64.0 && len < 1.0, "{low} {high}");
 
     let mut hz = new_json(shared(), r#"{"rate": 100.0, "version": 1, "domain": "hz"}"#);
-    let y = &hz.window(40)["children"][0]["axes"]["y"];
+    let y = &hz.window(40)["children"][1]["axes"]["y"];
     assert!(y["max"].as_f64().unwrap() > 12_543.9, "past MIDI note 127");
     let (floor, ceiling) = (
         clausters_core::scale::hz_to_midi(y["min"].as_f64().unwrap()),
@@ -304,7 +304,7 @@ fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
         .unwrap();
     let mut e = editor(sequence.clone());
     let tree = e.window(40);
-    assert_eq!(tree["children"][0]["curves"][0], json!(curve.to_string()));
+    assert_eq!(tree["children"][1]["curves"][0], json!(curve.to_string()));
     let name = json!(curve.to_string());
     let drawn = vec![
         name.clone(),

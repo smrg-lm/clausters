@@ -255,6 +255,20 @@ pub enum MultitrackIntent {
         /// Its points, in order.
         points: Vec<Point>,
     },
+    /// Whether an automation curve is shown -- a track's row or a region's
+    /// layer, one curve at a time.
+    ///
+    /// **The view's, and recorded**, as the curve's `visible` is: which curves
+    /// a person had open is part of reopening the multitrack as they left it,
+    /// so showing one is an edit that an undo puts back. A track's own toggle
+    /// shows or hides every curve of the track at once and rides
+    /// [`Self::SetTracks`]; this is the one curve a menu names.
+    ShowAutomation {
+        /// The curve.
+        automation: NodeId,
+        /// Whether it is shown.
+        visible: bool,
+    },
     /// A marker is at this instant with this name -- placed if it was not there,
     /// moved or renamed if it was.
     SetMarker {
@@ -315,6 +329,7 @@ impl MultitrackIntent {
             Self::JoinRegions { .. } => "joinregions",
             Self::FadeRegion { .. } => "faderegion",
             Self::SetAutomation { .. } => "setautomation",
+            Self::ShowAutomation { .. } => "showautomation",
             Self::SetMarker { .. } => "setmarker",
             Self::RemoveMarker { .. } => "removemarker",
             Self::SetRange { .. } => "setrange",
@@ -339,7 +354,9 @@ impl MultitrackIntent {
             | Self::SplitRegion { region, .. }
             | Self::FadeRegion { region, .. } => Some(*region),
             Self::JoinRegions { into, .. } => Some(*into),
-            Self::SetAutomation { automation, .. } => Some(*automation),
+            Self::SetAutomation { automation, .. } | Self::ShowAutomation { automation, .. } => {
+                Some(*automation)
+            }
             Self::SetMarker { marker, .. } | Self::RemoveMarker { marker } => Some(*marker),
             Self::SetTracks { .. } | Self::SetRange { .. } => None,
             Self::SetTempoMap { .. } | Self::SetMeterMap { .. } => None,
@@ -391,6 +408,7 @@ impl MultitrackIntent {
             | Self::PlaceRegion { .. }
             | Self::FadeRegion { .. }
             | Self::SetAutomation { .. }
+            | Self::ShowAutomation { .. }
             | Self::SetMarker { .. }
             | Self::RemoveMarker { .. }
             | Self::SetRange { .. }
@@ -508,6 +526,10 @@ fn edit(
         MultitrackIntent::SetAutomation { automation, points } => {
             set_automation(multitrack, *automation, points)
         }
+        MultitrackIntent::ShowAutomation {
+            automation,
+            visible,
+        } => show_automation(multitrack, *automation, *visible),
         MultitrackIntent::SetMarker { marker, at, name } => {
             set_marker(multitrack, *marker, *at, name.as_deref(), rules)
         }
@@ -583,6 +605,13 @@ pub fn current(multitrack: &Multitrack, intent: &MultitrackIntent) -> Option<Mul
             Some(MultitrackIntent::SetAutomation {
                 automation: *automation,
                 points: curve.points.clone(),
+            })
+        }
+        MultitrackIntent::ShowAutomation { automation, .. } => {
+            let curve = multitrack.automation(*automation)?;
+            Some(MultitrackIntent::ShowAutomation {
+                automation: *automation,
+                visible: curve.visible,
             })
         }
         // A marker that is not there is described by its absence, which is a
@@ -951,6 +980,25 @@ fn set_automation(
         return Outcome::unchanged(stated);
     }
     curve.points = points.to_vec();
+    Outcome::changed(stated)
+}
+
+fn show_automation(
+    multitrack: &mut Multitrack,
+    automation: NodeId,
+    visible: bool,
+) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::ShowAutomation {
+        automation,
+        visible,
+    };
+    let Some(curve) = multitrack.automation_mut(automation) else {
+        return Outcome::refused(stated, "no such automation");
+    };
+    if curve.visible == visible {
+        return Outcome::unchanged(stated);
+    }
+    curve.visible = visible;
     Outcome::changed(stated)
 }
 

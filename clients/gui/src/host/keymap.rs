@@ -64,11 +64,13 @@ pub enum Verb {
     /// Show the window's keys: the sheet of what each key does in it
     /// ([`Keymap::sheet`]).
     Keys,
+    /// Hold everything the view holds: every box, every note, the whole take.
+    SelectAll,
 }
 
 impl Verb {
     /// Every host verb, with the name the table and the wire spell it with.
-    pub const ALL: [(Verb, &'static str); 14] = [
+    pub const ALL: [(Verb, &'static str); 15] = [
         (Verb::ViewAll, "view_all"),
         (Verb::Play, "play"),
         (Verb::Loop, "loop"),
@@ -83,6 +85,7 @@ impl Verb {
         (Verb::Join, "join"),
         (Verb::Delete, "delete"),
         (Verb::Keys, "keys"),
+        (Verb::SelectAll, "select_all"),
     ];
 
     /// The host verb a name is, or `None` for an application's.
@@ -122,6 +125,7 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     ("split", &["E"]),
     ("join", &["J"]),
     ("delete", &["Delete", "Backspace"]),
+    ("select_all", &["Ctrl+A"]),
     ("keys", &["F1"]),
 ];
 
@@ -146,6 +150,7 @@ const DESCRIBED: &[(&str, &str)] = &[
     ("split", "Split at the cursor"),
     ("join", "Join what touches"),
     ("delete", "Delete"),
+    ("select_all", "Select all"),
     ("keys", "Show the keys"),
 ];
 

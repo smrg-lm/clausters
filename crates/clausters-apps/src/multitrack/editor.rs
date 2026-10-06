@@ -276,6 +276,8 @@ pub struct MultitrackEditor {
     /// Whether the holder's work has changes its file does not hold, as the
     /// holder last said: the session is the holder's, not this editor's.
     unsaved: bool,
+    /// Whether the window is composed with no chrome ([`Window::bare`]).
+    bare: bool,
 }
 
 impl MultitrackEditor {
@@ -311,7 +313,14 @@ impl MultitrackEditor {
             close_form: None,
             asks: false,
             unsaved: false,
+            bare: false,
         }
+    }
+
+    /// **A window with no chrome** -- no menu bar, no tools -- for a client
+    /// that composes its own around it. Said before [`window`](Self::window).
+    pub fn set_bare(&mut self, bare: bool) {
+        self.bare = bare;
     }
 
     /// **The close form's widgets**, numbered by the holder: the window then
@@ -520,9 +529,11 @@ impl MultitrackEditor {
 
     /// Whether a message on `widget` tagged `tag` is this editor's to answer:
     /// one of its widgets, or its window's own `play` and `loop` -- the space
-    /// bar and `L`.
+    /// bar and `L` -- and the `pause` and `stop` of its menu.
     pub fn answers(&self, widget: i32, tag: &str) -> bool {
-        self.owns(widget) || (self.window == Some(widget) && (tag == PLAY_KEY || tag == LOOP_KEY))
+        self.owns(widget)
+            || (self.window == Some(widget)
+                && matches!(tag, PLAY_KEY | LOOP_KEY | PAUSE_VERB | STOP_VERB))
     }
 
     /// **Rewind**: the position cursor back at the top, and a stopped
@@ -720,6 +731,7 @@ impl MultitrackEditor {
             size: self.size,
             close_form: self.close_form,
             asks: self.asks,
+            bare: self.bare,
         })
     }
 
@@ -792,6 +804,16 @@ impl MultitrackEditor {
                 range: self.range,
                 looping: values.first().is_some_and(|v| number(v) != 0.0),
             });
+            return (None, Vec::new());
+        }
+        // **The menu's pause and stop**, the transport row's two buttons by
+        // their verbs
+        if self.window.map(i64::from) == Some(widget) && tag == PAUSE_VERB {
+            out.transport = Some(TransportVerb::Toggle);
+            return (None, Vec::new());
+        }
+        if self.window.map(i64::from) == Some(widget) && tag == STOP_VERB {
+            out.transport = Some(self.stopped());
             return (None, Vec::new());
         }
         if tag == "click"
@@ -965,6 +987,13 @@ pub const PLAY_KEY: &str = "play";
 /// beside it.
 pub const LOOP_KEY: &str = "loop";
 
+/// **The window's pause**: play, or pause where it stands -- the menu's
+/// Pause, what the transport row's play/pause button does.
+pub const PAUSE_VERB: &str = "pause";
+
+/// **The window's stop**: halt and go back to the mark -- the menu's Stop.
+pub const STOP_VERB: &str = "stop";
+
 /// **The editor's tables as one**: which buffer each source was read into, how
 /// many frames each take holds, and the segments each join it knows is made of.
 struct Table<'a> {
@@ -1035,6 +1064,13 @@ struct New {
     w: i64,
     #[serde(default)]
     h: i64,
+    /// `false` for a window with no menu bar and no tools ([`Window::bare`]).
+    #[serde(default = "yes")]
+    chrome: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// An [`Outcome`] as JSON.
@@ -1070,6 +1106,7 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
         &request.title,
         (request.w, request.h),
     );
+    editor.set_bare(!request.chrome);
     editor
 }
 
@@ -1587,6 +1624,48 @@ mod tests {
                 .is_none(),
             "a press is not a click"
         );
+    }
+
+    /// **The menu's entries are the window's verbs**: a pick reported as
+    /// `"menu" <verb>` is read as the verb, so Pause and Stop do what the
+    /// transport row's buttons do, and a close from the menu is a close.
+    #[test]
+    fn the_menu_s_entries_are_the_window_s_verbs() {
+        let mut ed = editor();
+        ed.set_cursor(Some(3.0));
+        let menu = |verb: &str| event(39, 5, 1, crate::turn::MENU, vec![json!(verb)]);
+        assert_eq!(
+            ed.event(&menu("pause"), 1).transport,
+            Some(TransportVerb::Toggle)
+        );
+        assert_eq!(
+            ed.event(&menu("stop"), 1).transport,
+            Some(TransportVerb::Stop { mark: 3.0 })
+        );
+        assert!(ed.event(&menu(crate::closing::VERB), 1).close);
+        // a widget's own `menu` is not the window's
+        assert!(
+            ed.event(&event(40, 6, 1, crate::turn::MENU, vec![json!("stop")]), 1)
+                .transport
+                .is_none()
+        );
+    }
+
+    /// **A curve shown from the context menu is an edit**: the `shown` report
+    /// is read into the multitrack's own verb, and it is recorded so an undo
+    /// hides it again.
+    #[test]
+    fn a_curve_shown_from_the_menu_is_recorded() {
+        use clausters_document::Opaque;
+        use clausters_document::multitrack::Automation;
+        let mut ed = editor();
+        ed.multitrack().tracks[0]
+            .automation
+            .push(Automation::new(NodeId(30), Opaque(json!({"port": "gain"}))));
+        let out = ed.event(&event(40, 7, 1, "shown", vec![json!("30"), json!(1)]), 1);
+        let record = out.record.expect("recorded");
+        assert_eq!(record.label, "show a curve");
+        assert!(ed.multitrack().automation(NodeId(30)).unwrap().visible);
     }
 
     /// **Rewind puts the mark at the top**, cues the transport there, and tells

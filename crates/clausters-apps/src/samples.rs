@@ -80,6 +80,9 @@ pub struct Window<'a> {
     pub size: (i64, i64),
     /// The level meter beside the picture, once something plays the take.
     pub meter: Option<MeterAt>,
+    /// **A window with no chrome**: no menu bar and no tools, for a client
+    /// that composes its own around it.
+    pub bare: bool,
 }
 
 /// **Where the level meter is read from**, and the id it is drawn under: the
@@ -119,6 +122,7 @@ pub fn window(w: &Window<'_>) -> Value {
         ..Waveform::default()
     });
     picture.insert("id".into(), json!(w.widget));
+    picture.insert("weight".into(), json!(1.0));
     let mut children = vec![Value::Object(picture)];
     // **The level, beside the take**: the editor's output measured before its
     // declick, one column per channel, read off the control buses the
@@ -136,17 +140,34 @@ pub fn window(w: &Window<'_>) -> Value {
             "channels": meter.channels,
         }));
     }
-    json!({
+    // The take and its meter side by side, under the toolbar.
+    let body = if w.meter.is_some() {
+        vec![
+            json!({"type": "layout", "flow": "row", "margin": 0, "weight": 1, "children": children}),
+        ]
+    } else {
+        children
+    };
+    let mut window = json!({
         "type": "window",
         "title": w.title,
         "w": w.size.0,
         "h": w.size.1,
-        "flow": if w.meter.is_some() { "row" } else { "col" },
+        "flow": "col",
         // **The space bar and `L` are the application's**: it plays its own
         // take through its own playback, so the host's monitor stays out.
         "plays": true,
-        "children": children,
-    })
+        "children": body,
+    });
+    if !w.bare {
+        crate::chrome::dress(
+            &mut window,
+            crate::chrome::menu(crate::chrome::App::Audio, true),
+            crate::chrome::toolbar(crate::chrome::App::Audio, None),
+            w.widget,
+        );
+    }
+    window
 }
 
 /// **What a widget of this window is corrected with**: read the take again.
@@ -195,6 +216,7 @@ mod tests {
             title: "take",
             meter: None,
             size: (1000, 520),
+            bare: true,
         })
     }
 

@@ -2316,7 +2316,7 @@ Every entry carries a checkbox.
   source that remembers it was stretched), and whether the drawing shows the
   stretch before the render lands.
 
-- ⬜ **The applications' window chrome in standalone** *(recorded 2026-09-24,
+- ✅ **The applications' window chrome in standalone** *(recorded 2026-09-24,
   the user: "para poder correr las aplicaciones del host en standalone se va
   a necesitar que la ventana tenga chrome y no está implementado aún")*. A
   standalone host runs the applications with no client beside it, so whatever
@@ -2334,6 +2334,26 @@ Every entry carries a checkbox.
   is handled there; run from a client it is optional -- the entry below -- so
   what this entry designs for each remaining application is the standalone
   window, and a client opening it bare is part of the acceptance.)*
+
+  **Done 2026-10-06** for the audio, multitrack and notes editors, with the
+  score editor as the model and the field's menu conventions (the user asked
+  for both): **File** (Save where the window writes its work, Close), **Edit**
+  (Undo, Redo; Cut, Copy, Paste -- and Paste mixed in the audio editor --,
+  Delete; Select all; Split, Join, Quantize in the multitrack and the roll),
+  **View** (Zoom to fit; the multitrack's Reset track heights and Compact
+  tracks), **Transport** (Play or stop; the multitrack's Pause and Stop; Go to
+  start, Go to end; Loop), **Track** in the multitrack (Add track) and **Help**
+  (Keyboard shortcuts). A toolbar under it holds the transport -- the host's
+  verbs as tools, or the multitrack's own row by name with its clock -- and
+  the edit tools. Composed once in `crate::chrome` and dressed onto each
+  window with its `main` view; the vocabulary is the one decided in
+  `clients/gui/PLAN.md` ("The whole interaction vocabulary is provisional").
+  **Bare from a client**: `"chrome": false` in each open request, passed by
+  both clients from the editor's `chrome`; the multitrack's transport row then
+  stays under it as before. A pick reported as `"menu" <verb>` is read as the
+  verb (`Converse::reads_menu_as_verbs`; the score editor keeps reading its
+  own). The standalone host numbers the tools of its own windows, which a
+  client does on the way out.
 
 - ✅ **An application opens without its chrome from a client** *(asked for by
   the user 2026-10-06, over the score editor, as a rule for every editor once
@@ -2403,8 +2423,9 @@ Every entry carries a checkbox.
   session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
   (`MultitrackPlayback::set_end`, bound in both clients as `Playback.end`); the
   standalone host needs a key that flips it and the session to keep it, so a
-  reopened session stops where it stopped before. Waits for "The
-  applications' window chrome in standalone", above.
+  reopened session stops where it stopped before. *(The chrome it waited for
+  landed 2026-10-06: the switch can be a Transport entry and a tool beside
+  Loop.)*
 
 - ⬜ **Effects in preview in the audio editor** *(out of X7)*: a chain in
   place on `dry`, between the readers and the pass, whose effects are heard

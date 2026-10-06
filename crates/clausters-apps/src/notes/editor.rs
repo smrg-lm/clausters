@@ -81,6 +81,8 @@ pub struct NotesEditor {
     /// The time range a sweep left, `[start, end)` in beats, while there is
     /// one: what the space bar plays.
     range: Option<(f64, f64)>,
+    /// Whether the window is composed with no chrome: no menu bar, no tools.
+    bare: bool,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -94,6 +96,8 @@ struct Opened {
     w: i64,
     h: i64,
     version: i64,
+    /// `false` for a window with no menu bar and no tools.
+    chrome: bool,
 }
 
 /// The Y domain a caller names: a word -- `"midi"`, or `"hz"` from MIDI note
@@ -133,6 +137,7 @@ impl Default for Opened {
             w: 1000,
             h: 520,
             version: 1,
+            chrome: true,
         }
     }
 }
@@ -151,6 +156,7 @@ impl NotesEditor {
             title: "Notes".into(),
             size: (1000, 520),
             range: None,
+            bare: false,
         }
     }
 
@@ -170,7 +176,17 @@ impl NotesEditor {
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
         let drawn = props(&self.held(), &self.domain, self.rate, self.editable);
-        window(drawn, widget, &self.title, self.size)
+        let mut window = window(drawn, widget, &self.title, self.size);
+        if !self.bare {
+            use crate::chrome::{self, App};
+            chrome::dress(
+                &mut window,
+                chrome::menu(App::Notes, false),
+                chrome::toolbar(App::Notes, None),
+                widget,
+            );
+        }
+        window
     }
 
     /// What `widget` is corrected with, or nothing for one that is not the
@@ -376,7 +392,8 @@ impl Converse for NotesEditor {
 }
 
 /// **A notes editor from JSON**: `{"rate", "editable", "domain", "title", "w",
-/// "h", "version"}` over `sequence`.
+/// "h", "version", "chrome"}` over `sequence` -- `chrome` `false` for a window
+/// with no menu bar and no tools.
 pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = NotesEditor::new(sequence, opened.rate, opened.version);
@@ -386,6 +403,7 @@ pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     }
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
+    editor.bare = !opened.chrome;
     editor
 }
 

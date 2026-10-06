@@ -32,7 +32,10 @@ looping, the selection -- or the whole take -- plays over and over. The
 stops, and neither a play nor a stop clicks: the editor sounds the take through
 nodes of its own, whose output fades in and out with the transport.
 **Wheel** to zoom in until each sample is a disc, then **Alt+drag**
-to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the history. ``hear()`` plays the take as the edits have left it, and ``parts()``
+to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the history. Every one of
+these is also in the **menu bar** -- File, Edit, View, Transport, Help, each
+entry with its key -- and the transport and the clipboard are **tools** under
+it, which act on the take as the keys do. ``hear()`` plays the take as the edits have left it, and ``parts()``
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the buffer it was opened from, and
 ``editor.save(path)`` writes it as a file instead.

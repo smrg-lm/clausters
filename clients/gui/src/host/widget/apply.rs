@@ -27,6 +27,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Window { ask_close, .. } if key == "ask_close" => {
             truthy(v).map(|b| *ask_close = b).is_some()
         }
+        WidgetKind::Window { main, .. } if key == "main" => {
+            *main = super::build::main_of(Some(v));
+            true
+        }
         WidgetKind::Window { keys, .. } if key == "keys" => {
             *keys = super::build::scopes(v);
             true

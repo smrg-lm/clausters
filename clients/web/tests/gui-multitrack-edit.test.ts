@@ -144,7 +144,7 @@ test("the multitrack is ruled from above by a strip of its own", () => {
     // zoom away from the tracks it is ruling.
     const children = (editor(multitrack()).draw() as unknown as {
         children: Record<string, unknown>[];
-    }).children;
+    }).children.filter((c) => c.type !== "layout");
     const ruler = children[0];
     const multitrackNode = children[1];
     assert.equal(ruler.type, "field", "the free-standing time ruler, above");

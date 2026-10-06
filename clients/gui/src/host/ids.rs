@@ -65,6 +65,20 @@ impl Host {
         id
     }
 
+    /// **Numbers the widgets of one of the host's own windows that came with
+    /// none** -- an application's tools, which a client numbers on the way
+    /// out -- each by its place in the tree, under `structure` and `role`, so
+    /// a window opened again keeps its numbers. The root keeps none: a
+    /// GuiDef's id is the one its `/gui_def` names.
+    pub(crate) fn number_own(&mut self, def: &mut serde_json::Value, structure: i64, role: &str) {
+        let mut n = 0;
+        let mut next = |_: &serde_json::Value| {
+            n += 1;
+            self.own_widget(structure, role, &format!("free:{n}"))
+        };
+        number_children(def, &mut next);
+    }
+
     /// Returns the id of one of the host's own widgets, by its name.
     pub(crate) fn forget_own_widget(&mut self, structure: i64, role: &str, key: &str) {
         self.widget_ids.forget(structure, role, key);
@@ -163,6 +177,26 @@ fn shape_of(args: &[OscType]) -> Option<ServerShape> {
         buffers: int(8)?,
         transports: int(15).unwrap_or(ServerShape::DEFAULT.transports),
     })
+}
+
+/// **Numbers every widget under `def` that came with no id**, in the order
+/// the tree is written, by what `next` hands out; the root is left as it is.
+pub(crate) fn number_children(
+    def: &mut serde_json::Value,
+    next: &mut dyn FnMut(&serde_json::Value) -> Option<i32>,
+) {
+    let Some(children) = def.get_mut("children").and_then(|c| c.as_array_mut()) else {
+        return;
+    };
+    for child in children {
+        if child.get("id").is_none_or(serde_json::Value::is_null)
+            && let Some(id) = next(child)
+            && let Some(map) = child.as_object_mut()
+        {
+            map.insert("id".into(), serde_json::json!(id));
+        }
+        number_children(child, next);
+    }
 }
 
 #[cfg(test)]

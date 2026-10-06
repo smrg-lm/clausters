@@ -126,6 +126,11 @@ pub(super) fn on_press(
         // A ruler takes no focus of its own -- it is chrome, not a sink -- and
         // it takes none away from what it rules.
         None if rules_the_focused(host, ctx, hit) => {}
+        // **Nor is a press on a tool**: a tool performs its verb on what the
+        // focus is on, so taking the focus away first would leave it nothing.
+        None if hit
+            .and_then(|(_, kind)| kind.as_element())
+            .is_some_and(|el| el.tool_verb().is_some()) => {}
         // A press anywhere else drops it -- but only if it was *this* window's:
         // clicking in one window must not take the focus out of another.
         None if host.focused().is_some_and(|(d, _)| d == ctx.def_id) => set(host, out, ctx, None),

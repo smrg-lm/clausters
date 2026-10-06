@@ -41,6 +41,7 @@ pub(super) fn build_kind(
             plays: props.get("plays").and_then(truthy).unwrap_or(false),
             keys: props.get("keys").map(scopes).unwrap_or_default(),
             ask_close: props.get("ask_close").and_then(truthy).unwrap_or(false),
+            main: main_of(props.get("main")),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its
@@ -314,4 +315,10 @@ pub(super) fn scopes(v: &Value) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// A window's `main`: the id of the element its commands address.
+pub(super) fn main_of(v: Option<&Value>) -> Option<i32> {
+    v.and_then(Value::as_i64)
+        .and_then(|id| i32::try_from(id).ok())
 }

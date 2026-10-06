@@ -65,6 +65,18 @@ import { Timeline } from "../src/seq/timeline.ts";
 import * as notation from "../src/gui/notation/index.ts";
 import { setEngraverUrl } from "../src/gui/notation/index.ts";
 
+/**
+ * The view a window edits: the node its `main` names, which stands under the
+ * toolbar of a window with chrome -- or, in one with none, its first.
+ */
+function picture(tree: unknown): Record<string, any> {
+    const root = tree as { main?: number; children?: unknown[] };
+    const find = (node: any): any =>
+        node.id === root.main ? node : (node.children ?? []).map(find).find((f: unknown) => f);
+    return (root.main !== undefined && find(root)) || (root.children as any[])[0];
+}
+
+
 await loadCore();
 
 /**
@@ -747,7 +759,7 @@ test("a page and a roll walk one order", {
     const pitches = () => [...notes].map(([, item]) => item.midinote());
 
     assert.ok(score.apply({ op: "transpose", semitones: 2 }));
-    const wid = (editor.view!.build(editor).children as { id: number }[])[0]!.id;
+    const wid = picture(editor.view!.build(editor)).id as number;
     const reach = editor as unknown as { route(args: unknown[]): boolean };
     assert.ok(reach.route([wid, "notes", 1, 0.0, 24_000, 67, 13, 0]));
     assert.deepEqual([step(), pitches()], ["d", [67]]);

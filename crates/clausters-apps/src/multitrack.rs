@@ -33,6 +33,8 @@ use clausters_core::tempomap::TempoMap;
 use clausters_document::multitrack::Multitrack;
 use clausters_editing::multitrack::{self as projection, Look};
 
+use crate::chrome::{self, App};
+
 pub mod editor;
 
 /// A multitrack the editor and its holder edit together -- a script's handle
@@ -127,8 +129,13 @@ pub struct Window<'a> {
     pub size: (i64, i64),
     /// The close form's widgets, when the holder numbered them.
     pub close_form: Option<crate::closing::Ids>,
-    /// Whether the window is the work's one holder ([`crate::closing`]).
+    /// Whether the window is the work's one holder ([`crate::closing`]) --
+    /// which is also whether it saves its work itself.
     pub asks: bool,
+    /// **A window with no chrome**: no menu bar and no tools, for a client
+    /// that composes its own around it. The transport row stays, under the
+    /// multitrack, where a window with chrome holds it in the toolbar.
+    pub bare: bool,
 }
 
 impl Window<'_> {
@@ -175,17 +182,22 @@ pub fn window(w: &Window<'_>) -> Value {
     multitrack.insert("id".into(), json!(w.widget));
     multitrack.extend(multitrack_props(w));
     let mut children = vec![ruler(w), Value::Object(multitrack)];
-    match w.transport {
-        Transport::Absent => {}
-        Transport::Unnumbered => children.push(transport(None)),
-        Transport::Numbered(ids) => children.push(transport(Some(ids))),
+    let ids = match w.transport {
+        Transport::Absent => None,
+        Transport::Unnumbered => Some(None),
+        Transport::Numbered(ids) => Some(Some(ids)),
+    };
+    if w.bare
+        && let Some(ids) = ids
+    {
+        children.push(transport(ids));
     }
     // **The close form, held**, where the holder numbered it -- and the
     // window asks before it closes only where it is the work's one holder
     if let Some(ids) = &w.close_form {
         children.push(crate::closing::stack(ids, UNSAVED));
     }
-    json!({
+    let mut window = json!({
         "type": "window",
         "title": w.title,
         "w": w.size.0,
@@ -193,7 +205,23 @@ pub fn window(w: &Window<'_>) -> Value {
         "flow": "col",
         "ask_close": crate::closing::asks(w.asks, w.close_form.is_some()),
         "children": children,
-    })
+    });
+    // **The chrome**: the menu bar, and the toolbar on top -- the transport
+    // first, where the multitrack can be heard, then the edit tools
+    if !w.bare {
+        let lead = ids.map(transport_tools).unwrap_or_default();
+        let mut bar = chrome::toolbar(App::Multitrack, Some(lead));
+        if let (Some(Some(ids)), Some(map)) = (ids, bar.as_object_mut()) {
+            map.insert("id".into(), json!(ids.row));
+        }
+        chrome::dress(
+            &mut window,
+            chrome::menu(App::Multitrack, w.asks),
+            bar,
+            w.widget,
+        );
+    }
+    window
 }
 
 /// **Everything a widget of this window should be drawing**, for a correction.
@@ -270,6 +298,51 @@ fn ruler(w: &Window<'_>) -> Value {
             "cursor": w.cursor_units(),
         }},
     })
+}
+
+/// **The transport, as tools**: rewind, play/pause and stop by name, the loop
+/// switch by its verb, and the clock -- what a window with chrome holds at the
+/// head of its toolbar.
+fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
+    let named = |mut node: Value, name: &str, id: Option<i32>| {
+        if let Some(map) = node.as_object_mut() {
+            map.insert("name".into(), json!(name));
+            if let Some(id) = id {
+                map.insert("id".into(), json!(id));
+            }
+        }
+        node
+    };
+    let button = |label: &str, tip: &str| {
+        json!({"type": "button", "flat": true, "label": label, "tip": tip,
+               "text_size": chrome::SYMBOL_SIZE})
+    };
+    vec![
+        named(
+            button(&chrome::glyph(chrome::TO_START), "Back to the start"),
+            REWIND,
+            ids.map(|i| i.rewind),
+        ),
+        named(
+            button(chrome::PLAY, "Play or pause"),
+            PLAY,
+            ids.map(|i| i.play),
+        ),
+        named(
+            button(chrome::STOP, "Stop and go back to the cursor"),
+            STOP,
+            ids.map(|i| i.stop),
+        ),
+        chrome::tool("loop", chrome::LOOP, true, "Loop (L)"),
+        // A reading, written on every tick of the transport: drawn on the
+        // window's live layer, so a write costs the label and not the window
+        // -- and as wide as its longest reading, so a tick moves no tool.
+        named(
+            json!({"type": "label", "text": "", "text_size": 2.0, "w": 260.0, "live": true}),
+            CLOCK,
+            ids.map(|i| i.clock),
+        ),
+    ]
 }
 
 /// **The transport row**: rewind, play/pause, stop, and where the multitrack is.
@@ -364,6 +437,7 @@ mod tests {
             size: (1000, 560),
             close_form: None,
             asks: false,
+            bare: false,
         })
     }
 
@@ -375,7 +449,7 @@ mod tests {
         assert_eq!(def["flow"], "col");
         let children = def["children"].as_array().unwrap();
         assert_eq!(children.len(), 3);
-        let (ruler, multitrack, row) = (&children[0], &children[1], &children[2]);
+        let (bar, ruler, multitrack) = (&children[0], &children[1], &children[2]);
         assert_eq!(ruler["type"], "field");
         assert_eq!(ruler["id"], 8);
         assert_eq!(multitrack["type"], "multitrack");
@@ -389,28 +463,51 @@ mod tests {
             ruler["axes"]["x"]["playhead_at"], multitrack["playhead_at"],
             "the first member seeds the group's anchor, so the ruler states it too"
         );
-        let names: Vec<&str> = row["children"]
+        // **The transport heads the toolbar**, by name, and the edit tools
+        // follow it by their verbs
+        let tools = bar["children"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().filter_map(|c| c["name"].as_str()).collect();
+        assert_eq!(names, [REWIND, PLAY, STOP, CLOCK]);
+        let verbs: Vec<&str> = tools.iter().filter_map(|c| c["verb"].as_str()).collect();
+        assert_eq!(verbs, ["loop", "split", "join", "quantize"]);
+        assert!(
+            bar.get("id").is_none() && tools[0].get("id").is_none(),
+            "named, and numbered by whoever sends it"
+        );
+        assert_eq!(def["main"], 7, "the menu's verbs address the multitrack");
+        assert!(def["menu"].is_array());
+        // **Bare, there is no chrome**, and the row is under the multitrack
+        let bare = compose(Transport::Unnumbered, None, |w| {
+            window(&Window { bare: true, ..*w })
+        });
+        assert!(bare.get("menu").is_none() && bare.get("main").is_none());
+        let children = bare["children"].as_array().unwrap();
+        assert_eq!(children[1]["type"], "multitrack");
+        let names: Vec<&str> = children[2]["children"]
             .as_array()
             .unwrap()
             .iter()
             .map(|c| c["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, [REWIND, PLAY, STOP, CLOCK]);
-        assert!(
-            row.get("id").is_none() && row["children"][0].get("id").is_none(),
-            "named, and numbered by whoever sends it"
-        );
     }
 
     /// A multitrack nobody can play has no transport row.
     #[test]
     fn a_multitrack_nobody_plays_has_no_transport() {
         let def = compose(Transport::Absent, None, window);
-        assert_eq!(def["children"].as_array().unwrap().len(), 2);
+        let names = def["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c.get("name").is_some())
+            .count();
+        assert_eq!(names, 0, "the toolbar holds the edit tools alone");
     }
 
-    /// **A host composing a window for itself numbers every widget**, because
-    /// a child with no id is a child its registry skips.
+    /// **A host composing a window for itself numbers the transport**, which
+    /// the editor reads by id; the tools it numbers on the way out, as a
+    /// client does.
     #[test]
     fn a_window_numbered_here_leaves_no_widget_without_an_id() {
         let ids = TransportIds {
@@ -427,7 +524,16 @@ mod tests {
                 .as_array()
                 .map_or(0, |c| c.iter().map(unnumbered).sum())
         }
-        assert_eq!(unnumbered(&def), 1, "only the root, whose id is the def's");
+        fn named_unnumbered(node: &Value) -> usize {
+            let own = usize::from(node.get("name").is_some() && node.get("id").is_none());
+            own + node["children"]
+                .as_array()
+                .map_or(0, |c| c.iter().map(named_unnumbered).sum())
+        }
+        assert_eq!(named_unnumbered(&def), 0, "the transport, numbered here");
+        // **The tools are not**: what a tool does is the host's to perform, so
+        // it is numbered as any id-less widget is, by whoever sends the window
+        assert!(unnumbered(&def) > 1);
     }
 
     /// **The multitrack's props are the projection's and the window's**: the rows

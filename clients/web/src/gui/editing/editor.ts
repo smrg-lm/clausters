@@ -114,8 +114,8 @@ export interface GenericEditorOptions<S> {
      * composed, so none of it is sent or kept current. **The keys stay** --
      * they are the window's, not the menu's, and F1 lists them -- and so do
      * every verb of the handle and the status line, where a verb refused says
-     * why. The score editor is the one application with chrome
-     * today; an editor with none opens the same either way.
+     * why. The score, audio, multitrack and notes editors have chrome; an
+     * editor with none opens the same either way.
      */
     chrome?: boolean;
     /**

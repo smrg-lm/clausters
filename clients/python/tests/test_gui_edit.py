@@ -99,6 +99,24 @@ class FakeHost:
     loop = None
 
 
+def picture(tree: dict) -> dict:
+    """The view a window edits: the node its `main` names, which stands under
+    the toolbar of a window with chrome -- or, in one with none, its first."""
+    main = tree.get("main")
+
+    def find(node):
+        if node.get("id") == main:
+            return node
+        for child in node.get("children", ()):
+            found = find(child)
+            if found is not None:
+                return found
+        return None
+
+    found = find(tree) if main is not None else None
+    return found if found is not None else tree["children"][0]
+
+
 def a_curve() -> Bpf:
     return Bpf([(0.0, 200.0, "exp"), (2.0, 900.0)])
 
@@ -111,7 +129,7 @@ def a_timeline() -> Timeline:
 def opened(editor):
     host = FakeHost()
     editor.open(host)
-    return host, host.trees[0]["children"][0]["id"]
+    return host, picture(host.trees[0])["id"]
 
 
 # ---- the verb ----
@@ -614,7 +632,7 @@ def test_a_sequence_with_a_marker_still_draws_its_notes():
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
                          (3.0, OscItem("/mark", 1, "cue"))])
     editor = NotesEditor(seq, sample_rate=SR)
-    roll = editor.view.build(editor)["children"][0]
+    roll = picture(editor.view.build(editor))
     assert roll["type"] == "notes"
     assert len(roll["notes"]) == 5, "the one note is on the roll"
     assert roll["osc"][1] == "/mark", "and the marker beside it, by its label"
@@ -630,7 +648,7 @@ def test_a_curve_is_drawn_against_its_own_axis_and_not_the_default_one():
     destroys the data's range. Both ends come from the curve."""
     curve = a_curve()                       # 200 Hz to 900 Hz, ending at beat 2
     editor = edit(curve, sample_rate=SR, open=False)
-    widget = editor.draw()["children"][0]
+    widget = picture(editor.draw())
 
     band = widget["axes"]["y"]
     assert band["min"] < 200.0 < 900.0 < band["max"], "the curve's own band"
@@ -643,21 +661,21 @@ def test_the_axis_is_held_rather_than_refitted_under_the_hand():
     *other* point visibly moves with it. It only ever grows."""
     curve = a_curve()
     editor = edit(curve, sample_rate=SR, open=False)
-    first = editor.draw()["children"][0]
+    first = picture(editor.draw())
     band = first["axes"]["y"]
 
     # A point dragged down and back up must leave the drawing where it was.
     curve.set_points([0.0, 500.0, 2, 0.0, 2.0, 600.0, 1, 0.0])
-    again = editor.draw()["children"][0]
+    again = picture(editor.draw())
     assert again["axes"]["y"] == band
     assert again["duration"] == first["duration"]
 
     # And a curve that no longer fits inside it widens the end that stopped
     # holding it, keeping the other.
     curve.set_points([0.0, 200.0, 2, 0.0, 4.0, 9000.0, 1, 0.0])
-    wider = editor.draw()["children"][0]["axes"]["y"]
+    wider = picture(editor.draw())["axes"]["y"]
     assert wider["max"] > band["max"] and wider["min"] == band["min"]
-    assert editor.draw()["children"][0]["duration"] == pytest.approx(4.0)
+    assert picture(editor.draw())["duration"] == pytest.approx(4.0)
 
 
 # ---- the notes editor plays ----
@@ -955,7 +973,7 @@ def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it(
     host, wid = opened(editor)
     transport = editor._playback.transport_id
     assert host.clocks == [(901, "transport", transport)]
-    assert host.trees[0]["children"][0]["axes"]["x"]["playhead_at"] == 0.0
+    assert picture(host.trees[0])["axes"]["x"]["playhead_at"] == 0.0
     placed = []
     editor.on_locate = placed.append
     server.sent.clear()
@@ -969,7 +987,7 @@ def test_a_roll_in_hertz_draws_and_edits_frequencies():
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
     editor = NotesEditor(seq, sample_rate=SR, y_axis="hz")
     host, wid = opened(editor)
-    roll = host.trees[0]["children"][0]
+    roll = picture(host.trees[0])
     assert roll["axes"]["y"]["unit"] == "hz"
     assert abs(roll["notes"][2] - 261.6256) < 1e-3, "middle C, in hertz"
     editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT * 0.8, 300.0, 100, 0])

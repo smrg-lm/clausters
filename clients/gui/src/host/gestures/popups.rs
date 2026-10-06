@@ -46,7 +46,7 @@ fn walk(key: &Key) -> Option<Walk> {
 
 /// The placement of widget `id` in this window, as an address the machine can
 /// hand an element.
-fn at_widget(host: &Host, ctx: &GestureCtx, id: i32) -> Option<element::At> {
+pub(super) fn at_widget(host: &Host, ctx: &GestureCtx, id: i32) -> Option<element::At> {
     host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?
         .iter()
         .find(|p| p.widget.id == Some(id))
@@ -148,7 +148,7 @@ fn report_pick(
                 .and_then(|w| w.context.as_mut())
                 .and_then(|m| menu::pick(m, path)),
         ),
-        Owner::Element(_) | Owner::Edit(_) | Owner::Keys => return,
+        Owner::Element(_) | Owner::Edit(_) | Owner::Own(_) | Owner::Keys => return,
     };
     let Some(picked) = picked else {
         return;
@@ -208,9 +208,22 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
                 element::report(host, out, ctx, id, events);
             }
         }
+        // **An entry of the bar is its verb performed**, as the key bound to
+        // it would perform it: on the focused element, the window's `main`,
+        // the window -- and only what none of them takes is reported. An
+        // entry that holds a state (a check, one of a group) is the owner's,
+        // reported with the state it flipped to.
         Owner::Bar(title) => {
             let full = menubar::path(title, &path);
-            report_pick(host, ctx, out, owner, &full);
+            match verb.filter(|_| !holds_state(host, ctx, &full)) {
+                Some(verb) => out.extend(super::Gestures::default().command(host, ctx, &verb)),
+                None => report_pick(host, ctx, out, owner, &full),
+            }
+        }
+        Owner::Own(id) => {
+            if let Some(verb) = verb {
+                out.extend(super::Gestures::default().context_command(host, ctx, id, &verb));
+            }
         }
         Owner::Button(_) | Owner::Context(_) => report_pick(host, ctx, out, owner, &path),
         Owner::Edit(id) => {
@@ -221,6 +234,36 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
         // a sheet is read, and nothing on it is picked
         Owner::Keys => {}
     }
+}
+
+/// **The element under `(cx, cy)` answering with a context menu of its own**
+/// ([`Element::context_menu`](crate::host::widget::Element::context_menu)),
+/// where the widget carries no `context` -- an author's menu on the widget
+/// itself is the one that opens.
+fn own_context(host: &mut Host, ctx: &GestureCtx, cx: f64, cy: f64) -> Option<(Owner, Vec<Entry>)> {
+    let found = super::nav::hit(host, ctx, cx, cy)?;
+    let widget = host.window_def(ctx.def_id)?.find(found.id)?;
+    if !widget.live || widget.context.as_ref().is_some_and(|m| !m.is_empty()) {
+        return None;
+    }
+    let at = element::At::widget(found.id, found.rect, found.scale, found.indent);
+    let entries = element::with(host, ctx, at, |el, input| el.context_menu((cx, cy), input))
+        .flatten()
+        .filter(|m| !m.is_empty())?;
+    Some((Owner::Own(found.id), entries))
+}
+
+/// Whether the bar entry at `path` holds a state a pick flips -- a check, or
+/// one of a group.
+fn holds_state(host: &Host, ctx: &GestureCtx, path: &[usize]) -> bool {
+    let Some((last, parents)) = path.split_last() else {
+        return false;
+    };
+    host.window_def(ctx.def_id)
+        .and_then(menubar::entries)
+        .and_then(|entries| menu::list_at(entries, parents))
+        .and_then(|list| list.get(*last))
+        .is_some_and(Entry::can_mark)
 }
 
 /// **Opens the window's key sheet** (the `keys` verb): what each key does in
@@ -561,7 +604,8 @@ impl Gestures {
         }
         // A list already open is dismissed by any press, this one included.
         let closed = host.close_popup(def_id);
-        let found = host.context_at(def_id, ctx.fb_w, ctx.fb_h, cx, cy);
+        let found = own_context(host, ctx, cx, cy)
+            .or_else(|| host.context_at(def_id, ctx.fb_w, ctx.fb_h, cx, cy));
         let Some((owner, entries)) = found else {
             return closed.then(|| vec![GestureEffect::Redraw(def_id)]);
         };

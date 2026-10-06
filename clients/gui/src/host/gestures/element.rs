@@ -275,6 +275,11 @@ pub(super) fn report(
         stack.origin = origin;
         host.open_popup(ctx.def_id, stack);
     });
+    // ...and the verb, if it named one: a tool is not where its verb is
+    // performed, so it is performed as a key bound to it would be.
+    if let Some(name) = events.take_command() {
+        out.extend(super::Gestures::default().command(host, ctx, &name));
+    }
     let voiced = !events.voices().is_empty() || selected.is_some() || opened.is_some();
     let messages = events.into_messages();
     if messages.is_empty() {

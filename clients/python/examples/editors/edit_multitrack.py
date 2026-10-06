@@ -31,7 +31,16 @@ What to do in the window:
   flat at unity across the multitrack, heard like any other. The same shape the
   double click that adds a track has, the verb making the thing rather than
   asking about it. Try it on **bass**, which this file gives no automation.
-- **rewind**, **play/pause** and **stop** are the window's own row. A pause
+- **The secondary button over a track** opens its **context menu**: each of
+  its curves, to show or hide one at a time -- the `A` shows or hides them
+  all -- a track added under it, and the rows' heights as a whole: **Reset
+  track heights** takes every zoom back, **Compact tracks** fits the stack.
+  Over a box, the menu lists **the box's own curves**.
+- **The menu bar** names every verb of the window -- File, Edit, View,
+  Transport, Track, Help -- with its key beside it, and the **toolbar** under
+  it holds the transport and Split, Join and Quantize. A tool acts on what the
+  keys act on, so **select a box and press Split**; **F1** lists the keys.
+- **rewind**, **play/pause** and **stop** head the toolbar. A pause
   freezes the readers where they stand, so playing again continues rather than
   starting over; stop goes back to the mark rather than to the top; and rewind
   puts the **mark** back at the top, which is the cursor's verb and not the

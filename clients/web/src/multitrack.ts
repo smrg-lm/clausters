@@ -1759,15 +1759,21 @@ export class Multitrack implements CurveHolder {
 
     /**
      * Writes a curve whole and answers its id. Its points alone are the
-     * multitrack's own curve verb, the one a curve drawn in a row is.
+     * multitrack's own curve verb, the one a curve drawn in a row is, and
+     * whether it is shown alone is the one a menu's check is.
      *
      * @internal
      */
     writeCurve(scope: CurveScope, written: Extra, label: string): number {
         const id = num(written.id);
         const current = this.writtenCurve(scope, id);
-        const without = (curve: Extra) => JSON.stringify(rest(curve, "points"));
-        if (current !== null && without(current) === without(written)) {
+        const without = (curve: Extra, key: string) => JSON.stringify(rest(curve, key));
+        if (current !== null && without(current, "visible") === without(written, "visible")) {
+            this.editIntent({ intent: "showautomation", automation: id,
+                              visible: Boolean(written.visible) }, label);
+            return id;
+        }
+        if (current !== null && without(current, "points") === without(written, "points")) {
             this.editIntent({ intent: "setautomation", automation: id,
                               points: [...((written.points as Extra[] | undefined) ?? [])] }, label);
             return id;

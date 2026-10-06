@@ -468,7 +468,8 @@ session saved in beats, before this, is converted when it is read.
 The multitrack has an edit vocabulary of its own, and every change made through
 its objects is one of its verbs: a region's place is `placeregion`, its length
 and window `trimregion`, its fades `faderegion`, a curve's points
-`setautomation`, a marker `setmarker`. The same vocabulary is reached as data
+`setautomation` and whether it is shown `showautomation`, a marker
+`setmarker`. The same vocabulary is reached as data
 through the door every other structure is — `domainEdit`, with `MULTITRACK` as
 the vocabulary: hand over a multitrack as the crate's JSON and an edit, which
 names what it moves by the ids the JSON holds, and take back the multitrack as
@@ -486,13 +487,14 @@ edited.state;                       // the multitrack, as JSON, with the region 
 edited.current;                     // the edit that puts it back
 ```
 
-Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
+Fifteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
 say the same thing) and `setactivetakelane`, which is comping's one verb. What a
 **region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
-`setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
-span), `settempomap` and `setmetermap`.
+`setautomation`, `showautomation` (one curve shown or hidden, which a
+reopened multitrack keeps), `setmarker`, `removemarker`, `setrange` (the loop
+or the punch span), `settempomap` and `setmetermap`.
 
 Three things about them are worth knowing before you write against them.
 

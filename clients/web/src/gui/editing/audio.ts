@@ -606,6 +606,7 @@ export class AudioEditor extends Editor<Buffer> {
             title: this.title,
             w: this.size[0],
             h: this.size[1],
+            chrome: this.chrome,
             window: this.windowId,
         };
     }

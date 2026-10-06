@@ -683,6 +683,11 @@ impl Multitrack {
         if verb == Verb::Delete && self.selected.is_empty() && self.track.is_some() {
             return self.remove_track();
         }
+        // **Every box, held**: the hand's state, so nothing is reported.
+        if verb == Verb::SelectAll {
+            self.selected = (0..self.clips.len()).collect();
+            return Some(Events::none());
+        }
         if self.selected.is_empty() && !matches!(verb, Verb::Paste | Verb::Mix) {
             return None;
         }

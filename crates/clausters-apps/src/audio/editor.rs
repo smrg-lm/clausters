@@ -221,6 +221,8 @@ pub struct AudioEditor {
     layers: Vec<String>,
     title: String,
     size: (i64, i64),
+    /// Whether the window is composed with no chrome ([`Window::bare`]).
+    bare: bool,
     window: Option<i32>,
     widget: Option<i32>,
     /// Where the position cursor stands, in frames of the take, once placed.
@@ -285,6 +287,7 @@ impl AudioEditor {
             layers: measures(layers)?,
             title: "Audio".into(),
             size: (1000, 520),
+            bare: false,
             window: None,
             widget: None,
             cursor: None,
@@ -611,6 +614,7 @@ impl AudioEditor {
             title: &self.title,
             size: self.size,
             meter,
+            bare: self.bare,
         })
     }
 
@@ -1071,6 +1075,8 @@ struct Facts {
     title: Option<String>,
     w: Option<i64>,
     h: Option<i64>,
+    /// `false` for a window with no menu bar and no tools.
+    chrome: Option<bool>,
     #[serde(deserialize_with = "present")]
     window: Option<Option<i32>>,
     /// Where the level meter is read from: `{"bus", "channels"}`, or `null`.
@@ -1132,6 +1138,9 @@ impl AudioEditor {
         if let Some(title) = facts.title {
             self.title = title;
         }
+        if let Some(chrome) = facts.chrome {
+            self.bare = !chrome;
+        }
         if let Some(w) = facts.w {
             self.size.0 = w;
         }
@@ -1151,7 +1160,8 @@ impl AudioEditor {
 /// `rate`, `display`, `buffers`, `chunk`, `path` (the file the take was read
 /// from, which a save writes over), `scratch` (the directory a take only
 /// the history holds is written to when it leaves memory), `name`, `layers`,
-/// `title`, `w`, `h` and `version` -- or the reason it cannot be.
+/// `title`, `w`, `h`, `chrome` (`false` for a window with no menu bar and no
+/// tools) and `version` -- or the reason it cannot be.
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let facts: Facts =
         serde_json::from_str(request).map_err(|e| format!("not an audio editor request: {e}"))?;

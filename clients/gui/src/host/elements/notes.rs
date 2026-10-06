@@ -979,6 +979,11 @@ impl Element for Notes {
     /// element has no arm for goes on to the window.
     fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
         match verb {
+            // **Every note, marked**: the picture's, so nothing is reported.
+            Verb::SelectAll => {
+                self.selected = (0..self.notes.len()).collect();
+                Some(Events::none())
+            }
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid -- the same grid a drag snaps to.
             Verb::Quantize => Some(

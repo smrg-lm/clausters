@@ -131,12 +131,30 @@ class FakeBuffer:
         raise AssertionError("an audio editor never writes the take")
 
 
+def picture(tree: dict) -> dict:
+    """The view a window edits: the node its `main` names, which stands under
+    the toolbar of a window with chrome -- or, in one with none, its first."""
+    main = tree.get("main")
+
+    def find(node):
+        if node.get("id") == main:
+            return node
+        for child in node.get("children", ()):
+            found = find(child)
+            if found is not None:
+                return found
+        return None
+
+    found = find(tree) if main is not None else None
+    return found if found is not None else tree["children"][0]
+
+
 def opened(take, **options):
     context = Editing()
     editor = AudioEditor(take, context=context, **options)
     host = FakeHost()
     editor.open(host)
-    return editor, host, host.trees[0]["children"][0]["id"], context
+    return editor, host, picture(host.trees[0])["id"], context
 
 
 def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
@@ -154,7 +172,7 @@ def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
 
 def test_the_window_opens_with_both_cursors_on_the_transport_clock():
     editor, host, _wid, _context = opened(FakeBuffer())
-    take = host.trees[0]["children"][0]
+    take = picture(host.trees[0])
     assert take["axes"]["x"]["cursor"] == 0.0, "the position cursor, placed"
     assert take["axes"]["x"]["playhead_at"] == 0.0, "the play cursor, anchored"
     assert host.clock == "transport", "drawn from the transport's position"
@@ -257,13 +275,13 @@ def test_a_takes_window_is_composed_by_the_crate():
     take = FakeBuffer(frames=8, channels=2)
     editor, host, wid, _context = opened(take, title="take")
     tree = host.trees[0]
-    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "row"), \
-        "the take, and its level beside it"
-    picture = tree["children"][0]
-    assert picture["type"] == "signal" and picture["id"] == wid
-    assert (picture["buffer"], picture["channels"]) == (editor.buffer.bufnum, 2)
-    assert picture["measure"] == "peak rms"
-    assert picture["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
+    assert (tree["type"], tree["title"]) == ("window", "take")
+    assert tree["children"][1]["flow"] == "row", "the take, and its level beside it"
+    taken = picture(tree)
+    assert taken["type"] == "signal" and taken["id"] == wid
+    assert (taken["buffer"], taken["channels"]) == (editor.buffer.bufnum, 2)
+    assert taken["measure"] == "peak rms"
+    assert taken["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
     assert editor.view.props(editor, wid) == {"reload": 1}
 
 
@@ -297,7 +315,7 @@ def test_the_take_sounds_through_the_editors_own_nodes():
     assert host.clock == "transport"
     window = host.trees[0]
     assert window["plays"] is True, "the space bar is the editor's"
-    meter = window["children"][1]
+    meter = next(c for c in window["children"][1]["children"] if c["type"] == "meter")
     assert meter["type"] == "meter" and meter["rate"] == "control"
     assert meter["channels"] == 2
 

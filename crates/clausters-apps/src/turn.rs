@@ -11,6 +11,9 @@ use serde_json::Value;
 
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
 
+/// The tag a pick in a window's menu bar is reported under.
+pub const MENU: &str = "menu";
+
 /// What kind of turn a message came to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,13 +200,34 @@ pub trait Converse {
     ) -> bool {
         false
     }
+    /// **Whether a pick in the window's menu bar is read as its verb**: the
+    /// host reports one as `"menu" <verb>`, and for an editor whose entries
+    /// are the verbs its keys and its tools say ([`crate::chrome`]) the two
+    /// are one message -- Save is `save` from the menu and from Ctrl+S. An
+    /// editor whose entries say something of their own reads them itself.
+    fn reads_menu_as_verbs(&self) -> bool {
+        true
+    }
 }
 
 /// **One turn of an editor's conversation**: the message the host sent, read
 /// and answered, the gesture in it handed to the editor's
 /// [`Converse::route`].
 pub fn turn<E: Converse>(editor: &mut E, event: &Event, version: i64) -> E::Outcome {
-    let args = &event.args;
+    let unwrapped;
+    let mut args = &event.args;
+    // **A menu entry is its verb**: `<id> <seq> <version> "menu" <verb>` is
+    // read as `<id> <seq> <version> <verb>` from the window
+    if editor.reads_menu_as_verbs()
+        && args.get(3).and_then(Value::as_str) == Some(MENU)
+        && args.len() > 4
+        && editor.window_id().map(i64::from) == args.first().map(int)
+    {
+        let mut moved = args.clone();
+        moved.remove(3);
+        unwrapped = moved;
+        args = &unwrapped;
+    }
     let widget = args.first().map_or(0, int);
     let tag = args.get(3).map(text).unwrap_or_default();
     let window = editor.window_id();

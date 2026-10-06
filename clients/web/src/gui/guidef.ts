@@ -1501,9 +1501,17 @@ export function view(
      * the titles of a band the host draws along the top edge, each opening its
      * list under it. It is chrome, like the status bar -- not a widget, and
      * taken out of the area the children are laid out in. A pick is reported
-     * by the window itself, as `"menu" verb`.
+     * by the window itself, as `"menu" verb` -- or, where the host performs
+     * the verb (`cut`, `play`, `select_all`...), performed as its key would
+     * be, and not reported.
      */
     menu?: MenuTree;
+    /**
+     * The id of the **view the window's commands address** when nothing
+     * holds the focus -- a menu entry's verb, a tool's, a key's -- so a
+     * window's menu acts on what it edits before a hand has been in it.
+     */
+    main?: number;
     /**
      * **Outlines for characters the window's text uses**: a codepoint in hex
      * (`"E1D5"`) to the SVG path of its shape, in the font's units with `y`
@@ -1521,7 +1529,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        theme, split, menu: bar, glyphs, ...rest
+        theme, split, menu: bar, main, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1533,6 +1541,7 @@ export function view(
             ["cols", cols],
             ["theme", theme],
             ["menu", bar === undefined ? undefined : [...bar]],
+            ["main", main],
             ["glyphs", glyphs === undefined ? undefined : { ...glyphs }],
             ["split", flag(split)],
             ["hug", flag(hug)],
@@ -1992,6 +2001,14 @@ export interface ButtonOptions extends WidgetOptions {
      * firing, and what it reports is the entry picked, as `"menu" verb`.
      */
     menu?: MenuTree;
+    /**
+     * The button is a **tool**: a click performs this verb as the key bound
+     * to it would -- `"cut"`, `"play"`, `"select_all"` -- on what the
+     * window's focus is on, or on the view the window names as its `main`,
+     * and the window's owner hears it where the host performs no such verb. A
+     * tool reports nothing of its own and takes no focus.
+     */
+    verb?: string;
     textSize?: number;
 }
 
@@ -2031,7 +2048,7 @@ export function button(
     options?: ButtonOptions,
 ): View {
     const [source_, opts] = controlArgs<ButtonOptions>(control, options);
-    const { label: text, mode, on, off, icon, flat, menu: list, textSize, ...rest } = opts;
+    const { label: text, mode, on, off, icon, flat, menu: list, verb, textSize, ...rest } = opts;
     if (mode !== undefined && mode !== "gate" && mode !== "press") {
         throw new Error(
             `unknown button mode '${mode}'; use "gate" (on while held) or ` +
@@ -2040,7 +2057,7 @@ export function button(
     }
     const props = drop([
         ["label", text], ["mode", mode], ["on", on], ["off", off],
-        ["icon", icon], ["menu", list === undefined ? undefined : [...list]],
+        ["icon", icon], ["menu", list === undefined ? undefined : [...list]], ["verb", verb],
         ["text_size", textSize], ["flat", flag(flat)],
     ]);
     let built;

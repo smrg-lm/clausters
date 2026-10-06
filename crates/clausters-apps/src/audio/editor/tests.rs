@@ -114,7 +114,7 @@ fn opening_copies_the_take_and_stitches_the_window_s_join_over_the_copy() {
         "copied once"
     );
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
-    assert_eq!(def["children"][0]["buffer"], 9, "the window draws the join");
+    assert_eq!(def["children"][1]["buffer"], 9, "the window draws the join");
 
     let bare = &mut new_json(r#"{"take": 3, "frames": 100, "display": 9}"#).unwrap();
     assert!(
@@ -518,8 +518,8 @@ fn the_window_carries_the_meter_and_plays_its_own_take() {
     );
     assert_eq!(
         bare["children"].as_array().unwrap().len(),
-        1,
-        "nothing measures it yet"
+        2,
+        "the toolbar and the take: nothing measures it yet"
     );
     assert_eq!(bare["plays"], true);
     call(
@@ -530,7 +530,7 @@ fn the_window_carries_the_meter_and_plays_its_own_take() {
         &mut editor,
         json!({"verb": "window", "widget": 12, "meter": 13}),
     );
-    let meter = &window["children"][1];
+    let meter = &window["children"][1]["children"][1];
     assert_eq!(meter["type"], "meter");
     assert_eq!(meter["id"], 13);
     assert_eq!(meter["bus"], 40);

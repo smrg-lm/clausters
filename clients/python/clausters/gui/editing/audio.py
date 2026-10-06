@@ -428,7 +428,7 @@ class AudioEditor(Marking, Editor):
                 "rate": self.sample_rate,
                 "chunk": int(self._server._bulk_chunk()) if hasattr(self, "_server") else None,
                 "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
-                "window": self._window}
+                "chrome": self.chrome, "window": self._window}
 
     def _call(self, verb: str, **args) -> dict:
         """One verb of this editor's member, through the context."""

@@ -21,6 +21,24 @@ from clausters.seq.event import rest
 from clausters.seq.timeline import Timeline
 
 
+def view_of(tree: dict) -> dict:
+    """The view a window edits: the node its `main` names, which stands under
+    the toolbar of a window with chrome -- or, in one with none, its first."""
+    main = tree.get("main")
+
+    def find(node):
+        if node.get("id") == main:
+            return node
+        for child in node.get("children", ()):
+            found = find(child)
+            if found is not None:
+                return found
+        return None
+
+    found = find(tree) if main is not None else None
+    return found if found is not None else tree["children"][0]
+
+
 @functools.cache
 def _engraver() -> bool:
     """Whether this checkout can engrave at all."""
@@ -251,7 +269,7 @@ def test_a_page_and_a_roll_walk_one_order():
 
     s.transpose(nid, -2)
     # The roll edits the sequence the timeline rendered into, by id.
-    wid = editor.view.build(editor)["children"][0]["id"]
+    wid = view_of(editor.view.build(editor))["id"]
     editor._route([wid, "notes", 1, 0.0, 24_000.0, 67, 13, 0])
     notes = editor.sequence
     assert (_pitches(s)[0], _midinotes(notes)) == (57, [67.0])

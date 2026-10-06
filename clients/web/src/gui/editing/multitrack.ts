@@ -664,6 +664,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
             title,
             w: this.size[0],
             h: this.size[1],
+            chrome: this.chrome,
         }, domain);
         this.member = opened.member;
         this.structureId = opened.identity;

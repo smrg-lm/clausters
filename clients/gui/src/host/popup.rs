@@ -48,6 +48,11 @@ pub enum Owner {
     /// element carries no `context` of its own. A pick is an edit of that
     /// element, not a report.
     Edit(i32),
+    /// **An element's own context menu**
+    /// ([`Element::context_menu`](super::widget::Element::context_menu)),
+    /// opened at the pointer where the widget carries no `context`. A pick is
+    /// the element's command, performed rather than reported.
+    Own(i32),
     /// **The window's key sheet** (the `keys` verb, F1): what each key does
     /// in the window, read and never picked. It stands in the middle of the
     /// window under a title strip with a close mark, and only that mark and
@@ -127,9 +132,11 @@ impl Stack {
     /// The widget the stack hangs off, when it hangs off one.
     pub fn owner_widget(&self) -> Option<i32> {
         match self.owner {
-            Owner::Element(id) | Owner::Context(id) | Owner::Button(id) | Owner::Edit(id) => {
-                Some(id)
-            }
+            Owner::Element(id)
+            | Owner::Context(id)
+            | Owner::Button(id)
+            | Owner::Edit(id)
+            | Owner::Own(id) => Some(id),
             Owner::Bar(_) | Owner::Keys => None,
         }
     }
@@ -346,7 +353,11 @@ pub fn owner_rect(
                 .find(|(t, _)| *t == title)
                 .map(|(_, r)| r)
         }
-        Owner::Element(id) | Owner::Context(id) | Owner::Button(id) | Owner::Edit(id) => placed
+        Owner::Element(id)
+        | Owner::Context(id)
+        | Owner::Button(id)
+        | Owner::Edit(id)
+        | Owner::Own(id) => placed
             .iter()
             .find(|p| p.widget.id == Some(id))
             .map(|p| p.rect),

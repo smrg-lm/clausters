@@ -1584,10 +1584,18 @@ class Multitrack:
 
     def _write_curve(self, scope: tuple, written: dict, label: str) -> int:
         """Write a curve whole and answer its id. Its points alone are the
-        multitrack's own curve verb, the one a curve drawn in a row is."""
+        multitrack's own curve verb, the one a curve drawn in a row is, and
+        whether it is shown alone is the one a menu's check is."""
         current = self._curve(scope, written["id"])
-        if current is not None and {k: v for k, v in current.items() if k != "points"} \
-                == {k: v for k, v in written.items() if k != "points"}:
+
+        def without(curve: dict, key: str) -> dict:
+            return {k: v for k, v in curve.items() if k != key}
+
+        if current is not None and without(current, "visible") == without(written, "visible"):
+            self._edit({"intent": "showautomation", "automation": int(written["id"]),
+                        "visible": bool(written.get("visible", False))}, label)
+            return int(written["id"])
+        if current is not None and without(current, "points") == without(written, "points"):
             self._edit({"intent": "setautomation", "automation": int(written["id"]),
                         "points": list(written.get("points", []))}, label)
             return int(written["id"])

@@ -316,13 +316,12 @@ Named, not enumerated: each is written where it belongs and is read there.
   builders from the catalog instead of contrasting against them), the GUI's (a
   steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
-  that could make tracks; the interaction vocabulary, provisional until the
-  applications exist), the web client's (a node
+  that could make tracks), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's
-  edge; the applications' window chrome in standalone, and the multitrack's
-  stop-at-end key that waits on it; what a bare window leaves to its
+  edge; the multitrack's stop-at-end key in standalone; what a bare window
+  leaves to its
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the

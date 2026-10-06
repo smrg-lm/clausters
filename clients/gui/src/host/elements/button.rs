@@ -62,6 +62,13 @@ pub const PRESS: &str = "press";
 pub const RELEASE: &str = "release";
 pub const CLICK: &str = "click";
 
+/// A `verb` prop: a non-empty word, or none.
+fn verb_of(v: Option<&Value>) -> Option<String> {
+    v.and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 fn mode_from(v: &Value) -> Option<Mode> {
     match v.as_str()? {
         "gate" => Some(Mode::Gate),
@@ -86,6 +93,11 @@ pub struct Button {
     /// The `flat` prop: no fill until the pointer is over it -- the look a row
     /// of tools wants.
     pub flat: bool,
+    /// The `verb` prop: the button is a **tool** -- a click performs the verb
+    /// as a key bound to it would, and reports nothing of its own. A tool
+    /// takes no focus, and a press on it leaves the focus where it was: what
+    /// it acts on is what the focus is on.
+    pub verb: Option<String>,
     /// Whether it is being held right now -- drawn pressed.
     held: bool,
 }
@@ -106,6 +118,7 @@ fn from_props(props: &Map<String, Value>) -> Button {
         off: parse::number(props, "off", 0.0),
         icon: props.get("icon").and_then(crate::host::menu::icon_of),
         flat: props.get("flat").and_then(parse::truthy).unwrap_or(false),
+        verb: verb_of(props.get("verb")),
         held: false,
     }
 }
@@ -123,6 +136,10 @@ impl Element for Button {
                 true
             }
             "flat" => parse::truthy(v).map(|b| self.flat = b).is_some(),
+            "verb" => {
+                self.verb = verb_of(Some(v));
+                true
+            }
             _ => false,
         }
     }
@@ -169,6 +186,11 @@ impl Element for Button {
 
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.held = true;
+        // A tool's press is the hand on it and nothing else: the click is
+        // what performs it.
+        if self.verb.is_some() {
+            return Claim::take();
+        }
         Claim::events(
             Events::value(switch_value(self.on)).and_interface(vec![OscType::String(PRESS.into())]),
         )
@@ -180,6 +202,13 @@ impl Element for Button {
     /// the pointer was still on the button when it came up.
     fn release(&mut self, _at: (f64, f64), inside: bool, _input: &Input) -> Events {
         self.held = false;
+        if let Some(verb) = &self.verb {
+            return if inside {
+                Events::none().and_command(verb)
+            } else {
+                Events::none()
+            };
+        }
         let value = match self.mode {
             Mode::Gate => Events::value(switch_value(self.off)),
             Mode::Press => Events::none(),
@@ -193,7 +222,11 @@ impl Element for Button {
     }
 
     fn accepts_focus(&self) -> bool {
-        true
+        self.verb.is_none()
+    }
+
+    fn tool_verb(&self) -> Option<&str> {
+        self.verb.as_deref()
     }
 
     fn reports_focus(&self) -> bool {

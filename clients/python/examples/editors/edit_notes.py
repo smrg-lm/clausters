@@ -52,7 +52,10 @@ first channel driving every note's `amp`, a crescendo -- and the first note
 carries a curve of its own, a **bend**, drawn in the plane as the pitch it
 glides to and running on into its release. **Drag a point** to move it,
 **Ctrl+click** to add one or remove the one under the cursor; one gesture is
-one edit, Ctrl+Z takes it back, and the space bar plays what is drawn.
+one edit, Ctrl+Z takes it back, and the space bar plays what is drawn. The
+**menu bar** names every verb of the roll with its key, and the **toolbar**
+holds the transport and Split, Join and Quantize, acting on the notes as the
+keys do.
 
 **A note keeps what the roll cannot draw.** Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its

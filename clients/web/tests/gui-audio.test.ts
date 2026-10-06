@@ -19,6 +19,18 @@ import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 import { Transport } from "../src/defs/server/transport.ts";
 
+/**
+ * The view a window edits: the node its `main` names, which stands under the
+ * toolbar of a window with chrome -- or, in one with none, its first.
+ */
+function picture(tree: unknown): Record<string, any> {
+    const root = tree as { main?: number; children?: unknown[] };
+    const find = (node: any): any =>
+        node.id === root.main ? node : (node.children ?? []).map(find).find((f: unknown) => f);
+    return (root.main !== undefined && find(root)) || (root.children as any[])[0];
+}
+
+
 await loadCore();
 
 const SR = 48_000;
@@ -153,7 +165,7 @@ async function opened(
     const host = new FakeHost();
     await editor.open(host as unknown as GuiHost);
     await settle();
-    return [editor, host, Number(host.trees[0]!.children![0]!.id), context];
+    return [editor, host, Number(picture(host.trees[0]).id), context];
 }
 
 const spans = (editor: AudioEditor): [number, number][] =>
@@ -177,7 +189,7 @@ test("the window draws a join over a private copy of the take", async () => {
 
 test("the window opens with both cursors on the transport clock", async () => {
     const [editor, host] = await opened(new FakeBuffer());
-    const take = host.trees[0]!.children![0]! as unknown as {
+    const take = picture(host.trees[0]) as unknown as {
         axes: { x: Record<string, unknown> };
     };
     assert.equal(take.axes.x.cursor, 0, "the position cursor, placed");
@@ -304,17 +316,14 @@ test("a take's window is composed by the crate", async () => {
     const host = new FakeHost();
     await editor.open(host as unknown as GuiHost);
     const tree = host.trees[0]!;
-    assert.deepEqual(
-        [tree.type, tree.title, tree.flow],
-        ["window", "take", "row"],
-        "the take, and its level beside it",
-    );
-    const picture = tree.children![0]! as Record<string, unknown>;
-    const wid = Number(picture.id);
-    assert.equal(picture.type, "signal");
-    assert.deepEqual([picture.buffer, picture.channels], [editor.buffer.bufnum, 2]);
-    assert.equal(picture.measure, "peak rms");
-    assert.deepEqual(picture.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
+    assert.deepEqual([tree.type, tree.title], ["window", "take"]);
+    assert.equal(tree.children![1]!.flow, "row", "the take, and its level beside it");
+    const taken = picture(tree);
+    const wid = Number(taken.id);
+    assert.equal(taken.type, "signal");
+    assert.deepEqual([taken.buffer, taken.channels], [editor.buffer.bufnum, 2]);
+    assert.equal(taken.measure, "peak rms");
+    assert.deepEqual(taken.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
     assert.deepEqual(editor.view!.props(editor as never, wid), { reload: 1 });
 });
 
@@ -341,7 +350,9 @@ test("the take sounds through the editor's own nodes", async () => {
     assert.equal(host.clock, "transport");
     const window = host.trees[0] as GuiNode & { plays?: boolean };
     assert.equal(window.plays, true, "the space bar is the editor's");
-    const meter = (window.children ?? [])[1] as Record<string, unknown>;
+    const meter = ((window.children ?? [])[1]!.children ?? []).find(
+        (c) => c.type === "meter",
+    ) as Record<string, unknown>;
     assert.equal(meter.type, "meter");
     assert.equal(meter.rate, "control");
     assert.equal(meter.channels, 2);

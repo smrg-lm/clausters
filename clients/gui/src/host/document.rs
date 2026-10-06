@@ -567,7 +567,14 @@ impl Owner {
         for (id, sequence) in &self.sequences {
             editor.bind_sequence(*id, sequence.clone());
         }
-        let def = editor.window(window + 1, window + 2);
+        let mut def = editor.window(window + 1, window + 2);
+        // **The tools come with no ids** -- a client numbers them on the way
+        // out -- so they are numbered here, past the close form
+        let mut free = window + 13;
+        crate::host::ids::number_children(&mut def, &mut |_| {
+            free += 1;
+            Some(free - 1)
+        });
         editor.set_window(Some(window));
         // **One editor over the multitrack**: opening the window again replaces the
         // editor in its seat rather than seating a second one.

@@ -1109,6 +1109,7 @@ pub struct Events {
     voices: Vec<Voice>,
     select: Option<SelectRequest>,
     popup: Option<PopupRequest>,
+    command: Option<String>,
 }
 
 /// **A list an element asks the host to open for it**: the rows, and the
@@ -1270,6 +1271,15 @@ impl Events {
         self
     }
 
+    /// **Asks the host to perform the verb `name`** as a key bound to it
+    /// would -- on the focused element, the window's `main` one, the window,
+    /// and the window's owner, in that order. What a tool does: it names the
+    /// verb and is not where it is performed.
+    pub fn and_command(mut self, name: &str) -> Self {
+        self.command = Some(name.to_string());
+        self
+    }
+
     /// **What the hand did**, reported beside -- or instead of -- what the widget
     /// is worth: `"press"`, `"release"`, `"click"`.
     ///
@@ -1298,6 +1308,7 @@ impl Events {
         self.voices.extend(other.voices);
         self.select = other.select.or(self.select);
         self.popup = other.popup.or(self.popup);
+        self.command = other.command.or(self.command);
         self
     }
 
@@ -1307,6 +1318,7 @@ impl Events {
             && self.voices.is_empty()
             && self.select.is_none()
             && self.popup.is_none()
+            && self.command.is_none()
     }
 
     /// The messages, for the gesture machine that delivers them.
@@ -1322,6 +1334,11 @@ impl Events {
     /// The voices asked for, for the machine that performs them.
     pub(crate) fn voices(&self) -> &[Voice] {
         &self.voices
+    }
+
+    /// The verb asked for, for the machine that performs it.
+    pub(crate) fn take_command(&mut self) -> Option<String> {
+        self.command.take()
     }
 
     /// The list asked for, for the machine that opens it.
@@ -1892,6 +1909,38 @@ pub trait Element: fmt::Debug {
     /// finds nothing to act on and is the element's to refuse says so with
     /// [`Events::refused`].
     fn verb(&mut self, _verb: Verb, _input: &mut KeyInput) -> Option<Events> {
+        None
+    }
+
+    /// **A command of this element's own**, by name: what an entry of its
+    /// [`context_menu`](Element::context_menu) or a menu entry naming a word
+    /// the host's table does not hold asks of it. `Some` is consumed and
+    /// reported as a verb's is; `None` declines, and the name goes on as a
+    /// verb would -- to the window, and to the window's owner.
+    ///
+    /// A name is a word and what it names (`show:12:1`), so an entry carries
+    /// its subject and nothing has to remember where the menu was opened.
+    fn command(&mut self, _name: &str, _input: &mut KeyInput) -> Option<Events> {
+        None
+    }
+
+    /// **This element's own context menu** at `at`, in window pixels: what the
+    /// secondary button opens over it where the widget carries no `context` of
+    /// its own. The entries' verbs come back through
+    /// [`command`](Element::command), or as the host's verbs where they name
+    /// one. `None` for an element with nothing to offer there.
+    fn context_menu(
+        &mut self,
+        _at: (f64, f64),
+        _input: &Input,
+    ) -> Option<Vec<crate::host::menu::Entry>> {
+        None
+    }
+
+    /// **The verb this element performs when it is used**, for a tool: a
+    /// `button` with a `verb`. A press on it leaves the keyboard focus where
+    /// it was, since what a tool acts on is what the focus is on.
+    fn tool_verb(&self) -> Option<&str> {
         None
     }
 

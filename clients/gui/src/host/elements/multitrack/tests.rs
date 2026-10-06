@@ -2368,3 +2368,37 @@ fn a_double_click_opens_a_box_of_notes_and_no_take() {
         );
     }
 }
+
+/// **The heights, as a whole**: compacting puts every row at its floor and
+/// keeps it there through the next payload, as a reader's zoom is kept; a
+/// reset takes every zoom back to what the payload states.
+#[test]
+fn the_rows_compact_and_reset_as_a_whole() {
+    let mut mt = multitrack();
+    assert!(mt.commanded("compact_tracks").is_some());
+    assert!(mt.tracks.iter().all(|t| t.height == MIN_LANE_H));
+    // a fader moved resends the rows, at the height they always state
+    mt.set(
+        "tracks",
+        &serde_json::json!(["noise", "", 100, 0, 0, 0.5, 1, "tone", "", 100, 0, 0, 1, 1]),
+    );
+    assert!(
+        mt.tracks.iter().all(|t| t.height == MIN_LANE_H),
+        "a compacted stack stays compact"
+    );
+    assert!(mt.commanded("reset_heights").is_some());
+    assert!(mt.tracks.iter().all(|t| t.height == 100.0));
+    // and a word that is not the multitrack's is declined
+    assert!(mt.commanded("nope").is_none());
+}
+
+/// **Add track, named where it goes**: the menu's entry carries the place.
+#[test]
+fn a_track_is_added_where_the_entry_says() {
+    let mut mt = multitrack();
+    let events = mt.commanded("add_track:1").expect("added");
+    assert_eq!(mt.tracks.len(), 3);
+    assert_eq!(mt.tracks[0].name, "noise");
+    assert_eq!(mt.tracks[2].name, "tone", "the new row stands between");
+    assert!(!events.is_empty(), "and the rows are reported");
+}

@@ -55,7 +55,7 @@ pub(crate) fn build(
 pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
     let curves = parse_curves(props);
     let layers = parse_layers(props);
-    Multitrack {
+    let mut made = Multitrack {
         tracks: parse_tracks(props),
         clips: parse_clips(props),
         track: None,
@@ -70,6 +70,8 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         meters: parse_meters(props),
         zoom: HashMap::new(),
         curve_zoom: HashMap::new(),
+        stated: HashMap::new(),
+        curve_stated: HashMap::new(),
         holding: None,
         selected: Vec::new(),
         scroll: 0.0,
@@ -93,7 +95,10 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         grab: None,
         block: Vec::new(),
         fading: None,
-    }
+    };
+    made.state_heights();
+    made.state_curve_heights();
+    made
 }
 
 /// The `tracks` prop: the flat `name label height mute solo gain` sextuple array.
@@ -436,6 +441,7 @@ impl Multitrack {
             // every structure on this wire uses.
             "tracks" => {
                 self.tracks = parse_tracks(&parse::as_array_props("tracks", v));
+                self.state_heights();
                 self.zoom_rows();
                 true
             }
@@ -511,6 +517,7 @@ impl Multitrack {
             // they name, replaced whole like every other list here.
             "curves" => {
                 self.curves = parse_curves(&parse::as_array_props("curves", v));
+                self.state_curve_heights();
                 // A curve payload states a height on every row for the reason a
                 // track payload does, so a reader who zoomed one must not lose it
                 // to the next point somebody drags.
