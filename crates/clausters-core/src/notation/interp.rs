@@ -30,7 +30,7 @@
 //! once a pass. What it says about the time and the pitch is heard too -- a
 //! tempo mark is the tempo, an octave line and a transposing staff move the
 //! pitch, a tremolo is its repeated notes, a rolled chord is staggered, a
-//! glissando is a slide, the pedal is held ([`Performance`]). A *tuplet* needs
+//! glissando moves the pitch continuously to the next note, the pedal is held ([`Performance`]). A *tuplet* needs
 //! no rule -- its division is already exact in the rational the item holds, so
 //! onsets land on it without the interpreter knowing tuplets exist.
 //!
@@ -140,17 +140,26 @@ pub struct Note {
     /// payload produces and the one that stays byte-identical.
     #[serde(default, skip_serializing_if = "Marks::is_empty")]
     pub marks: Marks,
-    /// **A glissando**: how many semitones the pitch slides by while the note
-    /// is held, to the note the slide is written to.
+    /// **A glissando** (MEI's `gliss`): how many semitones the pitch moves
+    /// by while the note is held, to the note the glissando is written to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub glide: Option<f64>,
-    /// **A swell**: how the note's level moves while it is held, under a
-    /// hairpin, as `(beats from its onset, factor of its amp)` -- the level
-    /// is linear in amplitude between the points. Empty for a note whose
+    pub gliss: Option<f64>,
+    /// Where the glissando starts, in beats from the onset: `0` but on a note
+    /// tied into others, whose glissando starts at the last of them, where it
+    /// is written.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub gliss_from: f64,
+    /// **The hairpin over the note while it is held**: how its level moves
+    /// under a crescendo or a diminuendo, as `(beats from its onset, factor
+    /// of its amp)` -- linear in amplitude between the points. Empty for a note whose
     /// level holds, and for every note where the reading hears a dynamic in
     /// the attack alone, as a struck or plucked sound does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub swell: Vec<(f64, f64)>,
+    pub hairpin: Vec<(f64, f64)>,
+}
+
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// **What a score sounds like, whole**: its notes, its tempo, its pedal, and
@@ -317,8 +326,8 @@ pub enum DynamicsAs {
     /// As a curve alone: a note's attack is the unmarked level, stressed by
     /// its place in the bar and its own accents.
     Curve,
-    /// Both -- and a note held under a hairpin swells with it, as its own
-    /// curve over `amp`, since a sustained sound grows inside the note.
+    /// Both -- and a note held under a hairpin carries it as its own curve
+    /// over `amp`, since a sustained sound grows inside the note.
     #[default]
     Both,
 }
@@ -505,7 +514,7 @@ fn measures_of(sheet: &Sheet) -> usize {
 /// [`Performance`]): the repeats, endings and jumps played out, the tempo
 /// marks as the tempo, the pedal, an octave line and a transposing staff on
 /// the pitch, a tremolo as its repeated notes, a rolled chord staggered, a
-/// glissando as a slide.
+/// glissando as the pitch moving continuously to the next note.
 ///
 /// # Errors
 /// As [`perform`].
@@ -542,7 +551,7 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
     let onset_of = |id: u64| at.get(&id).map(|&i| placed[i].t);
     let end_of = |id: u64| at.get(&id).map(|&i| placed[i].t + placed[i].item.dur());
     let mut octaves: Vec<(usize, Ratio, Ratio, i32)> = Vec::new();
-    let mut glides: HashMap<u64, f64> = HashMap::new();
+    let mut glissandos: HashMap<u64, f64> = HashMap::new();
     let mut alternating: HashMap<u64, u64> = HashMap::new();
     let mut pedals = Vec::new();
     for spanner in &sheet.spanners {
@@ -561,7 +570,7 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
             "15mb" => octaves.push((staff, from, end, -24)),
             "gliss" => {
                 if let (Some(a), Some(b)) = (first_pitch(spanner.from), first_pitch(spanner.to)) {
-                    glides.insert(spanner.from, f64::from(b - a));
+                    glissandos.insert(spanner.from, f64::from(b - a));
                 }
             }
             "ftrem" => {
@@ -671,14 +680,25 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
         // **The level while it is held**, where the reading hears a dynamic in
         // the attack and in the curve both: a held note under a hairpin moves
         // with it, as a sustained sound does.
-        let swell = if interp.dynamics_as == DynamicsAs::Both {
-            swell_of(&hairpins, p.staff, p.t, sustain / beats)
+        let under_hairpin = if interp.dynamics_as == DynamicsAs::Both {
+            hairpin_of(&hairpins, p.staff, p.t, sustain / beats)
                 .into_iter()
                 .map(|(after, factor)| (after * beats, factor))
                 .collect()
         } else {
             Vec::new()
         };
+
+        // A glissando is written from the note it leaves, which in a tied
+        // chain is the last: the tied part holds its pitch.
+        let (gliss, gliss_from) = (i..=last)
+            .rev()
+            .find_map(|k| {
+                let tied = &placed[k];
+                let gliss = glissandos.get(&tied.item.id())?;
+                Some((Some(*gliss), (tied.t - p.t).to_f64() * beats))
+            })
+            .unwrap_or((None, 0.0));
 
         let by = shifted(p.staff, p.t);
         let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch| Note {
@@ -697,8 +717,9 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
             },
             accidental: pitch.forced.then(|| "written".to_string()),
             marks: marks.cloned().unwrap_or_default(),
-            glide: glides.get(&p.item.id()).copied(),
-            swell: Vec::new(),
+            gliss,
+            gliss_from,
+            hairpin: Vec::new(),
         };
         let pitches = p.item.pitches();
         // **Two notes alternating**, sixteenths of each in turn for the time
@@ -759,8 +780,9 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
                     (sustain - late).max(step),
                     pitch,
                 );
-                // a note rolled in late swells from where it comes in
-                n.swell = swell
+                // a note rolled in late follows the hairpin from where it
+                // comes in
+                n.hairpin = under_hairpin
                     .iter()
                     .map(|&(after, factor)| ((after - late).max(0.0), factor))
                     .collect();
@@ -839,7 +861,7 @@ fn prevailing(dynamics: &[Vec<(Ratio, f64)>], staff: usize, t: Ratio) -> Option<
 /// It follows the hairpins alone. The note took the dynamic in force when it
 /// was struck, and a held note does not jump to one written while it sounds;
 /// what it reaches at a hairpin's end it keeps -- the arrival, written or not.
-fn swell_of(hairpins: &[Hairpin], staff: usize, t: Ratio, held: f64) -> Vec<(f64, f64)> {
+fn hairpin_of(hairpins: &[Hairpin], staff: usize, t: Ratio, held: f64) -> Vec<(f64, f64)> {
     let (from, to) = (t.to_f64(), t.to_f64() + held);
     let over: Vec<&Hairpin> = hairpins.iter().filter(|h| h.staff == staff).collect();
     let factor = |m: f64| over.iter().map(|h| h.reach(m)).product::<f64>();
@@ -1107,7 +1129,11 @@ mod tests {
             "an octave up, a tone down"
         );
         assert_eq!(played.notes[2].pitch, 58);
-        assert_eq!(played.notes[2].glide, Some(0.0), "a slide to the same C");
+        assert_eq!(
+            played.notes[2].gliss,
+            Some(0.0),
+            "a glissando to the same C"
+        );
         assert_eq!(played.pedals, vec![(0, 4.0, 6.0)]);
     }
 
@@ -1369,11 +1395,11 @@ mod tests {
         }
     }
 
-    /// **A note held under a hairpin swells with it** where the reading hears
+    /// **A note held under a hairpin carries it** where the reading hears
     /// a dynamic in the curve as well as the attack, a sustained sound; where
     /// it hears it in the attack alone, a struck one, the note holds.
     #[test]
-    fn a_held_note_swells_under_a_hairpin_where_the_reading_hears_it() {
+    fn a_held_note_carries_the_hairpin_where_the_reading_hears_it() {
         let mut sheet = quarters(3);
         // the first two tied: a half note, held under the crescendo
         if let Item::Note { tie, .. } = &mut sheet.staves[0].voices[0].items[0] {
@@ -1387,20 +1413,45 @@ mod tests {
         let interp = Interpretation::default();
         let notes = perform(sheet.clone(), &interp).unwrap();
         let held = &notes[0];
-        assert_eq!(held.swell.first(), Some(&(0.0, 1.0)));
-        let &(at, factor) = held.swell.last().unwrap();
+        assert_eq!(held.hairpin.first(), Some(&(0.0, 1.0)));
+        let &(at, factor) = held.hairpin.last().unwrap();
         assert_eq!(at, held.sustain);
         let expected = 1.0 + (interp.crescendo - 1.0) * held.sustain / 2.0;
-        assert!((factor - expected).abs() < 1e-12, "{:?}", held.swell);
-        // the last note is where the hairpin arrives: it does not swell
-        assert!(notes[1].swell.is_empty());
+        assert!((factor - expected).abs() < 1e-12, "{:?}", held.hairpin);
+        // the last note is where the hairpin arrives: its level holds
+        assert!(notes[1].hairpin.is_empty());
 
         let struck = Interpretation {
             dynamics_as: DynamicsAs::Attack,
             ..Interpretation::default()
         };
         let notes = perform(sheet, &struck).unwrap();
-        assert!(notes.iter().all(|n| n.swell.is_empty()));
+        assert!(notes.iter().all(|n| n.hairpin.is_empty()));
+    }
+
+    /// **A glissando out of a tied chain starts at its last note**, where it
+    /// is written: the tied part holds its pitch.
+    #[test]
+    fn a_glissando_out_of_a_tied_chain_starts_at_its_last_note() {
+        let mut sheet = quarters(4);
+        for k in 0..2 {
+            if let Item::Note { tie, .. } = &mut sheet.staves[0].voices[0].items[k] {
+                *tie = true;
+            }
+        }
+        if let Item::Note { pitches, .. } = &mut sheet.staves[0].voices[0].items[3] {
+            pitches[0].step = Step::G;
+        }
+        sheet.spanners = vec![Spanner {
+            kind: "gliss".into(),
+            from: 3,
+            to: 4,
+        }];
+        let notes = perform(sheet, &Interpretation::default()).unwrap();
+        let held = &notes[0];
+        assert_eq!(held.sustain, 3.0, "three tied quarters, one sound");
+        assert_eq!(held.gliss, Some(7.0), "up to the G");
+        assert_eq!(held.gliss_from, 2.0, "from the third beat");
     }
 
     #[test]

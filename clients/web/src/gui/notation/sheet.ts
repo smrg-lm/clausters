@@ -106,14 +106,19 @@ export interface PerformedNote {
      * though the key already implies it -- a courtesy sign.
      */
     accidental?: string;
-    /** A glissando: the semitones the pitch slides by while it is held. */
-    glide?: number;
+    /** A glissando (MEI's `gliss`): the semitones the pitch moves by while it is held. */
+    gliss?: number;
     /**
-     * A swell: how the level moves while the note is held under a hairpin, as
-     * `[beats from its onset, factor of its amp]` pairs, straight between
-     * them; absent where the level holds.
+     * Where the glissando starts, in beats from the onset: absent (0) but on a
+     * note tied into others, whose glissando starts at the last of them.
      */
-    swell?: [number, number][];
+    gliss_from?: number;
+    /**
+     * The hairpin over the note while it is held: how its level moves under a
+     * crescendo or a diminuendo, as `[beats from its onset, factor of its
+     * amp]` pairs, straight between them; absent where the level holds.
+     */
+    hairpin?: [number, number][];
     /**
      * What is written on the note beyond its pitch and value, **verbatim** --
      * not what the interpreter made of it. A staccato is already honoured in

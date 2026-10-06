@@ -208,7 +208,7 @@ scrolls when its open groups are taller than the window.
 jumps are played out in order, a tempo mark is the tempo from where it is
 heard, the pedal is the sustain controller, an octave line and a transposing
 staff move the pitch, a tremolo is its repeated notes, a rolled chord is
-staggered, a glissando bends the note to the one it slides to, a breath lets
+staggered, a glissando moves the pitch continuously to the next note, a breath lets
 the note go early and let it ring holds it — and the page's cursor follows the
 same reading.
 
@@ -327,7 +327,7 @@ own curve over `amp` too, so a crescendo moves inside a held note on a synth,
 which listens to no controller. Which of the two an instrument hears is the
 reading's — a struck sound hears the attack alone, a sustained one the curve
 as well: `interp: { ...notation.interpretation(), dynamics_as: "attack" }` writes no curve and no
-note swells, `"curve"` leaves the attacks unmarked, and `dynamics_cc` names the controller
+note carries the hairpin, `"curve"` leaves the attacks unmarked, and `dynamics_cc` names the controller
 (11, expression). What is no note's — the meter, the key, the clefs, the page
 and its text, a slur — is kept in the sequence's `notation` section.
 

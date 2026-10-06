@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn a_hairpin_that_ends_on_no_dynamic_holds_what_it_reached() {
         let interp = Interpretation::default();
-        let swell = sheet(
+        let score = sheet(
             (1..=5)
                 .map(|id| {
                     note(
@@ -213,7 +213,7 @@ mod tests {
                 .collect(),
             vec![hairpin("crescendo", 1, 3)],
         );
-        let level = &levels(swell, &interp).unwrap()[0];
+        let level = &levels(score, &interp).unwrap()[0];
         let said: Vec<(f64, f64, bool)> =
             level.points.iter().map(|p| (p.t, p.amp, p.ramps)).collect();
         let peak = 0.12 * interp.crescendo;

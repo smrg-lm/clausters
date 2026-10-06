@@ -35,13 +35,13 @@
 //!   repeats, endings and jumps played out, a tempo mark the tempo from
 //!   where it is heard.
 //!   A note held under a hairpin carries the hairpin as its own curve too,
-//!   over `amp` (a **swell**), where the reading hears a dynamic in both
-//!   places: a synth listens to no controller, and a sustained sound grows
-//!   inside the note.
+//!   over `amp`, where the reading hears a dynamic in both places: a synth
+//!   listens to no controller, and a sustained sound grows inside the note.
 //! - **The pedal is a lane**, controller 64 on each channel of its staff, and
-//!   **a glissando is a note's own curve**, a bend over the note to the one
-//!   it slides to -- which a MIDI 1.0 channel cannot carry, so a sequence
-//!   with one is MIDI 2.0.
+//!   **a glissando is a note's own curve** over its pitch, in semitones, to
+//!   the note it is written to -- played as a pitch bend of that note alone,
+//!   which a MIDI 1.0 channel cannot carry, so a sequence with one is MIDI
+//!   2.0.
 //!
 //! A tie is one sound, as the interpreter reads it: the chain is one event,
 //! whose `value` is the chain's whole written length -- two tied quarters
@@ -165,28 +165,29 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         }
         first_event.entry(note.id).or_insert(id);
         items.push(json!([id, note.id]));
-        // a glissando: the pitch bent over the held note to where it slides
+        // a glissando: the note's pitch moved while it is held, as a pitch
+        // bend, to the note it is written to
         let mut automation = Vec::new();
-        if let Some(glide) = note.glide.filter(|g| *g != 0.0) {
+        if let Some(gliss) = note.gliss.filter(|g| *g != 0.0) {
             let curve = json!({
                 "id": 0,
                 "name": "glissando",
                 "target": {"bend": true},
-                "points": [{"at": 0.0, "value": 0.0}, {"at": note.sustain, "value": glide}],
+                "points": gliss_points(note.gliss_from, note.sustain, gliss),
                 "visible": true,
             });
             automation.push(serde_json::from_value(curve).map_err(|why| why.to_string())?);
         }
-        // a swell: the level of a note held under a hairpin, moving with it
-        if !note.swell.is_empty() {
+        // the hairpin over a held note: its level, moving while it is held
+        if !note.hairpin.is_empty() {
             let points: Vec<Value> = note
-                .swell
+                .hairpin
                 .iter()
                 .map(|&(at, factor)| json!({"at": at, "value": note.amp * factor}))
                 .collect();
             let curve = json!({
                 "id": 0,
-                "name": "swell",
+                "name": "hairpin",
                 "target": {"control": "amp"},
                 "points": points,
                 "visible": true,
@@ -199,7 +200,7 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
             ..Event::new(note.t, Value::Object(keys))
         });
     }
-    let glides = notes.iter().any(|n| n.glide.is_some_and(|g| g != 0.0));
+    let glissandos = notes.iter().any(|n| n.gliss.is_some_and(|g| g != 0.0));
 
     // What is no note's: the sheet, without its items.
     let spanners: Vec<Value> = sheet
@@ -246,7 +247,7 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         // Every curve a render writes is a channel's, which MIDI 1.0 says --
         // as long as there are channels for the voices, and no note bends on
         // its own.
-        midi: if glides {
+        midi: if glissandos {
             Some(MidiSpec::Midi2)
         } else {
             (channel_of.len() <= MIDI_CHANNELS).then_some(MidiSpec::Midi1)
@@ -257,6 +258,22 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
     };
     sequence.hold();
     Ok(sequence)
+}
+
+/// A glissando's curve over the pitch: straight in semitones from where it
+/// starts -- the onset, or the last note of a tied chain -- to the note's
+/// release.
+fn gliss_points(from: f64, sustain: f64, gliss: f64) -> Value {
+    let from = from.clamp(0.0, sustain);
+    if from > 0.0 {
+        json!([
+            {"at": 0.0, "value": 0.0},
+            {"at": from, "value": 0.0},
+            {"at": sustain, "value": gliss},
+        ])
+    } else {
+        json!([{"at": 0.0, "value": 0.0}, {"at": sustain, "value": gliss}])
+    }
 }
 
 /// The staves' levels as lanes: one for each channel of each staff that has a
@@ -393,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn the_page_plays_its_repeats_its_tempo_its_pedal_and_its_slides() {
+    fn the_page_plays_its_repeats_its_tempo_its_pedal_and_its_glissandos() {
         let mut score = sheet(vec![(1..=8).map(plain).collect()], Vec::new());
         score.grid.barlines = vec![(0, "rptend".into())];
         score.spanners = vec![
@@ -429,23 +446,46 @@ mod tests {
             .find(|lane| lane.target.0["cc"] == 64)
             .expect("a pedal lane");
         assert_eq!(pedal.points.len(), 2);
-        let slide = sequence
+        let gliss = sequence
             .events
             .iter()
             .find(|e| !e.automation.is_empty())
-            .expect("a note that slides");
-        assert_eq!(slide.automation[0].target.0, json!({"bend": true}));
-        // straight in semitones, which a bend makes geometric in frequency
-        let ends: Vec<f64> = slide.automation[0].points.iter().map(|p| p.value).collect();
+            .expect("a note with a glissando");
+        assert_eq!(gliss.automation[0].target.0, json!({"bend": true}));
+        // straight in semitones, which a pitch bend makes geometric in frequency
+        let ends: Vec<f64> = gliss.automation[0].points.iter().map(|p| p.value).collect();
         assert_eq!(ends, vec![0.0, 4.0], "C to E");
         assert_eq!(sequence.midi, Some(MidiSpec::Midi2));
     }
 
-    /// **A note held under a hairpin swells**: its own curve over `amp`, from
+    /// A glissando out of a tied chain holds the chain's pitch and starts at
+    /// its last note.
+    #[test]
+    fn a_glissando_out_of_a_tied_chain_holds_and_then_moves() {
+        let mut score = sheet(vec![(1..=3).map(plain).collect()], Vec::new());
+        if let Item::Note { tie, .. } = &mut score.staves[0].voices[0].items[0] {
+            *tie = true;
+        }
+        if let Item::Note { pitches, .. } = &mut score.staves[0].voices[0].items[2] {
+            pitches[0] = pitch(Step::E, 0);
+        }
+        score.spanners = vec![Spanner {
+            kind: "gliss".into(),
+            from: 2,
+            to: 3,
+        }];
+        let sequence = render(&score, &Interpretation::default()).unwrap();
+        let gliss = &sequence.events[0].automation[0];
+        let points: Vec<(f64, f64)> = gliss.points.iter().map(|p| (p.at, p.value)).collect();
+        let sustain = sequence.events[0].keys()["sustain"].as_f64().unwrap();
+        assert_eq!(points, vec![(0.0, 0.0), (1.0, 0.0), (sustain, 4.0)]);
+    }
+
+    /// **A note held under a hairpin carries it**: its own curve over `amp`, from
     /// its level at the attack to where the hairpin has taken it when it is
     /// let go -- what a synth hears, since it listens to no controller.
     #[test]
-    fn a_held_note_under_a_hairpin_carries_its_swell() {
+    fn a_held_note_under_a_hairpin_carries_it() {
         let mut score = sheet(vec![(1..=3).map(plain).collect()], Vec::new());
         if let Item::Note { tie, .. } = &mut score.staves[0].voices[0].items[0] {
             *tie = true;
@@ -457,14 +497,14 @@ mod tests {
         }];
         let sequence = render(&score, &Interpretation::default()).unwrap();
         let held = &sequence.events[0];
-        let swell = held
+        let hairpin = held
             .automation
             .iter()
             .find(|c| c.target.0 == json!({"control": "amp"}))
-            .expect("a swell");
+            .expect("the hairpin's curve");
         let amp = held.keys()["amp"].as_f64().unwrap();
-        assert_eq!(swell.points[0].value, amp, "from the attack's level");
-        assert!(swell.points.last().unwrap().value > amp, "and growing");
+        assert_eq!(hairpin.points[0].value, amp, "from the attack's level");
+        assert!(hairpin.points.last().unwrap().value > amp, "and growing");
         // and the lane the controller hears is still there for a MIDI port
         assert!(
             sequence

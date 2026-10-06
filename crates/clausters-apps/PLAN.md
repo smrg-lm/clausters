@@ -1402,8 +1402,8 @@ opened it.
   (data, replaceable), and it is organized in **three scopes**:
 
   - **The note**: its pitch, its two lengths, its attack level (a dynamic and
-    an accent), and its own curves -- a glissando as its bend, a swell on one
-    note as its pressure. In MPE or MIDI 2.0 these are the note's expression
+    an accent), and its own curves -- a glissando as its pitch bend, a
+    crescendo inside one held note as its pressure. In MPE or MIDI 2.0 these are the note's expression
     (`X3.11`); in MIDI 1.0 a curve needs the note alone on its channel.
   - **The voice, as a channel**: each voice is a channel, so what governs a
     line is a lane of that channel -- the dynamic that prevails after it, a
@@ -1689,7 +1689,7 @@ opened it.
       one finds them by that name; an edit to one of them is an edit to the
       group (the entry under "Found by use"). The
       note's own scope yields nothing: the model holds no glissando and no
-      swell. The sequence is MIDI 1.0 while its voices fit sixteen channels.
+      crescendo inside one note. The sequence is MIDI 1.0 while its voices fit sixteen channels.
       What is no note's goes into the `notation` section, the spanners over
       event ids and `items` saying which item each event came from. Both
       clients' `to_timeline` and `to_sequence` are now this render -- the
@@ -2379,12 +2379,12 @@ Every entry carries a checkbox.
     sound (a bowed string, a wind, a voice) grows inside a held note; a
     struck or plucked one (a piano) only from one attack to the next. Today
     the reading says it once for the whole score (`dynamics_as`: `attack`,
-    `curve`, `both`), and the swell follows it; it belongs to each staff's
+    `curve`, `both`), and a held note's hairpin curve follows it; it belongs to each staff's
     instrument, which the model does not hold.
   - **Accents are thought apart from the level**, above all on an
     instrument whose amplitude is controlled continuously: an accent on a
     note inside a crescendo is an event of its own over the line, not a
-    factor of the note's amp that the swell then scales from the attack on,
+    factor of the note's amp that its hairpin curve then scales from the attack on,
     which is what it is now.
   - **One fact in two places.** With `both`, a MIDI port hears the level in
     the attack's velocity and again in the expression controller, so an
@@ -2398,7 +2398,7 @@ Every entry carries a checkbox.
     pass (the user, 2026-10-06): after a crescendo that ends on no dynamic,
     the next bar's accented downbeat falls back at once, so a following
     *subito p* sounds as if a decrescendo led into it; and inside a
-    crescendo over quarters, the downbeat's swell starts from its accented
+    crescendo over quarters, the downbeat's hairpin curve starts from its accented
     attack and the next note attacks lower, a small dip in the line. Both are
     the accent as a factor of the note's amp rather than an event over the
     level.
@@ -3022,18 +3022,30 @@ wrong.
   or not -- the field's well off, the chosen fill on.
 
 - ✅ **A glissando's pitch, and how it is heard** *(the user, 2026-10-06,
-  in the score editor: a slide must be logarithmic in frequency to sound
+  in the score editor: a glissando must be logarithmic in frequency to sound
   right, or go through midi-to-hertz, depending on how it is built)*.
-  Checked, and it already is: a glissando renders as the note's own bend,
-  straight in **semitones** from its onset to its release
-  (`events::score::render`), and every player turns a bend into a ratio --
+  Checked, and it already is: a glissando (MEI's `gliss`) renders as the
+  note's own curve over its pitch, played as a pitch bend, straight in
+  **semitones** from its onset to its release
+  (`events::score::render`), and every player turns a pitch bend into a ratio --
   `midiratio` of the channel's and the note's bend on the server
   (`event_graph::pitch_def`), `2^(s/12)` where a client sends the values
   itself (`event_curves`), and a per-note pitch bend in semitones in a MIDI
   2.0 file -- so the frequency moves geometrically: halfway up an octave's
-  slide is a tritone, not the mean of the two frequencies. Two tests hold it
+  glissando is a tritone, not the mean of the two frequencies. Two tests hold it
   there (`a_glissando_is_straight_in_pitch_and_geometric_in_frequency`, and
-  the render's slide in semitones).
+  the render's glissando in semitones).
+  **Found while listening, and fixed 2026-10-06**: a glissando written from
+  the last note of a tied chain -- where it is written -- was lost, since the
+  chain sounds as its first note and the glissando was looked up on that one.
+  It is now the chain's, and starts at its last note (`Note::gliss_from`):
+  the tied part holds its pitch. The terms were also put back to the
+  engraver's, at the user's call (bend and glissando are two notations: a
+  bend is a curve out of a stretched string's note, a glissando a straight
+  line between orchestral notes): the model and the performance say
+  `gliss`, as MEI and verovio do; "pitch bend" names only the MIDI message
+  a glissando is played as; and the curve of a held note under a hairpin is
+  `hairpin`, not a word of the project's own.
 
 - ✅ **A hairpin's level** *(the user, 2026-10-06, in the score editor: a
   crescendo or a diminuendo grows straight from the note it starts on to the
@@ -3048,9 +3060,9 @@ wrong.
   so a crescendo over a held note was heard only at the next attack. Where
   the reading hears a dynamic in the attack and the curve both (`both`, the
   default), a note held under a hairpin now carries it as its own curve
-  over `amp`, a **swell** (`Note::swell`, rendered as the note's
+  over `amp` (`Note::hairpin`, rendered as the note's
   automation), from its level at the attack to where the hairpin has taken
   it at its release, straight between; with `attack` -- a struck sound --
-  nothing swells. What a good reading of dynamics needs beyond this is
+  no note carries it. What a good reading of dynamics needs beyond this is
   "Dynamics need a model of the instrument and of hearing", under Future
   directions.
