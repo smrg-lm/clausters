@@ -4,9 +4,10 @@
 //! Note entry is a mode. Outside it a press selects and a drag moves; inside
 //! it the window has an **edit cursor** -- a staff, a voice and a time -- and
 //! what is entered is written *there*: a letter writes its pitch, of the value
-//! in hand, over the stretch it covers ([`Op::Enter`]), and the cursor goes on
-//! by that value. Nothing after it moves. These are the pure parts of that:
-//! the cursor's arithmetic over the model, with no window and no engraver.
+//! in hand, over the stretch it covers (`notation::Op::Enter`), and the cursor
+//! goes on by that value. Nothing after it moves. These are the pure parts of
+//! that: the cursor's arithmetic over the model, with no window and no
+//! engraver.
 
 use clausters_core::notation::{Item, Pitch, Sheet, Step};
 use clausters_core::ratio::Ratio;
