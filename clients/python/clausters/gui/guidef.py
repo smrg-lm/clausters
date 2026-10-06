@@ -1611,6 +1611,9 @@ def table(*, rows=None, columns=None, selected=None, multiple: bool | None = Non
     column with no header. A row with a ``depth`` sits under the row above it
     that is less deep, and one with ``open`` is a **branch** that folds the rows
     under it. Only the rows on screen are drawn, and the wheel scrolls the rest.
+    The rows travel with every ``set`` of them, which the host takes inside a
+    frame up to fifty thousand; a longer list is one to page -- hold it here
+    and send the stretch a reader is in.
 
     It reports what a hand did, in the owner's terms: ``("select", i, ...)``
     with the indices now selected (Ctrl adds, Shift ranges, when ``multiple``);

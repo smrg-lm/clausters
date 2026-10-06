@@ -146,7 +146,7 @@ impl Files {
             },
             ..Row::default()
         }));
-        self.rows.rows = rows;
+        self.rows.replace_rows(rows);
         self.rows.selected.clear();
     }
 
@@ -387,13 +387,13 @@ mod tests {
         );
         assert!(f.listed("takes", Ok(listing())));
         assert_eq!(f.path, "/takes");
-        let names: Vec<&str> = f.rows.rows.iter().map(|r| r.cells[0].as_str()).collect();
+        let names: Vec<&str> = f.rows.rows().iter().map(|r| r.cells[0].as_str()).collect();
         assert_eq!(
             names,
             vec!["..", "old/", "kick.wav"],
             "filtered, with the way up"
         );
-        assert_eq!(f.rows.rows[2].cells[1], "2.0 kB");
+        assert_eq!(f.rows.rows()[2].cells[1], "2.0 kB");
     }
 
     #[test]
@@ -453,7 +453,7 @@ mod tests {
         f.wants_listing();
         assert!(f.listed("/nowhere", Err("/nowhere: not found".into())));
         assert_eq!(f.error.as_deref(), Some("/nowhere: not found"));
-        assert_eq!(f.rows.rows[0].cells[0], "..", "the way up is still there");
+        assert_eq!(f.rows.rows()[0].cells[0], "..", "the way up is still there");
     }
 
     #[test]

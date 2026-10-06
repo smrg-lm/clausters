@@ -54,7 +54,15 @@ pub(crate) struct Changed {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Rows {
     pub columns: Vec<Column>,
-    pub rows: Vec<Row>,
+    /// The rows, written through [`Rows::replace_rows`] alone, so the list of
+    /// the ones a fold leaves showing is always theirs.
+    rows: Vec<Row>,
+    /// **The rows a reader sees**, by index into the rows: every one no
+    /// folded branch hides ([`table::visible`]). Kept rather than walked for,
+    /// because a draw, a press and a key each ask it, and walking the rows
+    /// for each made a frame cost the length of the list and not of the
+    /// window.
+    shown: Vec<usize>,
     pub selected: Vec<usize>,
     pub multiple: bool,
     pub sort: Option<(usize, bool)>,
@@ -173,10 +181,18 @@ impl Rows {
             text_size: parse::text_size(props),
             ..Rows::default()
         };
+        rows.shown = table::visible(&rows.rows);
+        table::warn_past_the_wire(rows.rows.len());
         if let Some(v) = props.get("selected") {
             rows.set_selected(v);
         }
         rows
+    }
+
+    /// Replaces the rows, and with them which are showing.
+    pub(crate) fn replace_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
+        self.shown = table::visible(&self.rows);
     }
 
     fn set_selected(&mut self, v: &Value) {
@@ -205,8 +221,9 @@ impl Rows {
                 true
             }
             "rows" => {
-                self.rows = list_of(v, row_of);
+                self.replace_rows(list_of(v, row_of));
                 let n = self.rows.len();
+                table::warn_past_the_wire(n);
                 self.selected.retain(|&i| i < n);
                 true
             }
@@ -248,7 +265,7 @@ impl Rows {
     }
 
     pub(crate) fn geometry(&self, rect: Rect, scale: f32, m: &Metrics) -> Geometry {
-        let shown = table::visible(&self.rows).len();
+        let shown = self.shown.len();
         Geometry::new(
             Self::body(rect, m),
             &self.columns,
@@ -270,7 +287,7 @@ impl Rows {
         if let Some(c) = g.header_at(at.0, at.1) {
             return Some(Hit::Header(c));
         }
-        let shown = table::visible(&self.rows);
+        let shown = &self.shown;
         let scroll = self.scroll.get().clamp(0.0, g.max_scroll());
         let k = g.row_at(shown.len(), scroll, at.0, at.1)?;
         let i = shown[k];
@@ -311,7 +328,7 @@ impl Rows {
 
     /// Selects the visible rows from `a` to `b` (indices into the rows).
     fn select_range(&mut self, a: usize, b: usize) {
-        let shown = table::visible(&self.rows);
+        let shown = &self.shown;
         let (pa, pb) = (
             shown.iter().position(|&s| s == a),
             shown.iter().position(|&s| s == b),
@@ -330,7 +347,8 @@ impl Rows {
             return Changed::default();
         };
         self.rows[i].open = Some(!open);
-        let shown = table::visible(&self.rows);
+        self.shown = table::visible(&self.rows);
+        let shown = &self.shown;
         let before = self.selected.len();
         self.selected.retain(|s| shown.contains(s));
         Changed {
@@ -343,7 +361,7 @@ impl Rows {
     /// A key, while the list holds the focus. `None` is a key it does not
     /// answer.
     pub(crate) fn key(&mut self, key: &Key, mods: Mods) -> Option<Changed> {
-        let shown = table::visible(&self.rows);
+        let shown = self.shown.clone();
         if shown.is_empty() {
             return None;
         }
@@ -438,7 +456,7 @@ impl Rows {
 
     pub(crate) fn draw(&self, d: &mut Draw, ctx: &Ctx, empty: Option<&str>) {
         let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics);
-        let shown = table::visible(&self.rows);
+        let shown = &self.shown;
         let mut scroll = self.scroll.get().clamp(0.0, g.max_scroll());
         if let Some(i) = self.reveal.take()
             && let Some(k) = shown.iter().position(|&s| s == i)
@@ -458,7 +476,7 @@ impl Rows {
             &Look {
                 columns: &self.columns,
                 rows: &self.rows,
-                shown: &shown,
+                shown,
                 selected: &self.selected,
                 hover,
                 sort: self.sort,
@@ -579,6 +597,15 @@ impl Element for Table {
 mod tests {
     use super::*;
 
+    impl Rows {
+        /// The rows -- what a test reads; everything else draws them. Here
+        /// and not beside the field, so the build carries no reader nothing
+        /// calls.
+        pub(crate) fn rows(&self) -> &[Row] {
+            &self.rows
+        }
+    }
+
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()
     }
@@ -622,14 +649,14 @@ mod tests {
     fn the_wire_reads_columns_rows_and_a_tree() {
         let t = table(TREE);
         assert_eq!(t.rows.columns.len(), 2);
-        assert_eq!(t.rows.rows.len(), 5);
-        assert_eq!(t.rows.rows[2].open, Some(false));
-        assert_eq!(table::visible(&t.rows.rows), vec![0, 1, 2, 4]);
-        assert_eq!(t.rows.rows[4].cells, vec!["notes.txt", "1"]);
+        assert_eq!(t.rows.rows().len(), 5);
+        assert_eq!(t.rows.rows()[2].open, Some(false));
+        assert_eq!(table::visible(t.rows.rows()), vec![0, 1, 2, 4]);
+        assert_eq!(t.rows.rows()[4].cells, vec!["notes.txt", "1"]);
         // ...and the same list on the scalar wire.
         let mut s = table("{}");
         assert!(s.set("rows", &Value::from(r#"[["a"],["b"]]"#)));
-        assert_eq!(s.rows.rows.len(), 2);
+        assert_eq!(s.rows.rows().len(), 2);
     }
 
     #[test]
@@ -702,7 +729,12 @@ mod tests {
                 OscType::Int(0)
             ]
         );
-        assert_eq!(table::visible(&t.rows.rows), vec![0, 4]);
+        assert_eq!(table::visible(t.rows.rows()), vec![0, 4]);
+        assert_eq!(
+            t.rows.shown,
+            vec![0, 4],
+            "and the list kept of them follows"
+        );
         let info = t.info();
         assert!(info[1].1.as_str().unwrap().contains(r#""open":false"#));
     }
@@ -724,7 +756,8 @@ mod tests {
         assert_eq!(t.press(at, &input(&m)), sort("up"));
         assert_eq!(t.press(at, &input(&m)), sort("down"));
         assert_eq!(
-            t.rows.rows[1].cells[0], "kick.wav",
+            t.rows.rows()[1].cells[0],
+            "kick.wav",
             "the rows are the owner's"
         );
     }

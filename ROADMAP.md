@@ -317,9 +317,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks; the interaction vocabulary, provisional until the
-  applications exist; and, under Found by use, a window repainted whole for
-  one moving line, what a playing frame still costs, and rows past what a def
-  should carry), the web client's (a node
+  applications exist; and, under Found by use, what a whole frame still
+  costs), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's

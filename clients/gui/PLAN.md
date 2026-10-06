@@ -8196,10 +8196,26 @@ module of its own.
   for what stands over the window, not a dialog's own. *(A window now draws
   three flat batches, with the window's textures after the first and the
   dialog's after the second; the host's bands and lists are in the third.)*
-- ⬜ **Rows past what a def should carry** *(left open by `G41.1`)*. A
+- ✅ **Rows past what a def should carry** *(left open by `G41.1`)*. A
   `table`'s rows ride the def and every `set` of them; a list of tens of
   thousands of rows wants the bulk path, and which size is the line is not
   decided.
+
+  **Decided 2026-10-06, by measuring** (`tests/table_rows_cost.rs`, a release
+  host, rows of three cells): a thousand rows are 35 kB and a third of a
+  millisecond to replace, twenty thousand 700 kB and 7 ms, fifty thousand
+  1.8 MB and 19 ms, a hundred thousand 3.5 MB and 38 ms -- past the 33 a frame
+  is. **The line is fifty thousand** (`graphics::table::WIRE_ROWS`), where a
+  set is still well inside a frame, and it is a line rather than a wall: a
+  longer table is shown whole and the host warns once a set. **No bulk path
+  for rows**: what bounds a table sooner is its carrier (a datagram holds
+  some eighteen hundred rows, a stream frame nine times the line), and a
+  list past it is one its owner pages -- it holds the rows and sends the
+  stretch a reader is in -- rather than one that needs a second format. The
+  measurement found a cost that was not the wire's: a draw, a press and a key
+  each walked every row to find the ones a fold leaves showing, so a frame
+  cost the length of the list; the list is kept now and walked only when the
+  rows or a fold change.
 - ✅ **A context menu and a tip per part of a heavy view** *(left open by
   `G37.2` and `G38.2`; closed 2026-10-04 by the user: it is being done in the
   applications, `crates/clausters-apps/PLAN.md`)*. Today one menu and one tip answer for the whole

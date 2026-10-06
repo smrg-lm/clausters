@@ -36,6 +36,34 @@ pub struct Row {
     pub open: Option<bool>,
 }
 
+/// **How many rows a table carries as a prop**: fifty thousand.
+///
+/// A table's rows ride its def and every `set` of them, as JSON in one OSC
+/// argument, and there is no second way in. Measured
+/// (`tests/table_rows_cost.rs`, a release host): a thousand rows of three
+/// cells are 35 kB and a third of a millisecond to replace, twenty thousand
+/// are 700 kB and ten milliseconds, a hundred thousand are 3.5 MB and
+/// thirty-seven -- past the thirty-three a frame is. So the line is where a
+/// `set` is still well inside a frame, at about nineteen milliseconds and
+/// under two megabytes. What bounds a table sooner is its carrier and not
+/// the host: a datagram holds some eighteen hundred rows, a stream frame
+/// (16 MiB by default) nine times the line.
+///
+/// It is a line and not a wall. A table past it is shown whole, and the host
+/// says so once a set ([`warn_past_the_wire`]): a list that long is one its
+/// owner pages -- it holds the rows, and sends the stretch a reader is in --
+/// rather than one that needs a second format for rows.
+pub const WIRE_ROWS: usize = 50_000;
+
+/// Says that a table of `rows` rows is past [`WIRE_ROWS`], when it is.
+pub fn warn_past_the_wire(rows: usize) {
+    if rows > WIRE_ROWS {
+        crate::host::diag::warn!(
+            "a table of {rows} rows: past {WIRE_ROWS} a set of them costs more than a frame              -- hold the list and send the stretch on screen"
+        );
+    }
+}
+
 /// The rows a reader sees: every row but those under a folded branch, as
 /// indices into `rows`.
 pub fn visible(rows: &[Row]) -> Vec<usize> {
