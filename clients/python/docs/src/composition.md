@@ -286,9 +286,14 @@ of the history, and Escape leaves it as it was.
 bar over the window, the toolbar's transport (back to the start, play, the loop
 switch) and the Play menu play the score on a transport of its own —
 `editor.play()`, `editor.stop()`, `editor.playing`, and `editor.transport` for the
-transport itself, whose beats are quarters. A play starts where the selection
-starts; with several notes selected the loop repeats the stretch they cover,
-and with none the whole score. What plays is the score rendered into a
+transport itself, whose beats are quarters. **A selection is a stretch or a place**, as a
+swept range and the position cursor are in the other editors: a measure —
+a press on its staff — a selection extended with Shift, several notes, or
+everything, is played from its first note to the end of the one that ends last,
+once, or over and over with the loop on (`L`, the toolbar's switch and the
+menu's are one switch); one note picked is where a play starts, and with
+nothing selected it starts at the cursor and the loop repeats the whole score.
+What plays is the score rendered into a
 sequence, at the engraver's own time of 120 quarters a minute, which is the
 time the page's cursor is drawn over; an edit made while it plays — and an undo
 — is heard on from where the position is. The cursor is the transport's

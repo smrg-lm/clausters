@@ -137,6 +137,12 @@ pub struct ScoreEditor {
     /// The selected elements, as the page names them (`n7`, `n7-2`), in the
     /// order they were picked.
     selection: Vec<String>,
+    /// Whether the selection is **a stretch of the score** -- a measure's,
+    /// one extended from an item to another, or everything -- rather than
+    /// the elements a hand picked one by one. A stretch is what a play plays
+    /// and a loop repeats, even where it holds one item; one item picked is
+    /// where a play starts.
+    stretch: bool,
     /// The written value a note entered on the page takes, undotted.
     value: Ratio,
     /// Whether that value is dotted.
@@ -238,6 +244,7 @@ impl ScoreEditor {
             opening: None,
             closing: false,
             looping: false,
+            stretch: false,
             cursor: 0.0,
             outlines: None,
             title: "Score".into(),
@@ -339,16 +346,25 @@ impl ScoreEditor {
 
     /// **The pass a play asks for**: from where the selection starts -- or
     /// where the cursor was left, with nothing selected -- over the stretch
-    /// several selected items cover, which is what a loop repeats; and
-    /// whether it loops. In beats, a quarter to the beat, as the score is
-    /// rendered.
+    /// the selection covers, which is what a loop repeats; and whether it
+    /// loops. In beats, a quarter to the beat, as the score is rendered.
+    ///
+    /// **A selection is a stretch or a place**, as a time selection and the
+    /// position cursor are in the other editors: measures, an extended
+    /// selection and several items are played from their first note to the
+    /// end of the one that ends last, once or over and over; one item picked
+    /// is where the pass starts, and it goes on to the end.
     fn pass(&self) -> Value {
         let span = {
             let held = self.held();
             held.sheet().and_then(|sheet| {
                 let ids = verbs::in_time(sheet, &self.items());
                 let first = verbs::locate(sheet, *ids.first()?)?;
-                let last = verbs::locate(sheet, *ids.last()?)?;
+                // the one that ends last, which need not start last
+                let last = ids
+                    .iter()
+                    .filter_map(|id| verbs::locate(sheet, *id))
+                    .max_by_key(|at| at.onset + at.item.dur())?;
                 // where it is first heard: a repeat is played out before it
                 let beats = |whole: Ratio| {
                     let written = whole.to_f64() * RENDER_BEAT_UNIT as f64;
@@ -367,7 +383,7 @@ impl ScoreEditor {
         match span {
             Some((start, end, count)) => json!({
                 "looping": self.looping,
-                "range": (count > 1).then(|| json!([start, end])),
+                "range": (count > 1 || self.stretch).then(|| json!([start, end])),
                 "from": start,
             }),
             None => json!({"looping": self.looping, "range": null, "from": self.cursor}),
@@ -625,12 +641,15 @@ impl ScoreEditor {
         if element.is_empty() {
             if mode.is_empty() {
                 self.selection.clear();
+                self.stretch = false;
             }
             return;
         }
         let picked = self.picked(element);
+        let measure = measure_id(element).is_some();
         match mode {
             "toggle" => {
+                self.stretch |= measure;
                 if picked.iter().all(|id| self.selection.contains(id)) {
                     self.selection.retain(|id| !picked.contains(id));
                 } else {
@@ -653,6 +672,7 @@ impl ScoreEditor {
                     }
                     _ => Vec::new(),
                 };
+                self.stretch = measure || !between.is_empty();
                 self.selection = if between.is_empty() {
                     picked
                 } else {
@@ -663,7 +683,10 @@ impl ScoreEditor {
                     self.elements_of(&items)
                 };
             }
-            _ => self.selection = picked,
+            _ => {
+                self.stretch = measure;
+                self.selection = picked;
+            }
         }
     }
 
@@ -900,6 +923,7 @@ impl ScoreEditor {
             self.held().load(&mei);
         }
         self.selection.clear();
+        self.stretch = false;
         out.selected = Some(Vec::new());
         self.laid.clear();
         // the file it was read from is the score's from now on, and holds it
@@ -933,6 +957,7 @@ impl ScoreEditor {
             return Some("a new score could not be written".into());
         }
         self.selection.clear();
+        self.stretch = false;
         out.selected = Some(Vec::new());
         self.laid.clear();
         self.cursor = 0.0;
@@ -981,10 +1006,26 @@ impl ScoreEditor {
     /// **The loop switch**, turned: a pass in progress follows it, and the
     /// chrome that shows it -- the toolbar's switch, the menu's check -- is
     /// corrected.
-    fn set_looping(&mut self, on: bool, out: &mut Outcome) -> Vec<Correction> {
+    ///
+    /// **It is one switch with the host's**, the one `L` turns. `L` arrives
+    /// with the state the host left it in; a turn of the toolbar's switch or
+    /// of the menu's (`mine`) tells the host -- `looping`, on the window --
+    /// so its next `L` starts from here and never asks for the state the
+    /// switch already has.
+    fn set_looping(&mut self, on: bool, mine: bool, out: &mut Outcome) -> Vec<Correction> {
         self.looping = on;
         out.relooped = Some(self.pass());
-        self.chrome()
+        let mut shown = self.chrome();
+        if mine
+            && let Some(window) = self.window
+            && let Some(Value::Object(props)) = shown
+                .iter_mut()
+                .find(|c| c.widget == i64::from(window))
+                .map(|c| &mut c.props)
+        {
+            props.insert("looping".into(), json!(on));
+        }
+        shown
     }
 
     /// **Save**: the score goes to its file, which the turn's outcome names
@@ -1024,6 +1065,7 @@ impl ScoreEditor {
             menu::Pick::SelectAll => {
                 let all = self.known_items();
                 self.selection = self.elements_of(&all);
+                self.stretch = true;
                 out.selected = Some(self.selection.clone());
             }
             menu::Pick::Dialog(form) => {
@@ -1042,7 +1084,7 @@ impl ScoreEditor {
                 self.rewind(out);
                 shown = Some(Vec::new());
             }
-            menu::Pick::Loop(on) => shown = Some(self.set_looping(on, out)),
+            menu::Pick::Loop(on) => shown = Some(self.set_looping(on, true, out)),
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.set_entry(on),
             menu::Pick::Value(value) => self.value = value,
@@ -1109,6 +1151,7 @@ impl ScoreEditor {
         }
         if let Some(id) = new {
             self.selection = vec![format!("n{id}")];
+            self.stretch = false;
             out.selected = Some(self.selection.clone());
         }
         self.recorded(before, label, out);
@@ -1559,7 +1602,7 @@ impl ScoreEditor {
                 self.rewind(out);
                 return (None, Vec::new());
             }
-            tools::Tool::Loop(on) => return (None, self.set_looping(on, out)),
+            tools::Tool::Loop(on) => return (None, self.set_looping(on, true, out)),
             tools::Tool::Act(action) => {
                 let reason = self.perform(&action, out);
                 return (reason, self.corrections());
@@ -1628,7 +1671,7 @@ impl Converse for ScoreEditor {
                     self.leave_to_play()
                 } else {
                     let on = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
-                    self.set_looping(on, out)
+                    self.set_looping(on, false, out)
                 };
                 out.answer = Some(conversation::answer(
                     message.seq,

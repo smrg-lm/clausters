@@ -799,6 +799,39 @@ mod tests {
         assert!(addrs.iter().any(|a| a.starts_with("/lane")), "{addrs:?}");
     }
 
+    /// The loop is one switch: the toolbar's turns the one `L` turns, so a
+    /// press of `L` after it never asks for the state the switch has.
+    #[test]
+    fn the_toolbars_loop_and_the_key_are_one_switch() {
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let def_id = host
+            .open_score(score(), "score", (960, 720), None)
+            .expect("a window");
+        assert!(!host.monitor_loops());
+        let switch = host.own_widget(0, SCORE, "tool:loop").expect("the tool");
+        let on = host.event_message(switch, 1, vec![OscType::Int(1)]);
+        assert!(host.deliver(def_id, &on));
+        assert!(host.monitor_loops(), "the toolbar turned the host's switch");
+        // `L`: the host turns its switch and tells the window where it stands
+        host.toggle_monitor_loop();
+        let key = host.event_message(def_id, 2, host.loop_verb());
+        assert!(host.deliver(def_id, &key));
+        assert!(!host.monitor_loops(), "and nothing turned it back");
+        // the menu's is the same one
+        let pick = host.event_message(
+            def_id,
+            3,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("loop".into()),
+                OscType::Int(1),
+            ],
+        );
+        assert!(host.deliver(def_id, &pick));
+        assert!(host.monitor_loops());
+    }
+
     /// An export writes the render as a Standard MIDI File, with the writer
     /// the `midi` feature links.
     #[cfg(feature = "midi")]

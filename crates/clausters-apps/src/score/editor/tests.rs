@@ -63,13 +63,16 @@ fn note(id: u64) -> Item {
 
 /// A bar of four quarters, ids 1 to 4.
 fn shared() -> Shared {
+    holding((1..=4).map(note).collect())
+}
+
+/// A score of one staff and one voice holding `items`.
+fn holding(items: Vec<Item>) -> Shared {
     let sheet = Sheet {
-        next_id: 5,
+        next_id: items.len() as u64 + 1,
         staves: vec![Staff {
             clef: "G2".into(),
-            voices: vec![Voice {
-                items: (1..=4).map(note).collect(),
-            }],
+            voices: vec![Voice { items }],
             ..Staff::default()
         }],
         ..Sheet::default()
@@ -1272,6 +1275,60 @@ fn a_play_asks_for_a_pass_from_where_the_selection_starts() {
     );
 }
 
+/// A selection is a stretch or a place: a measure is played and looped as
+/// what it spans, though it holds one note, and so is a selection extended
+/// with Shift; one note picked is where a pass starts.
+#[test]
+fn a_measure_selected_is_the_stretch_a_play_plays_though_it_holds_one_note() {
+    // two quarters and a half, then a bar of one whole note
+    let mut items: Vec<Item> = (1..=3).map(note).collect();
+    items[2] = items[2].with_dur(Ratio::new(1, 2));
+    items.push(note(4).with_dur(Ratio::ONE));
+    let mut editor = ScoreEditor::new(holding(items), 1);
+    editor.window(
+        IDS,
+        Chrome {
+            tools: numbered(),
+            ..Chrome::default()
+        },
+    );
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    let played = |editor: &mut ScoreEditor| editor.event(&window("play", 0), 1).play.unwrap();
+
+    // the whole note, picked: a place to play from
+    editor.event(&gesture("element", &[json!("n4")]), 1);
+    assert_eq!(
+        played(&mut editor),
+        json!({"looping": false, "range": null, "from": 4.0})
+    );
+    // its measure, pressed on the staff: the stretch the measure spans
+    editor.event(&gesture("element", &[json!("m2s1")]), 1);
+    assert_eq!(editor.items(), vec![4]);
+    assert_eq!(
+        played(&mut editor),
+        json!({"looping": false, "range": [4.0, 8.0], "from": 4.0})
+    );
+    // and it is what a loop repeats
+    let out = editor.event(&window("loop", 1), 1);
+    assert_eq!(
+        out.relooped,
+        Some(json!({"looping": true, "range": [4.0, 8.0], "from": 4.0}))
+    );
+    // a second measure joins it with Ctrl: both, from the first
+    editor.event(&gesture("element", &[json!("m1s1"), json!("toggle")]), 1);
+    assert_eq!(played(&mut editor)["range"], json!([0.0, 8.0]));
+    // the stretch ends with the item that ends last, which starts first here
+    editor.event(&gesture("element", &[json!("n3")]), 1);
+    editor.event(&gesture("element", &[json!("n2"), json!("toggle")]), 1);
+    assert_eq!(played(&mut editor)["range"], json!([1.0, 4.0]));
+    // a press on one note is a place again
+    editor.event(&gesture("element", &[json!("n2")]), 1);
+    assert_eq!(played(&mut editor)["range"], json!(null));
+    // and everything selected is the whole score
+    editor.event(&pick("select_all", None), 1);
+    assert_eq!(played(&mut editor)["range"], json!([0.0, 8.0]));
+}
+
 #[test]
 fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
     let mut editor = with_tools();
@@ -1294,9 +1351,21 @@ fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
         .find(|m| m["label"] == "Play")
         .unwrap();
     assert_eq!(play["menu"][3]["checked"], true);
-    // the toolbar turns it off, and the next play does not loop
+    // the host turned it, so it is not told what it already holds
+    let window_props = &shown.last().unwrap().props;
+    assert!(window_props.get("looping").is_none(), "{window_props}");
+    // the toolbar turns it off, and the next play does not loop: the host's
+    // switch -- the one `L` turns -- is told, so its next press turns it on
     let out = editor.event(&tool("loop", json!(0)), 1);
     assert_eq!(out.relooped.as_ref().unwrap()["looping"], false);
+    let shown = corrections_of(&out);
+    assert_eq!(shown.last().unwrap().props["looping"], json!(false));
+    let out = editor.event(&pick("loop", Some(1)), 1);
+    assert_eq!(
+        corrections_of(&out).last().unwrap().props["looping"],
+        json!(true)
+    );
+    editor.event(&tool("loop", json!(0)), 1);
     assert_eq!(
         editor.event(&window("play", 1), 1).play.unwrap()["looping"],
         false

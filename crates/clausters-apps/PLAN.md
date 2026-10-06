@@ -1731,7 +1731,8 @@ opened it.
       it does, under "Found by use"). Open: the host's
       own `L` switch and the toolbar's are told apart by nothing -- the
       editor's is the one a play reads, and a press of `L` after the toolbar
-      turned it may ask for the state it already has; and a tempo the score
+      turned it may ask for the state it already has (one switch since
+      2026-10-06, under "Found by use"); and a tempo the score
       states is not read, since the model holds none (`tempo`, in the
       palettes' open list -- read since 2026-10-05, a tempo mark setting the
       render's tempo map).)*
@@ -3034,6 +3035,24 @@ wrong.
   the close (`close`), and its holder closes the window once the file is
   written. An Open now makes the file it read the score's. The window's own
   close mark still closes without asking.
+
+- ✅ **The host's `L` and the toolbar's loop are two switches** *(left
+  open by `X5.8.3`: "a press of `L` after the toolbar turned it may ask for
+  the state it already has")*. The editor's switch was the one a play read
+  and the host's the one `L` turned, and nothing told the host when the
+  toolbar or the menu turned the editor's.
+  **Decided 2026-10-06, by the user**: a set of measures or of notes is
+  selected and a play loops it -- "the same behaviour as the other editors,
+  in another domain, the notation's".
+  **Fixed 2026-10-06**: a turn of the toolbar's switch or of the menu's
+  carries `looping` on the window, which is the host's own switch, so the
+  three are one and `L` starts from where it stands. And a selection is **a
+  stretch or a place**, as a swept range and the position cursor are in the
+  other editors: a measure pressed on its staff, a selection extended with
+  Shift, everything, or several items picked, is the stretch a play plays
+  once and a loop repeats -- from its first note to the end of the one that
+  ends last, though the measure holds one note; one item picked is where a
+  pass starts.
 
 - ⬜ **The window's close mark loses unsaved changes without asking**
   *(found 2026-10-06, building Close)*. The File menu's Close asks; the mark
