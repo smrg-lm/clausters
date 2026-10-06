@@ -988,8 +988,7 @@ opened it.
   mode with an edit cursor, which is also how the second voice is written; a
   written page break, laid out in runs of pages; the ○ palette entries, each
   the model grown with its sound; a channel group edited as one; a written
-  pitch that moves with the sounding one. What stays open: New and Close in
-  the File menu; the standalone host's playback and export; and the sound, which nobody has
+  pitch that moves with the sounding one; New and Close in the File menu. What stays open: the standalone host's playback and export; and the sound, which nobody has
   listened to.* The notation model
   and what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
@@ -1688,7 +1687,8 @@ opened it.
       one entry, the score that was there a step back. The host's own
       `--save-to` is now that path, given to the editor when it opens.
       `editor.save` and `editor.load` are the two as methods. Not in it: New
-      and Close, which the menu's list names and nothing here builds.)*
+      and Close, which the menu's list names and nothing here built then --
+      they are under "Found by use".)*
     - ✅ **X5.8.3 - The score's playback.** *(Done 2026-10-05. **The
       editor holds no transport**: a play is a turn whose outcome is the pass
       it asks for -- `from`, where the selection starts or the cursor was
@@ -2908,11 +2908,27 @@ wrong.
   of its group -- the same target but for the channel -- the edited lane's
   points, and removing one removes the group.
 
-- ⬜ **New and Close are in the File menu and do nothing** *(`X5.8.2`)*.
+- ✅ **New and Close are in the File menu and do nothing** *(`X5.8.2`)*.
   **Decided 2026-10-05, by the user**: New replaces the score in the same
   window, as Open does and as one entry of the history -- one staff, treble
   clef, common time, C major, four empty bars; Close closes the window, and
   with changes not saved asks first: save, do not save, or cancel.
+  **Fixed 2026-10-06**: both are the File menu's. What its file holds is the
+  document the editor last opened, saved or made new, so an undo back to it
+  is nothing to save; a holder that wrote the file a save named says so
+  (`saved`). Close with something to lose opens a form -- Don't save,
+  Cancel, Save -- and a Save with no file asks for one first; the turn names
+  the close (`close`), and its holder closes the window once the file is
+  written. An Open now makes the file it read the score's. The window's own
+  close mark still closes without asking.
+
+- ⬜ **The window's close mark loses unsaved changes without asking**
+  *(found 2026-10-06, building Close)*. The File menu's Close asks; the mark
+  on the window's frame frees the window at once, since the host closes it
+  before any owner hears. Asking there means the host holding a close until
+  an owner that wants to ask has answered -- a window prop saying so, and a
+  close request the owner confirms -- which is the host's, for every
+  editor, and not the score editor's alone.
 
 - ⬜ **The standalone host's score neither plays nor exports**
   *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with

@@ -637,8 +637,17 @@ class ScoreEditor(Editor):
     def save(self, path=None) -> str:
         """Write the score to its file -- ``path``, which is then the score's,
         or the one it was read from or last saved to -- and answer the path.
-        The File menu's Save, as a method (`clausters.gui.notation.Score.write`)."""
-        return self.score.write(path)
+        The File menu's Save, as a method (`clausters.gui.notation.Score.write`).
+        What is written is then not a change the File menu's Close asks about."""
+        written = self.score.write(path)
+        self._call("saved")
+        return written
+
+    @property
+    def unsaved(self) -> bool:
+        """Whether the score has changes its file does not hold -- what the
+        File menu's Close asks about before it closes the window."""
+        return bool(self._call("unsaved").get("unsaved"))
 
     def load(self, path) -> bool:
         """Open the document in the file at ``path`` in this editor, in place
@@ -733,8 +742,13 @@ class ScoreEditor(Editor):
         self._transport_turn(outcome)
         self.echo.send(outcome.get("answer"))
         # A file is this client's to write and to read: the turn said which.
+        # (the File menu's Close waits for the file it saves to: a write that
+        # fails raises, and the window stays)
         if outcome.get("save"):
-            self.score.write(outcome["save"])
+            self.save(outcome["save"])
+        if outcome.get("close"):
+            self.close()
+            return changed
         if outcome.get("export"):
             self.export(outcome["export"]["path"], outcome["export"]["format"])
         if outcome.get("open"):

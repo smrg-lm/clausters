@@ -1,9 +1,10 @@
 //! **The score editor's dialogs**: the forms a menu entry opens over the
 //! window while it is up.
 //!
-//! Four of them -- the page's text, a transformation's parameter, the page's
-//! margins and staff, a file's path -- and one rule for how a window comes to
-//! show one. A
+//! Five of them -- the page's text, a transformation's parameter, the page's
+//! margins and staff, a file's path, and the question a window closed with
+//! changes not saved asks -- and one rule for how a window comes to show one.
+//! A
 //! dialog is a node of the tree and an editor answers with props, never with
 //! nodes, so every dialog is **in the window from the start, on a page of a
 //! `stack`**: a hidden page is not placed, which is a dialog that is not up,
@@ -46,6 +47,9 @@ pub enum Form {
     Page,
     /// The path of a file: to open, or to save as.
     File(File),
+    /// **Whether to save before closing**: the score has changes its file
+    /// does not hold. `OK` is Save, and a third button closes without.
+    Close,
 }
 
 /// **What a path is asked for.**
@@ -218,6 +222,7 @@ impl Form {
             "save" => Form::File(File::SaveAs),
             "export_midi" => Form::File(File::ExportMidi),
             "export_clip" => Form::File(File::ExportClip),
+            "close" => Form::Close,
             "transpose" => Form::Param(Param::Transpose),
             "repeat" => Form::Param(Param::Repeat),
             "stretch" => Form::Param(Param::Stretch),
@@ -242,6 +247,7 @@ impl Form {
             Form::Param(_) => "param",
             Form::Page => "page",
             Form::File(_) => "file",
+            Form::Close => "close",
         }
     }
 
@@ -253,6 +259,7 @@ impl Form {
             Form::Param(_) => 2,
             Form::Page => 3,
             Form::File(_) => 4,
+            Form::Close => 5,
         }
     }
 
@@ -279,6 +286,7 @@ impl Form {
                 ("staff", "Staff height (mm)"),
             ],
             Form::File(_) => vec![("path", "File")],
+            Form::Close => Vec::new(),
         }
     }
 
@@ -305,23 +313,29 @@ impl Form {
             Form::File(File::SaveAs) => "Save as",
             Form::File(File::ExportMidi) => "Export MIDI",
             Form::File(File::ExportClip) => "Export clip",
+            Form::Close => "Close",
         }
     }
 }
 
 /// The forms the window holds; the parameter's is one form whatever
 /// transformation asks, and the file's one whichever way the file goes.
-const FORMS: [Form; 4] = [
+const FORMS: [Form; 5] = [
     Form::Text,
     Form::Param(Param::Transpose),
     Form::Page,
     Form::File(File::Open),
+    Form::Close,
 ];
+
+/// What the close form asks.
+pub const UNSAVED: &str = "The score has changes that are not saved.";
 
 /// **Every widget of the dialogs, by name**, for a caller to number: the
 /// stack; and for each form its dialog (`text`), its fields (`text:title`),
 /// the labels a form corrects (`param:label`) and its two buttons
-/// (`text:ok`, `text:cancel`).
+/// (`text:ok`, `text:cancel`) -- three for the close form, whose third
+/// closes without saving (`close:discard`).
 #[must_use]
 pub fn names() -> Vec<String> {
     let mut out = vec![STACK.to_string()];
@@ -338,6 +352,9 @@ pub fn names() -> Vec<String> {
         }
         out.push(format!("{prefix}:ok"));
         out.push(format!("{prefix}:cancel"));
+        if form == Form::Close {
+            out.push(format!("{prefix}:discard"));
+        }
     }
     out
 }
@@ -359,11 +376,12 @@ const FIELD_W: f64 = 340.0;
 /// How high the footnotes' field is: four lines of them.
 const NOTES_H: f64 = 76.0;
 
-/// One form as a dialog: a row per field, and `Cancel` and `OK` under them.
+/// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
+/// or, closing, the question, and `Don't save` apart from `Cancel` and `Save`.
 fn dialog(form: Form, ids: &Ids) -> Value {
     let prefix = form.prefix();
     let id = |name: &str| ids.get(&format!("{prefix}:{name}")).copied();
-    let rows: Vec<Value> = form
+    let mut rows: Vec<Value> = form
         .fields()
         .iter()
         .map(|(name, label)| {
@@ -388,17 +406,26 @@ fn dialog(form: Form, ids: &Ids) -> Value {
             })
         })
         .collect();
+    let spring = json!({"type": "separator", "weight": 1, "line": false});
+    let cancel = json!({"type": "button", "id": id("cancel"), "label": "Cancel"});
+    let children = if form == Form::Close {
+        rows.push(json!({"type": "label", "text": UNSAVED}));
+        json!([
+            {"type": "button", "id": id("discard"), "label": "Don't save"},
+            spring,
+            cancel,
+            {"type": "button", "id": id("ok"), "label": "Save"},
+        ])
+    } else {
+        json!([spring, cancel, {"type": "button", "id": id("ok"), "label": "OK"}])
+    };
     let buttons = json!({
         "type": "layout",
         "flow": "row",
         "hug": true,
         "pack": true,
         "margin": 0,
-        "children": [
-            {"type": "separator", "weight": 1, "line": false},
-            {"type": "button", "id": id("cancel"), "label": "Cancel"},
-            {"type": "button", "id": id("ok"), "label": "OK"},
-        ],
+        "children": children,
     });
     json!({
         "type": "layout",
@@ -447,6 +474,8 @@ pub enum Said {
     Accept,
     /// `Cancel`, Escape, or the dialog's close mark.
     Cancel,
+    /// The close form's `Don't save`.
+    Discard,
 }
 
 /// **What the widget `name` reporting `tag` said** -- or `None` for a name
@@ -462,6 +491,7 @@ pub fn read(form: Form, name: &str, tag: &str) -> Option<Said> {
     match part {
         "ok" => (tag == "click").then_some(Said::Accept),
         "cancel" => (tag == "click").then_some(Said::Cancel),
+        "discard" if form == Form::Close => (tag == "click").then_some(Said::Discard),
         field if form.fields().iter().any(|(name, _)| *name == field) => {
             Some(Said::Field(field.to_string(), tag.to_string()))
         }
@@ -654,15 +684,17 @@ mod tests {
         );
         assert_eq!(stack["h"], 0, "it takes no room in the window");
         let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 5, "no dialog, and the four forms");
+        assert_eq!(pages.len(), 6, "no dialog, and the five forms");
         assert!(pages[0].get("children").is_none());
         for (page, form) in pages[1..].iter().zip(FORMS) {
             let dialog = &page["children"][0];
             assert_eq!(dialog["modal"], true);
             assert_eq!(dialog["id"], ids[form.prefix()]);
-            // a row per field, and the buttons
+            // a row per field -- the close form's question in place of them
+            // -- and the buttons
             let rows = dialog["children"].as_array().unwrap();
-            assert_eq!(rows.len(), form.fields().len() + 1);
+            let asked = usize::from(form == Form::Close);
+            assert_eq!(rows.len(), form.fields().len() + asked + 1);
         }
         // every name is a widget, each under an id of its own
         let text = stack.to_string();

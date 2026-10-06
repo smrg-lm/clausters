@@ -294,7 +294,10 @@ score remembers its file (`score.path`), which is what the File menu's **Save**
 and Ctrl+S write to; a score with none is asked for one, as **Save as...**
 always asks, and **Open...** reads another document in place of the score, as
 one step of the history. The same two are `editor.save()` and
-`editor.load(path)`.
+`editor.load(path)`. **New** puts an empty score in its place the same way —
+one staff in the treble clef, common time, C major, four empty bars, and no
+file yet — and **Close** closes the window, asking first when the score has
+changes its file does not hold (`editor.unsaved`): save, don't save, or cancel.
 
 **A score is exported as what it renders.** The File menu's **Export MIDI...**
 and **Export clip...** — `await editor.export(path)`, which takes the format from the

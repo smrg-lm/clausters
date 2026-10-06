@@ -5,6 +5,8 @@
 //! [`dialogs`](super::super::dialogs); what is here is what each of them does
 //! to this editor.
 
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 
 use clausters_core::notation::Op;
@@ -54,6 +56,7 @@ impl ScoreEditor {
             }
             Form::Param(param) => [("value".to_string(), param.initial().to_string())].into(),
             Form::Page => dialogs::page_of(&self.setup()),
+            Form::Close => BTreeMap::new(),
             // an export is a file of its own: it opens asking, where a save
             // offers the score's
             Form::File(file) => {
@@ -90,6 +93,13 @@ impl ScoreEditor {
             }
             Some(Said::Cancel) => {
                 self.dialog = None;
+                self.closing = false;
+                (None, corrected(dialogs::hidden(&self.dialogs)))
+            }
+            // closing without saving: what was not saved is let go
+            Some(Said::Discard) => {
+                self.dialog = None;
+                out.close = true;
                 (None, corrected(dialogs::hidden(&self.dialogs)))
             }
             Some(Said::Accept) => {
@@ -97,12 +107,25 @@ impl ScoreEditor {
                 if let Some(reason) = self.accept(&open, out) {
                     return (Some(reason), Vec::new());
                 }
+                // a save the close form asked for, with no file yet, asks for
+                // one: the file form is now the one up
+                if self.dialog.as_ref().is_some_and(|up| up.form != open.form) {
+                    return (None, corrected(self.dialog_shown()));
+                }
                 self.dialog = None;
                 let mut corrections = self.corrections();
                 corrections.extend(corrected(dialogs::hidden(&self.dialogs)));
                 (None, corrections)
             }
         }
+    }
+
+    /// What the window is corrected with to show the form that is up.
+    fn dialog_shown(&self) -> Vec<(i32, Value)> {
+        self.dialog
+            .as_ref()
+            .map(|up| up.shown(&self.dialogs))
+            .unwrap_or_default()
     }
 
     /// Write what `open` holds to the score; the answer is why it was not.
@@ -125,6 +148,17 @@ impl ScoreEditor {
                 Ok(action) => self.perform(&action, out),
                 Err(why) => Some(why),
             },
+            // Save, and close once it is written; a score with no file is
+            // asked for one first
+            Form::Close => {
+                self.closing = true;
+                let (reason, _) = self.save(out);
+                if out.save.is_some() {
+                    self.closing = false;
+                    out.close = true;
+                }
+                reason
+            }
             // A file is its holder's to read and write: the outcome names
             // it, and for a save it is the score's file from now on.
             Form::File(file) => {
@@ -136,10 +170,14 @@ impl ScoreEditor {
                     (_, Some(format)) => {
                         out.export = Some(serde_json::json!({"path": path, "format": format}));
                     }
-                    (dialogs::File::Open, _) => out.open = Some(path),
+                    (dialogs::File::Open, _) => {
+                        self.opening = Some(path.clone());
+                        out.open = Some(path);
+                    }
                     (_, None) => {
                         self.path = Some(path.clone());
                         out.save = Some(path);
+                        out.close = std::mem::take(&mut self.closing);
                     }
                 }
                 None

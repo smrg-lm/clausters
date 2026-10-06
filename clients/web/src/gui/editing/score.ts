@@ -55,6 +55,8 @@ interface Outcome {
     open?: string;
     /** The file to export the score's render to, and as what. */
     export?: { path: string; format: "smf" | "clip" };
+    /** Whether to close the window: the File menu's Close. */
+    close?: boolean;
     /** What a play asks of the playback: the space bar, the toolbar, the menu. */
     play?: Pass;
     /** What the loop switch asks of a pass in progress. */
@@ -928,10 +930,21 @@ export class ScoreEditor extends Editor<Score> {
     /**
      * Write the score to its file -- `path`, which is then the score's, or the
      * one it was read from or last saved to -- and answer the path. The File
-     * menu's Save, as a method (`Score.write`).
+     * menu's Save, as a method (`Score.write`). What is written is then not a
+     * change the File menu's Close asks about.
      */
-    save(path: string | null = null): Promise<string> {
-        return this.score.write(path);
+    async save(path: string | null = null): Promise<string> {
+        const written = await this.score.write(path);
+        this.coreCall("saved");
+        return written;
+    }
+
+    /**
+     * Whether the score has changes its file does not hold -- what the File
+     * menu's Close asks about before it closes the window.
+     */
+    get unsaved(): boolean {
+        return this.coreCall("unsaved").unsaved === true;
     }
 
     /**
@@ -1027,11 +1040,18 @@ export class ScoreEditor extends Editor<Score> {
         // A file is this client's to write and to read: the turn said which.
         // Both are the page's own storage in a tab, and neither is waited for
         // by the turn that asked; what went wrong is said on the console.
+        // The File menu's Close waits for the file it saves to, and keeps the
+        // window when that file was not written.
         if (outcome.save) {
-            this.filed = this.score.write(outcome.save).then(
-                () => undefined,
+            this.filed = this.save(outcome.save).then(
+                () => {
+                    if (outcome.close === true) this.close();
+                },
                 (error: unknown) => console.warn(`save: ${outcome.save}:`, error),
             );
+        } else if (outcome.close === true) {
+            this.close();
+            return changed;
         }
         if (outcome.export) {
             const { path, format } = outcome.export;

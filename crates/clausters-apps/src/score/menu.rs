@@ -127,12 +127,15 @@ pub fn menu(state: &State<'_>) -> Value {
                 sep(),
                 form("Page text...", "text", state),
                 sep(),
+                word("New", "new"),
                 form("Open...", "open", state),
                 word("Save", "save"),
                 form("Save as...", "save", state),
                 sep(),
                 form("Export MIDI...", "export_midi", state),
                 form("Export clip...", "export_clip", state),
+                sep(),
+                word("Close", "close"),
             ],
         ),
         sub(
@@ -350,8 +353,13 @@ pub enum Pick {
     SelectAll,
     /// A form, opened over the window.
     Dialog(Form),
+    /// A new score in place of this one.
+    New,
     /// The score, written to its file.
     Save,
+    /// The window, closed -- asking first when the score has changes its
+    /// file does not hold.
+    Close,
     /// Play, or stop what plays.
     Play,
     /// Back to the start.
@@ -392,7 +400,9 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "undo" => Pick::Undo,
         "redo" => Pick::Redo,
         "select_all" => Pick::SelectAll,
+        "new" => Pick::New,
         "save" => Pick::Save,
+        "close" => Pick::Close,
         "play" => Pick::Play,
         "rewind" => Pick::Rewind,
         "loop" => Pick::Loop(state.is_none_or(|on| on != 0)),

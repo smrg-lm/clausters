@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use clausters_core::notation::{
-    AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, View, field_of, item_id,
-    layout_options, measure_id, pitch_near, sheet_to_mei,
+    AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, Sheet, View, field_of,
+    item_id, layout_options, measure_id, pitch_near, sheet_to_mei,
 };
 use clausters_core::ratio::Ratio;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
@@ -60,6 +60,11 @@ pub struct Outcome {
     /// the text and hands it back as the `open` verb, which is the edit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<String>,
+    /// **Whether to close the window**: the File menu's Close, once nothing
+    /// is left unsaved or the writer said not to save it. A turn that also
+    /// names a file to save closes once that file is written.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub close: bool,
     /// **The file to export the score's render to**, and as what:
     /// `{"path", "format"}`, the format `"smf"`, a Standard MIDI File, or
     /// `"clip"`, a MIDI 2.0 Clip File. Its holder renders the score and
@@ -109,6 +114,15 @@ pub struct ScoreEditor {
     /// The file the score is saved to: the one it was read from, or the last
     /// one a save named. `None` for a score that has no file yet.
     path: Option<String>,
+    /// **The score as its file holds it**: the document when the editor
+    /// opened, or when it was last saved, opened or made new. A score that
+    /// is not this has changes to lose.
+    saved: String,
+    /// The file an Open asked for, until its holder hands the document back.
+    opening: Option<String>,
+    /// Whether a save the close form asked for closes the window once a file
+    /// is named for it.
+    closing: bool,
     /// Whether a pass loops: the loop switch, the toolbar's and the menu's.
     looping: bool,
     /// Where a pass starts with nothing selected, as a beat of the score.
@@ -200,7 +214,7 @@ impl ScoreEditor {
     /// it now -- the same document, read through the model, with the model's
     /// ids -- and records nothing, since nothing was edited.
     pub fn new(score: Shared, version: i64) -> Self {
-        {
+        let saved = {
             let mut held = score.lock().unwrap_or_else(|e| e.into_inner());
             let written = held.sheet().and_then(|sheet| sheet_to_mei(sheet).ok());
             if let Some(mei) = written
@@ -208,7 +222,8 @@ impl ScoreEditor {
             {
                 held.load(&mei);
             }
-        }
+            held.mei()
+        };
         Self {
             score,
             conversation: Conversation::new(version),
@@ -219,6 +234,9 @@ impl ScoreEditor {
             palettes: palettes::Ids::new(),
             dialog: None,
             path: None,
+            saved,
+            opening: None,
+            closing: false,
             looping: false,
             cursor: 0.0,
             outlines: None,
@@ -884,8 +902,73 @@ impl ScoreEditor {
         self.selection.clear();
         out.selected = Some(Vec::new());
         self.laid.clear();
+        // the file it was read from is the score's from now on, and holds it
+        if let Some(path) = self.opening.take() {
+            self.path = Some(path);
+        }
+        let saved = self.held().mei();
+        self.saved = saved;
         self.recorded(before, "open", out);
         None
+    }
+
+    /// **A new score in place of this one**, as one entry, as an Open is:
+    /// one staff in the treble clef, common time, C major, four empty bars,
+    /// and no file yet.
+    fn new_score(&mut self, out: &mut Outcome) -> Option<String> {
+        let mut sheet = Sheet::default();
+        sheet.staves[0].voices[0].items = (0..4)
+            .map(|_| Item::Rest {
+                id: 0,
+                dur: sheet.grid.meter_at(0).bar(),
+            })
+            .collect();
+        sheet.assign_ids();
+        let Ok(mei) = sheet_to_mei(&sheet) else {
+            return Some("a new score could not be written".into());
+        };
+        let before = self.held().mei();
+        if !self.held().load(&mei) {
+            self.held().load(&before);
+            return Some("a new score could not be written".into());
+        }
+        self.selection.clear();
+        out.selected = Some(Vec::new());
+        self.laid.clear();
+        self.cursor = 0.0;
+        self.place = None;
+        self.left = None;
+        self.entered = None;
+        self.path = None;
+        let saved = self.held().mei();
+        self.saved = saved;
+        self.recorded(before, "new", out);
+        None
+    }
+
+    /// **Whether the score has changes its file does not hold.**
+    #[must_use]
+    pub fn unsaved(&self) -> bool {
+        self.held().mei() != self.saved
+    }
+
+    /// **The score as it stands is what its file holds**: what a holder says
+    /// once it has written the file a save named.
+    pub fn mark_saved(&mut self) {
+        let saved = self.held().mei();
+        self.saved = saved;
+    }
+
+    /// **Close**: the window goes, at once when nothing is unsaved, and
+    /// otherwise once the close form is answered.
+    fn close(&mut self, out: &mut Outcome) -> (Option<String>, Option<Vec<Correction>>) {
+        if !self.unsaved() {
+            out.close = true;
+            return (None, Some(Vec::new()));
+        }
+        // a window with no dialogs cannot ask, and so does not lose the work
+        let (reason, shown) = self.open_form(dialogs::Form::Close);
+        (reason, Some(shown))
     }
 
     /// **Back to the start**: the cursor a pass starts from is the score's
@@ -949,6 +1032,8 @@ impl ScoreEditor {
                 shown = Some(corrections);
             }
             menu::Pick::Save => (reason, shown) = self.save(out),
+            menu::Pick::New => reason = self.new_score(out),
+            menu::Pick::Close => (reason, shown) = self.close(out),
             menu::Pick::Play => {
                 out.play = Some(self.pass());
                 shown = Some(self.leave_to_play());
@@ -1627,6 +1712,10 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 ///   the name of its paper when it is a known one, which way up it is, and the
 ///   papers there are.
 /// - `mei` -- `{"mei"}`: the score as MEI.
+/// - `saved` -- the score as it stands is what its file holds: what a holder
+///   says once it has written the file a save named. `{}`.
+/// - `unsaved` -- `{"unsaved"}`: whether the score has changes its file does
+///   not hold, which the File menu's Close asks about before it closes.
 /// - `render` -- `{"sequence"}`: the score as the sequence it plays as, on the
 ///   engraver's time, or `{"error"}`.
 ///
@@ -1779,6 +1868,11 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             .to_string()
         }
         "mei" => json!({"mei": editor.held().mei()}).to_string(),
+        "saved" => {
+            editor.mark_saved();
+            "{}".into()
+        }
+        "unsaved" => json!({"unsaved": editor.unsaved()}).to_string(),
         "render" => match editor.rendered() {
             Ok(sequence) => json!({"sequence": sequence}).to_string(),
             Err(why) => json!({"error": why}).to_string(),

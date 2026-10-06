@@ -314,6 +314,39 @@ def test_the_file_menu_saves_and_opens_through_this_client(score, tmp_path):
     assert editor.save(tmp_path / "again.mei") == str(tmp_path / "again.mei")
 
 
+def test_new_and_close_in_the_file_menu(score, tmp_path):
+    editor = ScoreEditor(score)
+    editor.draw()
+    editor._window = window = 0
+    widget = lambda name: editor.view.widget(editor, "dialog", editor.structure, name)
+    send = lambda *args: editor.apply("/gui_event", [args[0], 1, editor._version, *args[1:]])
+    # New: one staff, four empty bars, as one entry; nothing to lose yet
+    send(window, "menu", "new")
+    assert [i["kind"] for i in _items(score)] == ["rest"] * 4
+    assert not editor.unsaved
+    # a change, and Close asks: Save names a file and closes once written
+    assert editor.set_text("title", "A title")
+    assert editor.unsaved
+    send(window, "menu", "close")
+    assert not editor.closed
+    send(widget("close:ok"), "click")
+    send(widget("file:path"), str(tmp_path / "kept.mei"))
+    send(widget("file:ok"), "click")
+    assert notation.Score.read(tmp_path / "kept.mei").sheet() == score.sheet()
+    assert editor.closed
+
+
+def test_close_with_nothing_unsaved_closes_at_once(score, tmp_path):
+    editor = ScoreEditor(score)
+    editor.draw()
+    editor._window = window = 0
+    assert editor.set_text("title", "A title")
+    editor.save(tmp_path / "a.mei")
+    assert not editor.unsaved
+    editor.apply("/gui_event", [window, 1, editor._version, "menu", "close"])
+    assert editor.closed
+
+
 def test_the_score_plays_on_a_transport_of_its_own_and_hears_an_edit(score):
     from test_gui_edit import FakeHost, _PlayingServer
 

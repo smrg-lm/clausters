@@ -24,6 +24,7 @@ await loadCore();
 
 interface Item {
     id: number;
+    kind: string;
     dur: [number, number];
     pitches?: { alter?: number }[];
     marks?: { articulations?: string[]; ornament?: string; grace?: string; tremolo?: number };
@@ -403,6 +404,51 @@ if (!existsSync(engraver)) {
         assert.ok(await editor.load(other));
         assert.equal(items(score).length, 2);
         assert.equal(await editor.save(join(dir, "again.mei")), join(dir, "again.mei"));
+        rmSync(dir, { recursive: true });
+    });
+
+    test("New and Close in the File menu", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        (editor as unknown as { windowId: number | null }).windowId ??= 0;
+        const widget = (name: string) =>
+            editor.view!.widget(editor, "dialog", editor.structure, name);
+        const send = (id: number, ...payload: unknown[]) =>
+            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
+        // New: one staff, four empty bars, as one entry; nothing to lose yet
+        send(0, "menu", "new");
+        assert.deepEqual(
+            items(score).map((i) => i.kind),
+            ["rest", "rest", "rest", "rest"],
+        );
+        assert.equal(editor.unsaved, false);
+        // a change, and Close asks: Save names a file and closes once written
+        assert.ok(editor.setText("title", "A title"));
+        assert.equal(editor.unsaved, true);
+        send(0, "menu", "close");
+        assert.equal(editor.closed, false);
+        send(widget("close:ok"), "click");
+        send(widget("file:path"), join(dir, "kept.mei"));
+        send(widget("file:ok"), "click");
+        await editor.filed;
+        assert.deepEqual((await Score.read(join(dir, "kept.mei"))).sheet(), score.sheet());
+        assert.equal(editor.closed, true);
+        rmSync(dir, { recursive: true });
+    });
+
+    test("Close with nothing unsaved closes at once", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        editor.draw();
+        (editor as unknown as { windowId: number | null }).windowId ??= 0;
+        assert.ok(editor.setText("title", "A title"));
+        await editor.save(join(dir, "a.mei"));
+        assert.equal(editor.unsaved, false);
+        editor.apply("/gui_event", [0, 1, versionOf(editor), "menu", "close"]);
+        assert.equal(editor.closed, true);
         rmSync(dir, { recursive: true });
     });
 

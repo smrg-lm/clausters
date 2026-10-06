@@ -156,8 +156,14 @@ impl Host {
             self.tell(answer);
         }
         // A file is this host's to write and to read: the editor said which.
-        if let Some(path) = outcome.save {
-            self.save_score(member, Path::new(&path));
+        // A close waits for the file it saves to, and stays when it was not
+        // written.
+        let written = outcome
+            .save
+            .is_none_or(|path| self.save_score(member, Path::new(&path)));
+        if outcome.close && written {
+            self.close_score(def_id);
+            return true;
         }
         if let Some(path) = outcome.open {
             self.open_into_score(def_id, member, Path::new(&path));
@@ -208,8 +214,9 @@ impl Host {
         diag::info!("score {def_id}: opened {}", path.display());
     }
 
-    /// Writes the score of `member` to `path` as MEI, or says why it did not.
-    fn save_score(&mut self, member: clausters_apps::editing::MemberId, path: &Path) {
+    /// Writes the score of `member` to `path` as MEI, and tells the editor
+    /// its file now holds it -- or says why it did not. Whether it wrote.
+    fn save_score(&mut self, member: clausters_apps::editing::MemberId, path: &Path) -> bool {
         use clausters_apps::editing::Member;
 
         let Some(Member::Score(editor)) = self
@@ -217,7 +224,7 @@ impl Host {
             .as_mut()
             .and_then(|o| o.editing.member_mut(member))
         else {
-            return;
+            return false;
         };
         let mei = editor
             .score()
@@ -225,9 +232,36 @@ impl Host {
             .unwrap_or_else(|e| e.into_inner())
             .mei();
         match std::fs::write(path, mei) {
-            Ok(()) => diag::info!("score saved to {}", path.display()),
-            Err(e) => diag::warn!("save: {}: {e}", path.display()),
+            Ok(()) => {
+                clausters_apps::score::editor::call_json(editor, r#"{"verb": "saved"}"#);
+                diag::info!("score saved to {}", path.display());
+                true
+            }
+            Err(e) => {
+                diag::warn!("save: {}: {e}", path.display());
+                false
+            }
         }
+    }
+
+    /// Closes the score editor's window `def_id`, as the File menu's Close
+    /// asked once nothing was left to lose: the window is freed, and the
+    /// editor is this host's no longer.
+    fn close_score(&mut self, def_id: i32) {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        if let Some(owner) = self.owner.as_mut() {
+            owner.scores.remove(&def_id);
+        }
+        let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
+        let effects = self.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(def_id)],
+            }),
+            origin,
+        );
+        self.pending_effects.extend(effects);
     }
 }
 
@@ -525,6 +559,57 @@ mod tests {
         let undo = host.event_message(def_id, 5, vec![OscType::String("undo".into())]);
         assert!(host.deliver(def_id, &undo));
         assert_eq!(items(&held), 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn close_saves_first_when_asked_and_frees_the_window() {
+        let dir = std::env::temp_dir().join(format!("clausters-close-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let saved = dir.join("closed.mei");
+        let mut host = Host::new();
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let held = score();
+        let def_id = host
+            .open_score(held.clone(), "score", (960, 640), Some(saved.clone()))
+            .expect("a window");
+        let menu = |host: &mut Host, seq: i32, verb: &str| {
+            let pick = host.event_message(
+                def_id,
+                seq,
+                vec![OscType::String("menu".into()), OscType::String(verb.into())],
+            );
+            assert!(host.deliver(def_id, &pick), "{verb}");
+        };
+        // New is an edit, so the score has changes its file does not hold:
+        // Close asks, and the window stays while it does
+        menu(&mut host, 1, "new");
+        assert_eq!(items(&held), 4, "four empty bars");
+        menu(&mut host, 2, r#"{"action":"page","landscape":true}"#);
+        menu(&mut host, 3, "close");
+        assert_eq!(dialog_page(&host, def_id), 5);
+        assert!(host.window_defs.contains_key(&def_id));
+        // Save writes the file a save names -- a new score has none, so the
+        // form asks -- and the window goes once it is written
+        let ok = host.own_widget(0, SCORE, "dialog:close:ok").unwrap();
+        let click = host.event_message(ok, 4, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        assert_eq!(dialog_page(&host, def_id), 4, "the file form");
+        let path = host.own_widget(0, SCORE, "dialog:file:path").unwrap();
+        let typed = host.event_message(path, 5, vec![OscType::String(saved.display().to_string())]);
+        assert!(host.deliver(def_id, &typed));
+        let ok = host.own_widget(0, SCORE, "dialog:file:ok").unwrap();
+        let click = host.event_message(ok, 6, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        assert_eq!(
+            std::fs::read_to_string(&saved).expect("the file"),
+            held.lock().unwrap().mei()
+        );
+        assert!(
+            !host.window_defs.contains_key(&def_id),
+            "the window is freed"
+        );
+        assert!(host.owner.as_ref().unwrap().scores.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1386,3 +1386,108 @@ fn the_new_marks_and_signs_are_verbs_over_the_selection() {
         vec!["la".to_string()]
     );
 }
+
+#[test]
+fn new_replaces_the_score_with_an_empty_one_as_one_entry() {
+    let mut editor = with_dialogs();
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
+    let before = editor.held().mei();
+    let out = editor.event(&pick("new", None), 1);
+    let record = out.record.expect("an entry");
+    assert_eq!(record.label, "new");
+    assert_eq!(record.legs[0].backward["mei"], json!(before));
+    {
+        let held = editor.held();
+        let sheet = held.sheet().unwrap();
+        assert_eq!(sheet.staves.len(), 1);
+        assert_eq!(sheet.staves[0].clef, "G2");
+        assert_eq!(sheet.key, "C");
+        assert_eq!(
+            (sheet.grid.meters[0].count, sheet.grid.meters[0].unit),
+            (4, 4)
+        );
+        let items = &sheet.staves[0].voices[0].items;
+        assert_eq!(items.len(), 4);
+        assert!(items.iter().all(|i| matches!(i, Item::Rest { .. })));
+    }
+    // a new score has no file, and nothing to lose
+    assert!(!editor.unsaved());
+    let out = editor.event(&pick("save", None), 1);
+    assert_eq!(out.save, None, "a save asks where to");
+}
+
+#[test]
+fn close_asks_first_only_when_there_is_something_to_lose() {
+    let ids = named();
+    // nothing changed: the window goes
+    let mut editor = with_dialogs();
+    assert!(editor.event(&pick("close", None), 1).close);
+
+    // a change: the form asks, and Cancel keeps the window
+    let mut editor = with_dialogs();
+    editor.act(&json!({"action": "page", "landscape": true}), 1);
+    assert!(editor.unsaved());
+    let out = editor.event(&stamped(pick("close", None), 2), 2);
+    assert!(!out.close);
+    assert_eq!(
+        corrections_of(&out)
+            .last()
+            .map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 5})))
+    );
+    assert!(
+        !editor
+            .event(&stamped(said("close:cancel", "click"), 2), 2)
+            .close
+    );
+    // Don't save closes as it is
+    editor.event(&stamped(pick("close", None), 2), 2);
+    assert!(
+        editor
+            .event(&stamped(said("close:discard", "click"), 2), 2)
+            .close
+    );
+    // Save with no file asks for one, and closes once it is named
+    editor.event(&stamped(pick("close", None), 2), 2);
+    let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
+    assert!(!out.close && out.save.is_none());
+    assert_eq!(
+        corrections_of(&out)
+            .last()
+            .map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 4})))
+    );
+    editor.event(&stamped(said("file:path", "/tmp/kept.mei"), 2), 2);
+    let out = editor.event(&stamped(said("file:ok", "click"), 2), 2);
+    assert_eq!(out.save.as_deref(), Some("/tmp/kept.mei"));
+    assert!(out.close);
+    // ...and with a file, Save names it and closes at once
+    editor.event(&stamped(pick("close", None), 2), 2);
+    let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
+    assert_eq!(out.save.as_deref(), Some("/tmp/kept.mei"));
+    assert!(out.close);
+    // once the holder wrote it, nothing is left to lose
+    call_json(&mut editor, r#"{"verb": "saved"}"#);
+    assert!(editor.event(&stamped(pick("close", None), 2), 2).close);
+    // a save the close form did not ask for closes nothing
+    editor.act(&json!({"action": "page", "landscape": false}), 2);
+    assert!(!editor.event(&stamped(window_save(), 3), 3).close);
+}
+
+#[test]
+fn an_opened_file_is_the_scores_and_holds_it() {
+    let mut editor = with_dialogs();
+    editor.event(&pick("dialog:open", None), 1);
+    editor.event(&said("file:path", "/tmp/two.mei"), 1);
+    editor.event(&said("file:ok", "click"), 1);
+    let data = sheet_to_mei(&Sheet::default()).unwrap();
+    editor.act(&json!({"action": "open", "data": data}), 1);
+    assert!(!editor.unsaved());
+    assert_eq!(
+        editor
+            .event(&stamped(pick("save", None), 2), 2)
+            .save
+            .as_deref(),
+        Some("/tmp/two.mei")
+    );
+}
