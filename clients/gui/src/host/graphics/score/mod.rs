@@ -102,6 +102,11 @@ pub struct Bounds {
 }
 
 impl Bounds {
+    /// The middle of the box, `(x, y)`.
+    fn middle(self) -> (f32, f32) {
+        (0.5 * (self.x0 + self.x1), 0.5 * (self.y0 + self.y1))
+    }
+
     /// The box `xf` maps this one onto -- still axis-aligned, since `xf` only
     /// translates and scales; a negative scale flips it, so the corners are
     /// re-ordered.
@@ -401,6 +406,15 @@ pub struct ScoreData {
     pub hits: Vec<HitBox>,
     /// The spatial index in front of `hits`, built with them.
     pub grid: HitGrid,
+    /// **Each id's entries of `hits`**, in their order -- an element's first
+    /// is its notehead -- so what is selected, dragged or under the edit
+    /// cursor is found without walking the page.
+    pub by_id: HashMap<String, Vec<u32>>,
+    /// **Each staff's entries of `hits`, across**: for every staff of
+    /// `staves`, the entries whose middle is nearer it than any other, as
+    /// `(x of the middle, entry)` in order of `x`. What a press in note entry
+    /// searches for the element it fell beside.
+    pub rows: Vec<Vec<(f32, u32)>>,
     /// **The ids of the primitives that draw the staff lines**, filled by the
     /// same pass that clusters them into staves ([`ScoreData::staves`]).
     ///
@@ -516,6 +530,8 @@ impl Default for ScoreData {
             sample_rate: 0.0,
             hits: Vec::new(),
             grid: HitGrid::default(),
+            by_id: HashMap::new(),
+            rows: Vec::new(),
             staff_ids: std::collections::HashSet::new(),
             staves: Vec::new(),
             selected: Vec::new(),

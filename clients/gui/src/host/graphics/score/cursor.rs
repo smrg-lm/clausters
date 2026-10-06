@@ -16,6 +16,25 @@
 use super::tess::staff_distance;
 use super::{Affine, Entry, Prim, ScoreData, Staff};
 
+/// One side of a row walked out from a press, as `(distance, entry)` in
+/// order of distance: an entry that `sounds` and is nearer than `best` -- or as
+/// near and drawn first -- becomes it, and the walk stops at the first entry
+/// further than `best`, since none past it can be nearer.
+fn nearest_on(
+    side: impl Iterator<Item = (f32, u32)>,
+    sounds: &impl Fn(u32) -> bool,
+    best: &mut Option<(f32, u32)>,
+) {
+    for (off, i) in side {
+        if best.is_some_and(|(o, _)| off > o) {
+            break;
+        }
+        if sounds(i) && best.is_none_or(|(o, j)| off < o || i < j) {
+            *best = Some((off, i));
+        }
+    }
+}
+
 /// How far from a staff, in diatonic steps, a press in note entry still
 /// writes on it: the reach of four ledger lines.
 const LEDGER_REACH: f32 = 8.0;
@@ -125,10 +144,22 @@ impl ScoreData {
     /// The staff a page-y belongs to: the nearest one, since a note off the
     /// staff still belongs to it (that is what ledger lines are for).
     pub fn staff_at(&self, y: f32) -> Option<Staff> {
-        self.staves
-            .iter()
-            .copied()
-            .min_by(|a, b| staff_distance(a, y).total_cmp(&staff_distance(b, y)))
+        self.staff_index_at(y).map(|i| self.staves[i])
+    }
+
+    /// Which of `staves` is nearest the page height `y`, by its place in
+    /// them. The staves are top to bottom and apart, so the nearest is the
+    /// first that has not ended above `y` or the one before it -- the upper of
+    /// two equally near.
+    pub(super) fn staff_index_at(&self, y: f32) -> Option<usize> {
+        let below = self.staves.partition_point(|s| s.y1 < y);
+        [below.checked_sub(1), Some(below)]
+            .into_iter()
+            .flatten()
+            .filter(|&i| i < self.staves.len())
+            .min_by(|&a, &b| {
+                staff_distance(&self.staves[a], y).total_cmp(&staff_distance(&self.staves[b], y))
+            })
     }
 
     /// Where an engraved element sits on its staff, in **whole diatonic steps
@@ -200,17 +231,8 @@ impl ScoreData {
         // is placed by where it is drawn, exactly as a note off the staff still
         // belongs to the staff its ledger lines count from.
         let at = self
-            .hits
-            .iter()
-            .filter(|h| self.elements.contains(&h.id))
-            .filter(|h| {
-                let mid = 0.5 * (h.bounds.y0 + h.bounds.y1);
-                self.staff_at(mid) == Some(staff)
-            })
-            .min_by(|a, b| {
-                let off = |h: &super::HitBox| (0.5 * (h.bounds.x0 + h.bounds.x1) - px).abs();
-                off(a).total_cmp(&off(b))
-            })
+            .staff_index_at(py)
+            .and_then(|row| self.nearest_element(row, px))
             .map(|h| h.id.clone());
         Some(Entry {
             staff: index,
@@ -219,13 +241,36 @@ impl ScoreData {
         })
     }
 
+    /// **The sounding element of staff `row` nearest `x` across**, the first
+    /// drawn of two as near. The row is in order of `x`, so the search starts
+    /// where `x` falls and walks out both ways, and a side stops once what it
+    /// reaches is further than the nearest found: what it visits is the
+    /// neighbourhood of the press, not the page.
+    fn nearest_element(&self, row: usize, x: f32) -> Option<&super::HitBox> {
+        let row = self.rows.get(row)?;
+        let start = row.partition_point(|(at, _)| *at < x);
+        let sounds = |i: u32| self.elements.contains(&self.hits[i as usize].id);
+        let mut best = None;
+        nearest_on(
+            row[start..].iter().map(|&(at, i)| (at - x, i)),
+            &sounds,
+            &mut best,
+        );
+        nearest_on(
+            row[..start].iter().rev().map(|&(at, i)| (x - at, i)),
+            &sounds,
+            &mut best,
+        );
+        best.map(|(_, i)| &self.hits[i as usize])
+    }
+
     /// **The rectangle the edit cursor covers**, in page units: the column of
     /// its element (or a notehead's width past it, at the end of a voice),
     /// over the staff it names in that element's system, a step beyond its
     /// lines.
     pub fn edit_cursor_box(&self) -> Option<super::Bounds> {
         let cursor = self.edit_cursor.as_ref()?;
-        let column = self.hits.iter().find(|h| h.id == cursor.at)?.bounds;
+        let column = self.boxes_of(&cursor.at).next()?.bounds;
         let mid = 0.5 * (column.y0 + column.y1);
         let own = self.staff_at(mid)?;
         // the staves of the system the element is in, top down

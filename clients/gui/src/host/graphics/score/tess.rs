@@ -207,7 +207,7 @@ impl ScoreData {
             .filter(|sel| Some(sel.as_str()) != typed)
         {
             let fit = self.prim_fit(fit, Some(sel));
-            for h in self.hits.iter().filter(|h| &h.id == sel) {
+            for h in self.boxes_of(sel) {
                 // a hair of page-unit padding so a hairline stem still shows a band
                 let b = h.bounds.grown(20.0).transformed(fit);
                 mesh.rect(
@@ -265,7 +265,7 @@ impl ScoreData {
         // the element's first primitive is its notehead (verovio draws it
         // before the stem), which is what a ledger line is centred on and sized
         // from -- the stem and flag would stretch the box out of shape.
-        let head = self.hits.iter().find(|h| h.id == drag.id)?.bounds;
+        let head = self.boxes_of(&drag.id).next()?.bounds;
         let y = 0.5 * (head.y0 + head.y1);
         let staff = self.staff_at(y)?;
         let pad = LEDGER_OVERHANG * (head.x1 - head.x0);

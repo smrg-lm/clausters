@@ -5749,7 +5749,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   (a waveform linked to a lane), and a roll with the switch off does not page
   forward under a take being written into it.
 
-- ⬜ **The score's element hit is a linear scan over the whole page** *(found
+- ✅ **The score's element hit is a linear scan over the whole page** *(found
   2026-09-03, measuring the vertical axis for a different design and checking a
   premise that the score's hit was the scalable case)*. `ScoreData::hit`
   (`graphics/score/cursor.rs:242`) walks every box the page engraved, keeps the
@@ -5780,6 +5780,31 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   The reason it is filed rather than fixed: the answer to "a score can have
   millions of elements" is already in the design, and it is not a faster index
   — it is that the view holds a page and the work stays in the client.
+
+  **Fixed 2026-10-06, at the user's call**, since a page stopped being a page:
+  the page view stacks every page of the score in one widget, and the
+  continuous view is one system as long as the score. The hit itself had
+  already gone through a grid (`HitGrid`, `graphics/score/hit.rs`); what
+  still walked the page was everything else a press or a frame asks.
+  `entry_at` -- the press of note entry -- walked every box and measured each
+  one's nearest staff by walking the staves, and the selection's highlight,
+  a drag's ledger lines and the edit cursor each found an id by a walk, the
+  highlight once per selected id per frame. Now `index()` builds, beside the
+  grid, each id's boxes (`by_id`) and each staff's boxes in order across
+  (`rows`); `entry_at` searches its staff's row outward from the press and
+  stops where nothing nearer can be, and the nearest staff is a binary search
+  over the staves, which are top to bottom and apart. Per press, note entry
+  and the hit together, measured on pages of two-staff systems:
+
+  ```
+                   before       after
+        410 boxes   7.0 us      0.97 us
+     40 100 boxes   1.4 ms      1.6 us
+    800 400 boxes  98.8 ms      7.9 us
+  ```
+
+  A test reads the indexes against the walks they replaced over a dense page
+  (`the_indexes_answer_what_a_walk_over_the_page_answers`).
 
 - ✅ **A session host draws no lane mixing, and its header controls reach
   nothing** *(found 2026-09-02, closing the Python client's `C48`; fixed

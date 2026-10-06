@@ -292,7 +292,30 @@ impl ScoreData {
             }
         }
         self.grid = HitGrid::build(&self.hits, GRID_STEPS * self.step);
+        self.by_id.clear();
+        for (i, h) in self.hits.iter().enumerate() {
+            self.by_id.entry(h.id.clone()).or_default().push(i as u32);
+        }
         self.index_staves();
+        self.rows = vec![Vec::new(); self.staves.len()];
+        for (i, h) in self.hits.iter().enumerate() {
+            let (x, y) = h.bounds.middle();
+            if let Some(staff) = self.staff_index_at(y) {
+                self.rows[staff].push((x, i as u32));
+            }
+        }
+        for row in &mut self.rows {
+            row.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        }
+    }
+
+    /// The entries of `hits` drawn under `id`, in their order.
+    pub fn boxes_of<'a>(&'a self, id: &str) -> impl Iterator<Item = &'a HitBox> + 'a {
+        self.by_id
+            .get(id)
+            .into_iter()
+            .flatten()
+            .map(|&i| &self.hits[i as usize])
     }
 
     /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the

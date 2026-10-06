@@ -823,3 +823,103 @@ fn a_page_keeps_the_fills_it_tessellated() {
         "a curve is flattened finer when it is larger"
     );
 }
+
+/// A page of `systems` systems of two staves, each staff `notes` noteheads
+/// across with a stem beside each -- a dense page, as `(data, rect)` fitted
+/// one to one. A third of the noteheads are rests' furniture rather than
+/// elements, so a search has to step over what does not sound.
+fn dense_page(systems: usize, notes: usize) -> (ScoreData, Rect) {
+    let (w, step) = (20.0 * notes as f32 + 200.0, 90.0);
+    let mut prims = Vec::new();
+    let mut elements = Vec::new();
+    let mut y = 300.0;
+    for s in 0..systems {
+        for staff in 0..2 {
+            for line in 0..5 {
+                let ly = y + line as f32 * 2.0 * step;
+                prims.push(
+                    serde_json::json!({"k": "line", "pts": [[100, ly], [w - 100.0, ly]],
+                    "w": 13, "id": format!("st{s}-{staff}")}),
+                );
+            }
+            for n in 0..notes {
+                let (x, id) = (120.0 + 20.0 * n as f32, format!("n{s}-{staff}-{n}"));
+                let ny = y + ((n * 7) % 12) as f32 * step;
+                prims.push(serde_json::json!({"k": "glyph", "cp": "E0A4",
+                    "xf": [x, ny, 0.05, -0.05], "id": id}));
+                prims.push(
+                    serde_json::json!({"k": "line", "pts": [[x + 14.0, ny], [x + 14.0, ny - 300.0]],
+                    "w": 4, "id": id}),
+                );
+                if n % 3 != 0 {
+                    elements.push(id);
+                }
+            }
+            y += 8.0 * step + 600.0;
+        }
+        y += 800.0;
+    }
+    let props: Map<String, Value> = serde_json::from_value(serde_json::json!({
+        "vb": [w, y],
+        "step": step,
+        "glyphs": {"E0A4": "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+        "prims": prims,
+        "elements": elements,
+    }))
+    .unwrap();
+    (ScoreData::parse(&props), Rect::new(0.0, 0.0, w, y))
+}
+
+/// **The indexes answer what the walks over the whole page answered**: the
+/// nearest staff, the element a press in note entry falls beside, and each
+/// id's boxes -- checked against the linear searches they replaced, over a
+/// page dense enough that a mistake in a row's order would show.
+#[test]
+fn the_indexes_answer_what_a_walk_over_the_page_answers() {
+    let (data, rect) = dense_page(3, 120);
+    assert_eq!(data.staves.len(), 6);
+    let walked_staff = |y: f32| {
+        data.staves.iter().copied().min_by(|a, b| {
+            super::tess::staff_distance(a, y).total_cmp(&super::tess::staff_distance(b, y))
+        })
+    };
+    let walked_entry = |px: f32, py: f32| {
+        let staff = walked_staff(py);
+        data.hits
+            .iter()
+            .filter(|h| data.elements.contains(&h.id))
+            .filter(|h| walked_staff(0.5 * (h.bounds.y0 + h.bounds.y1)) == staff)
+            .min_by(|a, b| {
+                let off = |h: &HitBox| (0.5 * (h.bounds.x0 + h.bounds.x1) - px).abs();
+                off(a).total_cmp(&off(b))
+            })
+            .map(|h| h.id.clone())
+    };
+    let (w, h) = (rect.w, rect.h);
+    let mut checked = 0;
+    for yi in 0..97 {
+        let y = h * yi as f32 / 96.0;
+        assert_eq!(data.staff_at(y), walked_staff(y), "staff at {y}");
+        for xi in 0..41 {
+            let x = w * xi as f32 / 40.0 - 3.0;
+            if let Some(entry) = data.entry_at(rect, x, y) {
+                assert_eq!(entry.at, walked_entry(x, y), "entry at ({x}, {y})");
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 500, "the presses reached staves: {checked}");
+    // each id's boxes are its boxes, in the page's order
+    for id in ["n1-0-7", "n2-1-119", "st0-1"] {
+        let walked: Vec<&HitBox> = data.hits.iter().filter(|h| h.id == id).collect();
+        let indexed: Vec<&HitBox> = data.boxes_of(id).collect();
+        assert_eq!(indexed.len(), walked.len());
+        assert!(
+            indexed
+                .iter()
+                .zip(&walked)
+                .all(|(a, b)| std::ptr::eq(*a, *b))
+        );
+    }
+    assert_eq!(data.boxes_of("nothing").count(), 0);
+}
