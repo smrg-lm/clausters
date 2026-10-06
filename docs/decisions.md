@@ -9753,3 +9753,54 @@ computed `out + chan`, as the audio editor's does, put a track's meters before
 the strip they read, so the fix for a stereo take's two sides hands the reader
 both channels of its bus as two controls instead. That holds whichever way
 the analysis reads arithmetic, and it stayed.
+
+## A window keeps its picture, and a tick draws what moves
+
+A window was laid out, meshed and uploaded whole for every frame, whatever
+the frame was for: a playhead crossing a multitrack redrew its toolbar, its
+boxes and its page thirty times a second, and so did a meter at rest. The
+entries were two and old — "a window repaints whole for a line that moves in
+one view", "what a playing frame still costs" — and each had been measured
+and left, because a frame cost a millisecond. Taken 2026-10-06 (the user: "son
+optimizaciones importantes").
+
+**What moves is a layer the element draws, not a region the frame tracks.**
+The obvious designs were two. A damage rectangle per view asks the card to
+keep the last picture, which a swapchain does not; and a retained closure per
+moving line cannot read state its element changes on a tick. So an element
+has a second draw, `draw_live`, called with the placement its last whole
+frame gave it and the world as it is now, and a promise (`Needs::live`) that
+its ordinary draw reads neither the clock nor a fed value. The frame keeps
+those placements without the tree — the way down to each widget, its rect,
+its clip, its size table — and a tick walks them alone.
+
+**The front says what a redraw is for, and the least is drawn.** Every
+request a host makes of a window names its cause: the picture changed, or
+only what moves did. One is asked by a set, a gesture, a reply, a resize; the
+other by the tick and by a set of a *live prop* (a clock's text). The rule
+between them is the one that cannot draw a stale picture: **whole wins, and
+silence is whole**. A frame the platform asked for is whole; one a tick asked
+for beside a set is whole; a window with a dialog up keeps nothing, since its
+lines are under the scrim and not where a live batch is drawn.
+
+**A tick that moved nothing draws nothing.** The live mesh is compared with
+the one on screen, to a quarter of a pixel — the step four samples to the
+pixel can show — and a frame that would be the frame already there is not
+drawn. That is what "thirty frames a second is one number for every window"
+asked for: the tick still asks thirty times, and the answer is usually no.
+
+**The card still draws the whole window.** What is kept is the describing —
+the layout, the triangles, the upload — which is where a frame's time went
+(measured: the score editor's host 11.2 % of a core playing, 1.1 % after;
+the multitrack session with its server 9.5 % at rest, 2.8 % after). An
+offscreen copy of the picture under the live layer would save the card's own
+work, and nothing measured asks for it.
+
+**The glyph atlas had to change with it.** A kept picture's text names
+places in the atlas, so the atlas may not move them: a glyph's coordinates
+are texels of the sheet, which the shader divides by the texture's own size,
+and a sheet that grows leaves every texel where it was. A sheet packed again
+is a new *epoch*, and a picture from an earlier one is drawn again. The same
+pass found that each batch of a window held its own megabyte of sheet and
+copied all of it for every new glyph; a window has one, as high as the atlas
+has had to grow, and takes the rows that changed.

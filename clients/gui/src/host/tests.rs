@@ -1349,3 +1349,39 @@ fn a_registered_element_defines_through_the_rust_door() {
     );
     crate::unregister("test_door_pad");
 }
+
+/// **A write of a reading asks for the live layers alone.** A label that
+/// says `live` draws its text there, so a set of that text leaves the
+/// window's picture standing; any other prop of it, and any prop of a label
+/// that does not say so, is a change of the picture.
+#[test]
+fn a_set_of_a_live_prop_asks_for_the_live_layers_alone() {
+    let mut host = Host::new();
+    host.handle_packet(
+        def_msg(
+            1,
+            r#"{"type":"window","children":[
+                {"id":2,"type":"label","text":"0.000 s","live":true},
+                {"id":3,"type":"label","text":"name"}]}"#,
+        ),
+        from(),
+    );
+    let mut set = |id: i32, props: Vec<(&str, serde_json::Value)>| {
+        let mut effects = Vec::new();
+        let props = props.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+        assert!(host.set_props(id, props, &mut effects));
+        effects
+    };
+    assert!(matches!(
+        set(2, vec![("text", "1.250 s".into())]).as_slice(),
+        [HostEffect::RedrawLive(1)]
+    ));
+    assert!(matches!(
+        set(2, vec![("text", "1.5 s".into()), ("text_size", 2.0.into())]).as_slice(),
+        [HostEffect::Redraw(1)]
+    ));
+    assert!(matches!(
+        set(3, vec![("text", "other".into())]).as_slice(),
+        [HostEffect::Redraw(1)]
+    ));
+}

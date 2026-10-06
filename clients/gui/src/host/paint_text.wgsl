@@ -1,9 +1,9 @@
 // The `font-atlas` feature's second pipeline: the same 2D geometry as
 // `paint.wgsl`, with a coverage sample from the window's glyph atlas.
 //
-// One texture and one bind group per window, never per widget -- which is what
-// keeps a document's text one draw call, the property the flat batch was built
-// for. The atlas is a single-channel coverage sheet: the red channel is the
+// One texture and one bind group per window, never per widget and never per
+// batch -- which is what keeps a document's text one draw call a batch, the
+// property the flat batch was built for. The atlas is a single-channel coverage sheet: the red channel is the
 // glyph's alpha, the vertex color is the ink.
 
 struct VsIn {
@@ -32,6 +32,10 @@ fn vs_main(in: VsIn) -> VsOut {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let coverage = textureSample(atlas_tex, atlas_smp, in.uv).r;
+    // The coordinates are texels of the sheet, which grows: a fraction of it
+    // would name another place after every growth, and the vertices a window
+    // has already uploaded would with it.
+    let size = vec2<f32>(textureDimensions(atlas_tex));
+    let coverage = textureSample(atlas_tex, atlas_smp, in.uv / size).r;
     return vec4<f32>(in.color.rgb, in.color.a * coverage);
 }

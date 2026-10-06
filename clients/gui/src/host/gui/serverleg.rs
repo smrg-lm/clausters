@@ -143,7 +143,7 @@ impl App {
                     ws.spectrograms
                         .insert((want.widget_id, SlotKey::SELF), slot);
                 }
-                ws.gpu.window.request_redraw();
+                ws.repaint();
                 self.finish_placement(want, frames, sample_rate);
                 continue;
             }
@@ -176,7 +176,7 @@ impl App {
                     frame::waveform_slot(data.clone()),
                 );
             }
-            ws.gpu.window.request_redraw();
+            ws.repaint();
             if let Some(w) = self
                 .host
                 .window_def_mut(want.def_id)
@@ -516,7 +516,7 @@ impl Front for App {
 
     fn redraw_window(&self, def_id: i32) {
         if let Some(ws) = self.windows.get(&def_id) {
-            ws.gpu.window.request_redraw();
+            ws.repaint();
         }
     }
 

@@ -195,6 +195,31 @@ impl Mesh {
         self.verts.is_empty()
     }
 
+    /// Whether this batch draws what `other` does, to within `slack` device
+    /// pixels: the same vertices in the same colors, none of them further than
+    /// that from its counterpart.
+    ///
+    /// What a frame asks of a live layer before drawing it again: a line that
+    /// moved a hundredth of a pixel since the picture on screen is that
+    /// picture, and a frame drawn for it is spent on nothing a reader can see.
+    pub fn near(&self, other: &Mesh, slack: f32) -> bool {
+        let same = |a: &[f32], b: &[f32], stride: usize| {
+            a.len() == b.len()
+                && a.chunks_exact(stride)
+                    .zip(b.chunks_exact(stride))
+                    .all(|(v, w)| {
+                        (v[0] - w[0]).abs() <= slack
+                            && (v[1] - w[1]).abs() <= slack
+                            && v[2..] == w[2..]
+                    })
+        };
+        #[cfg(feature = "font-atlas")]
+        if !same(&self.glyphs, &other.glyphs, FLOATS_PER_GLYPH_VERTEX) {
+            return false;
+        }
+        same(&self.verts, &other.verts, FLOATS_PER_VERTEX)
+    }
+
     /// A glyph quad: `r` in device pixels, textured with `uv` (`[u0, v0, u1,
     /// v1]` of the atlas) and tinted `color`.
     ///
@@ -693,45 +718,97 @@ pub struct Painter {
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
     num_vertices: u32,
-    /// The glyph half of this batch, when the crate was built with a
-    /// rasterizer. Absent until the batch first carries a glyph, so a build
-    /// with the feature on and no face pays no texture.
+    /// The glyph vertices of this batch, when the crate was built with a
+    /// rasterizer. Absent until the batch first carries a glyph.
     #[cfg(feature = "font-atlas")]
     text: Option<TextLayer>,
-    /// The pass this painter draws into, kept for the glyph layer's pipeline:
+    /// **The window's glyph sheet**: the textured pipeline and the window's
+    /// copy of the atlas, shared by every batch of the window
+    /// ([`Painter::sharing`]) and absent until one of them carries a letter,
+    /// so a build with the feature on and no face pays no texture.
+    #[cfg(feature = "font-atlas")]
+    sheet: std::rc::Rc<std::cell::RefCell<Option<GlyphSheet>>>,
+    /// The pass this painter draws into, kept for the glyph sheet's pipeline:
     /// it is built on the first batch that carries a letter, and it has to
     /// agree with the flat one on the format **and** the sample count.
     #[cfg(feature = "font-atlas")]
     target: crate::view::Target,
 }
 
-/// The textured pipeline and this window's copy of the glyph atlas.
+/// One batch's glyph vertices: what a [`Painter`] holds of its text, beside
+/// the sheet its window shares.
 #[cfg(feature = "font-atlas")]
 struct TextLayer {
-    pipeline: wgpu::RenderPipeline,
-    texture: wgpu::Texture,
-    bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
     num_vertices: u32,
-    /// The atlas version this texture holds: the sheet is re-uploaded only when
-    /// the shared cache has rasterized something new.
-    version: u64,
 }
 
 #[cfg(feature = "font-atlas")]
 impl TextLayer {
-    fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("glyph shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("paint_text.wgsl").into()),
+    fn new(device: &wgpu::Device) -> Self {
+        let float = std::mem::size_of::<f32>() as wgpu::BufferAddress;
+        let capacity_vertices = 6 * 256;
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("glyph vertices"),
+            size: capacity_vertices * FLOATS_PER_GLYPH_VERTEX as u64 * float,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        let side = super::font::atlas::SIDE;
+        Self {
+            vertex_buffer,
+            capacity_vertices,
+            num_vertices: 0,
+        }
+    }
+}
+
+/// **A window's glyph sheet**: the textured pipeline and the window's copy of
+/// the glyph atlas, one for all of its batches.
+///
+/// Each batch used to carry its own -- a megabyte of texture and a pipeline
+/// apiece, three and then four to a window, each copying the whole sheet
+/// again whenever the cache rasterized one new glyph. The sheet is the
+/// window's, as the comment on the shader always said; a batch holds its
+/// vertices.
+///
+/// **It is as high as the atlas is, and takes the rows that changed.** The
+/// atlas starts at a few shelves and doubles as it fills, and this texture is
+/// made again at its height when it does; between growths a sync copies from
+/// the shelf that was being filled at the last one down, since every row
+/// above it is finished.
+#[cfg(feature = "font-atlas")]
+struct GlyphSheet {
+    pipeline: wgpu::RenderPipeline,
+    bind_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    /// How many rows the texture has.
+    rows: u32,
+    /// The atlas version this texture holds: rows are copied only when the
+    /// shared cache has rasterized something new.
+    version: u64,
+    /// The atlas epoch it holds: a sheet packed again is copied whole.
+    epoch: u64,
+    /// The top of the shelf the atlas was filling when this was last synced.
+    shelf: u32,
+}
+
+#[cfg(feature = "font-atlas")]
+impl GlyphSheet {
+    /// A texture of `rows` rows and the bind group that samples it.
+    fn texture(
+        device: &wgpu::Device,
+        bind_layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        rows: u32,
+    ) -> (wgpu::Texture, wgpu::BindGroup) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("glyph atlas"),
             size: wgpu::Extent3d {
-                width: side,
-                height: side,
+                width: super::font::atlas::SIDE,
+                height: rows.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -744,6 +821,28 @@ impl TextLayer {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("glyph bind group"),
+            layout: bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        (texture, bind_group)
+    }
+
+    fn new(device: &wgpu::Device, target: crate::view::Target, rows: u32) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("glyph shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("paint_text.wgsl").into()),
+        });
         // Nearest: a glyph is rasterized at the size it draws at and its quad
         // is snapped to whole pixels, so every texel lands on its own pixel.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -770,20 +869,6 @@ impl TextLayer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
-                },
-            ],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("glyph bind group"),
-            layout: &bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
         });
@@ -839,54 +924,77 @@ impl TextLayer {
             multiview_mask: None,
             cache: None,
         });
-        let capacity_vertices = 6 * 256;
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("glyph vertices"),
-            size: capacity_vertices * FLOATS_PER_GLYPH_VERTEX as u64 * float,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let (texture, bind_group) = Self::texture(device, &bind_layout, &sampler, rows);
         Self {
             pipeline,
+            bind_layout,
+            sampler,
             texture,
             bind_group,
-            vertex_buffer,
-            capacity_vertices,
-            num_vertices: 0,
+            rows,
             // 0 is "nothing uploaded": the atlas starts at 0 too and only
             // counts up once it holds a glyph, so the first sheet is copied.
             version: 0,
+            epoch: 0,
+            shelf: 0,
         }
     }
 
-    /// Copies the shared cache's coverage sheet into this window's texture, if
-    /// this copy is behind it.
-    fn sync(&mut self, queue: &wgpu::Queue, atlas: &super::font::atlas::Atlas) {
+    /// Brings this window's texture up to the shared cache's sheet, if it is
+    /// behind it: made again at the atlas' height where that grew, and the
+    /// rows written since the last sync copied in -- all of them for a sheet
+    /// that was made or packed again.
+    fn sync(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        atlas: &super::font::atlas::Atlas,
+    ) {
         let pixels = atlas.pixels();
         if self.version == atlas.version() || pixels.is_empty() {
             return;
         }
         let side = super::font::atlas::SIDE;
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(side),
-                rows_per_image: Some(side),
-            },
-            wgpu::Extent3d {
-                width: side,
-                height: side,
-                depth_or_array_layers: 1,
-            },
-        );
+        let mut from = self.shelf;
+        if atlas.rows() != self.rows {
+            (self.texture, self.bind_group) =
+                Self::texture(device, &self.bind_layout, &self.sampler, atlas.rows());
+            self.rows = atlas.rows();
+            from = 0;
+        }
+        if self.epoch != atlas.epoch() {
+            from = 0;
+        }
+        let to = atlas.used_rows();
+        let from = from.min(to);
+        if to > from {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: from,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &pixels[(from * side) as usize..(to * side) as usize],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(side),
+                    rows_per_image: Some(to - from),
+                },
+                wgpu::Extent3d {
+                    width: side,
+                    height: to - from,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         self.version = atlas.version();
+        self.epoch = atlas.epoch();
+        self.shelf = atlas.shelf_top();
     }
 }
 
@@ -957,8 +1065,25 @@ impl Painter {
             #[cfg(feature = "font-atlas")]
             text: None,
             #[cfg(feature = "font-atlas")]
+            sheet: Default::default(),
+            #[cfg(feature = "font-atlas")]
             target,
         }
+    }
+
+    /// A painter of the same window as `other`: its own vertices, and
+    /// `other`'s glyph sheet -- one texture and one textured pipeline for
+    /// every batch a window draws.
+    pub fn sharing(device: &wgpu::Device, target: crate::view::Target, other: &Painter) -> Self {
+        #[cfg(not(feature = "font-atlas"))]
+        let _ = other;
+        #[allow(unused_mut)] // without a rasterizer there is nothing to share
+        let mut painter = Self::new(device, target);
+        #[cfg(feature = "font-atlas")]
+        {
+            painter.sheet = other.sheet.clone();
+        }
+        painter
     }
 
     /// Uploads `mesh`, converting its device-pixel positions to clip space
@@ -1015,9 +1140,7 @@ impl Painter {
             }
             return;
         }
-        let text = self
-            .text
-            .get_or_insert_with(|| TextLayer::new(device, self.target));
+        let text = self.text.get_or_insert_with(|| TextLayer::new(device));
         let mut clip = Vec::with_capacity(verts.len());
         for v in verts.as_chunks::<FLOATS_PER_GLYPH_VERTEX>().0 {
             clip.push((v[0] / fw) * 2.0 - 1.0);
@@ -1038,7 +1161,15 @@ impl Painter {
         }
         queue.write_buffer(&text.vertex_buffer, 0, bytemuck::cast_slice(&clip));
         text.num_vertices = needed as u32;
-        super::font::atlas::with(|atlas| text.sync(queue, atlas));
+        // The window's sheet, made on the first letter any of its batches
+        // carries, and brought up to what the cache has rasterized since.
+        let target = self.target;
+        super::font::atlas::with(|atlas| {
+            self.sheet
+                .borrow_mut()
+                .get_or_insert_with(|| GlyphSheet::new(device, target, atlas.rows()))
+                .sync(device, queue, atlas)
+        });
     }
 
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
@@ -1052,9 +1183,10 @@ impl Painter {
         #[cfg(feature = "font-atlas")]
         if let Some(text) = &self.text
             && text.num_vertices > 0
+            && let Some(sheet) = self.sheet.borrow().as_ref()
         {
-            pass.set_pipeline(&text.pipeline);
-            pass.set_bind_group(0, &text.bind_group, &[]);
+            pass.set_pipeline(&sheet.pipeline);
+            pass.set_bind_group(0, &sheet.bind_group, &[]);
             pass.set_vertex_buffer(0, text.vertex_buffer.slice(..));
             pass.draw(0..text.num_vertices, 0..1);
         }

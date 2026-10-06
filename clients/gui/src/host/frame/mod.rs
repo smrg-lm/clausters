@@ -758,41 +758,292 @@ pub(crate) fn channel_at(body: Rect, channels: usize, cy: f64) -> usize {
     ((rel * channels as f64) as usize).min(channels.saturating_sub(1))
 }
 
-/// **A window's three flat batches**, in the order the pass draws them, with
-/// the heavy views' texture passes between them.
+/// **A window's flat batches**, in the order the pass draws them, with the
+/// heavy views' texture passes between them, and what the window keeps of its
+/// last whole frame ([`Kept`]).
 ///
 /// - `base`: the window's widgets. The window's own textures go over it.
 /// - `over`: what the window's elements draw over their own textures (the
-///   selection, the playhead, the readout) and, with a dialog up, the scrim
-///   and the dialog's flat widgets. The dialog's textures go over it.
+///   selection, the readout) and, with a dialog up, the scrim and the dialog's
+///   flat widgets. The dialog's textures go over it.
+/// - `live`: what moves -- the lines a clock sweeps, the bars a level fills,
+///   a reading set many times a second ([`Element::draw_live`]). The one batch
+///   a tick builds again.
 /// - `top`: what the dialog's elements draw over their textures, then the
 ///   host's bands and lists, which cover everything.
 ///
 /// Two batches were enough while nothing with a texture could stand over the
 /// window: a spectrogram or a shader `canvas` inside a dialog was drawn with
 /// the window's, and so under the dialog that held it.
+///
+/// [`Element::draw_live`]: super::widget::Element::draw_live
 pub(crate) struct Batches {
     pub(crate) base: Painter,
     pub(crate) over: Painter,
+    pub(crate) live: Painter,
     pub(crate) top: Painter,
+    kept: Kept,
+    asked: Asked,
+}
+
+/// What the next frame of a window was asked for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Wanted {
+    /// Nobody of this host asked -- the platform did, or a caller that named
+    /// no reason -- so the frame is a whole one.
+    #[default]
+    Unsaid,
+    /// Only what moves: a tick found a counter or a fed value moved, or a set
+    /// wrote a live prop.
+    Live,
+    /// The picture: something it is drawn from changed.
+    Whole,
+}
+
+/// **What the next frame of a window was asked for, and by whom**: the one
+/// place the question is kept, so that a front draws the least a frame may
+/// be and never less.
+///
+/// A redraw has two kinds of cause. Something the picture is drawn from
+/// changed -- a set, a gesture, a reply, a resize -- or only what moves did.
+/// A front says which as it asks ([`want_whole`](Self::want_whole),
+/// [`want_live`](Self::want_live)), and the frame reads the answer once.
+/// **Whole wins, and so does silence**: a frame somebody asked the whole of
+/// is whole whatever a tick asked beside it, and one nobody of this host
+/// asked for -- the platform's, or a caller that named no reason -- is whole
+/// too, since a picture kept past a change nobody declared is a wrong one.
+#[derive(Default)]
+struct Asked(std::cell::Cell<Wanted>);
+
+impl Asked {
+    fn want_whole(&self) {
+        self.0.set(Wanted::Whole);
+    }
+
+    fn want_live(&self) {
+        if self.0.get() == Wanted::Unsaid {
+            self.0.set(Wanted::Live);
+        }
+    }
+
+    fn whole(&self) -> bool {
+        self.0.get() != Wanted::Live
+    }
+
+    fn drawn(&self) {
+        self.0.set(Wanted::Unsaid);
+    }
 }
 
 impl Batches {
-    /// The three batches of a surface drawing into `target`.
+    /// The batches of a surface drawing into `target`.
     pub(crate) fn new(device: &wgpu::Device, target: crate::view::Target) -> Self {
+        // One glyph sheet for the window: the batches share the first's.
+        let base = Painter::new(device, target);
         Self {
-            base: Painter::new(device, target),
-            over: Painter::new(device, target),
-            top: Painter::new(device, target),
+            over: Painter::sharing(device, target, &base),
+            live: Painter::sharing(device, target, &base),
+            top: Painter::sharing(device, target, &base),
+            base,
+            kept: Kept::default(),
+            asked: Asked::default(),
         }
     }
+
+    /// **The picture changed**: the next frame lays the window out and draws
+    /// all of it. What every redraw is unless it was asked for
+    /// [`want_live`](Self::want_live) alone.
+    pub(crate) fn want_whole(&self) {
+        self.asked.want_whole();
+    }
+
+    /// **Only what moves moved**: the next frame may keep the window's
+    /// picture and draw its live layers again -- unless something else asked
+    /// for the whole of it before that frame is drawn.
+    pub(crate) fn want_live(&self) {
+        self.asked.want_live();
+    }
+
+    /// Whether the frame about to be drawn has to be a whole one, read once
+    /// by the front that draws it. A frame nobody of this host asked for is.
+    pub(crate) fn whole_wanted(&self) -> bool {
+        self.asked.whole()
+    }
+}
+
+/// What a call to [`render`] came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Drawn {
+    /// The window laid out and drawn, all of it.
+    Whole,
+    /// The live layers drawn again over the picture the window kept.
+    Live,
+    /// Nothing: the live layers were where they are on screen.
+    Still,
+    /// Nothing, and the frame is still owed: the surface had no drawable.
+    Owed,
+}
+
+/// **What a window keeps of its last whole frame**, so that a frame drawn
+/// because a line moved builds that line and nothing else.
+///
+/// A window's picture is a function of its tree, of the host's state and of
+/// the world; of the world, the clock and the fed values are what moves on
+/// its own. Everything an element draws from those is on its live layer, so a
+/// frame asked for by a tick alone finds the rest already in the batches --
+/// the vertices on the card, the heavy views framed -- and has only to draw
+/// the live layers again, in the placements kept here.
+///
+/// The card still draws the whole window: what is kept is the work of
+/// describing it, which is where a frame's time went.
+#[derive(Default)]
+struct Kept {
+    /// Whether the batches hold the picture of the tree as it stands.
+    valid: bool,
+    /// The framebuffer that picture was laid out for.
+    size: (u32, u32),
+    /// The color it was cleared to.
+    clear: Option<wgpu::Color>,
+    /// The glyph atlas' epoch it was drawn at: a sheet packed again since
+    /// holds other glyphs where this picture's text points.
+    epoch: u64,
+    /// Where each element with a live layer was placed.
+    places: Vec<LivePlace>,
+    /// The heavy views of the window and, with a dialog up, of the dialog.
+    collected: Option<Collected>,
+    inside: Option<Collected>,
+    /// The live layer as it was last drawn.
+    live: Mesh,
+}
+
+/// The glyph atlas' epoch ([`font::atlas::epoch`]): the same for ever in a
+/// build with no rasterizer, where nothing is ever packed again.
+fn atlas_epoch() -> u64 {
+    #[cfg(feature = "font-atlas")]
+    {
+        font::atlas::epoch()
+    }
+    #[cfg(not(feature = "font-atlas"))]
+    {
+        0
+    }
+}
+
+/// **How far a live layer has to move to be drawn again**, in device pixels.
+/// A quarter: with four samples to the pixel that is the step a line's edge
+/// can show, and without them a pixel is, so nothing under it is visible.
+const LIVE_SLACK: f32 = 0.25;
+
+/// One element's placement, kept without the tree it was laid out from: the
+/// way down to its widget, and what a [`Ctx`] is made of.
+struct LivePlace {
+    /// The index of each child on the way from the root to the widget.
+    path: Vec<usize>,
+    rect: Rect,
+    clip: Option<Rect>,
+    scale: f32,
+    metrics: Metrics,
+    indent: f32,
+    ink: Ink,
+}
+
+/// The placements of `placed[range]` that have a live layer, or `None` when
+/// one of them cannot be found again from the root -- a frame that keeps
+/// nothing, then, and is drawn whole the next time too.
+fn live_places(
+    placed: &[layout::Placed<'_>],
+    range: std::ops::Range<usize>,
+) -> Option<Vec<LivePlace>> {
+    let mut out = Vec::new();
+    for i in range {
+        let p = &placed[i];
+        let WidgetKind::Custom(el) = &p.widget.kind else {
+            continue;
+        };
+        if !el.needs().live {
+            continue;
+        }
+        let mut path = Vec::new();
+        let mut at = p;
+        while let Some(parent) = at.parent.and_then(|n| placed.get(n)) {
+            let n = parent
+                .widget
+                .children
+                .iter()
+                .position(|child| std::ptr::eq(child, at.widget))?;
+            path.push(n);
+            at = parent;
+        }
+        path.reverse();
+        out.push(LivePlace {
+            path,
+            rect: p.rect,
+            clip: p.clip,
+            scale: p.scale,
+            metrics: p.metrics,
+            indent: p.indent,
+            ink: ink_of(p),
+        });
+    }
+    Some(out)
+}
+
+/// **The live layers of the elements in `places`**, into `mesh`: each element
+/// found again in `tree` and handed the placement it was laid out in, with
+/// the world as it is now.
+fn draw_live_places(
+    mesh: &mut Mesh,
+    tree: &Widget,
+    places: &[LivePlace],
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    for place in places {
+        let Some(widget) = place.path.iter().try_fold(tree, |w, &n| w.children.get(n)) else {
+            continue;
+        };
+        let WidgetKind::Custom(el) = &widget.kind else {
+            continue;
+        };
+        mesh.set_clip(place.clip);
+        mesh.set_ink(place.ink);
+        let th = widget.theme.as_deref().unwrap_or(theme);
+        let m = &place.metrics;
+        let ctx = Ctx {
+            world: &inputs.world,
+            metrics: m,
+            rect: place.rect,
+            indent: place.indent,
+            scale: place.scale,
+            clip: place.clip,
+            time: widget.id.zip(widget.kind.editor()).and_then(|(id, e)| {
+                inputs
+                    .world
+                    .timelines
+                    .space_of(id, e.link, Some(inputs.world.clocks.at(Some(id))))
+            }),
+            focused: widget.id.is_some() && widget.id == inputs.focused,
+            hovered: widget.id.is_some() && widget.id == inputs.popups.and_then(|o| o.hover),
+            clock: inputs.world.clocks.at(widget.id),
+        };
+        el.draw_live(&mut Draw::new(mesh, m, th), &ctx);
+    }
+    mesh.set_clip(None);
+    mesh.set_ink(Ink::default());
 }
 
 /// Renders `tree` into `gpu`'s surface, using the window's `batches` (flat
 /// geometry under, between and over the heavy views), the `waveforms`/
 /// `spectrograms`/`canvases` GPU resources, plus `inputs` for the live values.
-/// One immutable mesh-building pass over the placed widgets, then the GPU
-/// uploads and the single render pass.
+///
+/// **A whole frame** is one immutable mesh-building pass over the placed
+/// widgets, then the GPU uploads and the single render pass. **A frame asked
+/// for what moves alone** (`whole` false, and a picture kept to draw it over)
+/// builds the live layers again and nothing else -- and when they are where
+/// they were on screen, it draws nothing at all, so how often a window is
+/// drawn follows how far its lines moved.
+///
+/// Answers what the frame came to ([`Drawn`]).
 #[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
 pub(crate) fn render(
     gpu: &mut Gpu,
@@ -804,13 +1055,215 @@ pub(crate) fn render(
     tree: &Widget,
     inputs: &FrameInputs,
     theme: &Theme,
-) {
+    whole: bool,
+) -> Drawn {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     // **The host's own chrome draws in the window's theme**: the status bar,
     // the menu bar, the lists and the tip that open over the tree, the scrim
     // behind a dialog. They belong to no widget, so they used to take the
     // host's theme and ignore a window that set one of its own.
     let theme = tree.theme.as_deref().unwrap_or(theme);
+    // **Only what moves**: the picture is in the batches, so the live layers
+    // are drawn again where they were placed -- built first, since a glyph
+    // one of them needs may be the one the atlas has to be packed again for,
+    // and a picture from before that is not kept.
+    let live = (!whole
+        && batches.kept.valid
+        && batches.kept.size == (fb_w, fb_h)
+        && batches.kept.epoch == atlas_epoch())
+    .then(|| {
+        let mut live = Mesh::new();
+        if let Some(collected) = &batches.kept.collected {
+            draw_timeline_heads(&mut live, collected, waveforms, spectrograms, inputs, theme);
+        }
+        draw_live_places(&mut live, tree, &batches.kept.places, inputs, theme);
+        live
+    })
+    .filter(|_| batches.kept.epoch == atlas_epoch());
+    let drawn = if let Some(live) = live {
+        // One that is where it was -- a line that crossed no fraction of a
+        // pixel worth showing, a meter at rest -- is the frame already on
+        // screen.
+        if live.near(&batches.kept.live, LIVE_SLACK) {
+            batches.asked.drawn();
+            return Drawn::Still;
+        }
+        batches
+            .live
+            .upload(&gpu.device, &gpu.queue, &live, fb_w, fb_h);
+        batches.kept.live = live;
+        Drawn::Live
+    } else {
+        draw_whole(
+            gpu,
+            renderers,
+            batches,
+            waveforms,
+            spectrograms,
+            canvases,
+            tree,
+            inputs,
+            theme,
+        );
+        Drawn::Whole
+    };
+
+    let frame = match gpu.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+        _ => {
+            // No drawable this turn (outdated/timed-out surface -- e.g. the
+            // compositor stopped consuming a covered window's frames):
+            // reconfigure and ask for another redraw, so the frame that was
+            // requested is not silently dropped and the window never shows
+            // stale state once it is presentable again. What it was asked for
+            // stands: the batches already hold it.
+            gpu.surface.configure(&gpu.device, &gpu.config);
+            gpu.window.request_redraw();
+            return Drawn::Owed;
+        }
+    };
+    let target = frame
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("gui frame"),
+        });
+    // Antialiasing is a property of the **attachment**, so it is the whole of
+    // what MSAA changes here: with it on, every pipeline draws into the
+    // multisampled texture and the GPU resolves that into the surface as the
+    // pass ends. One flag, one texture per window, nothing per widget.
+    let (attachment, resolve_target) = match gpu.msaa_view() {
+        Some(ms) => (ms, Some(&target)),
+        None => (&target, None),
+    };
+    let fb = (fb_w, fb_h);
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("gui pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: attachment,
+                resolve_target,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(
+                        batches.kept.clear.unwrap_or_else(|| clear_color(theme)),
+                    ),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        batches.base.draw(&mut pass);
+        if let Some(collected) = &batches.kept.collected {
+            draw_heavy(&mut pass, renderers, spectrograms, canvases, collected, fb);
+        }
+        batches.over.draw(&mut pass);
+        batches.live.draw(&mut pass);
+        if let Some(inside) = &batches.kept.inside {
+            draw_heavy(&mut pass, renderers, spectrograms, canvases, inside, fb);
+        }
+        batches.top.draw(&mut pass);
+    }
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    // The winit present contract: lets winit attach the compositor frame
+    // callback to this commit, so later `request_redraw`s are delivered (and
+    // throttled) correctly -- without it, Wayland redraw delivery can stall on
+    // an unfocused or covered window until the compositor repaints it anyway.
+    gpu.window.pre_present_notify();
+    frame.present();
+    batches.asked.drawn();
+    drawn
+}
+
+/// **A whole frame's picture**, into the batches: the tree laid out, every
+/// widget drawn, the heavy views framed -- and what the next frames may keep
+/// of it ([`Kept`]).
+#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
+fn draw_whole(
+    gpu: &mut Gpu,
+    renderers: &mut Renderers,
+    batches: &mut Batches,
+    waveforms: &mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &mut HashMap<i32, CanvasView>,
+    tree: &Widget,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    // **Drawn again if the glyph atlas was packed again under it**: the text
+    // drawn before that names texels that now hold other glyphs, and a
+    // picture is kept, so it would stay wrong for as long as only lines
+    // moved. The second pass finds what it needs already on the new sheet.
+    let epoch = atlas_epoch();
+    let mut picture = picture(tree, inputs, theme, waveforms, spectrograms, (fb_w, fb_h));
+    if atlas_epoch() != epoch {
+        picture = self::picture(tree, inputs, theme, waveforms, spectrograms, (fb_w, fb_h));
+    }
+    for (batch, mesh) in [
+        (&mut batches.base, &picture.base),
+        (&mut batches.over, &picture.over),
+        (&mut batches.live, &picture.live),
+        (&mut batches.top, &picture.top),
+    ] {
+        batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
+    }
+    for heavy in std::iter::once(&picture.collected).chain(picture.inside.as_ref()) {
+        upload_heavy(
+            gpu,
+            renderers,
+            spectrograms,
+            canvases,
+            heavy,
+            inputs,
+            (fb_w, fb_h),
+        );
+    }
+    batches.kept = Kept {
+        valid: picture.kept,
+        size: (fb_w, fb_h),
+        clear: Some(clear_color(theme)),
+        epoch: atlas_epoch(),
+        places: std::mem::take(&mut picture.places),
+        collected: Some(picture.collected),
+        inside: picture.inside,
+        live: picture.live,
+    };
+}
+
+/// A whole frame as triangles and snapshots, before any of it reaches a card.
+struct Picture {
+    base: Mesh,
+    over: Mesh,
+    live: Mesh,
+    top: Mesh,
+    /// The heavy views of the window and, with a dialog up, of the dialog.
+    collected: Collected,
+    inside: Option<Collected>,
+    /// Where each element with a live layer was placed.
+    places: Vec<LivePlace>,
+    /// Whether the frames after this one may keep it: the live batch is where
+    /// the live layers belong, and every one of them can be found again.
+    kept: bool,
+}
+
+/// **The picture of `tree` in a framebuffer of `fb`**: laid out, and drawn
+/// into the four meshes of a frame. No card is touched, so it is what a test
+/// reads -- and what says, mesh against mesh, that nothing but the live layer
+/// follows the clock.
+fn picture(
+    tree: &Widget,
+    inputs: &FrameInputs,
+    theme: &Theme,
+    waveforms: &HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    (fb_w, fb_h): (u32, u32),
+) -> Picture {
     let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     // The status band comes off the top of the frame, before anything is
     // placed: the same call the hit test makes (`Host::content_area`), so the
@@ -825,6 +1278,7 @@ pub(crate) fn render(
     let placed = layout::layout_on(area, tree, inputs.metrics);
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
+    let mut live = Mesh::new();
     let mut top = Mesh::new();
     // **A dialog is the tail of the placements** (`layout` places it last), and
     // it is drawn apart: everything before it is the window as it always was,
@@ -845,14 +1299,52 @@ pub(crate) fn render(
     draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
     draw_element_overlays(&mut over, base, inputs, theme);
     draw_bars(&mut over, base, inputs, theme);
+    // **What moves, apart**: the window's live layers, kept by the placements
+    // they were drawn in so the next tick can draw them alone.
+    let places = live_places(&placed, 0..base.len());
 
     let inside = if dialog.is_empty() {
+        draw_timeline_heads(
+            &mut live,
+            &collected,
+            waveforms,
+            spectrograms,
+            inputs,
+            theme,
+        );
+        draw_live_places(
+            &mut live,
+            tree,
+            places.as_deref().unwrap_or_default(),
+            inputs,
+            theme,
+        );
         None
     } else {
         // The window behind a dialog is out of reach, and looks it: a scrim
         // over the work area, then the dialog's own picture built on the side
         // and laid over it -- its flat widgets, then its textures, then what
         // its elements draw over themselves.
+        //
+        // What moves in the window is under the scrim with the rest of it, and
+        // what moves in the dialog is over the dialog's own pictures: neither
+        // is where a live batch is drawn, so with a dialog up nothing is kept
+        // and every frame is a whole one.
+        draw_timeline_heads(
+            &mut over,
+            &collected,
+            waveforms,
+            spectrograms,
+            inputs,
+            theme,
+        );
+        draw_live_places(
+            &mut over,
+            tree,
+            places.as_deref().unwrap_or_default(),
+            inputs,
+            theme,
+        );
         let mut under = Mesh::new();
         let mut above = Mesh::new();
         let inside = collect_widgets(dialog, &mut under, inputs, theme);
@@ -869,6 +1361,15 @@ pub(crate) fn render(
         draw_static_meshes(&mut under, &mut above, &inside, inputs, theme, tree);
         draw_element_overlays(&mut above, dialog, inputs, theme);
         draw_bars(&mut above, dialog, inputs, theme);
+        draw_timeline_heads(&mut above, &inside, waveforms, spectrograms, inputs, theme);
+        let within = live_places(&placed, base.len()..placed.len());
+        draw_live_places(
+            &mut above,
+            tree,
+            within.as_deref().unwrap_or_default(),
+            inputs,
+            theme,
+        );
         over.set_clip(None);
         over.set_ink(Ink::default());
         over.rect(area, with_alpha(theme.background, 0.6));
@@ -892,102 +1393,20 @@ pub(crate) fn render(
     if let Some(popups) = inputs.popups {
         draw_popups(&mut top, popups, tree, &placed, window, area, inputs, theme);
     }
-    for (batch, mesh) in [
-        (&mut batches.base, &mut mesh),
-        (&mut batches.over, &mut over),
-        (&mut batches.top, &mut top),
-    ] {
+    for mesh in [&mut mesh, &mut over, &mut live, &mut top] {
         mesh.set_clip(None);
         mesh.set_ink(Ink::default());
-        batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
     }
-    for heavy in std::iter::once(&collected).chain(inside.as_ref()) {
-        upload_heavy(
-            gpu,
-            renderers,
-            spectrograms,
-            canvases,
-            heavy,
-            inputs,
-            (fb_w, fb_h),
-        );
+    Picture {
+        base: mesh,
+        over,
+        live,
+        top,
+        kept: inside.is_none() && places.is_some(),
+        places: places.unwrap_or_default(),
+        collected,
+        inside,
     }
-
-    let frame = match gpu.surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-        _ => {
-            // No drawable this turn (outdated/timed-out surface -- e.g. the
-            // compositor stopped consuming a covered window's frames):
-            // reconfigure and ask for another redraw, so the frame that was
-            // requested is not silently dropped and the window never shows
-            // stale state once it is presentable again.
-            gpu.surface.configure(&gpu.device, &gpu.config);
-            gpu.window.request_redraw();
-            return;
-        }
-    };
-    let target = frame
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("gui frame"),
-        });
-    // Antialiasing is a property of the **attachment**, so it is the whole of
-    // what MSAA changes here: with it on, every pipeline draws into the
-    // multisampled texture and the GPU resolves that into the surface as the
-    // pass ends. One flag, one texture per window, nothing per widget.
-    let (attachment, resolve_target) = match gpu.msaa_view() {
-        Some(ms) => (ms, Some(&target)),
-        None => (&target, None),
-    };
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("gui pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: attachment,
-                resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear_color(theme)),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        batches.base.draw(&mut pass);
-        draw_heavy(
-            &mut pass,
-            renderers,
-            spectrograms,
-            canvases,
-            &collected,
-            (fb_w, fb_h),
-        );
-        batches.over.draw(&mut pass);
-        if let Some(inside) = &inside {
-            draw_heavy(
-                &mut pass,
-                renderers,
-                spectrograms,
-                canvases,
-                inside,
-                (fb_w, fb_h),
-            );
-        }
-        batches.top.draw(&mut pass);
-    }
-    gpu.queue.submit(std::iter::once(encoder.finish()));
-    // The winit present contract: lets winit attach the compositor frame
-    // callback to this commit, so later `request_redraw`s are delivered (and
-    // throttled) correctly -- without it, Wayland redraw delivery can stall on
-    // an unfocused or covered window until the compositor repaints it anyway.
-    gpu.window.pre_present_notify();
-    frame.present();
 }
 
 /// Pushes this frame's textures and uniforms to the heavy views in
@@ -1213,6 +1632,184 @@ pub(crate) fn framing_of(r: Rect, fb_w: u32, fb_h: u32) -> Framing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The picture of window 1 of a host holding `json`, with every playhead
+    /// reading `clock` and the control buses reading `level`.
+    fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
+        use crate::host::world::HeadClocks;
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        /// Every control bus at one value: a meter's level, moved by a test.
+        struct Flat(f32);
+        impl crate::host::BusSource for Flat {
+            fn control(&self, _index: usize) -> f32 {
+                self.0
+            }
+        }
+
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(json.into())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let bus = Flat(level);
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                bus: Some(&bus),
+                clocks: HeadClocks::uniform(clock),
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        picture(
+            host.window_def(1).expect("the window is defined"),
+            &inputs,
+            &host.theme,
+            &HashMap::new(),
+            &HashMap::new(),
+            (800, 600),
+        )
+    }
+
+    /// A window of everything a clock or a level moves that is drawn into
+    /// the mesh: a roll and a page, each anchored, a metered multitrack, and
+    /// a clock's reading beside them.
+    const MOVING: &str = r#"{"type":"window","children":[
+        {"id":2,"type":"label","text":"0.000 s","live":true,"h":20},
+        {"id":3,"type":"notes","notes":[0.0,50.0,60.0,100.0,0.0],
+         "playhead_at":0,"sample_rate":48000},
+        {"id":4,"type":"score","playhead_at":0,"vb":[100,100],"prims":[],
+         "cursors":[{"t":0,"x":10,"y0":10,"y1":90},{"t":500,"x":60,"y0":10,"y1":90}]},
+        {"id":5,"type":"multitrack","playhead_at":0,
+         "tracks":["one","",100,0,0,1.0,1],"meters":["one",10,12,2],
+         "clips":["a","one",0,48000,0,"a",-1]}]}"#;
+
+    /// **Nothing but the live layer follows the clock or a level.** The
+    /// window's picture -- its base, what is drawn over its textures, the
+    /// host's own bands -- is the same triangles wherever the transport is
+    /// and whatever a meter reads, which is what lets a tick keep it; and the
+    /// live layer is not, which is what a tick draws.
+    #[test]
+    fn only_the_live_layer_follows_the_clock_and_the_levels() {
+        let still = picture_at(MOVING, 0.0, 0.0);
+        assert!(still.kept, "nothing here keeps a frame from being kept");
+        assert!(
+            !still.places.is_empty(),
+            "the elements that move are placed for the next tick"
+        );
+        for (what, clock, level) in [("the clock", 24_000.0, 0.0), ("a level", 0.0, 0.5)] {
+            let moved = picture_at(MOVING, clock, level);
+            assert!(
+                still.base.near(&moved.base, 0.0),
+                "the window's picture does not read {what}"
+            );
+            assert!(
+                still.over.near(&moved.over, 0.0),
+                "nor does what is drawn over its textures ({what})"
+            );
+            assert!(still.top.near(&moved.top, 0.0), "nor the host's bands");
+            assert!(
+                !still.live.near(&moved.live, LIVE_SLACK),
+                "the live layer follows {what}"
+            );
+        }
+    }
+
+    /// **The live layers drawn again are the live layers of a whole frame.**
+    /// A tick finds each element by the way down to it and hands it the
+    /// placement it was laid out in; what comes out is what a whole frame at
+    /// the same clock draws there, so a kept picture and a fresh one cannot
+    /// be told apart.
+    #[test]
+    fn a_tick_draws_the_live_layers_a_whole_frame_would() {
+        use crate::host::world::HeadClocks;
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(MOVING.into())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let tree = host.window_def(1).unwrap();
+        let at = |clock: f64| FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                clocks: HeadClocks::uniform(clock),
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let none = (HashMap::new(), HashMap::new());
+        let kept = picture(tree, &at(0.0), &host.theme, &none.0, &none.1, (800, 600));
+        let whole = picture(
+            tree,
+            &at(24_000.0),
+            &host.theme,
+            &none.0,
+            &none.1,
+            (800, 600),
+        );
+        let mut tick = Mesh::new();
+        draw_timeline_heads(
+            &mut tick,
+            &kept.collected,
+            &none.0,
+            &none.1,
+            &at(24_000.0),
+            &host.theme,
+        );
+        draw_live_places(&mut tick, tree, &kept.places, &at(24_000.0), &host.theme);
+        assert!(tick.near(&whole.live, 0.0));
+    }
+
+    /// **With a dialog up nothing is kept.** What moves in the window is
+    /// under the scrim and what moves in the dialog is over the dialog's own
+    /// pictures, and neither is where the live batch is drawn.
+    #[test]
+    fn a_window_with_a_dialog_up_keeps_no_picture() {
+        let dialog = picture_at(
+            r#"{"type":"window","children":[
+                {"id":3,"type":"notes","notes":[0.0,50.0,60.0,100.0,0.0],"playhead_at":0},
+                {"id":9,"type":"layout","modal":true,"title":"t","children":[
+                    {"id":10,"type":"label","text":"x"}]}]}"#,
+            0.0,
+            0.0,
+        );
+        assert!(!dialog.kept);
+        assert!(dialog.live.is_empty(), "its lines are under the scrim");
+    }
+
+    /// **A frame is the least it may be and never less.** Asked for what
+    /// moves alone it may keep the picture; asked for the whole by anyone, or
+    /// by nobody of this host, it is whole -- and a tick asking beside a set
+    /// does not take the set's frame away.
+    #[test]
+    fn a_frame_is_whole_unless_only_a_tick_asked_for_it() {
+        let asked = Asked::default();
+        assert!(asked.whole(), "nobody asked: the platform's frame is whole");
+        asked.want_live();
+        assert!(!asked.whole(), "a tick alone asks for what moves");
+        asked.want_whole();
+        asked.want_live();
+        assert!(asked.whole(), "a set beside a tick is still drawn whole");
+        asked.drawn();
+        assert!(asked.whole(), "and the next one starts from nobody asking");
+    }
 
     /// The viewport is the rect **intersected** with the framebuffer, not its
     /// origin clamped into it: a lane starting above the window keeps its far

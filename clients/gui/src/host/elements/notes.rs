@@ -640,6 +640,22 @@ impl Element for Notes {
         self.draw_axis_chrome(d, ctx, r.grid, &nav, rate);
     }
 
+    /// **The playhead**: the one line of a roll a clock moves, down the grid
+    /// at where the music is.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        let Some(pos) = ctx.time.and_then(|time| time.head) else {
+            return;
+        };
+        let grid = self.regions(ctx.rect, ctx.indent, ctx.metrics).grid;
+        let nav = self.view(ctx.time);
+        if pos < nav.start || pos > nav.start + nav.len {
+            return;
+        }
+        let x = (grid.x as f64 + (pos - nav.start) / nav.len.max(1.0) * grid.w as f64) as f32;
+        let (mesh, m, theme) = d.parts();
+        mesh.rect(Rect::new(x, grid.y, m.trace_w, grid.h), theme.playhead);
+    }
+
     fn info(&self) -> Vec<(String, Value)> {
         // Each list as the JSON string its own `/gui_set` accepts: a query
         // gives back exactly what a set would take.
@@ -686,6 +702,9 @@ impl Element for Notes {
             // carries its own anchor is the one that can answer.
             clock: self.editor.playhead_at >= 0.0,
             midi: self.midi_in,
+            // The playhead is the whole of what a clock moves here, and it is
+            // on the live layer.
+            live: true,
             ..Needs::default()
         }
     }
@@ -1260,16 +1279,17 @@ impl Notes {
             self.editor.value_range(),
             crate::host::graphics::selection::Vertical::Pitch(axis),
         );
-        // The position cursor first, then the playhead over it: two lines that
-        // mean two things, and where they coincide the music's is the one that
-        // reads.
-        for (pos, color) in [(time.cursor, theme.cursor), (time.head, theme.playhead)] {
-            if let Some(pos) = pos
-                && pos >= nav.start
-                && pos <= nav.start + nav.len
-            {
-                mesh.rect(Rect::new(to_x(pos), grid.y, m.trace_w, grid.h), color);
-            }
+        // The position cursor here, and the playhead over it on the live
+        // layer ([`Element::draw_live`]): two lines that mean two things, and
+        // where they coincide the music's is the one that reads.
+        if let Some(pos) = time.cursor
+            && pos >= nav.start
+            && pos <= nav.start + nav.len
+        {
+            mesh.rect(
+                Rect::new(to_x(pos), grid.y, m.trace_w, grid.h),
+                theme.cursor,
+            );
         }
         // The readout, in the grid's bottom-right corner: what is under the
         // pointer -- a curve's label and value, a note's pitch, velocity and

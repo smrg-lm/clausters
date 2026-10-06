@@ -269,8 +269,31 @@ impl CanvasSlot {
             .unwrap_or((1, 1))
     }
 
+    /// **The canvas' picture changed**: asks for a whole frame. What every
+    /// redraw of this front is, but a tick's that found only a line moved.
     pub(super) fn request_redraw(&self) {
+        if let Some(render) = &self.render {
+            render.batches.want_whole();
+        }
         self.window.request_redraw();
+    }
+
+    /// **Only what moves moved** -- a playhead's counter, a fed value, a
+    /// reading written as a live prop: asks for a frame that may keep the
+    /// canvas' picture and draw its live layers again.
+    pub(super) fn request_redraw_live(&self) {
+        if let Some(render) = &self.render {
+            render.batches.want_live();
+        }
+        self.window.request_redraw();
+    }
+
+    /// Whether the frame about to be drawn has to be a whole one. A canvas
+    /// whose GPU has not arrived has kept nothing, so its first is.
+    pub(super) fn whole_wanted(&self) -> bool {
+        self.render
+            .as_ref()
+            .is_none_or(|render| render.batches.whole_wanted())
     }
 }
 
@@ -401,10 +424,14 @@ impl WebApp {
         // reload was served would fill from nothing and leave the stale picture
         // on the canvas.
         self.reload_bulk(def);
+        // What this frame was asked for: the canvas' picture, or only what
+        // moves over the one it kept.
+        let whole = self.canvases.get(&def).is_none_or(CanvasSlot::whole_wanted);
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it -- a canvas with nothing live in it never ticks.
-        if let (Some(slot), Some(tree)) =
-            (self.canvases.get_mut(&def), self.host.window_def_mut(def))
+        if whole
+            && let (Some(slot), Some(tree)) =
+                (self.canvases.get_mut(&def), self.host.window_def_mut(def))
         {
             let extents = refresh_slots(slot, tree);
             self.host.apply_extents(extents);
@@ -455,7 +482,8 @@ impl WebApp {
         // costs a walk and compiles only what is missing. Without it the whole
         // widget was silent: it laid out, drew its label, and left its own
         // rectangle empty, on a page with no error anywhere.
-        for widget in tree.descendants() {
+        // (A frame of what moves alone draws no view it did not already have.)
+        for widget in tree.descendants().filter(|_| whole) {
             if let Some(SlotKind::Shader { source }) = widget.kind.needs().slot
                 && let Some(id) = widget.id
                 && !render.canvases.contains_key(&id)
@@ -476,6 +504,7 @@ impl WebApp {
             tree,
             &inputs,
             theme,
+            whole,
         );
         // The frame is drawn: the host's status log can be let go of, so the
         // fetch below has this canvas' host to itself. (`inputs` borrows it

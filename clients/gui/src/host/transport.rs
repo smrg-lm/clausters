@@ -124,7 +124,8 @@ fn handle(
                 diag::info!("gui_def {id}: window requested (headless front: not opening a window)")
             }
             HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
-            HostEffect::Redraw(_) => {} // nothing to repaint headless
+            // nothing to repaint headless
+            HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
         }
     }
 }

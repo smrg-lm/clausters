@@ -179,11 +179,18 @@ impl Host {
         {
             let mut changed = false;
             let mut styled = false;
+            // Whether every prop written is one the widget draws on its live
+            // layer alone: the window's picture then stands as it is.
+            let mut live = true;
             if let Some(widget) = tree.find_mut(id) {
                 is_timeline = widget.is_timeline();
                 span_before = widget.kind.content_span();
                 for (k, v) in &props {
                     if !(is_timeline && timeline::is_timeline_key(k)) {
+                        live &= matches!(
+                            &widget.kind,
+                            widget::WidgetKind::Custom(el) if el.live_prop(k)
+                        );
                         // The generic place props (`w`/`h`/`weight`/`x`/`y`)
                         // and the style props (`theme`/`color`) apply to any
                         // widget; everything else is the kind's own.
@@ -206,7 +213,11 @@ impl Host {
                 widget::resolve_style(tree, &Arc::new(self.theme.clone()));
             }
             if changed {
-                effects.push(HostEffect::Redraw(root));
+                effects.push(if live && !styled {
+                    HostEffect::RedrawLive(root)
+                } else {
+                    HostEffect::Redraw(root)
+                });
             }
         }
         if is_timeline {

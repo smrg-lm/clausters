@@ -86,6 +86,25 @@ pub(crate) fn tree_is_fed(widget: &Widget) -> bool {
     })
 }
 
+/// Whether a tree holds something fed live that **draws it into the window's
+/// picture** -- an element that reads a bus, a level or a tap, or follows the
+/// clock on its own, and does not keep that to its live layer
+/// ([`Needs::live`](super::widget::Needs::live)).
+///
+/// The difference a tick reads: such a window is drawn whole on every one,
+/// as every fed window was, and one whose fed elements are all on their live
+/// layers keeps its picture and has those drawn again.
+pub(crate) fn tree_repaints(widget: &Widget) -> bool {
+    widget.descendants().any(|w| {
+        let needs = w.kind.needs();
+        !needs.live
+            && (needs.animated
+                || !needs.buses.is_empty()
+                || !needs.levels.is_empty()
+                || !needs.taps.is_empty())
+    })
+}
+
 /// Whether `widget` shows a live playhead -- so its window must animate, the
 /// line tracking the engine sample clock every frame.
 ///
@@ -681,6 +700,21 @@ mod tests {
                 {"id":6,"type":"meter","bus":0}]}"#,
         );
         assert!(tree_is_fed(&metered), "a meter is");
+        // **Fed, and still kept**: a multitrack's meters are fed on every
+        // tick and drawn on its live layer, so its window keeps its picture;
+        // a `meter` widget draws its level into the picture, and its window
+        // is drawn whole.
+        let tracks = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"multitrack","tracks":["one","",100,0,0,1.0,1],
+                 "meters":["one",10,12,2]}]}"#,
+        );
+        assert!(tree_is_fed(&tracks) && !tree_repaints(&tracks));
+        assert!(tree_repaints(&metered));
+        assert!(
+            !tree_repaints(&page),
+            "a page's cursor is on its live layer"
+        );
 
         let mut host = Host::new();
         let at = |position: f64| HeadClocks::uniform(position);

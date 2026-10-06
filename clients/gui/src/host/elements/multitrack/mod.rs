@@ -419,6 +419,9 @@ impl Element for Multitrack {
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         self.paint(d, ctx)
     }
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        self.paint_live(d, ctx)
+    }
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.press_at(at, input)
     }
@@ -503,6 +506,9 @@ impl Element for Multitrack {
             // has to be told: an anchored playhead moves with no message and
             // nothing else would ask for the frame it moves on.
             clock: self.editor.playhead_at >= 0.0,
+            // The meters and the playhead are the whole of what moves here,
+            // and both are on the live layer.
+            live: true,
             ..Needs::default()
         }
     }

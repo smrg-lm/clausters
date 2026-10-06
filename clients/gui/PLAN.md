@@ -7863,7 +7863,7 @@ finished work, where a pending item reads as done.
   `/transport_query` for each transport a visible playhead reads. The
   monitor names its take's view, and the clients name the window.
 
-- ⬜ **A window repaints whole for a line that moves in one view** *(the
+- ✅ **A window repaints whole for a line that moves in one view** *(the
   user, 2026-09-24, with the head clock per view)*. A frame is the window's:
   every view is redrawn while any playhead in it moves. Now that the host
   knows which views draw a moving line and from which counter, a frame could
@@ -7879,6 +7879,42 @@ finished work, where a pending item reads as done.
   millisecond, so the entry waits until a heavier window measures worse. The
   multitrack's playhead is in the base mesh, not the overlay, so splitting it
   out is part of that design.)*
+
+  **Built 2026-10-06** *(the user: "son optimizaciones importantes")*: **a
+  window keeps its picture, and a tick draws what moves.** A frame is four
+  batches -- base, over, **live**, top -- and an element draws everything a
+  clock or a fed value moves on its live layer (`Element::draw_live`,
+  `Needs::live`): the playhead of a timeline view, of a roll and of a
+  multitrack, a multitrack's meters, a page's cursor. A front says what each
+  redraw was asked for (`Batches::want_whole`, `want_live`), and a frame asked
+  for what moves alone builds the live mesh from the placements the last
+  whole frame kept and uploads only that; when the live mesh is where it was
+  to a quarter of a pixel it draws **nothing**, so the rate follows how far a
+  line moved. A reading set many times a second is a live prop: a `label`
+  with `live` draws its text there, and a `/gui_set` of it asks for the live
+  layers alone (`HostEffect::RedrawLive`) -- the multitrack's clock is one,
+  which is what lets its window keep its picture while it plays.
+  - **Measured** (release, the same machine, CPU time of the process). The
+    standalone multitrack session, host with its server and audio: **9.5 % ->
+    2.8 %** of a core at rest and **14.8 % -> 8.8 %** playing; at rest every
+    tick finds nothing moved (32 a second at 0.045 ms, where there were 30
+    whole frames), and playing, a frame is the live layers alone. The score
+    editor opened from a client, the host process alone: **11.2 % -> 1.1 %**
+    playing, 0.8 % -> 0.7 % at rest.
+  - **What is kept is the describing, not the drawing.** The card still draws
+    the whole window, from buffers it already holds, into a cleared pass:
+    nothing tracks a region, and a swapchain keeps no picture to draw over.
+    An offscreen copy of the picture, blitted under the live layer, is what
+    would save the card's own work; nothing measured asks for it yet (the
+    live frame's remaining 0.8 ms is the pass and the present).
+  - **Whole wins, and silence is whole.** A frame the platform asked for, a
+    window with a dialog up (its lines are under the scrim) and a picture
+    drawn before the glyph atlas was packed again are drawn whole. An element
+    that reads a bus, a level or a tap and does not say `live` -- a `meter`, a
+    scope, a shader `canvas` -- makes its window repaint every tick, as it
+    did; moving their live parts over is one element at a time.
+  - **The playhead is the top of its view now**, over the selection and the
+    readout it used to be drawn among: it is on a layer of its own.
 
 The entries below are one audit of the host's orchestration layer
 *(2026-09-25, asked by the user once `host/mod.rs` reached 5748 lines)*:
@@ -8188,7 +8224,7 @@ module of its own.
   - **A triangle wholly inside its clip is not walked round it**, and one wholly outside is dropped by its corners' sides (`Mesh::tri`): the profile's largest single function while playing.
   Playing, with the face and four samples on: **14.0 %** (13.0 % with one sample -- the antialiasing is within the noise; the browser's GPU process spends 11.7 % with four samples and 12.2 % with one). What is left of a playing frame, by the profile: the browser's own work for a frame of WebGL (about a quarter), pushing the triangles, uploading the whole mesh, and drawing the symbols.
 
-- ⬜ **What a playing frame still costs, and where it could go** *(2026-10-05, the analysis the measurements above end in)*. In the order of what each would give:
+- ✅ **What a playing frame still costs, and where it could go** *(2026-10-05, the analysis the measurements above end in; three of its six taken 2026-10-06, the rest under "What a whole frame still costs" below)*. In the order of what each would give:
   - **The chrome is rebuilt and uploaded on every frame though only the cursor moved.** The frame is one immediate mesh: the toolbar, the palettes and their seventy symbols, the page, the cursor. A window's mesh kept in layers -- what a `/gui_set` or a gesture changes, and what the clock changes -- would rebuild and upload the cursor's alone while a score plays. It is the largest saving and the largest change: every element draws into one `Mesh` today.
   - **A page that did not change is tessellated into the mesh again.** With the fills kept, what is left is mapping and pushing some eight thousand vertices; keeping the page's own triangles in screen space while neither the page nor its fit moved makes it a copy.
   - **A symbol's triangles and its hint are computed where they are drawn**, per frame (`font::outline::draw`): its final triangles could be kept by size, as a page's fills are.
@@ -8196,3 +8232,15 @@ module of its own.
   - **Thirty frames a second is one number for every window**: a cursor crossing a page at a quarter note every half second does not need them all, and a rate that follows how far the line moved would draw fewer.
   - **One megabyte of atlas texture per window** is allocated whole: a page of forty small canvases holds forty. A sheet that starts small and grows, or one shared by a page's canvases, is what that profile wants.
   - Not measured: the GPU's own time. The browser's GPU process is the only proxy this pass had, and it does not see shading; `--msaa 1` is the knob if a machine shows it.
+
+  **Taken 2026-10-06**, with "A window repaints whole for a line that moves in one view" above, which is the layers the first of these asks for:
+  - **The chrome and the page are not rebuilt while only the cursor moves**: the window's picture is kept and a tick builds the live layers alone. A whole frame -- a set, a gesture, a fed element that is not on its live layer -- still builds all of it.
+  - **The rate follows the line.** A tick whose live layers are where they are on screen draws nothing; the 33 ms stay as how often the question is asked.
+  - **The atlas is a sheet that grows, and a window has one.** The entry asked for a megabyte allocated whole, and there was more to find: **every batch of a window held its own** megabyte and its own textured pipeline -- three to a window, four with the live batch -- and each copied the whole sheet again when the cache rasterized one glyph. The sheet now starts at 64 rows and doubles as it fills (`font::atlas`), a glyph's coordinates are texels rather than fractions so the text already uploaded outlives a growth, a window has one copy for all its batches (`paint::GlyphSheet`), and a sync copies the rows written since the last. A page of forty small canvases holds forty sheets of a few shelves; one shared by a page's canvases is not built, since each canvas is a device of its own.
+
+- ⬜ **What a whole frame still costs** *(left by the entry above, 2026-10-06)*. A frame drawn whole builds everything, and three of the costs named there are still in it:
+  - **A symbol's triangles and its hint are computed where they are drawn**, per frame (`font::outline::draw`): its final triangles could be kept by size, as a page's fills are.
+  - **A string's width is measured character by character on every layout** (`outline::advance` and the atlas's `advance_of` each look their table up per character): a width kept by string and size would answer it.
+  - **A page that did not change is tessellated into the mesh again** on a whole frame: keeping its triangles in screen space while neither the page nor its fit moved makes it a copy.
+  - **The card draws the whole window on every frame**, live ones included, and its time is not measured. An offscreen copy of the kept picture is the design if a measurement asks for it.
+  - **The fed elements that are not on their live layer** -- `meter`, the live `signal` views, `progress` -- repaint their window every tick.

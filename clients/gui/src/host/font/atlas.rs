@@ -30,10 +30,17 @@ use fontdue::{Font, FontSettings};
 
 use super::GLYPH_H;
 
-/// The side of the atlas texture, in texels. One 1 MiB R8 texture per window
-/// holds every glyph of every size a document actually draws; when a document
-/// asks for more than fits, the atlas repacks (see [`Atlas::fit`]).
+/// The width of the atlas sheet, in texels, and the most rows it grows to:
+/// a megabyte of coverage holds every glyph of every size a document
+/// actually draws, and when one asks for more than fits, the atlas repacks
+/// (see [`Atlas::fit`]).
 pub const SIDE: u32 = 1024;
+
+/// The rows a sheet starts with. An interface writes one or two sizes of a
+/// hundred-odd characters, which is a few shelves: a sheet that began at the
+/// megabyte held a megabyte for them, in every window. It doubles as it
+/// fills ([`Atlas::fit`]), up to [`SIDE`].
+const FIRST_ROWS: u32 = 64;
 
 /// A texel of empty margin around each glyph, so the sampler can never pick up
 /// a neighbour's coverage at a quad edge.
@@ -52,7 +59,11 @@ pub struct Glyph {
     pub dy: f32,
     pub w: f32,
     pub h: f32,
-    /// `[u0, v0, u1, v1]` in texture coordinates.
+    /// `[u0, v0, u1, v1]` in **texels** of the sheet. Texels and not
+    /// fractions of it: a sheet grows, and a fraction of a sheet that has
+    /// since grown is somewhere else, while a texel stays where it was
+    /// written -- so the glyphs a window has already drawn outlive every
+    /// growth. The shader divides by the texture's own size.
     pub uv: [f32; 4],
     /// How far the pen steps after this glyph -- the face's own advance, which
     /// is what makes the face proportional rather than a grid.
@@ -73,13 +84,16 @@ struct Face {
 /// and the map from `(character, pixel size)` to where it landed.
 pub struct Atlas {
     face: Option<Face>,
+    /// The sheet: [`SIDE`] texels wide and [`rows`](Self::rows) high.
     pixels: Vec<u8>,
+    rows: u32,
     /// Shelf packing state: the pen on the current shelf, its top and height.
     pen_x: u32,
     shelf_y: u32,
     shelf_h: u32,
     map: HashMap<(char, u32), Glyph>,
     version: u64,
+    epoch: u64,
 }
 
 impl Atlas {
@@ -87,11 +101,13 @@ impl Atlas {
         Self {
             face: None,
             pixels: Vec::new(),
+            rows: 0,
             pen_x: PAD,
             shelf_y: PAD,
             shelf_h: 0,
             map: HashMap::new(),
             version: 0,
+            epoch: 0,
         }
     }
 
@@ -128,14 +144,17 @@ impl Atlas {
     }
 
     /// Empties the cache and the texture, bumping the version so every window's
-    /// copy is re-uploaded.
+    /// copy is re-uploaded -- and the **epoch**, since every glyph a window
+    /// has drawn now names texels that hold something else.
     fn reset(&mut self) {
         self.map.clear();
         self.pixels.clear();
+        self.rows = 0;
         self.pen_x = PAD;
         self.shelf_y = PAD;
         self.shelf_h = 0;
         self.version += 1;
+        self.epoch += 1;
     }
 
     /// The pixel size `scale` rasterizes at: the size whose cap height is the
@@ -207,9 +226,6 @@ impl Atlas {
         } else {
             let (ox, oy) = self.fit(w, h)?;
             // Rows arrive top-first, one coverage byte per texel.
-            if self.pixels.is_empty() {
-                self.pixels = vec![0; (SIDE * SIDE) as usize];
-            }
             for row in 0..h {
                 let src = (row * w) as usize;
                 let dst = ((oy + row) * SIDE + ox) as usize;
@@ -217,7 +233,6 @@ impl Atlas {
                     .copy_from_slice(&coverage[src..src + w as usize]);
             }
             self.version += 1;
-            let s = SIDE as f32;
             Glyph {
                 dx: metrics.xmin as f32,
                 // `ymin` is the bottom of the ink above the baseline, y up; the
@@ -225,12 +240,7 @@ impl Atlas {
                 dy: -(metrics.ymin as f32) - h as f32,
                 w: w as f32,
                 h: h as f32,
-                uv: [
-                    ox as f32 / s,
-                    oy as f32 / s,
-                    (ox + w) as f32 / s,
-                    (oy + h) as f32 / s,
-                ],
+                uv: [ox as f32, oy as f32, (ox + w) as f32, (oy + h) as f32],
                 advance: metrics.advance_width,
             }
         };
@@ -238,9 +248,10 @@ impl Atlas {
         Some(glyph)
     }
 
-    /// Reserves a `w` x `h` box on the current shelf, opening the next one (or,
-    /// once the sheet is full, repacking from scratch) when it does not fit.
-    /// `None` for a glyph larger than the whole sheet.
+    /// Reserves a `w` x `h` box on the current shelf, opening the next one
+    /// when it does not fit -- and, where that runs past the sheet, **growing
+    /// the sheet** by doubling its rows, or once it is at [`SIDE`] of them,
+    /// repacking from scratch. `None` for a glyph larger than the whole sheet.
     fn fit(&mut self, w: u32, h: u32) -> Option<(u32, u32)> {
         if w + 2 * PAD > SIDE || h + 2 * PAD > SIDE {
             return None;
@@ -251,13 +262,25 @@ impl Atlas {
             self.shelf_h = 0;
         }
         if self.shelf_y + h + PAD > SIDE {
-            // The sheet is full. Repacking loses the glyphs a mesh being built
-            // right now already placed, so that frame may sample the wrong
-            // texels once; the next one is correct. A document with more glyphs
-            // than a megabyte of coverage holds is what this costs, and it is
-            // cheaper than growing a texture every window has a copy of.
+            // The sheet is full at its largest. Repacking loses the glyphs a
+            // mesh being built right now already placed, so that frame may
+            // sample the wrong texels once; the epoch says so, and a window
+            // that kept a picture from before it draws a whole one again. A
+            // document with more glyphs than a megabyte of coverage holds is
+            // what this costs.
             self.reset();
-            self.pixels = vec![0; (SIDE * SIDE) as usize];
+        }
+        // Rows for this box: what the sheet has, doubled until it fits. The
+        // texels already written stay where they are, so nothing drawn from
+        // them moves.
+        let needed = self.shelf_y + h + PAD;
+        if needed > self.rows {
+            let mut rows = self.rows.max(FIRST_ROWS);
+            while rows < needed {
+                rows *= 2;
+            }
+            self.rows = rows.min(SIDE);
+            self.pixels.resize((SIDE * self.rows) as usize, 0);
         }
         let at = (self.pen_x, self.shelf_y);
         self.pen_x += w + PAD;
@@ -271,10 +294,35 @@ impl Atlas {
         self.version
     }
 
-    /// The coverage sheet, `SIDE` x `SIDE` bytes -- empty until a glyph has been
-    /// rasterized.
+    /// Bumped whenever the sheet was **emptied and packed again** -- a new
+    /// face, or more glyphs than it holds at its largest. Every glyph drawn
+    /// before it names texels that now hold something else, so a picture kept
+    /// from an earlier epoch is drawn again rather than shown.
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// The coverage sheet, [`SIDE`] bytes a row and [`rows`](Self::rows) of
+    /// them -- empty until a glyph has been rasterized.
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
+    }
+
+    /// How many rows the sheet has: none before the first glyph, then
+    /// a power of two that doubles as it fills.
+    pub fn rows(&self) -> u32 {
+        self.rows
+    }
+
+    /// The top of the shelf being filled. Everything above it is finished: a
+    /// copy of the sheet that has those rows needs only the ones from here.
+    pub fn shelf_top(&self) -> u32 {
+        self.shelf_y
+    }
+
+    /// One past the last row that holds a glyph.
+    pub fn used_rows(&self) -> u32 {
+        (self.shelf_y + self.shelf_h + PAD).min(self.rows)
     }
 }
 
@@ -288,6 +336,11 @@ thread_local! {
 /// Runs `f` with the process's atlas.
 pub fn with<R>(f: impl FnOnce(&mut Atlas) -> R) -> R {
     ATLAS.with(|a| f(&mut a.borrow_mut()))
+}
+
+/// The process's atlas epoch ([`Atlas::epoch`]).
+pub fn epoch() -> u64 {
+    with(|a| a.epoch())
 }
 
 /// Loads `bytes` as the host's typeface. `false` if they are not a readable
@@ -411,7 +464,59 @@ mod tests {
         assert_eq!(a.version(), after_first, "a hit uploads nothing");
         a.glyph('A', 4.0).unwrap();
         assert!(a.version() > after_first, "another size is another glyph");
-        assert_eq!(a.pixels().len(), (SIDE * SIDE) as usize);
+        assert_eq!(a.pixels().len(), (SIDE * a.rows()) as usize);
+    }
+
+    /// **A sheet starts small and grows without moving anything.** A hundred
+    /// characters of an interface's size fit a few shelves, not a megabyte;
+    /// when the shelves run past the sheet it doubles, and a glyph placed
+    /// before that is the same texels after it, holding the same coverage --
+    /// which is what lets a window go on drawing text it uploaded before the
+    /// growth. Only a sheet full at its largest is packed again, and that is
+    /// a new epoch.
+    #[test]
+    fn a_sheet_grows_and_leaves_its_glyphs_where_they_were() {
+        let Some(mut a) = loaded() else { return };
+        let text = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let first = a.glyph('A', 1.5).unwrap();
+        for c in text.chars() {
+            a.glyph(c, 1.5).unwrap();
+        }
+        assert_eq!(a.rows(), FIRST_ROWS, "an interface's text is a few shelves");
+        let ink = |a: &Atlas, g: &Glyph| {
+            let [u0, v0, u1, v1] = g.uv.map(|t| t as u32);
+            (v0..v1)
+                .flat_map(|y| (u0..u1).map(move |x| (y * SIDE + x) as usize))
+                .map(|at| u32::from(a.pixels()[at]))
+                .sum::<u32>()
+        };
+        let before = ink(&a, &first);
+        assert!(before > 0);
+        let epoch = a.epoch();
+        // Larger sizes until the sheet has had to grow.
+        let mut scale = 3.0;
+        while a.rows() == FIRST_ROWS {
+            for c in text.chars() {
+                a.glyph(c, scale).unwrap();
+            }
+            scale += 1.0;
+        }
+        assert!(a.rows() > FIRST_ROWS && a.rows().is_power_of_two());
+        assert_eq!(a.epoch(), epoch, "growing packs nothing again");
+        let again = a.glyph('A', 1.5).unwrap();
+        assert_eq!(again.uv, first.uv, "the glyph is where it was");
+        assert_eq!(ink(&a, &again), before, "holding what it held");
+        assert!(a.used_rows() <= a.rows() && a.shelf_top() < a.used_rows());
+        // Past the largest sheet, the atlas packs again and says so.
+        let mut scale = 20.0;
+        while a.epoch() == epoch && scale < 400.0 {
+            for c in text.chars() {
+                a.glyph(c, scale);
+            }
+            scale += 7.0;
+        }
+        assert!(a.epoch() > epoch, "a full sheet is packed again");
+        assert!(a.rows() <= SIDE);
     }
 
     /// Every glyph lands inside the sheet with its margin, whatever order the
@@ -422,9 +527,11 @@ mod tests {
         for scale in [1.0, 2.0, 6.0, 11.0] {
             for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".chars() {
                 let g = a.glyph(c, scale).unwrap();
+                // In texels of a sheet that is as high as it has had to grow.
                 let [u0, v0, u1, v1] = g.uv;
-                assert!((0.0..=1.0).contains(&u0) && (0.0..=1.0).contains(&u1));
-                assert!((0.0..=1.0).contains(&v0) && (0.0..=1.0).contains(&v1));
+                let (w, h) = (SIDE as f32, a.rows() as f32);
+                assert!((0.0..=w).contains(&u0) && (0.0..=w).contains(&u1));
+                assert!((0.0..=h).contains(&v0) && (0.0..=h).contains(&v1));
             }
         }
     }

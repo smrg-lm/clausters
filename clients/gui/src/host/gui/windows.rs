@@ -90,7 +90,7 @@ impl App {
         let (gpu, renderers, batches, mut state) = match held {
             Some(ws) => {
                 ws.gpu.window.set_title(&title);
-                ws.gpu.window.request_redraw();
+                ws.repaint();
                 let carried = (
                     ws.origin,
                     ws.cursor,
@@ -180,10 +180,11 @@ impl App {
                 unnamed,
                 gestures,
                 histories,
+                frames: super::app::FrameTally::default(),
             },
         );
         if let Some(ws) = self.windows.get(&id) {
-            ws.gpu.window.request_redraw();
+            ws.repaint();
         }
         // Kick off fetches for any waveform that references a server buffer.
         let draws_a_buffer = !buffer_refs.is_empty();

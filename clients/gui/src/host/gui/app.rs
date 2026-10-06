@@ -26,7 +26,7 @@ use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
-use crate::host::live::{self, tree_animates, tree_has_live_widget, tree_is_fed};
+use crate::host::live::{self, tree_animates, tree_has_live_widget, tree_is_fed, tree_repaints};
 // Only the MIDI painting reaches a roll by its navigation group.
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
@@ -85,6 +85,68 @@ pub(super) struct WindowState {
     /// `retention` span on -- the addressable past a forward-only source has
     /// none of. Keyed by **bus**: one history, however many views read it.
     pub(super) histories: HashMap<i32, crate::host::live::BusHistory>,
+    /// What this window's frames came to, for the `debug` line.
+    pub(super) frames: FrameTally,
+}
+
+/// **What a window's frames came to over the last second**, for the `debug`
+/// line that says it: how many were drawn whole, how many drew the live
+/// layers alone, how many found nothing had moved, and the time each kind
+/// took on this thread.
+#[derive(Default)]
+pub(super) struct FrameTally {
+    since: Option<Instant>,
+    /// Count and total time, by [`frame::Drawn`]: whole, live, still.
+    kinds: [(u32, Duration); 3],
+}
+
+impl FrameTally {
+    fn count(&mut self, def_id: i32, drawn: frame::Drawn, took: Duration) {
+        let kind = match drawn {
+            frame::Drawn::Whole => 0,
+            frame::Drawn::Live => 1,
+            frame::Drawn::Still => 2,
+            frame::Drawn::Owed => return,
+        };
+        self.kinds[kind].0 += 1;
+        self.kinds[kind].1 += took;
+        let since = *self.since.get_or_insert_with(Instant::now);
+        if since.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        let each = |(n, total): (u32, Duration)| {
+            let mean = if n == 0 {
+                0.0
+            } else {
+                total.as_secs_f64() * 1e3 / f64::from(n)
+            };
+            format!("{n} at {mean:.3} ms")
+        };
+        tracing::debug!(
+            "window {def_id} frames: whole {}, live {}, still {}",
+            each(self.kinds[0]),
+            each(self.kinds[1]),
+            each(self.kinds[2]),
+        );
+        *self = Self::default();
+    }
+}
+
+impl WindowState {
+    /// **The window's picture changed**: asks for a whole frame. What every
+    /// redraw of this front is, but a tick's that found only a line moved.
+    pub(super) fn repaint(&self) {
+        self.batches.want_whole();
+        self.gpu.window.request_redraw();
+    }
+
+    /// **Only what moves moved** -- a playhead's counter, a fed value, a
+    /// reading written as a live prop: asks for a frame that may keep the
+    /// window's picture and draw its live layers again.
+    pub(super) fn repaint_live(&self) {
+        self.batches.want_live();
+        self.gpu.window.request_redraw();
+    }
 }
 
 pub(super) struct App {
@@ -344,7 +406,12 @@ impl App {
                 }
                 HostEffect::Redraw(id) => {
                     if let Some(ws) = self.windows.get(&id) {
-                        ws.gpu.window.request_redraw();
+                        ws.repaint();
+                    }
+                }
+                HostEffect::RedrawLive(id) => {
+                    if let Some(ws) = self.windows.get(&id) {
+                        ws.repaint_live();
                     }
                 }
             }
@@ -428,7 +495,7 @@ impl App {
             self.host
                 .forward_args(widget_id, args[1..].to_vec(), &mut effects);
             for effect in effects {
-                if let HostEffect::Redraw(id) = effect {
+                if let HostEffect::Redraw(id) | HostEffect::RedrawLive(id) = effect {
                     self.redraw(id);
                 }
             }
@@ -451,7 +518,7 @@ impl App {
 
     pub(super) fn redraw(&self, def_id: i32) {
         if let Some(ws) = self.windows.get(&def_id) {
-            ws.gpu.window.request_redraw();
+            ws.repaint();
         }
     }
 
@@ -460,9 +527,17 @@ impl App {
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
         tracing::trace!("rendering window {def_id}");
+        // What this frame was asked for: the window's picture, or only what
+        // moves over the one it kept.
+        let whole = self
+            .windows
+            .get(&def_id)
+            .is_none_or(|ws| ws.batches.whole_wanted());
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it.
-        self.refresh_slots_for(def_id);
+        if whole {
+            self.refresh_slots_for(def_id);
+        }
         let server_attached = self.host.server().is_some();
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.
@@ -516,7 +591,10 @@ impl App {
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
         };
-        frame::render(
+        // Timed only when somebody is reading it: what a window's frames
+        // come to, said once a second under `debug`.
+        let timed = tracing::enabled!(tracing::Level::DEBUG).then(Instant::now);
+        let drawn = frame::render(
             &mut ws.gpu,
             &mut ws.renderers,
             &mut ws.batches,
@@ -526,7 +604,11 @@ impl App {
             tree,
             &inputs,
             &self.host.theme,
+            whole,
         );
+        if let Some(started) = timed {
+            ws.frames.count(def_id, drawn, started.elapsed());
+        }
     }
 }
 
@@ -633,10 +715,9 @@ impl ApplicationHandler<UserEvent> for App {
         // edits one with nobody else in the process to write the label.
         if let Some(position) = self.shm.as_deref().map(|bus| {
             bus.transport_position(clausters_editing::apply::MULTITRACK_TRANSPORT as usize)
-        }) && let Some(def_id) = self.host.tick_multitrack_clock(position)
-            && let Some(ws) = self.windows.get(&def_id)
+        }) && let Some(effect) = self.host.tick_multitrack_clock(position)
         {
-            ws.gpu.window.request_redraw();
+            self.apply(event_loop, super::PLACEHOLDER_ORIGIN, vec![effect]);
         }
 
         // **What the last frame could not draw.** A view zoomed finer than its
@@ -658,7 +739,7 @@ impl ApplicationHandler<UserEvent> for App {
         if now >= self.next_follow {
             for def_id in self.follow_recordings() {
                 if let Some(ws) = self.windows.get(&def_id) {
-                    ws.gpu.window.request_redraw();
+                    ws.repaint();
                 }
             }
             // **The block is the tick, and it is one tick for every view.**
@@ -715,15 +796,24 @@ impl ApplicationHandler<UserEvent> for App {
                 // audio-rate scopes refresh their triggered tap windows likewise.
                 self.advance_live();
                 for id in &animated {
-                    // A frame is drawn for what moved: something fed live
-                    // always does, an edge scroll does, and a playhead does
-                    // when its counter did.
-                    let fed = self.host.window_def(*id).is_some_and(tree_is_fed)
-                        || self.window_is_edge_scrolling(*id);
+                    // A frame is drawn for what moved. An edge scroll moves
+                    // the picture, and so does a fed element that draws its
+                    // values into it: a whole frame. What is fed and drawn on
+                    // a live layer, and a playhead whose counter moved, ask
+                    // for the live layers alone.
+                    let tree = self.host.window_def(*id);
+                    let whole =
+                        tree.is_some_and(tree_repaints) || self.window_is_edge_scrolling(*id);
+                    let fed = tree.is_some_and(tree_is_fed);
                     let clocks = self.host.head_clocks(*id, self.shm.as_deref());
                     let moved = self.host.playheads_moved(*id, clocks);
-                    if let (true, Some(ws)) = (fed || moved, self.windows.get(id)) {
-                        ws.gpu.window.request_redraw();
+                    let Some(ws) = self.windows.get(id) else {
+                        continue;
+                    };
+                    if whole {
+                        ws.repaint();
+                    } else if fed || moved {
+                        ws.repaint_live();
                     }
                 }
                 self.next_frame = now + FRAME;
@@ -793,7 +883,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::Resized(size) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.gpu.resize(size.width, size.height);
-                    ws.gpu.window.request_redraw();
+                    ws.repaint();
                 }
             }
             // The window moved to a display of another density (or the desktop's
@@ -815,7 +905,7 @@ impl ApplicationHandler<UserEvent> for App {
                     if let Err(e) = inner_size_writer.request_inner_size(want) {
                         tracing::debug!("window {def_id}: keeping the size at the new scale: {e}");
                     }
-                    ws.gpu.window.request_redraw();
+                    ws.repaint();
                 }
             }
             WindowEvent::ModifiersChanged(mods) => {
@@ -843,7 +933,7 @@ impl ApplicationHandler<UserEvent> for App {
                         // Off-window: the cursor readout hides (nothing
                         // contains it).
                         ws.cursor = None;
-                        ws.gpu.window.request_redraw();
+                        ws.repaint();
                         // ...and so does whatever the pointer was lighting up:
                         // the hovered control, a tip, a title of the bar.
                         self.on_leave(def_id);

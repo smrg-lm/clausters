@@ -357,6 +357,13 @@ impl WebApp {
                         self.request_redraw(id);
                     }
                 }
+                // A live prop is a reading: nothing it writes retargets a
+                // source, and the canvas' picture stands.
+                HostEffect::RedrawLive(id) => {
+                    if let Some(slot) = self.canvases.get(&id) {
+                        slot.request_redraw_live();
+                    }
+                }
             }
         }
     }
@@ -549,12 +556,18 @@ impl WebApp {
                 },
             );
             extents.extend(refresh_slots(slot, tree));
-            // A frame is drawn for what moved: something fed live always
-            // does, and a playhead does when its counter did.
+            // A frame is drawn for what moved. A fed element that draws its
+            // values into the picture asks for a whole one; what is fed and
+            // drawn on a live layer, and a playhead whose counter moved, ask
+            // for the live layers alone.
+            let whole = live::tree_repaints(tree);
             let fed = live::tree_is_fed(tree);
             let clocks = self.host.head_clocks(def, Some(self.buses.as_ref()));
-            if self.host.playheads_moved(def, clocks) || fed {
+            let moved = self.host.playheads_moved(def, clocks);
+            if whole {
                 slot.request_redraw();
+            } else if fed || moved {
+                slot.request_redraw_live();
             }
             // Asked after the tick, so the mutable walk above is over: whether
             // this tree draws a moving playhead is what makes the page poll the

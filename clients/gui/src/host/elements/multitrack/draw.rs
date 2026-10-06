@@ -197,6 +197,29 @@ impl Multitrack {
 }
 
 impl Multitrack {
+    /// **What moves of a multitrack**: each track's meters, over the level the
+    /// track is making, and the playhead across the stack. Everything else it
+    /// draws is the description, which a tick does not change.
+    pub(super) fn paint_live(&self, d: &mut Draw, ctx: &Ctx) {
+        let at = self.track_rects(ctx.rect);
+        let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
+        for (i, track) in self.tracks.iter().enumerate() {
+            if shown(at[i]) && self.meters.contains_key(&track.name) {
+                track::draw_meters(d, at[i], &self.live_header(track, ctx), ctx.indent);
+            }
+        }
+        if let Some(time) = ctx.time
+            && let Some(pos) = time.head
+        {
+            let nav = self.view(ctx.time);
+            let over = track::track_body(ctx.rect, false, ctx.indent, ctx.metrics);
+            if let Some(x) = track::playhead_x(over, &nav, pos) {
+                let (mesh, m, theme) = d.parts();
+                mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), theme.playhead);
+            }
+        }
+    }
+
     pub(super) fn paint(&self, d: &mut Draw, ctx: &Ctx) {
         let nav = self.view(ctx.time);
         let at = self.track_rects(ctx.rect);
@@ -206,11 +229,14 @@ impl Multitrack {
         let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
         for (i, track) in self.tracks.iter().enumerate() {
             if shown(at[i]) {
+                // The header as it stands with nothing sounding: its meters
+                // are a level's to move, and are drawn again over these on
+                // the live layer ([`Self::paint_live`]).
                 track::draw(
                     d,
                     at[i],
                     Some(track.shown()),
-                    &self.live_header(track, ctx),
+                    &self.header(track, ctx.indent),
                     false,
                     ctx.indent,
                     self.track == Some(i),
@@ -332,16 +358,13 @@ impl Multitrack {
             );
             // **Two lines, and they mean two things**: the position cursor is
             // where the reader put the mark, the playhead is where the music
-            // is. The cursor goes down first, so where they coincide it is the
-            // playhead that reads.
-            for (pos, role) in [(time.cursor, false), (time.head, true)] {
-                if let Some(pos) = pos
-                    && let Some(x) = track::playhead_x(over, &nav, pos)
-                {
-                    let (mesh, m, theme) = d.parts();
-                    let color = if role { theme.playhead } else { theme.cursor };
-                    mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), color);
-                }
+            // is. The cursor is drawn here; the playhead goes over it, on the
+            // live layer, since a clock moves it.
+            if let Some(pos) = time.cursor
+                && let Some(x) = track::playhead_x(over, &nav, pos)
+            {
+                let (mesh, m, theme) = d.parts();
+                mesh.rect(Rect::new(x, over.y, m.trace_w, over.h), theme.cursor);
             }
         }
         if let Some(text) = &self.label {

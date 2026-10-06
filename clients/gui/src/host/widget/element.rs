@@ -527,6 +527,18 @@ pub struct Needs {
     /// [`MidiNote`], the same posture [`Key`] takes: the front translates, and
     /// the element answers identically wherever it is compiled.
     pub midi: bool,
+    /// Whether **everything this element draws from what moves** is on its
+    /// live layer ([`Element::draw_live`]): the clock, a bus, a level, state
+    /// its [`tick`](Element::tick) advances, a prop it names
+    /// [`live`](Element::live_prop).
+    ///
+    /// It is a promise about [`draw`](Element::draw) and
+    /// [`draw_over`](Element::draw_over) -- that neither reads any of those --
+    /// and it is what lets a frame keep the rest of the window's picture: a
+    /// tick then rebuilds the live layers alone, and draws nothing when none
+    /// of them moved. An element that reads a bus or a level and does not say
+    /// so is repainted whole on every tick, as every element was.
+    pub live: bool,
     /// The **bulk resource** this element wants resolved, and in which form.
     ///
     /// Bulk is the data too big for the wire -- a minutes-long take, a peaks
@@ -1941,6 +1953,31 @@ pub trait Element: fmt::Debug {
     /// ([`Events::and_popup`]).
     fn draw_over(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
+    /// What this element draws **from what moves**: the line a clock sweeps,
+    /// the bar a level fills, a reading that is set many times a second. Into
+    /// the window's live mesh, over its pictures and under the host's own
+    /// bands and lists. Nothing by default.
+    ///
+    /// The frame keeps a window's picture and calls this alone when only the
+    /// clock or a fed value moved, with the placement it was last laid out in
+    /// -- so whatever is drawn here costs its own triangles on a tick, and the
+    /// toolbar, the page and the boxes beside it cost nothing. An element
+    /// that draws all of its moving parts here says so
+    /// ([`Needs::live`]); the picture it leaves in [`draw`](Element::draw) is
+    /// what it looks like with nothing moving.
+    fn draw_live(&self, _d: &mut Draw, _ctx: &Ctx) {}
+
+    /// Whether a `set` of prop `key` changes only what
+    /// [`draw_live`](Element::draw_live) draws -- and so asks for the live
+    /// layers alone rather than for the window's picture. `false` by default:
+    /// a set repaints.
+    ///
+    /// For a reading written many times a second (a clock's text): a prop
+    /// that sizes nothing and that `draw` does not read.
+    fn live_prop(&self, _key: &str) -> bool {
+        false
+    }
+
     /// **A directory this element wants listed**, asked once: the element
     /// clears its ask as it answers. `None` (the default) for one that shows
     /// no directory. The front lists it and hands the answer back through
@@ -2750,6 +2787,7 @@ mod tests {
                 animated: true,
                 clock: true,
                 midi: false,
+                live: false,
                 slot: None,
                 bulk: Some(Bulk::Buffer(self.bus + 4)),
             }

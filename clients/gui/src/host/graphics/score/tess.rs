@@ -218,6 +218,22 @@ impl ScoreData {
         }
     }
 
+    /// **The playback cursor alone**, at musical time `head` ms, cut to `rect`
+    /// and the caller's `clip` as [`render`](Self::render) cuts the page: what
+    /// a clock moves of a page, for a caller that keeps the rest.
+    pub fn render_playhead(
+        &self,
+        mesh: &mut Mesh,
+        rect: Rect,
+        clip: Option<Rect>,
+        head: f32,
+        color: Color,
+    ) {
+        mesh.set_clip(Some(intersect(rect, clip)));
+        self.draw_playhead(mesh, self.fit(rect), head, color);
+        mesh.set_clip(clip);
+    }
+
     /// Draw the playback cursor at musical time `head` (ms): the vertical
     /// staff-spanning line of the latest cursor at or before it. A no-op when no
     /// playhead is set or no timemap was sent.

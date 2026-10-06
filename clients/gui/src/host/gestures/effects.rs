@@ -126,7 +126,9 @@ pub(super) fn deliver(
 pub(super) fn redraws(out: &mut Vec<GestureEffect>, effects: Vec<HostEffect>) {
     for effect in effects {
         match effect {
-            HostEffect::Redraw(root) => out.push(GestureEffect::Redraw(root)),
+            HostEffect::Redraw(root) | HostEffect::RedrawLive(root) => {
+                out.push(GestureEffect::Redraw(root))
+            }
             other => diag::warn!("a binding's apply asked for {other:?}, which it cannot do"),
         }
     }

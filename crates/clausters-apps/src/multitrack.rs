@@ -296,8 +296,11 @@ fn transport(ids: Option<TransportIds>) -> Value {
         button("|<", REWIND, 44.0, ids.map(|i| i.rewind)),
         button("play/pause", PLAY, 110.0, ids.map(|i| i.play)),
         button("stop", STOP, 110.0, ids.map(|i| i.stop)),
+        // A reading, written on every tick of the transport: drawn on the
+        // window's live layer, so a write costs the label and not the window.
         numbered(
-            json!({"type": "label", "text": "", "name": CLOCK, "text_size": 2.0, "weight": 1.0}),
+            json!({"type": "label", "text": "", "name": CLOCK, "text_size": 2.0,
+                   "weight": 1.0, "live": true}),
             ids.map(|i| i.clock),
         ),
     ];

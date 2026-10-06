@@ -49,7 +49,7 @@ use clausters_editing::playback::MultitrackPlayback;
 use clausters_editing::run::{Reply, Runner, Server};
 
 use crate::host::diag;
-use crate::host::{Host, document};
+use crate::host::{Host, HostEffect, document};
 
 /// **Which link a server's reply came in on.**
 ///
@@ -474,9 +474,10 @@ impl Host {
 
     /// **The clock of a multitrack this host edits alone**, read with the transport
     /// at `position` samples of the multitrack: the label the editor names, set when
-    /// what the editor says it reads changed. Answers the window to repaint when
-    /// it did.
-    pub fn tick_multitrack_clock(&mut self, position: f64) -> Option<i32> {
+    /// what the editor says it reads changed. Answers what the write asks of
+    /// the window when it did: its live layers alone, for a label that draws
+    /// its text there, or the picture.
+    pub fn tick_multitrack_clock(&mut self, position: f64) -> Option<HostEffect> {
         let secs = self
             .instance
             .multitrack
@@ -503,7 +504,9 @@ impl Host {
             &mut fx,
         );
         self.clock_shown = Some(text);
-        Some(window)
+        fx.into_iter()
+            .rfind(|effect| matches!(effect, HostEffect::Redraw(_) | HostEffect::RedrawLive(_)))
+            .or(Some(HostEffect::Redraw(window)))
     }
 
     /// How many nodes the multitrack is playing through, for a caller reporting what

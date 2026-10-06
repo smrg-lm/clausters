@@ -323,23 +323,15 @@ pub(super) fn draw_editor_overlay(
     }
     // **Two lines, and they mean two things.** The position cursor is where
     // the reader put the mark -- a click on the ruler and nothing else -- and it
-    // goes down first, so where they coincide the playhead is the one that
-    // reads. The playhead is the engine clock relative to the widget's origin
-    // while playing, else the parked line of a located, stopped transport.
-    for (pos, color) in [
-        (chrome.cursor(), theme.cursor),
-        (
-            chrome.head_at(inputs.world.clocks.at(Some(item.id))),
-            theme.playhead,
-        ),
-    ] {
-        if let Some(pos) = pos
-            && pos >= nav.start
-            && pos <= nav.start + nav.len
-        {
-            let x = sample_to_x(pos, nav, body);
-            mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), color);
-        }
+    // is drawn here. The playhead is where the music is, and it is drawn over
+    // it on the window's live layer ([`draw_timeline_heads`]): it is the one
+    // part of this view a clock moves.
+    if let Some(pos) = chrome.cursor()
+        && pos >= nav.start
+        && pos <= nav.start + nav.len
+    {
+        let x = sample_to_x(pos, nav, body);
+        mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), theme.cursor);
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner --
@@ -679,6 +671,55 @@ pub(super) fn draw_timeline_meshes(
 /// multitrack lanes and piano rolls): pure mesh work with the host-tree borrow
 /// already released. The flat geometry goes into `mesh`, the hover/selection/
 /// playhead chrome into `over`.
+/// **The playhead of every timeline view in `collected`**, into `mesh`: the
+/// engine clock relative to the view's origin while its transport plays, else
+/// the parked line of a located, stopped one.
+///
+/// The one thing a timeline view draws from the clock, and the whole of what
+/// a tick draws of it: the picture under it is the window's, kept.
+pub(super) fn draw_timeline_heads(
+    mesh: &mut Mesh,
+    collected: &Collected,
+    waveforms: &HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    for item in &collected.timeline_items {
+        // The axis' extent, as the picture under this line read it.
+        let Some(total) = waveforms
+            .get(&(item.id, item.key))
+            .map(|s| s.view.total_samples())
+            .or_else(|| {
+                spectrograms
+                    .get(&(item.id, item.key))
+                    .map(|s| s.total_samples())
+            })
+        else {
+            continue;
+        };
+        let chrome = chrome_for(inputs, item.id, &item.editor, || View::full(total));
+        let nav = &chrome.nav;
+        let Some(pos) = chrome.head_at(inputs.world.clocks.at(Some(item.id))) else {
+            continue;
+        };
+        if pos < nav.start || pos > nav.start + nav.len {
+            continue;
+        }
+        let th = item.theme.as_deref().unwrap_or(theme);
+        mesh.set_clip(item.clip);
+        mesh.set_ink(item.ink);
+        let x = sample_to_x(pos, nav, item.body);
+        mesh.rect(
+            Rect::new(x, item.body.y, m.trace_w, item.body.h),
+            th.playhead,
+        );
+    }
+    mesh.set_clip(None);
+    mesh.set_ink(Ink::default());
+}
+
 pub(super) fn draw_static_meshes(
     mesh: &mut Mesh,
     _over: &mut Mesh,

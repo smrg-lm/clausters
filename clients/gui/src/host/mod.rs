@@ -657,6 +657,12 @@ pub enum HostEffect {
     /// A live `/gui_set` changed a widget in the window rooted at this id; the
     /// front should repaint it (the typed tree is already updated in place).
     Redraw(i32),
+    /// A set wrote only what a widget draws on its **live layer**
+    /// ([`Element::live_prop`](widget::Element::live_prop)) in the window
+    /// rooted at this id: the front may keep the window's picture and draw
+    /// its live layers again. A reading written many times a second -- a
+    /// clock's text -- costs its own triangles and not the window's.
+    RedrawLive(i32),
 }
 
 /// The widget-protocol interpreter (transport- and GPU-agnostic). See

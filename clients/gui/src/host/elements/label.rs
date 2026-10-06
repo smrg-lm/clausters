@@ -17,12 +17,19 @@ use crate::host::widget::{Align, parse};
 
 /// Static text. `wrap` word-wraps it on the font's advance (off, a single line
 /// clipped with an ellipsis); `align` places each line in the rect.
+///
+/// `live` makes the text a **reading**: something written many times a
+/// second, as a clock's is. It is then drawn on the window's live layer, so a
+/// write costs the label's own triangles and not the window's picture -- and
+/// it sizes nothing, since a container that followed it would be laid out on
+/// every write.
 #[derive(Debug, Clone)]
 pub struct Label {
     pub text: String,
     pub text_size: f32,
     pub wrap: bool,
     pub align: Align,
+    pub live: bool,
 }
 
 pub(super) fn build(
@@ -44,6 +51,20 @@ fn from_props(props: &Map<String, Value>) -> Label {
         text_size: parse::text_size(props),
         wrap: props.get("wrap").and_then(parse::truthy).unwrap_or(false),
         align: Align::parse(props),
+        live: props.get("live").and_then(parse::truthy).unwrap_or(false),
+    }
+}
+
+impl Label {
+    fn paint(&self, d: &mut Draw, ctx: &Ctx) {
+        controls::draw_label(
+            d,
+            &self.text,
+            ctx.rect,
+            self.text_size * ctx.scale,
+            self.wrap,
+            self.align,
+        );
     }
 }
 
@@ -57,6 +78,7 @@ impl Element for Label {
                 .map(|n| self.text_size = n as f32)
                 .is_some(),
             "wrap" => parse::truthy(v).map(|b| self.wrap = b).is_some(),
+            "live" => parse::truthy(v).map(|b| self.live = b).is_some(),
             "align" => v
                 .as_str()
                 .and_then(Align::from_str)
@@ -67,14 +89,21 @@ impl Element for Label {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        controls::draw_label(
-            d,
-            &self.text,
-            ctx.rect,
-            self.text_size * ctx.scale,
-            self.wrap,
-            self.align,
-        );
+        if !self.live {
+            self.paint(d, ctx);
+        }
+    }
+
+    /// A reading is the whole of what a live label draws: its rect is the
+    /// window's picture, and the text over it is what a write changes.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        if self.live {
+            self.paint(d, ctx);
+        }
+    }
+
+    fn live_prop(&self, key: &str) -> bool {
+        self.live && key == "text"
     }
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
@@ -93,7 +122,9 @@ impl Element for Label {
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         (
-            (!self.wrap).then(|| text_box(&self.text, size, m)),
+            // A reading sizes nothing: its text is written on a tick, and a
+            // container fitted to it would be laid out on each one.
+            (!self.wrap && !self.live).then(|| text_box(&self.text, size, m)),
             self.natural(m, scale).1,
         )
     }
@@ -107,7 +138,10 @@ impl Element for Label {
     }
 
     fn needs(&self) -> Needs {
-        Needs::default()
+        Needs {
+            live: self.live,
+            ..Needs::default()
+        }
     }
 
     /// A label puts marks on its rect and navigates nothing: in a window with
@@ -144,6 +178,54 @@ mod tests {
         assert_eq!(l.text_size, crate::host::font::DEFAULT_SIZE);
         assert!(!l.wrap);
         assert_eq!(l.align, Align::Start);
+    }
+
+    /// **A reading is drawn on the live layer and sizes nothing.** A label
+    /// that says `live` leaves its rect to the window's picture and draws its
+    /// text over it, where a write of the text is the only thing redrawn; a
+    /// container fitted to its content does not follow it.
+    #[test]
+    fn a_live_label_draws_its_text_on_the_live_layer() {
+        use crate::host::layout::Rect;
+        use crate::host::paint::Mesh;
+        use crate::host::theme::Theme;
+        use crate::host::world::World;
+
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let world = World::default();
+        let ctx = Ctx {
+            world: &world,
+            metrics: &m,
+            rect: Rect::new(0.0, 0.0, 200.0, 20.0),
+            indent: 0.0,
+            clip: None,
+            scale: 1.0,
+            time: None,
+            focused: false,
+            hovered: false,
+            clock: 0.0,
+        };
+        let drawn = |label: &Label, live: bool| {
+            let mut mesh = Mesh::new();
+            let mut d = Draw::new(&mut mesh, &m, &theme);
+            if live {
+                label.draw_live(&mut d, &ctx);
+            } else {
+                label.draw(&mut d, &ctx);
+            }
+            !mesh.is_empty()
+        };
+        let plain = from_props(&props(r#"{"text":"12.3 s"}"#));
+        assert!(drawn(&plain, false) && !drawn(&plain, true));
+        assert!(!plain.live_prop("text") && !plain.needs().live);
+        assert!(plain.hug(&m, 1.0).0.is_some());
+
+        let reading = from_props(&props(r#"{"text":"12.3 s","live":true}"#));
+        assert!(!drawn(&reading, false) && drawn(&reading, true));
+        assert!(reading.live_prop("text") && reading.needs().live);
+        assert!(!reading.live_prop("text_size"), "its size is the picture's");
+        assert!(reading.hug(&m, 1.0).0.is_none(), "it sizes nothing");
     }
 
     /// A wrapped label's line count follows its string, which is data -- so it

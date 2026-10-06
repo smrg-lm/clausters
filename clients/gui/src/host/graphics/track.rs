@@ -321,6 +321,16 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     }
 }
 
+/// **A header's meters alone**, where [`draw`] puts them: what a track draws
+/// of the sound, apart from everything it draws of the description -- the
+/// part of a header a level moves.
+pub fn draw_meters(d: &mut Draw, rect: Rect, header: &Header, indent: f32) {
+    let (mesh, m, theme) = d.parts();
+    let band = timeline::gutter_band(rect, indent);
+    let parts = header_parts(band, header, m);
+    draw_meter_strip(mesh, m, theme, parts.meters, &header.meters);
+}
+
 /// **A track shows what it produces**: one column per channel down the right
 /// edge of the header, over the amplitude the track is making *after
 /// everything has been applied* -- its clips' gains, its curves and its fader.

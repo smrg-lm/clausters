@@ -1718,16 +1718,32 @@ export function scroll(
  * wraps to the label's width (off, an overflowing line clips with an
  * ellipsis); `align` places each line: `"start"` (the default), `"center"` or
  * `"end"`.
+ *
+ * `live: true` makes the text a **reading** -- a clock, a counter, something
+ * a script sets many times a second. The host then draws it over the window's
+ * kept picture, so a `set` of its text redraws the label and not the window.
+ * A live label sizes nothing: give it a `w` or a `weight`, since a container
+ * fitted to its content does not follow it.
  */
 export function label(
     text = "",
-    options: WidgetOptions & { textSize?: number; wrap?: boolean; align?: string } = {},
+    options: WidgetOptions & {
+        textSize?: number;
+        wrap?: boolean;
+        align?: string;
+        live?: boolean;
+    } = {},
 ): GuiNode {
-    const { textSize, wrap, align, ...rest } = options;
+    const { textSize, wrap, align, live, ...rest } = options;
     return node("label", {
         ...rest,
         text,
-        ...drop([["text_size", textSize], ["wrap", flag(wrap)], ["align", align]]),
+        ...drop([
+            ["text_size", textSize],
+            ["wrap", flag(wrap)],
+            ["align", align],
+            ["live", flag(live)],
+        ]),
     });
 }
 

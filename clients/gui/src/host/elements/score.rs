@@ -151,19 +151,26 @@ impl Element for Score {
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         // Notation tessellates straight into the shared triangle mesh: a paper
-        // panel under the engraving, glyphs and fills in ink, the playback
-        // cursor over it in the playhead accent.
+        // panel under the engraving, glyphs and fills in ink. The playback
+        // cursor goes over it on the live layer, since a clock moves it.
         let (mesh, _, theme) = d.parts();
         mesh.rect(ctx.rect, theme.panel);
-        // The cursor sweeps off the engine clock while a pass plays
-        // (`playhead_at`), so playback costs no messages per frame.
-        let head = self.data.head_ms(ctx.clock, ctx.world.sample_rate);
         let colors = ScoreColors {
             ink: theme.text,
             playhead: theme.playhead,
             selection: theme.selection,
         };
-        self.data.render(mesh, ctx.rect, ctx.clip, head, colors);
+        self.data.render(mesh, ctx.rect, ctx.clip, -1.0, colors);
+    }
+
+    /// **The playback cursor**, over the page: it sweeps off the engine clock
+    /// while a pass plays (`playhead_at`), so playback costs no message per
+    /// frame -- and, drawn here, no page per frame either.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        let (mesh, _, theme) = d.parts();
+        let head = self.data.head_ms(ctx.clock, ctx.world.sample_rate);
+        self.data
+            .render_playhead(mesh, ctx.rect, ctx.clip, head, theme.playhead);
     }
 
     fn needs(&self) -> Needs {
@@ -173,6 +180,8 @@ impl Element for Score {
             // cursor is sweeping -- without this the window stops following the
             // clock and the cursor freezes where it was anchored.
             clock: self.data.playhead_at >= 0.0,
+            // The cursor is the whole of what a clock moves on a page.
+            live: true,
             ..Needs::default()
         }
     }
