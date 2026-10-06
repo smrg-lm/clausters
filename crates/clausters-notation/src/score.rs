@@ -595,11 +595,21 @@ mod tests {
             assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
             score.pages(1000.0, true)
         };
+        // how many drawings the page holds under an element's name
+        let parts = |page: &Page, id: &str| {
+            let named = |p: &&clausters_core::notation::Prim| p.id() == Some(id);
+            page.draw.prims.iter().filter(named).count()
+        };
         let one = laid(&sheet);
         assert_eq!((drawn(&one, "slur"), drawn(&one, "hairpin")), (1, 1));
+        assert_eq!(parts(&one, "a-slur-6-11"), 1);
         sheet.grid.breaks = vec![(2, "page".to_string())];
         let two = laid(&sheet);
-        assert_eq!((drawn(&two, "slur"), drawn(&two, "hairpin")), (2, 2));
+        // one slur and one hairpin still, each drawn once on each page under
+        // the one name: a press on either part names the line
+        assert_eq!((drawn(&two, "slur"), drawn(&two, "hairpin")), (1, 1));
+        assert_eq!(parts(&two, "a-slur-6-11"), 2);
+        assert_eq!(parts(&two, "a-crescendo-6-11"), 2);
         // and it has nothing to say about either run: no end it cannot match
         for run in clausters_core::notation::sheet_to_mei_pages(&sheet).unwrap() {
             let said = crate::complaints(&run, &EngraveOptions::default()).expect("engraves");
@@ -624,6 +634,13 @@ mod tests {
         let page = score.display_list(1);
         assert_eq!(drawn(&page, "mRpt"), 1);
         assert_eq!((drawn(&page, "slur"), drawn(&page, "hairpin")), (1, 1));
+        // each under the name the model gives it, which is what a press says
+        let kinds = &page.draw.kinds;
+        assert_eq!(kinds.get("a-slur-2-6").map(String::as_str), Some("slur"));
+        assert_eq!(
+            kinds.get("a-crescendo-7-10").map(String::as_str),
+            Some("hairpin")
+        );
         // and the engraver's own document still holds both
         let back = clausters_core::notation::mei_to_sheet(&score.mei()).unwrap();
         let kinds: Vec<&str> = back.spanners.iter().map(|s| s.kind.as_str()).collect();

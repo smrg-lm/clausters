@@ -63,8 +63,8 @@ pub use interp::{
 };
 pub use layout::{PAPERS, PageSetup, Paper, View, options as layout_options, paper};
 pub use mei::{
-    KEYS, OCTAVES, ORNAMENTS, REPEAT_MARKS, SPANNERS, Slot, key_alteration, sheet_to_mei,
-    sheet_to_mei_pages, voice_to_mei, voice_to_sheet,
+    Attachment, CONTROLS, KEYS, MARKS, OCTAVES, ORNAMENTS, REPEAT_MARKS, SPANNERS, Slot,
+    attachment_id, key_alteration, sheet_to_mei, sheet_to_mei_pages, voice_to_mei, voice_to_sheet,
 };
 pub use model::{
     Control, Grid, Group, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice,

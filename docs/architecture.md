@@ -1135,7 +1135,15 @@ selection is the editor's**: a press names one
 element and how it was pressed (alone, with Ctrl, with Shift), and the editor
 answers with every element that is now selected — a range in time, a measure
 named by the id the emitter gives each staff of it (`m3s1`), an item as every
-part it is drawn as — which the page then highlights. The standalone host opens one with `--score`, a feature
+part it is drawn as — which the page then highlights. **A verb means what the
+selection makes it mean** (`score::selection`): what is written beside the
+notes — a line between two items, a mark of one, a sign at one — is written
+under an id that names it in the model (`a-slur-2-11`, `a-dynamic-n3`;
+`notation::attachment_id` reads it back), so a press on a slur selects the slur,
+Delete takes it away and not its notes, and a verb that asks for notes reads the
+ones it is attached to. The keys of the window's scope act on the selection, and
+note entry's own scope, read first while the window is in it, gives the same
+keys to the cursor. The standalone host opens one with `--score`, a feature
 that links the engraver to read the file and the clients' MIDI writer to export
 it. With `standalone` it also plays it the way it plays a roll: the score's
 render on an event lane of a transport of its own, through the player

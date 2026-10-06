@@ -2366,6 +2366,40 @@ Every entry carries a checkbox.
   has nowhere to live), and so whether the builder and those two examples go,
   as the bare `multitrack` did, or stay as a view.
 
+- ⬜ **The score editor's editing rules as modules of their own** *(the
+  user, 2026-10-06: "the editing rules of the score editor should be
+  modularized; they are very specific. It can be a later refactor, coherent
+  with the other applications")*. What a press, a key and a verb mean is
+  decided in four places today: the host's `score` element (what a press
+  reports, by the page's `entry` and the modifiers), the editor's turn (which
+  verb a window key is, by the mode), `score::verbs` (what a verb does to the
+  items selected) and `score::selection` (what a selection is, and what a
+  verb means over something that is no item). The last two are modules and
+  pure; the first two are arms of a `match` inside a widget and inside the
+  editor. The refactor names each rule once -- the context a gesture is read
+  in, the meaning it has there -- in a module the editor consults, shaped as
+  the other applications' are, so the notes editor's and the multitrack's
+  rules can be read against it. Open: where the press's rule lives, since the
+  host answers a press before any owner hears it (the core's `admits` table
+  is the precedent: one table every renderer reads).
+
+- ⬜ **What a score editor's hand expects and this one has not** *(listed
+  2026-10-06, settling "A press on a score means what its context says" in
+  `clients/gui/PLAN.md` against the field's conventions)*. Three, none of
+  them a fix:
+  - **The signs the engraver draws from the grid and the staff** -- a clef, a
+    key signature, a time signature, a barline, a measure repeat -- are
+    selected under ids the engraver mints, which name nothing in the model:
+    no verb reaches them, and Delete over a change of clef does not take it
+    back. They are written from the score definition and not as elements of
+    their own, so naming them is a decision about how the changes are
+    written.
+  - **A sweep over blank paper selects what it covers.** A press on paper
+    lets the selection go and a drag there does nothing; the field's editors
+    select by a rectangle.
+  - **A menu on what is pressed**, with the verbs that are that element's.
+    The host has the menu bar and no menu at the pointer.
+
 - ⬜ **Dynamics need a model of the instrument and of hearing** *(the user,
   2026-10-06, listening to the score editor's hairpins: what can be done now
   is a first reading, and the rest is a direction)*. A crescendo is now
@@ -3053,6 +3087,18 @@ wrong.
   once and a loop repeats -- from its first note to the end of the one that
   ends last, though the measure holds one note; one item picked is where a
   pass starts.
+
+- ✅ **A window's widgets asked one by one engrave the score once each**
+  *(found 2026-10-06, looking at a selection in the browser)*. A client asks
+  the editor for a window's widgets one at a time (the door's `props`), and
+  the score editor answered each with the whole window corrected -- the page
+  engraved again -- whichever widget was asked for. Measured in a page: one
+  `select` made from the script engraved the score 165 times, once for every
+  tool and palette entry, three loads each with a page break written. A
+  press on the page does not take that path, so a hand never saw it.
+  **Fixed 2026-10-06**: only the page and its scroll are answered with an
+  engraving; the status line is answered with its sentence, a tool with the
+  chrome's state. Pinned by counting what the engraver draws.
 
 - ✅ **A run of pages after the first carries the engraver's own credit**
   *(found 2026-10-06, the same look)*. The engraver signs the foot of a

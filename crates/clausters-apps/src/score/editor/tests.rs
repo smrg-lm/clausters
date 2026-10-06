@@ -26,6 +26,7 @@ impl Engraver for Kept {
         !data.is_empty()
     }
     fn render_svg(&self, _page: i32) -> String {
+        DRAWN.with(|n| n.set(n.get() + 1));
         String::new()
     }
     fn mei(&self) -> String {
@@ -86,6 +87,8 @@ fn holding(items: Vec<Item>) -> Shared {
 }
 
 thread_local! {
+    /// How many pages this test's engraver was asked to draw.
+    static DRAWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// What this test's engraver was last asked to lay out under.
     static OPTIONS: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 }
@@ -193,6 +196,162 @@ fn a_verb_over_the_selection_is_one_entry_and_puts_back() {
         first_marks(&editor).articulations,
         vec!["stacc".to_string()]
     );
+}
+
+/// A verb means what the selection makes it mean: Delete takes away the
+/// slur that is selected and not its notes, and a dynamic from the palette
+/// with a dynamic selected replaces it.
+#[test]
+fn a_verb_acts_on_what_is_selected_by_what_it_is() {
+    let mut editor = opened();
+    let spanners = |editor: &ScoreEditor| -> Vec<(String, u64, u64)> {
+        let held = editor.held();
+        let sheet = held.sheet().unwrap();
+        sheet
+            .spanners
+            .iter()
+            .map(|s| (s.kind.clone(), s.from, s.to))
+            .collect()
+    };
+    let dynamic = |editor: &ScoreEditor, id: u64| -> Option<String> {
+        let held = editor.held();
+        let sheet = held.sheet().unwrap();
+        let items = &sheet.staves[0].voices[0].items;
+        items
+            .iter()
+            .find(|i| i.id() == id)
+            .and_then(|i| i.marks())
+            .and_then(|m| m.dynamic.clone())
+    };
+    // a slur over the first three notes, and a dynamic under the second
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    editor.event(&gesture("element", &[json!("n3"), json!("extend")]), 1);
+    assert!(
+        editor
+            .act(&json!({"action": "spanner", "kind": "slur"}), 1)
+            .changed
+    );
+    editor.event(&gesture("element", &[json!("n2")]), 1);
+    assert!(
+        editor
+            .act(&json!({"action": "dynamic", "name": "p"}), 1)
+            .changed
+    );
+    assert_eq!(spanners(&editor), [("slur".to_string(), 1, 3)]);
+
+    // the slur, pressed: the status line says what it is
+    editor.event(&gesture("element", &[json!("a-slur-1-3")]), 1);
+    assert!(editor.items().is_empty());
+    assert!(
+        editor.describe().starts_with("slur from item 1 to item 3"),
+        "{}",
+        editor.describe()
+    );
+    // a crescendo from the palette is written over the notes the slur is on
+    assert!(
+        editor
+            .act(&json!({"action": "spanner", "kind": "crescendo"}), 1)
+            .changed
+    );
+    assert_eq!(spanners(&editor).len(), 2);
+    // and Delete takes the slur away: the notes and the crescendo stay
+    editor.event(&gesture("element", &[json!("a-slur-1-3")]), 1);
+    let out = editor.act(&json!({"action": "delete"}), 1);
+    assert!(
+        out.changed && out.record.is_some(),
+        "one entry of the history"
+    );
+    assert_eq!(spanners(&editor), [("crescendo".to_string(), 1, 3)]);
+    assert_eq!(shape(&editor).len(), 4, "no note went with it");
+
+    // the dynamic, pressed: another one replaces it, and Delete removes it
+    editor.event(&gesture("element", &[json!("a-dynamic-n2")]), 1);
+    assert!(editor.describe().starts_with("dynamic of item 2: p"));
+    assert!(
+        editor
+            .act(&json!({"action": "dynamic", "name": "f"}), 1)
+            .changed
+    );
+    assert_eq!(dynamic(&editor, 2).as_deref(), Some("f"));
+    editor.event(&gesture("element", &[json!("a-dynamic-n2")]), 1);
+    assert!(editor.act(&json!({"action": "delete"}), 1).changed);
+    assert_eq!(dynamic(&editor, 2), None);
+    assert_eq!(shape(&editor).len(), 4);
+
+    // a note and a line picked together: both go
+    editor.event(&gesture("element", &[json!("n4")]), 1);
+    editor.event(
+        &gesture("element", &[json!("a-crescendo-1-3"), json!("toggle")]),
+        1,
+    );
+    assert!(editor.act(&json!({"action": "delete"}), 1).changed);
+    assert!(spanners(&editor).is_empty());
+    assert_eq!(shape(&editor).len(), 3);
+}
+
+/// The keys act on the selection where the window is not writing notes:
+/// the same keys note entry reads, meaning what the mode makes them mean.
+#[test]
+fn the_keys_act_on_the_selection_outside_note_entry() {
+    let mut editor = opened();
+    // a key is the window's verb, so the editor is told which window is its
+    call_json(&mut editor, r#"{"verb": "sync", "window": 1}"#);
+    let steps = |editor: &ScoreEditor| -> Vec<Step> {
+        let held = editor.held();
+        let sheet = held.sheet().unwrap();
+        let items = &sheet.staves[0].voices[0].items;
+        items.iter().map(|i| i.pitches()[0].step).collect()
+    };
+    // the arrows move the selection to the item beside it, and stop at the end
+    editor.event(&gesture("element", &[json!("n3")]), 1);
+    editor.event(&key("select_right"), 1);
+    assert_eq!(editor.items(), vec![4]);
+    editor.event(&key("select_right"), 1);
+    assert_eq!(editor.items(), vec![4], "there is nothing after the last");
+    editor.event(&key("select_left"), 1);
+    editor.event(&key("select_left"), 1);
+    assert_eq!(editor.items(), vec![2]);
+    // up and down move the selected note a step, one entry each
+    let out = editor.event(&key("step_up"), 1);
+    assert!(out.changed && out.record.is_some());
+    assert_eq!(steps(&editor), [Step::E, Step::F, Step::E, Step::E]);
+    editor.event(&stamped(key("step_down"), 2), 2);
+    assert_eq!(steps(&editor), [Step::E; 4]);
+    // Delete takes the selection away, and Escape lets one go
+    editor.event(&stamped(key("delete"), 3), 3);
+    assert_eq!(shape(&editor).len(), 3);
+    editor.event(&stamped(gesture("element", &[json!("n1")]), 4), 4);
+    assert_eq!(editor.items(), vec![1]);
+    editor.event(&stamped(key("deselect"), 4), 4);
+    assert!(editor.items().is_empty());
+    // in note entry the arrows are the cursor's: nothing is selected by them
+    editor.event(&stamped(key("entry"), 4), 4);
+    editor.event(&stamped(key("cursor_right"), 4), 4);
+    assert!(editor.items().is_empty());
+}
+
+/// A client asks for a window's widgets one by one, and only the page and
+/// its scroll are worth an engraving: a tool is answered with its state and
+/// the status line with its sentence.
+#[test]
+fn asking_for_a_tools_props_engraves_nothing() {
+    let mut editor = with_tools();
+    let props = |editor: &mut ScoreEditor, widget: i32| -> Value {
+        let asked = json!({"verb": "props", "widget": widget}).to_string();
+        serde_json::from_str(&call_json(editor, &asked)).unwrap()
+    };
+    let drawn = || DRAWN.with(std::cell::Cell::get);
+    let before = drawn();
+    // every tool, and the status line
+    for widget in numbered().values().copied().chain(IDS.status) {
+        props(&mut editor, widget);
+    }
+    assert_eq!(drawn(), before, "no page was drawn for any of them");
+    assert_eq!(props(&mut editor, numbered()["loop"])["value"], 0);
+    assert!(props(&mut editor, IDS.status.unwrap())["text"].is_string());
+    // the page is engraved to be answered
+    assert!(props(&mut editor, IDS.page)["display_list"].is_object());
+    assert!(drawn() > before);
 }
 
 #[test]

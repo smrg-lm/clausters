@@ -1503,13 +1503,15 @@ mod tests {
         });
         let mei = sheet_to_mei(&sheet).unwrap();
         assert!(mei.contains("<mRpt/>"), "{mei}");
-        let slur = "<slur staff=\"1\" startid=\"#n2\" tstamp2=\"1m+2\"/>";
+        let slur = "<slur xml:id=\"a-slur-2-6\" staff=\"1\" startid=\"#n2\" tstamp2=\"1m+2\"/>";
         assert!(mei.contains(slur), "{mei}");
-        let hairpin =
-            "<hairpin form=\"cres\" staff=\"1\" tstamp=\"3\" layer=\"1\" endid=\"#n10\"/>";
+        let hairpin = "<hairpin form=\"cres\" xml:id=\"a-crescendo-7-10\" staff=\"1\" tstamp=\"3\" \
+                       layer=\"1\" endid=\"#n10\"/>";
         assert!(mei.contains(hairpin), "{mei}");
-        assert!(mei.contains("<reh staff=\"1\" tstamp=\"1\" place=\"above\">"));
-        assert!(mei.contains("<pedal staff=\"1\" tstamp=\"1\" layer=\"1\" dir=\"down\"/>"));
+        assert!(mei.contains("<reh xml:id=\"a-reh-n5\" staff=\"1\" tstamp=\"1\" place=\"above\">"));
+        assert!(mei.contains(
+            "<pedal xml:id=\"a-pedal-5-9\" staff=\"1\" tstamp=\"1\" layer=\"1\" dir=\"down\"/>"
+        ));
 
         // the repeated measure's items are the first's again, as new items
         let back = mei_to_sheet(&mei).unwrap();

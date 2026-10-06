@@ -117,7 +117,22 @@ type Rows = &'static [(&'static str, &'static [&'static str])];
 /// editor's window (`score`) and its note entry (`note_entry`), whose keys are
 /// the settled ones of notation programs.
 const SCOPED: &[(&str, Rows)] = &[
-    ("score", &[("entry", &["N"])]),
+    (
+        "score",
+        &[
+            ("entry", &["N"]),
+            // over the selection: what note entry's own rows, read first
+            // while the window is in it, give the cursor and the note written
+            ("delete", &["Delete", "Backspace"]),
+            ("deselect", &["Escape"]),
+            ("select_left", &["Left"]),
+            ("select_right", &["Right"]),
+            ("step_up", &["Up"]),
+            ("step_down", &["Down"]),
+            ("octave_up", &["Ctrl+Up"]),
+            ("octave_down", &["Ctrl+Down"]),
+        ],
+    ),
     (
         "note_entry",
         &[
@@ -579,6 +594,18 @@ mod tests {
         );
         assert_eq!(map.lookup_in(&Key::Escape, none, &entry), Some("entry_off"));
         assert_eq!(map.lookup(&Key::Escape, none), None);
+        // one key, two verbs by the mode the window is in: the arrows and
+        // Escape are the selection's, and the cursor's in note entry
+        for (key, selecting, writing) in [
+            (Key::Left, "select_left", "cursor_left"),
+            (Key::Right, "select_right", "cursor_right"),
+            (Key::Escape, "deselect", "entry_off"),
+            (Key::Up, "step_up", "step_up"),
+            (Key::Delete, "delete", "delete"),
+        ] {
+            assert_eq!(map.lookup_in(&key, none, &entry[..1]), Some(selecting));
+            assert_eq!(map.lookup_in(&key, none, &entry), Some(writing));
+        }
         let warnings = map.bind("leave", &["Escape"]);
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         // a scope's table overlays from JSON as a nested object, and takes a

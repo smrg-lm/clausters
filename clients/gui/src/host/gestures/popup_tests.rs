@@ -1237,5 +1237,26 @@ fn a_windows_key_scopes_are_read_before_the_table() {
         from(),
     );
     assert_eq!(host.window_keys(1), vec!["score".to_string()]);
+    // one key, another verb: outside note entry Escape lets the selection go
+    let effects = g
+        .press_key(&mut host, &ctx, Key::Escape, None)
+        .expect("the score's own");
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![OscType::String("deselect".into())]]
+    );
+    // and with no scope named it is the front's again
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_SET.into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String("keys".into()),
+                OscType::String("[]".into()),
+            ],
+        }),
+        from(),
+    );
+    assert!(host.window_keys(1).is_empty());
     assert!(g.press_key(&mut host, &ctx, Key::Escape, None).is_none());
 }

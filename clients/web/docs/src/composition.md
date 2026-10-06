@@ -138,6 +138,23 @@ the staves between. `editor.selected` is what is selected, as the model's item
 ids, and `editor.select(elements)` selects from the page by the page's
 `xml:id`s.
 
+**Everything the page draws can be picked, and a verb means what the selection
+makes it mean** — the rule the field's editors share. A press on a slur, a
+hairpin, a dynamic, an ornament or a tempo mark selects *it*, and the status
+line says what it is in the model; Delete then takes away the slur and not its
+notes, the dynamic and not the note it is under. A verb that asks for notes
+reads the notes the selection is attached to: with a dynamic selected, another
+one from the palette replaces it, and with a slur selected a hairpin is written
+over the same notes. The page names each after the model — `a-slur-2-11` is the
+slur from item 2 to item 11, `a-dynamic-n3` the dynamic of item 3 — so a line
+drawn in two parts, across a page break, is one thing to pick.
+
+**The keys act on the selection** where the window is not writing notes: Delete
+or Backspace takes it away, Up and Down move the selected notes a step and Ctrl
+with them an octave, Left and Right move the selection to the item beside it,
+and Escape lets it go. They are the keys note entry reads, meaning what the mode
+makes them mean, and bindings of the key table under `[gui.keys.score]`.
+
 **Writing is a mode, note entry**, and the window opens outside it: N, the
 toolbar's pencil or `editor.entry = true` enter it, and Escape, N again or a
 play leave it. In it an **edit cursor** stands on a staff, in a voice, at a time
@@ -154,8 +171,8 @@ Ctrl and an arrow a bar, Alt and Up or Down to the next staff, and Ctrl+Alt+1 to
 first; Up and Down move the note just written a step, Ctrl and them an octave. A
 press on a staff writes at the time it fell at, or, on a note of the cursor's
 voice, adds the pitch pressed to its chord. Every one of these keys is a binding
-of the host's key table, under `[gui.keys.note_entry]`, and `N` under
-`[gui.keys.score]`.
+of the host's key table, under `[gui.keys.note_entry]`, read before the
+selection's own under `[gui.keys.score]`, where `N` is.
 
 ### The window: a menu bar, a toolbar, palettes and dialogs
 

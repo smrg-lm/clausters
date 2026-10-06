@@ -4761,7 +4761,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   widget's.
   *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
-- ⬜ **A press on a score means what its context says, not what is under it**
+- ✅ **A press on a score means what its context says, not what is under it**
   *(the user, 2026-09-07, after the staff-line fix and the regression that
   followed it: "para que el editor de partituras funcione correctamente vamos a
   tener que agregar reglas de edición segun el contexto en el que se produce un
@@ -4795,6 +4795,36 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   evidence: both are closed, both were correct, and the editor is still not
   what a hand expects, which is what says the missing piece is not another
   geometric tie-break.
+
+  **Resolved 2026-10-06, against what the field's editors do** *(the user:
+  "see whether they can be settled by the standards of score editors")*. Of
+  the three candidates, the field uses each for one thing and none of them for
+  the others:
+
+  - **The mode** is the context of a plain press on a staff, and there are two:
+    selecting and note entry. It is the client's state, said to the page as the
+    `entry` prop the score editor's `X5` built -- so that half was already
+    answered when this was read again. No editor has a tool per family.
+  - **The modifier** extends a selection and does nothing else: Ctrl takes an
+    element in or out, Shift reaches to it. Also built.
+  - **The kind of thing touched** is the context of a *verb*, not of a press:
+    everything drawn can be picked, and a verb means what the selection makes
+    it mean. This was the missing piece, and it was not in the host at all. A
+    slur, a hairpin, a dynamic or a tempo mark selected was "not one of this
+    model's items" to the editor, and no verb reached it.
+
+  **Built 2026-10-06**: what is written beside the notes is named after the
+  model on the page (`a-slur-2-11`, `a-dynamic-n3`, `a-tempo-n5`;
+  `notation::attachment_id`), so a press on it names it and a line drawn in
+  two parts is one thing; the editor reads a selection as what each element is
+  (`score::selection` in `crates/clausters-apps`), Delete takes away what is
+  selected and not the notes under it, and a verb that asks for notes reads the
+  ones the selection is attached to -- a dynamic from the palette replaces the
+  one selected. The keys follow the same rule: outside note entry Delete, the
+  arrows and Escape act on the selection, and in it they are the cursor's.
+  What the field's editors do and this one does not yet is in
+  `crates/clausters-apps/PLAN.md`, "Future directions": the signs the engraver
+  draws from the grid, a sweep that selects, and a menu on what is pressed.
 
 - ✅ **Key bindings per window** *(left open by `G36`, 2026-10-04)*. The key table is the host's, like its theme, so two windows of one host cannot give one chord two verbs. A `keys` prop on a `window` -- or on a subtree, as `theme` scopes a look -- is the next level, and the question it waits on is the one an application inside another asks: which of two applications that both claim a chord answers it. **Built 2026-10-05, with the score editor's note entry**: a window names the key table's **scopes** in its `keys` prop, sub-tables (`[gui.keys.<scope>]`, a nested object on `/gui_keys`) read before the table's own rows, the last named first -- so one chord has two verbs in two windows, and in one window from one mode to the next (`docs/gui-protocol.md`, "The keys are a table"). A subtree naming scopes, and which of two nested applications answers a chord they both claim, are the open part of `crates/clausters-document/PLAN.md`'s "An application inside another", where nesting is decided.
 

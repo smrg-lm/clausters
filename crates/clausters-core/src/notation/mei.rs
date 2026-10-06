@@ -1347,24 +1347,35 @@ fn attachments(
                     continue;
                 };
                 let at = format!(" staff=\"{}\" startid=\"#n{}\"", si + 1, item.id());
+                // each is named after the mark it draws, so a press on it
+                // names the mark
+                let id = |mark: &str| format!(" xml:id=\"{}\"", mark_id(mark, item.id()));
                 let here = out.entry(measure).or_default();
                 if let Some(dynamic) = &marks.dynamic {
-                    here.push_str(&format!("<dynam{at} place=\"below\">{dynamic}</dynam>"));
+                    here.push_str(&format!(
+                        "<dynam{}{at} place=\"below\">{dynamic}</dynam>",
+                        id("dynamic")
+                    ));
                 }
                 if let Some(ornament) = &marks.ornament {
                     // An ornament is its own element in MEI, named for what it
                     // is; any other is an `ornam` named by its glyph.
+                    let id = id("ornament");
                     if ORNAMENTS.contains(&ornament.as_str()) {
-                        here.push_str(&format!("<{ornament}{at}/>"));
+                        here.push_str(&format!("<{ornament}{id}{at}/>"));
                     } else {
                         here.push_str(&format!(
-                            "<ornam{at} glyph.auth=\"smufl\" glyph.name=\"{}\"/>",
+                            "<ornam{id}{at} glyph.auth=\"smufl\" glyph.name=\"{}\"/>",
                             escape(ornament)
                         ));
                     }
                 }
                 if let Some(order) = &marks.arpeggio {
-                    here.push_str(&format!("<arpeg{at} order=\"{}\"/>", escape(order)));
+                    here.push_str(&format!(
+                        "<arpeg{}{at} order=\"{}\"/>",
+                        id("arpeggio"),
+                        escape(order)
+                    ));
                 }
                 if let Some(kind) = &marks.breath {
                     let kind = if kind == "caesura" {
@@ -1372,7 +1383,7 @@ fn attachments(
                     } else {
                         "breath"
                     };
-                    here.push_str(&format!("<{kind}{at}/>"));
+                    here.push_str(&format!("<{kind}{}{at}/>", id("breath")));
                 }
                 if marks.ring
                     && let Some(&(_, onset)) = times.get(&item.id())
@@ -1381,13 +1392,15 @@ fn attachments(
                 }
                 if let Some(fingering) = &marks.fingering {
                     here.push_str(&format!(
-                        "<fing{at} place=\"above\">{}</fing>",
+                        "<fing{}{at} place=\"above\">{}</fing>",
+                        id("fingering"),
                         escape(fingering)
                     ));
                 }
                 if let Some(harmony) = &marks.harmony {
                     here.push_str(&format!(
-                        "<harm{at} place=\"above\">{}</harm>",
+                        "<harm{}{at} place=\"above\">{}</harm>",
+                        id("harmony"),
                         escape(harmony)
                     ));
                 }
@@ -1399,6 +1412,7 @@ fn attachments(
         out.entry(measure).or_default().push_str(&xml);
     }
 
+    let mut seen: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
     for control in &sheet.controls {
         let (point, measure, si) = anchor(control.on, false).ok_or_else(|| {
             format!(
@@ -1406,7 +1420,16 @@ fn attachments(
                 control.kind, control.on
             )
         })?;
-        let at = format!(" staff=\"{}\"{}", si + 1, point.start());
+        // the first of its kind at an item is named after it; a second one
+        // there is the same to the model, which takes them back together
+        let named = (control.kind.clone(), control.on);
+        let id = if seen.contains(&named) {
+            String::new()
+        } else {
+            format!(" xml:id=\"{}\"", control_id(&control.kind, control.on))
+        };
+        seen.insert(named);
+        let at = format!("{id} staff=\"{}\"{}", si + 1, point.start());
         let text = escape(&control.text);
         let xml = match control.kind.as_str() {
             "tempo" => {
@@ -1446,7 +1469,11 @@ fn attachments(
                 spanner.kind, spanner.to
             ));
         };
-        let staff = format!(" staff=\"{}\"", si + 1);
+        // named after the line it draws, in every part of it: a press on any
+        // of them names the one line
+        let named = spanner_id(&spanner.kind, spanner.from, spanner.to);
+        let staff = format!(" xml:id=\"{named}\" staff=\"{}\"", si + 1);
+        let plain = format!(" staff=\"{}\"", si + 1);
         // the element's name with what it says before its ends, and after
         let (name, tail) = match spanner.kind.as_str() {
             "slur" => ("slur".to_string(), String::new()),
@@ -1480,9 +1507,10 @@ fn attachments(
                 out.entry(measure)
                     .or_default()
                     .push_str(&format!("<pedal{staff}{} dir=\"down\"/>", from.start()));
-                out.entry(to_measure)
-                    .or_default()
-                    .push_str(&format!("<pedal{staff}{} dir=\"up\"/>", to.start()));
+                out.entry(to_measure).or_default().push_str(&format!(
+                    "<pedal xml:id=\"{named}-up\"{plain}{} dir=\"up\"/>",
+                    to.start()
+                ));
                 continue;
             }
             other => {
@@ -1605,9 +1633,15 @@ fn ring_xml(
     };
     heads
         .into_iter()
-        .map(|head| {
+        .enumerate()
+        .map(|(k, head)| {
+            // each tie is the one mark, named after it
+            let named = match k {
+                0 => mark_id("ring", id),
+                k => format!("{}-p{}", mark_id("ring", id), k + 1),
+            };
             let xml = format!(
-                "<lv staff=\"{}\" startid=\"#{head}\" tstamp2=\"0m+{end}\"/>",
+                "<lv xml:id=\"{named}\" staff=\"{}\" startid=\"#{head}\" tstamp2=\"0m+{end}\"/>",
                 si + 1
             );
             (measure, xml)
@@ -1701,6 +1735,90 @@ fn beat_of(offset: Ratio, unit: i64) -> String {
     let beat = 1.0 + (offset * Ratio::new(unit, 1)).to_f64();
     let text = format!("{beat:.4}");
     text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// **What is written beside the notes, as the model holds it**: a line
+/// between two items, a mark one item carries, or something written at an
+/// item. It is what an engraved element is *of*, where it is no item itself
+/// -- so a press on a slur names the slur, and a verb over it acts on the
+/// slur ([`attachment_id`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Attachment {
+    /// A [`Spanner`](super::model::Spanner): its kind and its two items.
+    Spanner { kind: String, from: u64, to: u64 },
+    /// One of an item's [`Marks`], by the field's name ([`MARKS`]).
+    Mark { mark: String, item: u64 },
+    /// A [`Control`](super::model::Control): its kind and the item it is at.
+    Control { kind: String, on: u64 },
+}
+
+/// The marks of an item the page draws as an element of their own, by the
+/// field of [`Marks`] each is.
+pub const MARKS: [&str; 7] = [
+    "dynamic",
+    "ornament",
+    "arpeggio",
+    "breath",
+    "ring",
+    "fingering",
+    "harmony",
+];
+
+/// What is written at a point, by its kind.
+pub const CONTROLS: [&str; 3] = ["tempo", "dir", "reh"];
+
+/// The id a line between two items is written under.
+fn spanner_id(kind: &str, from: u64, to: u64) -> String {
+    format!("a-{kind}-{from}-{to}")
+}
+
+/// The id a mark of `item` is written under.
+fn mark_id(mark: &str, item: u64) -> String {
+    format!("a-{mark}-n{item}")
+}
+
+/// The id what is written at `on` is written under.
+fn control_id(kind: &str, on: u64) -> String {
+    format!("a-{kind}-n{on}")
+}
+
+/// **What the engraved element `element_id` is of the model's**, where it is
+/// something written beside the notes -- `a-slur-2-11` is the slur from item
+/// 2 to item 11, `a-dynamic-n3` the dynamic of item 3, `a-tempo-n5` the tempo
+/// mark at item 5 -- or `None` where it was not written as one.
+///
+/// The emitter's own spelling, read back where it is written, as
+/// [`item_id`](super::item_id) reads an item's: a part of one line in another
+/// run of pages, the sign a pedal is let go with and the tie of a chord's
+/// second notehead carry the same name with something after it, and are the
+/// same line and the same mark.
+pub fn attachment_id(element_id: &str) -> Option<Attachment> {
+    let mut parts = element_id.strip_prefix("a-")?.split('-');
+    let kind = parts.next()?;
+    let first = parts.next()?;
+    if let Some(item) = first.strip_prefix('n') {
+        let item: u64 = item.parse().ok()?;
+        return if CONTROLS.contains(&kind) {
+            Some(Attachment::Control {
+                kind: kind.to_string(),
+                on: item,
+            })
+        } else if MARKS.contains(&kind) {
+            Some(Attachment::Mark {
+                mark: kind.to_string(),
+                item,
+            })
+        } else {
+            None
+        };
+    }
+    let from = first.parse().ok()?;
+    let to = parts.next()?.parse().ok()?;
+    SPANNERS.contains(&kind).then(|| Attachment::Spanner {
+        kind: kind.to_string(),
+        from,
+        to,
+    })
 }
 
 /// The ornaments MEI names an element for; any other is an `ornam`.
@@ -2611,24 +2729,28 @@ mod emission {
         mine.spanners = vec![line("slur", 2, 11), line("crescendo", 2, 6)];
         // one document: the two ends are the two notes
         let whole = sheet_to_mei(&mine).unwrap();
-        assert!(whole.contains("<slur staff=\"1\" startid=\"#n2\" endid=\"#n11\"/>"));
+        assert!(
+            whole.contains(
+                "<slur xml:id=\"a-slur-2-11\" staff=\"1\" startid=\"#n2\" endid=\"#n11\"/>"
+            )
+        );
         mine.grid.breaks = vec![(1, "page".into()), (2, "page".into())];
         assert_eq!(sheet_to_mei(&mine).unwrap().matches("<slur").count(), 1);
 
         let runs = sheet_to_mei_pages(&mine).unwrap();
         assert_eq!(runs.len(), 3);
         // from its note to the end of the first run's last measure
-        let first = "<slur staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
+        let first = "<slur xml:id=\"a-slur-2-11\" staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
         assert!(runs[0].contains(first), "{}", runs[0]);
         // through the whole of the run it passes
-        let through = "<slur staff=\"1\" tstamp=\"0\" tstamp2=\"0m+5\"/>";
+        let through = "<slur xml:id=\"a-slur-2-11\" staff=\"1\" tstamp=\"0\" tstamp2=\"0m+5\"/>";
         assert!(runs[1].contains(through), "{}", runs[1]);
         // and from where the last opens to its note
-        let last = "<slur staff=\"1\" tstamp=\"0\" endid=\"#n11\"/>";
+        let last = "<slur xml:id=\"a-slur-2-11\" staff=\"1\" tstamp=\"0\" endid=\"#n11\"/>";
         assert!(runs[2].contains(last), "{}", runs[2]);
         // the hairpin ends in the second run and is no part of the third
-        let opens = "<hairpin form=\"cres\" staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
-        let closes = "<hairpin form=\"cres\" staff=\"1\" tstamp=\"0\" endid=\"#n6\"/>";
+        let opens = "<hairpin form=\"cres\" xml:id=\"a-crescendo-2-6\" staff=\"1\" startid=\"#n2\" tstamp2=\"0m+5\"/>";
+        let closes = "<hairpin form=\"cres\" xml:id=\"a-crescendo-2-6\" staff=\"1\" tstamp=\"0\" endid=\"#n6\"/>";
         assert!(runs[0].contains(opens), "{}", runs[0]);
         assert!(runs[1].contains(closes), "{}", runs[1]);
         assert!(!runs[2].contains("<hairpin"));
@@ -2692,19 +2814,126 @@ mod emission {
         }]);
         let mei = sheet_to_mei(&mine).expect("writes it");
         for tie in [
-            "<lv staff=\"1\" startid=\"#n1\" tstamp2=\"0m+2\"/>",
-            "<lv staff=\"1\" startid=\"#n3\" tstamp2=\"0m+3.25\"/>",
-            "<lv staff=\"1\" startid=\"#n5\" tstamp2=\"0m+4.5\"/>",
-            "<lv staff=\"1\" startid=\"#n7-p1\" tstamp2=\"0m+3.5\"/>",
-            "<lv staff=\"1\" startid=\"#n7-p2\" tstamp2=\"0m+3.5\"/>",
-            "<lv staff=\"1\" startid=\"#n8-2\" tstamp2=\"0m+2\"/>",
+            "<lv xml:id=\"a-ring-n1\" staff=\"1\" startid=\"#n1\" tstamp2=\"0m+2\"/>",
+            "<lv xml:id=\"a-ring-n3\" staff=\"1\" startid=\"#n3\" tstamp2=\"0m+3.25\"/>",
+            "<lv xml:id=\"a-ring-n5\" staff=\"1\" startid=\"#n5\" tstamp2=\"0m+4.5\"/>",
+            "<lv xml:id=\"a-ring-n7\" staff=\"1\" startid=\"#n7-p1\" tstamp2=\"0m+3.5\"/>",
+            "<lv xml:id=\"a-ring-n7-p2\" staff=\"1\" startid=\"#n7-p2\" tstamp2=\"0m+3.5\"/>",
+            "<lv xml:id=\"a-ring-n8\" staff=\"1\" startid=\"#n8-2\" tstamp2=\"0m+2\"/>",
         ] {
             assert!(mei.contains(tie), "{tie} in {mei}");
         }
-        assert!(!mei.contains("<lv staff=\"1\" startid=\"#n8\""), "{mei}");
+        assert!(
+            !mei.contains("<lv xml:id=\"a-ring-n8\" staff=\"1\" startid=\"#n8\""),
+            "{mei}"
+        );
         // the second measure holds the chord's two, the third the last part's
         let third = mei.split("xml:id=\"m3\"").nth(1).unwrap();
         assert_eq!(third.matches("<lv").count(), 1, "{third}");
+    }
+
+    /// What is written beside the notes is named after what it is in the
+    /// model, and the name is read back: a press on a slur names the slur.
+    #[test]
+    fn what_is_written_beside_the_notes_is_named_after_the_model() {
+        use super::super::model::{Control, Spanner};
+        let quarter = Ratio::new(1, 4);
+        let mut items: Vec<Item> = (1..=4).map(|id| note(Step::C, quarter, id)).collect();
+        if let Item::Note { marks, .. } = &mut items[2] {
+            marks.dynamic = Some("mf".into());
+            marks.ornament = Some("trill".into());
+        }
+        let mut mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(items)],
+            ..Staff::default()
+        }]);
+        let line = |kind: &str, from, to| Spanner {
+            kind: kind.into(),
+            from,
+            to,
+        };
+        mine.spanners = vec![line("slur", 1, 4), line("8va", 2, 3), line("pedal", 1, 2)];
+        mine.controls = vec![Control {
+            kind: "tempo".into(),
+            on: 1,
+            text: "Allegro".into(),
+            bpm: Some(120.0),
+        }];
+        let mei = sheet_to_mei(&mine).unwrap();
+        let named = [
+            (
+                "a-slur-1-4",
+                Attachment::Spanner {
+                    kind: "slur".into(),
+                    from: 1,
+                    to: 4,
+                },
+            ),
+            (
+                "a-8va-2-3",
+                Attachment::Spanner {
+                    kind: "8va".into(),
+                    from: 2,
+                    to: 3,
+                },
+            ),
+            (
+                "a-pedal-1-2",
+                Attachment::Spanner {
+                    kind: "pedal".into(),
+                    from: 1,
+                    to: 2,
+                },
+            ),
+            // the sign the pedal is let go with is the same pedal
+            (
+                "a-pedal-1-2-up",
+                Attachment::Spanner {
+                    kind: "pedal".into(),
+                    from: 1,
+                    to: 2,
+                },
+            ),
+            (
+                "a-dynamic-n3",
+                Attachment::Mark {
+                    mark: "dynamic".into(),
+                    item: 3,
+                },
+            ),
+            (
+                "a-ornament-n3",
+                Attachment::Mark {
+                    mark: "ornament".into(),
+                    item: 3,
+                },
+            ),
+            (
+                "a-tempo-n1",
+                Attachment::Control {
+                    kind: "tempo".into(),
+                    on: 1,
+                },
+            ),
+        ];
+        for (id, what) in named {
+            assert!(mei.contains(&format!("xml:id=\"{id}\"")), "{id} in {mei}");
+            assert_eq!(attachment_id(id), Some(what), "{id}");
+        }
+        // an item, a measure, a page's text and an id the engraver minted are
+        // none of them
+        for id in [
+            "n3",
+            "n3-2",
+            "m1s1",
+            "t-title",
+            "s1x9k2",
+            "a-nothing-n3",
+            "a-slur-1",
+        ] {
+            assert_eq!(attachment_id(id), None, "{id}");
+        }
     }
 
     /// The end of a run is counted in measures as they are written: a run of
@@ -2733,7 +2962,7 @@ mod emission {
         }];
         let runs = sheet_to_mei_pages(&mine).unwrap();
         assert!(runs[0].contains("<multiRest num=\"3\"/>"), "{}", runs[0]);
-        let first = "<slur staff=\"1\" startid=\"#n3\" tstamp2=\"1m+5\"/>";
+        let first = "<slur xml:id=\"a-slur-3-7\" staff=\"1\" startid=\"#n3\" tstamp2=\"1m+5\"/>";
         assert!(runs[0].contains(first), "{}", runs[0]);
     }
 
@@ -2846,7 +3075,7 @@ mod emission {
         ];
         let mei = sheet_to_mei(&mine).expect("writes them");
         assert!(
-            mei.contains("<slur staff=\"1\" startid=\"#n1\" endid=\"#n2\"/>"),
+            mei.contains("<slur xml:id=\"a-slur-1-2\" staff=\"1\" startid=\"#n1\" endid=\"#n2\"/>"),
             "{mei}"
         );
         assert!(mei.contains("<hairpin form=\"cres\""), "{mei}");
@@ -2930,7 +3159,9 @@ mod emission {
         );
         // a dynamic and an ornament hang off the measure, pointing at the note
         assert!(
-            mei.contains("<dynam staff=\"1\" startid=\"#n1\" place=\"below\">mf</dynam>"),
+            mei.contains(
+                "<dynam xml:id=\"a-dynamic-n1\" staff=\"1\" startid=\"#n1\" place=\"below\">mf</dynam>"
+            ),
             "{mei}"
         );
     }

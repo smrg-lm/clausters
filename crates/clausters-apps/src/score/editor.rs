@@ -16,7 +16,7 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::entry::{self, Place};
 use super::verbs::{self, Action};
-use super::{Chrome, dialogs, icons, menu, palettes, tools};
+use super::{Chrome, dialogs, icons, menu, palettes, selection, tools};
 use super::{Ids, PAGE_GAP, Shared, Window, correction, scale_for, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, text};
 
@@ -745,9 +745,23 @@ impl ScoreEditor {
                 measure + 1,
             );
         }
+        // something written beside the notes: what it is, in the model
+        let attached = selection::attached(&self.selection);
+        if items.is_empty() {
+            match attached.as_slice() {
+                [] => {}
+                [one] => return selection::describe(sheet, one),
+                many => {
+                    return format!("{} elements selected -- Delete takes them away", many.len());
+                }
+            }
+        }
         match items.as_slice() {
             [] if self.selection.is_empty() => HINT.into(),
-            [] => format!("{} is not one of this model's items", self.selection[0]),
+            [] => format!(
+                "{} is the page's own, and no verb is its",
+                self.selection[0]
+            ),
             [one] => match verbs::locate(sheet, *one) {
                 Some(at) => {
                     let mut line = format!(
@@ -775,23 +789,34 @@ impl ScoreEditor {
         }
     }
 
-    /// What `widget` is corrected with: the page, the scroll it sits in or the
-    /// status line, as the score now stands -- nothing for another widget.
+    /// What `widget` is corrected with, as the score now stands -- nothing for
+    /// a widget that is not this window's.
+    ///
+    /// **Only the page and its scroll are worth an engraving.** The status
+    /// line is a sentence and a tool a state, so each is answered with that
+    /// alone: a client asks for a window's widgets one by one (the door's
+    /// `props`), and answering each with the whole window engraved the score
+    /// once per tool and palette entry -- some hundred and sixty times for
+    /// one selection made from a script.
     fn resync_widget(&mut self, widget: i64) -> Vec<Correction> {
         let Some(ids) = self.ids else {
             return Vec::new();
         };
-        let ours = [Some(ids.page), ids.scroll, ids.status]
-            .into_iter()
-            .flatten()
-            .chain(self.tools.values().copied())
-            .chain(self.dialogs.values().copied())
-            .chain(self.palettes.values().copied())
-            .any(|id| i64::from(id) == widget);
-        if !ours {
-            return Vec::new();
+        let is = |id: i32| i64::from(id) == widget;
+        if is(ids.page) || ids.scroll.is_some_and(is) {
+            return self.corrections();
         }
-        self.corrections()
+        if ids.status.is_some_and(is) {
+            return vec![Correction {
+                widget,
+                props: json!({"text": self.describe()}),
+            }];
+        }
+        let chrome = self.tools.values().any(|id| is(*id)) || self.window.is_some_and(is);
+        if chrome {
+            return self.chrome();
+        }
+        Vec::new()
     }
 
     /// **Every widget of the window, corrected**: the page re-engraved, the
@@ -802,11 +827,18 @@ impl ScoreEditor {
         };
         let page = self.page();
         self.drawn = page.draw.kinds.keys().cloned().collect();
-        // an item re-engraved may be drawn as other parts than it was
+        // an item re-engraved may be drawn as other parts than it was, and
+        // what else was selected stays while the page still draws it: a slur
+        // taken away is no longer selected
         let items = self.items();
-        if !items.is_empty() {
-            self.selection = self.elements_of(&items);
-        }
+        let others: Vec<String> = self
+            .selection
+            .iter()
+            .filter(|id| item_id(id).is_none() && self.drawn.contains(*id))
+            .cloned()
+            .collect();
+        self.selection = self.elements_of(&items);
+        self.selection.extend(others);
         let mut out: Vec<Correction> = correction(&page, ids, self.scale())
             .into_iter()
             .map(|(widget, props)| Correction {
@@ -890,11 +922,32 @@ impl ScoreEditor {
             Err(why) => Some(format!("no such verb: {why}")),
             Ok(Action::Open { data }) => self.open_document(&data, out),
             Ok(action) => {
+                // **A verb means what the selection makes it mean**
+                // (`selection`): Delete takes away what is selected, the slur
+                // and not its notes; any other verb, with nothing but what is
+                // written beside the notes selected, reads the notes it is
+                // attached to.
+                let items = self.items();
+                let attached = selection::attached(&self.selection);
                 let planned = {
                     let held = self.held();
                     match held.sheet() {
-                        Some(sheet) => verbs::ops(sheet, &self.items(), &action),
                         None => Err("this document has no model to edit".into()),
+                        Some(sheet) if action == Action::Delete && !attached.is_empty() => {
+                            let mut ops = selection::removal(sheet, &attached);
+                            if items.is_empty() {
+                                Ok(ops)
+                            } else {
+                                verbs::ops(sheet, &items, &action).map(|deleted| {
+                                    ops.extend(deleted);
+                                    ops
+                                })
+                            }
+                        }
+                        Some(sheet) if items.is_empty() && !attached.is_empty() => {
+                            verbs::ops(sheet, &selection::anchors(&attached), &action)
+                        }
+                        Some(sheet) => verbs::ops(sheet, &items, &action),
                     }
                 };
                 planned
@@ -1509,6 +1562,52 @@ impl ScoreEditor {
         Some(moved(self, to))
     }
 
+    /// **A key over the selection**, where the window is not writing notes
+    /// with it: the same keys note entry reads, meaning what the mode makes
+    /// them mean. Delete takes away what is selected, whatever it is; the
+    /// arrows up and down move the selected notes a step, or an octave with
+    /// Ctrl, where in note entry they move the note just written; left and
+    /// right move the selection to the item beside it, where there they move
+    /// the cursor; Escape lets the selection go, where there it leaves the
+    /// mode. `None` for a verb that is none of them.
+    fn select_key(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+    ) -> Option<(Option<String>, Vec<Correction>)> {
+        let action = match verb {
+            "delete" => json!({"action": "delete"}),
+            "step_up" => json!({"action": "move", "steps": 1}),
+            "step_down" => json!({"action": "move", "steps": -1}),
+            "octave_up" => json!({"action": "move", "steps": 7}),
+            "octave_down" => json!({"action": "move", "steps": -7}),
+            "deselect" => {
+                self.select_by("", "");
+                out.selected = Some(Vec::new());
+                return Some((None, self.selected()));
+            }
+            "select_left" | "select_right" => {
+                let forward = verb == "select_right";
+                let to = {
+                    let held = self.held();
+                    let sheet = held.sheet()?;
+                    // from the end of the selection the arrow points away from
+                    let ids = verbs::in_time(sheet, &self.items());
+                    let from = if forward { ids.last() } else { ids.first() };
+                    from.and_then(|id| selection::beside(sheet, *id, forward))
+                };
+                let to = to?;
+                self.selection = self.elements_of(&[to]);
+                self.stretch = false;
+                out.selected = Some(self.selection.clone());
+                return Some((None, self.selected()));
+            }
+            _ => return None,
+        };
+        let reason = self.perform(&action, out);
+        Some((reason, self.corrections()))
+    }
+
     /// Every item id the model holds.
     fn known_items(&self) -> Vec<u64> {
         let held = self.held();
@@ -1691,9 +1790,14 @@ impl Converse for ScoreEditor {
                     shown.unwrap_or_default(),
                 ));
             }
-            // the keys of note entry, and `N` that enters it
+            // the keys of note entry, and `N` that enters it; then the keys
+            // that act on the selection, which a key note entry has no use
+            // for falls through to
             verb => {
-                let Some((reason, corrections)) = self.entry_key(verb, out) else {
+                let Some((reason, corrections)) = self
+                    .entry_key(verb, out)
+                    .or_else(|| self.select_key(verb, out))
+                else {
                     return false;
                 };
                 out.turn = Kind::Route;
