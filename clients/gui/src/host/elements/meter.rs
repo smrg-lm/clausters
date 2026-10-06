@@ -284,6 +284,22 @@ impl Meter {
             })
             .collect()
     }
+
+    fn paint(&self, d: &mut Draw, ctx: &Ctx) {
+        let reads = self.reads();
+        meters::draw_meter_view(
+            d,
+            ctx.rect,
+            &MeterView {
+                channels: &reads,
+                axis: self.axis,
+                readout: self.readout,
+                label: self.label.as_deref(),
+                ruler: self.ruler,
+                zones: &self.zones,
+            },
+        );
+    }
 }
 
 impl Element for Meter {
@@ -398,20 +414,13 @@ impl Element for Meter {
         )
     }
 
-    fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        let reads = self.reads();
-        meters::draw_meter_view(
-            d,
-            ctx.rect,
-            &MeterView {
-                channels: &reads,
-                axis: self.axis,
-                readout: self.readout,
-                label: self.label.as_deref(),
-                ruler: self.ruler,
-                zones: &self.zones,
-            },
-        );
+    fn draw(&self, _d: &mut Draw, _ctx: &Ctx) {}
+
+    /// **The whole meter**, columns, ladder and label: what it shows is what
+    /// the last tick read, so a window with meters in keeps the rest of its
+    /// picture while they move. Its ordinary draw draws nothing.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        self.paint(d, ctx);
     }
 
     /// **A click puts the lamps out.** The one thing a hand does to a meter,
@@ -438,10 +447,12 @@ impl Element for Meter {
             Rate::Audio => Needs {
                 levels: level,
                 buses: counts,
+                live: true,
                 ..Default::default()
             },
             Rate::Control => Needs {
                 buses: level.into_iter().chain(counts).collect(),
+                live: true,
                 ..Default::default()
             },
         }

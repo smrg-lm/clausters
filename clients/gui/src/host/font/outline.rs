@@ -35,7 +35,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
 
@@ -75,6 +75,15 @@ static TABLE: RwLock<BTreeMap<char, Shape>> = RwLock::new(BTreeMap::new());
 /// asks first, so a host no window brought an outline to takes no lock.
 static FILLED: AtomicBool = AtomicBool::new(false);
 
+/// How many times the table has changed: what a measurement kept of an
+/// outline's advance, or a shape kept at a size, is checked against.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// The table's generation ([`GENERATION`]).
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Relaxed)
+}
+
 /// The character a table key names: a codepoint in hex (`E1D5`), with or
 /// without the `U+` a reference writes it with.
 fn key_char(key: &str) -> Option<char> {
@@ -96,6 +105,7 @@ pub fn set(glyphs: &Map<String, Value>) {
     let mut table = TABLE.write().unwrap_or_else(|e| e.into_inner());
     table.extend(shapes);
     FILLED.store(true, Ordering::Relaxed);
+    GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Whether `c` has an outline.
@@ -175,27 +185,89 @@ pub fn draw(mesh: &mut Mesh, c: char, x: f32, y: f32, scale: f32, color: Color) 
     if !FILLED.load(Ordering::Relaxed) {
         return None;
     }
-    let table = TABLE.read().unwrap_or_else(|e| e.into_inner());
-    let shape = table.get(&c)?;
-    let step = step(shape, scale);
-    let k = pixels(scale);
+    let kept = sized(c, scale)?;
     // Centred in its step less the trailing font pixel a character leaves,
     // and on whole pixels: the same symbol is the same picture wherever a
     // layout puts it.
-    let cx = (x + (step - scale) * 0.5).round();
+    let cx = (x + (kept.step - scale) * 0.5).round();
     let cy = (y + GLYPH_H as f32 * scale * 0.5).round();
-    // the font's `y` goes up and the screen's down
-    let at = |p: [f32; 2]| [cx + p[0] * k, cy - p[1] * k];
-    for corner in shape.fill.as_chunks::<3>().0 {
-        mesh.tri(at(corner[0]), at(corner[1]), at(corner[2]), color);
+    mesh.tris_at(&kept.corners, kept.bounds, [cx, cy], color);
+    Some(kept.step)
+}
+
+/// What is kept per character and size, and the generation it was kept at.
+pub(super) type Kept<T> = (u64, std::collections::HashMap<(char, u32), T>);
+
+/// **A shape at one size**, about its own centre: the fill and the hint as
+/// the triangles they come to, the box they span and the pen's step.
+struct Sized {
+    corners: Vec<[f32; 2]>,
+    bounds: crate::host::layout::Rect,
+    step: f32,
+}
+
+/// `c`'s shape at `scale`, made once and kept: a toolbar draws the same
+/// seventy symbols at one size on every whole frame, and the scaling, the
+/// hint's strokes and the fill's corners came to the same triangles each
+/// time. Kept by the thread, as the table's [`generation`] stood when it was
+/// made.
+fn sized(c: char, scale: f32) -> Option<std::rc::Rc<Sized>> {
+    thread_local! {
+        static KEPT: std::cell::RefCell<Kept<std::rc::Rc<Sized>>> =
+            std::cell::RefCell::new((u64::MAX, std::collections::HashMap::new()));
     }
-    let short = HINT - THIN * k;
-    if short > 0.0 {
-        for [a, b] in &shape.edges {
-            mesh.line(at(*a), at(*b), short, color);
+    let now = generation();
+    let key = (c, scale.to_bits());
+    if let Some(kept) = KEPT.with(|kept| {
+        let kept = kept.borrow();
+        (kept.0 == now).then(|| kept.1.get(&key).cloned()).flatten()
+    }) {
+        return Some(kept);
+    }
+    let made = {
+        let table = TABLE.read().unwrap_or_else(|e| e.into_inner());
+        let shape = table.get(&c)?;
+        let k = pixels(scale);
+        // the font's `y` goes up and the screen's down
+        let at = |p: [f32; 2]| [p[0] * k, -p[1] * k];
+        let mut mesh = Mesh::new();
+        for corner in shape.fill.as_chunks::<3>().0 {
+            mesh.tri(at(corner[0]), at(corner[1]), at(corner[2]), [1.0; 4]);
         }
-    }
-    Some(step)
+        let short = HINT - THIN * k;
+        if short > 0.0 {
+            for [a, b] in &shape.edges {
+                mesh.line(at(*a), at(*b), short, [1.0; 4]);
+            }
+        }
+        let corners = mesh.corners();
+        let (mut lo, mut hi) = ([f32::MAX; 2], [f32::MIN; 2]);
+        for p in &corners {
+            for axis in 0..2 {
+                lo[axis] = lo[axis].min(p[axis]);
+                hi[axis] = hi[axis].max(p[axis]);
+            }
+        }
+        let bounds = if corners.is_empty() {
+            crate::host::layout::Rect::new(0.0, 0.0, 0.0, 0.0)
+        } else {
+            crate::host::layout::Rect::new(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1])
+        };
+        std::rc::Rc::new(Sized {
+            corners,
+            bounds,
+            step: step(shape, scale),
+        })
+    };
+    KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.0 != now {
+            kept.0 = now;
+            kept.1.clear();
+        }
+        kept.1.insert(key, made.clone());
+    });
+    Some(made)
 }
 
 #[cfg(all(test, feature = "notation"))]
@@ -295,5 +367,42 @@ mod tests {
         draw(&mut mesh, HAIR, 0.0, 0.0, big, [1.0; 4]);
         let [left, _, right, _] = bounds(&mesh);
         assert!((right - left - 17.0 * 0.4).abs() < 0.01);
+    }
+
+    /// **A shape kept at a size is the shape drawn there.** Drawn again it
+    /// is the same triangles, only moved, wherever the pen is; and a window
+    /// sending outlines empties what was kept, so a codepoint given a new
+    /// shape is drawn as the new one.
+    #[test]
+    fn a_kept_shape_is_the_shape_and_new_outlines_replace_it() {
+        // A codepoint of its own: the tests run together, and the others
+        // measure theirs.
+        const KEPT: char = '\u{F4A5}';
+        let one = |path: &str| {
+            let mut table = Map::new();
+            table.insert("F4A5".into(), json!(path));
+            set(&table);
+        };
+        one("M100 100h500v500h-500z");
+        let scale = 2.0;
+        let at = |x: f32, y: f32| {
+            let mut mesh = Mesh::new();
+            draw(&mut mesh, KEPT, x, y, scale, [1.0; 4]).unwrap();
+            mesh.corners()
+        };
+        let here = at(0.0, 0.0);
+        let there = at(40.0, 30.0);
+        assert_eq!(here.len(), there.len());
+        for (a, b) in here.iter().zip(&there) {
+            assert!((b[0] - a[0] - 40.0).abs() < 1e-3 && (b[1] - a[1] - 30.0).abs() < 1e-3);
+        }
+        one("M0 0h100v900h-100z");
+        let mut mesh = Mesh::new();
+        draw(&mut mesh, KEPT, 0.0, 0.0, 16.0, [1.0; 4]).unwrap();
+        let [left, top, right, bottom] = bounds(&mesh);
+        assert!(
+            bottom - top > 4.0 * (right - left),
+            "drawn as the new, tall shape"
+        );
     }
 }

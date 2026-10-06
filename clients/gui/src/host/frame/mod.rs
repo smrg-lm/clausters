@@ -1681,8 +1681,8 @@ mod tests {
     }
 
     /// A window of everything a clock or a level moves that is drawn into
-    /// the mesh: a roll and a page, each anchored, a metered multitrack, and
-    /// a clock's reading beside them.
+    /// the mesh: a roll and a page, each anchored, a metered multitrack, a
+    /// meter, a sweeping bar and a clock's reading beside them.
     const MOVING: &str = r#"{"type":"window","children":[
         {"id":2,"type":"label","text":"0.000 s","live":true,"h":20},
         {"id":3,"type":"notes","notes":[0.0,50.0,60.0,100.0,0.0],
@@ -1691,7 +1691,9 @@ mod tests {
          "cursors":[{"t":0,"x":10,"y0":10,"y1":90},{"t":500,"x":60,"y0":10,"y1":90}]},
         {"id":5,"type":"multitrack","playhead_at":0,
          "tracks":["one","",100,0,0,1.0,1],"meters":["one",10,12,2],
-         "clips":["a","one",0,48000,0,"a",-1]}]}"#;
+         "clips":["a","one",0,48000,0,"a",-1]},
+        {"id":6,"type":"meter","bus":20,"rate":"control","h":80},
+        {"id":7,"type":"progress","h":30}]}"#;
 
     /// **Nothing but the live layer follows the clock or a level.** The
     /// window's picture -- its base, what is drawn over its textures, the
@@ -1776,6 +1778,109 @@ mod tests {
         );
         draw_live_places(&mut tick, tree, &kept.places, &at(24_000.0), &host.theme);
         assert!(tick.near(&whole.live, 0.0));
+    }
+
+    /// **What a whole frame of the score editor costs**, the heaviest window
+    /// this host draws: the toolbar's symbols, the palettes, the menus and a
+    /// page of two staves, engraved by the real engraver. Prints the median
+    /// of a whole frame's picture -- the layout, the meshes, no card -- which
+    /// is what a set, a gesture or a resize asks for.
+    ///
+    /// Run with `cargo test --release --features score --lib
+    /// what_a_whole_frame_costs -- --ignored --nocapture`.
+    #[cfg(feature = "score")]
+    #[test]
+    #[ignore = "timing: only meaningful under --release"]
+    fn what_a_whole_frame_costs() {
+        use clausters_core::notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
+        use clausters_core::ratio::Ratio;
+
+        crate::host::font::atlas::set_embedded();
+        let notes = |octave: i32| -> Vec<Item> {
+            (0..128u64)
+                .map(|i| Item::Note {
+                    id: 0,
+                    pitches: vec![Pitch {
+                        step: [Step::C, Step::E, Step::G, Step::B][i as usize % 4],
+                        alter: if i % 7 == 0 { 1 } else { 0 },
+                        octave,
+                        forced: false,
+                    }],
+                    dur: Ratio::new(1, 8),
+                    tie: false,
+                    marks: Marks::default(),
+                })
+                .collect()
+        };
+        let mut sheet = Sheet {
+            staves: vec![
+                Staff {
+                    clef: "G2".into(),
+                    voices: vec![Voice { items: notes(5) }],
+                    ..Staff::default()
+                },
+                Staff {
+                    clef: "F4".into(),
+                    voices: vec![Voice { items: notes(3) }],
+                    ..Staff::default()
+                },
+            ],
+            ..Sheet::default()
+        };
+        let mut id = 1;
+        for staff in &mut sheet.staves {
+            for item in &mut staff.voices[0].items {
+                if let Item::Note { id: at, .. } = item {
+                    *at = id;
+                    id += 1;
+                }
+            }
+        }
+        sheet.next_id = id;
+        let mei = clausters_core::notation::sheet_to_mei(&sheet).unwrap();
+        let score = clausters_notation::open(&mei, &clausters_notation::EngraveOptions::default())
+            .expect("engraved");
+        let mut host = crate::host::Host::new();
+        host.owner = Some(crate::host::document::Owner::new(
+            clausters_document::Document::empty(),
+        ));
+        let def = host
+            .open_score(
+                std::sync::Arc::new(std::sync::Mutex::new(score)),
+                "score",
+                (1280, 900),
+                None,
+            )
+            .expect("a window");
+        let tree = host.window_def(def).unwrap();
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(def),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let none = (HashMap::new(), HashMap::new());
+        let draw = || picture(tree, &inputs, &host.theme, &none.0, &none.1, (1280, 900));
+        let first = draw();
+        let mut took: Vec<f64> = (0..30)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                std::hint::black_box(draw());
+                start.elapsed().as_secs_f64() * 1e3
+            })
+            .collect();
+        took.sort_by(f64::total_cmp);
+        let verts = |m: &Mesh| m.vertex_count();
+        println!(
+            "whole frame: {:.3} ms median, {:.3} ms best; {} + {} + {} vertices",
+            took[took.len() / 2],
+            took[0],
+            verts(&first.base),
+            verts(&first.over),
+            verts(&first.top),
+        );
     }
 
     /// **With a dialog up nothing is kept.** What moves in the window is

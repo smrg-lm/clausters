@@ -439,7 +439,47 @@ pub fn advance(scale: f32) -> f32 {
 ///
 /// This is the proportional seam, and it is what [`width`] is a sum of. Nothing
 /// in a layout pass calls it -- a measurement happens where a string changes.
+///
+/// **Answered from a table once asked.** A whole frame measures the same few
+/// hundred characters at the same two or three sizes over and over -- every
+/// label a container hugs, every entry an ellipsis cuts, every symbol a
+/// toolbar centres -- and the answer took a scan of the symbols, a lock on
+/// the outlines and the face's own metrics each time. The table is the
+/// thread's, and it is emptied when what it was read from changes: a face
+/// loaded, outlines sent ([`generation`]).
 pub fn advance_of(c: char, scale: f32) -> f32 {
+    thread_local! {
+        static KEPT: std::cell::RefCell<outline::Kept<f32>> =
+            std::cell::RefCell::new((u64::MAX, std::collections::HashMap::new()));
+    }
+    let now = generation();
+    KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.0 != now {
+            kept.0 = now;
+            kept.1.clear();
+        }
+        *kept
+            .1
+            .entry((c, scale.to_bits()))
+            .or_insert_with(|| measure_advance(c, scale))
+    })
+}
+
+/// **What the text is measured against**: a number that moves whenever a
+/// face is loaded or a window sends outlines, so a measurement kept from
+/// before is not answered after.
+pub fn generation() -> u64 {
+    #[cfg(feature = "font-atlas")]
+    let face = atlas::epoch();
+    #[cfg(not(feature = "font-atlas"))]
+    let face = 0;
+    face.wrapping_mul(1 << 32)
+        .wrapping_add(outline::generation())
+}
+
+/// [`advance_of`], measured.
+fn measure_advance(c: char, scale: f32) -> f32 {
     // A symbol takes the bitmap's cell whatever face is loaded: it is drawn
     // as a shape in that cell ([`symbol_shape`]), and so is a character a
     // window brought the outline of ([`outline`]).
@@ -863,6 +903,22 @@ pub fn text_centered(mesh: &mut Mesh, s: &str, area: Rect, scale: f32, color: Co
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A kept advance is answered until the outlines change.** A
+    /// character a window gives a shape steps by its shape, from the
+    /// moment the shape arrives -- not by what was kept of it before.
+    #[cfg(feature = "notation")]
+    #[test]
+    fn an_advance_kept_follows_the_outlines() {
+        let c = '\u{F4B0}';
+        let before = advance_of(c, 2.0);
+        let wide: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"F4B0":"M0 0h3000v300h-3000z"}"#).unwrap();
+        outline::set(&wide);
+        let after = advance_of(c, 2.0);
+        assert!(after > 2.0 * before, "{before} -> {after}");
+        assert_eq!(advance_of(c, 2.0), after, "and kept");
+    }
 
     /// Every symbol of the set is drawn as a shape -- none falls through to the
     /// box an unknown character draws -- inside its own cell.

@@ -700,17 +700,20 @@ mod tests {
                 {"id":6,"type":"meter","bus":0}]}"#,
         );
         assert!(tree_is_fed(&metered), "a meter is");
-        // **Fed, and still kept**: a multitrack's meters are fed on every
-        // tick and drawn on its live layer, so its window keeps its picture;
-        // a `meter` widget draws its level into the picture, and its window
-        // is drawn whole.
+        // **Fed, and still kept**: a multitrack's meters, a `meter` and a
+        // scope are fed on every tick and drawn on their live layers, so the
+        // window keeps its picture; a shader `canvas` that follows the clock
+        // draws into the picture, and its window is drawn whole.
         let tracks = tree(
             r#"{"type":"window","children":[
                 {"id":5,"type":"multitrack","tracks":["one","",100,0,0,1.0,1],
-                 "meters":["one",10,12,2]}]}"#,
+                 "meters":["one",10,12,2]},
+                {"id":7,"type":"scope","bus":3,"rate":"control"}]}"#,
         );
         assert!(tree_is_fed(&tracks) && !tree_repaints(&tracks));
-        assert!(tree_repaints(&metered));
+        assert!(!tree_repaints(&metered), "a meter is its live layer");
+        let shaded = tree(r#"{"type":"window","children":[{"id":6,"type":"canvas"}]}"#);
+        assert!(tree_is_fed(&shaded) && tree_repaints(&shaded));
         assert!(
             !tree_repaints(&page),
             "a page's cursor is on its live layer"

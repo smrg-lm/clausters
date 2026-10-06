@@ -367,6 +367,50 @@ impl Mesh {
         self.vertex(c, color);
     }
 
+    /// **Triangles kept at a place, drawn at another**: `corners` (three to a
+    /// triangle) moved by `offset`, in `color`. `bounds` is the box they span
+    /// before the move: when it lands wholly inside the clip, or there is
+    /// none, the corners go straight in with nothing asked of each; otherwise
+    /// each triangle is clipped as [`tri`](Self::tri) clips it.
+    ///
+    /// What a shape kept by size is drawn with -- a symbol, a page -- so the
+    /// work of drawing one again is the vertices it is, and no more.
+    pub fn tris_at(&mut self, corners: &[[f32; 2]], bounds: Rect, offset: [f32; 2], color: Color) {
+        let moved = |p: [f32; 2]| [p[0] + offset[0], p[1] + offset[1]];
+        let inside = self.clip.is_none_or(|clip| {
+            let (x0, y0) = (bounds.x + offset[0], bounds.y + offset[1]);
+            x0 >= clip.x
+                && y0 >= clip.y
+                && x0 + bounds.w <= clip.x + clip.w
+                && y0 + bounds.h <= clip.y + clip.h
+        });
+        if inside {
+            let alpha = color[3] * self.ink.alpha;
+            self.verts.reserve(corners.len() * FLOATS_PER_VERTEX);
+            for p in corners {
+                let p = moved(*p);
+                self.verts
+                    .extend_from_slice(&[p[0], p[1], color[0], color[1], color[2], alpha]);
+            }
+            return;
+        }
+        for t in corners.as_chunks::<3>().0 {
+            self.tri(moved(t[0]), moved(t[1]), moved(t[2]), color);
+        }
+    }
+
+    /// **The corners of the flat triangles accumulated**, three to a
+    /// triangle -- what a shape built once is kept as, to be drawn again by
+    /// [`tris_at`](Self::tris_at).
+    pub(crate) fn corners(&self) -> Vec<[f32; 2]> {
+        self.verts
+            .as_chunks::<FLOATS_PER_VERTEX>()
+            .0
+            .iter()
+            .map(|v| [v[0], v[1]])
+            .collect()
+    }
+
     /// A triangle (clipped to the active clip rectangle, if any).
     pub fn tri(&mut self, a: [f32; 2], b: [f32; 2], c: [f32; 2], color: Color) {
         let Some(clip) = self.clip else {

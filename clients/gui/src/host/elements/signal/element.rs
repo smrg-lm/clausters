@@ -47,15 +47,19 @@ pub(crate) fn build(
     Ok(Box::new(crate::host::widget::signal_element(props, blobs)?))
 }
 
-impl Element for SignalElement {
-    fn set(&mut self, key: &str, v: &Value) -> bool {
-        self.apply(key, v)
+impl SignalElement {
+    /// **Whether this view is drawn on the live layer**: a forward-only view
+    /// of a bus, which shows what the last tick read and nothing else. A
+    /// navigable view and a stored one are the window's picture, and so is a
+    /// view whose picture is a texture -- that is uploaded with a whole frame.
+    fn on_live_layer(&self) -> bool {
+        matches!(self.source, Source::Bus(_)) && !self.caps.navigable && self.slot_kind().is_none()
     }
 
     /// The four presentations the shared mesh can carry. The two navigable
     /// heavy ones draw nothing here -- their picture is the slot's -- and a
     /// stored view of a live source has nothing to draw until it has data.
-    fn draw(&self, d: &mut Draw, ctx: &Ctx) {
+    fn paint(&self, d: &mut Draw, ctx: &Ctx) {
         let rect = ctx.rect;
         match (self.presentation, &self.source) {
             // The navigable heavy views: the slot draws the *picture*, on the
@@ -132,6 +136,27 @@ impl Element for SignalElement {
             (_, Source::Bus(_)) => {}
         }
     }
+}
+
+impl Element for SignalElement {
+    fn set(&mut self, key: &str, v: &Value) -> bool {
+        self.apply(key, v)
+    }
+
+    fn draw(&self, d: &mut Draw, ctx: &Ctx) {
+        if !self.on_live_layer() {
+            self.paint(d, ctx);
+        }
+    }
+
+    /// A view fed live is drawn whole on the live layer: everything it shows
+    /// -- the trace, the field under it, the label -- is what the last tick
+    /// read, and a window with it in keeps the rest of its picture.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        if self.on_live_layer() {
+            self.paint(d, ctx);
+        }
+    }
 
     /// The hover readout of a **stored** view: a hairline and the value under
     /// the pointer. It rides the overlay mesh for the same reason a timeline
@@ -178,6 +203,7 @@ impl Element for SignalElement {
                 .retention
                 .max(clausters_core::loudness::SHORT_TERM_SECONDS as f32);
         }
+        needs.live = self.on_live_layer();
         if let Source::Bus(bus) = &self.source {
             match self.presentation {
                 // The phase view is a stereo pair by construction: a bus and

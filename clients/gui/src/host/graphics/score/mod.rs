@@ -550,7 +550,7 @@ impl Default for ScoreData {
 
 /// The three roles a score paints in: the engraving ink, the playback cursor
 /// and the selection highlight -- bundled so the theme travels as one argument.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScoreColors {
     pub ink: Color,
     pub playhead: Color,

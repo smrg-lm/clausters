@@ -77,6 +77,19 @@ pub fn fill(bar: Rect, value: Option<f32>, phase: f64) -> Rect {
     }
 }
 
+impl Progress {
+    fn paint(&self, d: &mut Draw, ctx: &Ctx) {
+        let size = self.text_size * ctx.scale;
+        controls::label_strip(d, self.label.as_deref(), ctx.rect, size);
+        let body = controls::body_rect_at(ctx.rect, self.label.is_some(), size, d.m);
+        let (mesh, m, theme) = d.parts();
+        let h = bar_h(m).min(body.h);
+        let bar = Rect::new(body.x, body.y + (body.h - h) * 0.5, body.w, h);
+        mesh.rect(bar, theme.track);
+        mesh.rect(fill(bar, self.value, self.phase), theme.accent);
+    }
+}
+
 impl Element for Progress {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
@@ -93,14 +106,18 @@ impl Element for Progress {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        let size = self.text_size * ctx.scale;
-        controls::label_strip(d, self.label.as_deref(), ctx.rect, size);
-        let body = controls::body_rect_at(ctx.rect, self.label.is_some(), size, d.m);
-        let (mesh, m, theme) = d.parts();
-        let h = bar_h(m).min(body.h);
-        let bar = Rect::new(body.x, body.y + (body.h - h) * 0.5, body.w, h);
-        mesh.rect(bar, theme.track);
-        mesh.rect(fill(bar, self.value, self.phase), theme.accent);
+        if self.value.is_some() {
+            self.paint(d, ctx);
+        }
+    }
+
+    /// A bar that sweeps is drawn on the live layer, where the tick moves it;
+    /// one that shows a fraction is the window's picture, drawn again when it
+    /// is set.
+    fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
+        if self.value.is_none() {
+            self.paint(d, ctx);
+        }
     }
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
@@ -125,6 +142,7 @@ impl Element for Progress {
     fn needs(&self) -> Needs {
         Needs {
             animated: self.value.is_none(),
+            live: self.value.is_none(),
             ..Needs::default()
         }
     }
