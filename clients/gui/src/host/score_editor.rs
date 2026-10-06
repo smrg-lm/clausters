@@ -102,7 +102,51 @@ impl Host {
             origin,
         );
         self.pending_effects.extend(effects);
+        // **The page's cursor is the position of the transport its score
+        // plays on**, as a client's score editor binds it -- where this host
+        // has a player to play it.
+        if let Some(transport) = self.score_transport(def_id) {
+            let effects = self.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: GUI_CLOCK.into(),
+                    args: vec![
+                        OscType::Int(def_id),
+                        OscType::String("transport".into()),
+                        OscType::Int(transport),
+                    ],
+                }),
+                origin,
+            );
+            self.pending_effects.extend(effects);
+        }
         Some(def_id)
+    }
+
+    /// The score of `member` as the sequence it plays as, at the engraver's
+    /// tempo -- what a pass plays and an export writes -- or `None`, said.
+    fn score_render(
+        &mut self,
+        member: clausters_apps::editing::MemberId,
+    ) -> Option<clausters_document::events::EventSequence> {
+        use clausters_apps::editing::Member;
+
+        let Some(Member::Score(editor)) = self
+            .owner
+            .as_mut()
+            .and_then(|o| o.editing.member_mut(member))
+        else {
+            return None;
+        };
+        let rendered = editor
+            .rendered()
+            .and_then(|value| serde_json::from_value(value).map_err(|e| e.to_string()));
+        match rendered {
+            Ok(sequence) => Some(sequence),
+            Err(why) => {
+                diag::warn!("the score cannot be rendered: {why}");
+                None
+            }
+        }
     }
 
     /// **A gesture on a score editor's window**, answered by the editor: the
@@ -140,8 +184,11 @@ impl Host {
         };
         if outcome.turn == Kind::Closed {
             owner.scores.remove(&def_id);
+            self.close_score_playback(def_id);
             return true;
         }
+        // an edit, or a step of the history, is heard on from where it plays
+        let stepped_now = turned.stepped.as_ref().is_some_and(|s| s.stepped);
         if let Some(stepped) = turned.stepped
             && stepped.stepped
         {
@@ -162,21 +209,58 @@ impl Host {
             .save
             .is_none_or(|path| self.save_score(member, Path::new(&path)));
         if outcome.close && written {
+            self.close_score_playback(def_id);
             self.close_score(def_id);
             return true;
         }
         if let Some(path) = outcome.open {
             self.open_into_score(def_id, member, Path::new(&path));
         }
-        // An export is the score rendered and written as MIDI, which is a
-        // client's to write: this host links no MIDI file writer.
+        // An export is the score rendered and written as the sequence writes
+        // a MIDI file, with the writer the clients use.
         if let Some(export) = outcome.export {
-            diag::warn!(
-                "export: {}: a host with no client writes no MIDI file -- open the score from a script to export it",
-                export["path"].as_str().unwrap_or_default()
-            );
+            self.export_score(member, &export);
+        }
+        // What a turn asked of the playback: the cursor placed, a play or a
+        // stop, the loop switch -- and the lane taking an edit.
+        if (outcome.changed || stepped_now)
+            && let Some(sequence) = self.score_render(member)
+        {
+            self.update_score(def_id, sequence);
+        }
+        if let Some(beat) = outcome.locate {
+            self.cue_score(def_id, beat);
+        }
+        if let Some(pass) = outcome.play
+            && let Some(sequence) = self.score_render(member)
+        {
+            self.roll_score(def_id, sequence, &pass);
+        }
+        if let Some(pass) = outcome.relooped {
+            self.reloop_score(def_id, &pass);
         }
         true
+    }
+
+    /// Writes the score of `member` rendered to the file `export` names --
+    /// `{"path", "format"}`, a Standard MIDI File (`smf`) or a MIDI 2.0 Clip
+    /// File (`clip`) -- as a client's `export` writes it, or says why not.
+    fn export_score(
+        &mut self,
+        member: clausters_apps::editing::MemberId,
+        export: &serde_json::Value,
+    ) {
+        let path = export["path"].as_str().unwrap_or_default().to_string();
+        let Some(sequence) = self.score_render(member) else {
+            return;
+        };
+        let Some(data) = midi_file(&sequence, export["format"] == "clip") else {
+            return diag::warn!("export: {path}: this host was built without a MIDI file writer");
+        };
+        match std::fs::write(&path, data) {
+            Ok(()) => diag::info!("score exported to {path}"),
+            Err(e) => diag::warn!("export: {path}: {e}"),
+        }
     }
 
     /// Reads the document at `path` into the score of `member`, as the
@@ -210,6 +294,10 @@ impl Host {
             && let Some(answer) = outcome.answer
         {
             self.tell(answer);
+        }
+        // what plays is the score now open
+        if let Some(sequence) = self.score_render(member) {
+            self.update_score(def_id, sequence);
         }
         diag::info!("score {def_id}: opened {}", path.display());
     }
@@ -263,6 +351,38 @@ impl Host {
         );
         self.pending_effects.extend(effects);
     }
+}
+
+/// **`sequence` as a MIDI file**, a MIDI 2.0 Clip File when `clip`, else a
+/// Standard MIDI File: what a client's `to_clip` and `to_smf` write, at the
+/// ticks per beat they write it at, with the writer they bind.
+#[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
+fn midi_file(sequence: &clausters_document::events::EventSequence, clip: bool) -> Option<Vec<u8>> {
+    const PPQ: u16 = 480;
+    if clip {
+        return Some(clausters_midi::write_clip_ump(&sequence.to_ump(PPQ), PPQ));
+    }
+    let (events, tempo) = sequence.to_midi(PPQ);
+    let events: Vec<clausters_midi::TimedMessage> = events
+        .into_iter()
+        .map(|(tick, message)| {
+            let mut bytes = [0u8; 3];
+            let n = message.len().min(3);
+            bytes[..n].copy_from_slice(&message[..n]);
+            clausters_midi::TimedMessage { tick, bytes }
+        })
+        .collect();
+    let tempo: Vec<clausters_midi::TempoMark> = tempo
+        .into_iter()
+        .map(|(tick, micros)| clausters_midi::TempoMark { tick, micros })
+        .collect();
+    Some(clausters_midi::write_smf_with_tempo(&events, PPQ, &tempo))
+}
+
+/// A host without the MIDI crate writes no MIDI file.
+#[cfg(not(all(feature = "midi", not(target_arch = "wasm32"))))]
+fn midi_file(_: &clausters_document::events::EventSequence, _: bool) -> Option<Vec<u8>> {
+    None
 }
 
 #[cfg(test)]
@@ -610,6 +730,102 @@ mod tests {
             "the window is freed"
         );
         assert!(host.owner.as_ref().unwrap().scores.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **What a player is sent, answered as one would**: every message the
+    /// socket `player` receives, its address kept, a `/server_sync` answered
+    /// with its reply and anything else with its `/done`, until the host has
+    /// nothing more to send.
+    fn played(host: &mut Host, player: &std::net::UdpSocket) -> Vec<String> {
+        fn flat(packet: OscPacket, out: &mut Vec<OscMessage>) {
+            match packet {
+                OscPacket::Message(m) => out.push(m),
+                OscPacket::Bundle(b) => b.content.into_iter().for_each(|p| flat(p, out)),
+            }
+        }
+        player.set_nonblocking(true).unwrap();
+        let mut buf = vec![0u8; 65536];
+        let mut addrs = Vec::new();
+        for _ in 0..32 {
+            let mut got = Vec::new();
+            while let Ok(len) = player.recv(&mut buf) {
+                if let Ok(packet) = clausters_core::osc::decode_packet(&buf[..len]) {
+                    flat(packet, &mut got);
+                }
+            }
+            if got.is_empty() {
+                break;
+            }
+            for message in got {
+                let reply = if message.addr == "/server_sync" {
+                    OscMessage {
+                        addr: "/server_sync.reply".into(),
+                        args: message.args.clone(),
+                    }
+                } else {
+                    let mut args = vec![OscType::String(message.addr.clone())];
+                    args.extend(message.args.first().cloned());
+                    OscMessage {
+                        addr: "/done".into(),
+                        args,
+                    }
+                };
+                addrs.push(message.addr);
+                host.multitrack_reply(crate::host::instance::Leg::Player, &reply);
+            }
+        }
+        addrs
+    }
+
+    #[test]
+    fn the_score_plays_through_the_player_and_exports_as_midi() {
+        let player = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let mut host = Host::new();
+        host.set_player_link(crate::host::ServerLink::Udp(
+            crate::host::ServerLeg::connect(player.local_addr().unwrap()).unwrap(),
+        ));
+        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        let held = score();
+        let def_id = host
+            .open_score(held.clone(), "score", (960, 720), None)
+            .expect("a window");
+        // the space bar is the window's play: the score's render goes onto an
+        // event lane of a transport of its own, and the transport rolls
+        let play = host.event_message(def_id, 1, vec![OscType::String("play".into())]);
+        assert!(host.deliver(def_id, &play));
+        let addrs = played(&mut host, &player);
+        assert!(addrs.iter().any(|a| a == "/transport_play"), "{addrs:?}");
+        assert!(addrs.iter().any(|a| a.starts_with("/lane")), "{addrs:?}");
+
+        // and an export writes the render as a Standard MIDI File
+        let dir = std::env::temp_dir().join(format!("clausters-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("score.mid");
+        let pick = host.event_message(
+            def_id,
+            2,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("dialog:export_midi".into()),
+            ],
+        );
+        assert!(host.deliver(def_id, &pick));
+        let path = host.own_widget(0, SCORE, "dialog:file:path").unwrap();
+        let typed = host.event_message(path, 3, vec![OscType::String(out.display().to_string())]);
+        assert!(host.deliver(def_id, &typed));
+        let ok = host.own_widget(0, SCORE, "dialog:file:ok").unwrap();
+        let click = host.event_message(ok, 4, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        let written = std::fs::read(&out).expect("the file");
+        assert_eq!(&written[..4], b"MThd");
+        let read = clausters_midi::read_smf(&written).unwrap();
+        let ons = read
+            .events
+            .iter()
+            .filter(|(_, bytes)| bytes[0] & 0xF0 == 0x90 && bytes[2] > 0)
+            .count();
+        assert_eq!(ons, 4, "the four quarters");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

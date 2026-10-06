@@ -111,7 +111,9 @@ usage:
                             reads) in the score editor, with this host as its
                             owner: edited and undone here, and Ctrl+S writes it
                             as MEI to --save-to. Built with the `score` feature,
-                            which links the engraver (libverovio)
+                            which links the engraver (libverovio); with
+                            `standalone` too it plays, through a player as
+                            --session does, on the server's default def
       --save-to <file>      write the session back here when the window closes.
                             Without it nothing is written: overwriting the file
                             you opened is a decision, not a default
@@ -515,7 +517,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // with the engraver can read the file.
     if let Some(path) = score_path {
         #[cfg(feature = "score")]
-        return run_score(&path, save_to.as_deref(), udp_bind, look);
+        return run_score(&path, save_to.as_deref(), udp_bind, look, shm, server);
         #[cfg(not(feature = "score"))]
         return Err(format!(
             "--score {path}: this clausters-gui was built without the engraver \
@@ -714,12 +716,20 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
 /// Opens a score in the score editor, with this host as its **owner**: the
 /// engraver reads the file, the applications crate's editor draws and edits it,
 /// and Ctrl+S writes it as MEI where `--save-to` says.
+///
+/// **It plays as a session does**: an on-demand server in this process and a
+/// player beside it, which holds the devices; the score is rendered and played
+/// on a transport of its own, on the server's default def. A build without
+/// the `standalone` feature, or a machine with no player, edits and saves and
+/// plays nothing.
 #[cfg(feature = "score")]
 fn run_score(
     path: &str,
     save_to: Option<&str>,
     udp_bind: SocketAddr,
     look: Look,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
 ) -> Result<(), String> {
     use clausters_gui::host::document::Owner;
 
@@ -728,6 +738,16 @@ fn run_score(
         .map_err(|e| format!("--score {path}: {e}"))?;
     let shared = Arc::new(std::sync::Mutex::new(score));
     let mut host = Host::new();
+    #[cfg(feature = "standalone")]
+    // The player is held, not used: dropping it stops it with the window.
+    let (bus, _player) = attach_server(&mut host, &Default::default(), shm, player)?;
+    #[cfg(not(feature = "standalone"))]
+    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
+    #[cfg(not(feature = "standalone"))]
+    tracing::warn!(
+        "score: this clausters-gui was built without standalone support, so the score \
+         does not play (rebuild with `--features standalone`)"
+    );
     look.apply(&mut host);
     host.owner = Some(Owner::new(clausters_document::Document::empty()));
     let name = Path::new(path)
@@ -742,7 +762,7 @@ fn run_score(
     tracing::info!("score: opened {path}");
     let socket =
         UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
-    gui::run(host, Arc::new(socket), None, None, None)
+    gui::run(host, Arc::new(socket), bus, None, None)
 }
 
 /// Opens a session and draws it, with this host as its **owner**.

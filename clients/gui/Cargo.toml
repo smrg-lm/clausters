@@ -50,7 +50,7 @@ standalone-faust = ["standalone", "clausters/faust"]
 # it, which links libverovio -- so opt-in, as the server's Faust family is. The
 # editor itself is the applications crate's and needs nothing more than the
 # `notation` feature; only reading the file does.
-score = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]
+score = ["notation", "midi", "dep:clausters-notation", "clausters-notation/verovio"]
 # **The diagnostic channel, in a build that is not a debug build.** `diag`'s
 # `debug!` and `note!` levels compile out of a release
 # (`#[cfg(debug_assertions)]`), arguments and all, which is what they are for.

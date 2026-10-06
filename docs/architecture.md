@@ -1136,7 +1136,11 @@ element and how it was pressed (alone, with Ctrl, with Shift), and the editor
 answers with every element that is now selected — a range in time, a measure
 named by the id the emitter gives each staff of it (`m3s1`), an item as every
 part it is drawn as — which the page then highlights. The standalone host opens one with `--score`, a feature
-that links the engraver to read the file and nothing else.
+that links the engraver to read the file and the clients' MIDI writer to export
+it. With `standalone` it also plays it the way it plays a roll: the score's
+render on an event lane of a transport of its own, through the player
+`--session` starts (`host/instance.rs`), the page's cursor bound to that
+transport.
 
 ### The application in each client, and the picture the host owns
 

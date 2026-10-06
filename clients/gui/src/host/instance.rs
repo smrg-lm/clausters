@@ -92,6 +92,11 @@ pub struct Playing {
     notes: HashMap<SourceId, NotesPlayback>,
     /// Each roll's position cursor, as a beat of its sequence.
     notes_cursor: HashMap<SourceId, f64>,
+    /// What plays each score editor's window, by its window: the score's
+    /// render, and a playback of it on a transport of its own -- as a
+    /// client's score editor has it.
+    #[cfg(feature = "notation")]
+    scores: HashMap<i32, (clausters_document::events::EventSequence, NotesPlayback)>,
     /// The steps not carried out yet, across both servers -- the crate's walk.
     run: Runner,
 }
@@ -599,6 +604,12 @@ impl Host {
                 notes.set_rolling(rolling);
             }
         }
+        #[cfg(feature = "notation")]
+        for (_, notes) in self.instance.scores.values_mut() {
+            if notes.transport() == Some(transport) {
+                notes.set_rolling(rolling);
+            }
+        }
     }
 
     /// **The transport the roll of `source` plays on**, taken the first time:
@@ -723,6 +734,129 @@ impl Host {
         }
         self.send_multitrack();
     }
+}
+
+/// **A score editor's window, as it plays.** The score is rendered at the
+/// engraver's tempo and played as a roll's sequence is -- an event lane on a
+/// transport of its own, through the player -- so what a client's score
+/// editor does with a turn's pass, this does with the same one.
+#[cfg(feature = "notation")]
+impl Host {
+    /// **The transport the score of window `def_id` plays on**, taken the
+    /// first time: what its page draws its cursor from. `None` with no player
+    /// to sound it, or no transport left.
+    pub(crate) fn score_transport(&mut self, def_id: i32) -> Option<i32> {
+        self.player()?;
+        let (_, playback) = self.instance.scores.entry(def_id).or_default();
+        match playback.alloc_transport(&mut self.ids) {
+            Ok(transport) => Some(transport),
+            Err(e) => {
+                diag::warn!("the score has no play cursor and cannot be played: {e}");
+                None
+            }
+        }
+    }
+
+    /// **A turn asked for a pass**, `{"from", "range", "looping"}`: a score
+    /// that sounds stops and goes back to where the pass began, a silent one
+    /// plays `sequence`, its render, from there.
+    pub(crate) fn roll_score(
+        &mut self,
+        def_id: i32,
+        sequence: clausters_document::events::EventSequence,
+        pass: &serde_json::Value,
+    ) {
+        if self.player().is_none() {
+            return diag::warn!("the score cannot be played: this host has no player");
+        }
+        let Some(rate) = self.owner.as_ref().map(|o| o.multitrack_look().rate) else {
+            return;
+        };
+        let from = pass["from"].as_f64().unwrap_or(0.0);
+        let range = span(&pass["range"]);
+        let looping = pass["looping"].as_bool().unwrap_or(false);
+        let (held, playback) = self.instance.scores.entry(def_id).or_default();
+        *held = sequence;
+        let steps = if playback.rolling() {
+            Ok(playback.stop(held, from, rate))
+        } else {
+            playback.play_pass(held, from, range, looping, rate, &mut self.ids)
+        };
+        match steps {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the score cannot be played: {e}"),
+        }
+        self.send_multitrack();
+    }
+
+    /// **The loop switch changed** while the score plays: the pass in
+    /// progress follows it.
+    pub(crate) fn reloop_score(&mut self, def_id: i32, pass: &serde_json::Value) {
+        let Some(rate) = self.owner.as_ref().map(|o| o.multitrack_look().rate) else {
+            return;
+        };
+        let Some((held, playback)) = self.instance.scores.get_mut(&def_id) else {
+            return;
+        };
+        let looping = pass["looping"].as_bool().unwrap_or(false);
+        let steps = playback.set_loop(held, span(&pass["range"]), looping, rate);
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
+    }
+
+    /// **The cursor was placed at `beat`** -- a rewind: a stopped transport
+    /// is cued there.
+    pub(crate) fn cue_score(&mut self, def_id: i32, beat: f64) {
+        let Some(rate) = self.owner.as_ref().map(|o| o.multitrack_look().rate) else {
+            return;
+        };
+        let Some((held, playback)) = self.instance.scores.get_mut(&def_id) else {
+            return;
+        };
+        let steps = playback.cue(held, beat, rate);
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
+    }
+
+    /// **The score changed**: its lane takes the new render, and the server
+    /// plays it on from where it is. Nothing before the first play.
+    pub(crate) fn update_score(
+        &mut self,
+        def_id: i32,
+        sequence: clausters_document::events::EventSequence,
+    ) {
+        let Some(rate) = self.owner.as_ref().map(|o| o.multitrack_look().rate) else {
+            return;
+        };
+        let Some((held, playback)) = self.instance.scores.get_mut(&def_id) else {
+            return;
+        };
+        *held = sequence;
+        match playback.update(held, rate, &mut self.ids) {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the score cannot be played: {e}"),
+        }
+        self.send_multitrack();
+    }
+
+    /// **The score's window closed**: what its playback made is freed and
+    /// its transport given back.
+    pub(crate) fn close_score_playback(&mut self, def_id: i32) {
+        let Some((_, mut playback)) = self.instance.scores.remove(&def_id) else {
+            return;
+        };
+        match playback.close(&mut self.ids) {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the score's playback cannot be closed: {e}"),
+        }
+        self.send_multitrack();
+    }
+}
+
+/// A pass's `range`, `[start, end]` in beats, or `None`.
+#[cfg(feature = "notation")]
+fn span(range: &serde_json::Value) -> Option<(f64, f64)> {
+    Some((range.get(0)?.as_f64()?, range.get(1)?.as_f64()?))
 }
 
 #[cfg(test)]

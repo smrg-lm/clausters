@@ -988,8 +988,9 @@ opened it.
   mode with an edit cursor, which is also how the second voice is written; a
   written page break, laid out in runs of pages; the ○ palette entries, each
   the model grown with its sound; a channel group edited as one; a written
-  pitch that moves with the sounding one; New and Close in the File menu. What stays open: the standalone host's playback and export; and the sound, which nobody has
-  listened to.* The notation model
+  pitch that moves with the sounding one; New and Close in the File menu;
+  the standalone host's playback and export. What stays open: the sound,
+  which nobody has listened to.* The notation model
   and what is still open about editing a page are the N track's
   (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
   which element admits which edit, `N9` a score as a box of the multitrack);
@@ -1706,7 +1707,8 @@ opened it.
       so both are heard on from where the position is, and binds the window's
       head clock to that transport. `play`, `pause`, `resume`, `stop`,
       `playing` and `transport` are the client's, as a notes editor has them.
-      The standalone host has no server and plays nothing. Open: the host's
+      The standalone host has no server and plays nothing (since 2026-10-06
+      it does, under "Found by use"). Open: the host's
       own `L` switch and the toolbar's are told apart by nothing -- the
       editor's is the one a play reads, and a press of `L` after the toolbar
       turned it may ask for the state it already has; and a tempo the score
@@ -1724,7 +1726,7 @@ opened it.
       read off the extension when left out. **The standalone host exports
       nothing**: it links no MIDI file writer, and says so; the writer is the
       clients' crate (`clausters-midi`), and giving the host the same one is
-      what closing that takes.)*
+      what closing that takes -- done 2026-10-06, under "Found by use".)*
   - ✅ **X5.9 - The books and the example**, both clients. *(The user,
     2026-10-05: the editing examples are gathered into one.)* `notation/
     score.py` (a drag and an undo), `notation/score_editor.py` (every verb)
@@ -2930,11 +2932,21 @@ wrong.
   close request the owner confirms -- which is the host's, for every
   editor, and not the score editor's alone.
 
-- ⬜ **The standalone host's score neither plays nor exports**
+- ✅ **The standalone host's score neither plays nor exports**
   *(`X5.8.3`, `X5.8.4`)*. **Decided 2026-10-05, by the user**: with
   `--score` the host boots its embedded server, as `--session` does, and
   plays the score with a simple def of its own; it exports with the MIDI
   writer the clients use.
+  **Fixed 2026-10-06**: `--score`, in a build with `standalone`, opens the
+  on-demand server and a player as `--session` does. The score's render
+  plays as a roll's sequence plays in that host -- the editor's playback on
+  a transport of its own, through the player -- and the page's cursor is
+  bound to that transport, as a client's score editor binds it; a pass, a
+  stop, the loop switch, a rewind and an edit heard on are the turn's, as
+  in both clients. The def is the server's built-in `default`, which a
+  render's events name by naming none. An export writes the render with
+  `clausters-midi`, the clients' writer, which the `score` feature now
+  pulls in. Nobody has listened to it.
 
 - ⬜ **The toolbar's voice and layout selectors are words** *(the symbols'
   entry, above: `v1`, `v2`; `page`, `line`)*. They take symbols, as every
