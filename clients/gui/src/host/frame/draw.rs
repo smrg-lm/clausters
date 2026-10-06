@@ -1040,6 +1040,11 @@ fn draw_list(
                 if entry.enabled { theme.accent } else { ink },
             );
         }
+        if matches!(entry.kind, crate::host::menu::EntryKind::Heading) {
+            // a section's name stands over the rows it names, centred
+            font::text_centered(over, &entry.label, *row, size, ink);
+            continue;
+        }
         font::text_ellipsis(
             over,
             &entry.label,

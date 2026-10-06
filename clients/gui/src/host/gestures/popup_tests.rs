@@ -1295,8 +1295,11 @@ fn f1_shows_the_windows_keys_until_its_close_mark_or_escape() {
     let sheet = &placed[0];
     let mark = sheet.close().expect("the sheet has a close mark");
     let work = host.content_area(1, ctx.fb_w, ctx.fb_h);
+    let mid_of = |r: Rect| (r.x + r.w * 0.5, r.y + r.h * 0.5);
+    let (sx, sy) = mid_of(sheet.rect);
+    let (wx, wy) = mid_of(work);
     assert!(
-        ((sheet.rect.x + sheet.rect.w * 0.5) - (work.x + work.w * 0.5)).abs() < 1.0,
+        (sx - wx).abs() < 1.0 && (sy - wy).abs() < 1.0,
         "{:?} stands in the middle of {work:?}",
         sheet.rect
     );
@@ -1335,6 +1338,12 @@ fn the_key_sheet_scrolls_by_the_arrows_and_the_ends() {
     assert!(
         first.max_scroll > 0.0,
         "the sheet is longer than the window"
+    );
+    let work = host.content_area(1, ctx.fb_w, ctx.fb_h);
+    assert!(
+        first.rect.h <= work.h * crate::host::popup::CENTRE_FILL + 0.5,
+        "and stands over it, not as tall as it: {:?} in {work:?}",
+        first.rect
     );
     assert!(
         first.rows[0].y >= first.body().y,

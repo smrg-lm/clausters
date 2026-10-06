@@ -524,11 +524,16 @@ pub fn place_at(at: (f32, f32), size: (f32, f32), work: Rect) -> Rect {
     Rect::new(hold_x(x, w, work), hold_y(y, h, work), w, h)
 }
 
+/// How much of the area's height a list standing in the middle of it may
+/// take: a sheet taller than that scrolls, and the window shows around it.
+pub const CENTRE_FILL: f32 = 0.8;
+
 /// The same for a list standing **in the middle** of the area -- the key
-/// sheet: centred, and cut to the area where it is bigger.
+/// sheet: centred both ways, and no taller than [`CENTRE_FILL`] of the area,
+/// so it reads as a sheet over the window rather than as the window.
 pub fn place_centre(size: (f32, f32), work: Rect) -> Rect {
     let w = size.0.min(work.w);
-    let h = size.1.min(work.h);
+    let h = size.1.min((work.h * CENTRE_FILL).round());
     Rect::new(
         work.x + (work.w - w) * 0.5,
         work.y + (work.h - h) * 0.5,
