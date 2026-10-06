@@ -313,8 +313,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   let the notes editor (`X3`) stand inside a multitrack or a script's window, as a
   composed widget. Nothing about it is designed: a subtree rather than a window,
   ids a parent hands a child, events routed to the application that owns each
-  widget, and who answers a key when applications nest, which meets the GUI's
-  "Key bindings per window" (`clients/gui/PLAN.md`, Future directions).
+  widget, and who answers a key when applications nest -- a window's own keys
+  are built (its `keys` scopes), and nesting is what is left of them.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool and `DiskIn`'s missing start frame; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a

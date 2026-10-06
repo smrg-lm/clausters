@@ -1053,7 +1053,9 @@ opened it.
   what a palette offers is an element verovio engraves, under its MEI name --
   and **the model and its verbs are ours**. ● the model holds it today; ○ the
   palette waits on the model growing it -- an item or a field, its emission and
-  reading, and an `Op`.
+  reading, and an `Op`. *(Every ○ entry was grown 2026-10-05, "The ○ entries
+  are notation the model does not hold" under "Found by use"; each now names
+  where the model holds it.)*
 
   - **Notes and rests** (the toolbar's input)
     - ● `note` -- one pitch with a written value, the element entry writes.
@@ -1061,8 +1063,8 @@ opened it.
     - ● `rest` -- a silence of a written value.
     - ● `mRest` (read as a rest) -- a rest filling a whole measure, centred in
       it whatever the meter.
-    - ○ `multiRest` -- several empty measures drawn as one numbered bar, the
-      usual sight in a part.
+    - ● `multiRest` (`Grid::multirests`, `SetMultirests`) -- several empty
+      measures drawn as one numbered bar, the usual sight in a part.
     - ● `space` (read as a rest) -- time a voice holds without drawing
       anything.
     - ● `dots` -- augmentation dots, part of the value (the item's ratio).
@@ -1072,7 +1074,8 @@ opened it.
       count, three in the time of two.
     - ● `beam` (read; the engraver's unless written, `N7`) -- notes joined
       under one beam.
-    - ○ `bTrem` / `fTrem` -- a tremolo on one note, or alternating between two.
+    - ● `bTrem` / `fTrem` (`Marks::tremolo`; the `ftrem` spanner) -- a tremolo
+      on one note, or alternating between two.
   - **Accidentals and pitch**
     - ● `accid` (`alter`, and `forced` for a courtesy sign) -- a sharp, flat,
       natural or double, written or implied by the key.
@@ -1090,55 +1093,71 @@ opened it.
     - ● `turn` -- the four-note figure around the main note.
     - ● `fermata` (an ornament in the model, a control element in MEI) -- a hold
       of no fixed length over a note, a rest or a barline.
-    - ○ `ornam` -- any other ornament, named by its glyph.
-    - ○ `arpeg` -- a chord rolled from its lowest note up, or down.
-    - ○ `gliss` -- a slide drawn as a line from one note to the next.
-    - ○ `breath` / `caesura` -- a breath, and a full stop of the line.
+    - ● `ornam` (`Marks::ornament`, any name past the four) -- any other
+      ornament, named by its glyph.
+    - ● `arpeg` (`Marks::arpeggio`) -- a chord rolled from its lowest note up,
+      or down.
+    - ● `gliss` (the `gliss` spanner) -- a slide drawn as a line from one note
+      to the next.
+    - ● `breath` / `caesura` (`Marks::breath`) -- a breath, and a full stop of
+      the line.
   - **Lines between two notes** (spanners, made from a selection's first and
     last notes)
     - ● `slur` -- a curve over a phrase, from a first note to a last.
     - ● `tie` (the item's `tie`) -- two notes of one pitch joined into one sound.
-    - ○ `lv` -- a tie into nothing: let it ring.
+    - ● `lv` (`Marks::ring`) -- a tie into nothing: let it ring.
     - ● `hairpin` (`crescendo`, `diminuendo`) -- a wedge for a gradual change of
       loudness.
-    - ○ `phrase` -- a phrase mark distinct from a slur, for analysis.
-    - ○ `octave` -- an 8va or 8vb line moving the written notes by octaves.
-    - ○ `pedal` -- the sustain pedal pressed and released, as signs or a
+    - ● `phrase` (a spanner, as are the four below) -- a phrase mark distinct
+      from a slur, for analysis.
+    - ● `octave` (`8va`, `8vb`, `15ma`, `15mb`) -- a line moving the written
+      notes by octaves.
+    - ● `pedal` -- the sustain pedal pressed and released, as signs or a
       bracket.
-    - ○ `bracketSpan` -- a bracket over a stretch of notes.
-    - ○ `beamSpan` -- a beam across a barline or across staves.
+    - ● `bracketSpan` (`bracket`) -- a bracket over a stretch of notes.
+    - ● `beamSpan` (`beamspan`) -- a beam across a barline or across staves.
   - **Dynamics and text over the music**
     - ● `dynam` (one per note today) -- a level, `pp` to `ff`, `sf`, `fp`,
       under the staff.
-    - ○ `tempo` -- a tempo mark, as words, as a metronome value or both.
-    - ○ `dir` -- a free direction ("dolce", "pizz.") at a point in time.
-    - ○ `reh` -- a rehearsal mark, a letter or number in a box.
-    - ○ `fing` -- a fingering number over a note.
-    - ○ `harm` -- a chord symbol or a figured bass over the staff.
-    - ○ `syl` / `verse` -- lyrics, a syllable under a note, verse by verse.
+    - ● `tempo` (a `Control`, as are the two below) -- a tempo mark, as words,
+      as a metronome value or both.
+    - ● `dir` -- a free direction ("dolce", "pizz.") at a point in time.
+    - ● `reh` -- a rehearsal mark, a letter or number in a box.
+    - ● `fing` (`Marks::fingering`) -- a fingering number over a note.
+    - ● `harm` (`Marks::harmony`) -- a chord symbol or a figured bass over the
+      staff.
+    - ● `syl` / `verse` (`Marks::lyrics`) -- lyrics, a syllable under a note,
+      verse by verse.
   - **Measures and structure**
     - ● `measure` (the grid) -- the bar: inserted, removed, selected as a range.
     - ● `meterSig` (`SetMeter`) -- the time signature, at the start or as a
       change.
-    - ● `keySig` (one key, the sheet's) / ○ a change of key inside the score.
-    - ● `clef` (one per staff) / ○ a change of clef inside a staff.
+    - ● `keySig` (the sheet's key, and `Grid::keys`, `SetKey`) -- the key, and
+      a change of it inside the score.
+    - ● `clef` (`Staff::clef`, and `Staff::clefs`, `SetClef`) -- a staff's
+      clef, and a change of it inside the staff.
     - ● `barLine` (`SetBarline`) -- how a measure ends: single, double, final,
       repeat start or end, dashed, invisible.
-    - ○ `ending` -- first and second endings (voltas) over measures.
-    - ○ `repeatMark` -- segno, coda, da capo and dal segno.
-    - ○ `mRpt` / `beatRpt` -- repeat the previous measure, or beat.
+    - ● `ending` (`Grid::endings`, `SetEnding`) -- first and second endings
+      (voltas) over measures.
+    - ● `repeatMark` (`Grid::marks`, `SetMark`) -- segno, coda, da capo and dal
+      segno.
+    - ● `mRpt` / `beatRpt` (`Grid::repeats`, `SetRepeat`; `Marks::beat_repeat`)
+      -- repeat the previous measure, or beat.
     - ● `sb` / `pb` (`SetBreak`) -- a system or page break the writer asks
       for.
   - **Staves**
-    - ○ a staff's line count, its label (the instrument's name, and its short
-      form) and a transposing staff ("A selected staff is edited by its line
+    - ● a staff's line count, its label (the instrument's name, and its short
+      form) and a transposing staff (`Staff::lines`, `label`, `abbr`,
+      `transpose`, `SetStaff`). What a staff of other than five lines means
+      for pitch is still open ("A selected staff is edited by its line
       count", `clients/gui/PLAN.md`, Future directions).
-    - ○ `staffGrp` -- a brace or bracket grouping staves (a grand staff, a
-      section).
+    - ● `staffGrp` (`Sheet::groups`, `SetGroups`) -- a brace or bracket
+      grouping staves (a grand staff, a section).
     - ● voices (`ToVoice`) -- a second line on one staff.
   - **The page's text** (`pgHead`, `pgFoot`)
-    - ● title, subtitle, composer, lyricist (`Header`, `SetHeader`) / ○
-      arranger, translator, copyright and footnotes.
+    - ● title, subtitle, composer, lyricist, arranger, translator, copyright
+      and footnotes (`Header`, `SetHeader`).
 
   **The transformations are the menu's too.** Every operator in `catalog()`
   -- `transpose`, `invert`, `retrograde`, `repeat`, `stretch`, `concat`,
@@ -1611,7 +1630,8 @@ opened it.
     `breath` and `caesura`, `lv`, `phrase`, `octave`, `pedal`, `bracketSpan`,
     `beamSpan`, `tempo`, `dir`, `reh`, `fing`, `harm`, lyrics, a change of
     key or of clef inside the score, `ending`, `repeatMark`, `mRpt` and
-    `beatRpt`, a staff's line count and label, and `staffGrp`.)*
+    `beatRpt`, a staff's line count and label, and `staffGrp` -- all grown
+    since, under "Found by use".)*
   - ✅ **X5.7 - The notation keys.** The table above settled key by key:
     the written pitch, the written value and the tuplet, `staff` and `voice`,
     the mark against the level, the grace note, the spanners over event ids,
@@ -1713,7 +1733,8 @@ opened it.
       editor's is the one a play reads, and a press of `L` after the toolbar
       turned it may ask for the state it already has; and a tempo the score
       states is not read, since the model holds none (`tempo`, in the
-      palettes' open list).)*
+      palettes' open list -- read since 2026-10-05, a tempo mark setting the
+      render's tempo map).)*
     - ✅ **X5.8.4 - The export.** *(Done 2026-10-05. The File menu's
       Export MIDI and Export clip name a file through the file form, and the
       turn's outcome names it and its format (`smf`, a Standard MIDI File;

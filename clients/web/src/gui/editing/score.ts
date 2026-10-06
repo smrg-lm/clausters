@@ -965,7 +965,7 @@ export class ScoreEditor extends Editor<Score> {
      * `path`'s extension when left out -- `.midi2` is a clip, anything else a
      * MIDI file. The File menu's two Exports, as a method.
      *
-     * It is the sequence `Score.renderEvents` answers, at the engraver's
+     * It is the sequence `Score.renderEvents` answers, at the score's own
      * tempo, written as a sequence writes either (`EventSequence.toSmf`,
      * `toClip`): its notes, a channel to a voice, the dynamics as each
      * channel's expression.

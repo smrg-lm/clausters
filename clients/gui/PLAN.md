@@ -4523,7 +4523,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ⬜ **A selected staff is edited by its line count, not by its position**
-  *(the user, 2026-09-07, during the visual review's second sitting)*. Selecting
+  *(the user, 2026-09-07, during the visual review's second sitting)*. *(Partly
+  built 2026-10-05, the score editor's ○ entries: the model holds a staff's
+  line count (`Staff::lines`, `SetStaff`) and the Staves palette sets one or
+  five, and the editor offers no drag of a staff. **Still open**: what the
+  count means for pitch -- a percussion clef, and the mapping from a staff
+  position to what an unpitched line plays -- so a one-line staff is still
+  read through the clef it had.)* Selecting
   a staff is legitimate and a score editor should offer it. What it must **not**
   offer is dragging one up or down: no notation program moves a staff that way,
   because where a staff sits on the page is the engraver's and a system's
@@ -4770,7 +4776,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   what a hand expects, which is what says the missing piece is not another
   geometric tie-break.
 
-- ⬜ **Key bindings per window** *(left open by `G36`, 2026-10-04)*. The key table is the host's, like its theme, so two windows of one host cannot give one chord two verbs. A `keys` prop on a `window` -- or on a subtree, as `theme` scopes a look -- is the next level, and the question it waits on is the one an application inside another asks: which of two applications that both claim a chord answers it.
+- ✅ **Key bindings per window** *(left open by `G36`, 2026-10-04)*. The key table is the host's, like its theme, so two windows of one host cannot give one chord two verbs. A `keys` prop on a `window` -- or on a subtree, as `theme` scopes a look -- is the next level, and the question it waits on is the one an application inside another asks: which of two applications that both claim a chord answers it. **Built 2026-10-05, with the score editor's note entry**: a window names the key table's **scopes** in its `keys` prop, sub-tables (`[gui.keys.<scope>]`, a nested object on `/gui_keys`) read before the table's own rows, the last named first -- so one chord has two verbs in two windows, and in one window from one mode to the next (`docs/gui-protocol.md`, "The keys are a table"). A subtree naming scopes, and which of two nested applications answers a chord they both claim, are the open part of `crates/clausters-document/PLAN.md`'s "An application inside another", where nesting is decided.
 
 - ⬜ **A key in a tip** *(left open by `G36`)*. A menu entry shows its chord because it names a verb; a tip belongs to a widget, whose report is its value. A tool button that *is* a verb (`verb` beside its `tip`) would let the tip show the key and the key press the button.
 

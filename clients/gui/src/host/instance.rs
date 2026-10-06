@@ -736,8 +736,8 @@ impl Host {
     }
 }
 
-/// **A score editor's window, as it plays.** The score is rendered at the
-/// engraver's tempo and played as a roll's sequence is -- an event lane on a
+/// **A score editor's window, as it plays.** The score is rendered at its
+/// own tempo and played as a roll's sequence is -- an event lane on a
 /// transport of its own, through the player -- so what a client's score
 /// editor does with a turn's pass, this does with the same one.
 #[cfg(feature = "notation")]
