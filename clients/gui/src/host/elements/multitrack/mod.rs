@@ -91,7 +91,8 @@ impl NotesView {
 pub(crate) struct ScoreBody {
     /// The page, as a `score` element takes one.
     page: crate::host::graphics::score::ScoreData,
-    /// `(element id, where it starts)`, in the units a note's start is in.
+    /// `(element id, where it starts)`, in the units a note's start is in:
+    /// frames of the sequence, read through the box's window.
     anchors: Vec<(String, f64)>,
 }
 pub(crate) use props::build;

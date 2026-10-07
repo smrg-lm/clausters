@@ -2731,18 +2731,21 @@ Every entry carries a checkbox.
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
 
-- ⬜ **A box of notes moved does not sound as it should** *(the user,
-  2026-10-06, at the first look at a box drawn as its page: with the box
-  moved, its notes do not sound as they should)*. Not yet reproduced by ear.
-  What is checked: the placement is right -- `placed_notes` answers the
-  notes at the box's new position, a box moved three seconds placing them
-  three seconds later -- and how a box is drawn does not reach what sounds,
-  so the page is not the cause and a box drawn as a roll should do the same.
-  What is not: what the lane and the box's own strip do with a new placement
-  while the transport stands or rolls (`MultitrackPlayback::notes`,
-  `nodes::plan_voiced`). To ask: what is heard -- the notes where the box
-  was, late, cut, at another level -- whether it is the same as a roll, and
-  in which host.
+- ✅ **A box of notes stretched from the front loses where its notes start**
+  *(the user, 2026-10-06, at the first look at a box drawn as its page: with
+  the box moved, its notes do not sound as they should -- and then the cause:
+  stretched from the front, the box loses the relation to where its notes
+  start)*. The document and what plays were right: a trim moves the box's
+  edge and its window's start together, and the notes were placed at their
+  own seconds. The picture was not. Each box's notes, and its page's anchors,
+  were stated **from the box's edge**, and a trim is answered with an
+  acknowledgement alone, so the host went on drawing them from the new edge:
+  they travelled with it, and the picture stopped being what was heard.
+  **Fixed 2026-10-06** by stating a box's notes as a take's samples are
+  stated, in **the sequence's own frames**, and drawing them through the
+  box's window (its `start`, and `rates`): a trim leaves every note where it
+  was played, in the picture the moment the edge moves, and a note that
+  starts before the window is not drawn, as it is not heard.
 - ✅ **The notes editor's playback does the transport's work** *(found
   2026-09-28, writing `X3.9`'s sound; the user: "Pianoroll con midi/osc events
   debería correr con el transport del servidor, de lo contrario estaríamos

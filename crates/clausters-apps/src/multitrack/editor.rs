@@ -387,7 +387,8 @@ impl MultitrackEditor {
     }
 
     /// **The pages of the boxes of notes**, a box's name to its page with
-    /// the time of each of its notes -- or `None` where the boxes are drawn
+    /// the time of each of its notes in the sequence's frames, which the box
+    /// reads through its window -- or `None` where the boxes are drawn
     /// as rolls, or nothing engraves here.
     #[cfg(feature = "notation")]
     fn scores(&self) -> Option<Value> {
@@ -455,24 +456,17 @@ impl MultitrackEditor {
             let Some(kept) = pages.get(&source) else {
                 continue;
             };
-            // where each note stands in the box: its second in the sequence,
-            // from the box's own start, in the frames a note's start is in
+            // where each note stands: its second in the sequence, in the
+            // sequence's frames, as a note of the box's roll is -- the box
+            // reads both through its window
             let map = sequence
                 .tempo_map
                 .clone()
                 .unwrap_or_else(|| TempoMap::new(1.0));
-            let rate = if box_.playrate > 0.0 {
-                box_.playrate
-            } else {
-                1.0
-            };
             let anchors: Vec<Value> = kept
                 .onsets
                 .iter()
-                .flat_map(|(id, beat)| {
-                    let start = (map.secs_at(*beat) - box_.start) / rate * self.rate;
-                    [json!(id), json!(start)]
-                })
+                .flat_map(|(id, beat)| [json!(id), json!(map.secs_at(*beat) * self.rate)])
                 .collect();
             let mut page = kept.page.clone();
             page.insert("anchors".into(), Value::Array(anchors));

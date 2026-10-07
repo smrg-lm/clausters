@@ -107,12 +107,6 @@ already carry it.
   is not a number. The server now reads `control + constant` as a static bus
   index, so the refusal can go, in both clients at once.
 
-- ⬜ **A box of notes moved does not sound as it should**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Reported at the first
-  look at a box drawn as its page, and not yet reproduced: the placement is
-  right, so what is wrong is in what the lane or the box's strip do with it.
-  It starts with what is heard, which the entry asks.
-
 - ⬜ **A looping selection does not follow a new selection**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection
   while it loops leaves the loop on the old span, in the audio editor opened

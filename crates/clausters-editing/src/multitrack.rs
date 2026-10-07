@@ -701,10 +701,14 @@ fn scaled(
 
 /// **The notes each box over a sequence draws**, as the flat `box start dur
 /// pitch velocity channel` sextuples the widget takes: every note of the
-/// sequence the box's window reads, placed in the box's own frames -- the
-/// window's start is a second of the sequence (through its own tempo map),
-/// read at the box's playrate. A note that starts outside the window is not
-/// the box's; one that runs past its end is drawn to where it ends.
+/// sequence the box is a window onto, placed in **the sequence's own frames**
+/// -- a second of it, through its own tempo map, at the source's rate -- as a
+/// take's samples are its own frames. The box reads them through its window,
+/// as it reads a take: where its zero falls in the sequence and how many of
+/// the sequence's frames one of its samples is (`rates`). So a trim, which
+/// moves the window and not the notes, is drawn right the moment the edge
+/// moves, with nothing to state again; and which notes the box holds is the
+/// window's to say, the host drawing none that starts before it.
 pub fn notes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let domain = crate::notes::YDomain::midi();
     let mut out = Vec::new();
@@ -712,27 +716,18 @@ pub fn notes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         let Some(sequence) = box_.source.and_then(|s| look.sources.sequence(s)) else {
             continue;
         };
-        let rate = if box_.playrate > 0.0 {
-            box_.playrate
-        } else {
-            1.0
-        };
+        let rate = look.source_rate(box_.source);
         let name = box_.region.0.to_string();
         for event in crate::notes_playback::placed(&sequence).events {
             let keys = event.keys;
             let Some(pitch) = domain.value(&keys) else {
                 continue;
             };
-            let from = (event.start - box_.start) / rate;
-            if from < 0.0 || from >= box_.length.0 {
-                continue;
-            }
-            let to = (event.end - box_.start) / rate;
             let level = clausters_core::event::render::level_of(&keys);
             out.extend([
                 json!(name),
-                json!(from * look.rate),
-                json!((to - from) * look.rate),
+                json!(event.start * rate),
+                json!((event.end - event.start).max(0.0) * rate),
                 json!(pitch),
                 json!(level.velocity()),
                 json!(keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0)),
@@ -1163,10 +1158,10 @@ mod tests {
         multitrack
     }
 
-    /// **A box over a sequence draws the notes its window reads**, in its own
-    /// frames: the window's start is a second of the sequence, a note before
-    /// it or past the box's end is not the box's, and the box is named by the
-    /// region the notes belong to.
+    /// **A box over a sequence is stated every note of it**, in the
+    /// sequence's frames, named by the region they belong to: the box reads
+    /// them through its window, as it reads a take, so its window's start
+    /// changes nothing stated here.
     #[test]
     fn a_box_over_a_sequence_draws_its_notes() {
         struct One(SourceId, clausters_document::EventSequence);
@@ -1220,24 +1215,20 @@ mod tests {
             rate: 1000.0,
             sources: &held,
         };
+        // Every note, at its own frame of the sequence: which of them the box
+        // holds is its window's, which the host reads them through.
+        let drawn = notes(&multitrack, &look);
+        let starts: Vec<f64> = drawn
+            .chunks(6)
+            .map(|note| note[1].as_f64().unwrap())
+            .collect();
+        assert_eq!(starts, [0.0, 1000.0, 2500.0, 5000.0]);
         assert_eq!(
-            notes(&multitrack, &look),
-            vec![
-                json!("3"),
-                json!(0.0),
-                json!(500.0),
-                json!(60.0),
-                json!(90.0),
-                json!(0.0),
-                json!("3"),
-                json!(1500.0),
-                json!(500.0),
-                json!(64.0),
-                json!(90.0),
-                json!(0.0),
-            ],
-            "the two notes from the window's start to the box's end"
+            drawn[2],
+            json!(500.0),
+            "a note's length, in the same frames"
         );
+        assert_eq!(drawn[3], json!(48.0));
 
         // A caller that holds no sequence draws the box empty.
         let empty = Held {

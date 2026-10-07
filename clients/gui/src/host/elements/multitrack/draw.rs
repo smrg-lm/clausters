@@ -477,11 +477,15 @@ impl Multitrack {
         // the row the box is on, as far across as the tracks are drawn
         let row = Rect::new(body.x + indent, cr.y, (body.w - indent).max(0.0), cr.h);
         let view = space.view;
+        // a note's time is a frame of the sequence, read through the box's
+        // window as its roll is
+        let window = space.window;
+        let rate = if window.rate > 0.0 { window.rate } else { 1.0 };
         score.page.render_on_time(
             mesh,
             TimeFrame { body: cr, row },
             &score.anchors,
-            &|start| to_x(start, &view, cr) as f32,
+            &|start| to_x((start - window.start) / rate, &view, cr) as f32,
             TimeColors {
                 ink: theme.text,
                 backdrop: theme.object_fill,

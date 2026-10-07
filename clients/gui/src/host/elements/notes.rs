@@ -719,16 +719,36 @@ impl Element for Notes {
 
     /// A clip's body: the same notes over the clip's own axis, with no keyboard,
     /// no strips and no chrome.
+    ///
+    /// **The notes are the contents and the clip is a window onto them**, as
+    /// a take is: a note's start is a frame of the sequence, and the clip's
+    /// window says which frame its zero reads and how many frames one unit of
+    /// its time is. So a trim from the front moves the window and leaves every
+    /// note where it was played -- in the picture the moment the edge moves,
+    /// before any owner answers -- and a note that starts before the window
+    /// is not the clip's, as it is not heard from it.
     fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
         let (lo, hi) = (self.min, self.max);
-        let local = &time.view;
+        let window = time.window;
+        let rate = if window.rate > 0.0 { window.rate } else { 1.0 };
+        // the visible stretch of the clip, in the sequence's frames
+        let seen = View {
+            start: window.start + time.view.start * rate,
+            len: time.view.len * rate,
+        };
+        let held: Vec<Note> = self
+            .notes
+            .iter()
+            .filter(|note| note.start >= window.start)
+            .cloned()
+            .collect();
         pianoroll::draw_notes(
             d,
             rect,
             rect,
-            local,
+            &seen,
             0.0,
-            &self.notes,
+            &held,
             Pitches::rows(lo, hi),
             false,
             &[],
@@ -1616,6 +1636,60 @@ mod tests {
 
     fn roll(json: &str) -> Notes {
         from_props(&props(json))
+    }
+
+    /// **A clip's notes are read through its window**, as a take is: a note
+    /// is a frame of the sequence, so a clip stretched from the front -- its
+    /// window's start pulled back with its edge -- draws every note where it
+    /// was, and a note before the window is none of the clip's.
+    #[test]
+    fn a_clip_s_notes_stand_where_they_were_played_whatever_its_window() {
+        use crate::host::metrics::Metrics;
+        use crate::host::paint::{Draw, Mesh};
+        use crate::host::theme::Theme;
+        use crate::host::widget::SourceWindow;
+        use crate::host::widget::element::TimeSpace;
+
+        let body = roll(
+            r#"{"notes": [0, 4800, 60, 100, 0, 4800, 2400, 64, 100, 0],
+                "min": 48, "max": 72, "ruler": "off", "osc_markers": false}"#,
+        );
+        let rect = Rect::new(0.0, 0.0, 960.0, 100.0);
+        // the left edge of each bar the body draws, past the pitch labels
+        let lefts = |start: f64| {
+            let mut mesh = Mesh::new();
+            let (m, theme) = (Metrics::default(), Theme::default());
+            let time = TimeSpace::of(
+                View {
+                    start: 0.0,
+                    len: 9600.0,
+                },
+                9600.0,
+            )
+            .with_window(SourceWindow {
+                start,
+                ..SourceWindow::default()
+            });
+            body.draw_body(&mut Draw::new(&mut mesh, &m, &theme), rect, &time);
+            let mut xs: Vec<i32> = mesh
+                .positions()
+                .map(|(x, _)| x.round() as i32)
+                .filter(|x| *x >= 100)
+                .collect();
+            xs.sort_unstable();
+            xs.dedup();
+            xs
+        };
+        // a clip over the sequence from its start: the second note at 480
+        assert!(lefts(0.0).contains(&480));
+        // stretched a half from the front: the same notes, a half later
+        let stretched = lefts(-4800.0);
+        assert_eq!(stretched.first(), Some(&480), "{stretched:?}");
+        assert!(stretched.contains(&960) || stretched.contains(&959));
+        // trimmed a quarter in: the first note starts before the window and
+        // is not the clip's, the second stands a quarter earlier
+        let trimmed = lefts(2400.0);
+        assert_eq!(trimmed.first(), Some(&240), "{trimmed:?}");
     }
 
     /// **The notes a script marks are the ones a query names**, by the ids
