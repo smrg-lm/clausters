@@ -713,10 +713,36 @@ Cargo feature: every build has both clocks and both queues.
 
 Open, not blocking:
 
-- ⬜ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group
+- ✅ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group
   bound, `originSample` is still read on the device axis, so the grid slides by
   the frozen total across a pause. Needs the grid semantics re-derived; no test
   pins it today.
+
+  **Closed 2026-10-07, decided with the user: the grid stays on the device
+  clock, and the premise was wrong.** Re-deriving it showed that a grid held
+  through a governed pause cannot be the grid this command was made for.
+  `/transport_set` leaves the transport stopped at 0, and clients phase-align
+  on the grid before anyone plays: `examples/transport/sync.py` defines it,
+  binds a group and has two clients quantize onto it while the transport is
+  stopped, and only then plays. A grid that held with the transport would hold
+  those notes forever. So the grid is a **metronome**, and the "slide" this
+  entry named is what a metronome does while the music pauses. What stops and
+  locates with the music already exists: the transport's **position**, in
+  beats and in samples, which is where a client reads the music's bar.
+
+  Two other designs were worked through and left. The transport's own clock
+  does not run at all without a group (the engine is only told to roll a
+  governed transport), so a grid on it froze every ungoverned use. And a third
+  clock — the device's minus the time stopped with a group bound — fixed that
+  and still froze `sync`, while adding a number that agrees with the
+  transport's clock only some of the time.
+
+  Pinned: `two clocks join one grid and land on the same bar`
+  (`clients/web/tests/seq-ws.test.ts`, against a real server) now binds a
+  governed group and leaves the transport stopped, as `sync` does, and both
+  notes still land on the bar. The contract is written where the grid is
+  documented: `docs/schemas.md`, `docs/sample-clock.md` and both books'
+  transport pages.
 - ⬜ **T3 — Classification is once, at drain.** A bundle scheduled before
   `/transport_group` binds stays on the device queue even if its target becomes
   governed. Documented; re-classifying would mean rewriting a queue on the audio

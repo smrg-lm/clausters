@@ -46,6 +46,8 @@ The join reads the grid once and keeps three numbers — a tempo (the grid bring
 
 How exact the alignment is follows from the timebase. A clock made on the server's sample clock (`new TempoClock(1, { timebase: await server.sampleTimebase() })`, and every clock of an `embed` or `live` session by default) is on the very counter the grid's origin is defined against, so the alignment is **sample-exact**; a wall-clock clock maps the origin through the server's `/clock_query` anchor and lands within the drift between the two clocks. A clock's timebase is fixed when it is made, so the reference comes first and the join after.
 
+**The grid does not stop with the transport.** It is a metronome on the server's device clock, which never stops, and it is what independent clients phase-align on — including before anyone has pressed play, which is how `/transport_set` leaves it (stopped at position 0) and how `examples/transport/sync.html` uses it. So a pause of a governed transport does not hold the grid: the music stops and the grid runs on, and after a three-second pause the music is three seconds behind the bar lines the grid draws. Where the music *is* is the transport's **position** (`(await server.transportState()).position`, in beats, or `positionSample`), which holds through a pause and jumps with a locate; a client that wants the music's next bar reads that.
+
 ## Following the conductor
 
 A `Timeline` obeys the conductor by being **on** the transport:

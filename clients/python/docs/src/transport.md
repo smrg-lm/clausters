@@ -30,6 +30,8 @@ With a `Session`, both sides are one call — `session.server.set_transport(...)
 
 Joining reads the grid once and keeps it; from then on `clock.grid_beat()` is where the shared grid is now — the clock's own `beats()` when it has not joined one. That is the number `quant` snaps against, and the one to read when computing where a bar falls.
 
+**The grid does not stop with the transport.** It is a metronome on the server's device clock, which never stops, and it is what independent clients phase-align on — including before anyone has pressed play, which is how `/transport_set` leaves it (stopped at position 0) and how `examples/transport/sync.py` uses it. So a pause of a governed transport does not hold the grid: the music stops and the grid runs on, and after a three-second pause the music is three seconds behind the bar lines the grid draws. Where the music *is* is the transport's **position** (`transport_state()["position"]`, in beats, or `position_sample`), which holds through a pause and jumps with a locate; a client that wants the music's next bar reads that.
+
 ## Starting together on a bar
 
 A DAW starts a clip on the next bar, not the instant you click. The client's equivalent is `quant`: the beat boundary a routine's start snaps to.

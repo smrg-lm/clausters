@@ -164,16 +164,6 @@ its plan; the plan is where its acceptance is read.
   development resumes and waiting on `O21`(a). **Related:** an application
   inside another, under "The larger questions" below.
 
-- ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
-  `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
-  device axis, so the grid slides by the frozen total across a pause. No test
-  pins it today.
-  **The decision:** the grid semantics have to be re-derived, and `T5` moved the
-  ground under them — it put a position in samples on the engine, which crosses
-  the beats↔samples conversion `T2` says is anchored on the wrong axis. `T2` did
-  not stop being optional when `T5` landed, and the question it was flagged with
-  still stands.
-
 - ⬜ **`T3` — classification is once, at drain** *(root `PLAN.md`, T track)*. A
   bundle scheduled before `/transport_group` binds stays on the device queue even
   if its target becomes governed. It is documented behaviour today.

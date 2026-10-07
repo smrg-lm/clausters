@@ -217,6 +217,15 @@ test("two clocks join one grid and land on the same bar", {
             expect: ["/clock_query.reply"],
         });
         await server.setTransport(Number(anchor.args[0]), 2.0);
+        // And a governed group, with the transport left stopped where
+        // `/transport_set` put it -- what `transport/sync` does before anyone
+        // plays. **The grid is on the device clock**, so it runs on through a
+        // stopped transport and the notes below still find their bar; a grid
+        // that held with the transport would hold them forever. Where the
+        // music is in a pause is the transport's position, not this grid.
+        const governed = new Group({ server });
+        await server.transportGroup(governed.id);
+        assert.equal((await server.transportState()).playing, false);
 
         // Two independent clients on it -- one on wall time, one locked to the
         // server's sample clock. They share nothing but the grid.
@@ -251,6 +260,8 @@ test("two clocks join one grid and land on the same bar", {
         );
         wall.close();
         locked.close();
+        await server.transportGroup(null);
+        governed.free();
     });
 });
 
