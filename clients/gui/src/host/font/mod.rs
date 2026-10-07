@@ -473,7 +473,7 @@ pub fn generation() -> u64 {
     #[cfg(feature = "font-atlas")]
     let face = atlas::epoch();
     #[cfg(not(feature = "font-atlas"))]
-    let face = 0;
+    let face = 0u64;
     face.wrapping_mul(1 << 32)
         .wrapping_add(outline::generation())
 }
