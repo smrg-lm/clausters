@@ -20,7 +20,7 @@
 //! # A line
 //!
 //! One row per event is the sequence as it is placed, and says its time only
-//! where `at` is among the keys. [`line`] is the other shape a caller asks
+//! where `at` is among the keys. [`line()`] is the other shape a caller asks
 //! for: the rows of **one line played back to back**, the way a pattern
 //! writes one. Notes that start together are one row, a key they differ in
 //! holding the list of their values (a chord); `dur` is the time to the next
@@ -188,7 +188,7 @@ fn together(group: &[&Event], key: &str) -> Value {
 }
 
 /// **A sequence from rows** of `keys`: the way back from [`rows`] and from
-/// [`line`].
+/// [`line()`].
 ///
 /// Where `at` is among the keys each row is placed there; otherwise the rows
 /// play back to back, each lasting its `dur` (a beat where there is none). A
