@@ -2172,6 +2172,47 @@ this list rather than being ticked here.
   keeping `Instant`. Worth doing with a second reader in mind -- a page that
   wants to know why *its own* engine is late has nothing else to read.
 
+  **Measured 2026-10-07: the fix above cannot be built as written, and what
+  can be is a decision.** The engine runs inside the AudioWorklet, so that is
+  where a block and the serving turn before it would be bracketed, and a
+  worklet's global scope has no clock that can time one. In Chrome 154:
+
+  - `performance` is **undefined** there. The page has `performance.now()`;
+    the thread that runs the engine does not.
+  - `currentTime` is the audio clock. It does not move inside one `process`
+    call, so it says when a block is and nothing about how long it took.
+  - `Date.now()` exists and steps by **1 ms**. A block's budget is 1.33 ms (64
+    frames at 48 kHz), so no single block can be timed with it: `peakCPU` and
+    `late_blocks` have no source at all.
+  - Accumulated over many blocks it is a statistical estimate, and it does not
+    hold up. A fixed piece of work, timed over a span of 400 repetitions, cost
+    about 40 µs; the same work bracketed once a block read as about 125 µs
+    over 5789 blocks (a tick caught in 13% of them, where 4% is what 40 µs
+    against 1 ms predicts), at 48 kHz and at 44.1 kHz alike. A factor of three,
+    and nothing in the page can say which of the two is right — which is the
+    one thing a meter must not be.
+  - `AudioContext.renderCapacity`, the browser's own load meter and the source
+    this should have had, is **absent**. `AudioContext.playbackStats` is
+    present: underruns, which is what `late_blocks` approximates, and not
+    load.
+
+  Firefox was not measured: a headless probe of it reported nothing.
+
+  What *is* measurable exactly is the work a page does **outside** the
+  worklet, where `performance.now()` exists: the NRT jobs the engine hands the
+  Worker (`take_delegated` / `finish_delegated`), a Faust compilation, the
+  disk streams the host feeds. The elapsed time could come back with each
+  result and land in its own row.
+
+  So the open question is no longer how to hand a clock down but **what a
+  page's table should say**, and it is not this entry's to settle alone:
+  exact rows for `nrt`, `faust` and the disk roles beside an `audio` row that
+  still reads zero; underruns from `playbackStats` as `late_blocks`, where a
+  browser has them; an `audio` row estimated with `Date.now()` and said to be
+  an estimate; or the table as it is, every row zero and documented as such.
+  A table half filled reads "idle" on the one row a late engine is asked
+  about, which is the argument against the first on its own.
+
 - ✅ **The score keeps a second history, and nothing joins the two** *(the port
   of `clients/python/PLAN.md`'s entry of the same name, fixed 2026-09-02 in the
   same commit and by the same calls)*. `Score` registers in `Editing.of(score)`
