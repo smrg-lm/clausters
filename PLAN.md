@@ -2362,7 +2362,7 @@ where it came from).
   `tests/mixer_graph.rs` (`a_moved_box_sounds_through_its_new_track_and_keeps_its_map`),
   and both clients have the verb (`Group.move_slot` / `Group.moveSlot`).
 
-- ⬜ **The transport's edges are square, so a stop and a play are clicks**
+- ✅ **The transport's edges are square, so a stop and a play are clicks**
   *(found by ear 2026-09-11 while the multitrack example played, and then
   measured: `tests/mixer_graph.rs`, `where_the_transport_clicks`)*. A stop
   freezes the governed subtree and a play thaws it, both at a block boundary
@@ -2381,6 +2381,29 @@ where it came from).
   during the window (it must not advance, or a stop would play material past
   where it stopped). Neither is hard; both are decisions. Until then a pause
   mid-note clicks, and the example says so.
+
+  **Done 2026-09-24, and ticked 2026-10-07 — the fix shipped as the server
+  half of the audio editor's declick and this entry was never closed.** Both
+  decisions were taken there, and neither as the entry guessed. **Where the
+  gain is applied**: nowhere in the engine. A transport publishes a declick
+  level and the `TransportFade` UGen reads it, from the transport of the
+  nearest bound group, so whatever sits *outside* the governed group
+  multiplies by it — the multitrack's way out (`mixer::out_def`) and the
+  audio editor's — and a subtree that is not a multitrack gets the same level
+  by naming the same UGen. **What the position does during the window**: it
+  advances. A stop with a ramp is a stopping phase in which the transport
+  rolls in full while the level falls, and it freezes on the sample the level
+  reaches zero, so the position rests where the readers stopped reading; a
+  stop then plays the ramp's length past where it was asked, which is what
+  every mixer's does and is the opposite of what this entry required.
+  `/transport_fade <transport> <samples>` sets the ramp, 0 by default, and the
+  multitrack's player and the audio editor's both send it
+  (`clausters-editing`, `FADE_SECS`). The rationale is in `docs/decisions.md`.
+
+  What a client that sets no ramp hears is unchanged, and
+  `where_the_transport_clicks` still measures it; with a ramp,
+  `a_stop_fades_the_master_and_leaves_its_meter_to_fall` asserts the edge at
+  the hardware and `tests/transport.rs` the level on a stop and on a play.
 
 - ⬜ **`mt.fx` is a declared empty slot, and what an effect *is* as a document
   is unspecified** *(named 2026-09-11, finishing the multitrack's node system)*.

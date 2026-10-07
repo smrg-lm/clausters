@@ -867,11 +867,13 @@ fn bus_value(s: &mut NrtSession, index: i32) -> f32 {
     panic!("the bus never answered")
 }
 
-/// Where the click is: the step the output takes at a transport stop and at a
-/// play from a cue inside a take.
+/// Where the click is **on a transport given no ramp**: the step the output
+/// takes at a stop and at a play from a cue inside a take.
 ///
-/// A measurement rather than an assertion, and the number it prints is what a
-/// declick would have to remove:
+/// A measurement rather than an assertion, and the number it prints is what
+/// `/transport_fade` takes off -- which is asserted, with a ramp set, in
+/// `a_stop_fades_the_master_and_leaves_its_meter_to_fall`. No ramp is the
+/// server's default, so this is still what a client that sets none hears:
 /// `cargo test --test mixer_graph where_the_transport -- --ignored --nocapture`
 #[test]
 #[ignore]
@@ -912,11 +914,11 @@ fn where_the_transport_clicks() {
     println!("the largest step at the stop:     {:.4}", step(&stopping));
     println!("the largest step at the play:     {:.4}", step(&starting));
     println!(
-        "\nA step the size of what was sounding is a click. The transport \
-         freezes the subtree and thaws it, so a stop and a play are square \
-         edges of whatever the take happened to be at -- which is what a \
-         declick ramp over a few milliseconds would take off, and what the \
-         readers cannot do for themselves: a frozen node gets no time."
+        "\nA step the size of what was sounding is a click. With no ramp set \
+         the transport freezes the subtree and thaws it, so a stop and a play \
+         are square edges of whatever the take happened to be at -- which is \
+         what /transport_fade takes off, and what the readers cannot do for \
+         themselves: a frozen node gets no time."
     );
 }
 
