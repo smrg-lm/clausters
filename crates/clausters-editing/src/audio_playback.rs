@@ -145,6 +145,9 @@ pub struct AudioEditorPlayback {
     focus: Option<u64>,
     /// Whether the transport was last told to roll.
     rolling: bool,
+    /// Whether the pass last asked for loops, which is what a selection
+    /// redrawn while it plays goes by ([`Self::follow`]).
+    looping: bool,
 }
 
 impl AudioEditorPlayback {
@@ -162,6 +165,7 @@ impl AudioEditorPlayback {
             files: BTreeMap::new(),
             focus: None,
             rolling: false,
+            looping: false,
         }
     }
 
@@ -296,6 +300,7 @@ impl AudioEditorPlayback {
     /// says: the file comes into focus (the one that was pauses), the loop or
     /// the end mark is set, the transport is located and rolls.
     pub fn play(&mut self, file: u64, start: u64, pass: Pass) -> Vec<Step> {
+        self.looping = matches!(pass, Pass::Loop { .. });
         let mut steps = self.focus_on(file);
         let Some(f) = self.files.get(&file).cloned() else {
             return steps;
@@ -318,10 +323,35 @@ impl AudioEditorPlayback {
         if !self.rolling {
             return Vec::new();
         }
+        self.looping = matches!(pass, Pass::Loop { .. });
         match self.focus.and_then(|f| self.files.get(&f)).cloned() {
             Some(f) => self.pass_steps(&f, pass),
             None => Vec::new(),
         }
+    }
+
+    /// **The selection of `file` was redrawn while it loops**: the loop is
+    /// now over frames `[from, to)`, from where the transport stands, and
+    /// with `place` the head goes to `from`. A sweep asks the span on every
+    /// move and the place once, when it is let go: a transport past its
+    /// loop's end runs on and never wraps, so a span drawn behind the head
+    /// is one the head has to be put into.
+    ///
+    /// Nothing unless `file` is the one in focus, rolling, on a pass that
+    /// loops. A pass that runs to its end keeps the end it was played with,
+    /// and a stopped playback reads the selection on its next play.
+    pub fn follow(&mut self, file: u64, from: u64, to: u64, place: bool) -> Vec<Step> {
+        if !self.rolling || !self.looping || self.focus != Some(file) || from >= to {
+            return Vec::new();
+        }
+        let Some(f) = self.files.get(&file).cloned() else {
+            return Vec::new();
+        };
+        let mut steps = self.pass_steps(&f, Pass::Loop { from, to });
+        if place {
+            steps.extend(self.locate(from));
+        }
+        steps
     }
 
     /// The loop and the end mark `pass` asks of the transport, in `f`'s frames.
@@ -691,6 +721,8 @@ fn out_ports(outs: usize) -> Ports {
 /// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
 ///   `{"kind": "until", "end", "back"}`)
 /// - `pass` -- `pass`, as for `play`: the loop switch changed while it plays
+/// - `follow` -- `file`, `from`, `to`, `place`: the selection of `file` was
+///   redrawn while it loops, and with `place` the head goes to its start
 /// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `cue`
 ///   (`frame`: a locate while stopped, nothing while rolling), `close`
 /// - `setRolling` -- `rolling`
@@ -734,6 +766,15 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
             Some(Ok(pass)) => answer(Ok(playback.set_pass(pass))),
             _ => json!({"error": "a pass is a loop or an end"}).to_string(),
         },
+        "follow" => answer(Ok(playback.follow(
+            int("file"),
+            int("from"),
+            int("to"),
+            request
+                .get("place")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ))),
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(int("back")))),
@@ -965,6 +1006,53 @@ mod tests {
             sent(&off, "/transport_end")[0].args[1..],
             [OscType::Long(200), OscType::Long(50)]
         );
+    }
+
+    /// **A selection redrawn while its loop plays moves the loop**, and the
+    /// head goes into it when the sweep is let go; a pass that runs to its
+    /// end, a stopped one and a file out of focus are left as they are.
+    #[test]
+    fn a_loop_follows_the_selection_redrawn_while_it_plays() {
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
+        let mut ids = spaces();
+        for file in [1, 2] {
+            playback
+                .sync(file, 10, 1, 44_100, 44_100.0, 48_000.0, &mut ids)
+                .unwrap();
+        }
+        assert!(playback.follow(1, 0, 100, true).is_empty(), "stopped");
+        playback.play(1, 0, Pass::Loop { from: 0, to: 100 });
+        // The span, in the engine's samples, and nothing located or restarted.
+        let moved = playback.follow(1, 22_050, 44_100, false);
+        assert_eq!(
+            sent(&moved, "/transport_loop")[0].args[1..],
+            [OscType::Long(24_000), OscType::Long(48_000)]
+        );
+        assert!(sent(&moved, "/transport_locateSample").is_empty());
+        assert!(sent(&moved, "/transport_play").is_empty());
+        // Let go: the head is put on the span's first frame.
+        let placed = playback.follow(1, 22_050, 44_100, true);
+        assert_eq!(
+            sent(&placed, "/transport_locateSample")[0].args[1..],
+            [OscType::Long(24_000)]
+        );
+        assert!(playback.follow(2, 0, 100, true).is_empty(), "not in focus");
+        assert!(playback.follow(1, 100, 100, true).is_empty(), "no span");
+        // A pass that runs to its end keeps the end it was played with.
+        playback.set_pass(Pass::Until { end: 200, back: 0 });
+        assert!(playback.follow(1, 0, 100, true).is_empty());
+        let door = call_json(
+            &mut playback,
+            r#"{"verb": "pass", "pass": {"kind": "loop", "from": 0, "to": 100}}"#,
+            &mut ids,
+        );
+        assert!(door.contains("/transport_loop"));
+        let door = call_json(
+            &mut playback,
+            r#"{"verb": "follow", "file": 1, "from": 441, "to": 882, "place": true}"#,
+            &mut ids,
+        );
+        assert!(door.contains("/transport_locateSample"), "{door}");
     }
 
     /// **A loop set while playing is converted as a locate is**: a selection

@@ -629,6 +629,56 @@ fn a_window_that_plays_its_own_take_leaves_the_monitor_out() {
     );
 }
 
+/// **A sweep is the monitor's loop only in a window the monitor plays**: a
+/// host that owns the transport follows the hand over a take of its own, and
+/// over a window whose owner plays it the sweep is reported and nothing is
+/// sent -- that owner's playback is the one that follows.
+#[test]
+fn a_sweep_over_a_window_that_plays_itself_leaves_the_monitors_loop_alone() {
+    let sweep = |plays: bool| {
+        let (mut host, server) = take_host(1, 16);
+        host.set_owns_transport(true);
+        // The monitor takes its transport the first time it plays.
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Loop { from: 0, to: 16 }));
+        exchange(&mut host, &server);
+        if plays {
+            host.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: GUI_SET.into(),
+                    args: vec![
+                        OscType::Int(1),
+                        OscType::String("plays".into()),
+                        OscType::Int(1),
+                    ],
+                }),
+                from(),
+            );
+        }
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let (cx, cy) = over_the_take(&host, &ctx);
+        let mut g = gestures::Gestures::default();
+        g.press(&mut host, &ctx, cx, cy);
+        let moved = g.drag_to(&mut host, &ctx, cx + 120.0, cy);
+        let told = moved.iter().any(|e| {
+            matches!(e, gestures::GestureEffect::Emit { args, .. }
+                if args.first() == Some(&OscType::String("selection".into())))
+        });
+        assert!(told, "the owner hears the sweep either way: {moved:?}");
+        g.release(&mut host, &ctx, cx + 120.0, cy);
+        exchange(&mut host, &server)
+    };
+    let own = sweep(false);
+    assert!(
+        own.iter().any(|m| m.addr == "/transport_loop"),
+        "the monitor's loop follows the hand"
+    );
+    let theirs = sweep(true);
+    assert!(
+        !theirs.iter().any(|m| m.addr.starts_with("/transport_")),
+        "not the monitor's to move: {theirs:?}"
+    );
+}
+
 /// **A script turns the loop switch as `L` does**: `looping` is the host's
 /// state and not a prop, so the next `L` starts from where the script left it.
 #[test]

@@ -400,6 +400,38 @@ test("placing the cursor cues a stopped transport there", async () => {
     assert.ok(!take.server.addrs().includes("/transport_locateSample"));
 });
 
+test("a loop follows the selection redrawn while it plays", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid] = await opened(take);
+    const window = host.trees.length + 900;
+    const server = take.server;
+    const sent = (addr: string): number[][] =>
+        server.sent.filter(([at]) => at === addr).map(([, args]) => args.map(Number));
+
+    editor.apply("/gui_event", [wid, 1, 0, "selection", 10, 20]);
+    editor.apply("/gui_event", [window, 2, 0, "play", 1]);
+    await settle();
+    server.playing = true;
+    server.sent = [];
+    editor.apply("/gui_event", [wid, 3, 0, "selection", 40, 0]);
+    editor.apply("/gui_event", [wid, 4, 0, "selection", 40, 30]);
+    await settle();
+    assert.deepEqual(sent("/transport_loop").at(-1), [1, 40, 70], "the span follows the hand");
+    assert.equal(sent("/transport_locateSample").length, 0, "and the head does not");
+    editor.apply("/gui_event", [wid, 5, 0, "locate", 40]);
+    await settle();
+    assert.deepEqual(sent("/transport_locateSample").at(-1), [1, 40], "let go: into the span");
+
+    // Not looping, the pass keeps the end it was played with.
+    editor.apply("/gui_event", [window, 6, 0, "loop", 0]);
+    await settle();
+    server.sent = [];
+    editor.apply("/gui_event", [wid, 7, 0, "selection", 5, 10]);
+    editor.apply("/gui_event", [wid, 8, 0, "locate", 5]);
+    await settle();
+    assert.deepEqual(server.addrs().filter((addr) => addr.startsWith("/transport_")), []);
+});
+
 test("the take's transport plays its span and keeps the switch", async () => {
     const take = new FakeBuffer();
     const server = take.server;

@@ -507,6 +507,37 @@ fn the_loop_key_asks_the_pass_in_progress_to_follow() {
     );
 }
 
+/// **A selection redrawn is the span a loop in progress follows**: every
+/// move of the sweep says the span, the locate it is let go with says to put
+/// the head into it, and a click -- which empties the selection at its press
+/// -- gives the loop the whole take back and places nothing.
+#[test]
+fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
+    let mut editor = opened(1);
+    let pressed = event(&mut editor, json!([12, 1, 0, "selection", 10, 0]));
+    assert_eq!(
+        pressed["follow"],
+        json!({"from": 0, "to": 100, "place": false}),
+        "no selection: the take"
+    );
+    let swept = event(&mut editor, json!([12, 2, 0, "selection", 10, 20]));
+    assert_eq!(
+        swept["follow"],
+        json!({"from": 10, "to": 30, "place": false})
+    );
+    let let_go = event(&mut editor, json!([12, 3, 0, "locate", 10]));
+    assert_eq!(
+        let_go["follow"],
+        json!({"from": 10, "to": 30, "place": true})
+    );
+    // A cursor placed anywhere else is a mark, and the loop is left alone.
+    let marked = event(&mut editor, json!([12, 4, 0, "locate", 60]));
+    assert!(marked.get("follow").is_none());
+    event(&mut editor, json!([12, 5, 0, "selection", 60, 0]));
+    let clicked = event(&mut editor, json!([12, 6, 0, "locate", 60]));
+    assert!(clicked.get("follow").is_none(), "a click places no head");
+}
+
 /// **The level meter stands beside the take** once a playback says where it
 /// writes, and the window says the space bar is its own.
 #[test]

@@ -274,13 +274,15 @@ pub(super) fn set_selection(
 /// a drag makes it chase the pointer, which a rolling transport hears as a
 /// retrigger per frame rather than as a selection being drawn.
 ///
-/// **Two conditions, and neither is "something is playing".** The host must be
+/// **Three conditions, and none is "something is playing".** The host must be
 /// the one that bound the governed group (`Host::owns_transport`) -- a script
 /// owns its own transport, and a sweep in a window it happens to be drawing is
-/// not a request to seek it. And the view must draw **contents**: the
-/// transport's position is in frames of the multitrack, so a sweep on a lane
-/// measuring beats would send a number that means something else on an axis it
-/// does not belong to.
+/// not a request to seek it. The window must not be one its owner plays
+/// (`Host::window_plays`): there the sweep is reported and the owner's own
+/// playback follows it, and the monitor stays out as it does for the space
+/// bar. And the view must draw **contents**: the transport's position is in
+/// frames of the multitrack, so a sweep on a lane measuring beats would send
+/// a number that means something else on an axis it does not belong to.
 ///
 /// Notably *not* conditioned on the monitor being loaded, which is where this
 /// started and was wrong by use: the head is drawn from the moment the window
@@ -294,7 +296,7 @@ pub(super) fn transport_follows_selection(
     len: f64,
     place: bool,
 ) {
-    if !host.owns_transport() || host.buffer_of(def_id, id).is_none() {
+    if !host.owns_transport() || host.window_plays(def_id) || host.buffer_of(def_id, id).is_none() {
         return;
     }
     let start = start.max(0.0) as u64;

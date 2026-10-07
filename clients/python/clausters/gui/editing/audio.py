@@ -554,6 +554,12 @@ class AudioEditor(Marking, Editor):
             # `L`: the pass in progress ends as the switch now says; a stopped
             # playback reads it on its next play.
             self._playback.call("pass", **{"pass": outcome["pass"]})
+        if outcome.get("follow") is not None:
+            # A selection redrawn while this take loops: the loop is over
+            # the new span, and the head goes into it once the sweep is let
+            # go. Whether it loops, and whether it is this take, is the
+            # playback's to say.
+            self._playback.call("follow", file=self._display, **outcome["follow"])
         if outcome.get("cue") is not None:
             self._cue(int(outcome["cue"]))
         if outcome.get("locate") is not None:

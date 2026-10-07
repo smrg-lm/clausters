@@ -359,6 +359,39 @@ def test_placing_the_cursor_cues_a_stopped_transport_there():
     assert "/transport_locateSample" not in take.server.addrs()
 
 
+def test_a_loop_follows_the_selection_redrawn_while_it_plays():
+    """**A selection redrawn while its loop plays moves the loop**: every move
+    of the sweep is the span, and the locate it is let go with puts the head
+    on the span's start. A pass that runs to its end is left as it was
+    played."""
+    take = FakeBuffer()
+    editor, _host, wid, _context = opened(take)
+    window = int(editor._window)
+    server = take.server
+
+    def sent(addr):
+        return [[int(a.value) if hasattr(a, "value") else a for a in args]
+                for at, args in server.sent if at == addr]
+
+    editor.apply("/gui_event", [wid, 1, 0, "selection", 10, 20])
+    editor.apply("/gui_event", [window, 2, 0, "play", 1])
+    server.playing = True
+    server.sent.clear()
+    editor.apply("/gui_event", [wid, 3, 0, "selection", 40, 0])
+    editor.apply("/gui_event", [wid, 4, 0, "selection", 40, 30])
+    assert sent("/transport_loop")[-1] == [1, 40, 70], "the span follows the hand"
+    assert not sent("/transport_locateSample"), "and the head does not"
+    editor.apply("/gui_event", [wid, 5, 0, "locate", 40])
+    assert sent("/transport_locateSample")[-1] == [1, 40], "let go: into the span"
+
+    # Not looping, the pass keeps the end it was played with.
+    editor.apply("/gui_event", [window, 6, 0, "loop", 0])
+    server.sent.clear()
+    editor.apply("/gui_event", [wid, 7, 0, "selection", 5, 10])
+    editor.apply("/gui_event", [wid, 8, 0, "locate", 5])
+    assert not [addr for addr in server.addrs() if addr.startswith("/transport_")]
+
+
 def _transported(take):
     """The take's server answering a real `Transport`, rolling as it says."""
     from clausters.defs import Transport

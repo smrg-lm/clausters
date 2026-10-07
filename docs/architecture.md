@@ -899,7 +899,13 @@ freezes the readers and not the meter or the declick. The transport is given a
 ramp (`/transport_fade`), which is what lets the declick run across a stop.
 Every file but the one in focus is paused with `/node_run`, and the editor's bus
 reaches both graphs as port values, since a graph instantiated at the top has no
-parent to hand it one.
+parent to hand it one. **A selection redrawn while a take loops is the
+playback's to follow** (`AudioEditorPlayback::follow`): the editor answers every
+move of the sweep with the span and the locate it is let go with as the moment
+to put the head on the span's start — a transport past its loop's end runs on
+and never wraps — and the playback acts only for the file in focus, rolling, on
+a pass that loops. In a window its owner plays, the host's own sweep leaves the
+monitor's transport alone.
 
 **The instance projection is the one with memory, and it is a reconciler.** The
 other two are functions of a structure alone; this one is a function of the

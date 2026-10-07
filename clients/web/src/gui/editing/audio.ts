@@ -71,6 +71,8 @@ interface Outcome {
     play?: Play;
     /** What `L` asks of a pass in progress: how it ends now. */
     pass?: unknown;
+    /** What a selection redrawn asks of a loop in progress: its span now. */
+    follow?: { from: number; to: number; place: boolean };
     cue?: number;
 }
 
@@ -769,6 +771,14 @@ export class AudioEditor extends Editor<Buffer> {
         // `L`: the pass in progress ends as the switch now says; a stopped
         // playback reads it on its next play.
         if (pass !== undefined) domain.after(() => this.playback.call("pass", { pass }).then(() => {}));
+        // A selection redrawn while this take loops: the loop is over the
+        // new span, and the head goes into it once the sweep is let go.
+        // Whether it loops, and whether it is this take, is the playback's
+        // to say.
+        const follow = outcome.follow;
+        if (follow !== undefined) {
+            domain.after(() => this.playback.call("follow", { file: this.display, ...follow }).then(() => {}));
+        }
         const cue = outcome.cue;
         if (cue !== undefined) domain.after(() => this.cue(cue));
         if (outcome.locate !== undefined) {

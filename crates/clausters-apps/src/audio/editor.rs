@@ -77,6 +77,12 @@ pub struct Outcome {
     /// and a stopped playback reads the switch on its next play.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pass: Option<Pass>,
+    /// **What a selection redrawn asks of a loop in progress**: the span it
+    /// repeats over now -- the caller hands it to the playback
+    /// (`AudioEditorPlayback::follow`), which answers nothing unless this
+    /// take is looping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow: Option<Follow>,
     /// **Where the position cursor now stands**, in frames of the take: the
     /// caller cues the playback there, so the play cursor goes with it while
     /// nothing plays.
@@ -183,6 +189,19 @@ pub struct Play {
     pub pass: Pass,
     /// Where a stop goes back to: the position cursor.
     pub back: u64,
+}
+
+/// **The span a loop in progress repeats over**, after a selection was
+/// redrawn: frames of the take, half-open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct Follow {
+    /// The first frame of the span.
+    pub from: u64,
+    /// The first frame past it.
+    pub to: u64,
+    /// Whether the head goes to `from`: once, when the sweep is let go, and
+    /// not while it is drawn -- a locate per move is a retrigger per move.
+    pub place: bool,
 }
 
 /// **An audio editor**: the take it opened, the list of parts it is now, the
@@ -636,6 +655,15 @@ impl AudioEditor {
         }
     }
 
+    /// The span a loop repeats over, as the view stands: the selection, or
+    /// the take with none -- what [`space`] says a looping pass covers.
+    fn follow(&self, place: bool) -> Option<Follow> {
+        match space(true, self.selection, self.cursor, self.length()).1 {
+            Pass::Loop { from, to } => Some(Follow { from, to, place }),
+            Pass::Until { .. } => None,
+        }
+    }
+
     /// **A step of the history, applied**: the list a payload states becomes
     /// the take, and the answer is the steps that stitch it. Nothing when the
     /// payload is not a list.
@@ -1012,9 +1040,20 @@ impl AudioEditor {
         match tag {
             "locate" if !values.is_empty() => {
                 let frame = number(&values[0]);
-                self.cursor = Some(frame.max(0.0).round() as u64);
+                let cursor = frame.max(0.0).round() as u64;
+                self.cursor = Some(cursor);
                 out.cue = self.cursor;
                 out.locate = Some(self.secs_at(frame));
+                // **A sweep let go puts the cursor on the selection's start**
+                // (a click empties the selection at its press), and that is
+                // when a loop in progress is put into the span it was moved
+                // to: a head past the loop's end would run on and never wrap.
+                if self
+                    .selection
+                    .is_some_and(|(from, _)| on_start(cursor, from))
+                {
+                    out.follow = self.follow(true);
+                }
             }
             "selection" => {
                 let frame = |i: usize| values.get(i).map_or(0.0, number).max(0.0);
@@ -1023,10 +1062,21 @@ impl AudioEditor {
                     (len > 0.0).then(|| (from.round() as u64, (from + len).round() as u64));
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 out.selection = Some(json!({ "start": at(0), "len": at(1) }));
+                // The span follows the hand while a loop plays; the head does
+                // not, until the sweep is let go.
+                out.follow = self.follow(false);
             }
             _ => {}
         }
     }
+}
+
+/// Whether a cursor at `cursor` stands on a selection's start `from`. A
+/// selection reaches here in single precision and a cursor in double, so
+/// past 2^24 frames the two readings of one frame differ by what a float
+/// cannot hold.
+fn on_start(cursor: u64, from: u64) -> bool {
+    cursor.abs_diff(from) <= 1 + (from >> 23)
 }
 
 /// **Where a save writes**: a file, or a server buffer.

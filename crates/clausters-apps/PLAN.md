@@ -2882,7 +2882,7 @@ wrong.
   scaled back unrounded it stood a fraction of a frame beside the position
   cursor at a zoom that draws samples.
 
-- ⬜ **A looping selection does not follow a new selection** *(the user,
+- ✅ **A looping selection does not follow a new selection** *(the user,
   2026-09-25)*. Redrawing the selection while it loops leaves the loop on
   the old span. It was never otherwise in the audio editor opened from a
   client: the live follow (`transport_follows_selection`) is the host
@@ -2893,6 +2893,22 @@ wrong.
   loop plays, with the playback's `set_loop`, bound for both clients; and
   in a window that plays itself the host's sweep should not touch the
   monitor's loop.
+  *(Fixed 2026-10-07. The editor answers a `selection` with the span a loop
+  would repeat over -- the selection, or the take with none, as `space`
+  says -- and the `locate` a sweep is let go with, which lands on the
+  selection's start, with the same span and `place`; both clients hand it
+  to the playback's `follow` verb, which moves the loop from where the
+  transport stands and, with `place`, locates the head on the span's first
+  frame. That placing is not in the entry above and is why `set_loop` alone
+  was not enough: a transport past its loop's end runs on and never wraps,
+  so a span drawn behind the head would have left the take playing on
+  outside it. The playback acts only for the file in focus, rolling, on a
+  pass that loops, which it now remembers from its last `play` or `pass`;
+  a pass that runs to its end keeps the end it was played with. In the
+  host, `transport_follows_selection` stays out of a window whose owner
+  plays it. The start is matched within what single precision keeps of a
+  frame: `clients/gui/PLAN.md`, "A selection is reported in single
+  precision".)*
 
 - ✅ **A roll over a rendering was offered the drag it could not keep**
   *(found 2026-09-27, writing the notes editor's window over the catalogue's

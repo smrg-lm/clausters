@@ -78,7 +78,11 @@ edits** on the audio editors' transport, and `editor.transport` is that
 `Transport` in the take's seconds: the space bar over the window plays the
 marked range, or from the position cursor, and `L` loops it -- the same
 `transport.play()`, `span` and `loop(start, end)` from a script, each side
-reading what the other set. What the hand marked is samples, and
+reading what the other set. **A range swept while it loops is the loop's new
+span**: the loop follows the hand as it draws, and the head goes to the start
+of the range when the sweep is let go. A pass that is not looping keeps the end
+it was played with, and the next play reads the range. What the hand marked is
+samples, and
 `editor.selected` answers them as a `Segment` over `editor.buffer` (its `start`
 a frame, its `duration` seconds); `editor.select(segment)` marks one and
 `editor.unselect()` marks nothing. In an audio editor the samples marked and the
