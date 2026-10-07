@@ -419,7 +419,16 @@ impl MultitrackEditor {
                 let Ok(got) = read(&sequence, &how, &default_interpretation()) else {
                     continue;
                 };
-                let Ok(mei) = clausters_core::notation::sheet_to_mei(&got.sheet) else {
+                // **A box's page has no end**: a roll and a page are a time
+                // line that begins and runs on, so the last measure closes
+                // with the bar line every other one has, not the end of a
+                // piece -- unless the sequence's own page wrote one there.
+                let mut sheet = got.sheet;
+                let last = clausters_core::notation::measure_count(&sheet).saturating_sub(1);
+                if !sheet.grid.barlines.iter().any(|(at, _)| *at == last) {
+                    sheet.grid.barlines.push((last, "single".into()));
+                }
+                let Ok(mei) = clausters_core::notation::sheet_to_mei(&sheet) else {
                     continue;
                 };
                 let mut held = engraver.lock().unwrap_or_else(|e| e.into_inner());
@@ -432,7 +441,7 @@ impl MultitrackEditor {
                 page.remove("cursors");
                 // every item that sounds, at the beat the page writes it
                 let mut onsets = Vec::new();
-                for voice in got.sheet.voices() {
+                for voice in sheet.voices() {
                     let mut at = clausters_core::ratio::Ratio::ZERO;
                     for item in &voice.items {
                         if item.sounds() {

@@ -291,6 +291,19 @@ impl ScoreData {
             match prim {
                 Prim::Line { pts, width, .. } => {
                     let w = (width * scale).max(1.0);
+                    // **A ledger line is its notehead's**, drawn as long as
+                    // engraved and where its head is, never stretched with
+                    // the stretch between two notes nor squeezed with it.
+                    if let Some((mid, half, line)) = ledger_line(self, prim, space) {
+                        let at = place(mid);
+                        mesh.line(
+                            [at - half * scale, y(line - lift)],
+                            [at + half * scale, y(line - lift)],
+                            w,
+                            color,
+                        );
+                        return;
+                    }
                     for seg in pts.windows(2) {
                         mesh.line(
                             [place(seg[0][0]), y(seg[0][1] - lift)],
@@ -356,6 +369,19 @@ impl ScoreData {
 
         // The notes and what joins them, cut to the box.
         mesh.set_clip(Some(cut(body)));
+        // **The staff runs the whole box**, as a roll's lanes do: a page on a
+        // time line has no end, so its lines go on past the last note to
+        // wherever the box is pulled, whatever the engraving reached.
+        for prim in &self.prims {
+            if let Some((line, w)) = staff_line(self, prim, space) {
+                mesh.line(
+                    [body.x, y(line)],
+                    [body.x + body.w, y(line)],
+                    (w * scale).max(1.0),
+                    colors.ink,
+                );
+            }
+        }
         let through = |page: f32| warp.x(page);
         for (at, prim) in self.prims.iter().enumerate() {
             if is_meter(prim) || in_prefix(at, prim) {
@@ -452,24 +478,12 @@ impl ScoreData {
                 }
             }
             for prim in &self.prims {
-                let Prim::Line { pts, width: w, id } = prim else {
+                let Some((line, w)) = staff_line(self, prim, space) else {
                     continue;
                 };
-                // a staff's own line runs the length of its system; a ledger
-                // line carries the staff's id too, and is a note's
-                let is_staff = id.as_ref().is_some_and(|id| self.staff_ids.contains(id));
-                let (lo, hi) = pts
-                    .iter()
-                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
-                        (lo.min(p[0]), hi.max(p[0]))
-                    });
-                if !is_staff || pts.len() < 2 || hi - lo < SYSTEM_LINE * space {
-                    continue;
-                }
-                let line = y(pts[0][1]);
                 mesh.line(
-                    [left, line],
-                    [left + width, line],
+                    [left, y(line)],
+                    [left + width, y(line)],
                     (w * scale).max(1.0),
                     colors.ink,
                 );
@@ -482,6 +496,42 @@ impl ScoreData {
         mesh.set_clip(outer);
         true
     }
+}
+
+/// A horizontal line with a staff's id: its page `y`, its stroke, and how far
+/// it runs across, `(left, right)`.
+fn staff_owned(page: &ScoreData, prim: &Prim) -> Option<(f32, f32, (f32, f32))> {
+    let Prim::Line { pts, width, id } = prim else {
+        return None;
+    };
+    let owned = id.as_ref().is_some_and(|id| page.staff_ids.contains(id));
+    let flat = pts
+        .windows(2)
+        .all(|seg| (seg[0][1] - seg[1][1]).abs() < 1.0);
+    if !owned || pts.len() < 2 || !flat {
+        return None;
+    }
+    let across = pts
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p[0]), hi.max(p[0]))
+        });
+    Some((pts[0][1], *width, across))
+}
+
+/// **One of a staff's own lines**, as `(page y, stroke width)`: a line with
+/// the staff's id that runs the length of its system.
+fn staff_line(page: &ScoreData, prim: &Prim, space: f32) -> Option<(f32, f32)> {
+    let (line, width, (lo, hi)) = staff_owned(page, prim)?;
+    (hi - lo >= SYSTEM_LINE * space).then_some((line, width))
+}
+
+/// **A ledger line**, as `(page x of its middle, half its length, page y)`: a
+/// line with the staff's id -- the engraver files a note's ledger lines under
+/// its staff -- as short as a notehead's, not a system's.
+fn ledger_line(page: &ScoreData, prim: &Prim, space: f32) -> Option<(f32, f32, f32)> {
+    let (line, _, (lo, hi)) = staff_owned(page, prim)?;
+    (hi - lo < SYSTEM_LINE * space).then_some(((lo + hi) * 0.5, (hi - lo) * 0.5, line))
 }
 
 #[cfg(test)]
@@ -513,6 +563,45 @@ mod tests {
         )
         .unwrap();
         ScoreData::parse(&props)
+    }
+
+    #[test]
+    fn a_ledger_line_is_its_notehead_s_and_a_staff_line_runs_the_system() {
+        let mut data = page();
+        // a ledger line under the first note, under the staff's id as the
+        // engraver files it
+        data.prims.push(Prim::Line {
+            pts: vec![[1440.0, 1100.0], [1720.0, 1100.0]],
+            width: 13.0,
+            id: Some("staff".into()),
+        });
+        let space = 2.0 * data.step;
+        let lines: Vec<Option<(f32, f32)>> = data
+            .prims
+            .iter()
+            .map(|prim| staff_line(&data, prim, space))
+            .collect();
+        assert_eq!(
+            lines[0],
+            Some((200.0, 13.0)),
+            "a line the length of the system"
+        );
+        let ledger = data.prims.last().unwrap();
+        assert_eq!(
+            staff_line(&data, ledger, space),
+            None,
+            "a ledger line is no staff line"
+        );
+        assert_eq!(
+            ledger_line(&data, ledger, space),
+            Some((1580.0, 140.0, 1100.0))
+        );
+        // and no glyph, nor a staff's own line, is one
+        assert!(
+            data.prims[..8]
+                .iter()
+                .all(|prim| ledger_line(&data, prim, space).is_none())
+        );
     }
 
     const COLORS: TimeColors = TimeColors {

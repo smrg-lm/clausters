@@ -126,14 +126,29 @@ pub(super) fn with<R>(
     let time = time_of(host, ctx, at);
     let input = input(&metrics, ctx, at, time);
     let widget = host.window_def_mut(ctx.def_id)?.find_mut(at.id)?;
+    let before = widget.kind.content_span();
     let kind = match at.layer {
         Some(layer) => widget.layer_body_mut(layer)?,
         None => &mut widget.kind,
     };
-    match kind {
-        WidgetKind::Custom(el) => Some(f(&mut **el, &input)),
-        _ => None,
+    let out = match kind {
+        WidgetKind::Custom(el) => f(&mut **el, &input),
+        _ => return None,
+    };
+    // **A gesture that moved how far the content reaches moves the axis
+    // with it**, there and then: a box dragged past the end lengthens the
+    // multitrack, and the axis has to know it while the hand is still
+    // there -- for the edge scroll to carry on past the old end, and for a
+    // zoom out to reach the box afterwards. An owner that answers the
+    // gesture with an acknowledgement alone sends no set to do it later.
+    let after = host
+        .window_def(ctx.def_id)
+        .and_then(|tree| tree.find(at.id))
+        .and_then(|widget| widget.kind.content_span());
+    if after.is_some() && after != before {
+        host.sync_track_totals_keeping_view();
     }
+    Some(out)
 }
 
 /// **Asks the element at `at` what a rectangle caught** -- the one marquee's one

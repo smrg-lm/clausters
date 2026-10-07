@@ -261,3 +261,37 @@ fn a_clip_s_context_menu_names_its_own_curves() {
     assert_eq!(first.label, "No clip automation");
     assert!(!first.pickable());
 }
+
+/// **A box dragged past the end lengthens the axis there and then**: the
+/// multitrack reaches further, and the group's extent follows while the hand
+/// is still down -- so the edge scroll carries on past the old end, and a zoom
+/// out afterwards reaches the box. An owner that answers the drag with an
+/// acknowledgement alone sends no set that would do it later.
+#[test]
+fn a_box_dragged_past_the_end_lengthens_the_axis() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":70,"type":"multitrack","link":9,"snap":0,"h":300,"sample_rate":48000,
+             "tracks":["10", "one", 120, 0, 0, 1.0, 1],
+             "clips":["a","10",0,48000,0,"",-1, "b","10",96000,48000,0,"",-1]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let before = host.timelines().total_of(70);
+    assert_eq!(before, 144_000);
+    let rect = rect_of(&host, &ctx, 70);
+    // the second box, at two thirds of the axis, pulled to the right edge
+    let y = f64::from(rect.y) + 30.0;
+    let indent = interact::hit(&host, 1, 800, 400, f64::from(rect.x) + 5.0, y, &|_, _| 1)
+        .map(|h| h.indent)
+        .unwrap();
+    let body_x = |frac: f32| f64::from(rect.x + indent + (rect.w - indent) * frac);
+    g.press(&mut host, &ctx, body_x(0.8), y);
+    g.drag_to(&mut host, &ctx, body_x(0.9), y);
+    g.drag_to(&mut host, &ctx, body_x(0.99), y);
+    let during = host.timelines().total_of(70);
+    assert!(during > before, "the axis follows the box: {during}");
+    g.release(&mut host, &ctx, body_x(0.99), y);
+    assert!(host.timelines().total_of(70) > before);
+}

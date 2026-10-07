@@ -4095,6 +4095,15 @@ Whatever symbols the model itself needs owe their rows either way
     its back edge runs on into the future with nothing in it. The host bounds
     a box's front edge by its contents' beginning (`Contents::begins`), known
     length or not, and leaves the back edge free where no length is known.
+  - **A box's page has no end, as a roll has none** *(the user,
+    2026-10-07)*: the staff starts where the sequence does and runs the
+    whole box, and no end bar line is drawn -- the last measure closes with
+    the bar line every other has. How a score editor draws the end of what
+    is written, or keeps to the continuous system, is for later.
+  - **A ledger line is its notehead's** *(the user, 2026-10-07)*: drawn as
+    long as engraved, centred where its head stands, and never stretched or
+    squeezed with the space between notes nor drawn over a glyph that is no
+    note.
   - **A page is inked as a take is in a box** *(the user, 2026-10-06)*:
     white fought the selection's color, and only part of the page took it.
   - **The first clef and key signature stay in view**: before the box's
