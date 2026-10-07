@@ -498,6 +498,103 @@ impl Source {
     }
 }
 
+/// **Where a pass ends** when it is neither looped nor stopped: what a
+/// playback is told, and what a session keeps so a multitrack opened again
+/// stops where it stopped before.
+///
+/// - `Open`: it does not, and the transport rolls on past the contents until
+///   it is stopped, as a multitrack is played to record onto or to hear a
+///   tail. The default.
+/// - `Contents`: where the contents end -- the last region, the last note's
+///   end -- going back to the position cursor, as an audio editor's pass does.
+/// - `At`: an **end marker**, at a place of the playback's own axis (seconds
+///   of a multitrack, beats of a sequence), going back the same way.
+///
+/// **An end is where a pass stops, and nothing else.** It bounds no axis: how
+/// far a window shows, scrolls or zooms out is the view's
+/// ([`crate::view`]), and reads nothing here.
+///
+/// As JSON: `null`, `"contents"` or the number.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum End {
+    /// The transport rolls on.
+    #[default]
+    Open,
+    /// Where the contents end.
+    Contents,
+    /// An end marker.
+    At(f64),
+}
+
+impl End {
+    /// The end a JSON value names, or `None` for one that names none.
+    pub fn from_json(value: &Value) -> Option<End> {
+        match value {
+            Value::Null => Some(End::Open),
+            Value::String(word) if word == "contents" => Some(End::Contents),
+            Value::Number(n) => n.as_f64().map(|at| End::At(at.max(0.0))),
+            _ => None,
+        }
+    }
+
+    /// Its JSON form.
+    pub fn to_json(self) -> Value {
+        match self {
+            End::Open => Value::Null,
+            End::Contents => json!("contents"),
+            End::At(at) => json!(at),
+        }
+    }
+
+    /// Where a pass ends, given where the contents do, or `None` for one that
+    /// rolls on -- and for contents that end nowhere, since a pass over
+    /// nothing has no end to stop on.
+    pub fn at(self, contents: f64) -> Option<f64> {
+        match self {
+            End::Open => None,
+            End::Contents => (contents > 0.0).then_some(contents),
+            End::At(at) => Some(at),
+        }
+    }
+
+    /// **This end after the contents' end moved from `was` to `now`**: an end
+    /// marker standing at or past where the contents ended is carried forward
+    /// when they grow past it, so a region placed beyond the marker takes the
+    /// marker with it rather than being cut off by it.
+    ///
+    /// A marker put *inside* the contents is an early stop somebody chose, and
+    /// stays; and contents that shrink leave a marker where it is.
+    #[must_use]
+    pub fn carried(self, was: f64, now: f64) -> End {
+        match self {
+            End::At(at) if at >= was && now > at => End::At(now),
+            other => other,
+        }
+    }
+
+    /// Whether it is the default, which a session does not write.
+    pub fn is_open(&self) -> bool {
+        *self == End::Open
+    }
+}
+
+impl Serialize for End {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_json().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for End {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        End::from_json(&value).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "an end is null, \"contents\" or a number of seconds, not {value}"
+            ))
+        })
+    }
+}
+
 /// A session: the multitrack, saved, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
@@ -542,6 +639,13 @@ pub struct Session {
     /// the window opens on its own defaults.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<View>,
+    /// **Where a pass over the multitrack ends** ([`End`]): the transport's
+    /// own switch, kept so a session opened again stops where it stopped
+    /// before. Not in a view, since it changes what is heard and a view
+    /// changes nothing that plays; and not in the multitrack, since it is no
+    /// edit and no undo puts it back.
+    #[serde(default, skip_serializing_if = "End::is_open")]
+    pub end: End,
     /// Where each source is. A `BTreeMap`, so a written session is stable
     /// under re-saving and a diff of two saves is the edits and not the
     /// iteration order.
@@ -570,6 +674,7 @@ impl Session {
             format: FORMAT,
             multitrack: Multitrack::new(),
             views: Vec::new(),
+            end: End::Open,
             document,
             sources: BTreeMap::new(),
             provenance: None,

@@ -402,6 +402,24 @@ impl Host {
             }
             Some(TransportVerb::Loop { range, looping }) => self.reloop_multitrack(range, looping),
             Some(TransportVerb::Stop { mark }) => self.stop_multitrack(mark),
+            Some(TransportVerb::StopAtEnd) => {
+                if let Some(stops) = self.flip_multitrack_end() {
+                    self.say(
+                        def_id,
+                        status::Line {
+                            kind: status::Kind::Did,
+                            widget: None,
+                            verb: "stop_at_end".into(),
+                            text: if stops {
+                                "stop at end on"
+                            } else {
+                                "stop at end off"
+                            }
+                            .into(),
+                        },
+                    );
+                }
+            }
             Some(TransportVerb::Cue { secs }) => self.cue_multitrack(secs),
             None => {}
         }

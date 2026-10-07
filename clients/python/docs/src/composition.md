@@ -668,8 +668,16 @@ draws the band and turns `L` on, and a range swept by hand reads back as
 `editor.transport.span` (see [The transport](transport.md)). **Where a pass ends** is
 the transport's `end`: `None` by default, the transport rolling on past the
 contents; `"contents"`, where the last region ends; or a number of seconds, an
-end marker -- the same three a notes editor's `end` takes, its marker a beat. A multitrack opened
-with no server still edits; it is simply not heard.
+end marker -- the same three a notes editor's `end` takes, its marker a beat.
+**Shift+L** flips it between rolling on and the contents' end — the Transport
+menu's *Stop at end* and the tool beside Loop are the same verb — and a region
+placed past an end marker takes the marker with it. An end is where a pass
+stops and nothing else: it bounds no view, and a window scrolls and zooms out
+past it. A session keeps it as `Session.end`, in the same three forms, so a
+multitrack opened again stops where it stopped before: the standalone host
+reads and writes it with the file, and a script copies the transport's `end`
+there when it saves. A multitrack opened with no server still edits; it is
+simply not heard.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
 slack between boxes — puts the **position cursor** down, which is where the next

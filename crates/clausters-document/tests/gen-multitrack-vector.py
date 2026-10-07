@@ -143,7 +143,7 @@ def saved() -> Session:
     """
     multitrack = build()
     session = Session(multitrack=multitrack, provenance={"script": "make.py"},
-                      views=views(multitrack))
+                      views=views(multitrack), end="contents")
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
             2, 480_000, 48_000.0)

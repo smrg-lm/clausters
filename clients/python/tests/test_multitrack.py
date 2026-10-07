@@ -289,6 +289,19 @@ from clausters.document import SESSION_FORMAT  # noqa: E402
 from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 
+def test_a_session_keeps_where_a_pass_ends():
+    """The transport's end is the session's, in the three forms a playback
+    takes it: none for a pass that rolls on -- which is not written --
+    ``"contents"``, and a number of seconds for an end marker."""
+    assert "end" not in Session().write()
+    assert Session.read({"format": SESSION_FORMAT}).end is None
+    for end in ("contents", 12.5):
+        written = Session(end=end).write()
+        assert written["end"] == end
+        assert Session.read(written).end == end
+        assert "end" not in Session.read(written).extra
+
+
 def test_a_session_round_trips_with_its_table():
     multitrack, _, lane = one_lane()
     place(lane, 0.0, 4.0, source=700)

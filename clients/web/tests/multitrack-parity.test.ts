@@ -417,6 +417,22 @@ test("a frozen source keeps what the table said", () => {
     assert.equal(new FrozenSource(701).path, undefined);
 });
 
+test("a session keeps where a pass ends", () => {
+    // The transport's end is the session's, in the three forms a playback
+    // takes it: none for a pass that rolls on -- which is not written --
+    // "contents", and a number of seconds for an end marker.
+    assert.ok(!("end" in new Session().write()));
+    assert.equal(Session.read({ format: SESSION_FORMAT }).end, null);
+    for (const end of ["contents", 12.5] as const) {
+        const session = new Session();
+        session.end = end;
+        const written = session.write();
+        assert.equal(written.end, end);
+        assert.equal(Session.read(written).end, end);
+        assert.ok(!("end" in Session.read(written).extra));
+    }
+});
+
 test("a session field a newer writer added survives", () => {
     const written = { format: SESSION_FORMAT, mixer: { buses: [{ id: 1, name: "reverb" }] } };
     assert.deepEqual(Session.read(written).write(), written);

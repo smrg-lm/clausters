@@ -960,6 +960,22 @@ def test_the_multitrack_transport_keeps_its_span_and_loop_and_draws_them():
     assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
 
 
+def test_the_end_switch_flips_where_a_pass_ends():
+    """The window's ``stop_at_end`` -- its key, the Transport menu's entry and
+    the tool beside Loop -- flips the playback's end: a pass that rolled on
+    stops where the contents end, and one that stopped rolls on."""
+    ed = editor(multitrack())
+    _wired(ed)
+    ed.playback = _RecordingPlayback()
+    ed._route([1, "stop_at_end"])
+    assert ed.playback.end == "contents"
+    ed._route([1, "stop_at_end"])
+    assert ed.playback.end is None
+    ed.playback.end = 12.0
+    ed._route([1, "stop_at_end"])
+    assert ed.playback.end is None, "a marker is an end too, and is let go"
+
+
 def test_what_the_multitrack_holds_is_its_regions():
     held = multitrack()
     ed = editor(held)

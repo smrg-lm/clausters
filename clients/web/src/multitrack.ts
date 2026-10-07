@@ -2422,6 +2422,15 @@ export class Session {
      */
     views: View[] = [];
     /**
+     * **Where a pass over the multitrack ends**, as a playback's `end` says
+     * it: `null` (it rolls on, the default), `"contents"` (where the last
+     * region ends) or a number of seconds, an end marker. The transport's own
+     * switch, kept so a session opened again stops where it stopped before --
+     * not in a view, since it changes what is heard. It bounds no axis: how
+     * far a window shows or zooms out reads nothing here.
+     */
+    end: "contents" | number | null = null;
+    /**
      * The general tree, for what is not an arrangement. The leg being walked
      * off: a composite region carries that same tree, placed.
      */
@@ -2555,6 +2564,7 @@ export class Session {
         const multitrack = this.multitrack.write();
         if (Object.keys(multitrack).length) out.multitrack = multitrack;
         if (this.views.length) out.views = this.views.map((v) => v.write());
+        if (this.end !== null) out.end = this.end;
         if (this.document !== undefined) out.document = this.document;
         if (this.sources.size) {
             const table: Extra = {};
@@ -2585,13 +2595,14 @@ export class Session {
         session.multitrack = Multitrack.read(
             (written.multitrack as Extra) ?? (written.arrangement as Extra) ?? {});
         session.views = ((written.views as Extra[]) ?? []).map(View.read);
+        session.end = (written.end as "contents" | number | null | undefined) ?? null;
         if (written.document !== undefined) session.document = written.document as Extra;
         for (const [id, entry] of Object.entries((written.sources as Extra) ?? {})) {
             session.sources.set(Number(id), Source.read(entry as Extra));
         }
         if (written.provenance !== undefined) session.provenance = written.provenance;
         session.extra = rest(written, "format", "multitrack", "arrangement", "views",
-                             "document", "sources", "provenance");
+                             "end", "document", "sources", "provenance");
         return session;
     }
 

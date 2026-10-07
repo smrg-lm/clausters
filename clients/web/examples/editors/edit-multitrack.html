@@ -65,7 +65,10 @@ puts the mark itself back at the top. <b>The space bar is play/stop</b>, so the
 play cursor comes back to the mark every time, and <b>Home</b> and <b>End</b>
 put the mark at the start and where the last region ends. <b>Alt and a drag</b>
 anywhere marks a time range, as in the audio editor: the space bar plays it,
-and <b>L</b> loops it.
+and <b>L</b> loops it. <b>Shift+L</b> is the other switch of a pass, Stop at
+end in the Transport menu: off, the transport rolls on past the last region
+until it is stopped; on, it stops where the contents end and goes back to the
+mark.
 
 <b>Double click the box on the keys track</b> to open its <b>roll</b>. That box
 holds notes -- an <code>EventSequence</code> -- and the roll opens over the very

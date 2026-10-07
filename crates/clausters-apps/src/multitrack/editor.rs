@@ -207,6 +207,12 @@ pub enum TransportVerb {
         /// The mark, in seconds.
         mark: f64,
     },
+    /// **The end switch changed** (the window's `stop_at_end`): a pass that
+    /// rolled on past the contents now stops where they end, and one that
+    /// stopped there rolls on. The caller flips its playback's end -- open,
+    /// or the contents -- which is where the switch is kept; the editor holds
+    /// no copy of it.
+    StopAtEnd,
     /// Cue a stopped transport at `secs`, and leave a rolling one alone.
     Cue {
         /// Where, in seconds.
@@ -698,6 +704,7 @@ impl MultitrackEditor {
                         | LOOP_KEY
                         | PAUSE_VERB
                         | STOP_VERB
+                        | STOP_AT_END_VERB
                         | NOTES_ROLL_VERB
                         | NOTES_SCORE_VERB
                 ))
@@ -989,6 +996,12 @@ impl MultitrackEditor {
             out.transport = Some(self.stopped());
             return (None, Vec::new());
         }
+        // **Whether a pass stops where the contents end**: the transport's
+        // own switch, flipped by the key, the menu's entry and the tool
+        if self.window.map(i64::from) == Some(widget) && tag == STOP_AT_END_VERB {
+            out.transport = Some(TransportVerb::StopAtEnd);
+            return (None, Vec::new());
+        }
         // **The View menu's two ways to draw a box of notes**: the window's
         // own state, so nothing is recorded and the picture is corrected
         if self.window.map(i64::from) == Some(widget)
@@ -1193,6 +1206,20 @@ pub const NOTES_SCORE_VERB: &str = "notes_score";
 
 /// **The window's stop**: halt and go back to the mark -- the menu's Stop.
 pub const STOP_VERB: &str = "stop";
+
+/// **The window's end switch**: whether a pass stops where the contents end
+/// or rolls on -- a key, the Transport menu's entry and the tool beside Loop.
+pub const STOP_AT_END_VERB: &str = "stop_at_end";
+
+/// The scope of the key table the multitrack window's own verbs are in.
+pub const KEYS: &str = "multitrack";
+
+/// **The window's `verbs` prop**: the verbs this application adds to the
+/// host's, each with its default chord and the words a key sheet shows.
+#[must_use]
+pub fn verbs() -> Value {
+    json!({KEYS: {STOP_AT_END_VERB: {"keys": ["Shift+L"], "label": "Stop at the end, on or off"}}})
+}
 
 /// **The editor's tables as one**: which buffer each source was read into, how
 /// many frames each take holds, and the segments each join it knows is made of.
@@ -1853,6 +1880,16 @@ mod tests {
         assert_eq!(
             ed.event(&menu("stop"), 1).transport,
             Some(TransportVerb::Stop { mark: 3.0 })
+        );
+        assert_eq!(
+            ed.event(&menu(STOP_AT_END_VERB), 1).transport,
+            Some(TransportVerb::StopAtEnd)
+        );
+        // ...and the key, which reaches the window as the bare verb
+        assert_eq!(
+            ed.event(&event(39, 6, 1, STOP_AT_END_VERB, vec![]), 1)
+                .transport,
+            Some(TransportVerb::StopAtEnd)
         );
         assert!(ed.event(&menu(crate::closing::VERB), 1).close);
         // a widget's own `menu` is not the window's

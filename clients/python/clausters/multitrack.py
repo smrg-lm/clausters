@@ -2163,6 +2163,13 @@ class Session:
     #: into the window it was left in is what a person expects -- and a reader
     #: that ignores it opens the same multitrack.
     views: list = field(default_factory=list)
+    #: **Where a pass over the multitrack ends**, as a playback's ``end`` says
+    #: it: ``None`` (it rolls on, the default), ``"contents"`` (where the last
+    #: region ends) or a number of seconds, an end marker. The transport's own
+    #: switch, kept so a session opened again stops where it stopped before --
+    #: not in a view, since it changes what is heard. It bounds no axis: how
+    #: far a window shows or zooms out reads nothing here.
+    end: "str | float | None" = None
     document: "dict | None" = None
     #: Where each source is, keyed by source id.
     sources: dict = field(default_factory=dict)
@@ -2344,6 +2351,8 @@ class Session:
             out["multitrack"] = written
         if self.views:
             out["views"] = [v.write() for v in self.views]
+        if self.end is not None:
+            out["end"] = self.end if self.end == "contents" else float(self.end)
         if self.document is not None:
             out["document"] = self.document
         if self.sources:
@@ -2366,7 +2375,7 @@ class Session:
             from ._native import session_migrate
 
             written = session_migrate(written)
-        known = ("format", "multitrack", "views", "document", "sources",
+        known = ("format", "multitrack", "views", "end", "document", "sources",
                  "provenance")
         return cls(
             format=int(written.get("format", 1)),
@@ -2375,6 +2384,7 @@ class Session:
             multitrack=Multitrack.read(
                 written.get("multitrack") or written.get("arrangement") or {}),
             views=[View.read(v) for v in written.get("views", [])],
+            end=written.get("end"),
             document=written.get("document"),
             sources={int(id): Source.read(entry)
                      for id, entry in (written.get("sources") or {}).items()},

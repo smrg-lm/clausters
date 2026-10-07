@@ -168,6 +168,33 @@ fn the_clients_session_parses_and_survives_a_round_trip() {
     assert_eq!(out, original);
 }
 
+/// **Where a pass ends is the session's**, in the three forms a playback
+/// takes it: absent or `null` for one that rolls on, `"contents"`, a number
+/// of seconds for an end marker -- and a word that names none is refused.
+#[test]
+fn a_session_keeps_where_a_pass_ends() {
+    use clausters_document::End;
+    assert_eq!(saved().end, End::Contents, "as the client wrote it");
+    let read = |end: &str| {
+        serde_json::from_str::<Session>(&format!(r#"{{"format": 5, "end": {end}}}"#))
+            .map(|session| session.end)
+    };
+    assert_eq!(read("null").unwrap(), End::Open);
+    assert_eq!(read("12.5").unwrap(), End::At(12.5));
+    assert!(read(r#""later""#).is_err());
+    let open: Session = serde_json::from_str(r#"{"format": 5}"#).unwrap();
+    assert_eq!(open.end, End::Open);
+    assert!(
+        serde_json::to_value(&open).unwrap().get("end").is_none(),
+        "the default is not written"
+    );
+    // A marker the contents grow past goes with them; one inside them stays.
+    assert_eq!(End::At(10.0).carried(8.0, 12.0), End::At(12.0));
+    assert_eq!(End::At(10.0).carried(8.0, 9.0), End::At(10.0));
+    assert_eq!(End::At(3.0).carried(8.0, 12.0), End::At(3.0));
+    assert_eq!(End::Contents.carried(8.0, 12.0), End::Contents);
+}
+
 #[test]
 fn a_source_table_written_there_reads_as_sources_here() {
     let session = saved();

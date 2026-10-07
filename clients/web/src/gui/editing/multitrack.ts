@@ -1091,6 +1091,10 @@ export class MultitrackEditor extends Editor<Multitrack> {
             await playback.setLoop({ range: verb.range ?? null, looping: verb.looping ?? false });
         } else if (verb.verb === "stop") {
             playback.stop();
+        } else if (verb.verb === "stopAtEnd") {
+            // The end switch: a pass that rolled on stops where the contents
+            // end, and one that stopped -- there or at a marker -- rolls on.
+            playback.end = playback.end === null ? "contents" : null;
         } else if (verb.verb === "cue") {
             this.locate(verb.secs ?? 0.0);
         }

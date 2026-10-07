@@ -87,7 +87,7 @@ pub use points::{Point, Points, PointsIntent};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
 pub use samples::{Samples, SamplesIntent};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
-pub use session::{Location, OpenEdit, Session, Source};
+pub use session::{End, Location, OpenEdit, Session, Source};
 pub use timebase::{Beat, ContentBeat, ContentFrame, Second, TimelineFrame};
 pub use view::{TakeLaneView, TrackView, View};
 

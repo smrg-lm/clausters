@@ -204,6 +204,9 @@ pub fn window(w: &Window<'_>) -> Value {
         "h": w.size.1,
         "flow": "col",
         "ask_close": crate::closing::asks(w.asks, w.close_form.is_some()),
+        // the window's own verbs, and the scope of the key table they are in
+        "keys": [editor::KEYS],
+        "verbs": editor::verbs(),
         "children": children,
     });
     // **The chrome**: the menu bar, and the toolbar on top -- the transport
@@ -334,6 +337,12 @@ fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
             ids.map(|i| i.stop),
         ),
         chrome::tool("loop", chrome::LOOP, true, "Loop"),
+        chrome::tool(
+            editor::STOP_AT_END_VERB,
+            &chrome::glyph(chrome::TO_END),
+            true,
+            "Stop where the contents end, or roll on",
+        ),
         // A reading, written on every tick of the transport: drawn on the
         // window's live layer, so a write costs the label and not the window
         // -- and as wide as its longest reading, so a tick moves no tool.
@@ -469,7 +478,7 @@ mod tests {
         let names: Vec<&str> = tools.iter().filter_map(|c| c["name"].as_str()).collect();
         assert_eq!(names, [REWIND, PLAY, STOP, CLOCK]);
         let verbs: Vec<&str> = tools.iter().filter_map(|c| c["verb"].as_str()).collect();
-        assert_eq!(verbs, ["loop", "split", "join", "quantize"]);
+        assert_eq!(verbs, ["loop", "stop_at_end", "split", "join", "quantize"]);
         assert!(
             bar.get("id").is_none() && tools[0].get("id").is_none(),
             "named, and numbered by whoever sends it"

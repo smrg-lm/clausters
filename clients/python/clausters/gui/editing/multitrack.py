@@ -769,6 +769,10 @@ class MultitrackEditor(Marking, Editor):
                                    looping=bool(verb.get("looping")))
         elif kind == "stop":
             self.playback.stop()
+        elif kind == "stopAtEnd":
+            # The end switch: a pass that rolled on stops where the contents
+            # end, and one that stopped -- there or at a marker -- rolls on.
+            self.playback.end = "contents" if self.playback.end is None else None
         elif kind == "cue":
             self.locate(float(verb.get("secs", 0.0)))
 

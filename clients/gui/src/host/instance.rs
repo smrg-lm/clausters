@@ -362,6 +362,13 @@ impl Host {
                 )
             })
             .collect();
+        // **A playback made here is told where the session's passes end**,
+        // once: from then on it holds the end, since it is the one that hears
+        // the contents grow past a marker.
+        if self.instance.multitrack.is_none() {
+            let end = owner.end;
+            self.instance.playback().set_end(end);
+        }
         let synced = self.instance.playback().sync(
             &owner.multitrack,
             look.rate,
@@ -390,6 +397,12 @@ impl Host {
         self.update_notes();
         self.send_multitrack();
         self.tell_meters();
+        // What a save writes: the end as the playback now has it, a marker the
+        // contents grew past carried with them.
+        let end = self.instance.playback().end();
+        if let Some(owner) = self.owner.as_mut() {
+            owner.end = end;
+        }
         diag::debug!("sound_multitrack: {} node(s)", self.instance.nodes());
         self.instance.nodes()
     }
@@ -558,6 +571,29 @@ impl Host {
         let steps = multitrack.play_pass(range, looping);
         self.instance.run.push(Server::Sound, steps);
         self.send_multitrack();
+    }
+
+    /// **The end switch** (the multitrack window's `stop_at_end`): a pass that
+    /// rolled on now stops where the contents end, and one that stopped --
+    /// there or at a marker -- rolls on. Answers whether it now stops.
+    ///
+    /// The session's, so it is flipped with no server and nothing sounding as
+    /// well: the owner keeps it for the save, and a playback is told now if
+    /// there is one, or when it is made.
+    pub fn flip_multitrack_end(&mut self) -> Option<bool> {
+        use clausters_document::End;
+        let owner = self.owner.as_mut()?;
+        owner.end = match owner.end {
+            End::Open => End::Contents,
+            End::Contents | End::At(_) => End::Open,
+        };
+        let end = owner.end;
+        if let Some(multitrack) = self.instance.multitrack.as_mut() {
+            let steps = multitrack.set_end(end);
+            self.instance.run.push(Server::Sound, steps);
+            self.send_multitrack();
+        }
+        Some(end != End::Open)
     }
 
     /// **The loop switch changed while the multitrack plays** (`L`): the pass

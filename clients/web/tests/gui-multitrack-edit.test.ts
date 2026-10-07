@@ -1044,6 +1044,29 @@ test("the multitrack transport keeps its span and loop and draws them", async ()
     assert.deepEqual(transport.span, [0.0, 2.0], "a sweep is the transport's span");
 });
 
+test("the end switch flips where a pass ends", async () => {
+    // The window's `stop_at_end` -- its key, the Transport menu's entry and the
+    // tool beside Loop -- flips the playback's end: a pass that rolled on stops
+    // where the contents end, and one that stopped rolls on.
+    const ed = editor(multitrack());
+    wired(ed);
+    const playback = recording();
+    (ed as unknown as { playback: unknown }).playback = playback;
+    const route = (args: unknown[]) =>
+        (ed as unknown as { route(args: unknown[]): boolean }).route(args);
+    const settled = () => (ed as unknown as { transported: Promise<void> }).transported;
+    route([1, "stop_at_end"]);
+    await settled();
+    assert.equal(playback.end, "contents");
+    route([1, "stop_at_end"]);
+    await settled();
+    assert.equal(playback.end, null);
+    (playback as { end: unknown }).end = 12.0;
+    route([1, "stop_at_end"]);
+    await settled();
+    assert.equal(playback.end, null, "a marker is an end too, and is let go");
+});
+
 test("what the multitrack holds is its regions", async () => {
     const held = multitrack();
     const ed = editor(held);

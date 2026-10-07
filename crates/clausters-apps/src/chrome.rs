@@ -159,6 +159,10 @@ pub fn menu(app: App, saves: bool) -> Value {
         sep(),
         entry("Loop", "loop"),
     ]);
+    if app == App::Multitrack {
+        // where a pass ends, when it is not looped
+        transport.push(entry("Stop at end", "stop_at_end"));
+    }
 
     let mut bar = vec![
         sub("File", file),

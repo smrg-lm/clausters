@@ -118,6 +118,11 @@ pub struct Owner {
     /// The session this document came from, when it came from one: the sources
     /// its samples live in, which is what a save has to write back.
     pub session: Option<Session>,
+    /// **Where a pass over the multitrack ends**: the session's
+    /// ([`Session::end`]), read with it and written back by a save. The
+    /// playback is told when it is made and holds it from then on -- it is the
+    /// one that hears where the contents end -- and this is what it last said.
+    pub end: clausters_document::End,
     /// How an edit is transformed on the way in (the grid a placement snaps
     /// to). The host states where the hand put something; this decides.
     pub rules: Rules,
@@ -247,6 +252,7 @@ impl Owner {
             units_per_beat: 48_000.0,
             units_per_second: 48_000.0,
             save_path: None,
+            end: clausters_document::End::Open,
             takes: sources::Takes::default(),
             nodes: HashMap::new(),
             headers: HashMap::new(),
@@ -291,6 +297,7 @@ impl Owner {
                 );
             }
         }
+        owner.end = session.end;
         owner.session = Some(session);
         owner
     }
@@ -405,6 +412,7 @@ impl Owner {
             .unwrap_or_else(|| Session::new(self.document.clone()));
         session.document = self.document.clone();
         session.multitrack = self.multitrack.clone();
+        session.end = self.end;
         // A sequence is in the file, so what an editor did to it is written.
         for (id, shared) in &self.sequences {
             if let Some(source) = session.sources.get_mut(id) {
@@ -3200,6 +3208,65 @@ mod window_verb_tests {
             Some(Some(0.0)),
             "and the picture went back with it"
         );
+    }
+
+    /// **Where a pass ends is read with the session, flipped by the window's
+    /// verb and written by a save**, with no server and nothing sounding: the
+    /// switch is the session's, so a multitrack opened again stops where it
+    /// stopped before.
+    #[test]
+    fn the_end_switch_is_the_session_s_and_a_save_keeps_it() {
+        use clausters_document::End;
+        use clausters_document::multitrack::{Multitrack, Track};
+
+        let mut session = clausters_document::Session::new(Document::empty());
+        session.multitrack = Multitrack {
+            tracks: vec![Track::new(NodeId(10), NodeId(11))],
+            ..Multitrack::default()
+        };
+        session.end = End::Contents;
+        let path =
+            std::env::temp_dir().join(format!("clausters_end_switch_{}.json", std::process::id()));
+        let mut owner = Owner::from_session(session)
+            .with_units_per_beat(100.0)
+            .with_units_per_second(48_000.0)
+            .saving_to(&path);
+        assert_eq!(owner.end, End::Contents, "as the file said");
+
+        let def_id = 1;
+        let (def, _view) = composed(&mut owner, def_id);
+        assert_eq!(def["keys"], serde_json::json!(["multitrack"]));
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+        // the window declared the verb's key, in its own scope of the table
+        assert_eq!(host.keys.label("stop_at_end").as_deref(), Some("Shift+L"));
+
+        let end = |host: &Host| host.owner.as_ref().map(|o| o.end);
+        let saved = |host: &mut Host| {
+            host.owner.as_mut().unwrap().save_now().expect("it saves");
+            serde_json::from_str::<Value>(&std::fs::read_to_string(&path).unwrap()).unwrap()
+        };
+        let flip = [OscType::String("stop_at_end".into())];
+        assert!(host.answer_own(def_id, def_id, 1, &flip));
+        assert_eq!(end(&host), Some(End::Open), "it rolls on");
+        assert!(
+            saved(&mut host).get("end").is_none(),
+            "the default is not written"
+        );
+        assert!(host.answer_own(def_id, def_id, 2, &flip));
+        assert_eq!(end(&host), Some(End::Contents));
+        assert_eq!(saved(&mut host)["end"], "contents");
+        let _ = std::fs::remove_file(&path);
     }
 
     /// A save writes where the caller said and nowhere else: overwriting what

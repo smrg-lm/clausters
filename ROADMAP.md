@@ -306,8 +306,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
   Python client's three open questions, the document crate's interpreter
   inside a standalone host, and the applications' (time-stretch from a clip's
-  edge; the multitrack's stop-at-end key in standalone; what a bare window
-  leaves to its
+  edge; what a bare window leaves to its
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; a roll's tempo and

@@ -2579,13 +2579,34 @@ Every entry carries a checkbox.
   since the table is every window's; a bare one has no menu to show a chord
   beside an entry, which is why it was asked for there.
 
-- ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
-  session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
+- ✅ **The multitrack's stop-at-end in standalone: a key, saved in the
+  session** *(decided by the user 2026-09-24; out of X8; done 2026-10-07)*. The switch exists
   (`MultitrackPlayback::set_end`, bound in both clients as `Playback.end`); the
   standalone host needs a key that flips it and the session to keep it, so a
   reopened session stops where it stopped before. *(The chrome it waited for
   landed 2026-10-06: the switch can be a Transport entry and a tool beside
   Loop.)*
+  *(Done, with two things the user fixed on the way, 2026-10-07. **Where it is
+  kept**: a field of the session, `end`, in the three forms a playback's end
+  already has -- absent for a pass that rolls on, `"contents"`, a number of
+  seconds for an end marker. Not in a view, since it changes what is heard,
+  and not in the multitrack, since it is no edit. The type is the document's
+  now (`clausters_document::End`), and both clients' `Session` carry the
+  field. **An end marker is carried by the contents**: a region placed past
+  one takes the marker with it (`End::carried`, applied by the playback at
+  each sync), while a marker put inside the contents is an early stop and
+  stays. **An end bounds no view**: it is where a pass stops and nothing
+  else, sent to the server's transport and read by no window, so the time
+  axis scrolls and zooms out past it.
+  The switch is the window's verb `stop_at_end`: `Shift+L`, declared by the
+  window in a scope of its own of the key table, *Stop at end* in the
+  Transport menu and a tool beside Loop. It flips the end between open and
+  the contents; the editor keeps no copy, and whoever holds the playback
+  flips it there. The standalone host reads the end with the session, tells
+  the playback when it makes one, says the switch on the status line and
+  writes it on a save, with no server needed; both clients flip their
+  playback's `end`, and a script copies it into `Session.end` when it
+  saves.)*
 
 - ⬜ **Effects in preview in the audio editor** *(out of X7)*: a chain in
   place on `dry`, between the readers and the pass, whose effects are heard

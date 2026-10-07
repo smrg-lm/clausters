@@ -36,62 +36,10 @@ use crate::instance::Instance;
 use crate::note_curves::{self, NoteCurves};
 use crate::notes_playback::Placement;
 
-/// **Where a pass ends**, the same three ways for every playback on a
-/// transport -- the multitrack's and the notes editor's.
-///
-/// - `Open`: it does not, and the transport rolls on past the contents until
-///   it is stopped, as a multitrack is played to record onto or to hear a
-///   tail. The default.
-/// - `Contents`: where the contents end -- the last region, the last note's
-///   end -- going back to the position cursor, as an audio editor's pass does.
-/// - `At`: an **end marker**, at a place of the playback's own axis (seconds
-///   of a multitrack, beats of a sequence), going back the same way.
-///
-/// What it sends is the transport's end mark, only when that moves; a loop
-/// set on the transport wins over it. As JSON: `null`, `"contents"` or the
-/// number.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum End {
-    /// The transport rolls on.
-    #[default]
-    Open,
-    /// Where the contents end.
-    Contents,
-    /// An end marker.
-    At(f64),
-}
-
-impl End {
-    /// The end a JSON value names, or `None` for one that names none.
-    pub fn from_json(value: &Value) -> Option<End> {
-        match value {
-            Value::Null => Some(End::Open),
-            Value::String(word) if word == "contents" => Some(End::Contents),
-            Value::Number(n) => n.as_f64().map(|at| End::At(at.max(0.0))),
-            _ => None,
-        }
-    }
-
-    /// Its JSON form.
-    pub fn to_json(self) -> Value {
-        match self {
-            End::Open => Value::Null,
-            End::Contents => json!("contents"),
-            End::At(at) => json!(at),
-        }
-    }
-
-    /// Where a pass ends, given where the contents do, or `None` for one that
-    /// rolls on -- and for contents that end nowhere, since a pass over
-    /// nothing has no end to stop on.
-    pub fn at(self, contents: f64) -> Option<f64> {
-        match self {
-            End::Open => None,
-            End::Contents => (contents > 0.0).then_some(contents),
-            End::At(at) => Some(at),
-        }
-    }
-}
+/// **Where a pass ends**: the document's own type, since a session keeps it
+/// ([`clausters_document::End`]). Both playbacks that end on the transport
+/// take one -- the multitrack's and the notes editor's.
+pub use clausters_document::End;
 
 /// **A pass as JSON**, `{"range": [start, end] | null, "looping": bool}`: the
 /// one reading every door of [`MultitrackPlayback::play_pass`] shares.
@@ -140,6 +88,8 @@ pub struct MultitrackPlayback {
     /// Where the contents end, in seconds of the multitrack: the last region's
     /// end on any track and any take lane, as of the last [`Self::sync`].
     content_end: f64,
+    /// Whether a [`Self::sync`] has said where the contents end.
+    measured: bool,
     /// The position cursor, in seconds -- where a pass that stops at the end
     /// goes back to. Moved by [`Self::cue`] and [`Self::stop`].
     mark: f64,
@@ -174,6 +124,7 @@ impl MultitrackPlayback {
             rate: 48_000.0,
             rolling: false,
             end: End::Open,
+            measured: false,
             content_end: 0.0,
             mark: 0.0,
             end_sent: None,
@@ -342,8 +293,16 @@ impl MultitrackPlayback {
                 vec![OscType::Long(fade)],
             ));
         }
-        // An edit that moves the last region moves where a pass stops.
-        self.content_end = multitrack.end().0;
+        // An edit that moves the last region moves where a pass stops -- and
+        // takes an end marker with it when the contents grow past one
+        // (`End::carried`). Not on the first sync: a marker read with the
+        // multitrack was put where it is against these same contents.
+        let now = multitrack.end().0;
+        if self.measured {
+            self.end = self.end.carried(self.content_end, now);
+        }
+        self.measured = true;
+        self.content_end = now;
         steps.extend(self.end_steps());
         Ok(steps)
     }
@@ -782,6 +741,36 @@ mod tests {
             Some(vec![OscType::Long(120_000), OscType::Long(48_000)]),
             "an end marker is where it says"
         );
+        // **A region placed past an end marker takes the marker with it**: one
+        // at or past the contents' end is carried forward when they grow past
+        // it, and one put inside them is an early stop that stays.
+        let sync = |playback: &mut MultitrackPlayback, secs: f64| {
+            playback
+                .sync(
+                    &ending_at(secs),
+                    48_000.0,
+                    &HashMap::new(),
+                    1.0,
+                    &mut spaces(),
+                )
+                .unwrap()
+        };
+        assert_eq!(
+            end_mark(&sync(&mut playback, 9.0)),
+            None,
+            "inside: it stays"
+        );
+        assert_eq!(playback.end(), End::At(2.5));
+        playback.set_end(End::At(10.0));
+        assert_eq!(end_mark(&sync(&mut playback, 9.5)), None, "not reached");
+        assert_eq!(
+            end_mark(&sync(&mut playback, 12.0)),
+            Some(vec![OscType::Long(576_000), OscType::Long(48_000)]),
+            "passed: the marker is where the contents end"
+        );
+        assert_eq!(playback.end(), End::At(12.0));
+        sync(&mut playback, 6.0);
+        assert_eq!(playback.end(), End::At(12.0), "shrinking leaves it");
         assert_eq!(
             end_mark(&playback.set_end(End::Open)),
             Some(vec![]),

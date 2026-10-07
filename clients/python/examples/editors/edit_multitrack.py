@@ -48,6 +48,9 @@ What to do in the window:
   to the mark every time, and **Home** and **End** put the mark at the start
   and where the last region ends. **Alt and a drag** anywhere marks a time
   range, as in the audio editor: the space bar plays it, and **L** loops it.
+  **Shift+L** is the other switch of a pass, Stop at end in the Transport
+  menu: off, the transport rolls on past the last region until it is stopped;
+  on, it stops where the contents end and goes back to the mark.
 - **Double click the box on the keys track** to open its **roll**. That box
   holds notes -- an `EventSequence` -- and the roll opens over the very same
   sequence, in the multitrack's undo order: drag a note there and the box redraws
