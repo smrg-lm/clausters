@@ -10,7 +10,7 @@ that will not open.
 What it deliberately covers is everything a whole-value comparison would not
 name if it broke one of them: a track comped from three takes playing the
 second, two regions overlapping with a crossfade and a layer order saying which
-is on top, a composite region placing the general tree, an automation curve on a
+is on top, an automation curve on a
 track and another on a region, whose point shapes nothing here reads, a tempo
 map that ramps, a meter change,
 markers sharing a beat, a loop and a punch, and a field a newer writer added.
@@ -78,17 +78,11 @@ def build() -> Multitrack:
                  {"id": 34, "name": "level", "target": {"ctl": "level"}, "visible": True,
                   "points": [{"at": 0.0, "value": 0.0, "data": {}},
                              {"at": 16.0, "value": 1.0, "data": {"shape": "exp"}}]}]},
-            # The general tree, placed: what a composite region is for -- with a
-            # field a newer writer added.
+            # A region with a field a newer writer added.
             {"id": 40, "name": "sections", "take_lanes": [
                 {"id": 41, "regions": [
                     {"id": 42, "position": 32.0, "length": 16.0,
-                     "content": Content.composite({
-                         "id": 43,
-                         "kind": "aggregate",
-                         "grouping": "concrete",
-                         "members": [{"offset": 0.0, "node": {"id": 44, "kind": "clang"}}],
-                     }).write(),
+                     "content": Content.onto(window(200, duration=16.0)).write(),
                      "warp": {"mode": "beats"}}]}]},
         ],
         "markers": [{"id": 1, "at": 0.0, "name": "intro"},

@@ -132,7 +132,7 @@ pub fn shown(multitrack: &Multitrack, look: &Look<'_>) -> Picture {
 }
 
 /// The **server buffer** a source was read into, or `-1` for a box over
-/// nothing: a window onto notes, a composite, or samples nobody read in yet.
+/// nothing: a window onto notes, or samples nobody read in yet.
 impl projection::Buffers for Look<'_> {
     fn bufnum(&self, source: SourceId) -> i64 {
         self.takes
@@ -231,21 +231,20 @@ mod tests {
     use super::*;
     use crate::host::document::sources::Takes;
     use clausters_core::osc::OscType;
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Content, Region, Track};
-    use clausters_document::{
-        Against, Beat, NodeId, Opaque, Rules, Second, SegmentRef, SegmentSource, SourceId,
-    };
+    use clausters_document::{Against, Beat, NodeId, Opaque, Rules, Second, SourceId};
     use clausters_document::{Lifetime, SourceRef};
 
     fn window(source: u64, start: f64) -> Content {
         Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 2.0,
             },
@@ -540,7 +539,7 @@ mod tests {
         match &made.content {
             Content::Window { window, .. } => {
                 assert_eq!(
-                    window.source.samples().map(|s| s.source),
+                    Some(window.source.source),
                     Some(SourceId(1)),
                     "the source its buffer number resolves to"
                 );

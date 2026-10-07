@@ -83,12 +83,28 @@ test("an overlap keeps its crossfade, its layer and its playrate", async () => {
     assert.deepEqual(second.content.args, { seed: 7 });
 });
 
-test("a composite region arrives as the general tree", async () => {
-    const multitrack = Multitrack.read(await vector());
+test("a region keeps a field a newer writer added", async () => {
+    const written = await vector();
+    const multitrack = Multitrack.read(written);
     const region = track(multitrack, 40).takeLanes.item(0).regions.item(0);
-    assert.equal(region.content.fill, "composite");
-    assert.equal(region.content.node?.id, 43);
-    assert.equal(region.content.node?.kind, "aggregate");
+    assert.equal(region.content.fill, "window");
+    assert.deepEqual(multitrack.write(), written);
+});
+
+test("a composite is a fill this build does not know", () => {
+    // A window is the one fill a region has. What the multitrack once held
+    // and does not -- a composite, the general tree placed as a region -- is
+    // among the fills this build does not know: read, kept, written back as it
+    // came, and no window.
+    const written = {
+        fill: "composite",
+        node: { id: 50, kind: "aggregate", grouping: "concrete" },
+    };
+    const content = Content.read(written);
+    assert.equal(content.fill, "composite");
+    assert.equal(content.window, undefined);
+    assert.deepEqual(content.write(), written);
+    assert.equal("composite" in Content, false);
 });
 
 test("an automation curve keeps the shapes neither side reads", async () => {

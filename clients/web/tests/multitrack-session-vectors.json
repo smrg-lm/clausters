@@ -242,20 +242,15 @@
       "regions": [
        {
         "content": {
-         "fill": "composite",
-         "node": {
-          "grouping": "concrete",
-          "id": 43,
-          "kind": "aggregate",
-          "members": [
-           {
-            "node": {
-             "id": 44,
-             "kind": "clang"
-            },
-            "offset": 0.0
-           }
-          ]
+         "fill": "window",
+         "window": {
+          "duration": 16.0,
+          "source": {
+           "generation": 0,
+           "lifetime": "session",
+           "source": 200
+          },
+          "start": 0.0
          }
         },
         "id": 42,

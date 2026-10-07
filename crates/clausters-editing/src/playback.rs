@@ -652,17 +652,18 @@ mod tests {
 
     /// A multitrack whose one region ends at `end` seconds.
     fn ending_at(end: f64) -> Multitrack {
+        use clausters_document::multitrack::Window;
         use clausters_document::multitrack::{Content, Region};
-        use clausters_document::{Lifetime, Second, SegmentRef, SegmentSource, SourceRef};
+        use clausters_document::{Lifetime, Second, SourceRef};
 
         let mut multitrack = multitrack();
-        let window = SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        let window = Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: end,
         };

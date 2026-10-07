@@ -1453,8 +1453,9 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Content, Region, Track};
-    use clausters_document::{Lifetime, NodeId, Second, SegmentRef, SegmentSource, SourceRef};
+    use clausters_document::{Lifetime, NodeId, Second, SourceRef};
 
     const SR: f64 = 48_000.0;
 
@@ -1465,13 +1466,13 @@ mod tests {
             Second(2.0),
             Content::Unknown(Value::Null),
         );
-        region.content = Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        region.content = Content::window(Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: 2.0,
         });
@@ -1596,13 +1597,13 @@ mod tests {
                 Second(1.0),
                 Content::Unknown(Value::Null),
             );
-            region.content = Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            region.content = Content::window(Window {
+                source: SourceRef {
                     source: SourceId(1),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 1.0,
             });

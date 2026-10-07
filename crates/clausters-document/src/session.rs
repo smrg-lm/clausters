@@ -607,20 +607,14 @@ pub struct Session {
         alias = "arrangement"
     )]
     pub multitrack: Multitrack,
-    /// The general tree, for what is not an multitrack.
+    /// The general tree, for what is not a multitrack.
     ///
-    /// **Absent means empty, not invalid** -- a session that is only an
-    /// arrangement is the shape this milestone is walking towards, and it has
-    /// to be writable before the leg comes off rather than after.
+    /// **Absent means empty, not invalid**: a session that is only a
+    /// multitrack writes no general tree and reads back without one.
     ///
-    /// **This is the leg that is being walked off, and saying so is part of
-    /// the design rather than an apology.** It is what every current reader
-    /// opens - the standalone host, the clients' save and reopen - so it stays
-    /// until the host binds the arrangement instead, which is a milestone of
-    /// its own. What replaces it is already here: a
-    /// [`Content::Composite`](crate::multitrack::Content::Composite) region
-    /// carries this same tree, placed, so nothing the general model can say is
-    /// lost by the move - it gains a position.
+    /// **Beside the multitrack and never inside it.** A region is a window
+    /// onto a source; none places this tree and none reads a node of it
+    /// ([`crate::multitrack::Window`]).
     #[serde(
         default = "Document::empty",
         skip_serializing_if = "Document::is_empty"
@@ -739,12 +733,11 @@ impl Session {
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
         for region in self.multitrack.regions() {
-            if let Some(window) = region.content.as_window()
-                && let Some(source) = window.source.samples()
-                && !self.sources.contains_key(&source.source)
-                && !missing.contains(&source.source)
+            if let Some(source) = region.content.source()
+                && !self.sources.contains_key(&source)
+                && !missing.contains(&source)
             {
-                missing.push(source.source);
+                missing.push(source);
             }
         }
         self.document.walk(&mut |node| {

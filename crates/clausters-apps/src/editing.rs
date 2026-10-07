@@ -1285,10 +1285,9 @@ fn to_json<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-    use clausters_document::{
-        Lifetime, NodeId, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-    };
+    use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
 
     const SR: f64 = 48_000.0;
 
@@ -1299,13 +1298,13 @@ mod tests {
             Second(2.0),
             Content::Unknown(Value::Null),
         );
-        region.content = Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        region.content = Content::window(Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: 2.0,
         });
@@ -1556,13 +1555,13 @@ mod tests {
         let half = |id: u64, at: f64, start: f64| {
             let mut region = region(id, at);
             region.length = Second(1.0);
-            region.content = Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            region.content = Content::window(Window {
+                source: SourceRef {
                     source: SourceId(1),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 1.0,
             });

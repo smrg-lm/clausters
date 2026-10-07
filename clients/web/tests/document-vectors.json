@@ -2144,11 +2144,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 1,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 1
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 100,
@@ -2162,11 +2166,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 2,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 2
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 101,
@@ -2212,11 +2220,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 2,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 2
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 101,
@@ -2237,11 +2249,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 1,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 100,
@@ -2280,11 +2296,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 1,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 1
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 100,
@@ -2298,11 +2318,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 2,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 2
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 101,
@@ -2344,11 +2368,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 1,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 110,
@@ -2357,11 +2385,15 @@
                     },
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 1,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 111,
@@ -2375,11 +2407,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 2,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 2
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 101,
@@ -2409,11 +2445,15 @@
           "regions": [
             {
               "content": {
-                "fill": "composite",
-                "node": {
-                  "grouping": "concrete",
-                  "id": 1,
-                  "kind": "aggregate"
+                "fill": "window",
+                "window": {
+                  "duration": 4.0,
+                  "source": {
+                    "generation": 0,
+                    "lifetime": "session",
+                    "source": 1
+                  },
+                  "start": 0.0
                 }
               },
               "id": 100,
@@ -2438,11 +2478,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 1,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 1
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 100,
@@ -2456,11 +2500,15 @@
                 "regions": [
                   {
                     "content": {
-                      "fill": "composite",
-                      "node": {
-                        "grouping": "concrete",
-                        "id": 2,
-                        "kind": "aggregate"
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 2
+                        },
+                        "start": 0.0
                       }
                     },
                     "id": 101,
@@ -2502,11 +2550,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 1,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 100,
@@ -2520,11 +2572,15 @@
                   "regions": [
                     {
                       "content": {
-                        "fill": "composite",
-                        "node": {
-                          "grouping": "concrete",
-                          "id": 2,
-                          "kind": "aggregate"
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 2
+                          },
+                          "start": 0.0
                         }
                       },
                       "id": 101,

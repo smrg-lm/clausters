@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::timebase::{Beat, Second};
-use crate::{Node, NodeId, Opaque, SegmentRef, SourceId};
+use crate::{NodeId, Opaque, Seconds, SourceId, SourceRef};
 
 pub mod edit;
 pub mod handle;
@@ -88,6 +88,43 @@ impl Fade {
     }
 }
 
+/// **A window onto a source**: which one, from where, for how long.
+///
+/// The multitrack's own, and deliberately not the general tree's
+/// [`crate::SegmentRef`]. That one may be onto a **node** of its document
+/// ([`crate::SegmentSource::Node`]), because the general tree holds content of
+/// its own for a window to read. A multitrack holds none: what a region reads
+/// is in the session's source table -- a recording, a buffer, a sequence of
+/// notes -- and is named by a [`SourceRef`]. So the type says so, and a window
+/// onto a node is not something a region can be.
+///
+/// On the wire it is the object a window onto samples always was, so every
+/// session written before this type existed reads unchanged.
+///
+/// **Both numbers are the source's own seconds**, which were fixed when it
+/// was made and which no tempo change moves. They are not the timeline's: a
+/// playrate scales one against the other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Window {
+    /// The source this window is onto.
+    pub source: SourceRef,
+    /// Where it opens, in the source's seconds.
+    #[serde(default)]
+    pub start: f64,
+    /// How long it lasts, in the source's seconds.
+    ///
+    /// **How much of the source the window reaches, never how much the region
+    /// shows.** A region is a view onto its whole source: a trim hides what is
+    /// behind an edge and pulling the edge back shows it again, so a trim or a
+    /// split moves `start` and the region's own position and length, and
+    /// leaves this alone. It is the whole take for a window over a file or a
+    /// buffer, and the sum of the segments for a join, whose edges cannot be
+    /// pulled past them. `start + duration` is therefore not the end of what
+    /// plays: the region's length is. Decided 2026-09-13 after a join read
+    /// this as what a trimmed box shows and asked for samples past its take.
+    pub duration: Seconds,
+}
+
 /// What fills a region.
 ///
 /// **Not [`crate::clipboard::Content`]**, which is what was *copied*. Two
@@ -96,20 +133,20 @@ impl Fade {
 /// clipboard's is re-exported at the crate root, so an unqualified `Content` is
 /// always that one.
 ///
-/// The half REAPER puts in a `Take`. Three kinds, and the third is the door the
-/// tree walks through rather than a special case.
+/// The half REAPER puts in a `Take`: a window onto a source, and nothing else
+/// this build knows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "fill", rename_all = "lowercase")]
 pub enum Content {
-    /// A **window** onto a source -- samples, or a node this document holds.
+    /// A **window** onto a source.
     ///
-    /// [`SegmentRef`] already says which source, where the window opens and how
-    /// long it lasts, in the units that source is addressed and measured in. A
-    /// region adds the two things a *placement* of that window has and the
-    /// window itself does not.
+    /// [`Window`] says which source, where the window opens and how long it
+    /// lasts, in the units that source is addressed and measured in. A region
+    /// adds the two things a *placement* of that window has and the window
+    /// itself does not.
     Window {
         /// Which source, from where, for how long.
-        window: SegmentRef,
+        window: Window,
         /// How fast the window is read, `1.0` being as recorded. A property of
         /// this placement: two regions over one source may play it at two
         /// rates, which is the ordinary case for a sampled instrument and the
@@ -134,17 +171,15 @@ pub enum Content {
         #[serde(rename = "loop", default, skip_serializing_if = "std::ops::Not::not")]
         looping: bool,
     },
-    /// A **composite**: the general tree, placed as one region.
-    ///
-    /// A section, a nested multitrack, anything the five primitives can build.
-    /// It carries a [`Node`] unchanged, which is what keeps everything the
-    /// document already models reachable from a session without restating it --
-    /// and what makes "an arrangement of arrangements" cost nothing.
-    Composite {
-        /// The tree this region places.
-        node: Box<Node>,
-    },
     /// A fill this build does not know, preserved whole.
+    ///
+    /// Among them, by decision, what the multitrack once held and does not:
+    /// a `composite` (the general tree placed as one region) and a window
+    /// onto a node of the general document. Both were `clausters.form`'s
+    /// arrangement inside this one, and a multitrack has no nodes -- its
+    /// regions are sources placed in seconds. A file that wrote either still
+    /// reads, and the region is carried as it was written, drawn as a named
+    /// box and played by nothing.
     #[serde(untagged)]
     Unknown(Value),
 }
@@ -169,7 +204,7 @@ fn is_one(value: &f64) -> bool {
 
 impl Content {
     /// A window onto a source, read as recorded and evaluating nothing.
-    pub fn window(window: SegmentRef) -> Self {
+    pub fn window(window: Window) -> Self {
         Self::Window {
             window,
             playrate: 1.0,
@@ -179,24 +214,16 @@ impl Content {
     }
 
     /// The window this content is, when it is one.
-    pub fn as_window(&self) -> Option<&SegmentRef> {
+    pub fn as_window(&self) -> Option<&Window> {
         match self {
             Content::Window { window, .. } => Some(window),
             _ => None,
         }
     }
 
-    /// The samples this content windows, when it is a window onto samples.
+    /// The source this content windows, when it is a window.
     pub fn source(&self) -> Option<SourceId> {
-        self.as_window()?.source.samples().map(|s| s.source)
-    }
-
-    /// The tree this content places, when it is a composite.
-    pub fn as_node(&self) -> Option<&Node> {
-        match self {
-            Content::Composite { node } => Some(node),
-            _ => None,
-        }
+        Some(self.as_window()?.source.source)
     }
 }
 
@@ -204,15 +231,16 @@ impl Content {
 ///
 /// The span is the region's own -- position, length, fades, layer -- and it is
 /// measured in **seconds**, the multitrack's axis: where a thing sits is
-/// physical time, and no tempo change moves it. What fills it is measured in
-/// its own source's units -- seconds of a recording, beats of a node of notes --
-/// which is why the two halves cannot be added and why they are two types.
+/// physical time, and no tempo change moves it. What fills it is measured
+/// along its own source -- the seconds of a recording, which a playrate scales
+/// against the timeline's -- which is why the two halves cannot be added and
+/// why they are two types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Region {
     /// Its identity, and not its source's.
     pub id: NodeId,
-    /// A referenceable label -- the same rule as [`Node::name`]: a second way to
-    /// refer to the region, never a second identity.
+    /// A referenceable label -- the same rule as [`crate::Node::name`]: a
+    /// second way to refer to the region, never a second identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Where it starts on the timeline, in seconds.
@@ -907,16 +935,16 @@ impl Multitrack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Lifetime, SegmentSource, SourceRef};
+    use crate::Lifetime;
 
-    fn window(source: u64) -> SegmentRef {
-        SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+    fn window(source: u64) -> Window {
+        Window {
+            source: SourceRef {
                 source: SourceId(source),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: 2.0,
         }
@@ -957,15 +985,7 @@ mod tests {
         let sources: Vec<_> = lane
             .regions
             .iter()
-            .map(|r| {
-                r.content
-                    .as_window()
-                    .unwrap()
-                    .source
-                    .samples()
-                    .unwrap()
-                    .source
-            })
+            .map(|r| r.content.source().unwrap())
             .collect();
         assert!(sources.iter().all(|s| *s == SourceId(1)));
         assert_eq!(lane.regions.len(), 6);
@@ -1019,27 +1039,33 @@ mod tests {
         assert_eq!(serde_json::from_str::<Region>(&json).unwrap(), r);
     }
 
+    /// **What the multitrack once held and does not is a fill it does not
+    /// know.** A composite and a window onto a node of the general document
+    /// were `clausters.form`'s tree inside this one; a session that wrote
+    /// either still reads, the region keeps its place and its length, and it
+    /// is written back as it came -- but it is not a window, so nothing draws
+    /// samples from it or plays it.
     #[test]
-    fn a_composite_region_carries_the_general_tree_unchanged() {
-        use crate::{Body, Grouping};
-        let node = Node::new(
-            NodeId(50),
-            Body::Aggregate {
-                grouping: Grouping::Concrete,
-                members: Vec::new(),
-                config: Opaque::none(),
-            },
-        );
-        let r = Region::new(
-            NodeId(1),
-            Second(0.0),
-            Second(8.0),
-            Content::Composite {
-                node: Box::new(node.clone()),
-            },
-        );
-        let back: Region = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
-        assert_eq!(back.content.as_node(), Some(&node));
+    fn a_composite_and_a_window_onto_a_node_are_fills_it_does_not_know() {
+        for content in [
+            serde_json::json!({"fill": "composite",
+                               "node": {"id": 50, "kind": "aggregate", "grouping": "concrete"}}),
+            serde_json::json!({"fill": "window",
+                               "window": {"source": {"node": 7}, "start": 0.0, "duration": 2.0}}),
+        ] {
+            let written = serde_json::json!({
+                "id": 1, "position": 0.0, "length": 8.0, "content": content,
+            });
+            let region: Region = serde_json::from_value(written.clone()).unwrap();
+            assert!(
+                matches!(region.content, Content::Unknown(_)),
+                "not a window: {:?}",
+                region.content
+            );
+            assert_eq!(region.content.source(), None);
+            assert_eq!(region.length, Second(8.0));
+            assert_eq!(serde_json::to_value(&region).unwrap(), written);
+        }
     }
 
     #[test]
@@ -1050,7 +1076,8 @@ mod tests {
         // two writers in two languages is how a multitrack gets lost.
         let json = r#"{"id":1,"position":0.0,"length":4.0,
                        "content":{"fill":"window",
-                                  "window":{"source":{"node":7},"start":0.0,"duration":2.0}},
+                                  "window":{"source":{"source":7,"lifetime":"session"},
+                                            "start":0.0,"duration":2.0}},
                        "warp":{"mode":"beats","markers":[1,2,3]}}"#;
         let region: Region = serde_json::from_str(json).unwrap();
         assert!(region.extra.contains_key("warp"));

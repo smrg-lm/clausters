@@ -4,16 +4,16 @@
 
 use super::*;
 use crate::multitrack::{Automation, TakeLane};
-use crate::{Beat, Lifetime, SegmentSource, SourceId, SourceRef};
+use crate::{Beat, Lifetime, SourceId, SourceRef};
 
-fn window(source: u64) -> crate::SegmentRef {
-    crate::SegmentRef {
-        source: SegmentSource::Samples(SourceRef {
+fn window(source: u64) -> crate::multitrack::Window {
+    crate::multitrack::Window {
+        source: SourceRef {
             source: SourceId(source),
             lifetime: Lifetime::Session,
             generation: 0,
             range: None,
-        }),
+        },
         start: 0.0,
         duration: 8.0,
     }

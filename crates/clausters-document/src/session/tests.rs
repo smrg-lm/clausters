@@ -377,15 +377,16 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
         NodeId(82),
         Second(0.0),
         Second(4.0),
-        Content::Composite {
-            node: Box::new(Node::new(
-                NodeId(83),
-                Body::Clang {
-                    config: crate::Opaque::none(),
-                    fires: None,
-                },
-            )),
-        },
+        Content::window(crate::multitrack::Window {
+            source: crate::SourceRef {
+                source: crate::SourceId(83),
+                lifetime: crate::Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start: 0.0,
+            duration: 4.0,
+        }),
     ));
     multitrack.tracks.push(track);
     let session = plain.with_multitrack(multitrack);
@@ -397,21 +398,22 @@ fn a_session_carries_an_arrangement_and_writes_none_when_there_is_none() {
 
 #[test]
 fn a_source_only_a_region_names_is_still_reported_missing() {
+    use crate::multitrack::Window;
     use crate::multitrack::{Content, Multitrack, Region, Track};
     use crate::timebase::Second;
-    use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
+    use crate::{Lifetime, SourceRef};
 
     // The table is walked against **both** halves. A reader that checked only
     // the tree would open a session missing exactly what the arrangement plays,
     // and an alternate take counts: it names its source whether or not it is
     // the take lane that plays.
-    let window = |source: u64| SegmentRef {
-        source: SegmentSource::Samples(SourceRef {
+    let window = |source: u64| Window {
+        source: SourceRef {
             source: SourceId(source),
             lifetime: Lifetime::Session,
             generation: 0,
             range: None,
-        }),
+        },
         start: 0.0,
         duration: 1.0,
     };
@@ -465,19 +467,20 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
 /// drop the fade on the one that is not on top.
 #[test]
 fn a_whole_session_round_trips_losslessly() {
+    use crate::multitrack::Window;
     use crate::multitrack::{
         Automation, Content, Fade, Marker, Meter, Multitrack, Region, Span, TakeLane, Tempo, Track,
     };
     use crate::timebase::{Beat, Second};
-    use crate::{Lifetime, Point, SegmentRef, SegmentSource, SourceRef};
+    use crate::{Lifetime, Point, SourceRef};
 
-    let window = |source: u64, from: f64| SegmentRef {
-        source: SegmentSource::Samples(SourceRef {
+    let window = |source: u64, from: f64| Window {
+        source: SourceRef {
             source: SourceId(source),
             lifetime: Lifetime::Session,
             generation: 0,
             range: None,
-        }),
+        },
         start: from,
         duration: 4.0,
     };
@@ -555,32 +558,13 @@ fn a_whole_session_round_trips_losslessly() {
     guitars.automation.push(level);
     guitars.soloed = true;
 
-    // A track placing the general tree, which is what a composite region is
-    // for: everything the five primitives can build, given a position.
+    // A third track, further along the timeline, so the end is its region's.
     let mut sections = Track::new(NodeId(40), NodeId(41)).named("sections");
     sections.take_lanes[0].place(Region::new(
         NodeId(42),
         Second(32.0),
         Second(16.0),
-        Content::Composite {
-            node: Box::new(Node::new(
-                NodeId(43),
-                Body::Aggregate {
-                    grouping: Grouping::Concrete,
-                    members: vec![placed(
-                        0.0,
-                        Node::new(
-                            NodeId(44),
-                            Body::Clang {
-                                config: crate::Opaque::none(),
-                                fires: None,
-                            },
-                        ),
-                    )],
-                    config: crate::Opaque::none(),
-                },
-            )),
-        },
+        Content::window(window(202, 0.0)),
     ));
 
     multitrack.tracks.push(vocals);
@@ -612,11 +596,9 @@ fn a_whole_session_round_trips_losslessly() {
         Second(4.0)
     );
     assert_eq!(a.tracks[1].automation[0].points[1].data.0["shape"], "exp");
-    assert!(
-        a.tracks[2].take_lanes[0].regions[0]
-            .content
-            .as_node()
-            .is_some()
+    assert_eq!(
+        a.tracks[2].take_lanes[0].regions[0].content.source(),
+        Some(SourceId(202))
     );
     assert_eq!(a.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
     assert_eq!(a.meter_at(Beat(40.0)).unwrap().beats, 7);

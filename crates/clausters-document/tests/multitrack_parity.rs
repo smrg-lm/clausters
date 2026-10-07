@@ -66,16 +66,7 @@ fn a_comped_track_keeps_every_take_and_plays_the_one_it_names() {
         .take_lanes
         .iter()
         .flat_map(|lane| lane.regions.iter())
-        .map(|r| {
-            r.content
-                .as_window()
-                .unwrap()
-                .source
-                .samples()
-                .unwrap()
-                .source
-                .0
-        })
+        .map(|r| r.content.source().unwrap().0)
         .collect();
     assert_eq!(sources, vec![100, 101, 102]);
 }
@@ -101,12 +92,11 @@ fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
 }
 
 #[test]
-fn a_composite_region_arrives_as_the_general_tree() {
+fn a_region_keeps_a_field_a_newer_writer_added() {
     let multitrack = vector();
     let region = &multitrack.track(NodeId(40)).unwrap().take_lanes[0].regions[0];
-    let node = region.content.as_node().expect("the tree, placed");
-    assert_eq!(node.id, NodeId(43));
-    assert!(matches!(node.body, Body::Aggregate { .. }));
+    assert_eq!(region.content.source().map(|s| s.0), Some(200));
+    assert_eq!(region.extra["warp"]["mode"], "beats");
 }
 
 #[test]
@@ -149,7 +139,7 @@ fn a_field_the_client_added_and_this_build_has_no_name_for_survives() {
     assert_eq!(region.extra["warp"]["mode"], "beats");
 }
 
-use clausters_document::{Body, Lifetime, Location, NodeId, Session, SourceId};
+use clausters_document::{Lifetime, Location, NodeId, Session, SourceId};
 
 // ---- the session: the multitrack, and where its samples are ----
 

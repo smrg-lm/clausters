@@ -246,12 +246,17 @@ def test_a_whole_multitrack_round_trips():
     assert second.overlaps(first)
 
 
-def test_a_composite_region_carries_the_general_tree_unchanged():
-    # As the crate writes it: an empty list of members is nothing said.
-    node = {"id": 50, "kind": "aggregate", "grouping": "concrete"}
-    _, _, lane = one_lane()
-    r = lane.regions.add(0.0, 8.0, Content.composite(node))
-    assert r.content.node == node
+def test_a_composite_is_a_fill_this_build_does_not_know():
+    # A window is the one fill a region has. What the multitrack once held
+    # and does not -- a composite, the general tree placed as a region -- is
+    # among the fills this build does not know: read, kept, written back as it
+    # came, and no window.
+    written = {"fill": "composite",
+               "node": {"id": 50, "kind": "aggregate", "grouping": "concrete"}}
+    content = Content.read(written)
+    assert content.fill == "composite" and content.window is None
+    assert content.write() == written
+    assert not hasattr(Content, "composite")
 
 
 def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():

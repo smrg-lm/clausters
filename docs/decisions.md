@@ -8706,7 +8706,9 @@ whose contents are in beats keeps them — placed in seconds, the way a child
 timeline is placed in its parent — and which map converts them is left open
 until something plays such a region. *(Dissolved the same day: no multitrack region
 holds beats. The composite region that suggested one is the `form` tree left
-inside the multitrack document, and it is filed for removal.)*
+inside the multitrack document, and it is filed for removal. Removed
+2026-10-07, with the window onto a node of the general document: a region is a
+window onto a source, and the type says so.)*
 
 **One unit for tempo.** `TempoClock` and `TempoMap` were in beats per second and
 the document in beats per minute, divided by 60 wherever the two met. Every

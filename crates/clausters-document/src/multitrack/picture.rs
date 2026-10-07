@@ -36,11 +36,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::multitrack::edit::{MintedSource, MultitrackIntent};
-use crate::multitrack::{Automation, Content, Multitrack, Region, TakeLane, Track};
+use crate::multitrack::{Automation, Content, Multitrack, Region, TakeLane, Track, Window};
 use crate::session::{Location, Part, Source};
-use crate::{
-    Lifetime, NodeId, Opaque, Point, Range, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-};
+use crate::{Lifetime, NodeId, Opaque, Point, Range, Second, SourceId, SourceRef};
 
 /// One row of the view: a track, and the strip that is drawn beside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,8 +79,8 @@ pub struct Box {
     /// How long the window lasts, in seconds. A region may be placed for longer
     /// than this; past it there is nothing to read.
     pub content: f64,
-    /// What it is a window onto, when it is a window onto samples at all. A
-    /// window onto notes and a composite both draw as a named box.
+    /// What it is a window onto, when it is a window at all. A fill this
+    /// build does not know draws as a named box.
     pub source: Option<SourceId>,
     /// What the box draws as its name.
     pub label: String,
@@ -817,13 +815,13 @@ pub fn read_join(
     Ok(vec![MultitrackIntent::JoinRegions {
         regions,
         into,
-        content: Some(Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        content: Some(Content::window(Window {
+            source: SourceRef {
                 source: id,
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: total,
         })),
@@ -981,13 +979,13 @@ fn lane_lists(
                 box_.position,
                 box_.length,
                 Content::Window {
-                    window: crate::SegmentRef {
-                        source: crate::SegmentSource::Samples(crate::SourceRef {
+                    window: crate::multitrack::Window {
+                        source: crate::SourceRef {
                             source,
                             lifetime: crate::Lifetime::Session,
                             generation: 0,
                             range: None,
-                        }),
+                        },
                         start: box_.start,
                         // What the window reaches, not what the box shows: a
                         // box a hand made can be pulled out to its whole source.
@@ -1038,8 +1036,8 @@ pub fn level_of(track: &Track) -> f64 {
 /// window slid to the reported `start`, looping as the report says, and every
 /// other field of it untouched.
 ///
-/// A region whose content is not a window (a composite) is handed back
-/// unchanged: there is no window to slide, and inventing one would replace what
+/// A region whose content is not a window (a fill this build does not know)
+/// is handed back unchanged: there is no window to slide, and inventing one would replace what
 /// the box actually holds.
 fn rewound_content(region: &Region, box_: &Placed) -> Content {
     let mut content = region.content.clone();
@@ -1062,7 +1060,7 @@ fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool, f64) {
         return (None, 0.0, 0.0, false, 1.0);
     };
     (
-        window.source.samples().map(|s| s.source),
+        Some(window.source.source),
         window.start,
         window.duration,
         *looping,
@@ -1176,13 +1174,13 @@ mod tests {
     fn a_report_that_moved_the_window_says_what_the_box_now_reads() {
         let mut multitrack = multitrack();
         multitrack.tracks[0].take_lanes[0].regions[0].content =
-            Content::window(crate::SegmentRef {
-                source: crate::SegmentSource::Samples(crate::SourceRef {
+            Content::window(crate::multitrack::Window {
+                source: crate::SourceRef {
                     source: crate::SourceId(1),
                     lifetime: crate::Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: 8.0,
             });
@@ -1272,13 +1270,13 @@ mod tests {
     fn a_split_leaves_the_first_half_short() {
         let mut multitrack = multitrack();
         multitrack.tracks[0].take_lanes[0].regions[0].content =
-            Content::window(crate::SegmentRef {
-                source: crate::SegmentSource::Samples(crate::SourceRef {
+            Content::window(crate::multitrack::Window {
+                source: crate::SourceRef {
                     source: crate::SourceId(1),
                     lifetime: crate::Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: 8.0,
             });

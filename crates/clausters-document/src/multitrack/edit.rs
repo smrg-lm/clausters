@@ -157,7 +157,7 @@ pub enum MultitrackIntent {
     /// length, a left-hand one moves the position and the length **and** the
     /// window into the source, which is why the resulting content is a field
     /// here. `None` leaves the content exactly as it is, which is what a
-    /// right-hand trim and a composite region both want.
+    /// right-hand trim wants, and a region whose fill is not a window.
     TrimRegion {
         /// The region being trimmed.
         region: NodeId,

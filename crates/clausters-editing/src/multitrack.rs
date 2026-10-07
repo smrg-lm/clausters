@@ -72,8 +72,8 @@ pub struct Look<'a> {
     /// Frames per second on the shared axis.
     pub rate: f64,
     /// Which server buffer each source was read into. A source nobody answers
-    /// for draws as a box over nothing, which is honest: a window onto notes, a
-    /// composite, or samples nobody has read in yet.
+    /// for draws as a box over nothing, which is honest: a window onto notes,
+    /// or samples nobody has read in yet.
     pub sources: &'a dyn Buffers,
 }
 
@@ -1131,12 +1131,11 @@ pub fn table(sources: &Value) -> HashMap<SourceId, i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Automation, Content, Region, Track};
     use clausters_document::points::Point;
     use clausters_document::session::Location;
-    use clausters_document::{
-        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
-    };
+    use clausters_document::{Lifetime, NodeId, Opaque, Second, SourceRef};
 
     /// One track at half gain with one box on it, a track automation over the
     /// timeline and an envelope inside the box.
@@ -1196,13 +1195,13 @@ mod tests {
         let mut multitrack = multitrack();
         let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source,
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 1.0,
                 duration: 4.0,
             },
@@ -1279,13 +1278,13 @@ mod tests {
         let mut multitrack = multitrack();
         let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source,
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 1.0,
                 duration: 8.0,
             },
@@ -1329,13 +1328,13 @@ mod tests {
         let mut multitrack = multitrack();
         let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source,
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 // Half a second into the take, in the take's own seconds.
                 start: 0.5,
                 duration: 4.0,
@@ -1382,13 +1381,13 @@ mod tests {
         let mut multitrack = multitrack();
         let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
         region.content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source,
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.5,
                 duration: 4.0,
             },
@@ -1483,13 +1482,13 @@ mod tests {
 
         let mut multitrack = multitrack;
         multitrack.tracks[0].take_lanes[0].regions[0].content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source: SourceId(77),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: 4.0,
             },
@@ -1663,13 +1662,13 @@ mod tests {
         for (id, at, start) in [(NodeId(10), 0.0, 0.0), (NodeId(11), 1.0, 1.0)] {
             let mut region =
                 Region::new(id, Second(at), Second(1.0), Content::Unknown(Value::Null));
-            region.content = Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            region.content = Content::window(Window {
+                source: SourceRef {
                     source: SourceId(7),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 1.0,
             });
@@ -1805,8 +1804,7 @@ mod tests {
         // The box is a plain window onto the new source, from its zero.
         let window = content.as_window().expect("a window");
         assert_eq!(
-            window.source.samples().map(|s| s.source),
-            Some(minted.id),
+            window.source.source, minted.id,
             "onto the source the join made"
         );
         assert_eq!((window.start, window.duration), (0.0, 2.0));
@@ -1930,7 +1928,7 @@ mod tests {
         let source = match &mut front.content {
             Content::Window { window, .. } => {
                 window.start = 1.5;
-                window.source.samples().map(|s| s.source)
+                Some(window.source.source)
             }
             _ => None,
         }
@@ -2023,13 +2021,13 @@ mod tests {
         // A box over the join reading across its seam (0.5 s to 1.5 s of it),
         // and beside it a box over the take.
         let window = |source: u64, start: f64| {
-            Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            Content::window(Window {
+                source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 1.0,
             })

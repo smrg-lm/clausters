@@ -16,16 +16,20 @@
 //!   configuration it never interprets ([`Opaque`]), because a generator *is
 //!   code* in the language of whoever wrote it and no crate in any language can
 //!   own one. What it does own is where that leaf sits in time.
-//! - **The tree stays general, and the arrangement is beside it rather than
+//! - **The tree stays general, and the multitrack is beside it rather than
 //!   projected out of it.** *(Changed 2026-09-06.)* This used to read "there is
 //!   no lane, no vertical position and no type-per-container here", with a
 //!   multitrack as a *projection* of the general tree -- and a projection has
 //!   nowhere to keep the state a multitrack has, so that state ended up in the
 //!   widget tree, which is drawn, and drawing frees. So [`multitrack`] holds
-//!   the model the field actually has -- source, region, take lane, track, automation
-//!   -- and the general tree is what a
-//!   [`Content::Composite`](multitrack::Content::Composite) region *places*.
-//!   Nothing the tree could say is lost; it gains a position.
+//!   the model the field actually has -- source, region, take lane, track,
+//!   automation.
+//! - **And neither is inside the other.** *(2026-10-07.)* A region is a window
+//!   onto a source, placed in seconds ([`multitrack::Window`]); it never
+//!   places a tree and never reads a node. The general tree's own window
+//!   ([`SegmentRef`]) may be onto a node of its document, because that
+//!   document holds content for one to read -- a multitrack holds none. A
+//!   session carries the two side by side.
 //! - **Sources are never overwritten.** A [`SourceRef`] names samples and
 //!   carries the [`Lifetime`] that says whether it outlives the session, which
 //!   is what lets a save be honest about what it is about to promote.

@@ -406,15 +406,11 @@ pub fn plan_voiced(
                 ..
             } = &region.content
             else {
-                // A window onto a node of the document is content the multitrack
-                // holds rather than samples, and nothing reads one yet. Named
-                // rather than silently dropped: it is the score's road in.
+                // A fill this build does not know: carried by the document
+                // and played by nothing.
                 continue;
             };
-            let Some(source) = window.source.samples() else {
-                continue;
-            };
-            let Some(info) = sources.get(&source.source).copied() else {
+            let Some(info) = sources.get(&window.source.source).copied() else {
                 continue;
             };
             let at = frames(region.position.get());
@@ -495,9 +491,10 @@ pub fn plan_voiced(
 mod tests {
     use super::*;
     use crate::multitrack::Tempo;
+    use crate::multitrack::Window;
     use crate::multitrack::{Region, TakeLane};
     use crate::timebase::{Beat, Second};
-    use crate::{Lifetime, SegmentRef, SegmentSource, SourceRef};
+    use crate::{Lifetime, SourceRef};
 
     fn sources() -> HashMap<SourceId, SourceInfo> {
         HashMap::from([
@@ -522,13 +519,13 @@ mod tests {
 
     fn region(id: u64, source: u64, at: f64, len: f64) -> Region {
         let content = Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: len,
             },
@@ -952,13 +949,13 @@ mod curve_tests {
             Second(2.0),
             Second(1.0),
             Content::Window {
-                window: crate::SegmentRef {
-                    source: crate::SegmentSource::Samples(crate::SourceRef {
+                window: crate::multitrack::Window {
+                    source: crate::SourceRef {
                         source: crate::SourceId(1),
                         lifetime: crate::Lifetime::Session,
                         generation: 0,
                         range: None,
-                    }),
+                    },
                     start: 0.0,
                     duration: 1.0,
                 },

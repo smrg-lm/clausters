@@ -86,12 +86,14 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
 def a_multitrack() -> dict:
     """Two tracks, two take lanes on the first, a region on each -- the smallest
     multitrack a move between tracks has somewhere to move to."""
-    composite = {"fill": "composite",
-                 "node": {"id": 1, "kind": "aggregate", "grouping": "concrete"}}
+    window = {"fill": "window",
+              "window": {"source": {"source": 1, "lifetime": "session",
+                                    "generation": 0},
+                         "start": 0.0, "duration": 4.0}}
     return {"tracks": [
         {"id": 10, "name": "vocals", "take_lanes": [
             {"id": 11, "regions": [{"id": 100, "position": 0.0, "length": 4.0,
-                                    "content": composite}]},
+                                    "content": window}]},
             {"id": 12}]},
         {"id": 20, "name": "guitar", "take_lanes": [{"id": 21}]}]}
 

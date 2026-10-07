@@ -1272,12 +1272,11 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::nodes::plan;
     use clausters_document::multitrack::{Automation, Content, Multitrack, Region, Track};
     use clausters_document::points::Point;
-    use clausters_document::{
-        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
-    };
+    use clausters_document::{Lifetime, NodeId, Opaque, Second, SourceRef};
     use serde_json::json;
 
     const RATE: f64 = 48_000.0;
@@ -1303,13 +1302,13 @@ mod tests {
             Second(0.0),
             Second(4.0),
             Content::Window {
-                window: SegmentRef {
-                    source: SegmentSource::Samples(SourceRef {
+                window: Window {
+                    source: SourceRef {
                         source: clausters_document::SourceId(source),
                         lifetime: Lifetime::Session,
                         generation: 0,
                         range: None,
-                    }),
+                    },
                     start: 0.0,
                     duration: 4.0,
                 },

@@ -397,13 +397,8 @@ fn referenced(session: &Session) -> Vec<SourceId> {
     for track in &session.multitrack.tracks {
         for lane in &track.take_lanes {
             for region in &lane.regions {
-                let clausters_document::multitrack::Content::Window { window, .. } =
-                    &region.content
-                else {
-                    continue;
-                };
-                if let Some(source) = window.source.samples() {
-                    name(source.source, &mut found);
+                if let Some(source) = region.content.source() {
+                    name(source, &mut found);
                 }
             }
         }

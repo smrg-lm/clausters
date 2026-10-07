@@ -902,20 +902,19 @@ fn span(range: &serde_json::Value) -> Option<(f64, f64)> {
 mod tests {
     use super::*;
     use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
+    use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-    use clausters_document::{
-        Lifetime, NodeId, Opaque, Second, SegmentRef, SegmentSource, SourceRef,
-    };
+    use clausters_document::{Lifetime, NodeId, Opaque, Second, SourceRef};
 
     fn window(source: u64, start: f64) -> Content {
         Content::Window {
-            window: SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            window: Window {
+                source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 2.0,
             },

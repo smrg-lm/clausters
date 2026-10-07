@@ -143,15 +143,16 @@ export class Fade {
 }
 
 /**
- * What fills a region: a **window** onto a source, or a **composite** tree.
+ * What fills a region: a **window** onto a source.
  *
  * Not the clipboard's content, which is what was *copied*. Two nouns in two
  * modules, each the right word where it stands: this one is a region's
  * `content` field, and the format tags it `fill`.
  *
- * Two shapes held as one class with a `fill` saying which, because that is how
- * the format writes it and a client that mirrored it as a class hierarchy would
- * spend an inheritance on a tag.
+ * One class with a `fill` saying which shape it is, because that is how the
+ * format writes it. A window is the one fill this build knows; any other is
+ * carried whole and written back as it came, so a session a newer writer saved
+ * is not lost by passing through here.
  *
  * A window carries its `playrate` (a property of *this* placement: two regions
  * over one source may play it at two rates) and the `args` of **this**
@@ -164,7 +165,6 @@ export class Content {
     window?: Extra;
     playrate: number;
     args?: unknown;
-    node?: Extra;
     other?: Extra;
     /**
      * Whether the window **wraps**: past the end of the source it begins again,
@@ -181,13 +181,13 @@ export class Content {
         this.window = fields.window;
         this.playrate = fields.playrate ?? 1;
         this.args = fields.args;
-        this.node = fields.node;
         this.other = fields.other;
         this.looping = fields.looping ?? false;
     }
 
     /**
-     * A window onto a source: `{ source, start, duration }`.
+     * A window onto a source: `{ source, start, duration }`, the source being
+     * one of the session's table.
      *
      * `duration` is how much of the source the window **reaches** -- the whole
      * take, or the sum of a join's segments -- and not how much the region
@@ -206,11 +206,6 @@ export class Content {
         });
     }
 
-    /** The general tree, placed as one region. */
-    static composite(node: Extra): Content {
-        return new Content("composite", { node });
-    }
-
     write(): Extra {
         if (this.fill === "window") {
             const out: Extra = { fill: "window", window: this.window };
@@ -219,7 +214,6 @@ export class Content {
             if (this.looping) out.loop = true;
             return out;
         }
-        if (this.fill === "composite") return { fill: "composite", node: this.node };
         // A fill this build does not know, carried whole.
         return { ...(this.other ?? {}) };
     }
@@ -232,9 +226,6 @@ export class Content {
                 args: written.args,
                 looping: written.loop === true,
             });
-        }
-        if (written.fill === "composite") {
-            return new Content("composite", { node: written.node as Extra });
         }
         return new Content(String(written.fill), { other: { ...written } });
     }
@@ -2431,8 +2422,9 @@ export class Session {
      */
     end: "contents" | number | null = null;
     /**
-     * The general tree, for what is not an arrangement. The leg being walked
-     * off: a composite region carries that same tree, placed.
+     * The general tree, beside the multitrack and never inside it: a
+     * multitrack's regions are windows onto sources, and no region places a
+     * tree.
      */
     document?: Extra;
     /** Where each source is, keyed by source id. */

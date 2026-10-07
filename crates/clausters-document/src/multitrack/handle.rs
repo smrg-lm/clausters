@@ -163,9 +163,10 @@ fn automation(multitrack: &Multitrack, id: NodeId) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multitrack::Window;
     use crate::multitrack::{Content, Marker, Region, TakeLane, Track};
     use crate::timebase::Second;
-    use crate::{Lifetime, SegmentRef, SegmentSource, SourceId, SourceRef};
+    use crate::{Lifetime, SourceId, SourceRef};
 
     fn multitrack() -> Multitrack {
         let mut lane = TakeLane::new(NodeId(2));
@@ -173,13 +174,13 @@ mod tests {
             NodeId(3),
             Second(1.0),
             Second(2.0),
-            Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            Content::window(Window {
+                source: SourceRef {
                     source: SourceId(9),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: 2.0,
             }),

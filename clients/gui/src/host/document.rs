@@ -1801,10 +1801,9 @@ mod window_verb_tests {
     #[test]
     fn a_double_click_on_a_box_of_notes_opens_its_roll() {
         use clausters_document::events::{Event, EventSequence};
+        use clausters_document::multitrack::Window;
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-        use clausters_document::{
-            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-        };
+        use clausters_document::{Lifetime, Second, SourceId, SourceRef};
 
         let source = SourceId(5);
         let mut track = Track::new(NodeId(10), NodeId(11));
@@ -1812,13 +1811,13 @@ mod window_verb_tests {
             NodeId(20),
             Second(0.0),
             Second(4.0),
-            Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            Content::window(Window {
+                source: SourceRef {
                     source,
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start: 0.0,
                 duration: 4.0,
             }),
@@ -2178,10 +2177,9 @@ mod window_verb_tests {
     #[test]
     fn a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in() {
         use crate::host::document::sources::{Take, Takes};
+        use clausters_document::multitrack::Window;
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-        use clausters_document::{
-            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-        };
+        use clausters_document::{Lifetime, Second, SourceId, SourceRef};
 
         // One take cut in two, the halves swapped: a join that mints.
         let mut track = Track::new(NodeId(1), NodeId(2));
@@ -2192,13 +2190,13 @@ mod window_verb_tests {
                 Second(1.0),
                 Content::Unknown(Value::Null),
             );
-            region.content = Content::window(SegmentRef {
-                source: SegmentSource::Samples(SourceRef {
+            region.content = Content::window(Window {
+                source: SourceRef {
                     source: SourceId(7),
                     lifetime: Lifetime::Session,
                     generation: 0,
                     range: None,
-                }),
+                },
                 start,
                 duration: 1.0,
             });
@@ -2252,7 +2250,7 @@ mod window_verb_tests {
         let joined = &owner.multitrack.tracks[0].take_lanes[0].regions;
         assert_eq!(joined.len(), 1, "one box");
         let minted = match &joined[0].content {
-            Content::Window { window, .. } => window.source.samples().map(|s| s.source),
+            Content::Window { window, .. } => Some(window.source.source),
             _ => None,
         }
         .expect("a window onto the minted source");
@@ -2346,22 +2344,21 @@ mod window_verb_tests {
 
     /// A box on a track, a window onto source 1.
     fn region(id: u64, position: f64, length: f64) -> clausters_document::multitrack::Region {
+        use clausters_document::multitrack::Window;
         use clausters_document::multitrack::{Content, Region};
-        use clausters_document::{
-            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-        };
+        use clausters_document::{Lifetime, Second, SourceId, SourceRef};
         let mut region = Region::new(
             NodeId(id),
             Second(position),
             Second(length),
             Content::Window {
-                window: SegmentRef {
-                    source: SegmentSource::Samples(SourceRef {
+                window: Window {
+                    source: SourceRef {
                         source: SourceId(1),
                         lifetime: Lifetime::Session,
                         generation: 0,
                         range: None,
-                    }),
+                    },
                     start: 0.0,
                     duration: length,
                 },
@@ -3107,9 +3104,10 @@ mod window_verb_tests {
     /// only the tree drew nothing and said so in one log line.
     #[test]
     fn a_multitrack_is_drawn_edited_and_undone_by_a_host_that_owns_it() {
+        use clausters_document::multitrack::Window;
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
         use clausters_document::{Lifetime, SourceRef};
-        use clausters_document::{Opaque as Op, Second, SegmentRef, SegmentSource, SourceId};
+        use clausters_document::{Opaque as Op, Second, SourceId};
 
         let region = |id: u64, at: f64| {
             Region::new(
@@ -3117,13 +3115,13 @@ mod window_verb_tests {
                 Second(at),
                 Second(2.0),
                 Content::Window {
-                    window: SegmentRef {
-                        source: SegmentSource::Samples(SourceRef {
+                    window: Window {
+                        source: SourceRef {
                             source: SourceId(1),
                             lifetime: Lifetime::Session,
                             generation: 0,
                             range: None,
-                        }),
+                        },
                         start: 0.0,
                         duration: 2.0,
                     },

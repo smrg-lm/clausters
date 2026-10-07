@@ -129,15 +129,16 @@ class Fade:
 
 @dataclass
 class Content:
-    """What fills a region: a **window** onto a source, or a **composite** tree.
+    """What fills a region: a **window** onto a source.
 
     Not the clipboard's content, which is what was *copied*. Two nouns in two
     modules, each the right word where it stands: this one is a region's
     ``content`` field, and the format tags it ``fill``.
 
-    Two shapes, held here as one class with a `fill` saying which, because that
-    is how the format writes it and a client that mirrored it as a class
-    hierarchy would spend an inheritance on a tag.
+    One class with a `fill` saying which shape it is, because that is how the
+    format writes it. A window is the one fill this build knows; any other is
+    carried whole and written back as it came, so a session a newer writer
+    saved is not lost by passing through here.
 
     A window carries its `playrate` (a property of *this* placement: two regions
     over one source may play it at two rates) and the `args` of **this**
@@ -150,7 +151,6 @@ class Content:
     window: "dict | None" = None
     playrate: float = 1.0
     args: "dict | None" = None
-    node: "dict | None" = None
     other: "dict | None" = None
     #: Whether the window **wraps**: past the end of the source it begins
     #: again, and before the beginning it shows the source's own tail. What a
@@ -163,8 +163,8 @@ class Content:
     @classmethod
     def onto(cls, window: dict, *, playrate: float = 1.0,
              args: "dict | None" = None, looping: bool = False) -> "Content":
-        """A window onto a source -- a `clausters.form` segment reference, or any
-        `{"source": ..., "start": ..., "duration": ...}` the crate accepts.
+        """A window onto a source: `{"source": ..., "start": ..., "duration":
+        ...}`, the source being one of the session's table.
 
         `duration` is how much of the source the window **reaches** -- the whole
         take, or the sum of a join's segments -- and not how much the region
@@ -172,12 +172,6 @@ class Content:
         of the source leaves `duration` alone so the edge can be pulled back."""
         return cls(fill="window", window=window, playrate=playrate, args=args,
                    looping=looping)
-
-    @classmethod
-    def composite(cls, node: dict) -> "Content":
-        """The general tree, placed as one region: a section, a nested
-        arrangement, anything the document's primitives can build."""
-        return cls(fill="composite", node=node)
 
     def write(self) -> dict:
         if self.fill == "window":
@@ -189,8 +183,6 @@ class Content:
             if self.looping:
                 out["loop"] = True
             return out
-        if self.fill == "composite":
-            return {"fill": "composite", "node": self.node}
         # A fill this build does not know, carried whole.
         return dict(self.other or {})
 
@@ -202,8 +194,6 @@ class Content:
                        playrate=float(written.get("playrate", 1.0)),
                        args=written.get("args"),
                        looping=bool(written.get("loop", False)))
-        if fill == "composite":
-            return cls(fill="composite", node=written.get("node"))
         return cls(fill=str(fill), other=dict(written))
 
 
@@ -2144,10 +2134,9 @@ class Session:
     nouns, two modules; this one is reached as `clausters.multitrack.Session`
     and is a **file**.
 
-    The `document` field carries the general tree for what is not an
-    arrangement. It is the leg being walked off -- what every current reader
-    opens -- and what replaces it is already here: a composite region carries
-    that same tree, placed.
+    The `document` field carries the general tree, beside the multitrack and
+    never inside it: a multitrack's regions are windows onto sources, and no
+    region places a tree.
     """
 
     #: The format version this build writes -- `clausters.document.SESSION_FORMAT`,

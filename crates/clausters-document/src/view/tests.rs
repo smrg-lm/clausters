@@ -10,16 +10,16 @@ fn multitrack() -> Multitrack {
         NodeId(100),
         Second(0.0),
         Second(4.0),
-        Content::Composite {
-            node: Box::new(crate::Node::new(
-                NodeId(1),
-                crate::Body::Aggregate {
-                    grouping: crate::Grouping::Concrete,
-                    members: Vec::new(),
-                    config: crate::Opaque::none(),
-                },
-            )),
-        },
+        Content::window(crate::multitrack::Window {
+            source: crate::SourceRef {
+                source: crate::SourceId(1),
+                lifetime: crate::Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start: 0.0,
+            duration: 4.0,
+        }),
     ));
     let mut multitrack = Multitrack::new();
     multitrack.tracks = vec![vocals, Track::new(NodeId(20), NodeId(21))];

@@ -1784,7 +1784,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   states is not cut. `tests/multitrack_playback.rs` is the test above, through
   the playback.
 
-- ⬜ **A composite region is `form`'s tree inside the multitrack** *(found
+- ✅ **A composite region is `form`'s tree inside the multitrack** *(found
   2026-09-17 by the user, while the scores phase asked which map converts the
   beats inside a region: "Un composito no existe en un multipista porque no hay
   nodos como en el modulo form. El multipista es un modelo completamente
@@ -1799,6 +1799,40 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   never in the multitrack. The same pass reviews the window onto a node
   (`SegmentSource::Node`, a window onto a node of `Document::content`), which
   has the same origin, and the migration of a session that saved either.
+
+  **Removed 2026-10-07.** `Content::Composite` is gone from the crate and
+  `Content.composite` from both clients. A region's fill is a window, or one
+  this build does not know.
+
+  **The window onto a node, reviewed: it is the general tree's and stays
+  there; what goes is a *region* being one.** `SegmentSource::Node` is how a
+  `Body::Segments` of the general document reads a node of `Document::content`
+  — a cut of a timeline of notes is two windows onto one node instead of two
+  copies — and that document is alive on its own account: the document door,
+  its log and its history, and the host's owner all hold one. What had the
+  composite's origin was the multitrack borrowing that window type, which let
+  a region name a node of a tree the multitrack does not have. So the
+  multitrack has a window of its own, `multitrack::Window`, over a `SourceRef`
+  and nothing else. The type says what the user said: no region reads a node.
+  On the wire it is the object a window onto samples always was, so nothing a
+  session wrote for a source moves; the readers that asked "is this onto
+  samples at all" (`window.source.samples()`, in the plan, the picture, the
+  loader and the host) stopped asking.
+
+  **No migration, as decided** *(the user, 2026-10-07: a multitrack keeps
+  only its own sessions, with no `form` in them)*. A session that wrote a composite or a
+  window onto a node still opens: both read as `Content::Unknown`, the fill
+  this build does not know, which is carried whole and written back as it came
+  — the region keeps its place and its length, draws as a named box and plays
+  nothing. Nothing converts it and nothing drops it. Held by
+  `a_composite_and_a_window_onto_a_node_are_fills_it_does_not_know`, and by
+  one test in each client that a composite read from a file is written back
+  whole and is no window.
+
+  The shared vectors lost their composite regions (the multitrack's, its
+  session's and the document door's), which are windows onto sources now.
+  `Session::document` stays — the general tree, beside the multitrack — and
+  its doc no longer says a composite region is what replaces it.
 
 - ✅ **Boxes that met on a sample stopped meeting once the multitrack was in seconds** *(found 2026-09-17 by the user, the day it landed: a snap that sometimes missed, a join refused, and in the editor example)*. The projection crossed a length on its own (`dur / rate`) and an end as `(at + dur) / rate`, which differ in the last bit for most sample counts, so a box's end and the next box's start stopped being equal and `read_join` -- comparing seconds against `f64::EPSILON` -- saw a gap. Beats had hidden it by computing a length as the difference of two converted positions. **Fixed** by one rule for every crossing, in the core (`tempoclock::secs_to_samples_over`/`samples_to_secs_over`): a position lands on a whole sample and a length is the difference of its two ends; a join asks where boxes meet in samples at the view's rate. The host also reported positions as `f32`, which holds a whole sample only up to 2^24 (under six minutes at 48 kHz); the `clips` and `points` reports are doubles now. Held by `halves_placed_at_any_sample_draw_back_there_and_join` and the core's `a_span_crosses_as_the_difference_of_its_ends`.
 

@@ -718,6 +718,16 @@ reasoning:
   exactly as before — the table is for sharing, not for tracks. Reading gives
   every window over one node the same object, which is what makes a reopened cut
   behave like the cut that made it.
+- **A multitrack's window is onto a source and nothing else.** The bullet above
+  is the general tree's, whose document holds content for a window to read. A
+  multitrack holds none: what a region reads is in the session's source table
+  — a recording, a buffer, a sequence of notes — so a region's window is a type
+  of its own (`multitrack::Window`, over a `SourceRef`) and not the tree's
+  `SegmentRef`. A region never places a tree and never reads a node of one: the
+  general tree and the multitrack are two models a session carries side by
+  side. A `composite` fill and a window onto a node, which the multitrack once
+  held, are read as fills this build does not know — carried whole, drawn as a
+  named box, played by nothing — so a session that wrote either still opens.
 - **An id names one node, and the door checks it.** An intent addresses a node
   by its id, so an id that names two *different* nodes is applied to whichever
   the lookup reaches first while the sender's own index keeps the other — one

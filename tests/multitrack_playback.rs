@@ -9,11 +9,10 @@ use std::collections::HashMap;
 use clausters::rosc::OscType;
 use clausters::server::nrtsession::{NrtSession, SessionConfig};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
+use clausters_document::multitrack::Window;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_document::multitrack::{Content, Multitrack, Region, Track};
-use clausters_document::{
-    Lifetime, NodeId, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
-};
+use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
 use clausters_editing::apply::{Endpoint, Step};
 use clausters_editing::playback::MultitrackPlayback;
 
@@ -76,13 +75,13 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
         NodeId(20),
         Second(0.0),
         Second(long),
-        Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        Content::window(Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: long,
         }),
@@ -168,13 +167,13 @@ fn a_track_s_width_is_the_document_s_and_may_change_while_it_plays() {
         NodeId(20),
         Second(0.0),
         Second(long),
-        Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        Content::window(Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: long,
         }),
@@ -311,13 +310,13 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
         NodeId(20),
         Second(0.0),
         Second(1.0),
-        Content::window(SegmentRef {
-            source: SegmentSource::Samples(SourceRef {
+        Content::window(Window {
+            source: SourceRef {
                 source: SourceId(1),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            }),
+            },
             start: 0.0,
             duration: 1.0,
         }),

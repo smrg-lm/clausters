@@ -38,11 +38,13 @@ def multitrack() -> dict:
     -- the smallest multitrack a move between tracks has somewhere to move to.
     The ids are the file's: the edits below name them.
     """
-    def region(id: int, at: float, node: int) -> dict:
+    def region(id: int, at: float, source: int) -> dict:
         return {"id": id, "position": at, "length": 4.0,
-                "content": {"fill": "composite",
-                            "node": {"id": node, "kind": "aggregate",
-                                     "grouping": "concrete"}}}
+                "content": {"fill": "window",
+                            "window": {"source": {"source": source,
+                                                  "lifetime": "session",
+                                                  "generation": 0},
+                                       "start": 0.0, "duration": 4.0}}}
     return Multitrack.read({"tracks": [
         {"id": 10, "name": "vocals", "take_lanes": [
             {"id": 11, "regions": [region(100, 0.0, 1)]},
