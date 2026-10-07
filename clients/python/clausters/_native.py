@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 87
+CORE_ABI_VERSION = 88
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -732,7 +732,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_document_resolve.restype = ctypes.c_size_t
     lib.clausters_document_resolve.argtypes = [
-        ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
+        ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_double,
         ctypes.c_int32, u8p, ctypes.c_size_t,
     ]
     # The edit history (ABI v16, renamed at v32): a handle too, for its own
@@ -1345,19 +1345,25 @@ class Document:
         The method form of `document_inverse`."""
         return document_inverse(self, intent)
 
-    def resolve(self, selection: dict, *, frames_per_beat: float,
+    def resolve(self, selection: dict, *, tempo: "TempoMap | float",
                 frames_per_second: float, in_beats: bool = False) -> list:
         """Resolve a selection to the spans of samples underneath it.
 
         Args:
             selection: ``{"start", "len", ...}`` -- see the crate's ``Selection``.
-            frames_per_beat: the bridge between the arrangement's beats and the
-                samples' frames. Supplied rather than derived: tempo is the
-                caller's, the arithmetic is the crate's.
-            frames_per_second: the same bridge for a length already measured in
-                seconds -- a take's, which no tempo moves. Both are needed
-                because the document measures a placement in beats and what it
-                places in the unit of that element's own data.
+            tempo: what a beat of the document is: the `TempoMap` of the clock
+                it is played on (a `clausters.base.TempoClock`'s ``map``).
+                Supplied rather than derived, because the document names no
+                clock. A number is a tempo that never moves, in beats per
+                second -- the caller saying so at the call. It is a map and
+                not a ratio because the frames between two beats are read off
+                it at both ends, so a selection may start before a tempo
+                change and end after it.
+            frames_per_second: the sample rate, which with the map is what a
+                stretch of the document is measured in frames with. Both are
+                needed because the document measures a placement in beats and
+                what it places in the unit of that element's own data -- a
+                take's length is in seconds, which no tempo moves.
             in_beats: whether the selection's numbers are beats rather than
                 frames on the shared axis.
 
@@ -1370,14 +1376,22 @@ class Document:
         """
         sel_ptr, sel_len = _bytes(selection)
         fn = lib().clausters_document_resolve
-        args = (self._handle, sel_ptr, sel_len, float(frames_per_beat),
-                float(frames_per_second), int(bool(in_beats)))
-        need = fn(*args, None, 0)
-        if need == 0:
-            raise ValueError("the selection is not valid JSON for the crate")
-        out = (ctypes.c_ubyte * need)()
-        n = fn(*args, out, need)
-        return json.loads(ctypes.string_at(out, n))
+        # A number is a map of one segment, made for this call and freed after
+        # it; a map handed in is the caller's and is left as it is.
+        steady = None if isinstance(tempo, TempoMap) else TempoMap(float(tempo))
+        try:
+            handle = (steady or tempo)._handle
+            args = (self._handle, sel_ptr, sel_len, handle,
+                    float(frames_per_second), int(bool(in_beats)))
+            need = fn(*args, None, 0)
+            if need == 0:
+                raise ValueError("the selection is not valid JSON for the crate")
+            out = (ctypes.c_ubyte * need)()
+            n = fn(*args, out, need)
+            return json.loads(ctypes.string_at(out, n))
+        finally:
+            if steady is not None:
+                steady.close()
 
 
 def document_apply(document: dict, intent: dict, *, against=None, quant: float = 0.0) -> dict:
@@ -2500,13 +2514,13 @@ def domain_coalesce_key(domain: str, payload: dict) -> str:
     return ctypes.string_at(out, n).decode("utf-8")
 
 
-def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
+def document_resolve(document: dict, selection: dict, *, tempo: "TempoMap | float",
                      frames_per_second: float, in_beats: bool = False) -> list:
     """Resolve a selection against a document given **by value** -- the
     convenience form of `Document.resolve`, for a caller that has one in hand.
     """
     with Document(document) as doc:
-        return doc.resolve(selection, frames_per_beat=frames_per_beat,
+        return doc.resolve(selection, tempo=tempo,
                            frames_per_second=frames_per_second,
                            in_beats=in_beats)
 

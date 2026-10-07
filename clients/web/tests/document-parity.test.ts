@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { TempoMap } from "../src/base/time.ts";
 import {
     Document,
     History,
@@ -58,7 +59,8 @@ interface Vectors {
     resolutions: {
         selection: { start: number; len: number };
         inBeats: boolean;
-        framesPerBeat: number;
+        /** A steady tempo as its number, a map as what it dumps. */
+        tempo: number | string;
         framesPerSecond: number;
         spans: Resolved[];
     }[];
@@ -149,11 +151,19 @@ test("a stale edit is stale here too, and moves nothing", async () => {
 });
 
 test("a selection resolves to the same spans", async () => {
+    let crossed = 0;
     for (const expected of vectors.resolutions) {
+        const map = typeof expected.tempo === "string"
+            ? TempoMap.load(expected.tempo)
+            : undefined;
+        if (typeof expected.tempo === "string") {
+            assert.ok(map, `the map loads: ${expected.tempo}`);
+            crossed += 1;
+        }
         const spans = await resolveSelection(
             vectors.start,
             expected.selection,
-            expected.framesPerBeat,
+            map ?? (expected.tempo as number),
             expected.framesPerSecond,
             expected.inBeats,
         );
@@ -162,7 +172,10 @@ test("a selection resolves to the same spans", async () => {
             expected.spans,
             `spans for ${JSON.stringify(expected.selection)}`,
         );
+        // The map handed in is the caller's: it still answers afterwards.
+        if (map) assert.equal(map.secsAt(8.0), 6.0);
     }
+    assert.ok(crossed >= 3, "the vectors carry selections across a tempo change");
 });
 
 test("an edit is idempotent, so a resend over a lossy leg is harmless", async () => {

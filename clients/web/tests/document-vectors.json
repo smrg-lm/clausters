@@ -893,7 +893,7 @@
         "len": 2.0
       },
       "inBeats": true,
-      "framesPerBeat": 48000.0,
+      "tempo": 1.0,
       "framesPerSecond": 48000.0,
       "spans": [
         {
@@ -914,7 +914,7 @@
         "len": 100.0
       },
       "inBeats": true,
-      "framesPerBeat": 48000.0,
+      "tempo": 1.0,
       "framesPerSecond": 48000.0,
       "spans": [
         {
@@ -935,7 +935,7 @@
         "len": 48000
       },
       "inBeats": false,
-      "framesPerBeat": 48000.0,
+      "tempo": 1.0,
       "framesPerSecond": 48000.0,
       "spans": [
         {
@@ -956,9 +956,72 @@
         "len": 10.0
       },
       "inBeats": true,
-      "framesPerBeat": 48000.0,
+      "tempo": 1.0,
       "framesPerSecond": 48000.0,
       "spans": []
+    },
+    {
+      "selection": {
+        "start": 3.0,
+        "len": 3.0
+      },
+      "inBeats": true,
+      "tempo": "[{\"beats\":0.0,\"tempo\":1.0},{\"beats\":4.0,\"tempo\":2.0}]",
+      "framesPerSecond": 48000.0,
+      "spans": [
+        {
+          "at": 0,
+          "generation": 0,
+          "node": 3,
+          "range": {
+            "end": 144000,
+            "start": 48000
+          },
+          "source": 100
+        }
+      ]
+    },
+    {
+      "selection": {
+        "start": 144000.0,
+        "len": 96000.0
+      },
+      "inBeats": false,
+      "tempo": "[{\"beats\":0.0,\"tempo\":1.0},{\"beats\":4.0,\"tempo\":2.0}]",
+      "framesPerSecond": 48000.0,
+      "spans": [
+        {
+          "at": 0,
+          "generation": 0,
+          "node": 3,
+          "range": {
+            "end": 144000,
+            "start": 48000
+          },
+          "source": 100
+        }
+      ]
+    },
+    {
+      "selection": {
+        "start": 6.0,
+        "len": 2.0
+      },
+      "inBeats": true,
+      "tempo": "[{\"beats\":0.0,\"tempo\":1.0},{\"beats\":4.0,\"tempo\":2.0}]",
+      "framesPerSecond": 48000.0,
+      "spans": [
+        {
+          "at": 0,
+          "generation": 0,
+          "node": 3,
+          "range": {
+            "end": 192000,
+            "start": 144000
+          },
+          "source": 100
+        }
+      ]
     }
   ],
   "logged": {

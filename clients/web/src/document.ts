@@ -25,6 +25,7 @@
 import {
     Document as CoreDocument,
     History as CoreHistory,
+    TempoMap as CoreTempoMap,
     domainCoalesceKey as coreDomainCoalesceKey,
     editingIntake as coreEditingIntake,
     editingStitch as coreEditingStitch,
@@ -32,6 +33,7 @@ import {
     domainEdit as coreDomainEdit,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
+import type { TempoMap } from "./base/time.ts";
 
 /**
  * How {@link Log} reaches the wasm object inside a {@link Document} without
@@ -257,13 +259,18 @@ export class Document {
      * trim and the clamp at both ends already applied.
      *
      * @param selection - what is selected.
-     * @param framesPerBeat - the bridge between the arrangement's beats and the
-     *   samples' frames. Supplied rather than derived: tempo is the caller's,
-     *   the arithmetic is the crate's.
-     * @param framesPerSecond - the same bridge for a length already measured in
-     *   seconds -- a take's, which no tempo moves. Both are needed because the
-     *   document measures a placement in beats and what it places in the unit
-     *   of that element's own data.
+     * @param tempo - what a beat of the document is: the `TempoMap` of the
+     *   clock it is played on (a `TempoClock`'s `map`). Supplied rather
+     *   than derived, because the document names no clock. A number is a
+     *   tempo that never moves, in beats per second -- the caller saying so at
+     *   the call. It is a map and not a ratio because the frames between two
+     *   beats are read off it at both ends, so a selection may start before a
+     *   tempo change and end after it.
+     * @param framesPerSecond - the sample rate, which with the map is what a
+     *   stretch of the document is measured in frames with. Both are needed
+     *   because the document measures a placement in beats and what it places
+     *   in the unit of that element's own data -- a take's length is in
+     *   seconds, which no tempo moves.
      * @param inBeats - whether the selection's numbers are beats rather than
      *   frames on the shared axis.
      * @returns the spans, in tree order. Empty when nothing with samples was
@@ -272,15 +279,23 @@ export class Document {
      */
     resolve(
         selection: Selection,
-        framesPerBeat: number,
+        tempo: TempoMap | number,
         framesPerSecond: number,
         inBeats = false,
     ): Resolved[] {
-        return JSON.parse(
-            this.#inner.resolve(
-                JSON.stringify({ selection, framesPerBeat, framesPerSecond, inBeats }),
-            ),
-        ) as Resolved[];
+        // A number is a map of one segment, made for this call and freed after
+        // it; a map handed in is the caller's and is left as it is.
+        const steady = typeof tempo === "number" ? new CoreTempoMap(tempo) : null;
+        try {
+            return JSON.parse(
+                this.#inner.resolve(
+                    JSON.stringify({ selection, framesPerSecond, inBeats }),
+                    steady ?? (tempo as TempoMap),
+                ),
+            ) as Resolved[];
+        } finally {
+            steady?.free();
+        }
     }
 
     /** Release the document. Idempotent. */
@@ -319,13 +334,13 @@ export async function applyIntent(
 export async function resolveSelection(
     document: ClaustersDocument,
     selection: Selection,
-    framesPerBeat: number,
+    tempo: TempoMap | number,
     framesPerSecond: number,
     inBeats = false,
 ): Promise<Resolved[]> {
     const doc = await Document.open(document);
     try {
-        return doc.resolve(selection, framesPerBeat, framesPerSecond, inBeats);
+        return doc.resolve(selection, tempo, framesPerSecond, inBeats);
     } finally {
         doc.free();
     }

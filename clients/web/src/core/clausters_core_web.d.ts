@@ -68,11 +68,13 @@ export class Document {
     constructor(json?: string | null);
     /**
      * Resolve a selection to the spans of samples underneath it.
-     * `resolve(requestJson) -> resolvedJson`, the request carrying
-     * `{ selection, framesPerBeat, framesPerSecond, inBeats? }` -- two ratios
-     * because a placement is in beats and a take's length is in seconds.
+     * `resolve(requestJson, tempo) -> resolvedJson`, the request carrying
+     * `{ selection, framesPerSecond, inBeats? }` and `tempo` being the map
+     * of the clock the document is played on -- a map and a rate because a
+     * placement is in beats and a take's length is in seconds, and a map
+     * rather than a ratio so a selection may cross a tempo change.
      */
-    resolve(request: string): string;
+    resolve(request: string, tempo: TempoMap): string;
     /**
      * The whole tree as JSON -- for saving it, or for a caller that wants it.
      * The one call that still costs the size of the document, and it is
@@ -1974,7 +1976,7 @@ export interface InitOutput {
     readonly document_coalesceKey: (a: number, b: number) => [number, number];
     readonly document_inverse: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_new: (a: number, b: number) => [number, number, number];
-    readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly document_resolve: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];

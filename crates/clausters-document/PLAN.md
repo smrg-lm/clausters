@@ -2035,7 +2035,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
   It is the cleanest possible demonstration of the hole this crate closes, and worth keeping as one: nobody wrote a bug. The client is right to refuse, the host is right to draw what the hand did, and there simply was no message in the protocol capable of carrying "no". The fix is O3 and nothing else - the refusal is the previous value, pushed back and stamped - and this case is its acceptance test.
 
-- ⬜ **A selection's mapping states one tempo, so a selection cannot cross a
+- ✅ **A selection's mapping states one tempo, so a selection cannot cross a
   tempo change** *(found 2026-09-01, taking the entry below — the one caller
   that legitimately kept a multiplication)*. `resolve::Mapping` carries
   `frames_per_beat` and `frames_per_second`, whose ratio is a tempo, and every
@@ -2052,6 +2052,41 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   a caller must not build across a tempo change, or a reference to the piece's
   map. The second is the same identity question the tempo value already waits
   on, so the two are read together.
+
+  **Fixed** *(2026-10-07)*, and the question had been answered in the
+  meantime: a tempo map is a **value** the caller holds (the clock's), which is
+  what `Member::end` was already given through `SecsToBeats`. So a `Mapping`
+  is neither of the two things above — not a constant, and not a reference to
+  a map the document stores — but **the map itself, handed over for the
+  call**: `Mapping { tempo: &TempoMap, frames_per_second, unit }`. The
+  document still names no clock, and the identity question stays exactly where
+  it was (a saved file saying which clock it is written against), because
+  resolving a selection never needed it.
+
+  Nothing in `resolve.rs` multiplies a length by a tempo any more:
+  `Mapping::end_of` takes where a length starts, `frames_between` takes both
+  beats and reads the seconds between them off the map, and a selection in
+  frames finds its beats with `beats_at`. `length_in_beats`, `to_frames` and
+  the private `tempo()` are gone. A caller whose tempo never moves builds a
+  map of one segment and says so by doing it; both clients take a number for
+  that (`tempo=1.0`, beats per second) beside a `TempoMap`.
+
+  It crosses every binding in one change: `clausters_document_resolve` takes a
+  tempo-map handle where it took `frames_per_beat` (`CORE_ABI_VERSION` 88),
+  `JsDocument.resolve` takes the wasm `TempoMap`, and `Document.resolve` /
+  `resolve_selection` take `tempo` in both clients. The parity vectors gained
+  three selections under a map that doubles at beat 4 — in beats, the same
+  stretch in frames, and one wholly after the change — and both clients land
+  on the same spans.
+
+  **Two more things in the same file read wrong, and were fixed with it.** A
+  window of an assembled body (`Body::Segments`) opens at a **second** of its
+  source — the format has said so since the unit was corrected on
+  `SegmentRef` — and `resolve` was the one reader still taking `start` as
+  frames, so a selection over a join resolved to the first frames of each take
+  whatever the window. And the windows were all laid as seconds, when one onto
+  a node measures beats (`SegmentSource::unit`): it contributes no samples
+  either way, but it moved where the windows after it were found.
 
 - ✅ **`TimeUnit::to_beats` takes a length and a scalar, and no position — and the format has nowhere to put a tempo** *(found 2026-08-31, auditing the call sites of the client's frozen-tempo bridge; `clients/python/PLAN.md` holds the other half)*. `TimeUnit::to_beats(length, tempo)` (`src/lib.rs`) converts a length in seconds to beats by multiplying by one number. Under a tempo that changes along the piece that operation is not imprecise, it is **undefined**: a beat is a logical coordinate, so the same stretch of seconds reaches a different beat depending on where it starts. Its caller `Node::end(tempo)` already has the onset in hand (`self.offset + self.duration_unit().to_beats(d, tempo)`) and simply does not pass it, so the local fix is to take the position — or to return the end beat rather than a "length in beats", which is the honest shape.
 

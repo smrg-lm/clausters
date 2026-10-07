@@ -188,15 +188,27 @@ LOGGED = [
 ]
 
 #: Selections resolved against the **starting** document, as
-#: `(start, len, in_beats)` -- the mapping is what is under test, not the edit
-#: history, and a stable document keeps the cases readable. The buffer sits at
-#: beat 2 for four beats, so these are: inside it, over the whole multitrack, a frame
-#: span landing in its second beat, and one that misses everything.
+#: `(start, len, in_beats, tempo)` -- the mapping is what is under test, not the
+#: edit history, and a stable document keeps the cases readable. The buffer
+#: sits at beat 2 and is four seconds long. Under `STEADY`, one beat a second,
+#: that is beats 2..6, and the cases are: inside it, over the whole of it, a
+#: frame span landing in its second beat, and one that misses everything.
+#: Under `CHANGING` the tempo doubles at beat 4, so the buffer reaches beat 8
+#: and a selection that crosses the change has an edge on each tempo: in
+#: beats, the same stretch in frames of the shared axis, and one wholly after
+#: the change, where a beat is half as many frames.
+STEADY = 1.0
+CHANGING = _native.TempoMap(1.0)
+CHANGING.push(4.0, 2.0)
+
 SELECTIONS = [
-    (2.0, 2.0, True),
-    (0.0, 100.0, True),
-    (3.5 * 48_000, 48_000, False),
-    (500.0, 10.0, True),
+    (2.0, 2.0, True, STEADY),
+    (0.0, 100.0, True, STEADY),
+    (3.5 * 48_000, 48_000, False, STEADY),
+    (500.0, 10.0, True, STEADY),
+    (3.0, 3.0, True, CHANGING),
+    (3.0 * 48_000, 2.0 * 48_000, False, CHANGING),
+    (6.0, 2.0, True, CHANGING),
 ]
 
 if __name__ == "__main__":
@@ -217,15 +229,17 @@ if __name__ == "__main__":
 
     start_document = starting_document()
     resolutions = []
-    for start, length, in_beats in SELECTIONS:
+    for start, length, in_beats, tempo in SELECTIONS:
         selection = {"start": start, "len": length}
         resolutions.append({
             "selection": selection,
             "inBeats": in_beats,
-            "framesPerBeat": 48_000.0,
+            # A tempo that never moves travels as its number, and a map as
+            # what it dumps -- its breakpoints -- for the other side to load.
+            "tempo": tempo if isinstance(tempo, float) else tempo.dump(),
             "framesPerSecond": 48_000.0,
             "spans": _native.document_resolve(
-                start_document, selection, frames_per_beat=48_000.0,
+                start_document, selection, tempo=tempo,
                 frames_per_second=48_000.0, in_beats=in_beats,
             ),
         })

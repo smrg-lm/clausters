@@ -493,8 +493,10 @@ ordered by one number and cannot hold two bases; and the editor's bridge crosses
 on **two different things** rather than one ratio — the time map for an onset,
 `units_per_second` for a length in seconds — which is what makes a take drawn
 exactly as wide as it sounds at any tempo. The host draws by the ratio pair
-(`tree::Look`'s `units_per_beat`/`units_per_second`) and the crate's `Mapping`
-carries both for the same reason.
+(`tree::Look`'s `units_per_beat`/`units_per_second`), and the crate's `Mapping`
+carries the two things themselves: the time map and the frames per second, so
+a selection that starts before a tempo change and ends after it reads each
+edge off the map, and no length is ever multiplied by a tempo.
 
 **The onset side is a map, not a ratio** (`clausters_core::tempomap::TempoMap`).
 A beat is a logical coordinate, and the second it falls on is the integral of

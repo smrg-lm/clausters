@@ -552,7 +552,11 @@ pub use time::*;
 /// **v87 a multitrack editor is handed an engraver.**
 /// `clausters_apps_editing_bind_engraver`: the score a multitrack editor
 /// engraves its boxes of notes with, each drawn as its page. Additive.
-pub const CORE_ABI_VERSION: u32 = 87;
+/// **v88 a selection is resolved against a tempo map.**
+/// `clausters_document_resolve` takes a tempo-map handle where it took a
+/// frames-per-beat ratio, so a selection may cross a tempo change. Breaking:
+/// one parameter changed type.
+pub const CORE_ABI_VERSION: u32 = 88;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

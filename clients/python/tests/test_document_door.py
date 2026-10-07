@@ -64,7 +64,7 @@ def test_the_one_shot_forms_need_no_document_object():
     assert isinstance(outcome, dict)
     resolved = resolve_selection(
         written, {"start": 0.0, "len": 1.0, "nodes": [1]},
-        frames_per_beat=48_000.0, frames_per_second=48_000.0
+        tempo=1.0, frames_per_second=48_000.0
     )
     assert isinstance(resolved, list)
 

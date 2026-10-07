@@ -86,7 +86,7 @@ def test_a_selection_resolves_to_the_span_underneath_it_through_the_crate():
         },
     }
     spans = _native.document_resolve(
-        doc, {"start": 3.0 * 48000, "len": 48000}, frames_per_beat=48000.0,
+        doc, {"start": 3.0 * 48000, "len": 48000}, tempo=1.0,
         frames_per_second=48000.0,
     )
     assert len(spans) == 1
@@ -100,9 +100,49 @@ def test_nothing_underneath_is_an_empty_list_and_not_a_failure():
 
     spans = _native.document_resolve(
         a_document(), {"start": 0.0, "len": 1.0},
-        frames_per_beat=48000.0, frames_per_second=48000.0, in_beats=True,
+        tempo=1.0, frames_per_second=48000.0, in_beats=True,
     )
     assert spans == []
+
+
+def test_a_selection_crosses_a_tempo_change_and_lands_right_at_both_edges():
+    """A take from beat 2, long enough to run through a change at beat 4 from
+    one beat a second to two. Beats 3..6 are one second before the change and
+    one after it: two seconds of the take, starting one second in. One ratio
+    would have said three seconds, or a second and a half."""
+    from clausters import _native
+
+    doc = {
+        "version": 1,
+        "root": {
+            "id": 1, "kind": "aggregate", "grouping": "concrete",
+            "members": [{
+                "offset": 2.0, "dur": 10.0,
+                "node": {
+                    "id": 2, "kind": "vector",
+                    "source": {"source": 100, "lifetime": "external",
+                               "generation": 1},
+                },
+            }],
+        },
+    }
+    tempo = _native.TempoMap(1.0)
+    tempo.push(4.0, 2.0)
+    selection = {"start": 3.0, "len": 3.0}
+    spans = _native.document_resolve(
+        doc, selection, tempo=tempo, frames_per_second=48000.0, in_beats=True)
+    assert spans[0]["range"] == {"start": 48000, "end": 3 * 48000}
+    # The map handed in is the caller's: it is still open, and still answers.
+    assert tempo.secs_at(8.0) == 6.0
+    # And the same stretch in frames of the shared axis is the same span.
+    in_frames = _native.document_resolve(
+        doc, {"start": 3.0 * 48000, "len": 2.0 * 48000}, tempo=tempo,
+        frames_per_second=48000.0)
+    assert in_frames == spans
+    # A number is a tempo that never moves, and says something else.
+    steady = _native.document_resolve(
+        doc, selection, tempo=1.0, frames_per_second=48000.0, in_beats=True)
+    assert steady[0]["range"] == {"start": 48000, "end": 4 * 48000}
 
 
 # ---- the log: undo through the crate, not through a history we keep ----

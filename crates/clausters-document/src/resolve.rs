@@ -10,14 +10,22 @@
 //!
 //! # The tempo is the caller's; the arithmetic is here
 //!
-//! [`Mapping`] takes **frames per beat** and **frames per second** rather than
-//! a tempo and a sample rate, which keeps the crate out of a policy it has no
-//! business in while still doing the conversion once instead of in every
-//! client. It needs both because the tree measures its two kinds of length in
-//! two units: an onset is in beats and a take's length is in seconds
-//! ([`crate::Body::duration_unit`]), so one ratio can place a clip and the
-//! other says how long it is. It is the same line the rest of the crate draws
-//! around a leaf's configuration: carry what is given, own what is shared.
+//! [`Mapping`] takes a **tempo map** and **frames per second**, both handed
+//! over by the caller: which clock a tree is played on, and so what one of its
+//! beats is, is nothing the tree says, and the sample rate is the device's. It
+//! needs both because the tree measures its two kinds of length in two units:
+//! an onset is in beats and a take's length is in seconds
+//! ([`crate::Body::duration_unit`]), so the map places a clip and the rate
+//! says how many frames a stretch of it is. It is the same line the rest of
+//! the crate draws around a leaf's configuration: carry what is given, own
+//! what is shared.
+//!
+//! **Nothing here multiplies a length by a tempo.** A beat is a position, so
+//! the frames between two of them are the seconds between them, read off the
+//! map at both ends -- which is what lets a selection start before an
+//! accelerando and end after it and still land on the right frames at both
+//! edges. A caller whose tempo never moves hands over a map of one segment
+//! ([`TempoMap::new`]) and says so by doing it.
 //!
 //! # What a resolution has to include, and what it must not
 //!
@@ -33,6 +41,7 @@
 //! a window would call belongs in `clausters-core`; a user-written function
 //! belongs to the user. Neither belongs here.
 
+use clausters_core::tempomap::TempoMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, SourceId, TimeUnit};
@@ -54,58 +63,52 @@ pub enum Unit {
 
 /// How to get from a selection's numbers to a source's frames.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Mapping {
-    /// Frames of samples per beat of the multitrack. Supplied rather than
-    /// derived: tempo and sample rate are the caller's.
-    pub frames_per_beat: f64,
-    /// Frames of samples per second -- the sample rate, and what a length that
-    /// is already in seconds is measured with.
+pub struct Mapping<'a> {
+    /// What a beat of the tree is: the map of the clock it is played on.
+    /// Supplied rather than held, because the tree names no clock.
+    pub tempo: &'a TempoMap,
+    /// Frames of samples per second -- the sample rate, which with the map is
+    /// what a stretch of the tree is measured in frames with.
     pub frames_per_second: f64,
     /// What the selection's numbers mean.
     pub unit: Unit,
 }
 
-impl Mapping {
+impl<'a> Mapping<'a> {
     /// A selection in frames on the shared axis.
-    pub fn frames(frames_per_beat: f64, frames_per_second: f64) -> Self {
+    pub fn frames(tempo: &'a TempoMap, frames_per_second: f64) -> Self {
         Self {
-            frames_per_beat,
+            tempo,
             frames_per_second,
             unit: Unit::Frames,
         }
     }
 
     /// A selection in beats.
-    pub fn beats(frames_per_beat: f64, frames_per_second: f64) -> Self {
+    pub fn beats(tempo: &'a TempoMap, frames_per_second: f64) -> Self {
         Self {
-            frames_per_beat,
+            tempo,
             frames_per_second,
             unit: Unit::Beats,
         }
     }
 
-    /// Beats per second -- the tempo the two ratios imply. Zero when the caller
-    /// gave a degenerate pair, which every reader here already guards for.
-    fn tempo(self) -> f64 {
-        if self.frames_per_beat > 0.0 {
-            self.frames_per_second / self.frames_per_beat
-        } else {
-            0.0
-        }
+    /// Whether the rate can measure anything. A degenerate one resolves
+    /// nothing, rather than every span to frame zero.
+    fn usable(self) -> bool {
+        self.frames_per_second.is_finite() && self.frames_per_second > 0.0
     }
 
-    /// A length in its own unit, as beats of the multitrack.
+    /// Where something that starts at beat `at` and lasts `length` of `unit`
+    /// ends, in beats.
     ///
-    /// A `Mapping` states its own `frames_per_beat`, so its tempo is a
-    /// **constant by construction** and the multiplication is the right one
-    /// here -- which is why this does not take the multitrack's converter. A
-    /// selection resolved across a tempo change is a wider question than this
-    /// mapping expresses, and it is written down in the plan rather than
-    /// assumed away.
-    fn length_in_beats(self, length: f64, unit: TimeUnit) -> Beats {
+    /// The start is part of the question: a length in seconds reaches a
+    /// different beat depending on where it begins, so there is no "length in
+    /// beats" to hand back, only an end.
+    fn end_of(self, at: Beats, length: f64, unit: TimeUnit) -> Beats {
         match unit {
-            TimeUnit::Beats => length,
-            TimeUnit::Seconds => length * self.tempo(),
+            TimeUnit::Beats => at + length,
+            TimeUnit::Seconds => at + self.tempo.span_beats(at, length),
         }
     }
 
@@ -113,19 +116,17 @@ impl Mapping {
     fn to_beats(self, position: f64) -> Beats {
         match self.unit {
             Unit::Beats => position,
-            Unit::Frames => {
-                if self.frames_per_beat > 0.0 {
-                    position / self.frames_per_beat
-                } else {
-                    0.0
-                }
-            }
+            Unit::Frames => self.tempo.beats_at(position / self.frames_per_second),
         }
     }
 
-    /// A length in beats, as frames.
-    fn to_frames(self, beats: Beats) -> f64 {
-        beats * self.frames_per_beat
+    /// How many frames lie between two beats: the seconds between them, at
+    /// the rate. Both ends, because the same stretch of beats lasts
+    /// differently depending on where it sits.
+    fn frames_between(self, from: Beats, to: Beats) -> u64 {
+        (self.tempo.span_secs(from, to) * self.frames_per_second)
+            .round()
+            .max(0.0) as u64
     }
 }
 
@@ -162,7 +163,7 @@ pub struct Resolved {
 /// than reported: an aggregate and a generator have no span to give, and the caller
 /// asked what is underneath, not what is in the way.
 pub fn resolve(document: &Document, selection: &Selection, mapping: &Mapping) -> Vec<Resolved> {
-    if selection.is_empty() {
+    if selection.is_empty() || !mapping.usable() {
         return Vec::new();
     }
     let start = mapping.to_beats(selection.start);
@@ -238,11 +239,11 @@ fn multitrack(
     // The trim: which part of the source this element uses. Absent means all of
     // it, and then the placement's own length is what bounds the read.
     let trim = source.range;
-    let extent = placed_extent(member, trim, mapping)?;
+    let placed_end = placed_end(member, at, trim, mapping)?;
 
-    // The overlap, in the arrangement's beats.
+    // The overlap, in the tree's beats.
     let from = start.max(at);
-    let to = end.min(at + extent);
+    let to = end.min(placed_end);
     if to <= from {
         return None;
     }
@@ -251,8 +252,8 @@ fn multitrack(
     // selection begins. Getting either term wrong is silent, which is why they
     // are one expression rather than two steps.
     let trim_start = trim.map_or(0, |r| r.start);
-    let into = mapping.to_frames(from - at).round().max(0.0) as u64;
-    let length = mapping.to_frames(to - from).round().max(0.0) as u64;
+    let into = mapping.frames_between(at, from);
+    let length = mapping.frames_between(from, to);
     if length == 0 {
         return None;
     }
@@ -274,7 +275,7 @@ fn multitrack(
             start: range_start,
             end: range_end,
         },
-        at: mapping.to_frames(from - start).round().max(0.0) as u64,
+        at: mapping.frames_between(start, from),
     })
 }
 
@@ -295,32 +296,33 @@ fn parts_of_segments(
     let Body::Segments { segments, .. } = &member.node.body else {
         return;
     };
-    // The placement's length and each window's are both in seconds here (these
-    // are samples), and the axis they are laid on is beats, so each one crosses
-    // once, on the way out.
+    // The placement's length and each window's are in the unit their source
+    // measures -- seconds over samples, beats over a node -- and the axis they
+    // are laid on is beats, so each one is laid from where it starts: the next
+    // window begins where this one ended.
     let placed = member
         .length()
-        .map(|d| mapping.length_in_beats(d, TimeUnit::Seconds));
-    let mut cursor = 0.0;
+        .map(|d| mapping.end_of(at, d, member.duration_unit()));
+    let mut from_beat = at;
     for segment in segments {
-        let length = mapping.length_in_beats(segment.duration, TimeUnit::Seconds);
-        let (from_beat, to_beat) = (at + cursor, at + cursor + length);
-        cursor += length;
+        let to_beat = mapping.end_of(from_beat, segment.duration, segment.source.unit());
+        let this = from_beat;
+        from_beat = to_beat;
         // Past what the placement shows: the rest of the samples is there and
         // is not being played, so it is not under anything.
         let to_beat = match placed {
-            Some(dur) if to_beat > at + dur => at + dur,
+            Some(end) if to_beat > end => end,
             _ => to_beat,
         };
-        if to_beat <= from_beat {
+        if to_beat <= this {
             break;
         }
-        let (from, to) = (start.max(from_beat), end.min(to_beat));
+        let (from, to) = (start.max(this), end.min(to_beat));
         if to <= from {
             continue;
         }
-        let into = mapping.to_frames(from - from_beat).round().max(0.0) as u64;
-        let length = mapping.to_frames(to - from).round().max(0.0) as u64;
+        let into = mapping.frames_between(this, from);
+        let length = mapping.frames_between(from, to);
         if length == 0 {
             continue;
         }
@@ -330,7 +332,10 @@ fn parts_of_segments(
         let Some(source) = segment.source.samples() else {
             continue;
         };
-        let range_start = segment.start.max(0.0).round() as u64 + into;
+        // A window opens at a **second** of its source ([`crate::SegmentRef`]),
+        // and what is handed back is frames.
+        let opens = (segment.start.max(0.0) * mapping.frames_per_second).round() as u64;
+        let range_start = opens + into;
         out.push(Resolved {
             node: member.node.id,
             source: source.source,
@@ -339,22 +344,24 @@ fn parts_of_segments(
                 start: range_start,
                 end: range_start + length,
             },
-            at: mapping.to_frames(from - start).round().max(0.0) as u64,
+            at: mapping.frames_between(start, from),
         });
     }
 }
 
-/// How long the placement is, in beats: what was written on it, or what the
+/// Where the placement ends, in beats: what was written on it, or what the
 /// trim implies when nothing was.
-fn placed_extent(member: &Member, trim: Option<Range>, mapping: &Mapping) -> Option<Beats> {
+fn placed_end(member: &Member, at: Beats, trim: Option<Range>, mapping: &Mapping) -> Option<Beats> {
     if let Some(dur) = member.length() {
-        return (dur > 0.0).then(|| mapping.length_in_beats(dur, member.duration_unit()));
+        return (dur > 0.0).then(|| mapping.end_of(at, dur, member.duration_unit()));
     }
     let trim = trim?;
-    if trim.is_empty() || mapping.frames_per_beat <= 0.0 {
+    if trim.is_empty() {
         return None;
     }
-    Some(trim.len() as f64 / mapping.frames_per_beat)
+    // A trim is frames of the source, which is a length in seconds.
+    let seconds = trim.len() as f64 / mapping.frames_per_second;
+    Some(mapping.end_of(at, seconds, TimeUnit::Seconds))
 }
 
 #[cfg(test)]

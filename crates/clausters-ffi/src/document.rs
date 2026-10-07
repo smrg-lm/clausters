@@ -389,26 +389,30 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 
 /// Resolve a selection to the spans of samples underneath it.
 ///
-/// `selection` is JSON; `frames_per_beat` and `frames_per_second` are the two
-/// bridges between the document's units and the buffer's frames -- a placement
-/// is in beats and a take's length in seconds -- supplied rather than derived
-/// because tempo is the caller's; `in_beats` says whether the selection's
-/// numbers are beats (non-zero) or frames on the shared axis (zero).
+/// `selection` is JSON. `tempo` is the map of the clock the document is played
+/// on (a `clausters_tempomap_*` handle) and `frames_per_second` the sample
+/// rate: the two bridges between the document's units and the buffer's frames
+/// -- a placement is in beats and a take's length in seconds -- supplied rather
+/// than derived because the document names no clock. A map, and not a ratio:
+/// the frames between two beats are read off it at both ends, so a selection
+/// may cross a tempo change. `in_beats` says whether the selection's numbers
+/// are beats (non-zero) or frames on the shared axis (zero).
 ///
 /// Writes a JSON array of `{"node", "source", "generation", "range", "at"}` to
-/// `out` and returns the byte count it needs. Returns `0` on a null handle or
-/// an unparseable selection; an empty array is `2` bytes, which is how "nothing
-/// was underneath" differs from "the call failed".
+/// `out` and returns the byte count it needs. Returns `0` on a null handle, a
+/// null map or an unparseable selection; an empty array is `2` bytes, which is
+/// how "nothing was underneath" differs from "the call failed".
 ///
 /// # Safety
 /// `h` must be a live document handle, `selection` null or readable for its
-/// length, and `out` null or writable for `out_cap` bytes.
+/// length, `tempo` null or a live tempo-map handle, and `out` null or writable
+/// for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_document_resolve(
     h: *mut FfiDocument,
     selection: *const u8,
     selection_len: usize,
-    frames_per_beat: f64,
+    tempo: *const clausters_core::tempomap::TempoMap,
     frames_per_second: f64,
     in_beats: i32,
     out: *mut u8,
@@ -421,8 +425,12 @@ pub unsafe extern "C" fn clausters_document_resolve(
     let Ok(selection) = serde_json::from_str::<Selection>(&selection) else {
         return 0;
     };
+    // SAFETY: the caller guarantees `tempo` is a live map handle (or null).
+    let Some(tempo) = (unsafe { tempo.as_ref() }) else {
+        return 0;
+    };
     let mapping = Mapping {
-        frames_per_beat,
+        tempo,
         frames_per_second,
         unit: if in_beats != 0 {
             Unit::Beats
@@ -1109,12 +1117,13 @@ mod tests {
             "range":{"start":480000,"end":672000}}}}]}}"#,
         );
         let selection = r#"{"start":144000.0,"len":48000.0}"#;
+        let tempo = clausters_core::tempomap::TempoMap::new(1.0);
         let raw = sized(|out, cap| unsafe {
             clausters_document_resolve(
                 doc.0,
                 selection.as_ptr(),
                 selection.len(),
-                48_000.0,
+                &tempo,
                 48_000.0,
                 0,
                 out,
@@ -1128,6 +1137,51 @@ mod tests {
         assert_eq!(json[0]["range"]["end"], 576_000);
     }
 
+    /// The map crosses as a handle, so a selection may cross a tempo change:
+    /// beats 3..6 of a take from beat 2 under a tempo that doubles at beat 4
+    /// are one second before the change and one after it.
+    #[test]
+    fn a_selection_resolves_against_the_map_it_is_handed() {
+        let doc = Doc::new(
+            r#"{"version":1,"root":{"id":1,"kind":"aggregate","grouping":"concrete",
+            "members":[{"offset":2.0,"dur":10.0,"node":{"id":2,"kind":"vector",
+            "source":{"source":100,"lifetime":"external","generation":1}}}]}}"#,
+        );
+        let selection = r#"{"start":3.0,"len":3.0}"#;
+        let mut tempo = clausters_core::tempomap::TempoMap::new(1.0);
+        tempo.push(4.0, 2.0).unwrap();
+        let raw = sized(|out, cap| unsafe {
+            clausters_document_resolve(
+                doc.0,
+                selection.as_ptr(),
+                selection.len(),
+                &tempo,
+                48_000.0,
+                1,
+                out,
+                cap,
+            )
+        });
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(json[0]["range"]["start"], 48_000);
+        assert_eq!(json[0]["range"]["end"], 144_000);
+
+        // No map is no answer, told apart from "nothing underneath".
+        let n = unsafe {
+            clausters_document_resolve(
+                doc.0,
+                selection.as_ptr(),
+                selection.len(),
+                std::ptr::null(),
+                48_000.0,
+                1,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        assert_eq!(n, 0);
+    }
+
     #[test]
     fn nothing_underneath_is_an_empty_array_and_not_a_failure() {
         let doc = Doc::new(DOC);
@@ -1137,7 +1191,7 @@ mod tests {
                 doc.0,
                 selection.as_ptr(),
                 selection.len(),
-                48_000.0,
+                &clausters_core::tempomap::TempoMap::new(1.0),
                 48_000.0,
                 1,
                 std::ptr::null_mut(),
