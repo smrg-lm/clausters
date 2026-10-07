@@ -828,6 +828,35 @@ fn value_of(host: &Host, id: i32) -> Option<OscType> {
     host.window_def(1)?.find(id)?.kind.event_value()
 }
 
+/// **A selection an hour into a take names the frames it holds.** A float
+/// keeps a whole frame only up to 2^24 of them -- under six minutes at 48 kHz
+/// -- so the two numbers leave as doubles, as the `"locate"` beside them does.
+#[test]
+fn a_selection_far_into_a_take_is_reported_to_the_frame() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    // An hour at 48 kHz, and an odd frame in it: a float lands on a multiple
+    // of sixteen there.
+    host.set_timeline_total(50, 200_000_000);
+    let (start, len) = (172_800_001.0, 4_801.0);
+    let mut effects = Vec::new();
+    // From its first sample to its last: a sweep holds the samples it passed
+    // over.
+    let last = start + len - 1.0;
+    super::nav::set_selection(&mut host, &mut effects, 1, 50, start, last, None);
+    let args = emitted_args(&effects, 50).expect("a selection reports");
+    assert_eq!(
+        args,
+        [
+            OscType::String("selection".into()),
+            OscType::Double(start),
+            OscType::Double(len),
+        ]
+    );
+}
+
 #[test]
 fn waveform_press_and_drag_select_a_range() {
     let mut host = host_from(
@@ -1022,7 +1051,7 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
         .clipboard_key(&mut host, &ctx, ClipVerb::Paste, 400.0, 150.0, &mut clip)
         .expect("answered");
     let args = emitted_args(&effects, 50).expect("a paste reports");
-    assert_eq!(args[1], OscType::Float(6.0), "at the cursor");
+    assert_eq!(args[1], OscType::Double(6.0), "at the cursor");
 
     // A mix is the same payload under its own word: the owner adds the block
     // onto what is there rather than putting it in.

@@ -536,8 +536,8 @@ impl Gestures {
                     id,
                     vec![
                         OscType::String(tag.into()),
-                        OscType::Float(start as f32),
-                        OscType::Float(len as f32),
+                        OscType::Double(start),
+                        OscType::Double(len),
                     ],
                 );
             }
@@ -765,8 +765,8 @@ impl Gestures {
                     id,
                     vec![
                         OscType::String("cut".into()),
-                        OscType::Float(start as f32),
-                        OscType::Float(len as f32),
+                        OscType::Double(start),
+                        OscType::Double(len),
                     ],
                 );
             }
@@ -794,7 +794,7 @@ impl Gestures {
                     // Where: the selection's start, which is where a locate or a
                     // sweep last put the axis -- a paste has no pointer of its
                     // own, and the cursor is what the reader was looking at.
-                    OscType::Float(cursor as f32),
+                    OscType::Double(cursor),
                     OscType::String(doc.kind().into()),
                     OscType::String(doc.to_json()),
                 ];

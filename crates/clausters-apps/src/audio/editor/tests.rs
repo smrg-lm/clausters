@@ -538,6 +538,27 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
     assert!(clicked.get("follow").is_none(), "a click places no head");
 }
 
+/// **A sweep's start and the locate it is let go with are one frame**,
+/// however far into a take: both reach the editor as doubles, so a cursor a
+/// frame away from the selection's start is a mark and not the sweep's end.
+#[test]
+fn a_selection_far_into_a_take_is_matched_to_the_frame() {
+    // An hour at 48 kHz, and an odd frame in it.
+    let mut editor = new_json(
+        &json!({"take": 3, "frames": 200_000_000_u64, "channels": 1, "rate": 48000,
+                "display": 9, "buffers": [20, 21]})
+        .to_string(),
+    )
+    .unwrap();
+    call(&mut editor, json!({"verb": "window", "widget": 12}));
+    let far = 172_800_001_u64;
+    event(&mut editor, json!([12, 1, 0, "selection", far, 20]));
+    let beside = event(&mut editor, json!([12, 2, 0, "locate", far + 1]));
+    assert!(beside.get("follow").is_none(), "a frame away is elsewhere");
+    let let_go = event(&mut editor, json!([12, 3, 0, "locate", far]));
+    assert_eq!(let_go["follow"]["place"], json!(true));
+}
+
 /// **The level meter stands beside the take** once a playback says where it
 /// writes, and the window says the space bar is its own.
 #[test]

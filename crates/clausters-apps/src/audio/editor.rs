@@ -1048,10 +1048,7 @@ impl AudioEditor {
                 // (a click empties the selection at its press), and that is
                 // when a loop in progress is put into the span it was moved
                 // to: a head past the loop's end would run on and never wrap.
-                if self
-                    .selection
-                    .is_some_and(|(from, _)| on_start(cursor, from))
-                {
+                if self.selection.is_some_and(|(from, _)| from == cursor) {
                     out.follow = self.follow(true);
                 }
             }
@@ -1069,14 +1066,6 @@ impl AudioEditor {
             _ => {}
         }
     }
-}
-
-/// Whether a cursor at `cursor` stands on a selection's start `from`. A
-/// selection reaches here in single precision and a cursor in double, so
-/// past 2^24 frames the two readings of one frame differ by what a float
-/// cannot hold.
-fn on_start(cursor: u64, from: u64) -> bool {
-    cursor.abs_diff(from) <= 1 + (from >> 23)
 }
 
 /// **Where a save writes**: a file, or a server buffer.

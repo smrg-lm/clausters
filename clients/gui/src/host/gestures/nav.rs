@@ -253,8 +253,10 @@ pub(super) fn set_selection(
     redraw_all(out, &roots);
     let mut args = vec![
         OscType::String("selection".into()),
-        OscType::Float(start as f32),
-        OscType::Float(len as f32),
+        // Doubles: a float holds a whole frame only up to 2^24 of them, under
+        // six minutes at 48 kHz, and a selection is a count of samples.
+        OscType::Double(start),
+        OscType::Double(len),
     ];
     if let Some((min, max)) = value {
         args.push(OscType::Float(min as f32));

@@ -100,11 +100,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A selection is reported in single precision**
-  *(`clients/gui/PLAN.md`, Found by use)*. A swept selection leaves the host
-  as two `f32`, which hold a whole frame only for the first 5.8 minutes of a
-  take at 48 kHz; the fix is to send the doubles the host already holds.
-
 
 ## 2. Tests and reviews pending
 

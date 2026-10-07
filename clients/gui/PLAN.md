@@ -8370,8 +8370,8 @@ module of its own.
   - **The fed elements are on their live layer**: a `meter` is all level and draws nothing else, a forward-only `signal` view of a bus (a scope, a spectrum, a phase view) draws on it whole, and a `progress` bar does while it sweeps. A shader `canvas` that follows the clock still repaints its window: its picture is a texture its frame uploads, and a live frame uploads none. So does a live view whose picture is a texture (the waterfall).
   - **The card drawing the whole window is left as it is.** An offscreen copy of the kept picture would replace drawing its triangles with a full-window copy of a multisampled texture, which is of the order of what the triangles cost a card; and nothing measured asks for it -- the host's process is at 1 % of a core while a score plays.
 
-- ⬜ **A selection is reported in single precision** *(found 2026-10-07,
-  making a loop follow a redrawn selection)*. `"selection" start len` leaves
+- ✅ **A selection is reported in single precision** *(found 2026-10-07,
+  making a loop follow a redrawn selection; fixed the same day)*. `"selection" start len` leaves
   the host as two `f32` (`gestures/nav.rs::set_selection`), and a float holds
   a whole frame only up to 2^24 of them: 5.8 minutes at 48 kHz. Past that the
   two ends a sweep reports land on every second frame, on every sixteenth an
@@ -8381,3 +8381,11 @@ module of its own.
   selection that far into a take is off by as much. The two numbers are
   doubles in the host's own state; sending them as such is the fix, with
   the readers of the event in both clients and `docs/gui-protocol.md`.
+  *(Fixed: `"selection" start len` leaves as two doubles, and so do the
+  other frames a hand reports from that state -- the span of `"cut"` and of
+  `"delete"`, and the position of `"paste"` and `"mix"`, which were floats
+  for the same reason and are what the cut reads. The `min max` of a boxed
+  sweep stay floats: they are values on the view's second axis and not
+  frames. Neither client changes -- both decode a double and a float to the
+  same number -- and the audio editor matches a sweep's start to its
+  `"locate"` exactly, `on_start` and its tolerance gone.)*
