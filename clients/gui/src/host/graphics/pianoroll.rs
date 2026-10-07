@@ -91,7 +91,7 @@ pub fn regions(rect: Rect, ruler_on: bool, osc_on: bool, indent: f32, m: &Metric
 
 /// The x pixel a timeline sample position falls on, through the shared `nav`
 /// window and the grid `body`.
-fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
+pub(crate) fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
     body.x as f64 + (s - nav.start) / nav.len.max(1.0) * body.w as f64
 }
 

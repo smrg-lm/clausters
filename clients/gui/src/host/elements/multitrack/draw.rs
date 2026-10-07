@@ -309,7 +309,18 @@ impl Multitrack {
             } else if let Some(take) = self.takes.get(&clip.source) {
                 take.draw_body(d, cr, &space);
             } else if let Some(roll) = self.rolls.get(&clip.name) {
-                roll.draw_body(d, cr, &space);
+                // **A box of notes has two presentations**: its roll, and
+                // its page -- drawn on the box's own axis, each note at its
+                // time. A box with no page, or a row too low for a staff to
+                // be read, is drawn as its roll.
+                #[cfg(feature = "notation")]
+                let paged = self.notes_view == NotesView::Score
+                    && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, &clip.name);
+                #[cfg(not(feature = "notation"))]
+                let paged = false;
+                if !paged {
+                    roll.draw_body(d, cr, &space);
+                }
             }
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
@@ -439,5 +450,42 @@ impl Multitrack {
             });
         }
         None
+    }
+}
+
+#[cfg(feature = "notation")]
+impl Multitrack {
+    /// **A box's page, on the box's axis**: the engraving of what it holds
+    /// with each note at its time, cut to the box -- and its clef to the row,
+    /// since it stands before the first note. Answers whether it drew one.
+    fn draw_page(
+        &self,
+        d: &mut Draw,
+        cr: Rect,
+        body: Rect,
+        indent: f32,
+        space: &TimeSpace,
+        name: &str,
+    ) -> bool {
+        use crate::host::graphics::pianoroll::to_x;
+        use crate::host::graphics::score::{TimeColors, TimeFrame};
+
+        let Some(score) = self.scores.get(name) else {
+            return false;
+        };
+        let (mesh, _, theme) = d.parts();
+        // the row the box is on, as far across as the tracks are drawn
+        let row = Rect::new(body.x + indent, cr.y, (body.w - indent).max(0.0), cr.h);
+        let view = space.view;
+        score.page.render_on_time(
+            mesh,
+            TimeFrame { body: cr, row },
+            &score.anchors,
+            &|start| to_x(start, &view, cr) as f32,
+            TimeColors {
+                ink: theme.text,
+                backdrop: theme.object_fill,
+            },
+        )
     }
 }

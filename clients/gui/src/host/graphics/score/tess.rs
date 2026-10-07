@@ -353,7 +353,7 @@ fn intersect(rect: Rect, clip: Option<Rect>) -> Rect {
 /// to the fill (expressed in the glyph's *local* font units) still lands at
 /// the same on-screen size. A fill is flattened in the path's own coordinates
 /// and then mapped, so its tolerance must be pre-divided by the local scale.
-fn xf_shrink(xf: Affine) -> f32 {
+pub(super) fn xf_shrink(xf: Affine) -> f32 {
     1.0 / xf.sx.abs().max(f32::MIN_POSITIVE)
 }
 

@@ -91,6 +91,13 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .into_iter()
             .map(|(name, notes)| (name, roll_body(&notes)))
             .collect(),
+        notes_view: props
+            .get("notes_view")
+            .and_then(Value::as_str)
+            .and_then(NotesView::parse)
+            .unwrap_or_default(),
+        #[cfg(feature = "notation")]
+        scores: props.get("scores").map(parse_scores).unwrap_or_default(),
         pending: HashMap::new(),
         grab: None,
         block: Vec::new(),
@@ -412,6 +419,37 @@ pub(super) fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64
     out
 }
 
+/// **The pages of the boxes of notes** (`scores`): an object, a box's name to
+/// its page -- the display list a `score` element takes, and beside it
+/// `anchors`, the flat `id start` pairs that say where each element with a
+/// time stands, `start` in the units a note's is in. A page that does not
+/// read is left out, and its box is drawn as a roll.
+#[cfg(feature = "notation")]
+pub(super) fn parse_scores(value: &Value) -> HashMap<String, ScoreBody> {
+    let Some(pages) = parse::as_props(value) else {
+        return HashMap::new();
+    };
+    pages
+        .iter()
+        .filter_map(|(name, page)| {
+            let props = page.as_object()?;
+            let anchors = props
+                .get("anchors")
+                .and_then(Value::as_array)
+                .map(|flat| {
+                    flat.as_chunks::<2>()
+                        .0
+                        .iter()
+                        .filter_map(|pair| Some((pair[0].as_str()?.to_string(), pair[1].as_f64()?)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let page = crate::host::graphics::score::ScoreData::parse(props);
+            Some((name.clone(), ScoreBody { page, anchors }))
+        })
+        .collect()
+}
+
 /// The **body element** a box of notes is drawn through: the roll this build
 /// already has, over the notes of that one box and with every track it draws on
 /// its own turned off.
@@ -566,6 +604,21 @@ impl Multitrack {
                     .into_iter()
                     .map(|(name, notes)| (name, roll_body(&notes)))
                     .collect();
+                true
+            }
+            // **How a box of notes is drawn**, the widget's own switch.
+            "notes_view" => match v.as_str().and_then(NotesView::parse) {
+                Some(view) => {
+                    self.notes_view = view;
+                    true
+                }
+                None => false,
+            },
+            // **The pages of the boxes of notes**, replaced whole: an edit of
+            // a sequence comes back as its page engraved again.
+            #[cfg(feature = "notation")]
+            "scores" => {
+                self.scores = parse_scores(v);
                 true
             }
             // **The spans a join is drawn from**, replaced whole like every
