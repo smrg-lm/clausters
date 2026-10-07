@@ -47,6 +47,15 @@
 //! **Widths past stereo**: [`strip_def`] is written for 1 and 2 channels, which
 //! is what a track declares today. The general N->M downmix (BS.775 and its
 //! relatives) is named where the widths are checked and refused.
+//!
+//! # A track has its own width
+//!
+//! A track is as wide as the document says it is, whatever the master's
+//! width: its mix bus, its fader and its meter are that wide, and the change
+//! of width is the last thing it does, on its way into the master
+//! ([`track_graph`]). So the tracks' group declares **a slot per width**
+//! ([`track_slot`]), as a track declares a clip slot per source width, and
+//! which one a track fills is the one fact about it that decides the wiring.
 
 use serde_json::{Value, json};
 
@@ -141,9 +150,13 @@ pub const VOICE_CHANNELS: usize = MAX_CHANNELS;
 pub fn voice_port(channel: usize) -> String {
     format!("in{channel}")
 }
-/// The slot a multitrack's tracks fill -- a slot of the tracks' group
-/// ([`tracks_graph`]), not of the multitrack itself.
-pub const TRACK_SLOT: &str = "tracks";
+/// The slot a multitrack's tracks of `channels` fill -- a slot of the tracks'
+/// group ([`tracks_graph`]), not of the multitrack itself. One per track
+/// width, for the reason there is a clip slot per source width: a slot names
+/// one def, and a mono track and a stereo one are not the same wiring.
+pub fn track_slot(channels: usize) -> String {
+    format!("tracks.{channels}")
+}
 /// **The slot the tracks' group fills**, once per multitrack: the subtree the
 /// transport governs. The master around it is not, so it goes on running
 /// while the transport is stopped.
@@ -237,9 +250,10 @@ pub fn voices_name(outputs: usize) -> String {
     format!("{PREFIX}.voices.{outputs}")
 }
 
-/// The name of the track graph for a track of `channels`.
-pub fn track_name(channels: usize) -> String {
-    format!("{PREFIX}.track.{channels}")
+/// The name of the track graph for a track of `channels` in a multitrack whose
+/// master is `master` wide.
+pub fn track_name(channels: usize, master: usize) -> String {
+    format!("{PREFIX}.track.{channels}x{master}")
 }
 
 /// The name of the tracks' group for a multitrack of `channels`.
@@ -909,7 +923,7 @@ pub fn voices_graph(outputs: usize) -> Result<Value, String> {
 }
 
 /// **A track**: clips onto a private mix bus, then a strip onto the track's own
-/// output bus, and a send from there onto the bus the master hands it.
+/// output bus, and from there onto the bus the master hands it.
 ///
 /// The clips are a slot of **nested graphs**, which is what a clip being a
 /// thing with its own gain, its own image and its own chain amounts to; the
@@ -918,20 +932,46 @@ pub fn voices_graph(outputs: usize) -> Result<Value, String> {
 ///
 /// The strip does not write into the master directly, and the node in between
 /// is what makes a meter mean anything -- see [`POST_BUS`] and [`send_def`].
-pub fn track_graph(channels: usize) -> Result<Value, String> {
+///
+/// # `channels` wide all the way to its meter, `master` wide on its way out
+///
+/// The mix bus, the strip and the output bus are the **track's** width, so a
+/// mono track is one channel through its fader and one channel in its meter,
+/// which is what a hand reads on a mono strip. What leaves it has to be as
+/// wide as the master, and that is the node in between:
+///
+/// - **the same width**: the send, a wire with a gain;
+/// - **mono into stereo**: a pan, with the law -- the strip written for one
+///   channel in and two out. The track's `pan` drives *this* one, because one
+///   channel has no image to balance before it;
+/// - **stereo into mono**: the sum, after the track's own balance and width.
+///
+/// So `pan` is one port on every track and it lands on whichever stage has an
+/// image to move, which is the rule [`PAN`] already states for a strip.
+pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
     check(channels, "track")?;
+    check(master, "multitrack")?;
+    let way_out = if channels == master {
+        send_name(channels)
+    } else {
+        strip_name(channels, master)
+    };
+    let mut surface = surface_of(4);
+    if channels < master {
+        surface[PAN] = json!([{"member": 1, "control": PAN}]);
+    }
     Ok(json!({
-        "name": track_name(channels),
+        "name": track_name(channels, master),
         "buses": [
             {"name": MIX_BUS, "rate": "audio", "channels": channels},
             {"name": POST_BUS, "rate": "audio", "channels": channels},
-            {"name": OUT_BUS, "rate": "audio", "channels": channels, "external": true},
+            {"name": OUT_BUS, "rate": "audio", "channels": master, "external": true},
         ],
         "members": [
             {"def": strip_name(channels, channels),
              "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)},
-            {"def": send_name(channels),
-             "controls": strip_wiring(POST_BUS, channels, OUT_BUS, channels)},
+            {"def": way_out,
+             "controls": strip_wiring(POST_BUS, channels, OUT_BUS, master)},
             {"def": clip_name(1, channels), "kind": "graph", "slot": clip_slot(1),
              "controls": {OUT_BUS: MIX_BUS}},
             {"def": clip_name(2, channels), "kind": "graph", "slot": clip_slot(2),
@@ -941,7 +981,7 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
             {"def": voices_name(channels), "kind": "graph", "slot": VOICE_SLOT,
              "controls": {OUT_BUS: MIX_BUS}},
         ],
-        "surface": surface_of(4),
+        "surface": surface,
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
     }))
 }
@@ -954,17 +994,24 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
 /// across a stop -- so the tracks are one subtree the transport governs, and
 /// the master is around it. A slot and not a member, because the transport is
 /// bound by node id and a slot's id is the caller's; one per multitrack.
+///
+/// **A slot per track width** ([`track_slot`]), each naming the track graph of
+/// that width into this master's: a track is added to the one its own width
+/// names, whatever the others are.
 pub fn tracks_graph(channels: usize) -> Result<Value, String> {
     check(channels, "tracks")?;
+    let members: Vec<Value> = (1..=MAX_CHANNELS)
+        .map(|track| {
+            json!({"def": track_name(track, channels), "kind": "graph",
+                   "slot": track_slot(track), "controls": {OUT_BUS: OUT_BUS}})
+        })
+        .collect();
     Ok(json!({
         "name": tracks_name(channels),
         "buses": [
             {"name": OUT_BUS, "rate": "audio", "channels": channels, "external": true},
         ],
-        "members": [
-            {"def": track_name(channels), "kind": "graph", "slot": TRACK_SLOT,
-             "controls": {OUT_BUS: OUT_BUS}},
-        ],
+        "members": members,
     }))
 }
 
@@ -1016,41 +1063,36 @@ pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
 /// One call rather than a list a caller assembles, because the order is a rule
 /// and a caller that got it wrong would find out at instantiation, in another
 /// process, as a missing member.
+///
+/// `widths` is every `(source width, track width)` pair in use and `master`
+/// the master's width. **Every width a strip is written for is sent, in use or
+/// not**: the tracks' group declares a slot per track width and a track a clip
+/// slot per source width, so each of those graphs has to exist before the one
+/// that names it -- and a take or a track of the other width is one edit away.
+/// What `widths` adds is the refusal: a pair nothing here is written for fails
+/// the whole call, which is how a multitrack with a track too wide says so.
 pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String> {
     check(master, "multitrack")?;
-    let mut strips: Vec<(usize, usize)> = widths.to_vec();
-    strips.push((master, master));
-    for &(_, outputs) in widths {
-        strips.push((outputs, outputs));
-        for inputs in 1..=MAX_CHANNELS {
-            strips.push((inputs, outputs));
-        }
+    for &(inputs, outputs) in widths {
+        check(inputs, "strip inputs")?;
+        check(outputs, "strip outputs")?;
     }
-    for inputs in 1..=MAX_CHANNELS {
-        strips.push((inputs, master));
-    }
-    strips.sort_unstable();
-    strips.dedup();
 
     let mut synth = vec![reader_def(), curve_def(), input_def()];
-    for &(inputs, outputs) in &strips {
-        synth.push(strip_def(inputs, outputs)?);
+    // Every strip: a clip's (source into track), a track's own, a track's way
+    // into a master of another width, and the master's.
+    for inputs in 1..=MAX_CHANNELS {
+        for outputs in 1..=MAX_CHANNELS {
+            synth.push(strip_def(inputs, outputs)?);
+        }
     }
     let mut graph = Vec::new();
-    // A track declares a clip slot per source width, so every one of those clip
-    // graphs has to exist before it -- not only the widths a multitrack happens to
-    // use today, since a take of the other width is one import away.
-    let mut tracks: Vec<usize> = widths.iter().map(|&(_, out)| out).collect();
-    tracks.push(master);
-    tracks.sort_unstable();
-    tracks.dedup();
-    for &channels in &tracks {
+    for channels in 1..=MAX_CHANNELS {
         // The meter and the send are per strip width, and every track width
         // and the master's need theirs before the graph that names them.
         synth.push(meter_def(channels)?);
         synth.push(track_meter_def(channels)?);
         synth.push(send_def(channels)?);
-        synth.push(out_def(channels)?);
         for inputs in 1..=MAX_CHANNELS {
             graph.push(clip_graph(inputs, channels)?);
         }
@@ -1058,8 +1100,9 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
         // whether or not it holds one today.
         graph.push(voices_graph(channels)?);
     }
-    for &channels in &tracks {
-        graph.push(track_graph(channels)?);
+    synth.push(out_def(master)?);
+    for channels in 1..=MAX_CHANNELS {
+        graph.push(track_graph(channels, master)?);
     }
     graph.push(tracks_graph(master)?);
     graph.push(multitrack_graph(master)?);
@@ -1085,7 +1128,9 @@ mod tests {
     fn every_strip_answers_the_same_four_ports() {
         for graph in [
             clip_graph(1, 2).unwrap(),
-            track_graph(2).unwrap(),
+            track_graph(2, 2).unwrap(),
+            track_graph(1, 2).unwrap(),
+            track_graph(2, 1).unwrap(),
             multitrack_graph(2).unwrap(),
         ] {
             let surface = graph["surface"].as_object().expect("a surface");

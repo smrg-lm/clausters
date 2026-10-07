@@ -143,6 +143,9 @@ pub struct PlannedTrack {
     pub track: NodeId,
     /// How wide it is.
     pub channels: usize,
+    /// The slot of the tracks' group it is added to -- its own width picks
+    /// it (`mixer::track_slot`), whatever the master's is.
+    pub slot: String,
     /// Its fader, linear.
     pub gain: f32,
     /// `1.0` when the mixer's rule silences it -- its own mute, or somebody
@@ -366,6 +369,7 @@ pub fn plan_voiced(
             tracks.push(PlannedTrack {
                 track: track.id,
                 channels,
+                slot: mixer::track_slot(channels),
                 gain: track_gain(track),
                 mute: track_mute(multitrack, track),
                 clips,
@@ -468,6 +472,7 @@ pub fn plan_voiced(
         tracks.push(PlannedTrack {
             track: track.id,
             channels,
+            slot: mixer::track_slot(channels),
             gain: track_gain(track),
             mute: track_mute(multitrack, track),
             clips,
@@ -666,6 +671,25 @@ mod tests {
         assert_eq!(clips[1].readers.len(), 2);
         assert_eq!(clips[1].readers[1].channel, 1);
         assert_eq!(plan.widths, vec![(1, 2), (2, 2)]);
+    }
+
+    /// **The track's width picks its slot**, and the master's has no say: a
+    /// mono track in a stereo multitrack is a mono track.
+    #[test]
+    fn the_track_width_picks_its_slot() {
+        let mut multitrack = multitrack();
+        multitrack.channels = 2;
+        multitrack.tracks[0].channels = 1;
+        let plan = plan(&multitrack, 48_000.0, &sources());
+        assert_eq!(plan.channels, 2);
+        assert_eq!(plan.tracks[0].channels, 1);
+        assert_eq!(plan.tracks[0].slot, mixer::track_slot(1));
+        // And the sources on it are clips of a mono track.
+        assert_eq!(plan.widths, vec![(1, 1), (2, 1)]);
+
+        multitrack.tracks[0].channels = 2;
+        let plan = super::plan(&multitrack, 48_000.0, &sources());
+        assert_eq!(plan.tracks[0].slot, mixer::track_slot(2));
     }
 
     /// **A source nobody can find is not planned**, rather than planned as

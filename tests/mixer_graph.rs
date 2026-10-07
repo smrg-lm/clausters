@@ -127,11 +127,23 @@ fn peaks(s: &mut NrtSession, blocks: usize) -> (f32, f32) {
 /// plays buffer 0 from the transport's start, and answers the ids
 /// `(multitrack, track, clip, reader)`.
 fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i32, i32) {
+    one_box_on(s, 2, 2, span_frames, at_frames)
+}
+
+/// [`one_box`] with the widths said: a master of `master` channels and one
+/// track of `track`, which goes in the slot its own width names.
+fn one_box_on(
+    s: &mut NrtSession,
+    master: usize,
+    track: usize,
+    span_frames: f32,
+    at_frames: f32,
+) -> (i32, i32, i32, i32) {
     send(
         s,
         "/graph_new",
         vec![
-            OscType::String(mixer::multitrack_name(2)),
+            OscType::String(mixer::multitrack_name(master)),
             OscType::Int(900),
             OscType::Int(0),
             OscType::Int(0),
@@ -153,7 +165,7 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
         "/graph_addSlot",
         vec![
             OscType::Int(TRACKS),
-            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::String(mixer::track_slot(track)),
             OscType::Int(910),
         ],
     );
@@ -256,6 +268,126 @@ fn a_mono_take_is_panned_into_the_stereo_track() {
     assert!(
         (left - right).abs() < 1e-3,
         "and the two sides are equal: {left} vs {right}"
+    );
+}
+
+/// **A mono track is one channel to its meter, and panned on its way out.**
+/// The document says how wide a track is and the master's width does not
+/// change it: the take is one channel through the track's fader, one channel
+/// in its meter at the level the fader left it, and the pan is the last thing
+/// the track does, into a master of two.
+#[test]
+fn a_mono_track_is_one_channel_until_it_meets_the_master() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 1)], 2);
+    dc(&mut s, 0, 48_000, 1.0);
+    let (_multitrack, track, ..) = one_box_on(&mut s, 2, 1, 48_000.0, 0.0);
+    // Its level and nothing beside it: the meter of a mono track writes one
+    // bus, and the next one is somebody else's.
+    send(
+        &mut s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::METER_SLOT.into()),
+            OscType::Int(960),
+            OscType::String(mixer::METER_OUT0.into()),
+            OscType::Float(110.0),
+        ],
+    );
+    s.settle_for(4);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(2);
+
+    let (left, right) = peaks(&mut s, 8);
+    let centre = 1.0 / 2.0f32.sqrt();
+    assert!(
+        (left - centre).abs() < 0.05 && (right - centre).abs() < 0.05,
+        "centred is -3 dB a side: left {left}, right {right}"
+    );
+    let level = bus_value(&mut s, 110);
+    assert!(
+        (level - 1.0).abs() < 0.05,
+        "the meter reads the one channel after the fader, before the pan: {level}"
+    );
+    assert_eq!(bus_value(&mut s, 111), 0.0, "and writes no second channel");
+
+    // The track's pan is the pan into the master: all of it on one side.
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::PAN.into()),
+            OscType::Float(-1.0),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let (left, right) = peaks(&mut s, 8);
+    assert!((left - 1.0).abs() < 0.05, "hard left is unity: {left}");
+    assert!(right < 1e-3, "and nothing on the right: {right}");
+    let level = bus_value(&mut s, 110);
+    assert!(
+        (level - 1.0).abs() < 0.05,
+        "the pan is after the meter, so the level did not move: {level}"
+    );
+
+    // And its gain is the fader before both.
+    send(
+        &mut s,
+        "/node_set",
+        vec![
+            OscType::Int(track),
+            OscType::String(mixer::GAIN.into()),
+            OscType::Float(0.5),
+        ],
+    );
+    s.settle_for(2);
+    let _settling = peaks(&mut s, 40);
+    let (left, _) = peaks(&mut s, 8);
+    assert!(
+        (left - 0.5).abs() < 0.05,
+        "half the fader, half the sound: {left}"
+    );
+    // The meter falls at its own rate rather than jumping, so what it shows
+    // by now is on its way down from unity and not yet past the new level.
+    let level = bus_value(&mut s, 110);
+    assert!(
+        (0.5 - 0.05..0.95).contains(&level),
+        "and the meter is after the fader, so it is falling to half: {level}"
+    );
+}
+
+/// **A stereo track in a mono multitrack keeps its two sides to its meter and
+/// is summed on its way out.** The other direction of the same rule.
+#[test]
+fn a_stereo_track_is_summed_into_a_mono_master() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 1);
+    dc(&mut s, 0, 48_000, 0.5);
+    let (_multitrack, track, ..) = one_box_on(&mut s, 1, 2, 48_000.0, 0.0);
+    meter(&mut s, track, 960, 110, 0.0);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(2);
+
+    // The mono take is panned into the stereo track at -3 dB a side, and the
+    // master is the sum of the two.
+    let (left, right) = peaks(&mut s, 8);
+    let side = 0.5 / 2.0f32.sqrt();
+    assert!(
+        (left - 2.0 * side).abs() < 0.05,
+        "the master is both sides summed: {left}"
+    );
+    assert!(right < 1e-3, "a mono master writes one channel: {right}");
+    let (l, r) = (bus_value(&mut s, 110), bus_value(&mut s, 111));
+    assert!(
+        (l - side).abs() < 0.05 && (r - side).abs() < 0.05,
+        "the track's meter has its two sides: {l}, {r}"
     );
 }
 
@@ -364,7 +496,7 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
         "/graph_addSlot",
         vec![
             OscType::Int(TRACKS),
-            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::String(mixer::track_slot(2)),
             OscType::Int(other),
             OscType::String(mixer::MUTE.into()),
             OscType::Float(1.0),
@@ -649,7 +781,7 @@ fn a_track_is_metered_on_its_own_output() {
         "/graph_addSlot",
         vec![
             OscType::Int(TRACKS),
-            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::String(mixer::track_slot(2)),
             OscType::Int(quiet_track),
         ],
     );
@@ -1121,7 +1253,7 @@ fn a_stereo_take_keeps_its_two_sides() {
         "/graph_addSlot",
         vec![
             OscType::Int(TRACKS),
-            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::String(mixer::track_slot(2)),
             OscType::Int(910),
         ],
     );
@@ -1220,7 +1352,7 @@ fn one_box_of_notes(s: &mut NrtSession, bus: i32) -> (i32, i32, i32, i32) {
         "/graph_addSlot",
         vec![
             OscType::Int(TRACKS),
-            OscType::String(mixer::TRACK_SLOT.into()),
+            OscType::String(mixer::track_slot(2)),
             OscType::Int(910),
         ],
     );

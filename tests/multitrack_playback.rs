@@ -124,6 +124,115 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
     );
 }
 
+/// **A mono track in a stereo multitrack sounds, and widening it while it
+/// sounds makes it again.** The document says how wide a track is; the plan
+/// names the slot that width fills, and a track whose width moved is another
+/// graph in another slot -- freed and made again with its clip, through the
+/// same `sync` every other edit takes.
+#[test]
+fn a_track_s_width_is_the_document_s_and_may_change_while_it_plays() {
+    let mut s = NrtSession::open(&SessionConfig {
+        sample_rate: SR,
+        channels: 2,
+        ..Default::default()
+    })
+    .expect("open");
+    let take = 4096 * BLOCK;
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(take as i32), OscType::Int(1)],
+    );
+    s.settle_for(4);
+    send(
+        &mut s,
+        "/buffer_fill",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(take as i32),
+            OscType::Float(1.0),
+        ],
+    );
+    s.settle_for(4);
+
+    let long = take as f64 / SR;
+    let mut track = Track::new(NodeId(10), NodeId(11));
+    track.channels = 1;
+    let mut multitrack = Multitrack {
+        channels: 2,
+        tracks: vec![track],
+        ..Multitrack::default()
+    };
+    multitrack.tracks[0].take_lanes[0].place(Region::new(
+        NodeId(20),
+        Second(0.0),
+        Second(long),
+        Content::window(SegmentRef {
+            source: SegmentSource::Samples(SourceRef {
+                source: SourceId(1),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: long,
+        }),
+    ));
+    let sources = HashMap::from([(
+        SourceId(1),
+        SourceInfo {
+            buffer: 0,
+            channels: 1,
+            duration: Some(long),
+        },
+    )]);
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = MultitrackPlayback::new(Endpoint::default());
+    let steps = playback
+        .sync(&multitrack, SR, &sources, 1.0, &mut ids)
+        .unwrap();
+    run(&mut s, steps);
+    let steps = playback.play();
+    run(&mut s, steps);
+
+    // The last block of a stretch, past every fader's lag.
+    let sides = |s: &mut NrtSession| {
+        let out = s.run_to_vec((48 * BLOCK) as u64).expect("the render ran");
+        let frame = out.as_chunks::<2>().0.last().copied().expect("a frame");
+        (frame[0], frame[1])
+    };
+    let centre = 1.0 / 2.0f32.sqrt();
+    let (left, right) = sides(&mut s);
+    assert!(
+        (left - centre).abs() < 0.02 && (right - centre).abs() < 0.02,
+        "a mono track is panned into the master, -3 dB a side: {left}, {right}"
+    );
+
+    // The same track, stereo now: the mono take is panned into *it*, and its
+    // balance leaves the centre alone.
+    multitrack.tracks[0].channels = 2;
+    let steps = playback
+        .sync(&multitrack, SR, &sources, 1.0, &mut ids)
+        .unwrap();
+    assert!(!steps.is_empty(), "a width is not something a set says");
+    run(&mut s, steps);
+    let (left, right) = sides(&mut s);
+    assert!(
+        (left - centre).abs() < 0.02 && (right - centre).abs() < 0.02,
+        "made again and sounding as before: {left}, {right}"
+    );
+    // And settled: the same document again asks for nothing.
+    let again = playback
+        .sync(&multitrack, SR, &sources, 1.0, &mut ids)
+        .unwrap();
+    assert!(
+        again.is_empty(),
+        "nothing left to do: {} steps",
+        again.len()
+    );
+}
+
 /// **A track's gain automation reaches the notes of a box on it.** A box of
 /// notes is a source of sound inside its track, so a curve over the track's
 /// gain shapes a note the way it shapes a take: closed, the note is not

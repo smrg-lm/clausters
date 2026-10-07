@@ -2916,7 +2916,7 @@ finished work, where a pending item reads as done.
   `a_thawed_strip_does_not_glide_down_from_where_it_stopped` and
   `a_thawed_meter_does_not_report_the_pass_before_it`.
 
-- ⬜ **A track's width is a document field the piece cannot honour yet** *(found
+- ✅ **A track's width is a document field the piece cannot honour yet** *(found
   2026-09-11, reading the meter's channel count against the strip it draws)*.
   `Track.channels` is a field of the document and the plan reports it per
   track, but a piece instantiates its tracks from one slot -- `mt.piece.<n>`
@@ -2927,6 +2927,43 @@ finished work, where a pending item reads as done.
   already solved the same problem one level down: a slot per width
   (`clips.1`, `clips.2`), so the piece would declare `tracks.1` and `tracks.2`
   and the plan would name which one each track fills.
+
+  **Fixed 2026-10-07**, in that shape. The tracks' group declares a slot per
+  track width (`mixer::track_slot`), the plan names the one each track fills
+  (`PlannedTrack::slot`), and the track graph is named by both widths
+  (`track.<track>x<master>`), since two multitracks of different masters may be
+  loaded at once.
+
+  What the entry did not say is **where the width changes**, and the clip's
+  answer does not carry over: a clip has no meter, so its strip can go straight
+  from the source's width to the track's. A track has one, after its fader, and
+  a mono track read on a stereo meter is the thing the entry was about. So a
+  track is its own width through its mix bus, its strip and its `post` bus —
+  which is what the meter reads — and the node that carries it into the master
+  is where the width changes: the send when the two agree, the 1→2 strip (a
+  pan, with the law) for a mono track in a stereo multitrack, the 2→1 strip
+  (the sum) the other way. `pan` stays one port on every track and lands on
+  the stage that has an image to move: the way out for a mono track, the
+  track's own balance otherwise.
+
+  `defs_for` sends every width a strip is written for rather than the ones in
+  use, because a graph must exist before the one that names it and the tracks'
+  group names both track graphs. A track whose width changes is freed and made
+  again with its clips (`Instance::tracks`) — another graph in another slot is
+  not something a `set` can say.
+
+  Heard rather than inspected, in `tests/mixer_graph.rs`:
+  `a_mono_track_is_one_channel_until_it_meets_the_master` (centred at −3 dB a
+  side, its meter one channel at the fader's level and unmoved by the pan) and
+  `a_stereo_track_is_summed_into_a_mono_master`. The plan and the instance
+  hold their halves in `the_track_width_picks_its_slot`,
+  `a_track_fills_the_slot_of_its_own_width` and
+  `a_track_of_another_width_is_made_again_with_its_clips`.
+
+  And through the whole playback, in `tests/multitrack_playback.rs`:
+  `a_track_s_width_is_the_document_s_and_may_change_while_it_plays` widens a
+  mono track while it sounds — which is what `track.channels = 2` from either
+  client does — and hears it made again.
 
 - ✅ **A meter's ballistics were nobody's, so a level had no readable shape**
   *(2026-09-10, with the node system)*. A picture of the raw block peak is

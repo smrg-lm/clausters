@@ -708,12 +708,23 @@ impl Instance {
             let id = track.track.0;
             seen.insert(id);
             let ports = hand_ports(&[("gain", track.gain), ("mute", track.mute)], &track.curves);
+            // **What a `set` cannot express**: a track of another width is
+            // another track graph, in another slot of the tracks' group, so
+            // it is made again -- and its clips with it, which are another
+            // clip def on a track of another width.
+            if self
+                .tracks
+                .get(&id)
+                .is_some_and(|held| held.channels != track.channels.max(1))
+            {
+                self.free_track(id, ops);
+            }
             match self.tracks.get(&id) {
                 None => {
                     ops.push(Op::Slot {
                         handle: track_handle(id),
                         target: TRACKS.into(),
-                        slot: mixer::TRACK_SLOT.into(),
+                        slot: track.slot.clone(),
                         ports: ports.clone(),
                     });
                     self.meter(id, track.channels.max(1), ops);
@@ -1829,6 +1840,74 @@ mod tests {
         // And the multitrack is whole afterwards: nothing of the vanished track is
         // still believed to be sounding.
         assert_eq!(instance.reconcile(&planned(&gone), 0.5), Vec::new());
+    }
+
+    /// **A track goes in the slot its own width names**, whatever the master's
+    /// is: these are mono tracks in a stereo multitrack.
+    #[test]
+    fn a_track_fills_the_slot_of_its_own_width() {
+        let multitrack = multitrack();
+        assert_eq!(multitrack.channels, 2, "a stereo master");
+        let mut instance = Instance::new();
+        let ops = instance.reconcile(&planned(&multitrack), 0.5);
+        for track in ["track:1", "track:10"] {
+            assert!(
+                ops.iter()
+                    .any(|op| matches!(op, Op::Slot { handle, target, slot, .. }
+                                  if handle == track && target == TRACKS
+                                  && *slot == mixer::track_slot(1))),
+                "{track} is a mono track"
+            );
+        }
+    }
+
+    /// **A track of another width is made again**, with what is on it: it is
+    /// another track graph in another slot, which a `set` cannot express --
+    /// and its clip is another clip def, onto a mix bus of another width.
+    #[test]
+    fn a_track_of_another_width_is_made_again_with_its_clips() {
+        let multitrack = multitrack();
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&multitrack), 0.5);
+
+        let mut wider = multitrack.clone();
+        wider.tracks[0].channels = 2;
+        let ops = instance.reconcile(&planned(&wider), 0.5);
+
+        let freed = ops
+            .iter()
+            .position(|op| matches!(op, Op::Free { handle, .. } if handle == "track:1"))
+            .expect("the mono track goes");
+        let made = ops
+            .iter()
+            .position(|op| {
+                matches!(op, Op::Slot { handle, target, slot, .. }
+                         if handle == "track:1" && target == TRACKS
+                         && *slot == mixer::track_slot(2))
+            })
+            .expect("and it is made again as a stereo track");
+        assert!(freed < made, "freed before it is made again");
+        let clip = ops
+            .iter()
+            .position(|op| {
+                matches!(op, Op::Slot { handle, target, .. }
+                         if handle == "clip:3" && target == "track:1")
+            })
+            .expect("its clip is made again on it");
+        assert!(made < clip, "the track before what is on it");
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, Op::Bus { handle, channels }
+                                         if handle == "meterbus:1" && *channels == 4)),
+            "and its meters have two channels each now"
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, Op::Free { handle, .. } if handle == "track:10")),
+            "the track beside it is left alone"
+        );
+        // Settled: the same plan again asks for nothing.
+        assert_eq!(instance.reconcile(&planned(&wider), 0.5), Vec::new());
     }
 
     /// The meters are two slots over one run of `2 * channels`, and the run is
