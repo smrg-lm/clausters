@@ -11,6 +11,8 @@
 // counterpart here: a page cannot start a process, so a web client always
 // meets a server that is already running.
 
+import { formatFixed, formatGeneral } from "../../base/format.ts";
+
 // Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
 // `DEFAULT_CONTROL_BUSES` (each a power of two, with no ceiling) and
 // `--sample-rate`.
@@ -123,7 +125,7 @@ export interface ServerInfo extends ServerSizing {
  * `defs/info.ts` are: `ServerInfo` is an interface, so it carries none.
  */
 export function formatServerInfo(info: ServerInfo): string {
-    const g = (value: number): string => Number(value.toPrecision(6)).toString();
+    const g = formatGeneral;
     const drift = info.actualSampleRate === info.nominalSampleRate
         ? ""
         : ` (nominal ${g(info.nominalSampleRate)})`;
@@ -246,10 +248,10 @@ export function formatLoad(rows: Load[]): string {
     for (const row of rows) {
         const share = row.share === undefined
             ? "     -"
-            : `${(row.share * 100).toFixed(1).padStart(5)}%`;
+            : `${formatFixed(row.share * 100, 1).padStart(5)}%`;
         const busy = row.busy === null
             ? "        -  "
-            : `${row.busy.toFixed(3).padStart(9)} s`;
+            : `${formatFixed(row.busy, 3).padStart(9)} s`;
         lines.push(`  ${loadName(row).padEnd(8)} ${share}  ${busy}  ${row.calls} calls`);
     }
     return lines.join("\n");
@@ -293,14 +295,15 @@ export interface ServerStatus {
  * A free function for the same reason {@link formatServerInfo} is one.
  */
 export function formatServerStatus(status: ServerStatus): string {
-    const g = (value: number): string => Number(value.toPrecision(6)).toString();
+    const g = formatGeneral;
     const drift = status.actualSampleRate === status.nominalSampleRate
         ? ""
         : ` (nominal ${g(status.nominalSampleRate)})`;
     let cpu = NOT_TIMED;
     if (status.avgCpu !== null && status.peakCpu !== null) {
         const late = status.lateBlocks ? `, ${status.lateBlocks} late` : "";
-        cpu = `${status.avgCpu.toFixed(1)}% avg, ${status.peakCpu.toFixed(1)}% peak${late}`;
+        cpu = `${formatFixed(status.avgCpu, 1)}% avg, `
+            + `${formatFixed(status.peakCpu, 1)}% peak${late}`;
     }
     return [
         `server ${g(status.actualSampleRate)} Hz${drift}`,

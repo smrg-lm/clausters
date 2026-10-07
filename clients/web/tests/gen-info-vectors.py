@@ -30,7 +30,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters.defs.info import (  # noqa: E402
     BufferInfo, ControlInfo, DefInfo, NodeInfo, NodeMap, UgenInfo, UgenInput,
 )
-from clausters.defs.server.options import ServerInfo  # noqa: E402
+from clausters.defs.server.options import (  # noqa: E402
+    Load, ServerInfo, ServerStatus, format_load,
+)
 from clausters.gui.host import WidgetInfo  # noqa: E402
 
 #: Each case is `[record kind, the record's fields, the line it prints]`. The
@@ -185,6 +187,61 @@ case("server", DRIFTED,
                 max_buffers=1024, max_graph_children=64, max_ugen_inputs=64,
                 taps=0, tap_frames=0, max_frame=65536, max_stream_buses=128,
                 transports=8))
+
+# ---- numbers that find a wrong rounding rule ---------------------------------
+# An exact tie goes to the even digit in Python and to the larger one in
+# JavaScript's own `toFixed`/`toPrecision`, and `%g` writes an exponent where a
+# plain number-to-string does not. A control is the record that prints a bare
+# `%g`, so these are controls.
+for default in (100000.5, 100001.5, 1e6, 999999.5, 0.00001, 0.000125, 2.5e-7):
+    case("control", {"name": "x", "default": default, "rate": "kr"},
+         ControlInfo("x", default, "kr"))
+
+# ---- the live counters: timed, late, drifting, and with no clock at all ------
+def status(**moved) -> None:
+    fields = dict(ugens=12, synths=3, groups=2, defs=5, avgCpu=1.5, peakCpu=4.0,
+                  nominalSampleRate=48000.0, actualSampleRate=48000.0,
+                  lateBlocks=0)
+    fields.update(moved)
+    case("status", fields, ServerStatus(
+        ugens=fields["ugens"], synths=fields["synths"], groups=fields["groups"],
+        defs=fields["defs"], avg_cpu=fields["avgCpu"], peak_cpu=fields["peakCpu"],
+        nominal_sample_rate=fields["nominalSampleRate"],
+        actual_sample_rate=fields["actualSampleRate"],
+        late_blocks=fields["lateBlocks"]))
+
+
+status()
+status(lateBlocks=2, actualSampleRate=47999.83)
+# Ties at one decimal, the digit before them even and odd.
+status(avgCpu=0.25, peakCpu=4.25)
+status(avgCpu=0.75, peakCpu=4.75)
+status(avgCpu=0.05, peakCpu=99.95)
+# A server that cannot time itself: no figure, said once.
+status(avgCpu=None, peakCpu=None, lateBlocks=None)
+
+
+# ---- the load table: a first reading, a second one, and an untimed one -------
+def load(*rows) -> None:
+    """Each row is `(role, index, busy, calls, share)`."""
+    fields = []
+    for role, index, busy, calls, share in rows:
+        row = {"role": role, "index": index, "busy": busy, "calls": calls}
+        if share is not None:
+            row["share"] = share
+        fields.append(row)
+    CASES.append(("load", {"rows": fields},
+                  format_load([Load(*row) for row in rows])))
+
+
+load(("audio", 0, 1.0, 100, None), ("dsp", 0, 0.2, 40, None),
+     ("net", 0, 0.5, 40, None))
+load(("audio", 0, 1.4, 130, 0.2), ("dsp", 2, 0.2, 40, 0.0),
+     ("net", 0, 0.6, 55, 0.05), ("disk-in", 0, 12.3456789, 9001, 1.0))
+# Ties: three decimals of seconds, one of per cent.
+load(("audio", 0, 1.0625, 7, 0.0025), ("nrt", 0, 0.0005, 1, 0.0425),
+     ("faust", 0, 3.1875, 2, 0.9975))
+load(("audio", 0, None, 230, None), ("net", 0, None, 12, None))
 
 
 def main() -> None:

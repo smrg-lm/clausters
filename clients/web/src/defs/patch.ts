@@ -35,6 +35,7 @@
 // draw a logical aggregate, and the gap is named rather than papered over.
 
 import { patchCompile } from "../core/clausters_core_web.js";
+import { formatGeneral } from "../base/format.ts";
 import { FaustDef } from "./faustdef.ts";
 import { GraphDef } from "./graphdef.ts";
 import { SynthDef } from "./synthdef.ts";
@@ -505,7 +506,9 @@ function ugenLabel(u: Ugen): string {
 function formatConst(value: unknown): string {
     const f = Number(value);
     if (!Number.isFinite(f)) return String(value);
-    return Number.isInteger(f) ? String(f) : String(Number(f.toPrecision(6)));
+    // The reference client's `str(int(f))` and `f"{f:g}"`: every digit of a
+    // whole number, and the general format for the rest.
+    return Number.isInteger(f) ? BigInt(f).toString() : formatGeneral(f);
 }
 
 /**

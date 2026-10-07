@@ -24,12 +24,14 @@ import {
     formatUgenInfo,
     formatUgenInput,
 } from "../src/defs/info.ts";
-import { formatServerInfo } from "../src/defs/server/options.ts";
+import {
+    formatLoad, formatServerInfo, formatServerStatus,
+} from "../src/defs/server/options.ts";
 import { formatWidgetInfo } from "../src/gui/host.ts";
 import type {
     BufferInfo, ControlInfo, DefInfo, NodeInfo, NodeMap, UgenInfo, UgenInput,
 } from "../src/defs/info.ts";
-import type { ServerInfo } from "../src/defs/server/options.ts";
+import type { Load, ServerInfo, ServerStatus } from "../src/defs/server/options.ts";
 import type { WidgetInfo } from "../src/gui/host.ts";
 
 interface Vector {
@@ -54,6 +56,8 @@ const formatters: Record<string, (record: never) => string> = {
     nodeMap: (r: NodeMap) => formatNodeMap(r),
     node: (r: NodeInfo) => formatNodeInfo(r),
     server: (r: ServerInfo) => formatServerInfo(r),
+    status: (r: ServerStatus) => formatServerStatus(r),
+    load: (r: { rows: Load[] }) => formatLoad(r.rows),
     widget: (r: WidgetInfo) => formatWidgetInfo(r),
 } as Record<string, (record: never) => string>;
 

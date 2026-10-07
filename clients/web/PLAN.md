@@ -3214,7 +3214,7 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A formatter rounds an exact tie differently in the two clients** *(found
+- ✅ **A formatter rounds an exact tie differently in the two clients** *(found
   2026-10-07, writing the test for a status with no clock: `4.25` printed
   `4.3% peak` here and `4.2% peak` in the Python client)*. Every record prints
   one line and the two clients are meant to print the same one
@@ -3229,6 +3229,36 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   `toFixed`. The fix is one helper that rounds as the reference client does,
   and it has to decide a tie on the value's exact binary expansion: scaling by
   a power of ten first makes `0.05` look like a tie it is not.
+
+  **Fixed 2026-10-07**, and it was wider than the tie. `src/base/format.ts`
+  is the reference client's rounding written in integers: `formatFixed` is
+  `f"{x:.Nf}"` and `formatGeneral` is `f"{x:g}"`, both worked on the float's
+  own bits (`mantissa * 2^exponent`, as a ratio of big integers), so a tie is
+  decided on the exact value and never on a product that already rounded.
+  Reading the sites found the second half: `formatNumber`, which every record
+  line calls and whose comment said "Python's `%g`", was
+  `Number(value.toPrecision(6)).toString()` — the same tie the other way
+  (`100000.5` printed `100001` against `100000`), and **no exponent** where
+  `%g` writes one, so a control at `1e6` printed `1000000` here and `1e+06`
+  there. Both are one function now. The sites: `formatNumber`
+  (`defs/info.ts`, and through it the host's widget record), the three
+  formatters of `defs/server/options.ts`, and a patch's value caption
+  (`defs/patch.ts`, which also writes every digit of a whole number as
+  `str(int(f))` does).
+
+  The reference is the language, so that is what the test is against:
+  `tests/gen-format-vectors.py` asks Python for 795 values — exact ties in
+  both parities, values that only look like ties once scaled, the edges of
+  `%g`, zero and its negative, the largest and smallest floats, what is not
+  finite, and a seeded spread as doubles and as the float32 a figure off the
+  wire is — and `tests/format.test.ts` matches every line. The wording
+  vectors gained what they did not cover: controls on a tie and past the
+  exponent's edges, and the status and load lines, timed and not, which had
+  no vector at all.
+
+  Left as it is, on purpose: `defs/boxes.ts` writes a whole number with
+  `toFixed(0)` when it splices one into Faust source. That is `repr`, not a
+  record's line, and a whole number is never a tie.
 
 - ✅ **`panels/host.html` promises a native host changes nothing, and its
   bound widgets and meters stop working there** *(found 2026-09-26, checking

@@ -455,5 +455,269 @@
       "transports": 8
     },
     "line": "server 48001.5 Hz (nominal 48000), 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    none (no segment)\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream\n  transports 8"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 100000.5,
+      "rate": "kr"
+    },
+    "line": "x=100000 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 100001.5,
+      "rate": "kr"
+    },
+    "line": "x=100002 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 1000000.0,
+      "rate": "kr"
+    },
+    "line": "x=1e+06 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 999999.5,
+      "rate": "kr"
+    },
+    "line": "x=1e+06 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 1e-05,
+      "rate": "kr"
+    },
+    "line": "x=1e-05 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 0.000125,
+      "rate": "kr"
+    },
+    "line": "x=0.000125 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "x",
+      "default": 2.5e-07,
+      "rate": "kr"
+    },
+    "line": "x=2.5e-07 kr"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": 1.5,
+      "peakCpu": 4.0,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "lateBlocks": 0
+    },
+    "line": "server 48000 Hz\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     1.5% avg, 4.0% peak"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": 1.5,
+      "peakCpu": 4.0,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 47999.83,
+      "lateBlocks": 2
+    },
+    "line": "server 47999.8 Hz (nominal 48000)\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     1.5% avg, 4.0% peak, 2 late"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": 0.25,
+      "peakCpu": 4.25,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "lateBlocks": 0
+    },
+    "line": "server 48000 Hz\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     0.2% avg, 4.2% peak"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": 0.75,
+      "peakCpu": 4.75,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "lateBlocks": 0
+    },
+    "line": "server 48000 Hz\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     0.8% avg, 4.8% peak"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": 0.05,
+      "peakCpu": 99.95,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "lateBlocks": 0
+    },
+    "line": "server 48000 Hz\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     0.1% avg, 100.0% peak"
+  },
+  {
+    "kind": "status",
+    "record": {
+      "ugens": 12,
+      "synths": 3,
+      "groups": 2,
+      "defs": 5,
+      "avgCpu": null,
+      "peakCpu": null,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "lateBlocks": null
+    },
+    "line": "server 48000 Hz\n  playing 3 synths in 2 groups, 12 ugens\n  loaded  5 defs\n  cpu     not available (this server cannot time itself)"
+  },
+  {
+    "kind": "load",
+    "record": {
+      "rows": [
+        {
+          "role": "audio",
+          "index": 0,
+          "busy": 1.0,
+          "calls": 100
+        },
+        {
+          "role": "dsp",
+          "index": 0,
+          "busy": 0.2,
+          "calls": 40
+        },
+        {
+          "role": "net",
+          "index": 0,
+          "busy": 0.5,
+          "calls": 40
+        }
+      ]
+    },
+    "line": "server load\n  audio         -      1.000 s  100 calls\n  dsp 0         -      0.200 s  40 calls\n  net           -      0.500 s  40 calls"
+  },
+  {
+    "kind": "load",
+    "record": {
+      "rows": [
+        {
+          "role": "audio",
+          "index": 0,
+          "busy": 1.4,
+          "calls": 130,
+          "share": 0.2
+        },
+        {
+          "role": "dsp",
+          "index": 2,
+          "busy": 0.2,
+          "calls": 40,
+          "share": 0.0
+        },
+        {
+          "role": "net",
+          "index": 0,
+          "busy": 0.6,
+          "calls": 55,
+          "share": 0.05
+        },
+        {
+          "role": "disk-in",
+          "index": 0,
+          "busy": 12.3456789,
+          "calls": 9001,
+          "share": 1.0
+        }
+      ]
+    },
+    "line": "server load\n  audio     20.0%      1.400 s  130 calls\n  dsp 2      0.0%      0.200 s  40 calls\n  net        5.0%      0.600 s  55 calls\n  disk-in  100.0%     12.346 s  9001 calls"
+  },
+  {
+    "kind": "load",
+    "record": {
+      "rows": [
+        {
+          "role": "audio",
+          "index": 0,
+          "busy": 1.0625,
+          "calls": 7,
+          "share": 0.0025
+        },
+        {
+          "role": "nrt",
+          "index": 0,
+          "busy": 0.0005,
+          "calls": 1,
+          "share": 0.0425
+        },
+        {
+          "role": "faust",
+          "index": 0,
+          "busy": 3.1875,
+          "calls": 2,
+          "share": 0.9975
+        }
+      ]
+    },
+    "line": "server load\n  audio      0.2%      1.062 s  7 calls\n  nrt        4.2%      0.001 s  1 calls\n  faust     99.8%      3.188 s  2 calls"
+  },
+  {
+    "kind": "load",
+    "record": {
+      "rows": [
+        {
+          "role": "audio",
+          "index": 0,
+          "busy": null,
+          "calls": 230
+        },
+        {
+          "role": "net",
+          "index": 0,
+          "busy": null,
+          "calls": 12
+        }
+      ]
+    },
+    "line": "server load: not available (this server cannot time itself)\n  audio    230 calls\n  net      12 calls"
   }
 ]

@@ -20,6 +20,8 @@
 // model one (its index and width are the client allocator's invention), which
 // is why there is no `BusInfo`.
 
+import { formatGeneral } from "../base/format.ts";
+
 /** Any decoded OSC argument -- what a reply parser walks. */
 export type ReplyArgs = readonly (number | string | boolean | null | Uint8Array)[];
 
@@ -320,9 +322,13 @@ export class Tree {
  * Python's `%g`, which is what every record line here is written against --
  * exported because the GUI's own record (`formatWidgetInfo`) prints values off
  * the same wire and has to round them the same way.
+ *
+ * It is the reference client's rounding and not `toPrecision`'s: an exact tie
+ * goes to the even digit, and an exponent is written where `%g` writes one
+ * (`base/format.ts`).
  */
 export function formatNumber(value: number): string {
-    return Number(value.toPrecision(6)).toString();
+    return formatGeneral(value);
 }
 
 /** An empty record, which the parsers fill in. */
