@@ -12,7 +12,7 @@ by kind:
   graph, a Faust `clausters.defs.Signal` or `clausters.defs.Box`, coerced
   through `clausters.defs.asdef.as_def`) -> instanced offline for ``dur``
   seconds -- the audible sibling of ``plot(def)``;
-- an arrangement **`Element`** -> with a ``destination``, delegates to
+- a **`FormElement`** -> with a ``destination``, delegates to
   `clausters.form.render` (the arrangement's own seam: RT or NRT by the
   destination); without one, an **offline bounce** -- an ephemeral NRT session
   plays it and renders the score;
@@ -199,10 +199,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
 
     Args:
         obj: what to render -- a binary score (``bytes``), a def or bare
-            expression, an arrangement `Element`, a `Timeline`, an
+            expression, a `FormElement`, a `Timeline`, an
             `EventPattern`, a `Routine`/`Stream`, a generator, or a value
             pattern.
-        destination: a `Server` to sound on -- only an `Element` or a
+        destination: a `Server` to sound on -- only a `FormElement` or a
             `Timeline` accepts one (the delegating paths); the rest are
             offline by nature.
         clock: the clock it plays on, as for `clausters.play`. Offline it is a
@@ -255,14 +255,14 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     Returns:
         A `RenderStats` for every offline path but a value pattern's, which
         is the list of its values. A timeline on a ``destination``
-        returns the timeline; an `Element` on one returns what
+        returns the timeline; a `FormElement` on one returns what
         `clausters.form.render` returns (the timeline it flattened to, or the
         instance group of a logical `Group`).
     """
     from .base.stream import Routine, Stream
     from .defs import Expr, FaustDef, GraphDef, SynthDef
     from .defs.asdef import as_def
-    from .form.element import Element
+    from .form.formelement import FormElement
     from .seq.pattern import EventPattern, Pattern
     from .seq.timeline import Timeline
 
@@ -275,7 +275,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         return bounce_def(as_def(obj), dur, controls, defs, sample_rate,
                           channels, seed, path, sample_format)
 
-    if isinstance(obj, Element):
+    if isinstance(obj, FormElement):
         if destination is not None:
             from .form import render as render_element
 
@@ -314,7 +314,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
                 f"don't know how to render {type(obj).__name__}; expected a "
                 "score (bytes), a def or bare expression "
                 "(Ugen/ChannelList/Signal/Box), "
-                "an arrangement Element, a Timeline, a pattern, or a "
+                "a FormElement, a Timeline, a pattern, or a "
                 "Routine/Stream/generator"
             )
     if destination is not None:

@@ -923,7 +923,7 @@ selection each had to be unified out of.
 **Consequence.** Where a structure that is *general* was filed under the
 arrangement, it moves. `Segment`/`Segments` are what cutting anything on a time
 axis produces — a signal, a sequence, a track — so they belong beside the
-structures rather than in `form/element.py`, and every client binds the same one.
+structures rather than in `form/formelement.py`, and every client binds the same one.
 And a picture that layers, collapses or refuses is answering a property of its
 contents; when it answers a property of the tree instead, the tree has leaked
 into a view.

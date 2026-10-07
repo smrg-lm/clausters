@@ -440,7 +440,7 @@ of the Python client's book; the reasoning behind it is in
 
 | Concept | What it already was | Where |
 |---|---|---|
-| Element (onset, duration) | a placed item on a timeline | `clients/python/clausters/form/element.py`, `seq/timeline.py` |
+| FormElement (onset, duration) | a placed item on a timeline | `clients/python/clausters/form/formelement.py`, `seq/timeline.py` |
 | Aggregate, concrete | a `Timeline` (client) projected onto server groups and timetagged bundles | `form/aggregate.py`, `seq/timeline.py`, `src/node/mod.rs` |
 | Aggregate, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `form/aggregate.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
 | Clang | `seq.Event` (parameters in one action) | `seq/event.py` |
@@ -622,7 +622,7 @@ order.
 
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
-— `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed
+— `formelement.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed
 in one is changed in both. What holds them together is not review: the two
 things that leave the layer — the **document** a tree is written as and
 the **flattened timeline** it renders to — are frozen from the Python side

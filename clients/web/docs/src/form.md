@@ -1,7 +1,7 @@
 # `form`: a frozen layer, and why it takes no work
 
 The `form` namespace is a small client-side algebra for placing elements in
-time: an `Element` (a thin adornment over an event, a timeline, a buffer or a
+time: a `FormElement` (a thin adornment over an event, a timeline, a buffer or a
 pattern — it adds an onset and a duration and nothing else), five primitives,
 and an `Aggregate` that places elements by an offset, recursively, in one of two
 kinds — **concrete** (the members relate in time) or **logical** (they relate by

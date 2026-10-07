@@ -2392,9 +2392,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   `composed_in` — which nothing did. Both are there now: the hook, and the piece
   setting itself as what an entered window is composed inside.
 
-- ⬜ **`form.Element` is a word two layers spend on different things, and one
+- ✅ **`form.Element` is a word two layers spend on different things, and one
   of them is frozen** *(found 2026-09-08 by the user, reading the multitrack
-  widget: "Element es un termino que se usa en form")*. `clausters.form.Element`
+  widget: "Element es un termino que se usa en form"; renamed 2026-10-07)*. `clausters.form.Element`
   is a thin adornment over an event, a timeline, a buffer or a pattern — an
   onset and a duration, and nothing else. The GUI host's `Element` is the leaf
   of a widget tree, one object implementing one trait (`clients/gui`'s K track,
@@ -2415,6 +2415,12 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   read again afterwards rather than swept: an uncountable word swapped for a
   compound leaves sentences that parse and no longer mean anything, which is
   the rule `CLAUDE.md` states as *a rename is not a search-and-replace*.
+
+  *(Renamed: the class is `FormElement` and its file `form/formelement.py`,
+  `form/formelement.ts`, in both clients at once; the five primitives and
+  `Aggregate` keep their names. Read again afterwards: the article before the
+  name, and "an arrangement `Element`" in `play`, `render` and the verbs page,
+  which is "a `FormElement`" now that the name says whose it is.)*
 
 - ✅ **The tempo map was written out under two names** *(found and fixed
   2026-09-05)*. `TempoMap.dumps` / `loads` here, `dump` / `load` in the C ABI,

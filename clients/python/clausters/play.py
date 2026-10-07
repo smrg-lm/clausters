@@ -34,7 +34,7 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   (``play(destination)`` -- an `OscItem`, a `MidiItem`, ...) -> dispatched
   to it with the ambient server.
 
-An arrangement `Element` is **not** playable -- its change of state to sound
+A `FormElement` is **not** playable -- its change of state to sound
 is `clausters.form.render`.
 
 Everything resolves against the ambient environment (the running session, else
@@ -139,13 +139,13 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return playable.play(server=server)
     if isinstance(playable, Buffer):
         return _play_buffer(playable, main.resolve_server(server), controls)
-    from .form.element import Element
+    from .form.formelement import FormElement
 
-    if isinstance(playable, Element):
-        # An Element carries a timeline-item play() (the hook flattening
+    if isinstance(playable, FormElement):
+        # A FormElement carries a timeline-item play() (the hook flattening
         # uses), but the verb keeps the state split: rendering is its door.
         raise TypeError(
-            "an arrangement Element is rendered, not played -- see "
+            "a FormElement is rendered, not played -- see "
             "clausters.render / clausters.form.render"
         )
     if callable(getattr(playable, "play", None)):
@@ -157,8 +157,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         "or event dict, an EventPattern (Pbind), a Routine/Stream or "
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
         "a Timeline, an EventSequence, "
-        "a Buffer, or anything with play(destination). An "
-        "arrangement Element is rendered, not played -- see "
+        "a Buffer, or anything with play(destination). A "
+        "FormElement is rendered, not played -- see "
         "clausters.form.render."
     )
 

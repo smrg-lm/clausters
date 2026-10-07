@@ -360,7 +360,7 @@ on trust, so that is where drift accumulates:
   **render**, never "realize"; the *graphic* direction is **draw**.
 
 - **`clausters.form` is a frozen, secondary module and is not that model.** It is
-  a small client-side algebra for placing elements in time (`Element`, the five
+  a small client-side algebra for placing elements in time (`FormElement`, the five
   primitives, `Aggregate` with its **concrete**/**logical** kinds) with **no
   view** — `FormEditor` was removed on 2026-09-06 along with its examples, its
   tests and the book chapter built on it. It takes no new work and nothing is

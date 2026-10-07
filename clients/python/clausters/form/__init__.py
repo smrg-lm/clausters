@@ -10,7 +10,7 @@ or a *generator* (the algorithm that renders it: forward-only), and evaluating t
 second into the first is the **change of state** rendering performs. Pure and
 transport-agnostic; the multitrack view of it lives in `clausters.gui.editing`.
 
-See `clausters.form.element` for the primitives and the temporal *character*,
+See `clausters.form.formelement` for the primitives and the temporal *character*,
 `clausters.form.aggregate` for grouping and the temporal *relation*, and
 `clausters.form.render` for the change of state to sound.
 
@@ -22,14 +22,14 @@ written with now is `clausters.multitrack`, and the crate is reached through
 around: this is a frozen, secondary module of data structures.
 """
 
-from .element import (
+from .formelement import (
     ABSTRACT,
     BEATS,
     SECONDS,
     PUNCTUAL,
     RELATIVE,
     SEGMENT,
-    Element,
+    FormElement,
     Generator,
     Clang,
     Segment,
@@ -52,7 +52,7 @@ from .aggregate import (
 from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
-    "Element",
+    "FormElement",
     "Clang",
     "Sequence",
     "Vector",

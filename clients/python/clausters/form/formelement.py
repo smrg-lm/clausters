@@ -1,7 +1,7 @@
 """The arrangement -- elements and their temporal character.
 
 The client-side layer under a multitrack editor of recursive granularity: it
-places elements in time, groups them recursively and renders them. An `Element`
+places elements in time, groups them recursively and renders them. A `FormElement`
 is an arbitrarily delimited entity that produces a unit of meaning and can be
 decomposed or combined -- *generated* (the rendered thing, editable and
 random-access) or a *generator* (the algorithm that renders it, forward-only),
@@ -20,7 +20,7 @@ The five primitives map one-to-one onto what the client already has:
 - `Sequence`  -- *List*: strict order with no concrete time, only sequence.
   Wraps a Python list or a `Pattern`.
 An element's ``onset`` is in **beats** and its ``duration`` is in the unit of
-what it is made of (`Element.duration_unit`) -- seconds for samples, beats for
+what it is made of (`FormElement.duration_unit`) -- seconds for samples, beats for
 events -- because a placement is a musical decision and a recording's length is
 not. `clausters.form.render.flatten` is where the two meet.
 
@@ -44,7 +44,7 @@ into ``clausters-core`` in a future port).
 #: is in the unit of its own data: `SECONDS` for audio (a take's length is
 #: ``frames / sample_rate``, a wall-clock fact no tempo change moves), `BEATS`
 #: for a succession of events (a note is musical, and a tempo change is supposed
-#: to shorten it). `Element.duration_unit` says which, derived from what the
+#: to shorten it). `FormElement.duration_unit` says which, derived from what the
 #: element wraps rather than stored, and `clausters.form.render.flatten`
 #: converts on the way to a timeline, which is ordered by one number and cannot
 #: hold two bases.
@@ -106,7 +106,7 @@ ABSTRACT = "abstract"
 
 def temporal_character(onset, duration) -> str:
     """The temporal character for a given ``onset``/``duration`` pair (the pure
-    rule behind `Element.temporal_character`)."""
+    rule behind `FormElement.temporal_character`)."""
     has_onset = onset is not None
     has_duration = duration is not None
     if has_onset and has_duration:
@@ -118,7 +118,7 @@ def temporal_character(onset, duration) -> str:
     return ABSTRACT
 
 
-class Element:
+class FormElement:
     """Base of the arrangement: temporal metadata over a wrapped item.
 
     An element carries an optional ``onset`` (in beats, relative to its context)
@@ -277,13 +277,13 @@ class Element:
         return render(self, destination, clock, at=at, quant=quant, ports=ports)
 
 
-class Clang(Element):
+class Clang(FormElement):
     """*event/clip*: parameters grouped into one action, internally simultaneous.
 
     Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters), and
     equally a `clausters.seq.timeline.OscItem` or `MidiItem` -- an action that
     happens at one moment is a clang whether it is a note or a message, which is
-    what `Element.play`'s double dispatch has always assumed and what a timeline
+    what `FormElement.play`'s double dispatch has always assumed and what a timeline
     written into a document is read back as. Anything that plays itself is taken
     as it is; anything else is the parameters of an event.
 
@@ -304,7 +304,7 @@ class Clang(Element):
                          name=name)
 
 
-class Sequence(Element):
+class Sequence(FormElement):
     """*List*: strict order with no concrete time -- only sequence.
 
     Wraps a Python list or a `clausters.seq.pattern.Pattern`. The items can be
@@ -317,7 +317,7 @@ class Sequence(Element):
         super().__init__(wraps=items, onset=onset, duration=duration, name=name)
 
 
-class Vector(Element):
+class Vector(FormElement):
     """*Vector*: a list at constant time -- audio or control samples.
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
@@ -478,7 +478,7 @@ def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
                   controls=controls, start=start, loop=loop, name=name)
 
 
-class Segments(Element):
+class Segments(FormElement):
     """*Several windows read as one*: data assembled from segments of one or
     more buffers, which sound as a single thing.
 
@@ -625,7 +625,7 @@ def _single_window(run, instrument=None, controls=None, name=None):
     return Track(first.source, duration=run.total, start=first.start, name=name)
 
 
-class Track(Element):
+class Track(FormElement):
     """*Set*: mixed placement of elements -- a DAW track.
 
     Wraps a `clausters.seq.Timeline` (free placement of items by beat). A fresh
@@ -686,7 +686,7 @@ class Track(Element):
                 if self.start <= float(beat) < end]
 
 
-class Generator(Element):
+class Generator(FormElement):
     """*Function*: a generator element.
 
     Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
@@ -703,7 +703,7 @@ class Generator(Element):
         maps: control-bus bindings for a logical-graph member
             (``/node_map``), as a ``{control: bus_name}`` dict.
         rendered: what this generator **last produced**, as an ordinary
-            `Element` -- the change of state above, kept rather than recomputed.
+            `FormElement` -- the change of state above, kept rather than recomputed.
             It is what a host with no language attached shows, since a
             generator is code and such a host has nothing to run it with; and
             it is what a saved session carries for the same reason a cache

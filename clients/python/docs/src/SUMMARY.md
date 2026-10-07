@@ -97,7 +97,7 @@
       - [trig](api/clausters.defs.ugens.trig.md)
   - [form](api/clausters.form.md)
     - [aggregate](api/clausters.form.aggregate.md)
-    - [element](api/clausters.form.element.md)
+    - [formelement](api/clausters.form.formelement.md)
     - [render](api/clausters.form.render.md)
   - [gui](api/clausters.gui.md)
     - [guidef](api/clausters.gui.guidef.md)

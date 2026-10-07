@@ -24,7 +24,7 @@ import { Timeline } from "../src/seq/timeline.ts";
 import {
     Aggregate,
     Clang,
-    Element,
+    FormElement,
     Generator,
     Segments,
     Sequence,
@@ -70,7 +70,7 @@ const asFile = (props: Record<string, unknown>): Record<string, unknown> => {
 };
 
 /** The flattened timeline as the generator writes it. */
-function flat(element: Element): unknown[] {
+function flat(element: FormElement): unknown[] {
     return flatten(element).map(([beat, item]) =>
         item instanceof SeqEvent
             ? { beat, event: asFile(item.props) }

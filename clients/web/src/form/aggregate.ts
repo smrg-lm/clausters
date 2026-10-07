@@ -4,7 +4,7 @@
 // An `Aggregate` is the one genuinely new structure of the arrangement: the
 // recursive placement of elements with an offset, and the temporal *relation*
 // derived from how the members sit in time. Everything else (the five
-// primitives) already exists and is merely adorned by `Element`.
+// primitives) already exists and is merely adorned by `FormElement`.
 //
 // Two kinds of grouping:
 //
@@ -19,8 +19,8 @@
 
 import { GraphDef } from "../defs/graphdef.ts";
 import type { GraphBusRef, MemberControlValue } from "../defs/graphdef.ts";
-import { Element, Generator, toBeats } from "./element.ts";
-import type { Beats, TimeUnit } from "./element.ts";
+import { FormElement, Generator, toBeats } from "./formelement.ts";
+import type { Beats, TimeUnit } from "./formelement.ts";
 
 /** The kind of an {@link Aggregate}. */
 export const CONCRETE = "concrete";
@@ -69,9 +69,9 @@ const isClose = (a: number, b: number): boolean =>
 export class Member {
     offset: number;
     dur: number | null;
-    element: Element;
+    element: FormElement;
 
-    constructor(offset: number, dur: number | null, element: Element) {
+    constructor(offset: number, dur: number | null, element: FormElement) {
         this.offset = Number(offset);
         this.dur = dur === null || dur === undefined ? null : Number(dur);
         this.element = element;
@@ -104,13 +104,13 @@ export class Member {
 }
 
 /** One member's placement, as {@link Aggregate.members} reports it. */
-export type PlacedMember = [offset: number, dur: number | null, element: Element];
+export type PlacedMember = [offset: number, dur: number | null, element: FormElement];
 
 /** A child an aggregate can be seeded with. */
 export type ChildSpec =
-    | Element
-    | readonly [offset: number, element: Element]
-    | readonly [offset: number, dur: number | null, element: Element];
+    | FormElement
+    | readonly [offset: number, element: FormElement]
+    | readonly [offset: number, dur: number | null, element: FormElement];
 
 /** An internal bus declaration, as {@link AggregateOptions.buses} takes it. */
 export type BusSpec =
@@ -158,9 +158,9 @@ export interface AggregateOptions {
  * (the bus-wired configuration the server already expresses).
  *
  * Each seeding child is an `[offset, element]` pair, an `[offset, dur, element]`
- * triple, or a bare {@link Element} (placed at offset 0).
+ * triple, or a bare {@link FormElement} (placed at offset 0).
  */
-export class Aggregate extends Element {
+export class Aggregate extends FormElement {
     readonly kind: AggregateKind;
     private busSpecs: Bus[];
     private members_: Member[] = [];
@@ -187,23 +187,23 @@ export class Aggregate extends Element {
      *
      * One resident generator inside it makes the whole placement unlocatable: a
      * position on the aggregate would be a position on that member too, and it
-     * has none. See {@link Element.locatable}.
+     * has none. See {@link FormElement.locatable}.
      */
     override get locatable(): boolean {
         return this.members_.every((handle) => handle.element.locatable);
     }
 
     private addChild(child: ChildSpec): void {
-        if (child instanceof Element) {
+        if (child instanceof FormElement) {
             this.add(child);
             return;
         }
         const spec = child as readonly unknown[];
         if (spec.length === 2) {
-            this.add(spec[1] as Element, Number(spec[0]));
+            this.add(spec[1] as FormElement, Number(spec[0]));
         } else if (spec.length === 3) {
             this.add(
-                spec[2] as Element,
+                spec[2] as FormElement,
                 Number(spec[0]),
                 spec[1] === null || spec[1] === undefined ? null : Number(spec[1]),
             );
@@ -217,7 +217,7 @@ export class Aggregate extends Element {
      * with `dur`. Returns a member handle for {@link Aggregate.remove}/
      * {@link Aggregate.move}.
      */
-    add(element: Element, offset = 0.0, dur: number | null = null): Member {
+    add(element: FormElement, offset = 0.0, dur: number | null = null): Member {
         const member = new Member(offset, dur, element);
         this.members_.push(member);
         return member;

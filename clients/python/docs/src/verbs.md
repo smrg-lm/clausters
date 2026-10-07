@@ -122,7 +122,7 @@ ranges):
 |---|---|
 | a binary **score** (`bytes`) | the embedded offline renderer, unchanged (the historical `render`) |
 | a def, or a bare expression | instances it offline for `dur` seconds — the audible sibling of `plot(def)` |
-| an arrangement `Element` | with a `destination`, delegates to the arrangement's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
+| a `FormElement` | with a `destination`, delegates to the arrangement's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
 | a `Timeline` | the same dual path |
 | an event pattern, a `Routine`/`Stream`, a generator | offline bounce only — they are forward-only; sounding them live is `play`'s job |
 | a value pattern (`Pseq`, `Pwhite`, …) | the values it generates, as a list (an endless one needs `count`) |
@@ -165,7 +165,7 @@ per call — see [Sessions](sessions.md) for how sessions scope this.
 
 ## Rendered, not played: the arrangement
 
-An arrangement `Element` is **not** playable, on purpose. The verbs follow the
+A `FormElement` is **not** playable, on purpose. The verbs follow the
 generated/generator split the arrangement is built on: an element still needs
 its change of state (the flatten/bounce), so its door is `render` —
 `play(element)` raises a `TypeError` that points there. A flat `Timeline`,

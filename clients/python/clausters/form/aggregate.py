@@ -3,7 +3,7 @@
 A `Aggregate` is the one genuinely new structure of the arrangement: the recursive
 placement of elements with an offset, and the temporal *relation* derived from
 how the members sit in time. Everything else (the five primitives) already
-exists and is merely adorned by `clausters.form.element.Element`.
+exists and is merely adorned by `clausters.form.formelement.FormElement`.
 
 Two kinds of grouping:
 
@@ -31,7 +31,7 @@ SUCCESSIVE = "successive"
 SIMULTANEOUS = "simultaneous"
 MIXED = "mixed"
 
-from .element import BEATS, Element, to_beats  # noqa: E402  (constants first for the docstring)
+from .formelement import BEATS, FormElement, to_beats  # noqa: E402  (constants first for the docstring)
 
 
 class _Member:
@@ -41,7 +41,7 @@ class _Member:
     ``offset`` is the member's start in beats relative to the aggregate's context;
     ``dur`` is an explicit placement length that overrides the element's own
     ``duration`` when set, **in the element's own unit**
-    (`clausters.form.element.Element.duration_unit`: seconds for a take, beats
+    (`clausters.form.formelement.FormElement.duration_unit`: seconds for a take, beats
     for a phrase of events) -- trimming a recording states seconds, and placing
     it states beats.
 
@@ -81,7 +81,7 @@ class _Member:
         return self.offset + to_beats(length, self.duration_unit, tempo)
 
 
-class Aggregate(Element):
+class Aggregate(FormElement):
     """A composite element: a set of placed members with a grouping ``kind``.
 
     Members are placed by an ``offset`` (beats relative to the aggregate's context)
@@ -96,7 +96,7 @@ class Aggregate(Element):
     Args:
         children: optional iterable seeding the aggregate. Each item is a
             ``(offset, element)`` pair, a ``(offset, dur, element)`` triple, or
-            a bare `Element` (placed at offset 0).
+            a bare `FormElement` (placed at offset 0).
         kind: `CONCRETE` (default) or `LOGICAL`.
         name: the aggregate's name -- the GraphDef name for a logical aggregate.
         buses: internal buses for a logical aggregate -- each a ``name`` (audio,
@@ -126,11 +126,11 @@ class Aggregate(Element):
 
         One resident generator inside it makes the whole placement unlocatable:
         a position on the aggregate would be a position on that member too, and it
-        has none. See `clausters.form.element.Element.locatable`."""
+        has none. See `clausters.form.formelement.FormElement.locatable`."""
         return all(handle.element.locatable for handle in self.handles)
 
     def _add_child(self, child):
-        if isinstance(child, Element):
+        if isinstance(child, FormElement):
             self.add(child)
         elif len(child) == 2:
             offset, element = child
@@ -280,7 +280,7 @@ class Aggregate(Element):
         1:1 mapping of the arrangement's logical grouping (nodes wired by sender/
         receiver buses) onto the configuration the server already expresses.
 
-        Each member must be a `clausters.form.element.Generator` (its
+        Each member must be a `clausters.form.formelement.Generator` (its
         ``def_name`` is the member def; its ``controls`` -- numbers, an internal
         bus name, or ``"OUT"`` -- and ``maps`` wire it). The aggregate's `buses` become
         the private internal buses. Placement offsets are ignored (a logical aggregate
@@ -288,7 +288,7 @@ class Aggregate(Element):
         instancing it is `clausters.form.render`.
         """
         from ..defs.graphdef import GraphDef
-        from .element import Generator
+        from .formelement import Generator
 
         gname = name or self.name
         if gname is None:

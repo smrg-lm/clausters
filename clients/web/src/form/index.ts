@@ -11,7 +11,7 @@
 // second into the first is the **change of state** rendering performs. Pure and
 // transport-agnostic.
 //
-// See `./element.ts` for the primitives and the temporal *character*,
+// See `./formelement.ts` for the primitives and the temporal *character*,
 // `./aggregate.ts` for grouping and the temporal *relation*, and `./render.ts`
 // for the change of state to sound.
 //
@@ -27,7 +27,7 @@ export {
     BEATS,
     SECONDS,
     Clang,
-    Element,
+    FormElement,
     Generator,
     PUNCTUAL,
     RELATIVE,
@@ -44,7 +44,7 @@ export {
     take,
     temporalCharacter,
     toBeats,
-} from "./element.ts";
+} from "./formelement.ts";
 export type {
     Beats,
     ElementOptions,
@@ -57,7 +57,7 @@ export type {
     TemporalCharacter,
     TimeUnit,
     VectorOptions,
-} from "./element.ts";
+} from "./formelement.ts";
 export {
     Aggregate,
     CONCRETE,

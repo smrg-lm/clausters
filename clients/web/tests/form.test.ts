@@ -20,7 +20,7 @@ import {
     ABSTRACT,
     Aggregate,
     Clang,
-    Element,
+    FormElement,
     Generator,
     MIXED,
     PUNCTUAL,
@@ -49,10 +49,10 @@ const note = (midinote: number, dur = 1.0): SeqEvent => new SeqEvent({ midinote,
 // ---- the temporal character ----
 
 test("the character comes from which of onset and duration are there", () => {
-    assert.equal(new Element(null, 1.0, 2.0).temporalCharacter, SEGMENT);
-    assert.equal(new Element(null, 1.0, null).temporalCharacter, PUNCTUAL);
-    assert.equal(new Element(null, null, 2.0).temporalCharacter, RELATIVE);
-    assert.equal(new Element().temporalCharacter, ABSTRACT);
+    assert.equal(new FormElement(null, 1.0, 2.0).temporalCharacter, SEGMENT);
+    assert.equal(new FormElement(null, 1.0, null).temporalCharacter, PUNCTUAL);
+    assert.equal(new FormElement(null, null, 2.0).temporalCharacter, RELATIVE);
+    assert.equal(new FormElement().temporalCharacter, ABSTRACT);
 });
 
 test("a clang takes its length from the event's dur, unless it is given one", () => {
@@ -73,7 +73,7 @@ test("a container is not directly playable, and says to render it", () => {
 test("playing a clang delegates to the event it wraps", () => {
     let played: unknown = null;
     const event = { play: (destination: unknown) => (played = destination) };
-    const element = new Element(event);
+    const element = new FormElement(event);
     element.play("here" as never);
     assert.equal(played, "here");
 });
@@ -122,8 +122,8 @@ test("members that start and end together are simultaneous", () => {
 
 test("members with no known length are simultaneous only if none has one", () => {
     const aggregate = new Aggregate();
-    aggregate.add(new Element(null), 0.0);
-    aggregate.add(new Element(null), 0.0);
+    aggregate.add(new FormElement(null), 0.0);
+    aggregate.add(new FormElement(null), 0.0);
     assert.equal(aggregate.temporalRelation(), SIMULTANEOUS);
     aggregate.add(new Clang(note(60, 1.0)), 0.0);
     assert.equal(aggregate.temporalRelation(), MIXED);
@@ -204,7 +204,7 @@ test("a flattened timeline comes out sorted", () => {
 });
 
 test("an abstract element contributes context and no event", () => {
-    assert.deepEqual(flatten(new Element()), []);
+    assert.deepEqual(flatten(new FormElement()), []);
 });
 
 test("a placement's length trims what the element plays", () => {

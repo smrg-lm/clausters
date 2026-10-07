@@ -1,9 +1,9 @@
 // The arrangement -- elements and their temporal character (mirrors
-// `clausters/form/element.py`).
+// `clausters/form/formelement.py`).
 //
 // The client-side layer under a multitrack editor of recursive granularity: it
-// places elements in time, groups them recursively and renders them. An
-// `Element` is an arbitrarily delimited entity that produces a unit of meaning
+// places elements in time, groups them recursively and renders them. A
+// `FormElement` is an arbitrarily delimited entity that produces a unit of meaning
 // and can be decomposed or combined -- *generated* (the rendered thing, editable
 // and random-access) or a *generator* (the algorithm that renders it,
 // forward-only), with the change of state between them. It is a **thin
@@ -45,7 +45,7 @@ import type { RenderOptions, RenderResult } from "./render.ts";
  * and therefore imports this module: `render.ts` registers itself here as it
  * loads, and these two methods read it back. The indirection is what keeps the
  * dependency one-way -- a plain import both ways is a cycle, and a cycle whose
- * far end declares `class Aggregate extends Element` fails at load, not at use.
+ * far end declares `class Aggregate extends FormElement` fails at load, not at use.
  *
  * Python has the same shape and spells it as a function-level import.
  */
@@ -53,9 +53,9 @@ const rendering: Partial<Rendering> = {};
 
 /** The two entry points `render.ts` fills in. */
 interface Rendering {
-    toTimeline: (element: Element, base: number, tempo: number) => Timeline;
+    toTimeline: (element: FormElement, base: number, tempo: number) => Timeline;
     render: (
-        element: Element,
+        element: FormElement,
         destination: unknown,
         clock: unknown,
         options: RenderOptions,
@@ -104,7 +104,7 @@ export type Beats = number | null | undefined;
  * is in the unit of its own data: `SECONDS` for audio (a take's length is
  * `frames / sampleRate`, a wall-clock fact no tempo change moves), `BEATS` for
  * a succession of events (a note is musical, and a tempo change is supposed to
- * shorten it). {@link Element.durationUnit} says which, derived from what the
+ * shorten it). {@link FormElement.durationUnit} says which, derived from what the
  * element is made of rather than stored, and `flatten` converts on the way to a
  * timeline, which is ordered by one number and cannot hold two bases.
  */
@@ -162,7 +162,7 @@ const beats = (value: Beats): number | null =>
 
 /**
  * The temporal character for a given `onset`/`duration` pair (the pure rule
- * behind {@link Element.temporalCharacter}).
+ * behind {@link FormElement.temporalCharacter}).
  */
 export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharacter {
     const hasOnset = onset !== null && onset !== undefined;
@@ -178,7 +178,7 @@ export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharac
  *
  * An element carries an optional `onset` (in beats, relative to its context)
  * and `duration` (in the unit of what it wraps -- see
- * {@link Element.durationUnit}) and wraps an underlying client object it
+ * {@link FormElement.durationUnit}) and wraps an underlying client object it
  * delegates to. The
  * concrete onset of an element typically comes from its *placement* inside an
  * {@link Aggregate}, not from the element itself, so a standalone leaf commonly
@@ -190,7 +190,7 @@ export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharac
  * addresses an element by name, and two elements may share one, which is what
  * naming *the same algorithm used twice* looks like.
  */
-export class Element {
+export class FormElement {
     wraps: unknown;
     /**
      * A label, and the key an unowned leaf is handed back by. See the class
@@ -202,7 +202,7 @@ export class Element {
     /**
      * Whether this element's audio is produced by a def running **on the
      * server** rather than by messages the arrangement flattens. Such an
-     * element is a generator with no index (see {@link Element.locatable}).
+     * element is a generator with no index (see {@link FormElement.locatable}).
      */
     resident: boolean;
     /**
@@ -311,7 +311,7 @@ export class Element {
      * split one step. Nothing is copied and nothing is lost either way --
      * lengthening a half brings back exactly what the cut hid.
      */
-    windowed(at: number, length: number, rate = 0.0): Element | null {
+    windowed(at: number, length: number, rate = 0.0): FormElement | null {
         void at;
         void length;
         void rate;
@@ -368,7 +368,7 @@ export class Element {
  *
  * Wraps a `seq.Event` (or a plain object of parameters), and equally an
  * `OscItem` or a `MidiItem` -- an action that happens at one moment is a clang
- * whether it is a note or a message, which is what `Element.play`'s double
+ * whether it is a note or a message, which is what `FormElement.play`'s double
  * dispatch has always assumed and what a timeline written into a document is
  * read back as. Anything that plays itself is taken as it is; anything else is
  * the parameters of an event.
@@ -376,7 +376,7 @@ export class Element {
  * Its `duration` defaults to the event's `dur` when not given explicitly; its
  * `onset` usually comes from its placement in an {@link Aggregate}.
  */
-export class Clang extends Element {
+export class Clang extends FormElement {
     constructor(
         event: SeqEvent | Record<string, unknown>,
         onset: Beats = null,
@@ -403,7 +403,7 @@ export class Clang extends Element {
  * whole elements; the structure fixes only their successive order. Rendering
  * bounces a pattern-backed sequence; an array is interpreted by its content.
  */
-export class Sequence extends Element {
+export class Sequence extends FormElement {
     constructor(
         items: unknown,
         onset: Beats = null,
@@ -451,7 +451,7 @@ export interface VectorOptions extends ElementOptions {
  * editor draws. An element reading its buffer from the beginning sends neither,
  * so a def written before windows existed is sent what it always was.
  */
-export class Vector extends Element {
+export class Vector extends FormElement {
     instrument: string | null;
     controls: EventControls;
     /**
@@ -624,7 +624,7 @@ export function take(
     return new Vector(buffer, onset, length, options);
 }
 
-export class Segments extends Element {
+export class Segments extends FormElement {
     /** The windows themselves, as the general structure they are. */
     readonly run: BufferSegments;
     instrument: string | null;
@@ -689,7 +689,7 @@ export class Segments extends Element {
      * optimization, it is what makes a cut and a join inverses instead of a pile
      * of wrappers.
      */
-    override windowed(at: number, length: number, rate = 0.0): Element {
+    override windowed(at: number, length: number, rate = 0.0): FormElement {
         void length;
         void rate;
         const [, tail] = this.run.cut(at) as [BufferSegments, BufferSegments];
@@ -775,7 +775,7 @@ export function singleWindow(
     instrument: string | null = null,
     controls: EventControls | null = null,
     name: string | null = null,
-): Element {
+): FormElement {
     const first = run.segments[0];
     if (run.unit === SECONDS) {
         return new Vector(first.source as unknown as SourceLike, null, run.total, {
@@ -811,7 +811,7 @@ export interface TrackOptions extends ElementOptions {
  * `Timeline` is created when none is given. With `start`, it is a **window**
  * onto that timeline: `duration` is then how much of it this element is.
  */
-export class Track extends Element {
+export class Track extends FormElement {
     /**
      * The **beat of the timeline this element reads from** -- the head of its
      * window, the beats counterpart of {@link Vector.start}.
@@ -875,7 +875,7 @@ export class Track extends Element {
 export interface GeneratorOptions extends ElementOptions {
     controls?: Record<string, unknown> | null;
     maps?: Record<string, string> | null;
-    rendered?: Element | null;
+    rendered?: FormElement | null;
 }
 
 /**
@@ -893,13 +893,13 @@ export interface GeneratorOptions extends ElementOptions {
  * read by `Aggregate.toGraphdef`.
  *
  * `rendered` is what this generator **last produced**, as an ordinary
- * {@link Element} -- the change of state above, kept rather than recomputed. It
+ * {@link FormElement} -- the change of state above, kept rather than recomputed. It
  * is what a host with no language attached shows, since a generator is code and
  * such a host has nothing to run it with; and it is what a saved session carries
  * for the same reason a cache cannot, which is that a missing cache leaves
  * nothing to draw.
  */
-export class Generator extends Element {
+export class Generator extends FormElement {
     controls: Record<string, unknown> | null;
     maps: Record<string, string> | null;
     /**
@@ -907,7 +907,7 @@ export class Generator extends Element {
      * as editing goes: it is a rendering, not the tree, so an edit to it
      * would be written over by the next render.
      */
-    rendered: Element | null;
+    rendered: FormElement | null;
 
     constructor(
         generator: unknown,

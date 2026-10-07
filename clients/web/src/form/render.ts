@@ -52,7 +52,7 @@ import { CONCRETE, LOGICAL, Aggregate } from "./aggregate.ts";
 import {
     BEATS,
     Clang,
-    Element,
+    FormElement,
     Generator,
     Segments,
     Sequence,
@@ -61,7 +61,7 @@ import {
     registerRendering,
     endBeat,
     tempoMapOf,
-} from "./element.ts";
+} from "./formelement.ts";
 import type { TempoMap } from "../base/time.ts";
 
 /** One flattened item: what plays, and the absolute beat it plays at. */
@@ -92,7 +92,7 @@ export type RenderResult = Timeline | Promise<Group>;
  * (they follow the `play(destination)` protocol).
  *
  * `tempo` (beats per second) is where the tree's two units meet. An onset is in
- * beats and a length is in the unit of its own data ({@link Element.durationUnit}:
+ * beats and a length is in the unit of its own data ({@link FormElement.durationUnit}:
  * a take's is seconds), and a timeline is ordered by **one** number -- so the
  * conversion belongs to the flattening and never to the structure. At the
  * default tempo of one beat a second the two coincide, which is what a script
@@ -105,7 +105,7 @@ export type RenderResult = Timeline | Promise<Group>;
  * absence.
  */
 export function flatten(
-    element: Element,
+    element: FormElement,
     base = 0.0,
     tempo = 1.0,
     tempoMap?: TempoMap | null,
@@ -126,7 +126,7 @@ export function flatten(
  * in beats per second (see {@link flatten}).
  */
 export function toTimeline(
-    element: Element,
+    element: FormElement,
     base = 0.0,
     tempo = 1.0,
     tempoMap?: TempoMap | null,
@@ -152,7 +152,7 @@ export function toTimeline(
  * group. The seam is the destination, not the element.
  */
 export function render(
-    element: Element,
+    element: FormElement,
     destination: unknown,
     clock?: unknown,
     { at = 0.0, quant, ports }: RenderOptions = {},
@@ -250,17 +250,17 @@ class Mix {
      * says *only these* -- so whether anything is soloed is a question about the
      * tree and not about the element being walked.
      */
-    static over(element: Element, mixed: boolean): Mix {
+    static over(element: FormElement, mixed: boolean): Mix {
         return new Mix(mixed && anySolo(element), false, 1.0, mixed);
     }
 
     /** Whether this element's branch is dropped outright. */
-    silences(element: Element): boolean {
+    silences(element: FormElement): boolean {
         return this.honour && Boolean(element.mute);
     }
 
     /** The mix inside `element`. */
-    under(element: Element): Mix {
+    under(element: FormElement): Mix {
         if (!this.honour) return this;
         const level = Number(element.level ?? 1.0);
         const soloed = this.soloed || Boolean(element.solo);
@@ -291,7 +291,7 @@ class Mix {
 }
 
 /** Whether anything in this tree is soloed. */
-function anySolo(element: Element): boolean {
+function anySolo(element: FormElement): boolean {
     if (element.solo) return true;
     if (element instanceof Aggregate) {
         return element.handles.some((handle) => anySolo(handle.element));
@@ -300,7 +300,7 @@ function anySolo(element: Element): boolean {
         return anySolo(element.rendered);
     }
     if (element instanceof Sequence && Array.isArray(element.wraps)) {
-        return element.wraps.some((item) => item instanceof Element && anySolo(item));
+        return element.wraps.some((item) => item instanceof FormElement && anySolo(item));
     }
     return false;
 }
@@ -312,7 +312,7 @@ function heard(out: Flat[], beat: number, item: unknown, mix: Mix): void {
 }
 
 function emit(
-    element: Element,
+    element: FormElement,
     base: number,
     out: Flat[],
     dur: number | null = null,
@@ -354,7 +354,7 @@ function sized(item: unknown, dur: number): unknown {
 }
 
 function emitElement(
-    element: Element,
+    element: FormElement,
     base: number,
     out: Flat[],
     tempoMap: TempoMap,
@@ -399,7 +399,7 @@ function emitElement(
         if (element.instrument !== null) {
             heard(out, base, element.toEvent(tempoMap, base), mix);
         }
-    } else if (element instanceof Element) {
+    } else if (element instanceof FormElement) {
         // An abstract context element yields no event.
         if (element.wraps === null) return;
         if (typeof (element.wraps as { play?: unknown }).play === "function") {
@@ -411,7 +411,7 @@ function emitElement(
             );
         }
     } else {
-        throw new TypeError(`not an Element: ${String(element)}`);
+        throw new TypeError(`not a FormElement: ${String(element)}`);
     }
 }
 
@@ -436,7 +436,7 @@ function slot(item: unknown): number {
  * through would make soloing one lane re-time the sequence in another, which is
  * the one thing a reader would never look for.
  */
-function reaches(element: Element, tempoMap: TempoMap): number {
+function reaches(element: FormElement, tempoMap: TempoMap): number {
     const laid: Flat[] = [];
     emitElement(element, 0.0, laid, tempoMap, Mix.over(element, false));
     return laid.reduce((end, [beat, item]) => Math.max(end, beat + slot(item)), 0.0);
@@ -473,7 +473,7 @@ function emitSequence(
         // Something that plays itself -- an automation curve, and whatever else a
         // script hands over. The conversion writes every element it has no body
         // for as a *generator* leaf, so resolving one back on open gives a
-        // `Generator` where the author wrote a bare `Element`; the two must play
+        // `Generator` where the author wrote a bare `FormElement`; the two must play
         // the same thing or a reopened aggregate would sound different from the one
         // that was saved.
         heard(out, base, wrapped, mix);
@@ -488,7 +488,7 @@ function emitSequence(
     } else {
         let cursor = base;
         for (const item of wrapped as Iterable<unknown>) {
-            if (!(item instanceof Element)) {
+            if (!(item instanceof FormElement)) {
                 throw new Error(
                     "a Sequence of raw values is data (a parameter), not events",
                 );
@@ -507,7 +507,7 @@ function emitSequence(
 }
 
 // `element.render()` / `element.toTimeline()` are these two functions, reached
-// through the registry rather than through an import back into `element.ts` --
+// through the registry rather than through an import back into `formelement.ts` --
 // see `registerRendering` there for why the dependency stays one-way.
 registerRendering({ toTimeline, render });
 

@@ -29,7 +29,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
-from clausters.form import (Aggregate, Clang, Element, Generator, Segments,  # noqa: E402
+from clausters.form import (Aggregate, Clang, FormElement, Generator, Segments,  # noqa: E402
                             Sequence, Track, Vector, flatten)
 from clausters.seq import Event as SeqEvent  # noqa: E402
 from clausters.seq.timeline import Timeline  # noqa: E402

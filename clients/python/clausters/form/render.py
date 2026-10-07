@@ -27,7 +27,7 @@ Scope of this phase (the concrete path):
   not an event.
 
 **Mixing is part of the tree, and it is honoured here.** An element
-carries `clausters.form.element.Element.mute`, `solo` and `level`, all three
+carries `clausters.form.formelement.FormElement.mute`, `solo` and `level`, all three
 inherited down the tree: a muted branch contributes nothing, one soloed element
 anywhere silences every branch that is not on a soloed path, and a level
 multiplies into the ``amp`` of the events below it. They travel in the
@@ -47,7 +47,7 @@ and raises a clear `NotImplementedError` here.
 
 from ..defs.node import Group as NodeGroup
 from .aggregate import CONCRETE, LOGICAL, Aggregate
-from .element import (BEATS, Element, Generator, Clang, Segments, Sequence,
+from .formelement import (BEATS, FormElement, Generator, Clang, Segments, Sequence,
                       Track, Vector, end_beat, tempo_map_of)
 
 
@@ -59,7 +59,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
 
     The aggregate's tempo is where the tree's two units meet. An onset is in beats
     and a length is in the unit of its own data
-    (`clausters.form.element.Element.duration_unit`: a take's is seconds), and a
+    (`clausters.form.formelement.FormElement.duration_unit`: a take's is seconds), and a
     timeline is ordered by **one** number -- so the conversion belongs to the
     flattening and never to the structure. At the default tempo of one beat a
     second the two coincide, which is what a script that never set a tempo has
@@ -221,7 +221,7 @@ def _any_solo(element) -> bool:
     if isinstance(element, Generator) and getattr(element, "rendered", None) is not None:
         return _any_solo(element.rendered)
     if isinstance(element, Sequence) and isinstance(element.wraps, (list, tuple)):
-        return any(_any_solo(i) for i in element.wraps if isinstance(i, Element))
+        return any(_any_solo(i) for i in element.wraps if isinstance(i, FormElement))
     return False
 
 
@@ -311,7 +311,7 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
         # the editor and contributes its extent, but emits no event.
         if element.instrument is not None:
             _heard(out, base, element.to_event(tempo_map, base), mix)
-    elif isinstance(element, Element):
+    elif isinstance(element, FormElement):
         if element.wraps is None:
             return  # an abstract context element yields no event
         if hasattr(element.wraps, "play"):
@@ -321,7 +321,7 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
                 f"cannot render an element wrapping {type(element.wraps).__name__}"
             )
     else:
-        raise TypeError(f"not an Element: {element!r}")
+        raise TypeError(f"not a FormElement: {element!r}")
 
 
 def _slot(item) -> float:
@@ -378,7 +378,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
         # Something that plays itself -- an automation curve, and whatever else a
         # script hands over. The conversion writes every element it has no body
         # for as a *generator* leaf, so resolving one back on open gives a
-        # `Generator` where the author wrote a bare `Element`; the two must play
+        # `Generator` where the author wrote a bare `FormElement`; the two must play
         # the same thing or a reopened aggregate would sound different from the one
         # that was saved.
         _heard(out, base, wrapped, mix)
@@ -395,7 +395,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
     else:
         cursor = base
         for item in wrapped:
-            if not isinstance(item, Element):
+            if not isinstance(item, FormElement):
                 raise NotImplementedError(
                     "a Sequence of raw values is data (a parameter), not events"
                 )

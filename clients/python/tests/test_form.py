@@ -23,7 +23,7 @@ from clausters.form import (
     SIMULTANEOUS,
     SUCCESSIVE,
     Aggregate,
-    Element,
+    FormElement,
     Generator,
     Clang,
     Sequence,
@@ -44,16 +44,16 @@ def test_temporal_character_table():
 
 
 def test_element_character_property():
-    assert Element(onset=1.0, duration=4.0).temporal_character == SEGMENT
-    assert Element(onset=1.0).temporal_character == PUNCTUAL
-    assert Element(duration=4.0).temporal_character == RELATIVE
-    assert Element().temporal_character == ABSTRACT
+    assert FormElement(onset=1.0, duration=4.0).temporal_character == SEGMENT
+    assert FormElement(onset=1.0).temporal_character == PUNCTUAL
+    assert FormElement(duration=4.0).temporal_character == RELATIVE
+    assert FormElement().temporal_character == ABSTRACT
 
 
 def test_onset_duration_are_floats():
-    m = Element(onset=1, duration=2)
+    m = FormElement(onset=1, duration=2)
     assert isinstance(m.onset, float) and isinstance(m.duration, float)
-    assert Element().onset is None and Element().duration is None
+    assert FormElement().onset is None and FormElement().duration is None
 
 
 # ---- the five primitives are thin wrappers ----
@@ -110,7 +110,7 @@ def test_a_container_is_not_directly_playable():
     with pytest.raises(NotImplementedError):
         Aggregate().play(_Dest())
     with pytest.raises(NotImplementedError):
-        Element().play(_Dest())
+        FormElement().play(_Dest())
 
 
 # ---- Aggregate editing by handle ----
@@ -122,8 +122,8 @@ def test_aggregate_kind_validated():
 
 
 def test_aggregate_seed_forms():
-    a, b = Element(duration=1.0), Element(duration=1.0)
-    g = Aggregate([a, (2.0, b), (4.0, 1.0, Element(duration=9.0))])
+    a, b = FormElement(duration=1.0), FormElement(duration=1.0)
+    g = Aggregate([a, (2.0, b), (4.0, 1.0, FormElement(duration=9.0))])
     offsets = [off for off, _dur, _mat in g.members]
     assert offsets == [0.0, 2.0, 4.0]
     # the (offset, dur, element) triple overrides the element's own duration
@@ -132,8 +132,8 @@ def test_aggregate_seed_forms():
 
 def test_aggregate_add_remove_move_by_handle():
     g = Aggregate()
-    h1 = g.add(Element(duration=1.0), 0.0)
-    h2 = g.add(Element(duration=1.0), 1.0)
+    h1 = g.add(FormElement(duration=1.0), 0.0)
+    h2 = g.add(FormElement(duration=1.0), 1.0)
     assert len(g) == 2
     g.move(h1, 5.0)
     assert h1.offset == 5.0
@@ -149,7 +149,7 @@ def _agg(*placements):
     """An aggregate of members at the given (offset, dur) placements."""
     g = Aggregate()
     for offset, dur in placements:
-        g.add(Element(duration=dur), offset)
+        g.add(FormElement(duration=dur), offset)
     return g
 
 
@@ -169,8 +169,8 @@ def test_relation_simultaneous():
 def test_relation_simultaneous_durationless():
     # all start together and all have unknown (None) length -> still simultaneous
     g = Aggregate()
-    g.add(Element(), 3.0)
-    g.add(Element(), 3.0)
+    g.add(FormElement(), 3.0)
+    g.add(FormElement(), 3.0)
     assert g.temporal_relation() == SIMULTANEOUS
 
 
@@ -191,8 +191,8 @@ def test_relation_mixed_overlap():
 def test_relation_placement_dur_drives_derivation():
     # element durations differ, but the placement dur makes them tile
     g = Aggregate(kind=CONCRETE)
-    g.add(Element(duration=99.0), 0.0, dur=2.0)
-    g.add(Element(duration=99.0), 2.0, dur=2.0)
+    g.add(FormElement(duration=99.0), 0.0, dur=2.0)
+    g.add(FormElement(duration=99.0), 2.0, dur=2.0)
     assert g.temporal_relation() == SUCCESSIVE
 
 
@@ -247,7 +247,7 @@ def test_a_sequence_lays_a_muted_member_out_where_it_would_have_been():
 
 
 def test_an_abstract_element_yields_no_clang():
-    flat = flatten(Aggregate([(0.0, Element()), (1.0, Clang({"dur": 1.0}))]))
+    flat = flatten(Aggregate([(0.0, FormElement()), (1.0, Clang({"dur": 1.0}))]))
     assert [beat for beat, _ in flat] == [1.0]
 
 
@@ -283,7 +283,7 @@ def test_a_frozen_generator_is_structure_and_emits_nothing():
 def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
     # The conversion writes an element it has no body for as a generator leaf,
     # so opening one back gives a `Generator` where the author wrote a bare
-    # `Element`. Both flatten to the same thing, or a reopened aggregate would sound
+    # `FormElement`. Both flatten to the same thing, or a reopened aggregate would sound
     # different from the one that was saved.
     class _Plays:
         def play(self, dest):
@@ -291,12 +291,12 @@ def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
 
     playable = _Plays()
     assert (flatten(Aggregate([(1.0, Generator(playable))]))
-            == flatten(Aggregate([(1.0, Element(playable))])))
+            == flatten(Aggregate([(1.0, FormElement(playable))])))
 
 
 def test_render_bare_abstract_is_an_error():
     with pytest.raises(ValueError):
-        Element().render(None, None)
+        FormElement().render(None, None)
 
 
 # ---- render: NRT equivalence to a hand-built timeline (needs the FFI) ----
@@ -504,30 +504,30 @@ def test_render_routes_a_logical_aggregate_to_graphdef():
 def test_a_flattened_element_is_locatable():
     """Everything the arrangement flattens becomes messages at absolute beats,
     so a position on it means something."""
-    from clausters.form import Element
+    from clausters.form import FormElement
     from clausters.seq import Event as SeqEvent
 
-    assert Element(SeqEvent(instrument="default")).locatable
+    assert FormElement(SeqEvent(instrument="default")).locatable
 
 
 def test_a_resident_generator_is_not_locatable():
     """A def generating its own audio on the server has no index: its
     position *is* its internal state, and no number moves it."""
-    from clausters.form import Element
+    from clausters.form import FormElement
     from clausters.seq import Event as SeqEvent
 
-    assert not Element(SeqEvent(instrument="default"), resident=True).locatable
+    assert not FormElement(SeqEvent(instrument="default"), resident=True).locatable
 
 
 def test_an_aggregate_is_locatable_only_if_every_member_is():
     """One resident generator makes the whole placement unlocatable: a position
     on the aggregate would be a position on it too."""
-    from clausters.form import Aggregate, Element
+    from clausters.form import Aggregate, FormElement
     from clausters.seq import Event as SeqEvent
 
-    g = Aggregate([Element(SeqEvent(instrument="default"))])
+    g = Aggregate([FormElement(SeqEvent(instrument="default"))])
     assert g.locatable
-    g.add(Element(SeqEvent(instrument="default"), resident=True))
+    g.add(FormElement(SeqEvent(instrument="default"), resident=True))
     assert not g.locatable
 
 
