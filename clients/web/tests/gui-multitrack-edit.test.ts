@@ -12,6 +12,7 @@
 // case. Needs the core wasm staged (`./build.sh`); run with `npm test`.
 
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -20,6 +21,8 @@ import {
     MultitrackEditor, MultitrackView, NotesEditor, Playback, edit,
 } from "../src/gui/editing/index.ts";
 import { Editing } from "../src/history.ts";
+import { ScoreEditor } from "../src/gui/editing/score.ts";
+import { setEngraverUrl } from "../src/gui/notation/index.ts";
 import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
 import { Content, Multitrack, Tempo } from "../src/multitrack.ts";
 import type { Region, Track } from "../src/multitrack.ts";
@@ -911,6 +914,63 @@ test("a double click on a box of notes opens its roll", () => {
         [...audio.view!.widgets.keys()][0], "open", "12",
     ]);
     assert.equal(audio.rolls.size, 0);
+});
+
+test("a box of notes is drawn as its page and opens on it", async (t) => {
+    // `notesView` draws every box of notes as a score: the crate reads the
+    // box's sequence, engraves it with the score this page hands it, and
+    // states the page with the time of each note in the box's own frames. A
+    // double click then opens the score editor over the sequence.
+    const engraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
+    if (!existsSync(engraver)) {
+        t.skip("no engraver: run third_party/build-verovio-wasm.sh");
+        return;
+    }
+    setEngraverUrl(engraver.href);
+    const notes = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [1.0, new Event({ midinote: 64, dur: 1.0 })],
+    ]);
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
+    assert.equal(ed.notesView, "roll");
+    ed.notesView = "score";
+    assert.equal(props(ed).scores, undefined, "nothing engraves until it is handed an engraver");
+    await ed.engrave();
+    const drawn = props(ed) as unknown as {
+        notes_view: string;
+        notes: unknown[];
+        scores: Record<string, { prims: unknown[]; glyphs: object; anchors: (string | number)[] }>;
+    };
+    assert.equal(drawn.notes_view, "score");
+    const page = drawn.scores["12"];
+    // an engraved page: the staff's lines and the two noteheads
+    assert.ok(page.prims.length > 5 && Object.keys(page.glyphs).length > 0);
+    const anchors = new Map<string, number>();
+    for (let i = 0; i < page.anchors.length; i += 2) {
+        anchors.set(String(page.anchors[i]), Number(page.anchors[i + 1]));
+    }
+    assert.equal(anchors.get("n1"), 0);
+    assert.ok(Math.abs(anchors.get("n2")! - SR) < 1e-6);
+    assert.ok(drawn.notes.length > 0, "the roll is still stated: a low row falls back to it");
+    assert.throws(() => {
+        ed.notesView = "tablature" as "score";
+    }, /no view/);
+
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "open", "12"]);
+    // the page is read before its editor is up
+    for (let i = 0; i < 50 && !ed.rolls.has(1); i += 1) await new Promise((r) => setTimeout(r, 10));
+    const pageEditor = ed.rolls.get(1);
+    assert.ok(pageEditor instanceof ScoreEditor && pageEditor.structure === notes);
+    const contextOf = (e: object) => (e as unknown as { editing: unknown }).editing;
+    assert.equal(contextOf(pageEditor), contextOf(ed), "one context, one undo order");
+    // at open, too
+    const again = new MultitrackEditor(multitrack(), {
+        sampleRate: SR, sources: { 1: notes }, notesView: "score",
+    });
+    await again.engrave();
+    assert.ok(props(again).scores !== undefined);
 });
 
 test("a join the history let go of is freed and leaves the table", async () => {

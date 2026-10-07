@@ -107,6 +107,12 @@ already carry it.
   is not a number. The server now reads `control + constant` as a static bus
   index, so the refusal can go, in both clients at once.
 
+- ⬜ **A box of notes moved does not sound as it should**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Reported at the first
+  look at a box drawn as its page, and not yet reproduced: the placement is
+  right, so what is wrong is in what the lane or the box's strip do with it.
+  It starts with what is heard, which the entry asks.
+
 - ⬜ **A looping selection does not follow a new selection**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Redrawing the selection
   while it loops leaves the loop on the old span, in the audio editor opened
@@ -153,10 +159,10 @@ its plan; the plan is where its acceptance is read.
   chosen them; no longer invisible, since the score editor opens a foreign
   file, lays it out in runs at its page breaks and changes its rhythms.
   **`N9`** — a score as a box of the multitrack, drawn the way a box of notes
-  is drawn as a piano roll. **Related:** `N9`'s decisions are taken (its
-  entry), and it is the last step of one sequence of work: "From the roll to
-  the score" (`crates/clausters-apps/PLAN.md`, Future directions), whose
-  reading it draws its notes with, comes first.
+  is drawn as a piano roll. **Related:** `N9` is built -- the reading it
+  draws its notes with landed first, as "From the roll to the score"
+  (`crates/clausters-apps/PLAN.md`) -- and what is left of it is the eye pass
+  over `editors/edit_multitrack`, and what its entry lists as left open.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
   continued, `X9`**
@@ -325,8 +331,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; a roll's tempo and
-  barlines as parameters; from the roll to the
-  score; the score editor's
+  barlines as parameters; the score editor's
   editing rules as modules; what a score editor's hand expects and this one
   has not; dynamics as a model of the instrument and of hearing; a glissando
   that arrives without a new attack). Every one of them carries its own checkbox in its own

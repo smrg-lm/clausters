@@ -273,6 +273,49 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score_over(
     n
 }
 
+/// **Hands a multitrack editor the engraver its boxes' pages are engraved
+/// with**: `score` is a handle from `clausters_score_open` the caller made
+/// for that and reads no more, and `member` the multitrack editor's. A box of
+/// notes drawn as a score is then that sequence read and engraved by it.
+/// Writes the member's picture corrected (the `Answer` a correction is), `{}`
+/// when `member` is not a multitrack editor; sizes with a null `out`.
+///
+/// # Safety
+/// `e` and `score` must be live handles, and `out` null or writable for
+/// `out_cap` bytes.
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_bind_engraver(
+    e: *mut FfiEditing,
+    member: u32,
+    score: *mut crate::notation::ScoreHandle,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both are live or null.
+    let (Some(handle), Some(score)) = (unsafe { e.as_ref() }, unsafe { score.as_ref() }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    // binding twice is binding once: the answer is kept across the sizing
+    // call and its fill
+    let asked = format!("bindEngraver {member}");
+    let answer = match pending.take() {
+        Some((was, answer)) if was == asked => answer,
+        _ => editing.bind_engraver(member, score.0.clone()),
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((asked, answer));
+    }
+    n
+}
+
 /// **Opens a multitrack editor over a multitrack the caller holds**:
 /// `multitrack` is a handle from `clausters_document_multitrack_new`, which the
 /// editor then edits in place -- the script reads every edit through that same

@@ -26,8 +26,9 @@
 //! **What each adds**: the audio editor `save` and `mix` (a paste that adds);
 //! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
-//! transport that pauses (`pause`, `stop`), and `save` where the window is the
-//! work's only holder.
+//! transport that pauses (`pause`, `stop`), how its boxes of notes are drawn
+//! (`notes_roll`, `notes_score`), and `save` where the window is the work's
+//! only holder.
 //!
 //! What has a gesture and no meaning without one -- moving a box, trimming
 //! it, drawing a curve -- is the hand's, and is in no menu. What is about one
@@ -138,6 +139,12 @@ pub fn menu(app: App, saves: bool) -> Value {
             sep(),
             entry("Reset track heights", "reset_heights"),
             entry("Compact tracks", "compact_tracks"),
+        ]);
+        // how a box of notes is drawn: the window's own, like its zoom
+        view.extend([
+            sep(),
+            entry("Notes as rolls", "notes_roll"),
+            entry("Notes as scores", "notes_score"),
         ]);
     }
 
@@ -315,6 +322,8 @@ mod tests {
             "stop",
             "reset_heights",
             "compact_tracks",
+            "notes_roll",
+            "notes_score",
         ] {
             assert!(
                 multitrack.contains(&verb.into()),

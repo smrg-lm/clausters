@@ -229,6 +229,12 @@ class Editing:
         self.claim(sequence)
         return self.core.bind_sequence(sequence._seq, int(member), int(source))
 
+    def bind_engraver(self, member: int, score) -> dict:
+        """**Hand a multitrack member the engraver its boxes' pages are
+        engraved with** -- a `clausters.gui.notation.Score` made for that and
+        read no more; answers the member's corrected picture."""
+        return self.core.bind_engraver(int(member), score._h)
+
     def claim(self, structure) -> None:
         """**Make this the structure's context**, so `Editing.of` and the
         structure's own `UndoHistory` answer it. An editor opened in a context

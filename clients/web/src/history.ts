@@ -475,6 +475,19 @@ export class Editing {
     }
 
     /**
+     * **Hand a multitrack member the engraver its boxes' pages are engraved
+     * with** -- a `Score` made for that and read no more; answers the
+     * member's corrected picture.
+     */
+    bindEngraver(member: number, score: Score): Record<string, unknown> {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        return JSON.parse(this.#core.bindEngraver(member, score.handle)) as Record<
+            string,
+            unknown
+        >;
+    }
+
+    /**
      * **Makes this the structure's context**, so {@link Editing.of} and the
      * structure's own {@link UndoHistory} answer it. An editor opened in a context
      * the caller handed it claims what it edits: the windows are here, so a

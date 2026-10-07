@@ -41,6 +41,11 @@ const AIR: f32 = 1.0;
 /// The room a staff is given above and below its lines, in staff spaces,
 /// whatever it holds: where the meter and the first ledger lines go.
 const ROOM: f32 = 3.0;
+/// The size a meter is written at over its staff, to the size it is engraved
+/// at in one: what fits the room over a staff.
+const METER: f32 = 0.5;
+/// How far over the staff's top line a meter's foot stands, in staff spaces.
+const METER_GAP: f32 = 0.4;
 /// The smallest a staff space is drawn, in pixels: under it a staff is five
 /// lines nobody can count, and the box is drawn another way.
 const LEGIBLE: f32 = 2.5;
@@ -335,41 +340,62 @@ impl ScoreData {
             }
             draw(mesh, at, prim, &through, 0.0);
         }
-        // A meter, over its staff, starting where the note after it does.
-        for (at, prim) in self.prims.iter().enumerate() {
+        // A meter, over its staff, starting where the note after it does --
+        // at half its size, which is what the room over a staff holds.
+        for prim in &self.prims {
+            let Prim::Glyph { cp, xf, id } = prim else {
+                continue;
+            };
             if !is_meter(prim) {
                 continue;
             }
-            let from = x_at(prim);
-            let Some(staff) = self.staves.iter().min_by(|a, b| {
-                let to = |s: &super::Staff| match prim {
-                    Prim::Glyph { xf, .. } => super::tess::staff_distance(s, xf.ty),
-                    _ => 0.0,
-                };
-                to(a).total_cmp(&to(b))
-            }) else {
+            let (Some(d), Some(staff)) = (
+                self.glyphs.get(cp),
+                self.staves.iter().min_by(|a, b| {
+                    super::tess::staff_distance(a, xf.ty)
+                        .total_cmp(&super::tess::staff_distance(b, xf.ty))
+                }),
+            ) else {
                 continue;
             };
-            let lift = (staff.y1 - staff.y0) + space;
             // every digit of one meter keeps its place beside the others
             let group = self
                 .prims
                 .iter()
-                .filter(|other| other.id() == prim.id())
+                .filter(|other| other.id() == id.as_deref())
                 .map(x_at)
                 .fold(f32::INFINITY, f32::min);
             let next = columns
                 .iter()
                 .map(|(page, _)| *page)
-                .filter(|page| *page >= from)
+                .filter(|page| *page >= group)
                 .fold(f32::INFINITY, f32::min);
             let anchor = if next.is_finite() {
                 warp.x(next)
             } else {
                 warp.x(group)
             };
-            let beside = |page: f32| anchor + scale * (page - group);
-            draw(mesh, at, prim, &beside, lift);
+            // the staff's own height, halved, its foot just over the top line
+            let small = scale * METER;
+            let foot = y(staff.y0 - METER_GAP * space);
+            let fit = Affine {
+                sx: small,
+                sy: small,
+                tx: anchor - small * group,
+                ty: foot - small * staff.y1,
+            }
+            .then(*xf);
+            let fill = self
+                .fills
+                .of(FillOf::Glyph(*cp), d, tol_page / METER * xf_shrink(*xf));
+            for corner in fill.as_chunks::<3>().0 {
+                mesh.tri(
+                    fit.apply(corner[0][0], corner[0][1]),
+                    fit.apply(corner[1][0], corner[1][1]),
+                    fit.apply(corner[2][0], corner[2][1]),
+                    colors.ink,
+                );
+            }
         }
 
         // The clef and the key: before the first note, before the box where

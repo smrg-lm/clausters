@@ -54,6 +54,12 @@ What to do in the window:
   it, play and it is heard where it now is, and `Ctrl`+`Z` in either window walks
   one history. A box of samples opens nothing on a double click: the multitrack
   edits where things are, never a take.
+- **View, Notes as scores** draws the keys box as notation: its four notes
+  on a staff, each at its time under the ruler, the clef before the box and
+  the meter over the staff. Zoom the time axis and the notes spread with it;
+  drag the track's lower edge and the staff grows with the row, and a row too
+  low for a staff goes back to the roll. A double click on the box then opens
+  the score editor over the same sequence. **Notes as rolls** puts it back.
 - **Watch the meters** while it plays: the strip in each track's header is one
   column per channel, in decibels, over what that track produces *after* its
   clips, its curves and its fader -- with the peak it reached held beside it.

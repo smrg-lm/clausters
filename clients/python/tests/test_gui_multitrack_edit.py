@@ -239,6 +239,45 @@ def test_a_double_click_on_a_box_of_notes_opens_its_roll():
     assert audio.rolls == {}
 
 
+def test_a_box_of_notes_is_drawn_as_its_page_and_opens_on_it():
+    """`notes_view` draws every box of notes as a score: the crate reads the
+    box's sequence, engraves it with the score this client hands it, and
+    states the page with the time of each note in the box's own frames. A
+    double click then opens the score editor over the sequence."""
+    from clausters import _native
+    from clausters.gui.editing import ScoreEditor
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    if not _native.has_engraver():
+        pytest.skip("no engraver: build libverovio and stage it")
+    notes = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
+                           (1.0, Event(midinote=64, dur=1.0))])
+    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
+    assert ed.notes_view == "roll" and "scores" not in props(ed)
+    ed.notes_view = "score"
+    drawn = props(ed)
+    assert drawn["notes_view"] == "score"
+    page = drawn["scores"]["12"]
+    # an engraved page: the staff's lines and the two noteheads
+    assert len(page["prims"]) > 5 and page["glyphs"]
+    anchors = dict(zip(page["anchors"][0::2], page["anchors"][1::2]))
+    assert anchors["n1"] == 0.0 and anchors["n2"] == pytest.approx(SR)
+    assert "notes" in drawn, "the roll is still stated: a low row falls back to it"
+    with pytest.raises(ValueError, match="no view"):
+        ed.notes_view = "tablature"
+
+    ed.draw()
+    ed._route([next(iter(ed.view.widgets)), "open", "12"])
+    page_editor = ed.rolls[1]
+    assert isinstance(page_editor, ScoreEditor) and page_editor.structure is notes
+    assert page_editor._editing is ed._editing, "one context, one undo order"
+    # at open, too
+    again = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes},
+                             notes_view="score")
+    assert "scores" in props(again)
+
+
 def test_a_scripts_change_to_a_sequence_a_box_reads_is_the_multitracks_turn():
     """The multitrack claims the sequences its boxes read, so a script's
     change to one is recorded in the multitrack's order, the boxes draw it,

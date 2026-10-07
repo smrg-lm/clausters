@@ -2298,7 +2298,7 @@ Every entry carries a checkbox.
   page's own grid, its meters by measure, which the sequence's `notation`
   section holds and a reading already takes.)*
 
-- ⬜ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
+- ✅ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
   the conversion to a roll goes one way, and the way back takes decisions
   that can be made later)*. `X5.8` renders a score into an `EventSequence`;
   reading one into a `Sheet` is the other direction, and each part of it is a
@@ -2347,7 +2347,9 @@ Every entry carries a checkbox.
 
   **The steps:** the reading, bound in both clients as the score's
   constructor from a sequence; `edit(sequence, view="score")` with the edit
-  written back as above; then `N9`.
+  written back as above; then `N9`. *(All of it done 2026-10-06; `N9` is
+  built and closes in its own plan with its eye pass. What each step left
+  open is listed under it.)*
 
   - ✅ **The reading.** *(Done 2026-10-06.
     `clausters_document::events::transcription::read`, behind the crate's
@@ -2729,6 +2731,18 @@ Every entry carries a checkbox.
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
 
+- ⬜ **A box of notes moved does not sound as it should** *(the user,
+  2026-10-06, at the first look at a box drawn as its page: with the box
+  moved, its notes do not sound as they should)*. Not yet reproduced by ear.
+  What is checked: the placement is right -- `placed_notes` answers the
+  notes at the box's new position, a box moved three seconds placing them
+  three seconds later -- and how a box is drawn does not reach what sounds,
+  so the page is not the cause and a box drawn as a roll should do the same.
+  What is not: what the lane and the box's own strip do with a new placement
+  while the transport stands or rolls (`MultitrackPlayback::notes`,
+  `nodes::plan_voiced`). To ask: what is heard -- the notes where the box
+  was, late, cut, at another level -- whether it is the same as a roll, and
+  in which host.
 - ✅ **The notes editor's playback does the transport's work** *(found
   2026-09-28, writing `X3.9`'s sound; the user: "Pianoroll con midi/osc events
   debería correr con el transport del servidor, de lo contrario estaríamos

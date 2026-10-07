@@ -408,7 +408,7 @@ class MultitrackEditor(Marking, Editor):
 
     def __init__(self, multitrack: Multitrack, *, sample_rate: float,
                  sources=None, link=None, server=None,
-                 title: str = "Multitrack", **options):
+                 title: str = "Multitrack", notes_view: str = "roll", **options):
         bridge = Bridge(multitrack, sample_rate=sample_rate, server=server,
                         sources=Sources(sources) if not isinstance(sources, Sources)
                         else sources)
@@ -436,10 +436,20 @@ class MultitrackEditor(Marking, Editor):
             f"multitrack:{id(multitrack)}", multitrack, {
                 "rate": float(sample_rate), "link": link,
                 "transport": server is not None, "title": title,
-                "w": int(self.size[0]), "h": int(self.size[1]), "chrome": self.chrome},
+                "w": int(self.size[0]), "h": int(self.size[1]), "chrome": self.chrome,
+                "notesView": str(notes_view)},
             domain)
         for source, sequence in bridge.sources.sequences().items():
             self._editing.bind_sequence(self._member, source, sequence)
+        #: The score the boxes' pages are engraved with, where this client
+        #: has an engraver: the crate reads each box's sequence and engraves
+        #: it there. Nothing else reads it.
+        self._engraver = None
+        if bridge.sources.sequences() and _native.has_engraver():
+            from ..notation import Score, sheet_from_voice, to_mei
+
+            self._engraver = Score(to_mei(sheet_from_voice([])))
+            self._editing.bind_engraver(self._member, self._engraver)
         self._shown = None
         #: The rolls a double click opened, by source.
         self.rolls = {}
@@ -579,6 +589,28 @@ class MultitrackEditor(Marking, Editor):
         self._closing(outcome)
         return changed
 
+    @property
+    def notes_view(self) -> str:
+        """**How a box of notes is drawn**: ``"roll"``, a piano roll fitted
+        to the box, or ``"score"`` -- its page, the sequence read as notation
+        (`clausters.gui.notation.Score.from_events`) and drawn on the box's
+        own axis, every note at its time, in line with the other tracks. The
+        first clef and key signature stand before the box's first note and
+        stay in view, and a row too low for a staff to be read is drawn as a
+        roll. The window's own, like its zoom: setting it is no edit. The
+        View menu's *Notes as rolls* and *Notes as scores* are the same
+        switch, and a double click on a box opens the editor of the view it
+        is drawn in. Without an engraver in this client every box is a
+        roll."""
+        return str(self._call("notesView").get("view", "roll"))
+
+    @notes_view.setter
+    def notes_view(self, view: str) -> None:
+        if not self._call("notesView", view=str(view)).get("set"):
+            raise ValueError(
+                f"no view {view!r} of a box of notes: it is drawn as 'roll' or 'score'")
+        self.adopt()
+
     def open_roll(self, source: int):
         """**Open the roll over source ``source``**, a sequence among this
         editor's `sources` -- what a double click on a box of notes asks for.
@@ -587,8 +619,11 @@ class MultitrackEditor(Marking, Editor):
         context, so it is one undo order with the multitrack, and an edit in
         the roll redraws every box over that sequence and is heard from the
         transport's lane. A roll already open over the sequence is left as it
-        is. Returns the `clausters.gui.editing.NotesEditor`, or ``None`` when
-        the source is not a sequence."""
+        is. Where the boxes are drawn as scores (`notes_view`) what opens is
+        the score editor over the sequence, on its page. Returns the
+        `clausters.gui.editing.NotesEditor` or the
+        `clausters.gui.editing.ScoreEditor`, or ``None`` when the source is
+        not a sequence."""
         sequence = self.bridge.sources.sequences().get(int(source))
         if sequence is None:
             return None
@@ -596,11 +631,18 @@ class MultitrackEditor(Marking, Editor):
         if open_roll is not None and open_roll._window is not None:
             return open_roll
         from .events import NotesEditor
+        from .score import ScoreEditor
 
         server = None if self.playback is None else self.playback.server
-        roll = NotesEditor(sequence, sample_rate=self.bridge.rate, server=server,
-                           app=self.app, context=self._editing,
-                           title=f"{self.title}: notes")
+        if self.notes_view == "score" and self._engraver is not None:
+            # a box drawn as its page opens on its page
+            roll = ScoreEditor.over(sequence, server=server, app=self.app,
+                                    context=self._editing,
+                                    title=f"{self.title}: score")
+        else:
+            roll = NotesEditor(sequence, sample_rate=self.bridge.rate, server=server,
+                               app=self.app, context=self._editing,
+                               title=f"{self.title}: notes")
         self.rolls[int(source)] = roll
         if self._host is not None:
             roll.open(self._host)

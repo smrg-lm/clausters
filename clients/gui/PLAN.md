@@ -4094,6 +4094,40 @@ Whatever symbols the model itself needs owe their rows either way
     what is visible once the start has scrolled off -- as a roll's keyboard
     is -- so the staff can always be read *(the user, 2026-10-06)*.
 
+  **Built 2026-10-06, and not closed: it closes with the eye pass** over
+  `editors/edit_multitrack` (View, Notes as scores).
+  - **The host** draws it: `notes_view` and `scores` on the `multitrack`
+    widget, and `graphics::score::proportional` -- a `Warp` of the page's
+    `x` with a zone around each note drawn as engraved, a glyph never
+    stretched, a meter at half its size over its staff, the first clef and
+    key before the first note and held at the row's left edge.
+  - **The application** states the pages: the multitrack editor reads each
+    box's sequence, engraves it with a score its holder hands it
+    (`bind_engraver`, since the engraver is a port a client has and the crate
+    does not), in the continuous view, and answers each box's page with the
+    time of every note of it in the box's own frames. A page is engraved
+    again when its sequence is no longer the one it was engraved from, and
+    not once a correction. The View menu's *Notes as rolls* and *Notes as
+    scores* are the switch, `notes_view` the option and the attribute in both
+    clients, and a double click on a box drawn as its page opens the score
+    editor over the sequence.
+  - **Found on the way**: a note's `dur` is the time to the next of a line
+    and not what it holds, and a client's event states one by default -- so
+    what decides that a note goes to another voice is what **sounds**, and
+    four notes written a beat long, half a beat apart and let go early are
+    one line of eighths, where they were two voices and their rests.
+  - **Left open**, each for when it is met:
+    - the standalone host binds no engraver to its multitrack, so there a
+      box of notes is a roll whatever the menu says;
+    - the box is read with the transcription's defaults, and nothing on the
+      multitrack states another meter, key or smallest value for it;
+    - a page is engraved whole when its sequence changes, and what that
+      costs for a sequence of thousands of notes is not measured;
+    - a rest has no id on the page, so it stands where the stretch between
+      its neighbours puts it rather than at its own time;
+    - the box's label and the meter over the first note share the box's top
+      left corner.
+
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
 here and none of them is a milestone any more: the **surface** is N5's, being a

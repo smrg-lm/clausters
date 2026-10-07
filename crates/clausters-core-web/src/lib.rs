@@ -1667,6 +1667,16 @@ impl JsEditing {
             .open_score_over(&key, score.0.clone(), sequence.0.clone(), request)
     }
 
+    /// Hands the multitrack editor `member` the engraver its boxes' pages are
+    /// engraved with -- the C ABI's `clausters_apps_editing_bind_engraver`.
+    /// `score` is one the caller made for that and reads no more. Answers the
+    /// member's picture corrected.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = bindEngraver)]
+    pub fn bind_engraver(&mut self, member: u32, score: &JsScore) -> String {
+        self.0.bind_engraver(member, score.0.clone())
+    }
+
     /// Opens a multitrack editor over `multitrack`, which it then edits in
     /// place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
     /// carries the `key` and what the editor is built from.

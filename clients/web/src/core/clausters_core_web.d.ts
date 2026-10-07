@@ -93,6 +93,13 @@ export class EditingCore {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Hands the multitrack editor `member` the engraver its boxes' pages are
+     * engraved with -- the C ABI's `clausters_apps_editing_bind_engraver`.
+     * `score` is one the caller made for that and reads no more. Answers the
+     * member's picture corrected.
+     */
+    bindEngraver(member: number, score: Score): string;
+    /**
      * Binds a multitrack member's source to `sequence`, so a region over it
      * draws the sequence's notes -- the C ABI's
      * `clausters_apps_editing_bind_sequence`. `request` is `{"member",
@@ -1934,6 +1941,7 @@ export interface InitOutput {
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly editingcore_bindEngraver: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_bindSequence: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_new: () => number;

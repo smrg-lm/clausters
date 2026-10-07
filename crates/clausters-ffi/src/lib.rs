@@ -549,7 +549,10 @@ pub use time::*;
 /// `clausters_apps_editing_open_score_over`: the score editor on the page a
 /// sequence is read into, its edits written back to the sequence and
 /// recorded as the sequence's. Additive.
-pub const CORE_ABI_VERSION: u32 = 86;
+/// **v87 a multitrack editor is handed an engraver.**
+/// `clausters_apps_editing_bind_engraver`: the score a multitrack editor
+/// engraves its boxes of notes with, each drawn as its page. Additive.
+pub const CORE_ABI_VERSION: u32 = 87;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

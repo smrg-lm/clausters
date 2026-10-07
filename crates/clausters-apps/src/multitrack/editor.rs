@@ -278,6 +278,46 @@ pub struct MultitrackEditor {
     unsaved: bool,
     /// Whether the window is composed with no chrome ([`Window::bare`]).
     bare: bool,
+    /// **How a box of notes is drawn**: `"roll"`, or `"score"` -- its page,
+    /// each note at its time. The window's own, like its zoom.
+    notes_view: String,
+    /// **The engraver the boxes' pages are engraved with**: a score its
+    /// holder hands over for that and nothing else ([`bind_engraver`]). With
+    /// none, a box of notes is drawn as its roll whatever the view.
+    ///
+    /// [`bind_engraver`]: MultitrackEditor::bind_engraver
+    #[cfg(feature = "notation")]
+    engraver: Option<Engraver>,
+    /// The pages engraved, by the source each is of, with the sequence each
+    /// was engraved from: a page is engraved again when its sequence is no
+    /// longer that one, and not once a correction.
+    #[cfg(feature = "notation")]
+    pages: std::cell::RefCell<HashMap<SourceId, Engraved>>,
+}
+
+/// The score a holder handed over to engrave with.
+#[cfg(feature = "notation")]
+#[derive(Clone)]
+struct Engraver(crate::score::Shared);
+
+#[cfg(feature = "notation")]
+impl std::fmt::Debug for Engraver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Engraver")
+    }
+}
+
+/// A sequence's page, as it was engraved.
+#[cfg(feature = "notation")]
+#[derive(Clone, Debug)]
+struct Engraved {
+    /// The sequence it is the page of.
+    of: clausters_document::events::EventSequence,
+    /// The display list a `score` widget takes.
+    page: Map<String, Value>,
+    /// Each item of the page that sounds: the id it is drawn under, and the
+    /// beat it starts at.
+    onsets: Vec<(String, f64)>,
 }
 
 impl MultitrackEditor {
@@ -314,7 +354,131 @@ impl MultitrackEditor {
             asks: false,
             unsaved: false,
             bare: false,
+            notes_view: ROLL.into(),
+            #[cfg(feature = "notation")]
+            engraver: None,
+            #[cfg(feature = "notation")]
+            pages: std::cell::RefCell::new(HashMap::new()),
         }
+    }
+
+    /// **How a box of notes is drawn**: `"roll"`, or `"score"`. A word that
+    /// is neither leaves it as it is, and says so.
+    pub fn set_notes_view(&mut self, view: &str) -> bool {
+        if view != ROLL && view != SCORE {
+            return false;
+        }
+        self.notes_view = view.to_string();
+        true
+    }
+
+    /// How a box of notes is drawn.
+    pub fn notes_view(&self) -> &str {
+        &self.notes_view
+    }
+
+    /// **Hands the editor the engraver its boxes' pages are engraved with**:
+    /// a score nobody else reads, which the editor loads with each sequence
+    /// in turn. The engraver is a port a holder has and this crate does not.
+    #[cfg(feature = "notation")]
+    pub fn bind_engraver(&mut self, score: crate::score::Shared) {
+        self.engraver = Some(Engraver(score));
+        self.pages.borrow_mut().clear();
+    }
+
+    /// **The pages of the boxes of notes**, a box's name to its page with
+    /// the time of each of its notes -- or `None` where the boxes are drawn
+    /// as rolls, or nothing engraves here.
+    #[cfg(feature = "notation")]
+    fn scores(&self) -> Option<Value> {
+        use clausters_core::notation::{PageSetup, View, default_interpretation, layout_options};
+        use clausters_core::tempomap::TempoMap;
+        use clausters_document::events::transcription::{Transcription, read};
+        use clausters_document::multitrack::picture;
+
+        if self.notes_view != SCORE {
+            return None;
+        }
+        let engraver = &self.engraver.as_ref()?.0;
+        let how = Transcription::default();
+        let beat_unit = how.beat_unit.max(1) as f64;
+        let mut out = Map::new();
+        let multitrack = self.multitrack();
+        for box_ in picture::boxes(&multitrack) {
+            let Some(source) = box_.source else {
+                continue;
+            };
+            let Some(shared) = self.sequences.get(&source) else {
+                continue;
+            };
+            let sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut pages = self.pages.borrow_mut();
+            let stale = pages.get(&source).is_none_or(|kept| kept.of != sequence);
+            if stale {
+                let Ok(got) = read(&sequence, &how, &default_interpretation()) else {
+                    continue;
+                };
+                let Ok(mei) = clausters_core::notation::sheet_to_mei(&got.sheet) else {
+                    continue;
+                };
+                let mut held = engraver.lock().unwrap_or_else(|e| e.into_inner());
+                if !held.load(&mei) {
+                    continue;
+                }
+                // one system as long as the music: the page of a box
+                held.relayout(&layout_options(&PageSetup::default(), View::Continuous));
+                let mut page = crate::score::drawing(&held.pages(0.0, false));
+                page.remove("cursors");
+                // every item that sounds, at the beat the page writes it
+                let mut onsets = Vec::new();
+                for voice in got.sheet.voices() {
+                    let mut at = clausters_core::ratio::Ratio::ZERO;
+                    for item in &voice.items {
+                        if item.sounds() {
+                            let beat = at.to_f64() * beat_unit;
+                            onsets.push((format!("n{}", item.id()), beat));
+                            // a chord is drawn as its pitches
+                            onsets.push((format!("n{}-p1", item.id()), beat));
+                        }
+                        at = at + item.dur();
+                    }
+                }
+                pages.insert(
+                    source,
+                    Engraved {
+                        of: sequence.clone(),
+                        page,
+                        onsets,
+                    },
+                );
+            }
+            let Some(kept) = pages.get(&source) else {
+                continue;
+            };
+            // where each note stands in the box: its second in the sequence,
+            // from the box's own start, in the frames a note's start is in
+            let map = sequence
+                .tempo_map
+                .clone()
+                .unwrap_or_else(|| TempoMap::new(1.0));
+            let rate = if box_.playrate > 0.0 {
+                box_.playrate
+            } else {
+                1.0
+            };
+            let anchors: Vec<Value> = kept
+                .onsets
+                .iter()
+                .flat_map(|(id, beat)| {
+                    let start = (map.secs_at(*beat) - box_.start) / rate * self.rate;
+                    [json!(id), json!(start)]
+                })
+                .collect();
+            let mut page = kept.page.clone();
+            page.insert("anchors".into(), Value::Array(anchors));
+            out.insert(box_.region.0.to_string(), Value::Object(page));
+        }
+        Some(Value::Object(out))
     }
 
     /// **A window with no chrome** -- no menu bar, no tools -- for a client
@@ -533,7 +697,15 @@ impl MultitrackEditor {
     pub fn answers(&self, widget: i32, tag: &str) -> bool {
         self.owns(widget)
             || (self.window == Some(widget)
-                && matches!(tag, PLAY_KEY | LOOP_KEY | PAUSE_VERB | STOP_VERB))
+                && matches!(
+                    tag,
+                    PLAY_KEY
+                        | LOOP_KEY
+                        | PAUSE_VERB
+                        | STOP_VERB
+                        | NOTES_ROLL_VERB
+                        | NOTES_SCORE_VERB
+                ))
     }
 
     /// **Rewind**: the position cursor back at the top, and a stopped
@@ -607,6 +779,12 @@ impl MultitrackEditor {
         );
         let mut props = self.composed(multitrack, ruler, |w| super::props(w, widget));
         if widget == multitrack && !props.is_empty() {
+            // how a box of notes is drawn, and its page where it is one
+            props.insert("notes_view".into(), json!(self.notes_view));
+            #[cfg(feature = "notation")]
+            if let Some(scores) = self.scores() {
+                props.insert("scores".into(), scores);
+            }
             // The time range is drawn where the hand sweeps one, so a span set
             // from the client shows as the band a sweep leaves.
             let (start, len) = self
@@ -816,6 +994,23 @@ impl MultitrackEditor {
             out.transport = Some(self.stopped());
             return (None, Vec::new());
         }
+        // **The View menu's two ways to draw a box of notes**: the window's
+        // own state, so nothing is recorded and the picture is corrected
+        if self.window.map(i64::from) == Some(widget)
+            && matches!(tag, NOTES_ROLL_VERB | NOTES_SCORE_VERB)
+        {
+            self.set_notes_view(if tag == NOTES_SCORE_VERB { SCORE } else { ROLL });
+            let corrections = self
+                .widget
+                .map(|id| {
+                    vec![Correction {
+                        widget: i64::from(id),
+                        props: Value::Object(self.picture(id)),
+                    }]
+                })
+                .unwrap_or_default();
+            return (None, corrections);
+        }
         if tag == "click"
             && let Some(controls) = self.controls
         {
@@ -991,6 +1186,16 @@ pub const LOOP_KEY: &str = "loop";
 /// Pause, what the transport row's play/pause button does.
 pub const PAUSE_VERB: &str = "pause";
 
+/// A box of notes drawn as a roll: the `notes_view` word, and the window's
+/// verb that asks for it.
+pub const ROLL: &str = "roll";
+/// ...and drawn as its page.
+pub const SCORE: &str = "score";
+/// The window verb that draws the boxes of notes as rolls.
+pub const NOTES_ROLL_VERB: &str = "notes_roll";
+/// The window verb that draws them as pages.
+pub const NOTES_SCORE_VERB: &str = "notes_score";
+
 /// **The window's stop**: halt and go back to the mark -- the menu's Stop.
 pub const STOP_VERB: &str = "stop";
 
@@ -1067,6 +1272,9 @@ struct New {
     /// `false` for a window with no menu bar and no tools ([`Window::bare`]).
     #[serde(default = "yes")]
     chrome: bool,
+    /// How a box of notes is drawn: `"roll"`, the default, or `"score"`.
+    #[serde(default)]
+    notes_view: Option<String>,
 }
 
 fn yes() -> bool {
@@ -1107,6 +1315,9 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
         (request.w, request.h),
     );
     editor.set_bare(!request.chrome);
+    if let Some(view) = &request.notes_view {
+        editor.set_notes_view(view);
+    }
     editor
 }
 
@@ -1182,6 +1393,12 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
         }
         "props" => Value::Object(editor.props(int(&get("widget")) as i32)).to_string(),
         "notes" => json!({ "placed": editor.placed_notes() }).to_string(),
+        "notesView" => {
+            let set = get("view")
+                .as_str()
+                .is_none_or(|view| editor.set_notes_view(view));
+            json!({ "view": editor.notes_view(), "set": set }).to_string()
+        }
         "event" => {
             let event = Event {
                 addr: get("addr").as_str().unwrap_or_default().to_string(),

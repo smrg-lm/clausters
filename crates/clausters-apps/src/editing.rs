@@ -1238,6 +1238,23 @@ impl Editing {
         }
     }
 
+    /// **Hands a multitrack member the engraver its boxes' pages are
+    /// engraved with**: a score the caller made for that and reads no more,
+    /// which the editor loads with each sequence in turn. The answer is the
+    /// member's picture corrected with it, or `{}` when `member` is not a
+    /// multitrack.
+    #[cfg(feature = "notation")]
+    pub fn bind_engraver(&mut self, member: MemberId, score: crate::score::Shared) -> String {
+        let version = self.version;
+        match self.member_mut(member) {
+            Some(Member::Multitrack(editor)) => {
+                editor.bind_engraver(score);
+                to_json(&editor.resync_all(version))
+            }
+            _ => "{}".into(),
+        }
+    }
+
     /// [`Self::bind_sequence`] off a `{"member", "source"}` request: the one
     /// door every binding's sequence handle binds through.
     pub fn bind_sequence_json(&mut self, sequence: Shared, request: &str) -> String {
@@ -1357,6 +1374,95 @@ mod tests {
     /// **A region over a bound sequence draws what a notes editor edits**: the
     /// binding answers the multitrack's picture with the note in box 12, and an
     /// edit in the roll opened on the same handle corrects that picture.
+    /// An engraver that keeps the document it is handed and draws nothing.
+    #[cfg(feature = "notation")]
+    struct Kept(std::sync::Mutex<String>);
+
+    #[cfg(feature = "notation")]
+    impl clausters_core::notation::Engraver for Kept {
+        type Guard = ();
+        fn lock(&self) -> Self::Guard {}
+        fn load_data(&self, data: &str) -> bool {
+            *self.0.lock().unwrap() = data.to_string();
+            !data.is_empty()
+        }
+        fn render_svg(&self, _page: i32) -> String {
+            String::new()
+        }
+        fn mei(&self) -> String {
+            self.0.lock().unwrap().clone()
+        }
+        fn edit(&self, _action: &str) -> bool {
+            false
+        }
+        fn timemap(&self, _options: &str) -> String {
+            "[]".into()
+        }
+        fn midi_values(&self, _xml_id: &str) -> Option<String> {
+            None
+        }
+        fn set_options(&self, _options: &str) -> bool {
+            true
+        }
+    }
+
+    /// A box of notes is drawn as its page where the window says so and an
+    /// engraver was handed over: the page, and the time of each of its notes
+    /// in the box's own frames.
+    #[cfg(feature = "notation")]
+    #[test]
+    fn a_box_of_notes_is_stated_as_its_page_once_an_engraver_is_bound() {
+        use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+        use clausters_document::EventSequence;
+        use clausters_document::events::Event as SeqEvent;
+        use std::sync::{Arc, Mutex};
+
+        let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
+            SeqEvent::new(0.0, json!({"midinote": 60, "dur": 1.0})),
+            SeqEvent::new(1.0, json!({"midinote": 64, "dur": 1.0})),
+        ])));
+        let mut editing = Editing::new();
+        let multitrack = editing.join("multitrack", a_multitrack());
+        editing.bind_sequence(multitrack, SourceId(1), sequence.clone());
+        let picture = |editing: &mut Editing| match editing.member_mut(multitrack) {
+            Some(Member::Multitrack(editor)) => editor.picture(40),
+            _ => panic!("a multitrack editor"),
+        };
+        // as rolls, and with nothing to engrave with, there is no page
+        assert_eq!(picture(&mut editing)["notes_view"], "roll");
+        assert!(!picture(&mut editing).contains_key("scores"));
+
+        let blank = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
+        let engraver = AnyEngraver::new(Kept(Mutex::new(String::new())));
+        let score = Arc::new(Mutex::new(Score::open(engraver, &blank).expect("opens")));
+        editing.bind_engraver(multitrack, score.clone());
+        assert!(
+            !picture(&mut editing).contains_key("scores"),
+            "still as rolls"
+        );
+        match editing.member_mut(multitrack) {
+            Some(Member::Multitrack(editor)) => assert!(editor.set_notes_view("score")),
+            _ => panic!("a multitrack editor"),
+        }
+        let props = picture(&mut editing);
+        assert_eq!(props["notes_view"], "score");
+        let pages = props["scores"].as_object().expect("the pages");
+        let (_, page) = pages.iter().next().expect("the box's page");
+        // the second note stands a beat in: a second, in the axis's frames
+        let anchors = page["anchors"].as_array().unwrap();
+        assert_eq!(anchors[0], "n1");
+        assert_eq!(anchors[1], 0.0);
+        assert_eq!(anchors[4], "n2");
+        assert_eq!(anchors[5], SR);
+        // what was engraved is the sequence, read
+        assert!(score.lock().unwrap().mei().contains("pname=\"e\""));
+        // and a note moved is the page engraved again
+        sequence.lock().unwrap().events[1].at.0 = 2.0;
+        let again = picture(&mut editing);
+        let (_, page) = again["scores"].as_object().unwrap().iter().next().unwrap();
+        assert_eq!(page["anchors"][5], 2.0 * SR);
+    }
+
     #[test]
     fn a_region_over_a_bound_sequence_follows_the_roll() {
         use clausters_document::EventSequence;

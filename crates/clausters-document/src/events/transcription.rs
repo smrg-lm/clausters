@@ -21,7 +21,9 @@
 //!   in MIDI 1.0 and 2.0 a channel is a line -- and in an MPE zone, where a
 //!   channel is one note's, one staff for the zone. A voice is what the
 //!   events say (`voice`), else found: notes that start and end together are
-//!   a chord, and a note that starts under another goes to the next voice.
+//!   a chord, and a note that starts while another still **sounds** goes to
+//!   the next voice -- one that starts after it was let go follows it in its
+//!   own, and cuts its written value there.
 //! - **As what.** A pitch is the event's `pitches`, else its number spelled
 //!   by the key -- the spelling nearest the tonic on the line of fifths -- or
 //!   by the event's `spelling`. The key is the reading's, the section's, or
@@ -116,6 +118,8 @@ struct Heard {
     /// Onset and length in whole notes, as played.
     at: f64,
     len: f64,
+    /// How long it sounds, in whole notes.
+    held: f64,
     midi: i32,
     keys: Map<String, Value>,
     channel: i64,
@@ -124,12 +128,16 @@ struct Heard {
     source: Option<u64>,
     start: Ratio,
     end: Ratio,
+    /// Where it stops sounding, on its beat's grid.
+    until: Ratio,
 }
 
 /// Notes written as one item: a note, or a chord.
 struct Group {
     start: Ratio,
     end: Ratio,
+    /// Where the last of them stops sounding.
+    until: Ratio,
     /// Indices into the staff's notes, low to high.
     notes: Vec<usize>,
     voice: Option<usize>,
@@ -451,12 +459,14 @@ pub fn read(
                 event: event.id,
                 at: event.at.0 / beat_unit as f64,
                 len: len.max(0.0) / beat_unit as f64,
+                held: render::sustain_of(&keys).max(0.0) / beat_unit as f64,
                 midi,
                 channel: keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0) as i64,
                 staff: 0,
                 source: section.items.get(&event.id).copied(),
                 start: Ratio::ZERO,
                 end: Ratio::ZERO,
+                until: Ratio::ZERO,
                 keys,
             })
         })
@@ -541,6 +551,8 @@ pub fn read(
             if note.end <= note.start {
                 note.end = note.start + grids.step(grids.beat_of(note.start.to_f64()));
             }
+            // where it stops sounding: no later than it is written to
+            note.until = grids.snap(note.at + note.held).min(note.end);
         }
         // Chords: what was one item of a score, else what starts and ends
         // together in one voice.
@@ -567,10 +579,14 @@ pub fn read(
                     }
             });
             match joins {
-                Some(group) => group.notes.push(i),
+                Some(group) => {
+                    group.until = group.until.max(note.until);
+                    group.notes.push(i);
+                }
                 None => groups.push(Group {
                     start: note.start,
                     end: note.end,
+                    until: note.until,
                     notes: vec![i],
                     voice,
                 }),
@@ -588,7 +604,12 @@ pub fn read(
             .map_or(0, |v| v + 1);
         let mut voices: Vec<Vec<Group>> = (0..stated_voices).map(|_| Vec::new()).collect();
         for group in groups {
-            let free = |voice: &Vec<Group>| voice.last().is_none_or(|last| last.end <= group.start);
+            // A voice is free once its last note has stopped **sounding**: a
+            // note written long and let go early -- an event's `dur` is the
+            // time to the next of a line, not what it holds -- leaves its
+            // voice to the next one, and its value is cut where that starts.
+            let free =
+                |voice: &Vec<Group>| voice.last().is_none_or(|last| last.until <= group.start);
             let at = match group.voice {
                 Some(voice) => voice,
                 None => match voices.iter().position(free) {
@@ -601,7 +622,7 @@ pub fn read(
                     None => voices
                         .iter()
                         .enumerate()
-                        .min_by_key(|(_, voice)| voice.last().map(|last| last.end))
+                        .min_by_key(|(_, voice)| voice.last().map(|last| last.until))
                         .map_or(0, |(at, _)| at),
                 },
             };
@@ -610,7 +631,10 @@ pub fn read(
             }
             match voices[at].last_mut() {
                 // two that start together in one voice are one chord
-                Some(last) if last.start == group.start => last.notes.extend(group.notes),
+                Some(last) if last.start == group.start => {
+                    last.until = last.until.max(group.until);
+                    last.notes.extend(group.notes);
+                }
                 Some(last) => {
                     // no note outlasts the next one of its voice
                     last.end = last.end.min(group.start);
@@ -1111,6 +1135,29 @@ mod tests {
             members: 15,
         });
         assert_eq!(read_plain(&zone, json!({})).sheet.staves.len(), 1);
+    }
+
+    #[test]
+    fn a_note_let_go_before_the_next_is_in_its_voice_and_cut_there() {
+        // each written a beat long, as an event that states no length is,
+        // held four tenths of one and half a beat from the next: one line
+        let seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 60, "dur": 1.0, "sustain": 0.4}},
+            {"at": 0.5, "data": {"midinote": 64, "dur": 1.0, "sustain": 0.4}},
+            {"at": 1.0, "data": {"midinote": 67, "dur": 1.0, "sustain": 0.4}},
+            {"at": 1.5, "data": {"midinote": 72, "dur": 1.0, "sustain": 0.4}},
+        ]));
+        let got = read_plain(&seq, json!({}));
+        assert_eq!(got.sheet.staves[0].voices.len(), 1);
+        assert_eq!(
+            line(&got.sheet, 0, 0),
+            vec![
+                (vec![60], (1, 8)),
+                (vec![64], (1, 8)),
+                (vec![67], (1, 8)),
+                (vec![72], (1, 4)),
+            ]
+        );
     }
 
     #[test]

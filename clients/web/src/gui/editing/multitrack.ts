@@ -45,6 +45,9 @@ import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import { keyOf } from "../../history.ts";
 import { NotesEditor } from "./events.ts";
+import { ScoreEditor } from "./score.ts";
+import { Score } from "../notation/engraver.ts";
+import { fromVoice as sheetFromVoice, toMei } from "../notation/sheet.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Marking, marking, marks, setMarks } from "./marking.ts";
 import { Playback } from "./playback.ts";
@@ -516,6 +519,11 @@ export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack
      * requirement.
      */
     server?: Server;
+    /**
+     * How a box of notes is drawn: `"roll"`, the default, or `"score"`
+     * ({@link MultitrackEditor.notesView}).
+     */
+    notesView?: "roll" | "score";
 }
 
 /**
@@ -637,7 +645,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
     private shown: string | null = null;
 
     constructor(multitrack: Multitrack, options: MultitrackEditorOptions) {
-        const { sources, link, server, title = "Multitrack", ...rest } = options;
+        const { sources, link, server, title = "Multitrack", notesView = "roll", ...rest } = options;
         const bridge = new Bridge(
             multitrack,
             Number(options.sampleRate),
@@ -665,6 +673,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
             w: this.size[0],
             h: this.size[1],
             chrome: this.chrome,
+            notesView,
         }, domain);
         this.member = opened.member;
         this.structureId = opened.identity;
@@ -841,7 +850,60 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /** The rolls a double click opened, by source. */
-    readonly rolls = new Map<number, NotesEditor>();
+    readonly rolls = new Map<number, NotesEditor | ScoreEditor>();
+
+    /**
+     * The score the boxes' pages are engraved with, once this page has
+     * loaded an engraver ({@link MultitrackEditor.engrave}): the crate reads
+     * each box's sequence and engraves it there. Nothing else reads it.
+     */
+    #engraver: Score | null = null;
+
+    /**
+     * **Hands the editor an engraver**, so a box of notes can be drawn as
+     * its page ({@link MultitrackEditor.notesView}). {@link MultitrackEditor.open}
+     * does it; a caller that builds the editor without opening it calls this
+     * itself. It is a step of its own, and awaited, where the reference
+     * client's constructor does it: a page fetches its engraver the first
+     * time it engraves. A multitrack with no sequence engraves nothing, and
+     * a page whose engraver will not load keeps its boxes as rolls.
+     */
+    async engrave(): Promise<void> {
+        if (this.#engraver !== null || this.bridge.sources.sequences().size === 0) return;
+        let score: Score;
+        try {
+            score = await Score.open(toMei(sheetFromVoice([])));
+        } catch {
+            return;
+        }
+        this.#engraver = score;
+        this.editing.bindEngraver(this.member, score);
+    }
+
+    /**
+     * **How a box of notes is drawn**: `"roll"`, a piano roll fitted to the
+     * box, or `"score"` -- its page, the sequence read as notation
+     * (`Score.fromEvents`) and drawn on the box's own axis, every note at its
+     * time, in line with the other tracks. The first clef and key signature
+     * stand before the box's first note and stay in view, and a row too low
+     * for a staff to be read is drawn as a roll. The window's own, like its
+     * zoom: setting it is no edit. The View menu's *Notes as rolls* and
+     * *Notes as scores* are the same switch, and a double click on a box
+     * opens the editor of the view it is drawn in. Without an engraver in
+     * this page every box is a roll.
+     */
+    get notesView(): "roll" | "score" {
+        return (this.coreCall("notesView").view as "roll" | "score") ?? "roll";
+    }
+
+    set notesView(view: "roll" | "score") {
+        if (!this.coreCall("notesView", { view }).set) {
+            throw new RangeError(
+                `no view "${view}" of a box of notes: it is drawn as "roll" or "score"`,
+            );
+        }
+        this.adopt();
+    }
 
     /**
      * **Opens the roll over source `source`**, a sequence among this editor's
@@ -851,14 +913,32 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * context, so it is one undo order with the multitrack, and an edit in the
      * roll redraws every box over that sequence and is heard from the
      * transport's lane. A roll already open over the sequence is left as it
-     * is. Returns the `NotesEditor`, or `null` when the source is not a
-     * sequence.
+     * is. Where the boxes are drawn as scores
+     * ({@link MultitrackEditor.notesView}) what opens is the score editor
+     * over the sequence, on its page -- once its score is read, so this
+     * answers `null` and the editor is in `rolls` when it is up. Returns the
+     * `NotesEditor`, the `ScoreEditor` already open, or `null` when the
+     * source is not a sequence.
      */
-    openRoll(source: number): NotesEditor | null {
+    openRoll(source: number): NotesEditor | ScoreEditor | null {
         const sequence = this.bridge.sources.sequences().get(Math.trunc(source));
         if (sequence === undefined) return null;
         const open = this.rolls.get(Math.trunc(source));
         if (open !== undefined && !open.closed) return open;
+        if (this.notesView === "score" && this.#engraver !== null) {
+            // a box drawn as its page opens on its page
+            void ScoreEditor.over(sequence, {
+                server: this.playback?.server,
+                app: this.app,
+                context: this.editing,
+                title: `${this.title}: score`,
+            }).then((page) => {
+                this.rolls.set(Math.trunc(source), page);
+                const host = this.host;
+                if (host !== null) void page.open(host);
+            });
+            return null;
+        }
         const roll = new NotesEditor(sequence, {
             sampleRate: this.bridge.rate,
             server: this.playback?.server,
@@ -901,6 +981,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         host?: GuiHost,
         options: { id?: number; stage?: unknown } = {},
     ): Promise<WindowHandle> {
+        await this.engrave();
         const handle = await super.open(host, options);
         const playback = this.playback;
         if (playback !== null) {

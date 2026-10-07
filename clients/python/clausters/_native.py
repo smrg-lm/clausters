@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 86
+CORE_ABI_VERSION = 87
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -1011,6 +1011,10 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         lib.clausters_apps_editing_open_score.restype = size
         lib.clausters_apps_editing_open_score.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, u8p, size, u8p, size,
+        ]
+        lib.clausters_apps_editing_bind_engraver.restype = size
+        lib.clausters_apps_editing_bind_engraver.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, u8p, size,
         ]
         lib.clausters_apps_editing_open_score_over.restype = size
         lib.clausters_apps_editing_open_score_over.argtypes = [
@@ -2223,6 +2227,18 @@ class EditingCore:
         raw = size_then_fill(lib().clausters_apps_editing_open_multitrack,
                              ctypes.c_void_p(self._handle), ctypes.c_void_p(multitrack._handle),
                              as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def bind_engraver(self, member: int, score_handle) -> dict:
+        """Hand the multitrack editor ``member`` the engraver its boxes' pages
+        are engraved with -- the score behind ``score_handle``, made for that
+        (`clausters_apps_editing_bind_engraver`): the member's corrected
+        picture, or ``{}``."""
+        if not self._handle:
+            return {}
+        raw = size_then_fill(lib().clausters_apps_editing_bind_engraver,
+                             ctypes.c_void_p(self._handle), ctypes.c_uint32(int(member)),
+                             ctypes.c_void_p(score_handle))
         return json.loads(raw) if raw else {}
 
     def bind_sequence(self, sequence: "SequenceHandle", member: int, source: int) -> dict:
