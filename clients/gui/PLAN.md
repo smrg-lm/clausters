@@ -4097,9 +4097,10 @@ Whatever symbols the model itself needs owe their rows either way
     length or not, and leaves the back edge free where no length is known.
   - **A box's page has no end, as a roll has none** *(the user,
     2026-10-07)*: the staff starts where the sequence does and runs the
-    whole box, and no end bar line is drawn -- the last measure closes with
-    the bar line every other has. How a score editor draws the end of what
-    is written, or keeps to the continuous system, is for later.
+    whole box. **No bar line is drawn, and no rest after the last note**
+    -- the rests between notes are -- a start the user means to revisit.
+    How a score editor draws the end of what is written, or keeps to the
+    continuous system, is for later.
   - **A ledger line is its notehead's** *(the user, 2026-10-07)*: drawn as
     long as engraved, centred where its head stands, and never stretched or
     squeezed with the space between notes nor drawn over a glyph that is no

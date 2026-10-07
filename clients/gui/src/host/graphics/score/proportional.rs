@@ -383,8 +383,23 @@ impl ScoreData {
             }
         }
         let through = |page: f32| warp.x(page);
+        // **No bar lines, and no silence after the music** *(the user,
+        // 2026-10-07, a start to be revisited)*: a page on a time line is
+        // measured by the axis and not by its bars, and a rest the engraver
+        // writes to fill the last bar is a silence nobody wrote. The rests
+        // between notes are the music's, and stay.
+        let kind_of = |prim: &Prim| prim.id().and_then(|id| self.kinds.get(id));
+        let last_note = columns
+            .iter()
+            .map(|(page, _)| *page)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let unwritten = |at: usize, prim: &Prim| match kind_of(prim).map(String::as_str) {
+            Some("barLine") => true,
+            Some("rest" | "mRest" | "multiRest") => across(at, prim).0 > last_note,
+            _ => false,
+        };
         for (at, prim) in self.prims.iter().enumerate() {
-            if is_meter(prim) || in_prefix(at, prim) {
+            if is_meter(prim) || in_prefix(at, prim) || unwritten(at, prim) {
                 continue;
             }
             draw(mesh, at, prim, &through, 0.0);
@@ -563,6 +578,55 @@ mod tests {
         )
         .unwrap();
         ScoreData::parse(&props)
+    }
+
+    /// **No bar line, and no rest after the last note**: what the engraver
+    /// adds to fill a bar is not drawn; a rest between two notes is.
+    #[test]
+    fn bar_lines_and_trailing_rests_are_not_drawn_and_a_rest_between_notes_is() {
+        let anchors = vec![("n1".to_string(), 0.0), ("n2".to_string(), 48_000.0)];
+        let x_of = |start: f64| 300.0 + (start / 48_000.0) as f32 * 400.0;
+        let frame = TimeFrame {
+            body: Rect::new(300.0, 10.0, 600.0, 90.0),
+            row: Rect::new(100.0, 10.0, 900.0, 90.0),
+        };
+        let inked = |data: &ScoreData| {
+            let mut mesh = Mesh::new();
+            assert!(data.render_on_time(&mut mesh, frame, &anchors, &x_of, COLORS));
+            mesh.vertex_count()
+        };
+        let base = inked(&page());
+        let with = |prim: Prim, id: &str, kind: &str| {
+            let mut data = page();
+            data.prims.push(prim);
+            data.kinds.insert(id.into(), kind.into());
+            inked(&data)
+        };
+        let rest = |x: f32, id: &str| Prim::Glyph {
+            cp: 0xE0A4,
+            xf: Affine {
+                tx: x,
+                ty: 560.0,
+                sx: 0.72,
+                sy: -0.72,
+            },
+            id: Some(id.into()),
+        };
+        let bar = Prim::Line {
+            pts: vec![[2000.0, 200.0], [2000.0, 920.0]],
+            width: 13.0,
+            id: Some("b1".into()),
+        };
+        assert_eq!(with(bar, "b1", "barLine"), base, "no bar line");
+        assert_eq!(
+            with(rest(3200.0, "r1"), "r1", "rest"),
+            base,
+            "no rest after the music"
+        );
+        assert!(
+            with(rest(2000.0, "r2"), "r2", "rest") > base,
+            "a rest between notes"
+        );
     }
 
     #[test]

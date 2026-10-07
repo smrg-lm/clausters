@@ -419,15 +419,7 @@ impl MultitrackEditor {
                 let Ok(got) = read(&sequence, &how, &default_interpretation()) else {
                     continue;
                 };
-                // **A box's page has no end**: a roll and a page are a time
-                // line that begins and runs on, so the last measure closes
-                // with the bar line every other one has, not the end of a
-                // piece -- unless the sequence's own page wrote one there.
-                let mut sheet = got.sheet;
-                let last = clausters_core::notation::measure_count(&sheet).saturating_sub(1);
-                if !sheet.grid.barlines.iter().any(|(at, _)| *at == last) {
-                    sheet.grid.barlines.push((last, "single".into()));
-                }
+                let sheet = got.sheet;
                 let Ok(mei) = clausters_core::notation::sheet_to_mei(&sheet) else {
                     continue;
                 };
