@@ -5,6 +5,46 @@
 //! which is why a client never hardcodes the UGen set).
 
 use super::super::*;
+use crate::server::engine::Counters;
+use crate::server::meters::Meters;
+
+/// The three figures of `/server_status.reply` that come from timing a block
+/// -- average and peak CPU as percentages of the block budget, and the late
+/// blocks since boot -- or three nils for a server that cannot time one.
+/// Reading the peak resets its window either way.
+fn cpu_args(counters: &Counters, timed: bool) -> [OscType; 3] {
+    let peak = counters.take_peak_cpu();
+    if !timed {
+        return [OscType::Nil, OscType::Nil, OscType::Nil];
+    }
+    [
+        OscType::Float(counters.avg_cpu() * 100.0),
+        OscType::Float(peak * 100.0),
+        OscType::Int(counters.late_blocks() as i32),
+    ]
+}
+
+/// The arguments of `/server_load.reply`: `uptime, n, n x (role, index, busy,
+/// calls)`, the seconds nil for a table that is not timed.
+fn load_args(meters: &Meters) -> Vec<OscType> {
+    let seconds = |value: f64| {
+        if meters.timed() {
+            OscType::Double(value)
+        } else {
+            OscType::Nil
+        }
+    };
+    let mut args = vec![seconds(meters.uptime())];
+    let report = meters.report();
+    args.push(OscType::Int(report.len() as i32));
+    for load in report {
+        args.push(OscType::String(load.role.as_str().into()));
+        args.push(OscType::Int(load.index as i32));
+        args.push(seconds(load.busy));
+        args.push(OscType::Long(load.calls as i64));
+    }
+    args
+}
 
 impl OscServer {
     /// `/server_dumpOsc flag`: toggles the OSC-traffic log overlay (the `clausters::osc`
@@ -55,16 +95,21 @@ impl OscServer {
         // queries all start at their first real field. The clients read this
         // into a `ServerStatus` now, so the padding named nothing and only cost
         // a reader the off-by-one.
+        //
+        // **A server with no clock says nil, not zero.** The three figures
+        // that come from timing a block are measurements; where nothing can
+        // take them, a zero would read as an idle engine.
+        let [avg, peak, late] = cpu_args(counters, self.handle.meters().timed());
         let args = vec![
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.groups.load(Ordering::Relaxed) as i32),
             OscType::Int(num_defs as i32),
-            OscType::Float(counters.avg_cpu() * 100.0),
-            OscType::Float(counters.take_peak_cpu() * 100.0),
+            avg,
+            peak,
             OscType::Double(self.info.nominal_sample_rate),
             OscType::Double(self.info.actual_sample_rate),
-            OscType::Int(counters.late_blocks() as i32),
+            late,
         ];
         self.reply(to, "/server_status.reply", args);
     }
@@ -79,17 +124,12 @@ impl OscServer {
     /// own interval. `busy` is time the work was in progress, not per cent of
     /// a core: a DSP worker spinning for its next stage is burning a core and
     /// is idle by this reading.
+    ///
+    /// **A server with no clock says nil where a second would be** -- `uptime`
+    /// and every `busy` -- and still counts: `calls` is how many times the
+    /// work ran, which needs no clock.
     pub(in crate::osc::server) fn send_server_load(&mut self, to: ClientId) {
-        let meters = self.handle.meters();
-        let mut args = vec![OscType::Double(meters.uptime())];
-        let report = meters.report();
-        args.push(OscType::Int(report.len() as i32));
-        for load in report {
-            args.push(OscType::String(load.role.as_str().into()));
-            args.push(OscType::Int(load.index as i32));
-            args.push(OscType::Double(load.busy));
-            args.push(OscType::Long(load.calls as i64));
-        }
+        let args = load_args(self.handle.meters());
         self.reply(to, "/server_load.reply", args);
     }
 
@@ -255,5 +295,58 @@ impl OscServer {
             other => return Err(format!("expected 0 or 1, got {other}")),
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::meters::Role;
+
+    /// **A server with no clock says so, field by field.** Zero seconds reads
+    /// as idle; nil reads as what it is. The counts are still there, since a
+    /// run is counted and not timed.
+    #[test]
+    fn a_load_reply_without_a_clock_carries_nil_seconds_and_real_counts() {
+        let meters = Meters::untimed(0);
+        meters.add(Role::Audio, 0, 0);
+        meters.add(Role::Audio, 0, 0);
+        let args = load_args(&meters);
+        assert_eq!(args[0], OscType::Nil, "no uptime");
+        let OscType::Int(rows) = args[1] else {
+            panic!("a row count");
+        };
+        assert_eq!(args.len(), 2 + 4 * rows as usize, "the same shape");
+        assert_eq!(args[2], OscType::String("audio".into()));
+        assert_eq!(args[4], OscType::Nil, "no seconds for the audio role");
+        assert_eq!(args[5], OscType::Long(2), "and both its runs counted");
+        assert!(
+            args[2..].chunks(4).all(|row| row[2] == OscType::Nil),
+            "nor for any other"
+        );
+    }
+
+    /// And a timed one is the reply it always was.
+    #[test]
+    fn a_load_reply_with_a_clock_carries_seconds() {
+        let meters = Meters::new(0);
+        meters.add(Role::Audio, 0, 2_000_000);
+        let args = load_args(&meters);
+        assert!(matches!(args[0], OscType::Double(_)));
+        assert_eq!(args[4], OscType::Double(0.002));
+        assert_eq!(args[5], OscType::Long(1));
+    }
+
+    #[test]
+    fn the_cpu_figures_are_nil_without_a_clock() {
+        let counters = Counters::default();
+        assert_eq!(
+            cpu_args(&counters, false),
+            [OscType::Nil, OscType::Nil, OscType::Nil]
+        );
+        assert_eq!(
+            cpu_args(&counters, true),
+            [OscType::Float(0.0), OscType::Float(0.0), OscType::Int(0)]
+        );
     }
 }

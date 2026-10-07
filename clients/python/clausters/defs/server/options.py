@@ -293,6 +293,11 @@ class ServerInfo:
         ])
 
 
+#: What a figure that comes from timing reads as when the server has no clock
+#: to time with: an engine in a page is the case.
+_NOT_TIMED = "not available (this server cannot time itself)"
+
+
 @dataclass
 class Load:
     """One role's share of the server's time, as ``/server_load`` reports it
@@ -313,6 +318,12 @@ class Load:
     DSP worker spinning for its next stage is burning a core and is idle by
     this reading, which is the honest answer to how much of the block budget a
     stage took -- a system profiler answers the other question.
+
+    **A server with no clock reports no time.** ``busy`` is then ``None``, and
+    so is ``share``: not zero seconds, which would read as an idle role, but
+    no reading. ``calls`` is still there, since a run is counted and not
+    timed. An engine in a page is that server -- it runs in an AudioWorklet,
+    whose scope has no clock fine enough to time a block.
     """
 
     #: ``audio`` (the callback's block), ``dsp`` (a worker thread), ``net``
@@ -322,12 +333,14 @@ class Load:
     role: str
     #: Which instance, for a role that has several. Only ``dsp`` does today.
     index: int
-    #: Seconds of work since the server booted.
-    busy: float
+    #: Seconds of work since the server booted, or ``None`` from a server that
+    #: cannot time itself.
+    busy: "float | None"
     #: Times the work ran: blocks, stages, turns, jobs, compilations.
     calls: int
     #: Fraction of wall time busy **since this client's previous call**, or
-    #: ``None`` on the first one, which has no interval to measure.
+    #: ``None`` on the first one, which has no interval to measure -- and on
+    #: every one from a server that cannot time itself.
     share: "float | None" = None
 
     @property
@@ -342,10 +355,17 @@ def format_load(rows: "list[Load]") -> str:
     A free function rather than a method because the reading is the *list*,
     and a list has no ``__str__`` of its own to give it.
     """
+    if rows and all(row.busy is None for row in rows):
+        # No clock on the server: say so once, and keep what was counted.
+        lines = [f"server load: {_NOT_TIMED}"]
+        for row in rows:
+            lines.append(f"  {row.name:<8} {row.calls} calls")
+        return "\n".join(lines)
     lines = ["server load"]
     for row in rows:
         share = "     -" if row.share is None else f"{row.share * 100:5.1f}%"
-        lines.append(f"  {row.name:<8} {share}  {row.busy:9.3f} s  {row.calls} calls")
+        busy = "        -  " if row.busy is None else f"{row.busy:9.3f} s"
+        lines.append(f"  {row.name:<8} {share}  {busy}  {row.calls} calls")
     return "\n".join(lines)
 
 
@@ -372,6 +392,10 @@ class ServerStatus:
 
     In an offline render both meters measure render speed rather than a real
     callback, since there is none.
+
+    **A server with no clock reports none of the three**: ``avg_cpu``,
+    ``peak_cpu`` and ``late_blocks`` are ``None`` -- not zero, which would read
+    as an idle engine. An engine in a page is that server.
     """
 
     #: Live UGen instances across every playing node.
@@ -382,27 +406,32 @@ class ServerStatus:
     groups: int
     #: Defs loaded, both families together (SynthDefs and FaustDefs).
     defs: int
-    #: Percentage of the block budget, averaged (~1 s time constant).
-    avg_cpu: float
-    #: Percentage of the block budget, worst block since the previous call.
-    peak_cpu: float
+    #: Percentage of the block budget, averaged (~1 s time constant); ``None``
+    #: from a server that cannot time itself.
+    avg_cpu: "float | None"
+    #: Percentage of the block budget, worst block since the previous call;
+    #: ``None`` from a server that cannot time itself.
+    peak_cpu: "float | None"
     #: The rate the server was asked for.
     nominal_sample_rate: float
     #: The rate the device actually runs at; it drifts from the nominal one.
     actual_sample_rate: float
     #: Blocks that missed their budget since boot. ``0`` against a server too
-    #: old to report it.
-    late_blocks: int = 0
+    #: old to report it, ``None`` from one that cannot time itself.
+    late_blocks: "int | None" = 0
 
     def __str__(self) -> str:
         drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
                  else f" (nominal {self.nominal_sample_rate:g})")
-        late = "" if self.late_blocks == 0 else f", {self.late_blocks} late"
+        if self.avg_cpu is None or self.peak_cpu is None:
+            cpu = _NOT_TIMED
+        else:
+            late = "" if not self.late_blocks else f", {self.late_blocks} late"
+            cpu = f"{self.avg_cpu:.1f}% avg, {self.peak_cpu:.1f}% peak{late}"
         return "\n".join([
             f"server {self.actual_sample_rate:g} Hz{drift}",
             f"  playing {self.synths} synths in {self.groups} groups, "
             f"{self.ugens} ugens",
             f"  loaded  {self.defs} defs",
-            f"  cpu     {self.avg_cpu:.1f}% avg, {self.peak_cpu:.1f}% peak"
-            f"{late}",
+            f"  cpu     {cpu}",
         ])

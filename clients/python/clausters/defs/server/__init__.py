@@ -831,18 +831,23 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         ``print(status)`` reads it out. Blocking, RT only.
 
         The peak CPU is the worst block **since the previous call**, so two
-        readers polling the same server each reset the other's window."""
+        readers polling the same server each reset the other's window.
+
+        A server with no clock -- an engine in a page -- reports the three
+        timed figures as ``None``: it cannot say what a block cost, and zero
+        would read as idle."""
         _, args = self.request("/server_status", timeout=timeout, expect=("/server_status.reply",))
+        late = args[8] if len(args) > 8 else 0
         return ServerStatus(
             ugens=int(args[0]),
             synths=int(args[1]),
             groups=int(args[2]),
             defs=int(args[3]),
-            avg_cpu=float(args[4]),
-            peak_cpu=float(args[5]),
+            avg_cpu=None if args[4] is None else float(args[4]),
+            peak_cpu=None if args[5] is None else float(args[5]),
             nominal_sample_rate=float(args[6]),
             actual_sample_rate=float(args[7]),
-            late_blocks=int(args[8]) if len(args) > 8 else 0,
+            late_blocks=None if late is None else int(late),
         )
 
     def load(self, timeout: "float | None" = None) -> "list[Load]":
@@ -860,25 +865,29 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         ``share`` at ``None``; call it twice, a second or so apart, to read a
         load. ``print(format_load(rows))`` reads the list out.
 
-        Blocking, RT only. A server in a page reports every role with zero
-        seconds: wasm has no monotonic clock to bracket work with.
+        Blocking, RT only. A server with no clock -- an engine in a page --
+        reports no seconds at all: every row's ``busy`` and ``share`` are
+        ``None``, and ``calls`` is what it still knows.
         """
         _, args = self.request("/server_load", timeout=timeout,
                                expect=("/server_load.reply",))
-        uptime = float(args[0])
+        uptime = None if args[0] is None else float(args[0])
         rows: "list[Load]" = []
         previous = self._last_load
         for i in range(int(args[1])):
             role, index, busy, calls = args[2 + 4 * i:6 + 4 * i]
-            row = Load(role=str(role), index=int(index), busy=float(busy),
+            row = Load(role=str(role), index=int(index),
+                       busy=None if busy is None else float(busy),
                        calls=int(calls))
-            if previous is not None:
+            if previous is not None and uptime is not None and row.busy is not None:
                 elapsed = uptime - previous[0]
                 was = previous[1].get((row.role, row.index))
                 if elapsed > 0.0 and was is not None:
                     row.share = (row.busy - was) / elapsed
             rows.append(row)
-        self._last_load = (uptime, {(r.role, r.index): r.busy for r in rows})
+        # A reading with no clock is no baseline for the next one.
+        self._last_load = None if uptime is None else (
+            uptime, {(r.role, r.index): r.busy for r in rows if r.busy is not None})
         return rows
 
     def _barrier(self, timeout: "float | None" = None) -> None:

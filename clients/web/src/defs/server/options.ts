@@ -160,7 +160,17 @@ export function formatServerInfo(info: ServerInfo): string {
  * well above the average -- the callback must fit its worst block, not its
  * mean. In an offline render both measure render speed, since there is no
  * callback.
+ *
+ * **A server with no clock reports none of the three**: `avgCpu`, `peakCpu`
+ * and `lateBlocks` are `null` -- not zero, which would read as an idle engine.
+ * An engine in a page is that server.
  */
+/**
+ * What a figure that comes from timing reads as when the server has no clock
+ * to time with: an engine in a page is the case.
+ */
+const NOT_TIMED = "not available (this server cannot time itself)";
+
 /**
  * One role's share of the server's time, as `/server_load` reports it (the
  * result of {@link Server.load}).
@@ -174,6 +184,12 @@ export function formatServerInfo(info: ServerInfo): string {
  * `busy` is time the work was **in progress**, not per cent of a core: a DSP
  * worker spinning for its next stage is burning a core and is idle by this
  * reading.
+ *
+ * **A server with no clock reports no time.** `busy` is then `null` and
+ * `share` stays unset: not zero seconds, which would read as an idle role,
+ * but no reading. `calls` is still there, since a run is counted and not
+ * timed. An engine in a page is that server -- it runs in an AudioWorklet,
+ * whose scope has no clock fine enough to time a block.
  */
 export interface Load {
     /**
@@ -185,13 +201,17 @@ export interface Load {
     role: string;
     /** Which instance, for a role that has several. Only `dsp` does today. */
     index: number;
-    /** Seconds of work since the server booted. */
-    busy: number;
+    /**
+     * Seconds of work since the server booted, or `null` from a server that
+     * cannot time itself.
+     */
+    busy: number | null;
     /** Times the work ran: blocks, stages, turns, jobs, compilations. */
     calls: number;
     /**
      * Fraction of wall time busy **since this client's previous call**, or
-     * `undefined` on the first one, which has no interval to measure.
+     * `undefined` on the first one, which has no interval to measure -- and on
+     * every one from a server that cannot time itself.
      */
     share?: number;
 }
@@ -214,15 +234,23 @@ export function loadName(load: Load): string {
  * @param rows - the reading to render.
  */
 export function formatLoad(rows: Load[]): string {
+    if (rows.length > 0 && rows.every((row) => row.busy === null)) {
+        // No clock on the server: say so once, and keep what was counted.
+        const lines = [`server load: ${NOT_TIMED}`];
+        for (const row of rows) {
+            lines.push(`  ${loadName(row).padEnd(8)} ${row.calls} calls`);
+        }
+        return lines.join("\n");
+    }
     const lines = ["server load"];
     for (const row of rows) {
         const share = row.share === undefined
             ? "     -"
             : `${(row.share * 100).toFixed(1).padStart(5)}%`;
-        lines.push(
-            `  ${loadName(row).padEnd(8)} ${share}  ` +
-                `${row.busy.toFixed(3).padStart(9)} s  ${row.calls} calls`,
-        );
+        const busy = row.busy === null
+            ? "        -  "
+            : `${row.busy.toFixed(3).padStart(9)} s`;
+        lines.push(`  ${loadName(row).padEnd(8)} ${share}  ${busy}  ${row.calls} calls`);
     }
     return lines.join("\n");
 }
@@ -236,10 +264,16 @@ export interface ServerStatus {
     groups: number;
     /** Defs loaded, both families together. */
     defs: number;
-    /** Percentage of the block budget, averaged (~1 s time constant). */
-    avgCpu: number;
-    /** Percentage of the block budget, worst block since the previous call. */
-    peakCpu: number;
+    /**
+     * Percentage of the block budget, averaged (~1 s time constant); `null`
+     * from a server that cannot time itself.
+     */
+    avgCpu: number | null;
+    /**
+     * Percentage of the block budget, worst block since the previous call;
+     * `null` from a server that cannot time itself.
+     */
+    peakCpu: number | null;
     /** The rate the server was asked for. */
     nominalSampleRate: number;
     /** The rate the device actually runs at; it drifts from the nominal one. */
@@ -247,9 +281,9 @@ export interface ServerStatus {
     /**
      * Blocks that missed their budget since boot -- cumulative. An occasional
      * increment is a warning, a steady climb is audible trouble. `0` against a
-     * server too old to report it.
+     * server too old to report it, `null` from one that cannot time itself.
      */
-    lateBlocks: number;
+    lateBlocks: number | null;
 }
 
 /**
@@ -263,13 +297,16 @@ export function formatServerStatus(status: ServerStatus): string {
     const drift = status.actualSampleRate === status.nominalSampleRate
         ? ""
         : ` (nominal ${g(status.nominalSampleRate)})`;
-    const late = status.lateBlocks === 0 ? "" : `, ${status.lateBlocks} late`;
+    let cpu = NOT_TIMED;
+    if (status.avgCpu !== null && status.peakCpu !== null) {
+        const late = status.lateBlocks ? `, ${status.lateBlocks} late` : "";
+        cpu = `${status.avgCpu.toFixed(1)}% avg, ${status.peakCpu.toFixed(1)}% peak${late}`;
+    }
     return [
         `server ${g(status.actualSampleRate)} Hz${drift}`,
         `  playing ${status.synths} synths in ${status.groups} groups, ` +
             `${status.ugens} ugens`,
         `  loaded  ${status.defs} defs`,
-        `  cpu     ${status.avgCpu.toFixed(1)}% avg, ` +
-            `${status.peakCpu.toFixed(1)}% peak${late}`,
+        `  cpu     ${cpu}`,
     ].join("\n");
 }

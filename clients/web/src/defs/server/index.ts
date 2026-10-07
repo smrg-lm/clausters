@@ -1325,6 +1325,10 @@ export class Server {
      *
      * The peak CPU is the worst block **since the previous call**, so two
      * readers polling the same server each reset the other's window.
+     *
+     * A server with no clock -- an engine in a page -- reports the three timed
+     * figures as `null`: it cannot say what a block cost, and zero would read
+     * as idle.
      */
     async status(timeout?: number): Promise<ServerStatus> {
         const msg = await this.request("/server_status", [], {
@@ -1332,16 +1336,18 @@ export class Server {
             timeout,
         });
         const at = (i: number): number => Number(msg.args[i]);
+        // A nil is a figure the server has no value for, not a zero.
+        const timed = (i: number): number | null => (msg.args[i] === null ? null : at(i));
         return {
             ugens: at(0),
             synths: at(1),
             groups: at(2),
             defs: at(3),
-            avgCpu: at(4),
-            peakCpu: at(5),
+            avgCpu: timed(4),
+            peakCpu: timed(5),
             nominalSampleRate: at(6),
             actualSampleRate: at(7),
-            lateBlocks: msg.args.length > 8 ? at(8) : 0,
+            lateBlocks: msg.args.length > 8 ? timed(8) : 0,
         };
     }
 
@@ -1361,8 +1367,9 @@ export class Server {
      * call it twice, a second or so apart, to read a load. `formatLoad` reads
      * the list out.
      *
-     * A server in a page reports every role with zero seconds: wasm has no
-     * monotonic clock to bracket work with.
+     * A server with no clock -- an engine in a page -- reports no seconds at
+     * all: every row's `busy` is `null` and its `share` unset, and `calls` is
+     * what it still knows.
      *
      * @param timeout - how long to wait for the reply, in seconds.
      */
@@ -1371,7 +1378,7 @@ export class Server {
             expect: ["/server_load.reply"],
             timeout,
         });
-        const uptime = Number(msg.args[0]);
+        const uptime = msg.args[0] === null ? null : Number(msg.args[0]);
         const previous = this.lastLoad;
         const rows: Load[] = [];
         const count = Number(msg.args[1]);
@@ -1380,10 +1387,10 @@ export class Server {
             const row: Load = {
                 role: String(msg.args[at]),
                 index: Number(msg.args[at + 1]),
-                busy: Number(msg.args[at + 2]),
+                busy: msg.args[at + 2] === null ? null : Number(msg.args[at + 2]),
                 calls: Number(msg.args[at + 3]),
             };
-            if (previous) {
+            if (previous && uptime !== null && row.busy !== null) {
                 const elapsed = uptime - previous.uptime;
                 const was = previous.busy.get(`${row.role} ${row.index}`);
                 if (elapsed > 0 && was !== undefined) {
@@ -1392,9 +1399,11 @@ export class Server {
             }
             rows.push(row);
         }
-        this.lastLoad = {
+        // A reading with no clock is no baseline for the next one.
+        this.lastLoad = uptime === null ? null : {
             uptime,
-            busy: new Map(rows.map((r) => [`${r.role} ${r.index}`, r.busy])),
+            busy: new Map(rows.flatMap((r) =>
+                r.busy === null ? [] : [[`${r.role} ${r.index}`, r.busy] as [string, number]])),
         };
         return rows;
     }

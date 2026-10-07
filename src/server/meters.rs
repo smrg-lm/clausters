@@ -17,6 +17,16 @@
 //! `wasm32` `Instant::now` panics, so there the stamp is inert and every slot
 //! reports zero, exactly as the engine's meter does.
 //!
+//! **A table that cannot time says so.** Zero seconds reads as *idle*, which
+//! is the one direction a meter must not be wrong in, so a table knows whether
+//! it has a clock ([`Meters::timed`]) and the replies built from it carry
+//! **no value** where there is none rather than a zero -- `/server_load`'s
+//! seconds, `/server_status`'s CPU figures. What an untimed table still knows
+//! is how many times each role ran, which is counted and not timed. An engine
+//! in a page is the case: it runs inside an AudioWorklet, whose scope has no
+//! clock fine enough to time a block (`clients/web/PLAN.md`, "An engine in a
+//! page has no clock").
+//!
 //! **A role, not a thread.** What is measured is the work, not the thread that
 //! happened to run it: the callback's block, one stage of a parallel group, a
 //! serving turn, an NRT job, a Faust compilation. That is what makes the
@@ -125,6 +135,8 @@ pub struct Load {
 pub struct Meters {
     slots: Box<[Slot]>,
     workers: usize,
+    /// Whether this build has a clock to bracket work with.
+    timed: bool,
     #[cfg(not(target_arch = "wasm32"))]
     epoch: std::time::Instant,
 }
@@ -132,6 +144,17 @@ pub struct Meters {
 impl Meters {
     /// The table for a server with `workers` DSP worker threads.
     pub fn new(workers: usize) -> Arc<Self> {
+        Self::build(workers, cfg!(not(target_arch = "wasm32")))
+    }
+
+    /// The table of a build with no clock -- what [`Meters::new`] is on
+    /// `wasm32`, here so a native test reads the replies such a server gives.
+    /// It counts every run and times none.
+    pub fn untimed(workers: usize) -> Arc<Self> {
+        Self::build(workers, false)
+    }
+
+    fn build(workers: usize, timed: bool) -> Arc<Self> {
         let mut slots = Vec::with_capacity(workers + 1 + TAIL_ROLES.len());
         let mut push = |role: Role, index: u32| {
             slots.push(Slot {
@@ -151,6 +174,7 @@ impl Meters {
         Arc::new(Self {
             slots: slots.into_boxed_slice(),
             workers,
+            timed,
             #[cfg(not(target_arch = "wasm32"))]
             epoch: std::time::Instant::now(),
         })
@@ -179,18 +203,31 @@ impl Meters {
         self.slots.get(i)
     }
 
+    /// Whether the seconds this table reports were measured. `false` for a
+    /// build with no clock, whose every `busy` and whose `uptime` are not a
+    /// reading of zero but no reading at all.
+    pub fn timed(&self) -> bool {
+        self.timed
+    }
+
     /// Accounts one run of `role`'s work. Allocation-free and lock-free: two
-    /// relaxed read-modify-writes, so the audio thread may call it.
+    /// relaxed read-modify-writes, so the audio thread may call it. An untimed
+    /// table counts the run and keeps no time for it.
     pub fn add(&self, role: Role, index: u32, nanos: u64) {
         if let Some(slot) = self.slot_of(role, index) {
-            slot.busy_nanos.fetch_add(nanos, Ordering::Relaxed);
+            if self.timed {
+                slot.busy_nanos.fetch_add(nanos, Ordering::Relaxed);
+            }
             slot.calls.fetch_add(1, Ordering::Relaxed);
         }
     }
 
     /// Seconds since the table was built -- the wall time the busy figures are
-    /// a fraction of. `0.0` on wasm32, which has no monotonic clock.
+    /// a fraction of. `0.0` for a table that is not [`timed`](Self::timed).
     pub fn uptime(&self) -> f64 {
+        if !self.timed {
+            return 0.0;
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.epoch.elapsed().as_secs_f64()
@@ -296,6 +333,19 @@ mod tests {
         assert!((row.busy - 0.006).abs() < 1e-9);
         let out = report.iter().find(|l| l.role == Role::DiskOut).unwrap();
         assert_eq!(out.calls, 0, "the other direction is its own row");
+    }
+
+    #[test]
+    fn an_untimed_table_counts_runs_and_keeps_no_time() {
+        let meters = Meters::untimed(0);
+        assert!(!meters.timed());
+        assert!(Meters::new(0).timed(), "a native build has a clock");
+        meters.add(Role::Audio, 0, 5_000_000);
+        meters.add(Role::Audio, 0, 0);
+        let audio = meters.report()[0];
+        assert_eq!(audio.calls, 2, "the runs are counted");
+        assert_eq!(audio.busy, 0.0, "and no time is kept for them");
+        assert_eq!(meters.uptime(), 0.0);
     }
 
     #[test]

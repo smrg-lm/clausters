@@ -79,7 +79,9 @@ Two sections feed the client's defaults:
   and the client differences its own interval out of them, so the first call
   has no `share` to report and the second one does; `format_load(rows)` prints
   the list. The figure is time the work was in progress, not per cent of a
-  core.
+  core. A server that cannot time itself — an engine in a page — reports no
+  time rather than zero: `busy` and `share` are `None`, and so are `status()`'s
+  `avg_cpu`, `peak_cpu` and `late_blocks`; `calls` is what it still knows.
 
   `ServerOptions` also carries the server's **behavior options** — `workers`,
   `tcp`, `ws`, `midi`, `persist`, `max_frame`, `max_clients`, `pin` — which

@@ -2,6 +2,7 @@
 Server round-trip (over a fake connection), and the end-to-end vertical slice
 (build a graph -> /def_send faust -> /synth_new -> control -> render)."""
 
+import struct
 import pytest
 
 from clausters.base.timebase import LogicalTimebase
@@ -231,6 +232,22 @@ def test_buffer_allocator():
 
 # ---- Server over a fake communication interface ----
 
+def _reply(addr, *args):
+    """A reply as a server encodes it: `osc.message`, plus the one thing a
+    server says and this client never does -- **nil** (`N`, no bytes), for a
+    field it has no value for. Written here rather than taught to the encoder,
+    which would be a surface nothing sends through."""
+    tags, data = ",", b""
+    for arg in args:
+        if arg is None:
+            tags += "N"
+            continue
+        # One argument on its own: "/x\0\0", then ",t\0\0", then its bytes.
+        one = osc.message("/x", arg)
+        tags, data = tags + chr(one[5]), data + one[8:]
+    return osc._string(addr) + osc._string(tags) + data
+
+
 class _FakeInterface:
     """A Server communication interface that records sent messages and replays
     queued replies -- the Server's comms surface, no socket."""
@@ -242,7 +259,7 @@ class _FakeInterface:
         self._replies = []      # queued reply packets (bytes)
 
     def queue_reply(self, addr, *args):
-        self._replies.append(osc.message(addr, *args))
+        self._replies.append(_reply(addr, *args))
 
     def send_msg(self, target, addr, *args):
         self.sent.append((addr, list(args)))
@@ -792,6 +809,58 @@ def test_load_differences_a_window_of_its_own():
     block = format_load(second)
     assert block.splitlines()[0] == "server load"
     assert "dsp 0" in block and "20.0%" in block
+
+
+def test_a_server_with_no_clock_reports_no_time_and_still_counts():
+    # An engine in a page cannot time a block, and says so: a nil where a
+    # second would be, not a zero that would read as an idle role. The counts
+    # are real -- a run is counted, not timed -- and no share is ever derived,
+    # however many readings are taken.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    for calls in (100, 230):
+        iface.queue_reply("/server_load.reply", None, 2,
+                          "audio", 0, None, calls, "net", 0, None, 12)
+        rows = srv.load()
+        assert [row.busy for row in rows] == [None, None]
+        assert [row.share for row in rows] == [None, None]
+        assert rows[0].calls == calls
+    block = format_load(rows)
+    assert block.splitlines() == [
+        "server load: not available (this server cannot time itself)",
+        "  audio    230 calls",
+        "  net      12 calls",
+    ]
+
+    # And a timed reading after it starts over: no baseline was kept.
+    iface.queue_reply("/server_load.reply", 4.0, 1, "audio", 0, 1.0, 10)
+    assert srv.load()[0].share is None
+
+
+def test_a_status_with_no_clock_has_no_cpu_figures():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/server_status.reply", 12, 3, 2, 5, None, None,
+                      48_000.0, 48_000.0, None)
+    status = srv.status()
+    assert (status.synths, status.defs) == (3, 5)
+    assert status.avg_cpu is None and status.peak_cpu is None
+    assert status.late_blocks is None
+    assert str(status).splitlines()[-1] == (
+        "  cpu     not available (this server cannot time itself)")
+
+    iface.queue_reply("/server_status.reply", 12, 3, 2, 5, 1.5, 4.0,
+                      48_000.0, 48_000.0, 2)
+    assert str(srv.status()).splitlines()[-1] == "  cpu     1.5% avg, 4.0% peak, 2 late"
+
+
+def test_a_nil_argument_decodes_as_none_and_keeps_its_place():
+    # `N` carries no bytes, so a decoder that skipped it would shift every
+    # argument after it one place to the left.
+    packet = (osc._string("/server_load.reply") + osc._string(",NisNh")
+              + struct.pack(">i", 1) + osc._string("audio")
+              + struct.pack(">q", 7))
+    assert osc.decode(packet) == ("/server_load.reply", [None, 1, "audio", None, 7])
 
 
 def test_defs_query_collects_until_done():

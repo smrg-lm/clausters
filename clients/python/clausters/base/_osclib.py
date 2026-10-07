@@ -122,6 +122,8 @@ def decode(packet: bytes) -> tuple[str, list]:
             args.append(secs - 2_208_988_800 + frac / 2 ** 32)
         elif t == "s":
             s, rest = _read_string(rest); args.append(s)
+        elif t == "N":  # nil: a field the sender has no value for; no bytes
+            args.append(None)
         elif t == "b":
             size = struct.unpack(">i", rest[:4])[0]
             args.append(rest[4:4 + size]); rest = rest[4 + (size + 3) // 4 * 4:]

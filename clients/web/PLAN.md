@@ -2157,7 +2157,7 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
-- ⬜ **An engine in a page has no clock, so every meter it reports reads zero**
+- ✅ **An engine in a page has no clock, so every meter it reports reads zero**
   *(named 2026-09-15 with the server's `M34`, which is where it became visible:
   the load table joins `/server_status`'s CPU fields in reporting nothing here)*.
   `Instant::now` panics on `wasm32-unknown-unknown`, so the engine's per-block
@@ -2212,6 +2212,34 @@ this list rather than being ticked here.
   an estimate; or the table as it is, every row zero and documented as such.
   A table half filled reads "idle" on the one row a late engine is asked
   about, which is the argument against the first on its own.
+
+  **Decided 2026-10-07 (the user): the table stays as it is, and reports that
+  the information is not available.** No estimate, no half-filled table. What
+  was wrong with the table as it was is that it said *zero*, and zero seconds
+  reads as an idle engine — so the fix is the reading, not a clock:
+
+  - The server's load table knows whether it has a clock (`Meters::timed`,
+    false on `wasm32`). Without one it still **counts** every run and keeps no
+    time for it.
+  - The replies say so field by field, with OSC **nil** where a measurement
+    would be: `uptime` and every `busy` in `/server_load.reply`; `avgCPU`,
+    `peakCPU` and `late_blocks` in `/server_status.reply`. `calls` stays, since
+    a run is counted and not timed.
+  - Both clients hand a nil on as no value — `None` there, `null` here — in
+    `Load.busy`, and in `ServerStatus`'s three figures; no `share` is ever
+    derived from an untimed reading, and one is no baseline for the next.
+    `format_load`/`formatLoad` and the status line print `not available (this
+    server cannot time itself)` and keep the counts.
+
+  Nil is a tag the Python decoder did not read (it skipped what it did not
+  know, which would have shifted every argument after it); it reads `N` as
+  `None` now. Neither client *sends* one, so neither encoder grew a tag.
+
+  Held by the server's own tests of the two replies over an untimed table, by
+  one test in each client that walks the same replies to the same lines, and
+  by `tests/defs.html`, where the engine a page boots answers `null` for all
+  of it and a count of the blocks it ran. `basics/server_load` still has no
+  page twin: there is no load in a page to look at.
 
 - ✅ **The score keeps a second history, and nothing joins the two** *(the port
   of `clients/python/PLAN.md`'s entry of the same name, fixed 2026-09-02 in the
@@ -3185,6 +3213,22 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 `startPage`, the bundle and component doors).
 
 ## Found by use: the running list of fixes
+
+- ⬜ **A formatter rounds an exact tie differently in the two clients** *(found
+  2026-10-07, writing the test for a status with no clock: `4.25` printed
+  `4.3% peak` here and `4.2% peak` in the Python client)*. Every record prints
+  one line and the two clients are meant to print the same one
+  (`tests/info-vectors.json`), but a number formatted to a fixed count of
+  decimals is rounded by two rules: Python's `f"{x:.1f}"` rounds the exact
+  binary value correctly and takes an exact tie to the **even** digit, while
+  `Number.prototype.toFixed` takes a tie to the **larger** one. They differ
+  only where the value is exactly halfway — `0.25`, `4.25`, `2.5` at no
+  decimals — which a float off the wire seldom is and a test value often is.
+  The sites are `formatServerStatus` and `formatLoad`
+  (`src/defs/server/options.ts`), and any other formatter that calls
+  `toFixed`. The fix is one helper that rounds as the reference client does,
+  and it has to decide a tie on the value's exact binary expansion: scaling by
+  a power of ten first makes `0.05` look like a tie it is not.
 
 - ✅ **`panels/host.html` promises a native host changes nothing, and its
   bound widgets and meters stop working there** *(found 2026-09-26, checking

@@ -25,9 +25,10 @@
     <!--
       The in-page half of W1's acceptance (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs, defines a def, plays it, reads it back out
-      of the node tree, hears it on an analyser and frees it. Verdict beaconed
-      as a fetch, read from the HTTP access log. The WS half -- both def
-      families against a native server -- is tests/server.test.ts.
+      of the node tree, hears it on an analyser and frees it, and reads the
+      engine's status and load, which a page reports as counted and not timed.
+      Verdict beaconed as a fetch, read from the HTTP access log. The WS half
+      -- both def families against a native server -- is tests/server.test.ts.
     -->
     <script type="module">
       import {
@@ -148,6 +149,26 @@
         log(`re-booted after quit: ${reborn.groups} group(s), `
           + `${resized.audioBuses} audio buses`);
 
+        // **An engine in a page cannot time itself, and says so.** It runs in
+        // an AudioWorklet, whose scope has no clock fine enough to time a
+        // block, so the figures that come from timing are no reading at all
+        // -- `null`, never a zero that would read as an idle engine -- while
+        // what is counted is real: the blocks it ran are in `calls`.
+        if (reborn.avgCpu !== null || reborn.peakCpu !== null || reborn.lateBlocks !== null) {
+          throw new Error(`a page's engine reported CPU figures: ${reborn.avgCpu}, `
+            + `${reborn.peakCpu}, ${reborn.lateBlocks}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const load = await server.load();
+        const audio = load.find((row) => row.role === "audio");
+        if (!audio || load.some((row) => row.busy !== null || row.share !== undefined)) {
+          throw new Error(`a page's engine reported seconds: ${JSON.stringify(load)}`);
+        }
+        if (!(audio.calls > 0)) {
+          throw new Error(`the engine ran no block it counted: ${audio.calls}`);
+        }
+        log(`untimed, as a page is: ${audio.calls} blocks counted, no seconds`);
+
         // Closing the engine twice **at once** is one close. A session does
         // exactly this -- it closes the server it owns, which quits the engine
         // it booted, and then closes the engine itself, without awaiting the
@@ -173,7 +194,7 @@
 
         verdict(`PASS: page carrier def round trip, peak ${peak.toFixed(3)}, `
           + `tree empty after free, quit -> boot left the handle usable, `
-          + `and two closes at once were one`);
+          + `its load is counted and not timed, and two closes at once were one`);
       }
 
       document.getElementById("boot").onclick = () =>

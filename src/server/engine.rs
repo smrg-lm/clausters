@@ -699,6 +699,7 @@ pub enum NodeEventKind {
 
 /// Counts published by the audio thread (relaxed stores) and read by the
 /// network thread for `/server_status.reply`.
+#[derive(Default)]
 pub struct Counters {
     pub synths: AtomicU32,
     pub ugens: AtomicU32,

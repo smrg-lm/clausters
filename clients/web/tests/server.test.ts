@@ -195,6 +195,8 @@ test("the load reads one row per role and differences its own window", {
         assert.ok(audio.calls > 0, "the callback ran blocks");
         assert.ok(audio.share !== undefined && audio.share >= 0);
         const before = first.find((row) => row.role === "audio")!;
+        // A server process has a clock, so its seconds are readings.
+        assert.ok(audio.busy !== null && before.busy !== null, "a timed server");
         assert.ok(audio.busy >= before.busy, "busy time never goes back");
 
         assert.equal(formatLoad(second).split("\n")[0], "server load");
