@@ -159,9 +159,21 @@
         }
         check(gone, "close: the widget is still there");
 
-        // The ambient host: with nothing registered every window above found
-        // the session's host on its own; a registered one wins outright.
-        const registered = await new gui.GuiHost().attach();
+        // **Whose client the host is.** The session holds an engine of its
+        // own and opened no host, so the verb opened one for that engine --
+        // once, kept, and not the page's own, whose engine is another.
+        const { resolveHost } = await import("../dist/plot.js");
+        check(session.server.engine !== null, "the server names its engine");
+        check(phase.host === await resolveHost(session.server),
+          "the scopes are on the host kept for the session's engine");
+        check(spectrum.host === phase.host, "one host for that engine");
+
+        // The ambient host: with nothing registered every window above opened
+        // on a host the verb had opened for the session's engine, the one the
+        // buses are on; a registered one wins outright. It is booted on that
+        // engine too -- nothing here ever brought the page's own host up.
+        const registered = await new gui.GuiHost({ engine: session.server.engine })
+          .boot({ adoptAmbient: false });
         gui.setAmbientHost(registered);
         const onRegistered = await scope(0);
         check(onRegistered.host === registered, "a registered host wins");

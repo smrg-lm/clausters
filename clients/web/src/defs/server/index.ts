@@ -49,7 +49,7 @@ import { ROOT_NODE_ID } from "../node.ts";
 const log = area("server");
 
 export type { TimedMessage } from "../../base/osc.ts";
-import type { Connection } from "../../base/connection.ts";
+import type { Connection, PageConnection } from "../../base/connection.ts";
 import { pageConnection, OscNrtInterface, WsConnection } from "../../base/connection.ts";
 import { engine as ownEngine, pageEngineIfUp } from "../../engine/server.ts";
 import type { ClaustersServer } from "../../engine/server.ts";
@@ -263,7 +263,9 @@ export class Server {
      * server, the way the reference client hands a second handle the port.
      */
     get engine(): ClaustersServer | null {
-        return this.audio;
+        // A handle built over a page connection never opened an engine itself,
+        // and the connection names the one it is a client of.
+        return this.audio ?? (this.conn as Partial<PageConnection> | null)?.engine ?? null;
     }
     private recv: OscReceiver | null = null;
     /**

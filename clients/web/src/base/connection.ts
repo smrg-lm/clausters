@@ -220,6 +220,15 @@ export class WsConnection implements Connection {
 }
 
 /**
+ * A {@link Connection} over an engine in this page, which it names: what lets
+ * a `Server` built over one say which engine it talks to.
+ */
+export interface PageConnection extends Connection {
+    /** The engine this connection is one client of. */
+    readonly engine: ClaustersServer;
+}
+
+/**
  * The in-page carrier: a `Connection` over an engine in this tab.
  *
  * Defaults to the page's shared engine, which is what a page wants -- its
@@ -232,7 +241,7 @@ export class WsConnection implements Connection {
  */
 export async function pageConnection(
     target?: Promise<ClaustersServer> | ClaustersServer,
-): Promise<Connection> {
+): Promise<PageConnection> {
     const engine = await (target ?? server());
     const mine = new Set<(packet: Uint8Array) => void>();
     // This connection is one client of the engine, and says so: the server
@@ -241,6 +250,7 @@ export async function pageConnection(
     // share a tag or they overwrite each other's `/bus_stream`.
     const peer = engine.claimPeer();
     return {
+        engine,
         // The engine is reached over the shared ring, 64 KiB, and a reply the
         // ring cannot hold is dropped rather than split -- so this carrier is
         // bounded exactly as a datagram is, and a bulk round trip keeps the

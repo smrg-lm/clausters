@@ -6148,7 +6148,10 @@ than being ticked here.
   it. In a page the owned host was already a client of the page's engine, so
   the cursor was missing only for a server holding an engine of its own;
   `resolveHost` takes the server, as `scope` now hands it too, and keeps one
-  host an engine rather than closing anything. A server over a socket names
+  host an engine rather than closing anything. A `Server` built over a page
+  connection — every `Session.embed` — named no engine, so that branch never
+  ran until the connection named its own (`PageConnection.engine`); the
+  suite's `scope.html` now asserts which host its windows are on. A server over a socket names
   no engine a page's host could be wired to and gets the page's host, which
   is still to do: `clients/web/PLAN.md`, Found by use, "A page's own host is
   never a client of a server over a socket".)*

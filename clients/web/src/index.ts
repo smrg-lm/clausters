@@ -186,7 +186,7 @@ export { IdSpaces, loadCore } from "./base/core.ts";
 export type { IdShare } from "./base/ids.ts";
 export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
 export { OscNrtInterface, OscScore, WsConnection, pageConnection } from "./base/connection.ts";
-export type { Connection, SampleClock } from "./base/connection.ts";
+export type { Connection, PageConnection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server, Transport } from "./defs/server/index.ts";
 // The records the transport surface reports, for the same reason: a public
