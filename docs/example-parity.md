@@ -361,15 +361,6 @@ in the middle of an example.
 |---|---|---|
 | python | `gui_is_up` | the launcher's probe: it asks whether a host **process** is still answering on a port after the guest handle let go. A page has neither a process nor a port -- its host is the tab, and the two windows on screen are the same answer |
 
-### `editors/pianoroll_midi`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `requestMidiPorts` | a browser has no **virtual** port to create: the script opens one named `clausters-in` and asks the user to route into it, where a page must ask the browser for access and pick from the ports that already exist |
-| web | `stop` (first) | the port picker above re-listens, which stops the receiver it had. Only a page has that picker |
-| python | `free` ×2 | the script's ending: it frees the two `MidiFunc` responders before the process exits |
-| python | `stop` | the script's ending: it stops the receiver it opened |
-
 ### `editors/multitrack`
 
 | Only in | Call | Why |

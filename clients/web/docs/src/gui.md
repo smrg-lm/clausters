@@ -30,7 +30,7 @@ things:
 
 The builders named after the old catalog — `panel`, `stack`, `scroll`,
 `waveform`, `plot`, `scope`, `spectrum`, `spectrogram`, `phasescope`,
-`timeruler`, `pianoroll`, `bpf`, `piano`, `nodetree`, `patch` —
+`timeruler`, `bpf`, `piano`, `nodetree`, `patch` —
 are **shortcuts** onto those nodes with the props of one common case. `layout`,
 `plane` and `signal` are the general ones beside them; a `field` is only a
 free-standing ruler, which `timeruler` writes. Both emit the

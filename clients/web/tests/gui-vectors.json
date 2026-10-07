@@ -414,45 +414,6 @@
       "flow": "col",
       "children": [
         {
-          "type": "notes",
-          "id": 1,
-          "notes": [
-            0.0,
-            4800.0,
-            60.0,
-            100,
-            0,
-            4800.0,
-            4800.0,
-            67.0,
-            90,
-            1
-          ],
-          "osc": [
-            0.0,
-            "start",
-            9600.0,
-            ""
-          ],
-          "snap": 1200.0,
-          "axes": {
-            "x": {
-              "unit": "beats",
-              "tempo": 2.0,
-              "playhead": 2400.0,
-              "playhead_at": -1.0,
-              "playhead_loop_start": 0.0,
-              "playhead_loop_len": 9600.0
-            },
-            "y": {
-              "min": 48,
-              "max": 84
-            }
-          },
-          "osc_markers": 1,
-          "velocity": true
-        },
-        {
           "type": "keys",
           "id": 2,
           "min": 36,

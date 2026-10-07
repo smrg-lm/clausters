@@ -95,4 +95,4 @@ Constructed with no interface, a `MidiServer` accumulates a **score** instead: `
 
 ## Examples
 
-The repository's `examples/io/responders.html` is the OSC worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive. `examples/io/midi-responder.html` is the MIDI one — a keyboard playing the in-page engine — and `examples/editors/pianoroll-midi.html` paints what you play into a piano roll.
+The repository's `examples/io/responders.html` is the OSC worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive. `examples/io/midi-responder.html` is the MIDI one — a keyboard playing the in-page engine.

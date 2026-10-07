@@ -283,11 +283,11 @@ def test_a_structure_source_expands_into_the_flat_wire_form():
 
 
 def test_a_structure_set_rewrites_the_definition_and_the_live_widget():
-    from clausters.gui import pianoroll, source
+    from clausters.gui import node, source
 
     host = _host_with_recorder(57988)
     roll = source(notes=[(0.0, 1.0, 60)])
-    v = view(pianoroll(name="roll", notes=roll))
+    v = view(node("notes", name="roll", notes=roll))
     win = v.open(host=host)
 
     host._osc.sent.clear()

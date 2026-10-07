@@ -205,7 +205,6 @@ __all__ = [
     "plane",
     "field",
     "signal",
-    "notes",
     "curve",
     "nodes",
     "keys",
@@ -236,7 +235,6 @@ __all__ = [
     "waveform",
     "spectrogram",
     "piano",
-    "pianoroll",
     "meter",
     "scope",
     "phasescope",
@@ -2533,30 +2531,6 @@ def _held(value, flatten):
     return flatten(value)
 
 
-def _flat_curve_points(points) -> list:
-    """Normalizes ``points`` to the flat ``curve time value shape amount``
-    quintuples the host reads -- a break-point per entry, each naming the curve
-    it is on.
-
-    One list for every curve there is, rows and layers alike: a break-point is
-    a break-point wherever the curve hangs, the way a note is a note whichever
-    box holds it."""
-    out: list = []
-    for point in points:
-        if isinstance(point, dict):
-            got = (point.get("curve"), point.get("time"), point.get("value"),
-                   point.get("shape"), point.get("amount"))
-        else:
-            got = tuple(point) + (None,) * (5 - len(point))
-        curve, time, value, shape, amount = got[:5]
-        out += [str(curve),
-                0.0 if time is None else float(time),
-                0.0 if value is None else float(value),
-                1.0 if shape is None else float(shape),
-                0.0 if amount is None else float(amount)]
-    return out
-
-
 def _flat_markers(markers) -> list:
     """Normalizes a ``markers`` argument to the flat ``time, label, color``
     triples the host reads.
@@ -2835,136 +2809,6 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
 
-def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
-              snap: float | None = None, note_ids=None, curves=None, layers=None, points=None,
-              osc_markers: bool | None = None, midi_in: bool | None = None, midi: str | None = None,
-              link: int | None = None, autofit: bool | None = None,
-              ruler: str | None = None, sample_rate: float | None = None,
-              tempo: float | None = None, tempo_map=None, beat_at: float | None = None, quant: float | None = None,
-              sel_start: float | None = None, sel_len: float | None = None,
-              sel_min: float | None = None, sel_max: float | None = None,
-              playhead_at: float | None = None, playhead: float | None = None,
-              cursor: float | None = None,
-              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
-              y_start: float | None = None, y_len: float | None = None, label: str | None = None,
-              color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
-    """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid and its OSC markers -- the timeline
-    sibling of the compact roll a `multitrack` draws inside a box, drawing the **same notes** with
-    the same geometry (they share the host's ``pianoroll`` primitives), plus
-    editing, rulers and navigation.
-
-    Content:
-
-    - ``notes`` -- an iterable of ``(start, dur, pitch)`` or ``(start, dur, pitch,
-      velocity, channel)`` MIDI notes: times in timeline samples, ``pitch`` a MIDI
-      note number drawn over the ``[min, max]`` window (default the 88-key range
-      21-108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
-      notes are the MIDI messages the roll represents, each drawn with its
-      velocity as its fill.
-    - ``note_ids`` -- the id of each note's event, in the order of ``notes``,
-      for a roll whose owner names its notes (an `clausters.seq.EventSequence`
-      does). With them, a ``"notes"`` report names every note first: the flat
-      ``id start dur pitch velocity channel`` sextuples, ``0`` for a note the
-      hand made.
-    - ``osc`` -- an iterable of ``(time, label)`` (or bare ``time``) markers, one
-      per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid --
-      the messages the roll carries alongside the notes. **The lane is
-      read-only.** A roll edits what has a pitch, which is what its grid is a
-      grid of; a message has none, and the flag is a lossy view of it (the
-      address as a label, the arguments not drawn), so there is nothing here a
-      hand could write. Add one with ``timeline.add(beat, OscItem(addr, ...))``
-      and it appears.
-
-    ``markers`` are the labelled points on the shared time axis, drawn in this
-    roll's own ruler strip when it has one (see `timeruler`, which documents
-    them).
-
-    Curves, drawn and edited as a `multitrack`'s automation is:
-
-    - ``curves`` -- the sequence's **automation**, curves over the whole roll, each a row under
-      the grid: ``(name, label, min, max, height)``.
-    - ``layers`` -- each note's own curves: ``(name, note_id, label, min, max,
-      pitch)``, drawn inside the note named by ``note_id`` (see ``note_ids``) --
-      or, with ``pitch`` true (a bend, in semitones), in the grid over the
-      pitches ``min..max`` from the note, so the line is the note's pitch.
-    - ``points`` -- every curve's break-points, ``(curve, time, value, shape,
-      amount)`` as a `multitrack`'s are, times in timeline samples (a layer's
-      counted from its note's start).
-
-    A gesture on a curve comes back once, on release, as a ``"points"`` event:
-    every curve's points, flat ``name time value shape curve``.
-
-    ``midi`` names the MIDI specification the notes are written for --
-    ``"MIDI 1.0"``, ``"MPE"``, ``"MIDI 2.0"``, or ``""`` for notes for the
-    server -- drawn in the cell under the keyboard beside the ruler.
-
-    **A plain drag over the grid sweeps the notes** the rectangle covered -- the
-    rectangles the notes *are*, the same gesture a patcher's canvas has over its
-    boxes and a lane has over its clips -- and it writes **no time span**. A
-    *time range* over the same grid is the other selection, asked for by name
-    (``gestures={"drag": "select"}``), exactly as on a lane.
-
-    Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
-    drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
-    add a note or remove the one under the cursor; Shift+drag a note up or down to
-    set its velocity (the selection's, when the note is selected); the OSC markers below the grid
-    are read-only: a press meant to edit one is refused, and says why. ``snap`` is the drag grid in timeline samples (``0`` = whole
-    samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
-    velocity channel ...``) or ``"osc"`` event (``time label ...``) -- the edit-back
-    pattern -- so a driver updates the arrangement and re-renders.
-
-    Navigation and chrome mirror the heavy editor views: it is a timeline widget,
-    so ``link`` joins/splits its navigation group (zoom with the wheel over the
-    grid, pan with Shift+drag, all group-wide); ``ruler`` places a time ruler
-    (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
-    ``sample_rate``/``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on -- not a length in samples) labelling it; ``sel_start``/
-    ``sel_len`` mark a time selection and ``sel_min``/``sel_max`` restrict it to
-    a band of **pitches** -- the roll's own y axis, so a marquee reports the
-    whole semitones it swept over at both ends; ``playhead_at`` sweeps a playhead from the
-    engine clock (``playhead`` sets a static cursor, and
-    ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
-    region); ``y_start``/``y_len`` are the
-    vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
-    zoom/pan. ``osc_markers=True`` opens
-    the OSC markers' strip even with no events. ``midi_in=True`` arms
-    **live MIDI painting** in the native host: it opens a virtual MIDI input
-    port ("clausters-gui") and paints incoming notes into this roll -- at the
-    running playhead, or step-entering on the ``snap`` grid when the transport
-    is stopped -- flowing back as the usual ``"notes"`` events (the standalone
-    host's live input; a script can equally paint via a `clausters.responders.
-    MidiFunc` and ``/gui_set``)."""
-    extra = _drop_none(
-        notes=_held(notes, _flat_notes),
-        osc=_held(osc, _flat_osc),
-        snap=snap, label=label, color=color, midi=midi)
-    extra.update(_axes(
-        axes, min=min, max=max, link=link, ruler=ruler,
-        sample_rate=sample_rate, tempo=tempo, tempo_map=_tempo_map(tempo_map),
-        beat_at=beat_at, quant=quant,
-        sel_start=sel_start, sel_len=sel_len,
-        sel_min=sel_min, sel_max=sel_max, playhead_at=playhead_at,
-        playhead=playhead, cursor=cursor, playhead_loop_start=playhead_loop_start,
-        playhead_loop_len=playhead_loop_len, autofit=autofit,
-        y_start=y_start, y_len=y_len))
-    if note_ids is not None:
-        extra["note_ids"] = [int(i) for i in note_ids]
-    if curves is not None:
-        extra["curves"] = [v for name, text, lo, hi, height in curves
-                           for v in (str(name), str(text), float(lo), float(hi), float(height))]
-    if layers is not None:
-        extra["layers"] = [v for name, note, text, lo, hi, pitch in layers
-                           for v in (str(name), int(note), str(text), float(lo), float(hi),
-                                     1 if pitch else 0)]
-    if points is not None:
-        extra["points"] = _flat_curve_points(points)
-    if osc_markers is not None:
-        extra["osc_markers"] = 1 if osc_markers else 0
-    if midi_in is not None:
-        extra["midi_in"] = 1 if midi_in else 0
-    return node("notes", id=id, **extra, **props)
-
-
 def piano(*, min: int | None = None, max: int | None = None, active_min: int | None = None,
           active_max: int | None = None, pan: bool | None = None, overview: bool | None = None,
           velocity: int | None = None, channel: int | None = None, voice: str | None = None,
@@ -3098,12 +2942,10 @@ def canvas(shader: str | None = None, *, params=None, buses=None, label: str | N
     return node("canvas", id=id, **extra, **props)
 
 
-#: The model's names for the four elements the catalog named after the thing
+#: The model's names for the three elements the catalog named after the thing
 #: they show rather than for what they are. The same builder under both names,
-#: since the rename is the whole of the difference: a piano-roll is the
-#: **notes** element, a break-point envelope is a **curve**, the server's graph
-#: is **nodes** and a keyboard is **keys**.
-notes = pianoroll
+#: since the rename is the whole of the difference: a break-point envelope is a
+#: **curve**, the server's graph is **nodes** and a keyboard is **keys**.
 curve = bpf
 nodes = nodetree
 keys = piano

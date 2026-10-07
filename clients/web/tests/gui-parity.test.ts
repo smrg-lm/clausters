@@ -42,7 +42,6 @@ import {
     phasescope,
     plane,
     piano,
-    pianoroll,
     plot,
     pointsToEnv,
     samplesToBlob,
@@ -193,15 +192,6 @@ const trees: Record<string, () => GuiNode> = {
     timeline_editors: () =>
         window(
             { title: "arrangement", layout: "col" },
-            pianoroll({
-                id: 1,
-                notes: [[0.0, 4800.0, 60], [4800.0, 4800.0, 67, 90, 1]],
-                osc: [[0.0, "start"], 9600.0],
-                min: 48, max: 84, snap: 1200.0, velocity: true, oscMarkers: true,
-                ruler: "beats", tempo: 2.0, playheadAt: -1.0,
-                playhead: 2400.0, playheadLoopStart: 0.0,
-                playheadLoopLen: 9600.0,
-            }),
             piano({
                 id: 2, min: 36, max: 96, activeMin: 48, activeMax: 84,
                 velocity: 100, channel: 0, voice: "piano_voice",

@@ -3195,95 +3195,6 @@ export function bpf(
 }
 
 /**
- * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and its OSC markers -- the timeline sibling of the compact roll a
- * `multitrack` draws inside a box, drawing the same notes with editing,
- * rulers and navigation.
- *
- * `notes` are `[start, dur, pitch]` or `[start, dur, pitch, velocity,
- * channel]` MIDI notes (times in timeline samples, pitch drawn over
- * `[min, max]`); `osc` are `[time, label]` (or bare `time`) markers, one per
- * OSC or raw-MIDI timeline item, in a **read-only** lane: a roll edits what
- * has a pitch, which is what its grid is a grid of, and a message has none --
- * the flag is a lossy view of one (its address as a label, its arguments not
- * drawn), so there is nothing there a hand could write. Add one with
- * `timeline.add(beat, OscItem(addr, ...))` and it appears. An edit flows
- * back as a flat `"notes"` event -- with `noteIds`, the id of each note's event
- * in the order of `notes`, as sextuples naming every note first (`0` for a note
- * the hand made). A note's velocity is drawn as its fill and set with Shift and
- * a vertical drag. `midiIn` arms live MIDI painting in the native host.
- *
- * Curves, drawn and edited as a `multitrack`'s automation is: `curves` are the
- * sequence's **automation**, curves over the whole roll, each a row under the grid, as `[name,
- * label, min, max, height]`; `layers` are each note's own curves, `[name,
- * noteId, label, min, max, pitch]`, drawn inside the note named by `noteId`
- * (see `noteIds`) -- or, with `pitch` true (a bend, in semitones), in the grid
- * over the pitches `min..max` from the note, so the line is the note's pitch;
- * `points` are every curve's break-points, `[curve, time, value, shape,
- * amount]` as a `multitrack`'s are, times in timeline samples (a layer's
- * counted from its note's start). A gesture on a
- * curve comes back once, on release, as a `"points"` event: every curve's
- * points, flat `name time value shape curve`.
- *
- * **A plain drag over the grid sweeps the notes** the rectangle covered -- the
- * rectangles the notes *are*, the same gesture a patcher's canvas has over its
- * boxes and a lane has over its clips -- and it writes **no time span**. A
- * *time range* over the same grid is the other selection, asked for by name
- * (`gestures: { drag: "select" }`), exactly as on a lane.
- */
-export function pianoroll(
-    options: TimelineOptions & {
-        notes?: NoteSpec | Source;
-        osc?: OscMarkSpec | Source;
-        min?: number;
-        max?: number;
-        snap?: number;
-        noteIds?: readonly number[];
-        curves?: readonly (readonly [string, string, number, number, number])[];
-        layers?: readonly (readonly [string, number, string, number, number, boolean])[];
-        points?: CurvePointSpec;
-        oscMarkers?: boolean;
-        midiIn?: boolean;
-        /**
-         * The MIDI specification the notes are written for -- `"MIDI 1.0"`,
-         * `"MPE"`, `"MIDI 2.0"`, or `""` for notes for the server -- drawn in
-         * the cell under the keyboard beside the ruler.
-         */
-        midi?: string;
-        label?: string;
-    } = {},
-): GuiNode {
-    const {
-        notes, osc, min, max, snap, noteIds, curves, layers, points, oscMarkers, midiIn,
-        midi, label: text, ...timeline
-    } = options;
-    return node("notes", {
-        ...timelineProps(timeline, drop([["min", min], ["max", max]])),
-        ...drop([
-            ["notes", held(notes, flatNotes)],
-            ["osc", held(osc, flatOsc)],
-            ["snap", snap],
-            ["note_ids", noteIds === undefined ? undefined : [...noteIds]],
-            [
-                "curves",
-                curves?.flatMap(([name, text, lo, hi, height]) => [name, text, lo, hi, height]),
-            ],
-            [
-                "layers",
-                layers?.flatMap(([name, note, text, lo, hi, pitch]) => [
-                    name, Math.trunc(note), text, lo, hi, pitch ? 1 : 0,
-                ]),
-            ],
-            ["points", points === undefined ? undefined : flatCurvePoints(points)],
-            ["osc_markers", flag(oscMarkers)],
-            ["midi_in", flag(midiIn)],
-            ["midi", midi],
-            ["label", text],
-        ]),
-    });
-}
-
-/**
  * The playable `piano` virtual keyboard: keys with real piano proportions,
  * resizing freely with the widget.
  *
@@ -3386,31 +3297,6 @@ export function timeruler(
         h,
         ...drop([["theme", theme]]),
     });
-}
-
-/** One break-point of a curve, naming the curve it is on. */
-export type CurvePointSpec = readonly (readonly [
-    curve: string,
-    time: number,
-    value: number,
-    shape?: number,
-    amount?: number,
-])[];
-
-/**
- * The flat `curve time value shape amount` quintuples the host reads -- a
- * break-point per entry, each naming the curve it is on.
- *
- * One list for every curve there is, rows and layers alike: a break-point is a
- * break-point wherever the curve hangs.
- */
-export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
-    const out: (number | string)[] = [];
-    for (const [curve, time, value, shape, amount] of points) {
-        out.push(String(curve), Number(time ?? 0), Number(value ?? 0),
-            Number(shape ?? 1), Number(amount ?? 0));
-    }
-    return out;
 }
 
 /**
@@ -3616,12 +3502,11 @@ function timelineProps(options: TimelineOptions, y: Props = {}, x: Props = {}): 
 }
 
 /**
- * The model's names for the four elements the catalog named after the thing
- * they show rather than for what they are: a piano-roll is the **notes**
- * element, a break-point envelope a **curve**, the server's graph **nodes**
- * and a keyboard **keys**. The same builder under both names.
+ * The model's names for the three elements the catalog named after the thing
+ * they show rather than for what they are: a break-point envelope is a
+ * **curve**, the server's graph **nodes** and a keyboard **keys**. The same
+ * builder under both names.
  */
-export const notes = pianoroll;
 export const curve = bpf;
 export const nodes = nodetree;
 export const keys = piano;

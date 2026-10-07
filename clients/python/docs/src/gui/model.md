@@ -104,13 +104,12 @@ win["lane"].set(axes={"x": {"start": 24000.0, "len": 48000.0}})
 ## The elements
 
 ```python
-from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
+from clausters.gui import curve, keys, label, meter, nodes, score, signal
 ```
 
 | Builder | What it draws | Its own props |
 |---|---|---|
 | `signal` | every view of a signal | `view`, the source, the capabilities — below |
-| `notes` | MIDI notes over a pitch axis, with velocity and OSC markers | `notes`, `osc`, `snap`, `velocity`, `osc_markers`, `midi_in` |
 | `curve` | break-points, played by the server's own shape math | `points`, `duration`, `exp` |
 | `keys` | a playable keyboard | `min`/`max` (the visible compass), `active_min`/`active_max`, `voice` |
 | `nodes` | the audio server's node graph, live | `group`, `controls` |
@@ -118,6 +117,11 @@ from clausters.gui import curve, keys, label, meter, nodes, notes, score, signal
 | `score` | an engraved notation page | `display_list`, `playhead`, `editable` |
 | `canvas` | a WGSL shader over the widget area | `shader`, `params`, `buses` |
 | `label` | static text | `text`, `text_size`, `wrap`, `align` |
+
+The `notes` element — MIDI notes over a pitch axis, the piano roll — has no
+builder: a roll drawn over no sequence has nowhere to keep an edit, so it is
+the notes editor's, opened over an `EventSequence` with `edit`
+([the document](../composition.md)).
 
 The controls — `knob`, `slider`, `number`, `button`, `toggle`, `text`, `choice` —
 are elements with a value and no axis, and they did not move: a knob names what

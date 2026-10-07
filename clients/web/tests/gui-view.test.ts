@@ -28,7 +28,6 @@ import {
     node,
     label,
     layout,
-    pianoroll,
     score,
     slider,
     source,
@@ -338,7 +337,7 @@ test("a structure source expands into the flat wire form", () => {
 test("a structure set rewrites the definition and the live widget", () => {
     const { host, sent } = fakeHost();
     const roll = source(undefined, { notes: [[0.0, 1.0, 60]] });
-    const v = view({}, pianoroll({ name: "roll", notes: roll }));
+    const v = view({}, node("notes", { name: "roll", notes: roll }));
     const win = host.open(v);
 
     const before = sent().length;

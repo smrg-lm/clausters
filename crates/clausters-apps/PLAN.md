@@ -2603,9 +2603,10 @@ Every entry carries a checkbox.
   whether the files share one position or each locates to its own cursor on
   a switch, is open.
 
-- ⬜ **A roll with no sequence: whether the bare `pianoroll` stays** *(the
+- ✅ **A roll with no sequence: whether the bare `pianoroll` stays** *(the
   user, 2026-10-01, deleting the bare `multitrack` builder in
-  `clients/python/PLAN.md`, `C57.0`; one question of `X6`)*. Both clients
+  `clients/python/PLAN.md`, `C57.0`; one question of `X6`; decided and done
+  2026-10-07)*. Both clients
   still build a `pianoroll` widget by hand, over no `EventSequence`: in
   `editors/pianoroll` and `editors/pianoroll_midi`, and in a column of
   `panels/gestures`. The two editor examples predate the notes editor (`X3`)
@@ -2615,6 +2616,24 @@ Every entry carries a checkbox.
   roll drawn with no sequence has any use (a multitrack's had none: an edit
   has nowhere to live), and so whether the builder and those two examples go,
   as the bare `multitrack` did, or stay as a view.
+  *(Decided by the user 2026-10-07: it goes -- "es código viejo que ya no se
+  usa así". Removed from both clients in one commit: the `pianoroll` builder
+  and its model name `notes`, the curve-point helper only it called, the two
+  editor examples and their pages, and the roll column of `panels/gestures`,
+  which now shows the table over a ruler and a waveform. The host's `notes`
+  element stays, as the notes editor's; a `Source` still carries `notes` and
+  `osc` through the generic `node`. What that left open is the entry below.)*
+
+- ⬜ **A roll that paints what is played has no door and no example** *(left
+  2026-10-07 by the entry above)*. The host's roll takes `midi_in`: it opens
+  a MIDI port and paints incoming notes into the roll, reported as ordinary
+  `"notes"` events. The bare builder was its only named door and
+  `editors/pianoroll_midi` its only example, and both are gone; the notes
+  editor's window states no `midi_in`. Reaching it now takes the generic
+  `node("notes", midi_in=True)`, over no sequence. It belongs with the
+  editor's recording (`X3.10`, through `PLAN.md` `T10`): whether a roll that
+  records shows the notes as they arrive through this prop, or only the take
+  the server wrote.
 
 - ⬜ **The score editor's editing rules as modules of their own** *(the
   user, 2026-10-06: "the editing rules of the score editor should be

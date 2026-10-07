@@ -949,12 +949,11 @@ the window's own group.
 
 ```python
 from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
-                           notes, piano, pianoroll, score)
+                           piano, score)
 ```
 
 | Element | Shortcut | What it is |
 |---|---|---|
-| `notes` | `pianoroll` | the editor-grade piano-roll: a keyboard, a MIDI-note grid and OSC markers, each note's velocity drawn as its fill and set with Shift and a vertical drag. `notes=[(start, dur, pitch[, vel[, chan]])]`, `note_ids` the id of each note's event (a report then names every note by it), `osc=[(time, label)]` markers, `min`/`max` the pitch window, `snap` the grid. `midi_in=True` arms live MIDI painting in the native host |
 | `curve` | `bpf` | a drawable break-point envelope, played by the server's own shape math. `points=[(t, v[, shape])]` or an `Env` through `env_to_points`; edits come back as `"points"` |
 | `keys` | `piano` | a playable keyboard with real piano proportions. `min`/`max` are the visible range (its overview strip pans and zooms it), `active_min`/`active_max` gray the keys outside a mapping, and `voice="def"` has the **host** manage one server voice per held key |
 | `nodes` | `nodetree` | the audio server's node graph, live, with each synth's controls |
@@ -963,9 +962,10 @@ from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
 | `canvas` | — | a script-supplied WGSL shader over the widget area, fed by `params` and by control `buses` |
 | `label` | — | static text: `text_size`, `wrap`, `align` |
 
-`notes`, `curve`, `nodes` and `keys` are the model's names; `pianoroll`,
-`bpf`, `nodetree` and `piano` are the same builder under the name the catalog
-used.
+`curve`, `nodes` and `keys` are the model's names; `bpf`, `nodetree` and
+`piano` are the same builder under the name the catalog used. The `notes`
+element, the piano roll, has no builder: it is the notes editor's, opened over
+an `EventSequence` with `edit` ([the document](composition.md)).
 
 ## Planes: a workspace and a patcher
 
