@@ -211,6 +211,15 @@
  },
  {
   "builder": "button",
+  "option": "verb",
+  "value": "q",
+  "tree": {
+   "type": "button",
+   "verb": "q"
+  }
+ },
+ {
+  "builder": "button",
   "option": "text_size",
   "value": 3.5,
   "tree": {
@@ -754,6 +763,16 @@
    "type": "label",
    "text": "",
    "align": "center"
+  }
+ },
+ {
+  "builder": "label",
+  "option": "live",
+  "value": true,
+  "tree": {
+   "type": "label",
+   "text": "",
+   "live": 1
   }
  },
  {
@@ -3398,6 +3417,15 @@
  },
  {
   "builder": "score",
+  "option": "edit_cursor",
+  "value": "q",
+  "tree": {
+   "type": "score",
+   "edit_cursor": "q"
+  }
+ },
+ {
+  "builder": "score",
   "option": "color",
   "value": "q",
   "tree": {
@@ -5145,6 +5173,39 @@
  },
  {
   "builder": "view",
+  "option": "keys",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "keys": [
+    "q"
+   ]
+  }
+ },
+ {
+  "builder": "view",
+  "option": "verbs",
+  "value": {
+   "a": "b"
+  },
+  "tree": {
+   "type": "window",
+   "verbs": {
+    "a": "b"
+   }
+  }
+ },
+ {
+  "builder": "view",
+  "option": "ask_close",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "ask_close": 1
+  }
+ },
+ {
+  "builder": "view",
   "option": "split",
   "value": true,
   "tree": {
@@ -5183,6 +5244,15 @@
      ]
     }
    ]
+  }
+ },
+ {
+  "builder": "view",
+  "option": "main",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "main": 7
   }
  },
  {
@@ -5813,6 +5883,39 @@
  },
  {
   "builder": "window",
+  "option": "keys",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "keys": [
+    "q"
+   ]
+  }
+ },
+ {
+  "builder": "window",
+  "option": "verbs",
+  "value": {
+   "a": "b"
+  },
+  "tree": {
+   "type": "window",
+   "verbs": {
+    "a": "b"
+   }
+  }
+ },
+ {
+  "builder": "window",
+  "option": "ask_close",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "ask_close": 1
+  }
+ },
+ {
+  "builder": "window",
   "option": "split",
   "value": true,
   "tree": {
@@ -5851,6 +5954,15 @@
      ]
     }
    ]
+  }
+ },
+ {
+  "builder": "window",
+  "option": "main",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "main": 7
   }
  },
  {
