@@ -143,9 +143,10 @@ export interface ClaustersGui {
      * The engine this host's audio leg is wired to -- the page's under
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
      * an instance needs exactly this to open a `Server` on it, and asking for
-     * it again by name would hand back the page's.
+     * it again by name would hand back the page's. `null` for a host whose
+     * audio leg is a socket to a server elsewhere (`newGuiHost({ url })`).
      */
-    engine: ClaustersServer;
+    engine: ClaustersServer | null;
     /**
      * Releases this host: its wasm instance, its GPU device, its event drain.
      * The engine is **not** closed -- a host is one client of it, and the page
@@ -255,16 +256,28 @@ export function pageGuiIfUp(): Promise<ClaustersGui> | null {
  * A second host costs neither a download nor a GPU device; a second engine is
  * a second `AudioContext`, and browsers cap those (Chrome at six). Release one
  * with `bridge.close()`.
+ *
+ * `url` makes it the host of a server **over a socket** instead
+ * (`ws://host:port`, a `clausters --ws`): its audio leg is a WebSocket of its
+ * own to that server, so its meters, its scopes and its play cursor read that
+ * server, and no engine is opened in the page for it.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer; idShare?: IdShare } = {},
+    options: { engine?: ClaustersServer; idShare?: IdShare; url?: string } = {},
 ): Promise<ClaustersGui> {
+    // A host of a server **over a socket**: its audio leg is a WebSocket to
+    // that server (`url`), and no engine in this page is its.
+    if (options.url !== undefined) return boot(undefined, options.idShare, options.url);
     return boot(options.engine ?? await engineInstance(), options.idShare);
 }
 
-async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<ClaustersGui> {
+async function boot(
+    audio?: ClaustersServer,
+    idShare?: IdShare,
+    url?: string,
+): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
-    const engine = audio ?? await server();
+    const engine = url !== undefined ? null : (audio ?? await server());
     await init();
     const bridge = start();
     // The share of the engine's node ids, buses and buffers this host
@@ -272,7 +285,8 @@ async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<Clauste
     // own host is on the page's engine, which the page's pools and handles
     // allocate on: the page splits its space with it, as a script does.
     await loadCore();
-    const share = idShare ?? (audio === undefined ? splitPageIds() : undefined);
+    const share = idShare
+        ?? (audio === undefined && url === undefined ? splitPageIds() : undefined);
     if (share !== undefined) bridge.id_share(share.index, share.of);
 
     // The page makes the canvas and hands it over, rather than waiting for one
@@ -293,7 +307,9 @@ async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<Clauste
     canvas.height = DEFAULT_CANVAS.height;
     canvas.style.display = "block";
     const useFallback = () => {
-        if (audio === undefined && !canvas.isConnected) document.body.append(canvas);
+        if (audio === undefined && url === undefined && !canvas.isConnected) {
+            document.body.append(canvas);
+        }
         return canvas;
     };
 
@@ -303,9 +319,15 @@ async function boot(audio?: ClaustersServer, idShare?: IdShare): Promise<Clauste
     // tag is what used to make the two take the stream from each other, leaving
     // the host's meters frozen until a widget was added or removed.
     //
-    const peer = engine.claimPeer();
-    engine.addReply((bytes) => bridge.server_reply(bytes), peer);
-    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
+    if (engine === null) {
+        // Over a socket the host is a client of its own: the server tells its
+        // connections apart, so there is no tag to claim.
+        bridge.connect_server(url!);
+    } else {
+        const peer = engine.claimPeer();
+        engine.addReply((bytes) => bridge.server_reply(bytes), peer);
+        bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
+    }
 
     // Drain the host's outbound events to the page's listeners.
     const listeners = new Set<EventListener>();

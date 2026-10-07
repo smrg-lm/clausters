@@ -66,6 +66,20 @@ let ownHost: GuiHost | null = null;
  * engine: each is a client of that engine, as {@link ownHost} is of the page's.
  */
 const ownHosts = new WeakMap<ClaustersServer, GuiHost>();
+/**
+ * The module's hosts for servers reached **over a socket**, one a server
+ * address: each has a WebSocket leg of its own to that server.
+ */
+const socketHosts = new Map<string, GuiHost>();
+
+/** The address of a server reached over a socket, or `undefined`. */
+function socketOf(server: Server): string | undefined {
+    try {
+        return server.connection.url;
+    } catch {
+        return undefined;      // no carrier yet: nothing to be a client of
+    }
+}
 
 /**
  * One open plot window: its GUI `host`, the window `id` and the plot widget's
@@ -540,9 +554,10 @@ function isRow(value: unknown): boolean {
  * with its ids on the engine split as `Session.gui` splits them. Where the
  * Python client boots its one host again for a server and closes the windows
  * on it, a page keeps a host an engine: a second one costs it neither a
- * download nor a device. A server with no engine in this tab (one over a
- * socket, an offline score) names nothing a page's host could be wired to,
- * and gets the page's.
+ * download nor a device. A server reached **over a socket** gets a host
+ * whose audio leg is a WebSocket of its own to that server, kept an address
+ * the same way. Only a server that is nowhere -- an offline score -- names
+ * nothing a host could be a client of, and gets the page's.
  *
  * @internal -- exported for `./scope.ts`, the other ambient visual verb, which
  * resolves through the same ladder and shares this module's own host. The
@@ -574,6 +589,17 @@ export async function resolveHost(server?: Server | null): Promise<GuiHost> {
             host = await new GuiHost({ gui, share: server.share })
                 .boot({ adoptAmbient: false });
             ownHosts.set(engine, host);
+        }
+        return host;
+    }
+    const url = server && engine === null ? socketOf(server) : undefined;
+    if (server && url !== undefined) {
+        let host = socketHosts.get(url);
+        if (host === undefined) {
+            const gui = await newGuiHost({ url, idShare: server.splitShare() });
+            host = await new GuiHost({ gui, share: server.share })
+                .boot({ adoptAmbient: false });
+            socketHosts.set(url, host);
         }
         return host;
     }

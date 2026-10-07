@@ -4727,8 +4727,9 @@ sound.
   score, one sized by hand — still steps at 48000, as Python's does at its
   options' default.)*
 
-- ⬜ **A page's own host is never a client of a server over a socket**
-  *(found 2026-10-07, giving `resolveHost` the server an editor plays on)*.
+- ✅ **A page's own host is never a client of a server over a socket**
+  *(found 2026-10-07, giving `resolveHost` the server an editor plays on;
+  done the same day)*.
   `resolveHost(server)` answers a host that is a client of the server's
   engine: the page's own host for the page's engine, one opened for an
   engine a server holds itself. A `Server` reached over a WebSocket has no
@@ -4740,6 +4741,18 @@ sound.
   needs first is the question the entry "`open()` with no host resolves
   the ambient one" already asks: which handle a page with two servers
   meant.
+  *(Done. `newGuiHost({ url })` makes a host whose audio leg is a WebSocket
+  of its own to that server — `connect_server`, which nothing called — and
+  opens no engine in the page for it; `resolveHost` makes one for a server
+  whose connection names an address and keeps it by that address, with the
+  server's ids split as they are for an engine's host. The question it was
+  said to wait on did not stand in the way: the caller hands the server it
+  means, so nothing is guessed. Checked against a real `clausters --ws`
+  with its OSC log on: a scope on a session over the socket opened on the
+  host kept for that address, the page opened no engine, and the server
+  received the host's own `/bus_tap`, `/bus_tapStream` and `/clock_query`.
+  No page of the suite runs against a socket server, so this stays a check
+  made by hand.)*
 
 - ✅ **A verb called on the score editor's handle told nobody the score
   changed** *(found 2026-10-06, writing the chrome-less window's test as the
