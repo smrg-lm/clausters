@@ -755,6 +755,28 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     assert "/transport_locateSample" in [addr for addr, _ in server.sent]
 
 
+def test_an_editor_that_plays_asks_for_a_host_on_its_server(monkeypatch):
+    """With no host named, the ambient one is asked for as a client of the
+    server the editor plays on -- what lets a host booted for the window read
+    the transport and draw the play cursor. An editor that plays nothing asks
+    for no server."""
+    import sys
+
+    asked = []
+
+    def ambient(server=None):
+        asked.append(server)
+        return FakeHost()
+
+    # the module, which the package's `plot` verb hides behind its own name
+    monkeypatch.setattr(sys.modules["clausters.plot"], "_ambient_host", ambient)
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    NotesEditor(seq, sample_rate=SR, server=server).open()
+    PointsEditor(a_curve(), sample_rate=SR).open()
+    assert asked == [server, None]
+
+
 def test_play_answers_the_transport_the_sequence_plays_on():
     """No window: play(sequence) loads the lane on the server's notes
     transport and answers that transport, whose verbs speak the sequence's

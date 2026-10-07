@@ -169,6 +169,12 @@ class NotesEditor(Marking, Editor):
 
     # ---- playing it ----
 
+    def _plays_on(self):
+        try:
+            return self._resolve_server()
+        except RuntimeError:
+            return None
+
     def _resolve_server(self):
         if self._server is None:
             from ...base.main import main

@@ -40,6 +40,9 @@
 
 import { main } from "./base/main.ts";
 import { loadCore } from "./base/core.ts";
+import type { Server } from "./defs/server/index.ts";
+import { pageEngineIfUp } from "./engine/server.ts";
+import type { ClaustersServer } from "./engine/server.ts";
 import { asDef, exprChannels, isExpr } from "./defs/asdef.ts";
 import { Buffer } from "./defs/buffer.ts";
 import { FaustDef } from "./defs/faustdef.ts";
@@ -48,7 +51,7 @@ import { Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import { Bpf, Env, control, envGen, out } from "./defs/ugens/index.ts";
-import { GuiHost, pageGuiConnection } from "./gui/host.ts";
+import { GuiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 import type { Stage } from "./gui/host.ts";
 import type { PropValue } from "./gui/host.ts";
 import { ambientHost } from "./gui/ambient.ts";
@@ -58,6 +61,11 @@ import { bounceDef } from "./render.ts";
 
 /** The module's own host, opened lazily when no session brought one. */
 let ownHost: GuiHost | null = null;
+/**
+ * The module's hosts for servers that hold an engine of their own, one an
+ * engine: each is a client of that engine, as {@link ownHost} is of the page's.
+ */
+const ownHosts = new WeakMap<ClaustersServer, GuiHost>();
 
 /**
  * One open plot window: its GUI `host`, the window `id` and the plot widget's
@@ -519,14 +527,28 @@ function isRow(value: unknown): boolean {
  * session's host when one is already up, else a host this module opens once
  * and owns.
  *
- * A registered host wins outright: it is a front this module could not have
- * opened itself, which is the whole reason it was registered.
+ * A registered host wins outright, `server` included: it is a front this
+ * module could not have opened itself, which is the whole reason it was
+ * registered, so whose client it is stays its registrar's business.
+ *
+ * `server` is the audio server the caller needs the host to be a client of --
+ * `scope` and an editor that plays pass the one they resolved, so the host
+ * reads that server's buses, taps and transport; `plot` passes nothing. The
+ * host this module opens is the page's, a client of the page's engine, which
+ * is the right one for every server on that engine. A server holding an
+ * engine of its own gets a host wired to that engine, opened once and kept,
+ * with its ids on the engine split as `Session.gui` splits them. Where the
+ * Python client boots its one host again for a server and closes the windows
+ * on it, a page keeps a host an engine: a second one costs it neither a
+ * download nor a device. A server with no engine in this tab (one over a
+ * socket, an offline score) names nothing a page's host could be wired to,
+ * and gets the page's.
  *
  * @internal -- exported for `./scope.ts`, the other ambient visual verb, which
  * resolves through the same ladder and shares this module's own host. The
  * Python client shares it the same way, as `plot._ambient_host`.
  */
-export async function resolveHost(): Promise<GuiHost> {
+export async function resolveHost(server?: Server | null): Promise<GuiHost> {
     const registered = ambientHost();
     if (registered) return registered;
     const session = main.currentSession as { guiHost?: GuiHost | null } | null;
@@ -542,6 +564,19 @@ export async function resolveHost(): Promise<GuiHost> {
     // and registering it would make the fallback outrank a session opened
     // afterwards. The reference client draws the same line
     // (`plot._ambient_host` boots with `adopt_ambient=False`).
+    const engine = server?.engine ?? null;
+    if (server && engine !== null && engine !== await (pageEngineIfUp() ?? null)) {
+        let host = ownHosts.get(engine);
+        if (host === undefined) {
+            // The host allocates on that engine too (its voices, its take
+            // monitor), so the server's ids are split with it.
+            const gui = await newGuiHost({ engine, idShare: server.splitShare() });
+            host = await new GuiHost({ gui, share: server.share })
+                .boot({ adoptAmbient: false });
+            ownHosts.set(engine, host);
+        }
+        return host;
+    }
     ownHost ??= await new GuiHost(await pageGuiConnection())
         .boot({ adoptAmbient: false });
     return ownHost;

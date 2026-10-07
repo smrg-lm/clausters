@@ -392,6 +392,14 @@ export class ScoreEditor extends Editor<Score | EventSequence> {
         return handle;
     }
 
+    protected override playsOn(): Server | null {
+        try {
+            return this.#resolveServer();
+        } catch {
+            return null;
+        }
+    }
+
     #resolveServer(): Server {
         this.#server ??= resolveServer(null) as unknown as Server;
         return this.#server;

@@ -545,6 +545,12 @@ class ScoreEditor(Editor):
             self._host.head_clock(window, "transport", transport)
         return window
 
+    def _plays_on(self):
+        try:
+            return self._resolve_server()
+        except RuntimeError:
+            return None
+
     def _resolve_server(self):
         if self._server is None:
             from ...base.main import main

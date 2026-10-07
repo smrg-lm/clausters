@@ -351,8 +351,9 @@ sequence, at the engraver's own time of 120 quarters a minute, which is the
 time the page's cursor is drawn over; an edit made while it plays — and an undo
 — is heard on from where the position is. The cursor is the transport's
 position, which the host reads from the server it is a client of: the session's
-own host, opened with `session.gui()` before the editor, is one; a host that
-stands alone still edits the score and draws no cursor.
+own host, opened with `session.gui()`, is one, and with no host open the editor
+has one booted as a client of the server it plays on. A host named by hand
+that is a client of no server still edits the score and draws no cursor.
 
 ### The score's file
 

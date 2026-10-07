@@ -1002,6 +1002,10 @@ export class MultitrackEditor extends Editor<Multitrack> {
         return handle;
     }
 
+    protected override playsOn(): Server | null {
+        return this.playback?.server ?? null;
+    }
+
     /**
      * **Tell the window where the multitrack's meters are.**
      *

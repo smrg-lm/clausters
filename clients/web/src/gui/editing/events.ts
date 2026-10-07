@@ -245,6 +245,14 @@ export class NotesEditor extends Editor<EventSequence> {
 
     // ---- playing it ----
 
+    protected override playsOn(): Server | null {
+        try {
+            return this.#resolveServer();
+        } catch {
+            return null;
+        }
+    }
+
     #resolveServer(): Server {
         this.#server ??= resolveServer(null) as unknown as Server;
         return this.#server;

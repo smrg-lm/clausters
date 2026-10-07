@@ -36,6 +36,7 @@
 import { CAPACITY, GuiIdAllocator } from "../ids.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
+import type { Server } from "../../defs/server/index.ts";
 import { Editing, FIRST_VERSION } from "../../history.ts";
 import type { Stepped } from "../../history.ts";
 import type { Adopting } from "../../history.ts";
@@ -187,8 +188,8 @@ export class Application {
     }
 
     /**
-     * Adopt a host: the one named, else the ambient one. Answers the host
-     * adopted.
+     * Adopt a host: the one named, else the ambient one -- a client of
+     * `server` when it has to be opened here. Answers the host adopted.
      *
      * **Only when it has none**, which is the rule the multitrack learned the
      * hard way: an application already open answers *its* host, and overwriting
@@ -199,10 +200,10 @@ export class Application {
      * Async where the Python client's is not, for the reason `View.open` is
      * async here: resolving the ambient host may have to boot it.
      */
-    async resolve(host?: GuiHost): Promise<GuiHost> {
+    async resolve(host?: GuiHost, server: Server | null = null): Promise<GuiHost> {
         if (this.host === null) {
             const { resolveEditorHost } = await import("./editor.ts");
-            this.host = await resolveEditorHost(host);
+            this.host = await resolveEditorHost(host, server);
         }
         return this.host;
     }

@@ -40,6 +40,7 @@ import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue } from "../host.ts";
 import { Editing, FIRST_VERSION } from "../../history.ts";
 import type { RecordingLeg } from "../../history.ts";
+import type { Server } from "../../defs/server/index.ts";
 import type { Adopting, Applier } from "../../history.ts";
 import type { Domain } from "./domain.ts";
 import { Application, BASE_ID } from "./application.ts";
@@ -76,13 +77,21 @@ export function notAnEdit(): readonly string[] {
  * resolution `guidef.View.open`, `plot` and `scope` share, so an editor is not
  * the one resource that has to be handed a host.
  *
+ * `server` is the audio server the window has to follow -- the one an editor
+ * plays on -- and is handed to the ambient resolution as `scope` hands its
+ * own: a host opened here is opened as a client of that server, which is what
+ * lets it read the transport's position and draw the play cursor.
+ *
  * Async where the Python client's `_resolve_host` is not, for the reason
  * `View.open` is async here: resolving the ambient host may have to boot it, and
  * a page boots asynchronously.
  */
-export async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
+export async function resolveEditorHost(
+    host?: GuiHost,
+    server: Server | null = null,
+): Promise<GuiHost> {
     if (host !== undefined) return host;
-    return (await import("../../plot.ts")).resolveHost();
+    return (await import("../../plot.ts")).resolveHost(server);
 }
 
 /** What {@link Editor} is built with. */
@@ -520,7 +529,7 @@ export class Editor<S = unknown> implements Adopting {
         { id, stage }: { id?: number; stage?: unknown } = {},
     ): Promise<WindowHandle> {
         if (this.windowId !== null && this.windowHandle !== null) return this.windowHandle;
-        const resolved = await this.app.resolve(host);
+        const resolved = await this.app.resolve(host, this.playsOn());
         const handle = resolved.open(this.draw(), { id, element: stage as never });
         this.windowId = handle.id;
         this.windowHandle = handle;
@@ -528,6 +537,18 @@ export class Editor<S = unknown> implements Adopting {
         this.listen(resolved);
         this.announce();
         return handle;
+    }
+
+    /**
+     * The audio server this editor plays on, or `null` for one that plays
+     * nothing (a curve's).
+     *
+     * What `open` hands the ambient resolution, so a host opened for the
+     * window is a client of that server and draws the play cursor from its
+     * transport -- the rule `scope` follows.
+     */
+    protected playsOn(): Server | null {
+        return null;
     }
 
     /**

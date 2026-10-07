@@ -578,6 +578,10 @@ export class AudioEditor extends Editor<Buffer> {
         return handle;
     }
 
+    protected override playsOn(): Server | null {
+        return this.server as unknown as Server;
+    }
+
     /**
      * The window closed: the take stops being one the editor plays, and the
      * last one closed frees the editor's nodes.

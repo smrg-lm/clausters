@@ -248,7 +248,7 @@ export async function scope(
     }
 
     const server = main.resolveServer(explicitServer);
-    const host = explicitHost ?? await resolveHost();
+    const host = explicitHost ?? await resolveHost(server as Server);
     const index = bus instanceof Bus ? bus.index : Math.trunc(bus);
 
     const text = label ?? (

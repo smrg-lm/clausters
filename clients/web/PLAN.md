@@ -4713,9 +4713,23 @@ sound.
   `/server_query` already answers and the emitter would read it.
   *(Fixed: `Server.reconcile` keeps the nominal rate the query answers, on
   an internal `sampleRate` of the handle, and `CurveEmitter.sampleRate`
-  reads it off the sample clock. A handle that never asked -- an offline
-  score, one sized by hand -- still steps at 48000, as Python's does at its
+  reads it off the sample clock. A handle that never asked — an offline
+  score, one sized by hand — still steps at 48000, as Python's does at its
   options' default.)*
+
+- ⬜ **A page's own host is never a client of a server over a socket**
+  *(found 2026-10-07, giving `resolveHost` the server an editor plays on)*.
+  `resolveHost(server)` answers a host that is a client of the server's
+  engine: the page's own host for the page's engine, one opened for an
+  engine a server holds itself. A `Server` reached over a WebSocket has no
+  engine in the tab, so `scope` and an editor that plays on it get the
+  page's host, a client of the page's engine: the taps drawn and the
+  transport followed are another server's. The host can be pointed at one
+  (`GuiBridge.connect_server(url)` attaches that leg) and nothing in this
+  client calls it. What it
+  needs first is the question the entry "`open()` with no host resolves
+  the ambient one" already asks: which handle a page with two servers
+  meant.
 
 - ✅ **A verb called on the score editor's handle told nobody the score
   changed** *(found 2026-10-06, writing the chrome-less window's test as the

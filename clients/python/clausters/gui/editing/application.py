@@ -68,16 +68,22 @@ class _Anyone:
 _ANYONE = _Anyone()
 
 
-def _resolve_host(host):
+def _resolve_host(host, server=None):
     """The host an `open` acts on: the one named, else the ambient one -- the
     same resolution `clausters.gui.guidef.View.open`, `clausters.plot` and
     `clausters.scope` share, so an editor is not the one resource that has to be
-    handed a host."""
+    handed a host.
+
+    ``server`` is the audio server the window has to follow -- the one an
+    editor plays on -- and is handed to the ambient resolution as
+    `clausters.scope` hands its own: a host this module has to boot is booted
+    as a client of that server, which is what lets it read the transport's
+    position and draw the play cursor."""
     if host is not None:
         return host
     from ...plot import _ambient_host
 
-    return _ambient_host()
+    return _ambient_host(server)
 
 
 class Application:
@@ -194,9 +200,9 @@ class Application:
             if echo is not None:
                 echo.host = host
 
-    def resolve(self, host=None):
-        """Adopt a host: the one named, else the ambient one. Answers the host
-        adopted.
+    def resolve(self, host=None, server=None):
+        """Adopt a host: the one named, else the ambient one -- a client of
+        ``server`` when it has to be booted here. Answers the host adopted.
 
         **Only when it has none**, which is the rule the multitrack learned the
         hard way: an application already open answers *its* host, and overwriting
@@ -205,7 +211,7 @@ class Application:
         same object.
         """
         if self.host is None:
-            self.host = _resolve_host(host)
+            self.host = _resolve_host(host, server)
         return self.host
 
     # ---- the widget-id space, and its two doors ----

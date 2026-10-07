@@ -6115,9 +6115,9 @@ than being ticked here.
   and a call on a dict's element were misread, and names imported from
   node's modules were taken for the client's.
 
-- ⬜ **An editor that plays draws no cursor unless the script opened the
+- ✅ **An editor that plays draws no cursor unless the script opened the
   session's host first** *(found 2026-10-05, the first look at
-  `notation/score_editor`)*. `edit` resolves its host as `plot` does
+  `notation/score_editor`; done 2026-10-07)*. `edit` resolves its host as `plot` does
   (`Application.resolve` -> `plot._ambient_host()` with no server), so with
   no `session.gui()` before it the window opens on a host that stands alone:
   it is a client of no server, reads no transport position, and the play
@@ -6133,3 +6133,16 @@ than being ticked here.
   (a `plot` opened before the editor); and the editors that do not play (a
   curve) keep asking for no server. The web client's twin is `plot.ts`'s
   owned host, and it changes in the same commit.
+  *(Done: an editor answers the server it plays on (`Editor._plays_on`,
+  `playsOn`), `Application.resolve` hands it to the ambient resolution, and
+  the four editors that play answer theirs — the roll and the score `None`
+  where there is no server to play on. What was to settle: the reboot stays
+  `scope`'s rule and is said in the editor's docstring — a `plot` open on a
+  host booted with no server closes when an editor that plays is opened after
+  it. In a page the owned host was already a client of the page's engine, so
+  the cursor was missing only for a server holding an engine of its own;
+  `resolveHost` takes the server, as `scope` now hands it too, and keeps one
+  host an engine rather than closing anything. A server over a socket names
+  no engine a page's host could be wired to and gets the page's host, which
+  is still to do: `clients/web/PLAN.md`, Found by use, "A page's own host is
+  never a client of a server over a socket".)*

@@ -687,6 +687,9 @@ class MultitrackEditor(Marking, Editor):
             self._tell_meters()
         return window
 
+    def _plays_on(self):
+        return None if self.playback is None else self.playback.server
+
     def _tell_meters(self) -> None:
         """**Tell the window where the multitrack's meters are.**
 

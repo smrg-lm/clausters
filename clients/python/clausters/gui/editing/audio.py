@@ -409,6 +409,9 @@ class AudioEditor(Marking, Editor):
             self._host.head_clock(window, "transport", self._playback.transport_id)
         return window
 
+    def _plays_on(self):
+        return self._server
+
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""

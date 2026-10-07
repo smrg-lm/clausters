@@ -425,7 +425,7 @@ class Editor:
             # gives a second editor on the same history -- so this answers the
             # window it already has rather than orphaning it.
             return self._window
-        self.app.resolve(host)
+        self.app.resolve(host, self._plays_on())
         tree = self.draw()
         self._window = self._host.open(tree, id=id)
         self._editing.attach(self)
@@ -433,6 +433,17 @@ class Editor:
         self._host.subscribe(self.apply)
         self._host.loop            # built and started on first use
         return self._window
+
+    def _plays_on(self):
+        """The audio server this editor plays on, or ``None`` for one that
+        plays nothing (a curve's).
+
+        What `open` hands the ambient resolution, so a host booted for the
+        window is a client of that server and draws the play cursor from its
+        transport. An ambient host booted earlier with no server -- by a
+        `clausters.plot` -- is booted again for it, and the windows open on it
+        close: the same rule `clausters.scope` follows."""
+        return None
 
     # ---- the edit-back ----
 
