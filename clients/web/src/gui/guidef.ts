@@ -724,6 +724,12 @@ export interface WidgetOptions {
      */
     tip?: string;
     /**
+     * The verb whose key the tip shows, for a widget a key presses that is no
+     * tool: a `toggle` that latches a state, a button read by its click. The
+     * host performs nothing for it; it only reads the key.
+     */
+    shortcut?: string;
+    /**
      * A {@link menu} the secondary button (or a press held still) opens at the
      * pointer. The nearest ancestor that carries one answers, so a
      * container's context menu serves everything inside it that has none.

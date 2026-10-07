@@ -146,6 +146,9 @@ strip) are that same widget configured down.
   widget. It goes when the pointer leaves, on a press and on a key. On a
   button that performs a ``verb`` the host adds the key bound to that verb, in
   parentheses, so a tip never states a key itself.
+- ``shortcut`` -- the verb whose key the tip shows, for a widget a key presses
+  that is no tool: a ``toggle`` that latches a state, a button read by its
+  click. The host performs nothing for it; it only reads the key.
 - ``context`` -- a `menu` the secondary button (or a press held still) opens
   at the pointer. The nearest ancestor that carries one answers, so a
   container's context menu serves everything inside it that has none.

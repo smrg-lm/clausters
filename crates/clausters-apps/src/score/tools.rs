@@ -200,6 +200,16 @@ fn press(label: &str, tip: &str) -> Value {
     json!({"type": "button", "flat": true, "label": label, "tip": tip})
 }
 
+/// `node` with the verb whose key its tip shows: these tools latch a state or
+/// report a click, so they are no `verb` tools, and the host reads the key of
+/// the verb named here (`shortcut`) rather than the tip writing one.
+fn keyed(mut node: Value, verb: &str) -> Value {
+    if let Some(map) = node.as_object_mut() {
+        map.insert("shortcut".into(), json!(verb));
+    }
+    node
+}
+
 /// `node` as a tool that shows symbols: drawn at [`SYMBOL_SIZE`].
 fn symbols(mut node: Value) -> Value {
     if let Some(map) = node.as_object_mut() {
@@ -230,9 +240,12 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         vec![tool(
             ids,
             "entry",
-            symbols(latch(
-                &shown(icons::ENTRY, "N"),
-                "Note entry: write notes at the cursor (N)",
+            symbols(keyed(
+                latch(
+                    &shown(icons::ENTRY, "N"),
+                    "Note entry: write notes at the cursor",
+                ),
+                "entry",
             )),
         )],
         &mut children,
@@ -341,12 +354,15 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         tool(
             ids,
             "play",
-            symbols(press("\u{25B6}", "Play, or stop (the space bar)")),
+            symbols(keyed(press("\u{25B6}", "Play, or stop"), "play")),
         ),
         tool(
             ids,
             "loop",
-            symbols(latch("\u{21BB}", "Loop the selection, or the score (L)")),
+            symbols(keyed(
+                latch("\u{21BB}", "Loop the selection, or the score"),
+                "loop",
+            )),
         ),
     ]
     .into_iter()

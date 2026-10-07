@@ -336,6 +336,10 @@ pub struct Widget {
     /// The `tip` prop: a short text shown beside the pointer once it rests on
     /// this widget.
     pub tip: Option<String>,
+    /// The `shortcut` prop: the verb whose key this widget's tip shows -- for
+    /// a widget a key presses that is no tool, a latch above all. A tool's is
+    /// the verb it performs and needs no naming.
+    pub shortcut: Option<String>,
     pub children: Vec<Widget>,
 }
 
@@ -517,6 +521,11 @@ impl Widget {
                 .and_then(Value::as_str)
                 .filter(|t| !t.is_empty())
                 .map(str::to_string),
+            shortcut: props
+                .get("shortcut")
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+                .map(str::to_string),
             children,
         };
         // The active **edit layer**, last: it is named by what the container
@@ -610,6 +619,10 @@ impl Widget {
             "enabled" => truthy(v).map(|b| self.enabled = b).is_some(),
             "tip" => {
                 self.tip = v.as_str().filter(|t| !t.is_empty()).map(str::to_string);
+                true
+            }
+            "shortcut" => {
+                self.shortcut = v.as_str().filter(|v| !v.is_empty()).map(str::to_string);
                 true
             }
             // a window's own: more outlines for the characters its text uses

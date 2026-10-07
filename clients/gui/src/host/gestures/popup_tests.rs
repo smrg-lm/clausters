@@ -705,7 +705,8 @@ fn a_tool_s_tip_shows_the_key_of_its_verb() {
         r#"{"type":"window","margin":0,"flow":"row","children":[
             {"id":5,"type":"button","label":"L","w":60,"verb":"loop","tip":"Loop"},
             {"id":6,"type":"button","label":"X","w":60,"verb":"export","tip":"Export"},
-            {"id":7,"type":"button","label":"B","w":60,"tip":"a plain button"}]}"#,
+            {"id":7,"type":"button","label":"B","w":60,"tip":"a plain button"},
+            {"id":8,"type":"toggle","label":"T","w":60,"tip":"Loop the score","shortcut":"loop"}]}"#,
     );
     let ctx = ctx();
     let tip = |host: &Host, id: i32| {
@@ -719,6 +720,8 @@ fn a_tool_s_tip_shows_the_key_of_its_verb() {
         "no key performs it"
     );
     assert_eq!(tip(&host, 7).as_deref(), Some("a plain button"));
+    // a latch is no tool: it names the verb whose key presses it
+    assert_eq!(tip(&host, 8).as_deref(), Some("Loop the score (L)"));
     let table = serde_json::json!({"loop": "Ctrl+L", "export": "F9"});
     host.keys.overlay_json(table.as_object().unwrap());
     assert_eq!(tip(&host, 5).as_deref(), Some("Loop (Ctrl+L)"));

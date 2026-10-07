@@ -772,12 +772,15 @@ impl super::Host {
                 // **A tool's tip shows its key**: a button that performs a
                 // verb is pressed by the chord the key table binds to it, so
                 // the tip names that chord as a menu entry does -- read from
-                // the table now, and so the one a rebinding left.
+                // the table now, and so the one a rebinding left. A widget a
+                // key presses that is no tool -- a latch, which reports its
+                // state -- names the verb itself (`shortcut`).
                 let key = p
                     .widget
                     .kind
                     .as_element()
                     .and_then(|el| el.tool_verb())
+                    .or(p.widget.shortcut.as_deref())
                     .and_then(|verb| self.keys.label(verb));
                 Some((
                     id,
