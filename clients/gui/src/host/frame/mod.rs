@@ -917,7 +917,7 @@ struct Kept {
     live: Mesh,
 }
 
-/// The glyph atlas' epoch ([`font::atlas::epoch`]): the same for ever in a
+/// The glyph atlas' epoch (`font::atlas::epoch`): the same for ever in a
 /// build with no rasterizer, where nothing is ever packed again.
 fn atlas_epoch() -> u64 {
     #[cfg(feature = "font-atlas")]
