@@ -16,7 +16,9 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { loadCore } from "../src/base/core.ts";
 import {
@@ -78,6 +80,11 @@ const vectors = JSON.parse(
         clip: number[];
     };
     notes: { props: Record<string, unknown>; channel: number; events: [number, number[]][] }[];
+    zones: {
+        options: { zone: number; upper?: boolean; bend_range?: number };
+        figure: Record<string, number | number[]>;
+        events: [number, number[]][];
+    }[];
 };
 
 // ---- the stand-in ports ----
@@ -353,6 +360,69 @@ test("a pattern plays to MIDI on the beat grid it plays to a server", async () =
         .filter(([, bytes]) => (bytes[0] & 0xf0) === 0x80)
         .map(([beat]) => beat);
     assert.deepEqual(offs, [0.4, 0.9, 1.8, 2.8]);
+});
+
+// ---- an MPE zone ----
+
+test("a zone puts each note on the member the reference client puts it on", async () => {
+    // The channel and the bytes are the crate's, through the core's door; which
+    // notes have ended by the time the next one asks for a channel is this
+    // client's bookkeeping. The frozen score is the reference client's, so a
+    // match is both: three notes overlap on three members, the fourth takes
+    // the channel of the first to end, and each one's bend, pressure and
+    // timbre sit just ahead of its note-on.
+    for (const { options, figure, events } of vectors.zones) {
+        const midi = new MidiServer({
+            zone: options.zone, upper: options.upper, bendRange: options.bend_range,
+        });
+        const timebase = new ManualTimebase(1000);
+        const ticker = manualTicker();
+        const clock = new TempoClock(1.0, { timebase, ticker }).start();
+        const run = runner(clock, timebase, ticker);
+        new Pbind(Object.fromEntries(Object.entries(figure).map(
+            ([key, value]) => [key, Array.isArray(value) ? new Pseq(value) : value],
+        ))).play(midi, { clock });
+        await run(4.0);
+        assert.deepEqual(
+            midi.score!.sorted().map(([beat, bytes]) => [beat, [...bytes]]),
+            events,
+            `for ${JSON.stringify(options)}`,
+        );
+    }
+});
+
+test("a zone is declared before anything is played", () => {
+    const midi = new MidiServer({ zone: 5 });
+    const head = midi.score!.sorted().map(([beat, bytes]) => [beat, [...bytes]]);
+    // RPN 6 on the master (channel 0), five members, then the null RPN.
+    assert.deepEqual(head, [
+        [0, [0xb0, 101, 0]], [0, [0xb0, 100, 6]], [0, [0xb0, 6, 5]],
+        [0, [0xb0, 101, 127]], [0, [0xb0, 100, 127]],
+    ]);
+    assert.equal(midi.bendRange, 48);
+});
+
+// ---- the file ----
+
+test("a score is written at a path, as a file or as a clip", async () => {
+    const midi = new MidiServer({ ppq: 96 });
+    midi.playEvent(new Event({ midinote: 60, dur: 1.0, amp: 0.5 }));
+    const dir = await mkdtemp(join(tmpdir(), "clausters-midi-"));
+    try {
+        const mid = await midi.write(join(dir, "out.mid"));
+        assert.equal(mid, join(dir, "out.mid"));
+        // The server's own ppq unless one is passed, and the score's bytes.
+        assert.deepEqual([...await readFile(mid)], [...midi.score!.toSmf(96)]);
+        const clip = await midi.write(join(dir, "out.midiclip"), { ppq: 480, fmt: "clip" });
+        assert.deepEqual([...await readFile(clip)], [...midi.score!.toClip(480)]);
+    } finally {
+        await rm(dir, { recursive: true });
+    }
+});
+
+test("a real-time server has no score to write", async () => {
+    const live = new MidiServer({ interface: new MidiRtInterface(new FakeOutput()) });
+    await assert.rejects(live.write("nowhere.mid"), /MidiNrtInterface/);
 });
 
 // ---- the timeline item ----

@@ -91,7 +91,11 @@ new seq.Pbind({ midinote: new seq.Pseq([60, 64, 67]), dur: 0.5 }).play(midi);
 
 Each `Event` becomes a note on/off pair — the note from `midinote()`, the velocity from `velocity()`, the release at `sustain()` — and `MidiItem` makes an event of raw bytes for a `Timeline` the way `OscItem` makes one of a raw message (types `"midi"` and `"osc"`). **Timing is best-effort by design**, as it is there, but the browser gives some of it back: `MIDIOutput.send` takes a `performance.now()` deadline, so a note-off two beats out is handed its deadline rather than slept to.
 
-Constructed with no interface, a `MidiServer` accumulates a **score** instead: `server.score.toSmf(480)` and `.toClip(480)` return the bytes of a Standard MIDI File or a MIDI 2.0 clip, written by the same `clausters-midi` the reference client writes with — so a `.mid` saved from a tab is the file a script would have saved. The bytes come back, as they do in the Python client, and the page keeps them where it keeps files (`opfs.writeFile`) or hands them on.
+Constructed with no interface, a `MidiServer` accumulates a **score** instead: `server.score.toSmf(480)` and `.toClip(480)` return the bytes of a Standard MIDI File or a MIDI 2.0 clip, written by the same `clausters-midi` the reference client writes with — so a `.mid` saved from a tab is the file a script would have saved. `await server.write("take.mid")` puts that file at a path, as the reference client's `write` does — the page's own storage in a tab, the disk under node — and `{ fmt: "clip" }` writes the clip instead.
+
+### An MPE zone as the destination
+
+`new MidiServer({ zone: 15 })` makes the destination an **MPE zone** — the lower one, master channel 0, unless `upper: true`. The RPN that declares it goes out first, and each note goes on a member channel of its own, preceded by its expression: the event's `bend` in semitones (through `bendRange`, 48 by default), its `press` (the pressure) and its `slide` (the timbre), 0..1 — the controls a server's zone names, so one pattern plays either end. So three notes of one chord can be bent, pressed and coloured apart, which one channel cannot say. The channel is chosen by the shared crate's assigner (a free member first, else the one held longest), the same rule on every end. A server plays a zone the same way when one is bound with `server.midiBindZone`.
 
 ## Examples
 

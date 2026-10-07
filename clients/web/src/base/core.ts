@@ -16,6 +16,7 @@
 
 import initCore, {
     IdSpaces,
+    MpeAssigner,
     Registry,
     shareOf as coreShareOf,
     WidgetIds,
@@ -26,6 +27,8 @@ import initCore, {
     midiReadSmf,
     midiWriteSmf,
     midiWriteSmfTempo,
+    mpeExpressionMessages,
+    mpeZoneMessages,
     node_id_partition,
 } from "../core/clausters_core_web.js";
 
@@ -36,6 +39,12 @@ export { IdSpaces, Registry, WidgetIds, coreShareOf };
 // at the boundary -- and a page writing a `.mid` writes the same bytes the
 // Python client does, which is the whole reason they are not a TS function.
 export { midiReadClip, midiReadSmf, midiWriteClip, midiWriteClipUmp, midiWriteSmf, midiWriteSmfTempo };
+
+// The outgoing half of MPE, from the same crate: which member channel a note
+// of a zone goes on, and the bytes a zone and a note's expression are written
+// as. The rule is the crate's so that a zone played from a page and from the
+// Python client is the same messages on the same channels.
+export { MpeAssigner, mpeExpressionMessages, mpeZoneMessages };
 
 let loaded: Promise<void> | null = null;
 let ready = false;

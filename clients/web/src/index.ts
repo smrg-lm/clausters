@@ -168,7 +168,8 @@ export type {
     MidiPortOptions,
     MidiPorts,
     MidiReceiverOptions,
-    MidiServerOptions } from "./base/midi.ts";
+    MidiServerOptions,
+    MidiWriteOptions } from "./base/midi.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";

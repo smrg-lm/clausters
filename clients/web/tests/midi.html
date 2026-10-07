@@ -39,13 +39,14 @@
         - a `MidiFunc` on an input port starts and frees synths on the in-page
           engine -- the acceptance's other half, a keyboard driving the server;
         - the score writes a Standard MIDI File through the shared writer, in
-          the tab, with no server and no filesystem.
+          the tab and with no server, and `write` puts it at a path of the
+          page's own storage.
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
       import {
         MidiFunc, MidiReceiver, MidiRtInterface, MidiServer, Server, Session,
-        Synth, SynthDef, loadCore,
+        Synth, SynthDef, loadCore, opfs,
       } from "../dist/index.js";
       import { out, sine } from "../dist/defs/index.js";
       import { Pbind, Pseq } from "../dist/seq/index.js";
@@ -205,12 +206,19 @@
         }
         log(`file: ${smf.length} bytes of Standard MIDI File, written by the `
           + `shared core in the page`);
+        // And at a path: the page's own storage, read back byte for byte.
+        const path = await score.write("midi-page/figure.mid", { ppq: 480 });
+        const kept = await opfs.readFile(path);
+        if (kept.length !== smf.length || kept.some((byte, i) => byte !== smf[i])) {
+          throw new Error(`${path} holds ${kept.length} bytes, not the score's ${smf.length}`);
+        }
+        log(`file: kept at ${path}`);
 
         verdict(`PASS: one pattern on one grid across an OSC and a MIDI `
           + `destination (onsets ${onsets.join("/")}), ${deadlined.length} `
           + `note-offs handed a deadline, a MidiFunc played and freed two `
           + `synths on the in-page engine, and ${smf.length} SMF bytes written `
-          + `in the tab`);
+          + `in the tab and kept at ${path}`);
       }
 
       document.getElementById("boot").onclick = () =>

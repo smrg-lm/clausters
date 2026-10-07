@@ -559,6 +559,11 @@ accumulates `(beat, message)` and writes the file in the tab. The alternative wa
 a TypeScript SMF writer, which is a second implementation of a byte format, and
 the whole point of a shared core is not having one.
 
+The outgoing half of **MPE** crosses the same way and for the same reason: which
+member channel a note of a zone goes on, and the bytes a zone and a note's
+expression are written as, are rules, and a `MidiServer` that is a zone has to
+put the same pattern on the same channels from a page and from a script.
+
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
 |---|---|---|
 | — | `midi_write_smf` | `idiom` — `clausters-midi`'s `clausters_midi_write_smf`, not `clausters-ffi`'s, so this table's left column cannot name it. Same flat arguments (n ticks, 3n bytes, ppq); C returns a malloc'd buffer freed by `clausters_midi_free`, wasm returns the bytes and JS sees it as `midiWriteSmf` |
@@ -567,7 +572,12 @@ the whole point of a shared core is not having one.
 | — | `midi_read_smf` | `idiom` — `clausters_midi_read_smf`: a file read back as JSON, which C hands over in a malloc'd buffer and wasm as a string; `midiReadSmf` in JS |
 | — | `midi_write_clip_ump` | `idiom` — `clausters_midi_write_clip_ump`: a MIDI 2.0 clip from UMP packets, flat as ticks, sizes and words; `midiWriteClipUmp` in JS |
 | — | `midi_read_clip` | `idiom` — `clausters_midi_read_clip`: a clip read back as JSON, on the terms of the row above's reader; `midiReadClip` in JS |
-| — | — | **gap** — `clausters-midi`'s MPE (`clausters_mpe_decoder_*`, `clausters_mpe_assigner_*`, `clausters_mpe_zone_messages`, `clausters_mpe_expression_messages`, `clausters_mpe_bend_message`): Python's `MidiServer` binds them to put a note on an MPE zone's member channel; the web client has no MIDI surface to use them from (`clients/web/PLAN.md`, "MIDI is missing here entirely, not only MPE"). The symbols are in the wasm modules only because the crate is linked there; nothing binds them |
+| — | `mpe_zone_messages` | `idiom` — `clausters-midi`'s `clausters_mpe_zone_messages`: the messages that declare a zone. C fills a caller's buffer and returns the byte count; wasm returns the bytes, flat, three per message; `mpeZoneMessages` in JS |
+| — | `mpe_expression_messages` | `idiom` — `clausters_mpe_expression_messages`: a note's bend, pressure and timbre ahead of its note-on, on the terms of the row above. C spells a dimension the note does not state as a negative number, wasm as an absent argument; `mpeExpressionMessages` in JS |
+| — | `JsMpeAssigner.new` | `idiom` — `clausters_mpe_assigner_new`: which member channel an outgoing note goes on. C hands back a pointer freed by `clausters_mpe_assigner_free`; wasm wraps the assigner in an object (`MpeAssigner` in JS) and frees it by `Drop` |
+| — | `JsMpeAssigner.note_on` | `idiom` — `clausters_mpe_assigner_note_on`: C answers a negative number for a zone of no members, wasm `undefined` |
+| — | `JsMpeAssigner.note_off` | `clausters_mpe_assigner_note_off` |
+| — | — | `clausters_mpe_decoder_*` and `clausters_mpe_bend_message` are bound by neither client: the decoder reads an MPE stream *coming in*, which is the server's and the host's work, and the bend is one of the three messages `mpe_expression_messages` already writes |
 
 ## The shared-memory segment
 

@@ -18,6 +18,12 @@ arrangement exists to prevent.
 on/off pair, and where those land in beats and what velocity they carry is
 client-side arithmetic in both.
 
+**And a zone**: a `MidiServer` that is an MPE zone puts each note on a member
+channel, its expression ahead of it. The channel and the bytes are the crate's,
+reached through the C ABI there and the wasm door here; which notes have ended
+by the time the next one asks for a channel is each client's own bookkeeping.
+So the frozen score proves both at once.
+
 The JSON is committed; regenerate with:
 
     python3 gen-midi-vectors.py
@@ -35,6 +41,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters.base._midiinterface import (  # noqa: E402
     MidiNrtInterface, MidiScore, MidiServer, parse_midi,
 )
+from clausters.base import TempoClock  # noqa: E402
+from clausters.base.timebase import LogicalTimebase  # noqa: E402
+from clausters.seq import Pbind, Pseq  # noqa: E402
 from clausters.seq.event import Event  # noqa: E402
 
 PPQ = 480
@@ -98,6 +107,44 @@ def note_cases():
     return out
 
 
+# One figure for both zones: four notes that overlap three at a time, so the
+# fourth has to take the channel of the first one to end. It states a bend and
+# a pressure and no timbre, which therefore goes back to its rest on every note.
+ZONE_FIGURE = {
+    "midinote": [60, 64, 67, 72],
+    "dur": 0.5,
+    "legato": 1.5,
+    "amp": 0.5,
+    "bend": [12.0, 0.0, -24.0, 0.5],
+    "press": [1.0, 0.0, 0.5, 0.25],
+}
+
+
+def zone_cases():
+    """A pattern played to a zone: the score a `MidiServer(zone=...)` keeps."""
+    out = []
+    for options, more in [
+        ({"zone": 3}, {}),
+        # The upper zone, a narrower bend range, and the timbre stated.
+        ({"zone": 2, "upper": True, "bend_range": 24.0},
+         {"slide": [0.0, 1.0, 0.5, 0.25]}),
+    ]:
+        figure = {**ZONE_FIGURE, **more}
+        server = MidiServer(MidiNrtInterface(), **options)
+        clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
+        Pbind(**{
+            key: Pseq(value) if isinstance(value, list) else value
+            for key, value in figure.items()
+        }).play(clock, server)
+        clock.render()
+        out.append({
+            "options": options,
+            "figure": figure,
+            "events": [[beat, list(msg)] for beat, msg in server.score.sorted()],
+        })
+    return out
+
+
 def main():
     s = score()
     vectors = {
@@ -110,12 +157,13 @@ def main():
             "clip": list(s.to_clip(PPQ)),
         },
         "notes": note_cases(),
+        "zones": zone_cases(),
     }
     path = pathlib.Path(__file__).with_name("midi-vectors.json")
     path.write_text(json.dumps(vectors, indent=1) + "\n")
     print(f"wrote {path.name}: {len(vectors['parse'])} parse cases, "
           f"{len(vectors['score']['smf'])} SMF bytes, "
-          f"{len(vectors['notes'])} note cases")
+          f"{len(vectors['notes'])} note cases, {len(vectors['zones'])} zones")
 
 
 if __name__ == "__main__":

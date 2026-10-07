@@ -19,11 +19,14 @@
 // Python client's `port` names a *virtual* port to open, here it names an
 // existing one to select. Everything above that -- the parsing, the score, the
 // event mapping, the dispatch -- is the same client in two languages, and
-// `MidiScore` hands back the file's bytes in both, for the caller to keep
-// where it keeps files.
+// `MidiScore` hands back the file's bytes in both, and `MidiServer.write` puts
+// them at a path -- the disk under node, the page's own storage in a tab.
 
 import { Moment } from "./moment.ts";
-import { midiWriteClip, midiWriteSmf } from "./core.ts";
+import {
+    MpeAssigner, midiWriteClip, midiWriteSmf, mpeExpressionMessages, mpeZoneMessages,
+} from "./core.ts";
+import { writeFileAt } from "./files.ts";
 import { event_midi as coreEventMidi } from "../core/clausters_core_web.js";
 import type { TempoClock } from "./clock.ts";
 import type { Event, EventDestination } from "../seq/event.ts";
@@ -309,6 +312,27 @@ export interface MidiServerOptions {
     channel?: number;
     /** Ticks per quarter note a written file uses. */
     ppq?: number;
+    /** A number of members: the destination is an MPE zone of that many. */
+    zone?: number | null;
+    /** The upper zone (master channel 15) rather than the lower one. */
+    upper?: boolean;
+    /** The semitones a member's full bend spans; 48 is the zone's default. */
+    bendRange?: number;
+}
+
+/** How `MidiServer.write` writes its score. */
+export interface MidiWriteOptions {
+    /** Ticks per quarter note; the server's own `ppq` by default. */
+    ppq?: number;
+    /** `"smf"` for a `.mid` (the default), `"clip"` for a MIDI 2.0 clip. */
+    fmt?: "smf" | "clip";
+}
+
+/** The three-byte messages a core call hands back flat. */
+function threes(flat: Uint8Array): Uint8Array[] {
+    const out: Uint8Array[] = [];
+    for (let i = 0; i + 3 <= flat.length; i += 3) out.push(flat.slice(i, i + 3));
+    return out;
 }
 
 /**
@@ -321,16 +345,40 @@ export interface MidiServerOptions {
  * from `event.midinote()`, velocity from `event.velocity()` -- an explicit
  * `velocity`, else the amplitude's, never 0, which is a note-off -- and the
  * channel the event's own `channel`, else this destination's.
+ *
+ * **MPE.** With `zone` (a number of members), the destination is an MPE zone:
+ * the lower one (master channel 0, members from 1 up) unless `upper`. The RPN
+ * that declares it goes out first -- at the head of the score, or down the port
+ * at once -- and each note goes on a member channel of its own (round robin,
+ * preferring a free one, reusing the one held longest), preceded by its
+ * expression: the event's `bend` in semitones through `bendRange` (48, the
+ * zone's default), its `press` (the pressure) and its `slide` (the timbre),
+ * 0..1 -- the keys a server's zone names its voice's controls with, so one
+ * pattern plays either end. A dimension the event does not state goes back to
+ * its rest, so a reused channel does not carry the last note's.
  */
 export class MidiServer implements EventDestination {
     readonly interface: MidiInterface;
     readonly channel: number;
     readonly ppq: number;
+    readonly bendRange: number;
+    private readonly assigner: MpeAssigner | null = null;
+    /** `[off beat, channel, key]` of the zone's notes. */
+    private held: [number, number, number][] = [];
 
     constructor(options: MidiServerOptions = {}) {
         this.interface = options.interface ?? new MidiNrtInterface();
         this.channel = (options.channel ?? 0) & 0x0f;
         this.ppq = options.ppq ?? 480;
+        this.bendRange = options.bendRange ?? 48.0;
+        const zone = options.zone ?? null;
+        if (zone !== null) {
+            const upper = options.upper ?? false;
+            this.assigner = new MpeAssigner(upper, zone);
+            for (const message of threes(mpeZoneMessages(upper, zone))) {
+                this.interface.emit(0.0, message);
+            }
+        }
     }
 
     /** The accumulated `MidiScore`, or `null` on a real-time interface. */
@@ -343,12 +391,54 @@ export class MidiServer implements EventDestination {
         const beat = Moment.current().beat;
         // The messages are the core's render: a note's on and off, a "midi"
         // event's one message, nothing for a rest.
-        const answer = JSON.parse(coreEventMidi(JSON.stringify(event.keysData()), this.channel));
+        const keys = event.keysData();
+        const answer = JSON.parse(coreEventMidi(JSON.stringify(keys), this.channel));
         if (answer.error) throw new TypeError(answer.error);
-        for (const [at, bytes] of answer.messages as [number, number[]][]) {
+        let messages = answer.messages as [number, number[]][];
+        if (this.assigner !== null && (keys.type ?? "note") === "note") {
+            messages = this.onMember(this.assigner, beat, keys, messages);
+        }
+        for (const [at, bytes] of messages) {
             this.interface.emit(beat + at, bytes);
         }
         return null;
+    }
+
+    /**
+     * A note's messages moved onto the member channel the zone assigns it, its
+     * expression ahead of its note-on.
+     */
+    private onMember(
+        assigner: MpeAssigner,
+        beat: number,
+        keys: Record<string, unknown>,
+        messages: [number, number[]][],
+    ): [number, number[]][] {
+        const on = messages.find(([, m]) => (m[0] & 0xf0) === 0x90 && m[2] > 0);
+        if (on === undefined) return messages;
+        const key = on[1][1];
+        // The notes that ended by now free their channels.
+        for (const ended of this.held.filter((h) => h[0] <= beat + 1e-9)) {
+            assigner.noteOff(ended[1], ended[2]);
+            this.held.splice(this.held.indexOf(ended), 1);
+        }
+        const channel = assigner.noteOn(key);
+        if (channel === undefined) return messages;
+        const moved = messages.map(
+            ([at, m]): [number, number[]] => [at, [(m[0] & 0xf0) | channel, ...m.slice(1)]],
+        );
+        const off = Math.max(0.0, ...moved.filter(([, m]) => (m[0] & 0xf0) === 0x80).map(([at]) => at));
+        this.held.push([beat + off, channel, key]);
+        const stated = (value: unknown): number | undefined =>
+            typeof value === "number" ? value : undefined;
+        const expression = mpeExpressionMessages(
+            channel, stated(keys.bend) ?? 0.0, this.bendRange,
+            stated(keys.press), stated(keys.slide), 74,
+        );
+        return [
+            ...threes(expression).map((m): [number, number[]] => [0.0, [...m]]),
+            ...moved,
+        ];
     }
 
     /**
@@ -358,6 +448,22 @@ export class MidiServer implements EventDestination {
     sendMessage(message: ArrayLike<number>): null {
         this.interface.emit(Moment.current().beat, message);
         return null;
+    }
+
+    /**
+     * Writes the accumulated score (NRT only) at `path` as a `.mid`
+     * (`fmt: "smf"`) or a MIDI 2.0 clip (`fmt: "clip"`): on the disk under
+     * node, in the page's own storage in a tab. Resolves to the path.
+     */
+    async write(path: string, options: MidiWriteOptions = {}): Promise<string> {
+        const score = this.score;
+        if (score === null) {
+            throw new Error("write() needs a MidiServer with a MidiNrtInterface");
+        }
+        const ppq = options.ppq ?? this.ppq;
+        const data = options.fmt === "clip" ? score.toClip(ppq) : score.toSmf(ppq);
+        await writeFileAt(path, new Uint8Array(data) as Uint8Array<ArrayBuffer>);
+        return path;
     }
 
     /**

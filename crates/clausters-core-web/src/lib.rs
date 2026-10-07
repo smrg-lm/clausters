@@ -3779,3 +3779,83 @@ pub fn midi_write_clip_ump(
 pub fn midi_read_clip(bytes: &[u8]) -> String {
     clausters_midi::read_clip_json(bytes)
 }
+
+// ---- MPE: the outgoing half ----
+//
+// A `MidiServer` that is an MPE zone puts each note on a member channel of its
+// own, with the note's expression ahead of its note-on. Which channel, and what
+// bytes a zone and an expression are written as, are `clausters-midi`'s rules --
+// the ones `clausters_mpe_assigner_*`, `clausters_mpe_zone_messages` and
+// `clausters_mpe_expression_messages` open to the Python client -- so a pattern
+// played to a zone from a page and from a script is the same messages on the
+// same channels.
+
+#[cfg(target_arch = "wasm32")]
+fn mpe_side(upper: bool) -> clausters_midi::mpe::Side {
+    if upper {
+        clausters_midi::mpe::Side::Upper
+    } else {
+        clausters_midi::mpe::Side::Lower
+    }
+}
+
+/// The messages that declare an MPE zone of `members` (the lower zone, master
+/// channel 0, unless `upper`), flat, three bytes each.
+///
+/// JS face: `mpeZoneMessages(upper, members) -> Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mpeZoneMessages)]
+pub fn mpe_zone_messages(upper: bool, members: u8) -> Vec<u8> {
+    clausters_midi::mpe::zone_messages(mpe_side(upper), members).concat()
+}
+
+/// A note's starting expression on its member `channel`, flat, three bytes
+/// each: the bend in semitones through `range`, the pressure and the timbre
+/// (0..1; absent for one the note does not state, which goes back to its
+/// rest).
+///
+/// JS face: `mpeExpressionMessages(channel, bend, range, pressure?, timbre?,
+/// timbreCc) -> Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mpeExpressionMessages)]
+pub fn mpe_expression_messages(
+    channel: u8,
+    bend: f32,
+    range: f32,
+    pressure: Option<f32>,
+    timbre: Option<f32>,
+    timbre_cc: u8,
+) -> Vec<u8> {
+    clausters_midi::mpe::expression_messages(channel, bend, range, pressure, timbre, timbre_cc)
+        .concat()
+}
+
+/// Which member channel an outgoing note goes on, the JS face of
+/// [`clausters_midi::mpe::Assigner`].
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = MpeAssigner)]
+pub struct JsMpeAssigner(clausters_midi::mpe::Assigner);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = MpeAssigner)]
+impl JsMpeAssigner {
+    /// An assigner over the members of a zone of `members`, the lower one
+    /// unless `upper`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(upper: bool, members: u8) -> JsMpeAssigner {
+        JsMpeAssigner(clausters_midi::mpe::Assigner::new(mpe_side(upper), members))
+    }
+
+    /// The channel for a new note on `key`; `undefined` for a zone of no
+    /// members.
+    #[wasm_bindgen(js_name = noteOn)]
+    pub fn note_on(&mut self, key: u8) -> Option<u8> {
+        self.0.note_on(key & 0x7F)
+    }
+
+    /// A note on `key` ended on `channel`.
+    #[wasm_bindgen(js_name = noteOff)]
+    pub fn note_off(&mut self, channel: u8, key: u8) {
+        self.0.note_off(channel, key & 0x7F);
+    }
+}

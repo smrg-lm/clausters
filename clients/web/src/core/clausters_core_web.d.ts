@@ -435,6 +435,29 @@ export class JsMultitrack {
 }
 
 /**
+ * Which member channel an outgoing note goes on, the JS face of
+ * [`clausters_midi::mpe::Assigner`].
+ */
+export class MpeAssigner {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * An assigner over the members of a zone of `members`, the lower one
+     * unless `upper`.
+     */
+    constructor(upper: boolean, members: number);
+    /**
+     * A note on `key` ended on `channel`.
+     */
+    noteOff(channel: number, key: number): void;
+    /**
+     * The channel for a new note on `key`; `undefined` for a zone of no
+     * members.
+     */
+    noteOn(key: number): number | undefined;
+}
+
+/**
  * **One multitrack, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
@@ -1531,6 +1554,25 @@ export function midinote_to_degree(midinote: number, octave: number, root: numbe
 export function mixerDefs(widths: string, master: number): string;
 
 /**
+ * A note's starting expression on its member `channel`, flat, three bytes
+ * each: the bend in semitones through `range`, the pressure and the timbre
+ * (0..1; absent for one the note does not state, which goes back to its
+ * rest).
+ *
+ * JS face: `mpeExpressionMessages(channel, bend, range, pressure?, timbre?,
+ * timbreCc) -> Uint8Array`.
+ */
+export function mpeExpressionMessages(channel: number, bend: number, range: number, pressure: number | null | undefined, timbre: number | null | undefined, timbre_cc: number): Uint8Array;
+
+/**
+ * The messages that declare an MPE zone of `members` (the lower zone, master
+ * channel 0, unless `upper`), flat, three bytes each.
+ *
+ * JS face: `mpeZoneMessages(upper, members) -> Uint8Array`.
+ */
+export function mpeZoneMessages(upper: boolean, members: number): Uint8Array;
+
+/**
  * JS face: **what a multitrack calls its rows and its boxes** -- `{"rows": [...],
  * "boxes": [...]}`, by the names the wire carries them under.
  *
@@ -1900,6 +1942,7 @@ export interface InitOutput {
     readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_jseventsequence_free: (a: number, b: number) => void;
     readonly __wbg_jsmultitrack_free: (a: number, b: number) => void;
+    readonly __wbg_mpeassigner_free: (a: number, b: number) => void;
     readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
     readonly __wbg_notesplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
@@ -2010,6 +2053,11 @@ export interface InitOutput {
     readonly midiWriteSmfTempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly midinote_to_degree: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
+    readonly mpeExpressionMessages: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly mpeZoneMessages: (a: number, b: number) => [number, number];
+    readonly mpeassigner_new: (a: number, b: number) => number;
+    readonly mpeassigner_noteOff: (a: number, b: number, c: number) => void;
+    readonly mpeassigner_noteOn: (a: number, b: number) => number;
     readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number) => [number, number];

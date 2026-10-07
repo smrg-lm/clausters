@@ -1988,7 +1988,7 @@ went, what stayed and why no case was left for it.
   Named here so a reader going through the parity gaps is not left thinking it
   is unrecorded.
 
-- ⬜ **MIDI is missing here entirely, not only MPE** *(found 2026-09-19, sizing
+- ✅ **MIDI is missing here entirely, not only MPE** *(found 2026-09-19, sizing
   the server's MPE milestone and looking for the web end of the wire)*. The
   Python client has a whole MIDI leg: `base/_midiinterface.py` (the RT/NRT seam
   for MIDI — a `MidiServer` a `Pbind` plays through, a `MidiScore` that writes a
@@ -2014,6 +2014,39 @@ went, what stayed and why no case was left for it.
   wasm core or the page decodes with what the browser hands it is the design
   question to answer first. The file writers (`.mid`, the clip file) have no such
   question — they are the same bytes from the same crate.
+
+  **Closed 2026-10-07, and the premise was wrong the day it was written.** The
+  MIDI leg had been here for three weeks: **W9** ported it name for name on
+  2026-08-27 — `parseMidi`, `MidiScore`, `MidiNrtInterface`, `MidiRtInterface`,
+  `MidiServer`, `MidiReceiver` in `src/base/midi.ts`, `MidiFunc` in
+  `responders.ts` — over Web MIDI, with the file writers through the core's
+  door. The search that found "none of it" did not look in `src/base`, and the
+  gap row it left in `docs/bindings.md` repeated the claim. What the entry got
+  right is only what it mentions in passing: MPE reached the Python
+  `MidiServer` after that port, and the port did not follow.
+
+  So what was actually missing was two things, and both are in now:
+
+  - **The zone.** `MidiServer({ zone, upper, bendRange })` is Python's
+    `MidiServer(zone=, upper=, bend_range=)`: the RPN first, each note on a
+    member channel with its `bend`, `press` and `slide` ahead of its note-on.
+    The design question the entry asked has the answer the file writers already
+    gave — through the wasm core. `clausters-core-web` grew `mpeZoneMessages`,
+    `mpeExpressionMessages` and `MpeAssigner` over `clausters-midi`, so the
+    channel a note takes and the bytes around it are one rule reached two ways;
+    the *decoder* is not bound, because reading an MPE stream is the server's
+    and the host's work and neither client does it.
+  - **`MidiServer.write(path)`.** W9 left it out because "a page has no
+    filesystem", which stopped being a reason when a path in a page came to
+    name its own storage. It writes through `base/files.ts` like every other
+    file verb, awaited where Python's returns.
+
+  Held by `tests/midi-vectors.json`, which gained two zones played by the
+  Python client (lower and upper, a bend range of its own, the timbre stated
+  and unstated) and is matched event for event by "a zone puts each note on the
+  member the reference client puts it on"; by "a score is written at a path,
+  as a file or as a clip" on the disk under node; and by `tests/midi.html`,
+  which writes its score at a path of the page's storage and reads it back.
 
 - ✅ **The logging area system is Python-only** *(found 2026-09-09, reading the
   two `gui/editing/` surfaces against each other for `W30`)*. `clausters.log`
