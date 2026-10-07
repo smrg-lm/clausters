@@ -472,6 +472,23 @@ use nav::*;
 #[cfg(feature = "patcher")]
 pub(crate) use nav::corner_rect;
 
+/// **Delivers what an element reported outside the machine** -- a note a
+/// keyboard played into a roll, which no pointer or key produced -- by the one
+/// rule the machine itself follows ([`effects`]): a **bound** widget forwards
+/// the payload without its tag straight to the audio server, an unbound one
+/// emits the whole tagged list to the script, stamped and said in the window
+/// like any other edit.
+#[cfg(feature = "midi")]
+pub(crate) fn report(
+    host: &mut super::Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    args: Vec<OscType>,
+) {
+    effects::deliver_args(host, out, def_id, widget_id, Some(args));
+}
+
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]

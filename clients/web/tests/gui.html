@@ -227,6 +227,41 @@
         }
         log(`touch drag drove the engine: freq ${beforeTouch} -> ${touched}`);
 
+        // **A roll that listens paints what is played, in a page as on the
+        // desktop.** The host reads the bytes of a MIDI message into a note
+        // and hands it to every element that declared it reads live MIDI --
+        // one walk, the same Rust under both fronts. Only the device differs:
+        // the browser's own inputs here, which a headless run has none of, so
+        // the bytes go in through the door a page has for MIDI that comes from
+        // somewhere else. With the transport stopped the note lands on the
+        // step cursor, and it is reported as a note a hand drew is.
+        const roll = host.open(gui.view(
+          { title: "played", w: 480, h: 200 },
+          gui.node("notes", {
+            name: "roll", midi_in: 1, min: 48, max: 72, snap: 4800.0,
+            sample_rate: 48000.0,
+          }),
+        ));
+        const played = [];
+        roll.widget("roll").onEvent((...args) => played.push(args));
+        await sleep(300);
+        const { bridge } = host.instanceOf;
+        bridge.midi(new Uint8Array([0x90, 60, 100]));
+        await sleep(50);
+        bridge.midi(new Uint8Array([0x80, 60, 0]));
+        const painted = () => played.find((args) => args[0] === "notes");
+        for (let i = 0; i < 40 && !painted(); i++) await sleep(50);
+        if (!painted()) {
+          throw new Error("a key played into a listening roll painted nothing: "
+            + JSON.stringify(played));
+        }
+        // `start dur pitch velocity channel` after the tag.
+        if (painted()[3] !== 60 || painted()[4] !== 100) {
+          throw new Error(`the note painted is not the one played: ${JSON.stringify(painted())}`);
+        }
+        log(`a key played painted a note: ${JSON.stringify(painted())}`);
+        roll.close();
+
         // Closing frees the subtree: a query still answers, with the empty
         // type that means "no such widget".
         win.close();
@@ -238,7 +273,8 @@
 
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
-          + `bound freq ${before} -> ${after}, touch ${touched}, subtree freed`);
+          + `bound freq ${before} -> ${after}, touch ${touched}, a played key painted, `
+          + `subtree freed`);
       }
 
       document.getElementById("boot").onclick = () =>

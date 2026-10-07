@@ -207,6 +207,12 @@ pub mod fontfile;
 // gesture behaves identically on either platform by construction.
 pub mod gestures;
 
+// Live MIDI input, from the bytes of a message to the elements that read
+// them. The device is each front's -- a virtual port on the desktop, Web MIDI
+// in a page -- and everything after it is here, once.
+#[cfg(feature = "midi")]
+pub mod midi;
+
 // The windowed host (winit + wgpu) is native-only; the wasm build swaps it for
 // the `<canvas>` surface in [`web`]. Both drive the shared [`frame`] render.
 #[cfg(not(target_arch = "wasm32"))]

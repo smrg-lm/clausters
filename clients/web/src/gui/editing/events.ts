@@ -604,8 +604,9 @@ export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> 
      * like a note a hand drew: recorded, and undone with the rest.
      *
      * A native host opens a port named `clausters-gui` to route a keyboard
-     * into. The host in a page opens none, so there the option is carried
-     * and nothing is painted.
+     * into. The host in a page listens to every MIDI input the browser has,
+     * which the browser asks the person's permission for the first time a
+     * roll that listens is opened.
      */
     midiIn?: boolean;
 }

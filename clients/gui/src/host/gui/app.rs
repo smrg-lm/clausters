@@ -27,9 +27,6 @@ use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget, tree_is_fed, tree_repaints};
-// Only the MIDI painting reaches a roll by its navigation group.
-#[cfg(feature = "midi")]
-use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
 use crate::host::winit_keys::{command, to_key};
@@ -202,14 +199,9 @@ pub(super) struct App {
     /// the port).
     #[cfg(feature = "midi")]
     pub(super) midi_in: Option<clausters_midi::live::Input>,
-    /// What the port's messages go through: the shared MPE decoder, both
-    /// zones waiting for a device to size them.
+    /// What the port's messages go through to become notes.
     #[cfg(feature = "midi")]
-    pub(super) mpe: clausters_midi::mpe::Decoder,
-    /// A zone note's channel and key, by the decoder's note id, while it
-    /// sounds.
-    #[cfg(feature = "midi")]
-    pub(super) mpe_notes: std::collections::HashMap<u32, (u8, u8)>,
+    pub(super) midi: crate::host::midi::Reader,
     /// Whether the port-open failure was already reported (retrying is cheap,
     /// warning every frame is not).
     #[cfg(feature = "midi")]
@@ -252,14 +244,7 @@ impl App {
             #[cfg(feature = "midi")]
             midi_in: None,
             #[cfg(feature = "midi")]
-            mpe: {
-                let mut decoder = clausters_midi::mpe::Decoder::new();
-                decoder.set_zone(clausters_midi::mpe::Side::Lower, Some(0));
-                decoder.set_zone(clausters_midi::mpe::Side::Upper, Some(0));
-                decoder
-            },
-            #[cfg(feature = "midi")]
-            mpe_notes: std::collections::HashMap::new(),
+            midi: Default::default(),
             #[cfg(feature = "midi")]
             midi_warned: false,
             tick_clock: Default::default(),
@@ -474,38 +459,6 @@ impl App {
             return;
         };
         self.send(ws.origin, message);
-    }
-
-    /// Delivers what an element reported outside the gesture machine -- the
-    /// live-MIDI painting path -- by the one rule the machine also follows: a
-    /// **bound** widget forwards the payload without its tag straight to the
-    /// audio server, an unbound one emits the whole tagged list to the script.
-    #[cfg(feature = "midi")]
-    pub(super) fn emit_element(
-        &mut self,
-        def_id: i32,
-        widget_id: i32,
-        args: Vec<clausters_core::osc::OscType>,
-    ) {
-        if self.host.is_bound(widget_id) {
-            // A bound widget may be driving another one, whose window then has
-            // to repaint: the apply behind a widget binding reports it the same
-            // way a `/gui_set` does.
-            let mut effects = Vec::new();
-            self.host
-                .forward_args(widget_id, args[1..].to_vec(), &mut effects);
-            for effect in effects {
-                if let HostEffect::Redraw(id) | HostEffect::RedrawLive(id) = effect {
-                    self.redraw(id);
-                }
-            }
-            return;
-        }
-        // Stamped like any other edit: live MIDI painting reports the same
-        // payloads a hand does, and the owner has no way to tell them apart.
-        let seq = self.host.outbox.borrow_mut().stamp(def_id, widget_id);
-        let message = self.host.event_message(widget_id, seq, args);
-        self.emit(def_id, message);
     }
 
     /// The framebuffer size of a window.
@@ -827,7 +780,7 @@ impl ApplicationHandler<UserEvent> for App {
         // the port).
         #[cfg(feature = "midi")]
         {
-            let readers = self.midi_readers();
+            let readers = self.host.midi_readers(self.windows.keys().copied());
             if readers.is_empty() {
                 self.midi_in = None;
             } else {
@@ -1031,42 +984,6 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::RedrawRequested => self.render(def_id),
             _ => {}
         }
-    }
-}
-
-#[cfg(feature = "midi")]
-impl App {
-    /// Every element that **declared** it reads live MIDI, as `(window,
-    /// widget)` -- what the front opens its input port for.
-    pub(super) fn midi_readers(&self) -> Vec<(i32, i32)> {
-        let mut out = Vec::new();
-        for &def_id in self.windows.keys() {
-            let Some(tree) = self.host.window_def(def_id) else {
-                continue;
-            };
-            out.extend(
-                tree.descendants()
-                    .filter_map(|w| w.kind.needs().midi.then_some((def_id, w.id?))),
-            );
-        }
-        out
-    }
-
-    /// The shared playhead's current sample for a widget while it is running
-    /// (`playhead_at` anchored to the engine clock), else `None`. It is the
-    /// widget's navigation group that is running or not -- the recording keeps
-    /// time with what the lanes draw, which is the group's sweep.
-    pub(super) fn playhead_sample(&self, def_id: i32, id: i32) -> Option<f64> {
-        let tree = self.host.window_def(def_id)?;
-        let e = tree.find(id)?.kind.editor()?;
-        let clock = self
-            .host
-            .head_clocks(def_id, self.shm.as_deref())
-            .at(Some(id));
-        self.host
-            .timelines()
-            .state(group_key(id, e.link))?
-            .swept_at(clock)
     }
 }
 

@@ -78,6 +78,17 @@ export class GuiBridge {
      */
     id_share(index: number, of: number): void;
     /**
+     * Feeds the bytes of one MIDI message to the host, as a device would
+     * deliver them: every element that reads live MIDI (a roll with
+     * `midi_in`) takes the note.
+     *
+     * The host listens to the browser's own inputs by itself, so a page
+     * calls this only for MIDI that comes from somewhere else -- another
+     * program's output arriving over a socket, a keyboard drawn on the page.
+     * It is the page's form of routing into the desktop host's virtual port.
+     */
+    midi(bytes: Uint8Array): void;
+    /**
      * Draws the host's windows with `samples`x multisampling -- the browser
      * form of the native `[gui] msaa` / `--msaa`, and the same bounded
      * capability: `1` (the default) draws the flat picture, a higher count
@@ -176,27 +187,49 @@ export interface InitOutput {
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
     readonly guibridge_id_share: (a: number, b: number, c: number) => void;
+    readonly guibridge_midi: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly start: () => number;
+    readonly clausters_midi_abi_version: () => number;
+    readonly clausters_midi_free: (a: number, b: number) => void;
+    readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;
+    readonly clausters_midi_read_smf: (a: number, b: number, c: number) => number;
+    readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_clip_ump: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly clausters_midi_write_smf: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_smf_tempo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+    readonly clausters_mpe_assigner_free: (a: number) => void;
+    readonly clausters_mpe_assigner_new: (a: number, b: number) => number;
+    readonly clausters_mpe_assigner_note_off: (a: number, b: number, c: number) => void;
+    readonly clausters_mpe_assigner_note_on: (a: number, b: number) => number;
+    readonly clausters_mpe_bend_message: (a: number, b: number, c: number, d: number) => void;
+    readonly clausters_mpe_decoder_feed: (a: number, b: number, c: number) => void;
+    readonly clausters_mpe_decoder_free: (a: number) => void;
+    readonly clausters_mpe_decoder_new: () => number;
+    readonly clausters_mpe_decoder_poll: (a: number, b: number, c: number) => number;
+    readonly clausters_mpe_decoder_set_zone: (a: number, b: number, c: number) => void;
+    readonly clausters_mpe_expression_messages: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+    readonly clausters_mpe_zone_messages: (a: number, b: number, c: number, d: number) => number;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_590c35605e59bfca___JsError___true_: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___js_sys_b41afed3307fbfdc___Array__web_sys_88afa50ec3019d0a___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___js_sys_b41afed3307fbfdc___Array__web_sys_9831dc711c81d90b___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__4: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_88afa50ec3019d0a___features__gen_InputEvent__InputEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_9831dc711c81d90b___features__gen_InputEvent__InputEvent______true_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__6: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__7: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_88afa50ec3019d0a___features__gen_InputEvent__InputEvent______true__8: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_9831dc711c81d90b___features__gen_InputEvent__InputEvent______true__8: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__9: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_88afa50ec3019d0a___features__gen_InputEvent__InputEvent______true__10: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_88afa50ec3019d0a___features__gen_InputEvent__InputEvent______true__11: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__12: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_9831dc711c81d90b___features__gen_InputEvent__InputEvent______true__10: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_9831dc711c81d90b___features__gen_InputEvent__InputEvent______true__11: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___web_sys_9831dc711c81d90b___features__gen_InputEvent__InputEvent______true__12: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__13: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__14: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue______true__1__15: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke_______true_: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

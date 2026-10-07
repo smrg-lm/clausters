@@ -73,12 +73,16 @@ any of the three takes back the last edit wherever it was made, and a note
 dragged in a roll is redrawn on the page.
 
 <b>The first roll is asked to paint what is played</b>
-(<code>midiIn: true</code>): a native host opens a MIDI input of its own, a
-port named <code>clausters-gui</code>, and writes each key into the roll as an
-edit of the sequence -- on the step cursor while the transport is stopped, at
-the play line while it plays. <b>The host in a page opens no MIDI input</b>, so
-here the option is carried and nothing is painted: that is the platform's one
-difference from the script, and it is the host's to close.
+(<code>midiIn: true</code>). The host opens its MIDI input and writes each key
+into the roll: while the transport is stopped a key lands on the step cursor, a
+chord on one step, and the last key up moves the cursor on; while it plays, a
+key lands at the play line and lasts as long as it is held. Each one is an edit
+of the sequence like a note a hand drew, so it appears in the other roll and on
+the page and <b>Ctrl+Z</b> takes it back. <b>The input is the platform's one
+difference from the script</b>: a native host opens a port of its own, named
+<code>clausters-gui</code>, to route a keyboard into, and a page cannot make a
+port, so here the host listens to every MIDI input the browser has -- which the
+browser asks your permission for when the roll opens.
 
 <b>The lane under the grid is the sequence's OSC markers</b>, edited the same
 way: drag one to move it, Ctrl+click one to remove it. A marker is matched by

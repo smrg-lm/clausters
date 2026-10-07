@@ -59,6 +59,8 @@ mod canvas;
 mod compose;
 mod files;
 mod input;
+#[cfg(feature = "midi")]
+mod midi;
 mod serverleg;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};
@@ -191,6 +193,14 @@ enum WebEvent {
     /// The share of the audio server's ids this host allocates from (the
     /// browser form of the native `--id-share`).
     IdShare(u32, u32),
+    /// The bytes of one MIDI message, from one of the browser's inputs or from
+    /// the page (`midi`).
+    #[cfg(feature = "midi")]
+    Midi(Vec<u8>),
+    /// The browser answered the request for its MIDI inputs: the access, or
+    /// why there is none.
+    #[cfg(feature = "midi")]
+    MidiAccess(Result<web_sys::MidiAccess, String>),
     /// Text the hidden composition field produced -- a typed letter, an
     /// accented one a dead key finished, an IME's output, a paste (`compose`).
     Typed { def_id: i32, text: String },
@@ -271,6 +281,17 @@ struct WebApp {
     /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
+    /// What a MIDI message's bytes go through to become notes.
+    #[cfg(feature = "midi")]
+    midi: crate::host::midi::Reader,
+    /// The browser's MIDI inputs, listened to while some canvas holds an
+    /// element that reads live MIDI.
+    #[cfg(feature = "midi")]
+    midi_device: midi::MidiDevice,
+    /// Whether a refused access was already reported (a tree change may ask
+    /// again, and saying so every time is noise).
+    #[cfg(feature = "midi")]
+    midi_warned: bool,
 }
 
 impl WebApp {
@@ -304,6 +325,12 @@ impl WebApp {
             tick_clock: Default::default(),
             stream_seen: false,
             fetches: BufferFetches::default(),
+            #[cfg(feature = "midi")]
+            midi: Default::default(),
+            #[cfg(feature = "midi")]
+            midi_device: Default::default(),
+            #[cfg(feature = "midi")]
+            midi_warned: false,
         }
     }
 
@@ -418,6 +445,9 @@ impl WebApp {
         self.schedule_stream_sync();
         // ...and a directory a newly defined chooser shows.
         self.start_listings();
+        // ...and the MIDI inputs an element that listens is waiting on.
+        #[cfg(feature = "midi")]
+        self.sync_midi();
     }
 
     /// Queues one subscription re-derivation for the end of this JavaScript
@@ -768,6 +798,10 @@ impl WebApp {
                 asked,
                 result,
             } => self.on_listed(def_id, widget_id, &asked, result),
+            #[cfg(feature = "midi")]
+            WebEvent::Midi(bytes) => self.on_midi(&bytes),
+            #[cfg(feature = "midi")]
+            WebEvent::MidiAccess(result) => self.on_midi_access(result),
             WebEvent::Typed { def_id, text } => self.on_typed(def_id, &text),
             WebEvent::ComposedKey { def_id, key, mods } => self.on_composed_key(def_id, &key, mods),
             WebEvent::Msaa(samples) => {

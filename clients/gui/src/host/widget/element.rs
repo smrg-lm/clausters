@@ -522,7 +522,8 @@ pub struct Needs {
     /// `/gui_set`.
     ///
     /// It is a need like the others because it is a *device* the front has to
-    /// open -- a virtual input port, native-only -- and one nothing in the window
+    /// open -- a virtual input port on the desktop, the browser's inputs and
+    /// the permission they take in a page -- and one nothing in the window
     /// asked for is one nothing opens. What arrives is the platform-neutral
     /// [`MidiNote`], the same posture [`Key`] takes: the front translates, and
     /// the element answers identically wherever it is compiled.
@@ -1044,13 +1045,13 @@ pub enum Key {
     F(u8),
 }
 
-/// A **platform-neutral MIDI note event**: what a front's live input port
-/// translates its channel-voice messages into, so an element paints the same
-/// note wherever it runs.
+/// A **platform-neutral MIDI note event**: what the channel-voice messages of
+/// a front's live input are read into (`crate::host::midi`, once for both
+/// fronts), so an element paints the same note wherever it runs.
 ///
-/// Note-on with velocity 0 is a note-off before it gets here -- the parse is the
-/// front's, exactly as resolving a keyboard layout into a [`Key::Char`] is. So
-/// is MPE: a note of a zone arrives with its `bend` in semitones, and a bend
+/// Note-on with velocity 0 is a note-off before it gets here -- the parse is
+/// done before the element, exactly as resolving a keyboard layout into a
+/// [`Key::Char`] is. So is MPE: a note of a zone arrives with its `bend` in semitones, and a bend
 /// that moves while it sounds arrives as a `retune` of the note held at that
 /// pitch and channel.
 #[derive(Clone, Copy, Debug, PartialEq)]

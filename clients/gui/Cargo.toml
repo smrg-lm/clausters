@@ -23,10 +23,10 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["midi", "notation", "patcher", "font-atlas"]
-# Live MIDI input painting piano-roll notes (a `midi_in` roll opens a virtual
-# input port other apps/devices route into). On by default -- the host must
-# paint notes when it runs standalone, with no language client to do it -- and
-# native-only (the dependency below is target-gated off wasm).
+# Live MIDI input painting piano-roll notes: a `midi_in` roll opens the
+# host's input -- a virtual port other apps and devices route into on the
+# desktop, the browser's own MIDI inputs in a page. On by default -- the host
+# must paint notes when it runs standalone, with no language client to do it.
 midi = ["dep:clausters-midi"]
 # Standalone mode: boot a saved GuiDef bundle against an in-process embedded
 # server. Off by default because it links the `clausters` server crate (engine +
@@ -113,6 +113,11 @@ clausters-notation = { path = "../../crates/clausters-notation", optional = true
 # the standalone build does not also pull MIDI/PipeWire. A normal gui build never
 # compiles this.
 clausters = { path = "../..", default-features = false, features = ["embed", "realtime"], optional = true }
+# Live MIDI input (the `midi` feature): the message reader and the MPE decoder,
+# the server's own, which is what turns a device's bytes into the notes a roll
+# paints. Pure Rust and on every target; the port it also has is added for the
+# native one alone, below.
+clausters-midi = { path = "../../crates/clausters-midi", optional = true }
 # GuiDef = JSON inside one OSC argument, exactly as a SynthDef/GraphDef. serde's
 # number handling keeps ids i32 and control values f32 across the wire.
 serde = { version = "1", features = ["derive"] }
@@ -141,9 +146,10 @@ fontdue = { version = "0.9", optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Live MIDI input (the `midi` feature): the shared MIDI crate's virtual input
-# port (midir/ALSA seq), consumed in-process through its safe Rust face.
-# Target-gated off wasm -- the browser host keeps display parity only.
+# The device half of live MIDI input (the `midi` feature): the shared MIDI
+# crate's virtual input port (midir/ALSA seq), consumed in-process through its
+# safe Rust face. Only the port is target-gated off wasm -- the crate itself is
+# a dependency of every target, above, and a page's device is Web MIDI.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
 # The stream legs of the script front -- TCP, and WebSocket (`--ws`), the
@@ -193,4 +199,10 @@ web-sys = { version = "0.3", features = [
     "CompositionEvent",
     # Which platform the page runs on: on a Mac the host's Ctrl is Command.
     "Navigator",
+    # Live MIDI input in a page (`host::web::midi`): the access the browser
+    # asks the person for, its inputs, and the event a message arrives as.
+    "MidiAccess",
+    "MidiInputMap",
+    "MidiInput",
+    "MidiMessageEvent",
 ] }
