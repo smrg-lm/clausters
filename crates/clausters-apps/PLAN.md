@@ -2280,6 +2280,19 @@ only for a choice with non-obvious context.
 
 Every entry carries a checkbox.
 
+- ⬜ **A roll may need its tempo and its barlines as parameters** *(the
+  user, 2026-10-06, hearing the page of a sequence against the rolls over
+  it)*. A sequence carries its tempo map as data and a roll reads it; one that
+  states none is played and drawn at a beat a second, and nothing on `edit` or
+  in the roll's window says another. And a roll rules its grid in beats: it
+  has no meter, so it draws no barline, while the page of the same sequence is
+  barred. Open, and the user's to say which was meant: the tempo and the meter
+  as options of `edit` for a sequence that states neither, controls of the
+  roll's window that edit what the sequence holds (its map, and the meter of
+  its `notation` section, which a page already reads), or both -- and what the
+  page of that sequence writes, since an engraver counts 120 quarters a minute
+  where a score states no tempo and a page says its tempo with a mark.
+
 - ⬜ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
   the conversion to a roll goes one way, and the way back takes decisions
   that can be made later)*. `X5.8` renders a score into an `EventSequence`;

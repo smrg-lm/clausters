@@ -324,7 +324,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   leaves to its
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
-  audio editor; whether a roll with no sequence stays; from the roll to the
+  audio editor; whether a roll with no sequence stays; a roll's tempo and
+  barlines as parameters; from the roll to the
   score; the score editor's
   editing rules as modules; what a score editor's hand expects and this one
   has not; dynamics as a model of the instrument and of hearing; a glissando
