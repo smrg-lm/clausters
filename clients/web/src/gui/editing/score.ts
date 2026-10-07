@@ -18,6 +18,9 @@
  */
 
 import { Score } from "../notation/engraver.ts";
+import { TRANSCRIPTION_KEYS } from "../notation/sheet.ts";
+import type { Interpretation, Transcription } from "../notation/sheet.ts";
+import { NotesDomain, keyOfSequence } from "./events.ts";
 import { readFileAt, writeFileAt } from "../../base/files.ts";
 import { area } from "../../base/log.ts";
 import type { Server } from "../../defs/server/index.ts";
@@ -149,6 +152,15 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
     /** The server it plays on; absent, the ambient one when it first plays. */
     server?: Server | null;
     /**
+     * The sequence the page is the reading of ({@link ScoreEditor.over},
+     * which is what sets it): an edit on the page is then an edit of it.
+     */
+    over?: EventSequence | null;
+    /** How `over` is read where its events do not say, as the crate spells it. */
+    how?: Record<string, unknown>;
+    /** The reading: what a mark sounds as, and what a level is named. */
+    interp?: Interpretation;
+    /**
      * `false` opens the page alone, in its scroll, over the status line: no
      * menu bar, no toolbar, no palettes and no dialogs, none of them composed
      * -- the window a page wants when it edits through this handle and reads
@@ -220,14 +232,31 @@ export interface PageOptions {
  * one entry of the editing context's history, so Ctrl+Z over the window walks
  * them back.
  */
-export class ScoreEditor extends Editor<Score> {
+export class ScoreEditor extends Editor<Score | EventSequence> {
     /** This editor's member in its editing context. */
     private readonly member: number;
+    readonly #score: Score;
+    /**
+     * The sequence this page is the reading of, in an editor opened over one
+     * ({@link ScoreEditor.over}); `null` for an editor over a score of its
+     * own.
+     */
+    readonly sequence: EventSequence | null;
 
     constructor(score: Score, options: ScoreEditorOptions = {}) {
-        const domain = new ScoreDomain();
-        const { value, sampleRate: _rate, server = null, ...rest } = options;
-        super(score, {
+        const {
+            value,
+            sampleRate: _rate,
+            server = null,
+            over = null,
+            how,
+            interp,
+            ...rest
+        } = options;
+        const domain = (over === null ? new ScoreDomain() : new NotesDomain()) as Domain<
+            Score | EventSequence
+        >;
+        super(over ?? score, {
             title: "Score",
             width: 960,
             height: 640,
@@ -236,6 +265,8 @@ export class ScoreEditor extends Editor<Score> {
             domain,
             view: new ScoreView(),
         });
+        this.#score = score;
+        this.sequence = over;
         const request: Record<string, unknown> = {
             title: this.title,
             w: this.size[0],
@@ -243,10 +274,79 @@ export class ScoreEditor extends Editor<Score> {
         };
         if (value !== undefined) request.value = [Math.trunc(value[0]), Math.trunc(value[1])];
         if (!this.chrome) request.chrome = false;
-        const opened = this.editing.openScore(`score:${keyOfScore(score)}`, score, request, domain);
+        let opened: { member: number; identity: number };
+        if (over === null) {
+            opened = this.editing.openScore(`score:${keyOfScore(score)}`, score, request, domain);
+        } else {
+            if (how !== undefined) request.how = how;
+            if (interp !== undefined) request.interp = interp;
+            opened = this.editing.openScoreOver(
+                `sequence:${keyOfSequence(over)}`,
+                score,
+                over,
+                request,
+                domain,
+            );
+            // what plays is the sequence itself
+            this.#rendered = over;
+        }
         this.member = opened.member;
         this.structureId = opened.identity;
         this.#server = server;
+    }
+
+    /**
+     * **The score editor over a sequence**, on the page it is read into
+     * (`Score.fromEvents`): what `edit(sequence, { view: "score" })` opens.
+     *
+     * The sequence is the structure and the page a reading of it. Opening
+     * changes nothing: a take keeps the times it was played with. **An edit on
+     * the page changes in the sequence only what it changed on the page** --
+     * the note moved, marked or written, in its notation keys and in what it
+     * sounds -- and every other event stays as it was, with its time, its
+     * level and its curves. The entry is the sequence's, so a roll open over
+     * the same sequence and this page are one undo order, and each follows
+     * what the other does.
+     *
+     * The transcription's keys among `options` (`meter`, `key`, `clef`,
+     * `beatUnit`, `division`, `tuplets`, `voices`, `dynamics`) say how the
+     * sequence is read where its events do not, and `interp` is the reading;
+     * the rest are the editor's own. The editor's `structure` is the
+     * sequence, and `score` the page.
+     */
+    static async over(
+        sequence: EventSequence,
+        options: ScoreEditorOptions & Transcription = {},
+    ): Promise<ScoreEditor> {
+        const how: Record<string, unknown> = {};
+        const others: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(options)) {
+            const reads = (TRANSCRIPTION_KEYS as readonly string[]).includes(key);
+            if (reads && value !== undefined && value !== null) how[key] = value;
+            else if (!reads) others[key] = value;
+        }
+        const interp = (options as ScoreEditorOptions).interp;
+        const page = await Score.fromEvents(sequence, { ...(how as Transcription), interp });
+        // the crate spells the beat as the model does
+        const { beatUnit, ...written } = how as Transcription;
+        const said: Record<string, unknown> = { ...written };
+        if (beatUnit !== undefined) said.beat_unit = beatUnit;
+        return new ScoreEditor(page, {
+            ...(others as ScoreEditorOptions),
+            over: sequence,
+            how: said,
+        });
+    }
+
+    /**
+     * Another view of this structure edited it: over a sequence, the page is
+     * read again from it -- window or none -- then every widget is corrected,
+     * and what plays, which is the sequence, takes the change.
+     */
+    override adopt(): void {
+        if (this.sequence !== null) this.coreCall("follow");
+        super.adopt();
+        if (this.sequence !== null) this.#update();
     }
 
     // ---- playing it ----
@@ -323,12 +423,16 @@ export class ScoreEditor extends Editor<Score> {
     #update(): void {
         const rendered = this.#rendered;
         if (rendered === null) return;
-        try {
-            (rendered as unknown as { seq: JsEventSequence }).seq = new JsEventSequence(
-                JSON.stringify(this.#render()),
-            );
-        } catch {
-            return;
+        // over a sequence, what plays is the sequence, which the edit is
+        // already in
+        if (this.sequence === null) {
+            try {
+                (rendered as unknown as { seq: JsEventSequence }).seq = new JsEventSequence(
+                    JSON.stringify(this.#render()),
+                );
+            } catch {
+                return;
+            }
         }
         const playback = this.#held;
         if (playback === null) return;
@@ -499,7 +603,7 @@ export class ScoreEditor extends Editor<Score> {
 
     /** The score the page edits -- the one the editor was opened over. */
     get score(): Score {
-        return this.structure;
+        return this.#score;
     }
 
     /**

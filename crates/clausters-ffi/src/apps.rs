@@ -211,6 +211,68 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score(
     n
 }
 
+/// **Opens a score editor over a sequence the caller holds**, on the page it
+/// is read into: `sequence` is a handle from
+/// `clausters_document_sequence_new`, and `score` one from
+/// `clausters_score_open`, which is loaded here with the sequence read. An
+/// edit on the page is then an edit of the sequence, recorded in the order a
+/// roll over it records in. `request` is `{"key", ...}` -- the sequence's key
+/// -- with what `clausters_apps::score::editor::over_json` reads (`how`, the
+/// transcription; `interp`, the reading); the answer is `{"member",
+/// "structure"}` or `{"error"}`. Sizes with a null `out` and fills with a
+/// second call, and opens once across the two (a later call with the same
+/// request hands the answer over).
+///
+/// # Safety
+/// `e`, `score` and `sequence` must be live handles, `request` readable for
+/// `request_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_open_score_over(
+    e: *mut FfiEditing,
+    score: *mut crate::notation::ScoreHandle,
+    sequence: *mut crate::document::FfiEventSequence,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees the three are live or null.
+    let (Some(handle), Some(score), Some(sequence)) =
+        (unsafe { e.as_ref() }, unsafe { score.as_ref() }, unsafe {
+            sequence.as_ref()
+        })
+    else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    let asked = format!("openScoreOver {request}");
+    let answer = match pending.take() {
+        Some((was, answer)) if was == asked => answer,
+        _ => {
+            let key = serde_json::from_str::<serde_json::Value>(&request)
+                .ok()
+                .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+                .unwrap_or_default();
+            editing.open_score_over(&key, score.0.clone(), sequence.0.clone(), &request)
+        }
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((asked, answer));
+    }
+    n
+}
+
 /// **Opens a multitrack editor over a multitrack the caller holds**:
 /// `multitrack` is a handle from `clausters_document_multitrack_new`, which the
 /// editor then edits in place -- the script reads every edit through that same

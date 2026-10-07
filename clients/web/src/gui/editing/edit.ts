@@ -44,6 +44,7 @@ import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor, isTake } from "./audio.ts";
 import { ScoreEditor, isScore } from "./score.ts";
+import type { Interpretation, Transcription } from "../notation/sheet.ts";
 import { main } from "../../base/main.ts";
 
 /** What `edit` passes on to whichever editor the structure asks for. */
@@ -96,6 +97,26 @@ export interface EditOptions {
      * ({@link NotesEditor}).
      */
     yAxis?: "midi" | "hz";
+    /**
+     * **The presentation of a structure that has several.** A sequence is
+     * edited as a `"roll"`, its default, or as a `"score"` -- the page it is
+     * read into, in the score editor, where an edit changes in the sequence
+     * only what it changed on the page and is one undo order with a roll over
+     * the same sequence ({@link ScoreEditor.over}). There it also takes the
+     * transcription's keys, which say how the sequence is read where its
+     * events do not (`meter`, `key`, `clef`, `beatUnit`, `division`,
+     * `tuplets`, `voices`, `dynamics`), and `interp`.
+     */
+    view?: "roll" | "score";
+    meter?: Transcription["meter"];
+    key?: Transcription["key"];
+    clef?: Transcription["clef"];
+    beatUnit?: Transcription["beatUnit"];
+    division?: Transcription["division"];
+    tuplets?: Transcription["tuplets"];
+    voices?: Transcription["voices"];
+    dynamics?: Transcription["dynamics"];
+    interp?: Interpretation;
     /** The element the window's canvas takes the box of. Absent: one of its own. */
     stage?: Stage | null;
     /**
@@ -131,10 +152,27 @@ export interface EditOptions {
     scratch?: string;
 }
 
+/**
+ * The presentation `view` asks for among `views`, the first of which is the
+ * structure's default.
+ */
+function viewOf<V extends string>(view: string | undefined, views: readonly V[]): V {
+    const asked = (view ?? views[0]) as V;
+    if (!views.includes(asked)) {
+        throw new RangeError(
+            `no view "${asked}" of this structure: it is edited as ` +
+                views.map((name) => `"${name}"`).join(" or "),
+        );
+    }
+    return asked;
+}
+
 /** Builds the editor `structure` asks for, without opening it. */
-function editorFor(structure: unknown, options: EditOptions): Editor<never> {
+async function editorFor(structure: unknown, options: EditOptions): Promise<Editor<never>> {
     const {
-        sampleRate = 0, host: _h, stage: _s, open: _o, min, max, start, end, ...rest
+        sampleRate = 0, host: _h, stage: _s, open: _o, min, max, start, end, view,
+        meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
+        ...rest
     } = options;
     if (isTake(structure)) {
         return new AudioEditor(structure, {
@@ -153,12 +191,23 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
         }) as unknown as Editor<never>;
     }
     if (isEvents(structure) && !(structure instanceof Timeline)) {
+        // **A sequence has two presentations**, and `view` chooses: the roll,
+        // which is its default, or its page -- the score it is read into,
+        // where an edit changes in the sequence only what it changed there.
+        if (viewOf(view, ["roll", "score"] as const) === "score") {
+            const { yAxis: _axis, ...page } = rest;
+            return (await ScoreEditor.over(structure, {
+                ...page,
+                meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
+            })) as unknown as Editor<never>;
+        }
         return new NotesEditor(structure, {
             sampleRate,
             ...rest,
         }) as unknown as Editor<never>;
     }
     if (isScore(structure)) {
+        viewOf(view, ["score"] as const);
         return new ScoreEditor(structure, rest) as unknown as Editor<never>;
     }
     if (isMultitrack(structure)) {
@@ -213,7 +262,7 @@ export async function edit(
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
     // A take knows its own rate; anything else takes the ambient server's.
     if (!rest.sampleRate && !isTake(opened)) rest.sampleRate = await ambientRate();
-    const editor = editorFor(opened, rest);
+    const editor = await editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
     }
@@ -237,8 +286,10 @@ function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | 
         [isScore, ScoreEditor],
         [isMultitrack, MultitrackEditor],
     ];
-    const kind = kinds.find(([test]) => test(structure))?.[1];
+    let kind = kinds.find(([test]) => test(structure))?.[1];
     if (kind === undefined || structure instanceof Timeline) return null;
+    // a sequence's page is the score editor's, over that sequence
+    if (kind === NotesEditor && options.view === "score") kind = ScoreEditor;
     const context = options.context ?? Editing.of(structure as object);
     const axis = options.yAxis ?? "midi";
     for (const view of context.views()) {

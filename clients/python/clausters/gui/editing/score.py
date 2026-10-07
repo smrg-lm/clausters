@@ -111,13 +111,25 @@ class ScoreEditor(Editor):
     """
 
     def __init__(self, score, *, title: str = "Score", value=None,
-                 width: int = 960, height: int = 640, server=None, **options):
+                 width: int = 960, height: int = 640, server=None,
+                 over: "EventSequence | None" = None, how: "dict | None" = None,
+                 interp: "dict | None" = None, **options):
         options.pop("sample_rate", None)
         self._server = server
+        self._score = score
+        #: The sequence this page is the reading of, in an editor opened over
+        #: one (`over`); ``None`` for an editor over a score of its own.
+        self.sequence: "EventSequence | None" = over
         #: The score as the sequence it plays as, rendered when it first plays
-        #: and again after every edit.
-        self._rendered: "EventSequence | None" = None
-        super().__init__(score, sample_rate=48_000.0, domain=ScoreDomain(),
+        #: and again after every edit. Over a sequence, that sequence.
+        self._rendered: "EventSequence | None" = over
+        if over is None:
+            domain, structure = ScoreDomain(), score
+        else:
+            from .events import NotesDomain
+
+            domain, structure = NotesDomain(), over
+        super().__init__(structure, sample_rate=48_000.0, domain=domain,
                          view=ScoreView(), title=title, width=width,
                          height=height, **options)
         request = {"title": self.title, "w": int(self.size[0]), "h": int(self.size[1])}
@@ -125,13 +137,49 @@ class ScoreEditor(Editor):
             request["value"] = [int(value[0]), int(value[1])]
         if not self.chrome:
             request["chrome"] = False
-        self._member, self._structure_id = self._editing.open_score(
-            f"score:{id(score)}", score, request, self.domain)
+        if over is None:
+            self._member, self._structure_id = self._editing.open_score(
+                f"score:{id(score)}", score, request, self.domain)
+        else:
+            if how:
+                request["how"] = dict(how)
+            if interp is not None:
+                request["interp"] = interp
+            self._member, self._structure_id = self._editing.open_score_over(
+                f"sequence:{id(over)}", score, over, request, self.domain)
+
+    @classmethod
+    def over(cls, sequence, *, interp: "dict | None" = None, **options) -> "ScoreEditor":
+        """**The score editor over a sequence**, on the page it is read into
+        (`clausters.gui.notation.Score.from_events`): what
+        ``edit(sequence, view="score")`` opens.
+
+        The sequence is the structure and the page a reading of it. Opening
+        changes nothing: a take keeps the times it was played with. **An edit
+        on the page changes in the sequence only what it changed on the
+        page** -- the note moved, marked or written, in its notation keys and
+        in what it sounds -- and every other event stays as it was, with its
+        time, its level and its curves. The entry is the sequence's, so a
+        roll open over the same sequence and this page are one undo order,
+        and each follows what the other does.
+
+        The transcription's keys among ``options`` (``meter``, ``key``,
+        ``clef``, ``beat_unit``, ``division``, ``tuplets``, ``voices``,
+        ``dynamics``) say how the sequence is read where its events do not,
+        and ``interp`` is the reading; the rest are the editor's own. The
+        editor's `structure` is the sequence, and `score` the page."""
+        from ..notation import TRANSCRIPTION_KEYS, Score
+
+        how = {key: options.pop(key) for key in TRANSCRIPTION_KEYS if key in options}
+        how = {key: value for key, value in how.items() if value is not None}
+        page = Score.from_events(sequence, interp=interp, **how)
+        return cls(page, over=sequence, how=how, interp=interp, **options)
 
     @property
     def score(self):
-        """The score the page edits -- the one the editor was opened over."""
-        return self.structure
+        """The score on the page: the one the editor was opened over, or --
+        over a sequence -- the reading of it, which follows the sequence."""
+        return self._score
 
     def _call(self, verb: str, **args) -> dict:
         """One verb of this editor's member, through the context."""
@@ -141,7 +189,7 @@ class ScoreEditor(Editor):
         """Hand the crate the window it is open in and the chrome."""
         self._call("sync", window=self._window, title=self.title,
                    w=int(self.size[0]), h=int(self.size[1]),
-                   path=getattr(self.structure, "path", None))
+                   path=getattr(self._score, "path", None))
 
     # ---- what is selected, and the value in hand ----
 
@@ -518,16 +566,30 @@ class ScoreEditor(Editor):
             raise ValueError(answer.get("error", "the score could not be rendered"))
         return answer["sequence"]
 
+    def adopt(self) -> None:
+        """Another view of this structure edited it: over a sequence, the page
+        is read again from it -- window or none -- and then every widget is
+        corrected."""
+        if self.sequence is not None:
+            self._call("follow")
+        super().adopt()
+        if self.sequence is not None:
+            # and what plays is the sequence, so the change is heard
+            self._update()
+
     def _update(self) -> None:
         """The score changed: the sequence it plays as holds the next render,
         and the lane takes it, so the server plays the edit on from where the
         position is."""
         if self._rendered is None:
             return
-        try:
-            self._rendered._seq = _native.SequenceHandle(self._render())
-        except ValueError:
-            return
+        # over a sequence, what plays is the sequence, which the edit is
+        # already in
+        if self.sequence is None:
+            try:
+                self._rendered._seq = _native.SequenceHandle(self._render())
+            except ValueError:
+                return
         playback = self._held
         if playback is not None:
             playback.update()

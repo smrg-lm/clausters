@@ -87,7 +87,17 @@ def edit(structure, *, sample_rate: float = 0.0,
             the ranges its values and its times are kept in
             (`clausters.gui.editing.PointsEditor`). A
             sequence (or a timeline, rendered into one) takes ``y_axis``, the
-            roll's vertical axis: ``"midi"`` or ``"hz"``.
+            roll's vertical axis: ``"midi"`` or ``"hz"``. **``view`` chooses
+            the presentation of a structure that has several**: a sequence is
+            edited as a ``"roll"``, its default, or as a ``"score"`` -- the
+            page it is read into, in the score editor, where an edit changes
+            in the sequence only what it changed on the page and is one undo
+            order with a roll over the same sequence
+            (`clausters.gui.editing.ScoreEditor.over`). There it also takes
+            the transcription's keys, which say how the sequence is read
+            where its events do not (``meter``, ``key``, ``clef``,
+            ``beat_unit``, ``division``, ``tuplets``, ``voices``,
+            ``dynamics``), and ``interp``.
 
     Returns:
         The editor, **open** -- the one already open over ``structure``, when
@@ -123,9 +133,17 @@ def edit(structure, *, sample_rate: float = 0.0,
         # editor's `sequence`.
         if isinstance(structure, Timeline):
             structure = structure.render_events(until=options.pop("until", None))
-        editor = NotesEditor(structure, sample_rate=sample_rate or _ambient_rate(),
-                             **options)
+        # **A sequence has two presentations**, and `view` chooses: the roll,
+        # which is its default, or its page -- the score it is read into,
+        # where an edit changes in the sequence only what it changed there.
+        view = _view(options, ("roll", "score"))
+        if view == "score":
+            editor = ScoreEditor.over(structure, **options)
+        else:
+            editor = NotesEditor(structure, sample_rate=sample_rate or _ambient_rate(),
+                                 **options)
     elif is_score(structure):
+        _view(options, ("score",))
         editor = ScoreEditor(structure, **options)
     elif is_multitrack(structure):
         # A multitrack states its own tempo, like a timeline.
@@ -143,6 +161,17 @@ def edit(structure, *, sample_rate: float = 0.0,
     return editor
 
 
+def _view(options: dict, views: tuple) -> str:
+    """The presentation ``options`` ask for among ``views``, the first of
+    which is the structure's default -- taken out of the options."""
+    view = options.pop("view", None) or views[0]
+    if view not in views:
+        raise ValueError(
+            f"no view {view!r} of this structure: it is edited as "
+            + " or ".join(repr(name) for name in views))
+    return view
+
+
 def _already_open(structure, host, options):
     """**The editor already open over ``structure``** that this call would
     open again -- the same kind, the same structure, the same axis for a roll,
@@ -156,6 +185,9 @@ def _already_open(structure, host, options):
     kind = next((k for test, k in kinds if test(structure)), None)
     if kind is None or isinstance(structure, Timeline):
         return None
+    # a sequence's page is the score editor's, over that sequence
+    if kind is NotesEditor and options.get("view") == "score":
+        kind = ScoreEditor
     context = options.get("context") or Editing.of(structure)
     axis = str(options.get("y_axis", "midi"))
     for view in context.views():

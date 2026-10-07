@@ -1854,3 +1854,128 @@ fn an_opened_file_is_the_scores_and_holds_it() {
         Some("/tmp/two.mei")
     );
 }
+
+/// A take played a little off the grid, shared as a roll's sequence is.
+fn played() -> crate::notes::Shared {
+    let take = serde_json::from_value(json!({"events": [
+        {"at": 0.03, "data": {"midinote": 60, "dur": 0.93, "velocity": 71}},
+        {"at": 1.01, "data": {"midinote": 62, "dur": 0.97, "velocity": 64}},
+        {"at": 1.98, "data": {"midinote": 64, "dur": 1.02, "velocity": 80}},
+        {"at": 3.02, "data": {"midinote": 65, "dur": 0.9, "velocity": 77}},
+    ]}))
+    .expect("a sequence");
+    Arc::new(Mutex::new(take))
+}
+
+/// The id the page names the `n`th item of its first voice by.
+fn nth(editor: &ScoreEditor, n: usize) -> String {
+    let held = editor.held();
+    let id = held.sheet().expect("a model").staves[0].voices[0].items[n].id();
+    format!("n{id}")
+}
+
+fn articulations(editor: &ScoreEditor, n: usize) -> Vec<String> {
+    let held = editor.held();
+    held.sheet().expect("a model").staves[0].voices[0].items[n]
+        .marks()
+        .map(|marks| marks.articulations.clone())
+        .unwrap_or_default()
+}
+
+#[test]
+fn an_edit_on_the_page_of_a_sequence_is_an_edit_of_the_sequence() {
+    use clausters_core::notation::default_interpretation;
+    use clausters_document::events::transcription::Transcription;
+
+    let sequence = played();
+    let before = sequence.lock().unwrap().clone();
+    let mut editor = ScoreEditor::over(
+        holding(Vec::new()),
+        Arc::clone(&sequence),
+        Transcription::default(),
+        default_interpretation(),
+        1,
+    )
+    .expect("reads");
+    editor.window(IDS, Chrome::default());
+    // the page is the take, read: four quarters, and the take as it was
+    assert_eq!(
+        editor.held().sheet().unwrap().staves[0].voices[0]
+            .items
+            .len(),
+        4
+    );
+    assert_eq!(*sequence.lock().unwrap(), before);
+
+    let third = nth(&editor, 2);
+    editor.event(&gesture("element", &[json!(third)]), 1);
+    let out = editor.act(&json!({"action": "articulation", "name": "stacc"}), 1);
+    assert!(out.changed);
+    // the entry is the sequence's: it is put back by restoring it
+    let record = out.record.expect("an entry");
+    assert_eq!(record.legs[0].backward["intent"], "restore");
+    let now = sequence.lock().unwrap().clone();
+    assert_eq!(now.events[2].keys()["articulations"], json!(["stacc"]));
+    assert_eq!(now.events[2].at.0, 1.98, "played when it was");
+    for i in [0, 1, 3] {
+        assert_eq!(now.events[i], before.events[i], "the rest as it was played");
+    }
+    // the step back restores the take, and the page follows
+    assert!(editor.apply(&record.legs[0].backward));
+    assert_eq!(*sequence.lock().unwrap(), before);
+    assert!(articulations(&editor, 2).is_empty());
+}
+
+#[test]
+fn a_roll_and_a_page_over_one_sequence_are_one_order() {
+    use crate::editing::{Editing, Member};
+    use clausters_document::history::Direction;
+
+    let sequence = played();
+    let before = sequence.lock().unwrap().clone();
+    let mut editing = Editing::new();
+    let roll: Value =
+        serde_json::from_str(&editing.open_notes("take", Arc::clone(&sequence), "{}")).unwrap();
+    let page: Value = serde_json::from_str(&editing.open_score_over(
+        "take",
+        holding(Vec::new()),
+        Arc::clone(&sequence),
+        r#"{"how": {"division": 8}}"#,
+    ))
+    .unwrap();
+    assert_eq!(
+        roll["structure"], page["structure"],
+        "one structure: the sequence"
+    );
+    let member = page["member"].as_u64().unwrap() as u32;
+    let third = match editing.member_mut(member) {
+        Some(Member::Score(editor)) => {
+            editor.window(IDS, Chrome::default());
+            nth(editor, 2)
+        }
+        _ => panic!("a score editor"),
+    };
+    editing.event(member, &gesture("element", &[json!(third)]));
+    editing
+        .act(member, &json!({"action": "articulation", "name": "stacc"}))
+        .expect("a turn");
+    assert_ne!(*sequence.lock().unwrap(), before);
+
+    // one undo, from anywhere, puts the take back -- and the page reads it
+    assert!(editing.can_undo());
+    assert!(editing.step(Direction::Undo).stepped);
+    assert_eq!(*sequence.lock().unwrap(), before);
+    match editing.member_mut(member) {
+        Some(Member::Score(editor)) => assert!(articulations(editor, 2).is_empty()),
+        _ => panic!("a score editor"),
+    }
+    assert!(!editing.can_undo());
+    // a transcription that does not read is said
+    let refused = editing.open_score_over(
+        "take",
+        holding(Vec::new()),
+        Arc::clone(&sequence),
+        r#"{"how": {"division": "fine"}}"#,
+    );
+    assert!(refused.contains("error"), "{refused}");
+}

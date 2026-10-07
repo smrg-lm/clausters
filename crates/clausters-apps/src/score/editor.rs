@@ -7,11 +7,17 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use clausters_core::notation::Interpretation;
 use clausters_core::notation::{
     AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, Sheet, View, field_of,
     item_id, layout_options, measure_id, pitch_near, sheet_to_mei,
 };
 use clausters_core::ratio::Ratio;
+use clausters_document::Opaque;
+use clausters_document::events::transcription::{self, Transcription};
+use clausters_document::events::writeback::write_back;
+use clausters_document::events::{self, EventSequence};
+use clausters_document::history::Editable;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 
 use super::entry::{self, Place};
@@ -188,6 +194,9 @@ pub struct ScoreEditor {
     /// The engraver's options the score is laid out under, so it is laid out
     /// again only when the paper or the view changed.
     laid: String,
+    /// The sequence this page is the reading of, in an editor opened over
+    /// one ([`ScoreEditor::over`]).
+    over: Option<Over>,
 }
 
 impl std::fmt::Debug for ScoreEditor {
@@ -199,6 +208,31 @@ impl std::fmt::Debug for ScoreEditor {
             .field("value", &self.value)
             .finish_non_exhaustive()
     }
+}
+
+/// **The sequence a page is the reading of**, for an editor opened over one.
+///
+/// The sequence is the structure and the page a reading of it
+/// (`clausters_document::events::transcription`), so such an editor's entries
+/// are the sequence's: an edit on the page is written back to it
+/// (`clausters_document::events::writeback`) and recorded as an edit of the
+/// sequence, in the order a roll over it records in. The score it shows is
+/// held for as long as the two agree, and read again when the sequence
+/// changes under it -- a step of the history, a note moved in a roll.
+#[derive(Clone)]
+pub struct Over {
+    /// The sequence, shared with its holder and with every roll over it.
+    sequence: crate::notes::Shared,
+    /// How it is read where its events do not say.
+    how: Transcription,
+    /// The reading both ways: what a mark sounds as, and what a level is
+    /// named.
+    interp: Interpretation,
+    /// The sequence as the page last agreed with it.
+    seen: EventSequence,
+    /// The page then, and which item each event of the sequence is.
+    sheet: Sheet,
+    items: Vec<(u64, u64)>,
 }
 
 /// What a score editor is opened with, as the context's door reads it.
@@ -281,6 +315,110 @@ impl ScoreEditor {
             drawn: Vec::new(),
             view: View::Page,
             laid: String::new(),
+            over: None,
+        }
+    }
+
+    /// **An editor over `sequence`**, on its page: `score` is loaded with the
+    /// sequence read as `how` says, and from then on an edit of the page is
+    /// an edit of the sequence (see [`Over`]). What `score` held is replaced.
+    ///
+    /// # Errors
+    /// When the sequence cannot be read into a score.
+    pub fn over(
+        score: Shared,
+        sequence: crate::notes::Shared,
+        how: Transcription,
+        interp: Interpretation,
+        version: i64,
+    ) -> Result<Self, String> {
+        let mut editor = Self::new(score, version);
+        let seen = sequence.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        editor.over = Some(Over {
+            sequence,
+            how,
+            interp,
+            seen,
+            sheet: Sheet::default(),
+            items: Vec::new(),
+        });
+        editor.read_again()?;
+        let mei = editor.held().mei();
+        editor.saved = mei;
+        Ok(editor)
+    }
+
+    /// Whether this editor's page is the reading of a sequence.
+    pub fn is_over(&self) -> bool {
+        self.over.is_some()
+    }
+
+    /// **The page read again from the sequence it is over**: the score
+    /// loaded with the reading, and nothing selected, since the items of a
+    /// new reading are new ones.
+    fn read_again(&mut self) -> Result<(), String> {
+        let Some(over) = self.over.as_mut() else {
+            return Ok(());
+        };
+        let sequence = over
+            .sequence
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let read = transcription::read(&sequence, &over.how, &over.interp)?;
+        let mei = sheet_to_mei(&read.sheet)?;
+        let mut held = self.score.lock().unwrap_or_else(|e| e.into_inner());
+        if held.mei() != mei {
+            held.load(&mei);
+        }
+        over.sheet = held.sheet().cloned().unwrap_or(read.sheet);
+        over.items = read.items;
+        over.seen = sequence;
+        drop(held);
+        self.selection.clear();
+        self.stretch = false;
+        Ok(())
+    }
+
+    /// Reads the page again where the sequence it is over is no longer the
+    /// one it agreed with.
+    fn follow(&mut self) {
+        let moved = self.over.as_ref().is_some_and(|over| {
+            *over.sequence.lock().unwrap_or_else(|e| e.into_inner()) != over.seen
+        });
+        if moved {
+            // a sequence that will not read leaves the page as it was
+            let _ = self.read_again();
+        }
+    }
+
+    /// **The edit the page just took, written back to the sequence it is
+    /// over**, as the leg of the sequence's history -- or `None` for an edit
+    /// that cannot be written back, which the page then gives up: it is read
+    /// again from the sequence as it stands.
+    fn written_back(&mut self) -> Option<Leg> {
+        let after = self.held().sheet().cloned()?;
+        let over = self.over.as_mut()?;
+        let mut sequence = over.sequence.lock().unwrap_or_else(|e| e.into_inner());
+        let backward = events::payload(&sequence.state());
+        let written = write_back(&sequence, &over.items, &over.sheet, &after, &over.interp);
+        match written {
+            Ok(written) => {
+                *sequence = written.sequence;
+                over.items = written.items;
+                over.sheet = after;
+                over.seen = sequence.clone();
+                Some(Leg {
+                    forward: json!({ "edit": events::payload(&sequence.state()).0 }),
+                    backward: backward.0,
+                    ..Leg::default()
+                })
+            }
+            Err(_) => {
+                drop(sequence);
+                let _ = self.read_again();
+                None
+            }
         }
     }
 
@@ -918,6 +1056,8 @@ impl ScoreEditor {
     /// **Every widget of the window, corrected** -- what a history step leaves
     /// behind.
     pub fn resync_all(&mut self, version: i64) -> Answer {
+        // over a sequence, a step or another editor may have changed it
+        self.follow();
         conversation::answer(0, version, None, self.corrections())
     }
 
@@ -935,6 +1075,19 @@ impl ScoreEditor {
     /// names, as a step forward (`{"edit": {"mei"}}`) or back (`{"mei"}`).
     /// Answers whether it changed.
     pub fn apply(&mut self, payload: &Value) -> bool {
+        // Over a sequence the step is the sequence's, written in its
+        // vocabulary: it is applied there and the page read again.
+        if let Some(over) = &self.over {
+            let payload = payload.get("edit").unwrap_or(payload);
+            let applied = over
+                .sequence
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .apply(&Opaque(payload.clone()))
+                .applied;
+            self.follow();
+            return applied;
+        }
         let mei = payload
             .get("edit")
             .unwrap_or(payload)
@@ -1267,14 +1420,23 @@ impl ScoreEditor {
         if after == before {
             return;
         }
-        out.record = Some(Record {
-            label: label.into(),
-            legs: vec![Leg {
+        // Over a sequence the entry is the sequence's: the edit written
+        // back, to be put back by restoring the sequence.
+        let leg = if self.over.is_some() {
+            self.written_back()
+        } else {
+            Some(Leg {
                 forward: json!({"edit": {"mei": after}}),
                 backward: json!({"mei": before}),
                 ..Leg::default()
-            }],
-        });
+            })
+        };
+        if let Some(leg) = leg {
+            out.record = Some(Record {
+                label: label.into(),
+                legs: vec![leg],
+            });
+        }
         out.changed = true;
         out.version += 1;
     }
@@ -1888,7 +2050,42 @@ impl Converse for ScoreEditor {
 /// only holder ([`ScoreEditor::set_asks_to_close`]); no client says it.
 pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
-    let mut editor = ScoreEditor::new(score, opened.version);
+    let editor = ScoreEditor::new(score, opened.version);
+    dressed(editor, opened)
+}
+
+/// **A score editor over a sequence, from the request a binding crosses
+/// with**: [`new_json`]'s, and beside it `how` -- the transcription the
+/// sequence is read by, any key of it left out keeping its default -- and
+/// `interp`, the reading. The score is loaded with the sequence read
+/// ([`ScoreEditor::over`]).
+///
+/// # Errors
+/// When `how` or `interp` does not read, or the sequence cannot be read into
+/// a score.
+pub fn over_json(
+    score: Shared,
+    sequence: crate::notes::Shared,
+    request: &str,
+) -> Result<ScoreEditor, String> {
+    let said: Value = serde_json::from_str(request).unwrap_or_else(|_| json!({}));
+    let opened: Opened = serde_json::from_value(said.clone()).unwrap_or_default();
+    let how = match said.get("how").filter(|how| !how.is_null()) {
+        Some(how) => serde_json::from_value::<Transcription>(how.clone())
+            .map_err(|e| format!("the transcription could not be read: {e}"))?,
+        None => Transcription::default(),
+    };
+    let interp = match said.get("interp").filter(|interp| !interp.is_null()) {
+        Some(interp) => serde_json::from_value::<Interpretation>(interp.clone())
+            .map_err(|e| format!("the interpretation could not be read: {e}"))?,
+        None => clausters_core::notation::default_interpretation(),
+    };
+    let editor = ScoreEditor::over(score, sequence, how, interp, opened.version)?;
+    Ok(dressed(editor, opened))
+}
+
+/// An editor given what it was opened with.
+fn dressed(mut editor: ScoreEditor, opened: Opened) -> ScoreEditor {
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
     editor.bare = !opened.chrome;
@@ -1936,6 +2133,9 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 ///   says once it has written the file a save named. `{}`.
 /// - `unsaved` -- `{"unsaved"}`: whether the score has changes its file does
 ///   not hold, which the File menu's Close asks about before it closes.
+/// - `follow` -- `{"followed"}`: over a sequence, the page read again where
+///   the sequence is no longer the one it agreed with -- which every verb
+///   here does first, so this one is for a caller with nothing else to ask.
 /// - `render` -- `{"sequence"}`: the score as the sequence it plays as, on the
 ///   engraver's time, or `{"error"}`.
 ///
@@ -1946,11 +2146,19 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
         return "{}".into();
     };
     let id = |key: &str| request.get(key).and_then(Value::as_i64).map(|i| i as i32);
+    // Over a sequence, the page is the sequence's reading whatever is asked
+    // of it: another editor or a script may have changed it since.
+    let was = editor.over.as_ref().map(|over| over.seen.clone());
+    editor.follow();
     match request
         .get("verb")
         .and_then(Value::as_str)
         .unwrap_or_default()
     {
+        "follow" => {
+            let now = editor.over.as_ref().map(|over| &over.seen);
+            json!({ "followed": was.as_ref() != now }).to_string()
+        }
         "window" => {
             // what the caller numbered, by the names the crate gave: a name
             // that is none of them numbers nothing

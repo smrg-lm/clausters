@@ -14,7 +14,7 @@
       button { font: inherit; padding: 4px 10px; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
-      #stage, #hertz { width: 720px; max-width: 100%; height: 460px; }
+      #stage, #hertz, #score { width: 720px; max-width: 100%; height: 460px; }
     </style>
   </head>
   <body>
@@ -62,6 +62,16 @@ there moves it continuously, writing its <code>freq</code>: the MIDI note it
 was written with follows, and the first roll redraws it between the keys. An
 edit in either roll is one history.
 
+<b>page opens the same notes on a page</b> -- the sequence read into a score,
+in the score editor (<code>edit(notes, { view: "score" })</code>). Reading
+changes nothing: the notes keep the beats they were written at, and the page
+writes each on the nearest eighth. An edit there -- select a note and press a
+letter, drag it along the staff, pick an articulation from the palette --
+changes in the sequence only what it changed on the page: that note, in the
+rolls too, and no other. The rolls and the page are one history, so Ctrl+Z in
+any of the three takes back the last edit wherever it was made, and a note
+dragged in a roll is redrawn on the page.
+
 <b>The lane under the grid is the sequence's OSC markers</b>, edited the same
 way: drag one to move it, Ctrl+click one to remove it. A marker is matched by
 its <b>label</b>, the address it sends, so the message survives the drag. Adding
@@ -87,6 +97,8 @@ leaves every other note its own.</div>
       <button id="run">open the roll</button>
       <div id="stage"></div>
       <div id="hertz"></div>
+      <button id="page" disabled>page</button>
+      <div id="score"></div>
       <button id="play" disabled>play the notes</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
@@ -190,6 +202,19 @@ leaves every other note its own.</div>
           stage: $("hertz"),
         });
         log("edit the notes; press play to hear them as they stand");
+
+        // The same notes, on a page. A sequence has two presentations, and
+        // `view` chooses: the roll, its default, or the page it is read into.
+        // The sequence is still the structure -- the editor's `structure` is
+        // `notes` -- and the page a reading of it: `division` is the smallest
+        // written value a note is snapped to, an eighth here. What an edit on
+        // the page changes in the sequence is what it changed on the page and
+        // nothing else, as one entry of the same history the rolls record in.
+        $("page").disabled = false;
+        $("page").onclick = () =>
+          gui.edit(notes, {
+            view: "score", division: 8, title: "notes on a page", stage: $("score"),
+          });
 
         $("play").disabled = false;
         // The editor plays the sequence it edits, on its own transport -- the

@@ -83,6 +83,9 @@ impl Member {
             Member::Audio(_) => audio::DOMAIN.into(),
             Member::Notes(_) => notes::DOMAIN.into(),
             Member::Points(_) => points::DOMAIN.into(),
+            // a score editor over a sequence records the sequence's edits
+            #[cfg(feature = "notation")]
+            Member::Score(editor) if editor.is_over() => notes::DOMAIN.into(),
             #[cfg(feature = "notation")]
             Member::Score(_) => score::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
@@ -1152,6 +1155,30 @@ impl Editing {
         }
         let editor = score::new_json(shared, &request.to_string());
         joined(self, key, Member::Score(Box::new(editor)))
+    }
+
+    /// **Opens a score editor over `sequence`**, on the page it is read
+    /// into: `shared` is the score the caller's handle holds, loaded here
+    /// with the reading, and `sequence` the one a roll over it shares. `key`
+    /// is the sequence's, so the editor's entries are the sequence's and one
+    /// order with every roll over it. `request` is what [`score::over_json`]
+    /// reads; the answer is the `openNotes` one's shape, or `{"error"}` when
+    /// the sequence cannot be read.
+    pub fn open_score_over(
+        &mut self,
+        key: &str,
+        shared: crate::score::Shared,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
+        let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
+        if let Some(map) = request.as_object_mut() {
+            map.insert("version".into(), json!(self.version));
+        }
+        match score::over_json(shared, sequence, &request.to_string()) {
+            Ok(editor) => joined(self, key, Member::Score(Box::new(editor))),
+            Err(error) => json!({ "error": error }).to_string(),
+        }
     }
 }
 

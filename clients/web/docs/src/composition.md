@@ -439,6 +439,44 @@ for (const voice of score.renderEvents().separate("voice")) {
 }
 ```
 
+### A sequence on its page
+
+A sequence has two presentations, and `view` chooses between them: the roll,
+which is its default, and the page it is read into.
+
+```js
+const take = seq.EventSequence.fromSmf(bytes);
+const page = await gui.edit(take, { view: "score", meter: "3/4", division: 8 });  // the score editor, over the take
+const roll = await gui.edit(take);                                               // and a roll over the same take
+```
+
+The sequence is still the structure — `page.structure` is `take` — and the
+score on the page (`page.score`) is a reading of it, by the transcription the
+options say (`Score.fromEvents` describes them). **Opening changes
+nothing**: a take keeps the times and the lengths it was played with, and the
+page writes each note on the nearest value it is told to.
+
+**An edit on the page changes in the sequence only what it changed on the
+page.** Move one note along its staff and that event's pitch moves, written
+as the page spells it; every other event stays as it was played — its time,
+its level, its curves, a bend drawn by hand. Write a note in and the ones after
+it are later by its length, each as far off the beat as it was. Mark a
+dynamic and the levels after it are the mark's, with no note moved in time.
+What was written is in the event's notation keys from then on, so the page
+reads it back, and what the page says of itself — a meter, a key, a slur —
+goes into the sequence's `notation` section where the edit changed it.
+
+**The entry is the sequence's.** The page and every roll over the same
+sequence are one history: Ctrl+Z in either window takes back the last edit
+wherever it was made, a note dragged in the roll is redrawn on the page, and
+`take.history.undo()` walks the same order from the page's own code. What plays is
+the sequence itself, as it was performed, and not a render of the page.
+
+A `Score` held as itself is unchanged by any of this: `edit(score)` edits a
+document that is saved as MEI, and `score.renderEvents()` goes one way.
+`examples/editors/edit-notes.html` opens a sequence in two rolls and on its
+page.
+
 `examples/notation/score-editor.html` is the whole of it: a document opened, operated on, edited,
 played, saved and rendered.
 

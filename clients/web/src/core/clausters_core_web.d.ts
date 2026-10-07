@@ -125,6 +125,14 @@ export class EditingCore {
      * and what the editor is built from.
      */
     openScore(score: Score, request: string): string;
+    /**
+     * Opens a score editor over `sequence`, on the page it is read into --
+     * the C ABI's `clausters_apps_editing_open_score_over`. `score` is loaded
+     * with the reading, and an edit on the page is then an edit of the
+     * sequence. `request` carries the sequence's `key`, the transcription
+     * (`how`) and the reading (`interp`).
+     */
+    openScoreOver(score: Score, sequence: JsEventSequence, request: string): string;
 }
 
 /**
@@ -1932,6 +1940,7 @@ export interface InitOutput {
     readonly editingcore_openMultitrack: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openScore: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly editingcore_openScoreOver: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
     readonly event_midi: (a: number, b: number, c: number) => [number, number];

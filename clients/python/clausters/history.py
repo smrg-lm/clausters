@@ -176,6 +176,26 @@ class Editing:
         self.claim(score)
         return member, identity
 
+    def open_score_over(self, key: str, score, sequence, request: dict, handler) -> tuple:
+        """**Open a score editor over ``sequence``**, on the page it is read
+        into -- ``score`` is the `clausters.gui.notation.Score` the page is
+        drawn from, loaded by the crate with the sequence read -- as the
+        structure ``key`` names, which is the sequence's: the editor's
+        entries are the sequence's, one order with every roll over it. Answers
+        its ``(member, identity)``, and the sequence is claimed.
+
+        Raises:
+            ValueError: the crate refused the request, with its reason.
+        """
+        answer = self.core.open_score_over(score._h, sequence._seq, key=str(key), **request)
+        if "error" in answer or "member" not in answer:
+            raise ValueError(answer.get("error", "the context opened nothing"))
+        member, identity = int(answer["member"]), int(answer["structure"])
+        self._handlers[member] = (sequence, handler)
+        self._structures.setdefault(id(sequence), (sequence, member, identity))
+        self.claim(sequence)
+        return member, identity
+
     def act(self, member: int, call: dict) -> dict:
         """**One verb a client calls on a member** -- ``call`` as that
         member's verbs read it -- recorded and answered by the crate like a

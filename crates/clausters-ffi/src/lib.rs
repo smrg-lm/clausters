@@ -545,7 +545,11 @@ pub use time::*;
 /// section gained `controls`, `marks` and `groups` and writes each staff as
 /// it is written; a sequence with one curve of a note's own and one line is
 /// now named MPE where it was named MIDI 2.0.
-pub const CORE_ABI_VERSION: u32 = 85;
+/// **v86 a score editor opens over a sequence.**
+/// `clausters_apps_editing_open_score_over`: the score editor on the page a
+/// sequence is read into, its edits written back to the sequence and
+/// recorded as the sequence's. Additive.
+pub const CORE_ABI_VERSION: u32 = 86;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -14,7 +14,9 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { Score, setEngraverUrl } from "../src/gui/notation/index.ts";
-import { ScoreEditor, edit } from "../src/gui/editing/index.ts";
+import { NotesEditor, ScoreEditor, edit } from "../src/gui/editing/index.ts";
+import { Event } from "../src/seq/event.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
 const engraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
@@ -531,5 +533,69 @@ if (!existsSync(engraver)) {
         const editor = await edit(score, { open: false });
         assert.ok(editor instanceof ScoreEditor);
         assert.equal((editor as unknown as ScoreEditor).score, score);
+    });
+
+    /** A take played a little off the grid. */
+    const take = () =>
+        new EventSequence([
+            [0.03, new Event({ midinote: 60, dur: 0.93, velocity: 71 })],
+            [1.01, new Event({ midinote: 62, dur: 0.97, velocity: 64 })],
+            [1.98, new Event({ midinote: 64, dur: 1.02, velocity: 80 })],
+            [3.02, new Event({ midinote: 65, dur: 0.9, velocity: 77 })],
+        ]);
+
+    test("a sequence is edited on its page and only what was edited moves", async () => {
+        const played = take();
+        const before = played.toRows(["at", "midinote", "velocity"]);
+        const editor = (await edit(played, {
+            view: "score",
+            open: false,
+            division: 8,
+        })) as unknown as ScoreEditor;
+        assert.ok(editor instanceof ScoreEditor);
+        assert.ok(editor.structure === played && editor.sequence === played);
+        // the page is the take, read: four quarters -- and the take as it was
+        assert.deepEqual(
+            items(editor.score).map((item) => item.dur),
+            [[1, 4], [1, 4], [1, 4], [1, 4]],
+        );
+        assert.deepEqual(played.toRows(["at", "midinote", "velocity"]), before);
+
+        const third = items(editor.score)[2].id;
+        editor.select([`n${third}`]);
+        assert.ok(editor.articulation("stacc"));
+        // the third note is marked in the sequence, played when it was
+        assert.deepEqual(played.toRows(["at", "articulations"])[2], [1.98, ["stacc"]]);
+        // and the others are as they were played
+        const now = played.toRows(["at", "midinote", "velocity", "articulations"]);
+        assert.deepEqual(
+            now.map((row) => row.slice(0, 3)),
+            before,
+        );
+        assert.deepEqual(
+            now.filter((_, i) => i !== 2).map((row) => row[3]),
+            [null, null, null],
+        );
+
+        // the entry is the sequence's: its history walks it back, and the page follows
+        assert.ok(played.history.undo());
+        assert.deepEqual(played.toRows(["articulations"])[2], [null]);
+        assert.equal(items(editor.score)[2].marks, undefined);
+    });
+
+    test("a roll and a page over one sequence follow each other", async () => {
+        const played = take();
+        const roll = await edit(played, { open: false });
+        const page = (await edit(played, { view: "score", open: false })) as unknown as ScoreEditor;
+        assert.ok(roll instanceof NotesEditor && page instanceof ScoreEditor);
+        // a note moved through the sequence -- as a roll moves it -- is on the page
+        played.events.item(0).set("midinote", 67);
+        page.adopt();
+        const first = items(page.score)[0] as unknown as { pitches: { step: string }[] };
+        assert.equal(first.pitches[0].step, "g");
+        await assert.rejects(
+            edit(played, { view: "tablature" as "score", open: false }),
+            /no view/,
+        );
     });
 }

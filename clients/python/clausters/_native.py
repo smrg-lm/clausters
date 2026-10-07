@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 85
+CORE_ABI_VERSION = 86
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -1011,6 +1011,10 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         lib.clausters_apps_editing_open_score.restype = size
         lib.clausters_apps_editing_open_score.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, u8p, size, u8p, size,
+        ]
+        lib.clausters_apps_editing_open_score_over.restype = size
+        lib.clausters_apps_editing_open_score_over.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, u8p, size, u8p, size,
         ]
     except AttributeError:
         return
@@ -2191,6 +2195,21 @@ class EditingCore:
         body = json.dumps(request).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_open_score,
                              ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
+                             as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def open_score_over(self, score_handle, sequence: "SequenceHandle", **request) -> dict:
+        """Open a score editor over ``sequence``, on the page it is read into
+        -- the score behind ``score_handle`` is loaded with the reading, and an
+        edit on the page is an edit of the sequence
+        (`clausters_apps_editing_open_score_over`): ``{"member",
+        "structure"}``, or ``{"error"}``."""
+        if not self._handle:
+            return {}
+        body = json.dumps(request).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_open_score_over,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
+                             ctypes.c_void_p(sequence._handle),
                              as_u8(body), len(body))
         return json.loads(raw) if raw else {}
 

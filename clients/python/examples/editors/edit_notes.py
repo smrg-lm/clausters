@@ -41,6 +41,16 @@ drag there moves it continuously, writing its ``freq``: the MIDI note it was
 written with follows, and the first window redraws it between the keys. An
 edit in either window is one history.
 
+**``page()`` opens the same notes on a page** -- the sequence read into a
+score, in the score editor (``edit(notes, view="score")``). Reading changes
+nothing: the notes keep the beats they were written at, and the page writes
+each on the nearest eighth. An edit there -- select a note and press a letter,
+drag it along the staff, pick an articulation from the palette -- changes in
+the sequence only what it changed on the page: that note, in the rolls too,
+and no other. The rolls and the page are one history, so Ctrl+Z in any of the
+three takes back the last edit wherever it was made, and a note dragged in a
+roll is redrawn on the page.
+
 **The lane under the grid is the sequence's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
@@ -134,6 +144,22 @@ hertz = edit(notes,
 
 
 # %% [markdown]
+# ## The same notes, on a page
+#
+# A sequence has two presentations, and `view` chooses: the roll, its default,
+# or the page it is read into. The sequence is still the structure -- the
+# editor's `structure` is `notes` -- and the page a reading of it: `division`
+# is the smallest written value a note is snapped to, an eighth here. What an
+# edit on the page changes in the sequence is what it changed on the page and
+# nothing else, as one entry of the same history the rolls record in.
+
+# %%
+def page():
+    """The same notes on a page, in the score editor."""
+    return edit(notes, view="score", division=8, title="notes on a page")
+
+
+# %% [markdown]
 # ## Play what was drawn
 #
 # The editor plays the sequence it edits, on its own transport -- the space bar
@@ -207,4 +233,5 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up -- play() to hear it, read_back() to see what survived the edit")
+    print("up -- play() to hear it, page() for the notes on a page, "
+          "read_back() to see what survived the edit")

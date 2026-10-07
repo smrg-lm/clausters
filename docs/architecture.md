@@ -1119,6 +1119,19 @@ keys chosen, a line played back to back, the sequence in parts by voice,
 staff or channel, and the MIDI specification that says what it holds) is in
 the same crate, behind the door a sequence already had.
 
+**A sequence is edited on its page without becoming a score.** The score
+editor opened over a sequence (`clausters_apps::score::editor::ScoreEditor::over`)
+loads its score with the reading and joins the editing context **under the
+sequence's key**, so it is one structure in the order with every roll over
+it. An edit of the page is written back by
+`clausters_document::events::writeback::write_back` — the page rendered
+before the edit and after it, compared item by item, and only the difference
+applied to the sequence's own events — and recorded as an edit of the
+sequence, put back by restoring it. The score is derived state there: it is
+held while it agrees with the sequence, so the ids a selection names stand
+across the page's own edits, and read again when the sequence has changed
+under it, which every verb of the editor checks before it answers.
+
 **The chrome is optional, and it is absent rather than hidden.** A standalone
 host opens the window whole, since with no holder beside it the window is the
 only way to reach what the editor does. A client has the handle, and may open

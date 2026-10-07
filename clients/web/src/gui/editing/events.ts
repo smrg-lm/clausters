@@ -588,7 +588,7 @@ export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> 
 /** The number a sequence's structure key is made of: one per handle. */
 const keys = new WeakMap<EventSequence, number>();
 let nextKey = 0;
-function keyOfSequence(sequence: EventSequence): number {
+export function keyOfSequence(sequence: EventSequence): number {
     let key = keys.get(sequence);
     if (key === undefined) {
         key = ++nextKey;

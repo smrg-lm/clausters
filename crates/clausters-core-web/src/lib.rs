@@ -1646,6 +1646,27 @@ impl JsEditing {
         self.0.open_score(&key, score.0.clone(), request)
     }
 
+    /// Opens a score editor over `sequence`, on the page it is read into --
+    /// the C ABI's `clausters_apps_editing_open_score_over`. `score` is loaded
+    /// with the reading, and an edit on the page is then an edit of the
+    /// sequence. `request` carries the sequence's `key`, the transcription
+    /// (`how`) and the reading (`interp`).
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = openScoreOver)]
+    pub fn open_score_over(
+        &mut self,
+        score: &JsScore,
+        sequence: &JsEventSequence,
+        request: &str,
+    ) -> String {
+        let key = serde_json::from_str::<serde_json::Value>(request)
+            .ok()
+            .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
+            .unwrap_or_default();
+        self.0
+            .open_score_over(&key, score.0.clone(), sequence.0.clone(), request)
+    }
+
     /// Opens a multitrack editor over `multitrack`, which it then edits in
     /// place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
     /// carries the `key` and what the editor is built from.

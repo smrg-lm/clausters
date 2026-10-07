@@ -2371,7 +2371,7 @@ Every entry carries a checkbox.
     - an end that falls in a beat with no onset is snapped to `division`,
       tuplets or not;
     - the keys are the fifteen major signatures, as the model's are.
-  - ⬜ **`edit(sequence, view="score")`**, the edit written back.
+  - ✅ **`edit(sequence, view="score")`**, the edit written back.
     - ✅ **The write-back.** *(Done 2026-10-06.
       `clausters_document::events::writeback::write_back`: the page rendered
       before the edit and after it, compared item by item. An item both
@@ -2390,10 +2390,27 @@ Every entry carries a checkbox.
       an `items` list, which is what says a sequence was rendered. With it,
       the reading lets an event that states no `staff` take its channel's
       beside others that state theirs.)*
-    - ⬜ **The editor over a sequence**: the score editor's entries as the
-      sequence's, one undo order with a roll over it, and the page read again
-      when the sequence changes under it; `edit(sequence, view="score")` in
-      both clients.
+    - ✅ **The editor over a sequence.** *(Done 2026-10-06.
+      `ScoreEditor::over` in the crate: the score loaded with the sequence
+      read, and from then on an edit of the page written back and recorded
+      **as the sequence's** -- its leg is in the events' vocabulary, put back
+      by restoring the sequence -- under the sequence's own key, so the page
+      and every roll over the sequence are one structure in the order and one
+      undo. The score is held while the two agree, so the ids a selection
+      names stand across the page's own edits; it is read again when the
+      sequence is no longer the one it agreed with -- a step of the history,
+      a note moved in a roll, a script's change -- which every verb of the
+      editor checks first. `clausters_apps_editing_open_score_over`, core ABI
+      86; `edit(sequence, view="score")` in both clients, with the
+      transcription's keys as its options, `ScoreEditor.over` the same as a
+      constructor, and `view` refused for a presentation a structure does
+      not have. What plays there is the sequence itself.)*
+      **Left open by it**: the page's cursor is drawn over the engraver's own
+      time, 120 quarters a minute, while what plays is the sequence on its
+      own tempo map -- the two agree for a sequence at that tempo, and how
+      the line follows another is to be heard with the example; and the
+      standalone host opens no sequence on a page, having no door that asks
+      for one.
 
 - ✅ **A sequence as primitive data, by the keys chosen** *(the user,
   2026-10-05, planning `X5`)*. A sequence the score editor or the roll made

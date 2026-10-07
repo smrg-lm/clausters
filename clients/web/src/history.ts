@@ -390,6 +390,39 @@ export class Editing {
     }
 
     /**
+     * **Open a score editor over `sequence`**, on the page it is read into --
+     * `score` is the `Score` the page is drawn from, loaded by the crate with
+     * the sequence read -- as the structure `key` names, which is the
+     * sequence's: the editor's entries are the sequence's, one order with
+     * every roll over it. Answers its member and identity, and the sequence
+     * is claimed. Throws with the crate's reason when it refuses.
+     */
+    openScoreOver(
+        key: string,
+        score: Score,
+        sequence: EventSequence,
+        request: Record<string, unknown>,
+        handler: StepHandler | null,
+    ): { member: number; identity: number } {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        const answer = JSON.parse(
+            this.#core.openScoreOver(
+                score.handle,
+                sequence.seq,
+                JSON.stringify({ key, ...request }),
+            ),
+        ) as Record<string, unknown>;
+        if (typeof answer.error === "string" || answer.member === undefined) {
+            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
+        }
+        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
+        this.handlers.set(opened.member, { structure: sequence, handler });
+        if (!this.structures.has(sequence)) this.structures.set(sequence, opened);
+        this.claim(sequence);
+        return opened;
+    }
+
+    /**
      * **Open a score editor over `score`** -- a symbolic `Score`, which the
      * editor then edits in place -- as the structure `key` names, and answer
      * its member and identity. The score is claimed: an edit a page makes

@@ -473,3 +473,57 @@ def test_the_marks_signs_and_staves_are_methods_too(score):
     assert sheet["key"] == "D"
     assert sheet["grid"]["marks"] == [[0, "segno"]]
     assert sheet["staves"][0]["label"] == "Flute"
+
+
+def _take():
+    """A take played a little off the grid."""
+    from clausters.seq import Event, EventSequence
+
+    return EventSequence([
+        (0.03, Event(midinote=60, dur=0.93, velocity=71)),
+        (1.01, Event(midinote=62, dur=0.97, velocity=64)),
+        (1.98, Event(midinote=64, dur=1.02, velocity=80)),
+        (3.02, Event(midinote=65, dur=0.9, velocity=77)),
+    ])
+
+
+def test_a_sequence_is_edited_on_its_page_and_only_what_was_edited_moves(score):
+    take = _take()
+    played = take.to_rows("at", "midinote", "velocity")
+    editor = edit(take, view="score", open=False, division=8)
+    assert isinstance(editor, ScoreEditor)
+    assert editor.structure is take and editor.sequence is take
+    # the page is the take, read: four quarters -- and the take as it was
+    assert [item["dur"] for item in _items(editor.score)] == [[1, 4]] * 4
+    assert take.to_rows("at", "midinote", "velocity") == played
+
+    third = _items(editor.score)[2]["id"]
+    editor.select([f"n{third}"])
+    assert editor.articulation("stacc")
+    # the third note is marked in the sequence, played when it was
+    assert take.to_rows("at", "articulations")[2] == (1.98, ["stacc"])
+    # and the others are as they were played
+    now = take.to_rows("at", "midinote", "velocity", "articulations")
+    assert [row[:3] for row in now] == played
+    assert [row[3] for i, row in enumerate(now) if i != 2] == [None] * 3
+
+    # the entry is the sequence's: its history walks it back, and the page follows
+    assert take.history.undo()
+    assert take.to_rows("articulations")[2] == (None,)
+    assert "marks" not in _items(editor.score)[2]
+
+
+def test_a_roll_and_a_page_over_one_sequence_follow_each_other(score):
+    from clausters.gui.editing import NotesEditor
+
+    take = _take()
+    roll = edit(take, open=False)
+    page = edit(take, view="score", open=False)
+    assert isinstance(roll, NotesEditor) and isinstance(page, ScoreEditor)
+    # a note moved through the sequence -- as a roll moves it -- is on the page
+    first = take.events[0]
+    first["midinote"] = 67
+    page.adopt()
+    assert _items(page.score)[0]["pitches"][0]["step"] == "g"
+    with pytest.raises(ValueError, match="no view"):
+        edit(take, view="tablature", open=False)
