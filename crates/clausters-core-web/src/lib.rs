@@ -341,6 +341,10 @@ fn js_space(name: &str) -> Result<clausters_core::ids::Space, JsError> {
 impl JsIdSpaces {
     /// The spaces of a live client of a server of this shape, taking share
     /// `index` of `of`.
+    // The arguments are the server's shape, flat, as the C ABI's
+    // `clausters_ids_new` takes them: a struct would be a JS object built per
+    // call for a constructor that runs once a connection.
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
     pub fn new(
         max_nodes: u32,
