@@ -4089,6 +4089,14 @@ Whatever symbols the model itself needs owe their rows either way
     what joins notes (a beam, a slur, a hairpin, the staff's lines) is
     stretched. A glyph is never stretched: it is placed where its own place
     falls.
+  - **A box of notes is a window onto a time line that begins** *(the user,
+    2026-10-06)*: a roll and a page have a start, so the box's front edge
+    stops at the sequence's start and is never pulled into the past, while
+    its back edge runs on into the future with nothing in it. The host bounds
+    a box's front edge by its contents' beginning (`Contents::begins`), known
+    length or not, and leaves the back edge free where no length is known.
+  - **A page is inked as a take is in a box** *(the user, 2026-10-06)*:
+    white fought the selection's color, and only part of the page took it.
   - **The first clef and key signature stay in view**: before the box's
     first note while its start is on screen, and held at the left edge of
     what is visible once the start has scrolled off -- as a roll's keyboard

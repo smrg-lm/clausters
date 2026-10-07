@@ -315,7 +315,7 @@ impl Multitrack {
                 // be read, is drawn as its roll.
                 #[cfg(feature = "notation")]
                 let paged = self.notes_view == NotesView::Score
-                    && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, &clip.name);
+                    && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, n);
                 #[cfg(not(feature = "notation"))]
                 let paged = false;
                 if !paged {
@@ -465,12 +465,17 @@ impl Multitrack {
         body: Rect,
         indent: f32,
         space: &TimeSpace,
-        name: &str,
+        n: usize,
     ) -> bool {
         use crate::host::graphics::pianoroll::to_x;
         use crate::host::graphics::score::{TimeColors, TimeFrame};
 
-        let Some(score) = self.scores.get(name) else {
+        let selected = self.selected.contains(&n);
+        let Some(score) = self
+            .clips
+            .get(n)
+            .and_then(|clip| self.scores.get(&clip.name))
+        else {
             return false;
         };
         let (mesh, _, theme) = d.parts();
@@ -486,9 +491,15 @@ impl Multitrack {
             TimeFrame { body: cr, row },
             &score.anchors,
             &|start| to_x((start - window.start) / rate, &view, cr) as f32,
+            // inked as a take is in a box, so a page reads as a picture of its
+            // contents and a selection is drawn over it as over a take
             TimeColors {
-                ink: theme.text,
-                backdrop: theme.object_fill,
+                ink: theme.selection,
+                backdrop: if selected {
+                    theme.selected_fill
+                } else {
+                    theme.object_fill
+                },
             },
         )
     }

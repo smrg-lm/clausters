@@ -46,6 +46,9 @@ const ROOM: f32 = 3.0;
 const METER: f32 = 0.5;
 /// How far over the staff's top line a meter's foot stands, in staff spaces.
 const METER_GAP: f32 = 0.4;
+/// How long a line with a staff's id has to be, in staff spaces, to be one of
+/// the staff's own lines rather than a note's ledger line.
+const SYSTEM_LINE: f32 = 8.0;
 /// The smallest a staff space is drawn, in pixels: under it a staff is five
 /// lines nobody can count, and the box is drawn another way.
 const LEGIBLE: f32 = 2.5;
@@ -137,7 +140,8 @@ impl Warp {
 pub struct TimeColors {
     /// The engraving.
     pub ink: Color,
-    /// What is put behind the clef where it is held over the notes.
+    /// What is put behind the clef where it is held over the notes: the
+    /// box's own fill.
     pub backdrop: Color,
 }
 
@@ -233,30 +237,49 @@ impl ScoreData {
                 .and_then(|id| self.kinds.get(id))
                 .is_some_and(|kind| kind == "meterSig")
         };
-        let x_at = |prim: &Prim| -> f32 {
+        // Where a primitive stands across the page, `(left, right)`. A fill's
+        // outline is in its own coordinates and its transform places it, so
+        // its extent is its outline's, placed -- the transform's offset alone
+        // says where the outline's origin is, which for a dot of a rest is
+        // nowhere near the dot.
+        let across = |at: usize, prim: &Prim| -> (f32, f32) {
             match prim {
-                Prim::Glyph { xf, .. } | Prim::Fill { xf, .. } => xf.tx,
-                Prim::Text { x, .. } => *x,
-                Prim::Line { pts, .. } => pts.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min),
-            }
-        };
-        let right_of = |prim: &Prim| -> f32 {
-            match prim {
-                Prim::Line { pts, .. } => {
-                    pts.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max)
+                Prim::Glyph { xf, .. } => (xf.tx, xf.tx),
+                Prim::Text { x, .. } => (*x, *x),
+                Prim::Line { pts, .. } => pts
+                    .iter()
+                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+                        (lo.min(p[0]), hi.max(p[0]))
+                    }),
+                Prim::Fill { d, xf, .. } => {
+                    let fill = self
+                        .fills
+                        .of(FillOf::Prim(at), d, tol_page * xf_shrink(*xf));
+                    let span =
+                        fill.iter()
+                            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), c| {
+                                let x = xf.apply(c[0], c[1])[0];
+                                (lo.min(x), hi.max(x))
+                            });
+                    if span.0.is_finite() {
+                        span
+                    } else {
+                        (xf.tx, xf.tx)
+                    }
                 }
-                other => x_at(other),
             }
         };
+        let x_at = |at: usize, prim: &Prim| across(at, prim).0;
         let first_meter = self
             .prims
             .iter()
-            .filter(|prim| is_meter(prim))
-            .map(x_at)
+            .enumerate()
+            .filter(|(_, prim)| is_meter(prim))
+            .map(|(at, prim)| x_at(at, prim))
             .fold(f32::INFINITY, f32::min);
         // the page before this edge is the clef and the key: it has no time
         let edge = warp.start().min(first_meter);
-        let in_prefix = |prim: &Prim| !is_meter(prim) && right_of(prim) < edge;
+        let in_prefix = |at: usize, prim: &Prim| !is_meter(prim) && across(at, prim).1 < edge;
 
         // one primitive, its `x` through `place` and its glyphs unstretched
         let draw = |mesh: &mut Mesh,
@@ -335,7 +358,7 @@ impl ScoreData {
         mesh.set_clip(Some(cut(body)));
         let through = |page: f32| warp.x(page);
         for (at, prim) in self.prims.iter().enumerate() {
-            if is_meter(prim) || in_prefix(prim) {
+            if is_meter(prim) || in_prefix(at, prim) {
                 continue;
             }
             draw(mesh, at, prim, &through, 0.0);
@@ -362,8 +385,9 @@ impl ScoreData {
             let group = self
                 .prims
                 .iter()
-                .filter(|other| other.id() == id.as_deref())
-                .map(x_at)
+                .enumerate()
+                .filter(|(_, other)| other.id() == id.as_deref())
+                .map(|(at, other)| x_at(at, other))
                 .fold(f32::INFINITY, f32::min);
             let next = columns
                 .iter()
@@ -404,34 +428,42 @@ impl ScoreData {
             .prims
             .iter()
             .enumerate()
-            .filter(|(_, prim)| in_prefix(prim))
+            .filter(|(at, prim)| in_prefix(*at, prim))
             .collect();
         if !prefix.is_empty() && edge.is_finite() {
             let from = prefix
                 .iter()
-                .map(|(_, p)| x_at(p))
+                .map(|(at, p)| x_at(*at, p))
                 .fold(f32::INFINITY, f32::min);
             let width = scale * (edge - from);
             let written = warp.x(from);
             let left = written.max(body.x - width).max(row.x);
             let shift = left - written;
             mesh.set_clip(Some(cut(row)));
-            // over the box, the notes under it are covered, and the staff's
-            // lines run on behind the clef
-            let over = (left + width) - body.x;
-            if over > 0.5 {
+            // Held over the notes, what it covers is covered -- in the box's
+            // own fill, and inside its frame, so the box keeps its edges --
+            // and the staff's lines run on behind the clef. Where it stands
+            // in its own place, before the first note, it covers nothing.
+            if shift > 0.5 {
                 let x0 = left.max(body.x);
-                mesh.rect(
-                    Rect::new(x0, body.y, left + width - x0, body.h),
-                    colors.backdrop,
-                );
+                let inner = Rect::new(x0, body.y + 1.0, left + width - x0, body.h - 2.0);
+                if inner.w > 0.0 && inner.h > 0.0 {
+                    mesh.rect(inner, colors.backdrop);
+                }
             }
             for prim in &self.prims {
                 let Prim::Line { pts, width: w, id } = prim else {
                     continue;
                 };
+                // a staff's own line runs the length of its system; a ledger
+                // line carries the staff's id too, and is a note's
                 let is_staff = id.as_ref().is_some_and(|id| self.staff_ids.contains(id));
-                if !is_staff || pts.len() < 2 {
+                let (lo, hi) = pts
+                    .iter()
+                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+                        (lo.min(p[0]), hi.max(p[0]))
+                    });
+                if !is_staff || pts.len() < 2 || hi - lo < SYSTEM_LINE * space {
                     continue;
                 }
                 let line = y(pts[0][1]);

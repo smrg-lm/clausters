@@ -113,6 +113,9 @@ impl Multitrack {
             total,
             looping: self.wraps(&clip.name),
             rate: self.rate_of(&clip.name),
+            // every box is a window onto something that begins: a take, or a
+            // sequence of notes, whose end is the only one left open
+            begins: true,
         }
     }
 

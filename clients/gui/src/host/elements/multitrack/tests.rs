@@ -2402,3 +2402,42 @@ fn a_track_is_added_where_the_entry_says() {
     assert_eq!(mt.tracks[2].name, "tone", "the new row stands between");
     assert!(!events.is_empty(), "and the rows are reported");
 }
+
+/// **A box of notes is a window onto a time line that begins**: pulled from
+/// the front it stops at the sequence's start, with nothing before it, and
+/// pulled from the back it goes on as far as the hand does, past the last
+/// note.
+#[test]
+fn a_box_of_notes_stops_at_its_start_and_runs_on_past_its_end() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+    let len = 1000.0;
+    // the window opens 100 frames into the sequence
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["b", "one", 400, 200, 100, "", -1],
+            "notes": ["b", 100.0, 100.0, 60.0, 100.0, 0.0, "b", 200.0, 100.0, 64.0, 100.0, 0.0]}"#,
+    ));
+    let mut pull = |from: f64, to: f64| {
+        let (a, b) = (
+            xy(&mt, &m, rect, from, len, 0),
+            xy(&mt, &m, rect, to, len, 0),
+        );
+        assert!(matches!(mt.press(a, &input(&m, rect, len)), Claim::Take(_)));
+        mt.drag(b, &input(&m, rect, len));
+        mt.release(b, true, &input(&m, rect, len));
+        mt.clips[0].place
+    };
+    let front = pull(400.0, 100.0);
+    assert_eq!(
+        (front.offset, front.dur, front.start),
+        (300.0, 300.0, 0.0),
+        "the start"
+    );
+    let back = pull(600.0, 950.0);
+    assert_eq!(
+        (back.offset, back.dur),
+        (300.0, 650.0),
+        "past the last note"
+    );
+}

@@ -97,6 +97,14 @@ pub struct Contents {
     ///
     /// [`SourceWindow::rate`]: crate::host::widget::SourceWindow::rate
     pub rate: f64,
+    /// **Whether the contents have a beginning** a window cannot start
+    /// before, known length or not: a take begins at its first frame, and a
+    /// sequence of notes -- a roll, a page -- is a time line that begins at
+    /// its start, with nothing before it to pull an edge onto. What it does
+    /// not have is an end: past its last note it may be pulled as far as a
+    /// hand likes. A note inside a roll has no contents of this kind, and its
+    /// front edge is bounded by nothing but its domain.
+    pub begins: bool,
 }
 
 impl Default for Contents {
@@ -105,6 +113,7 @@ impl Default for Contents {
             total: None,
             looping: false,
             rate: 1.0,
+            begins: false,
         }
     }
 }
@@ -273,9 +282,10 @@ pub fn drag(
             // own: an edge already inside stays inside.
             let mut new_off = snap(target, bounds.grid).min(end - floor).max(0.0);
             // ...and the same at the head: the window cannot begin before the
-            // contents does unless the box loops, where what lies before frame
-            // zero is the tail of the iteration before it.
-            if !contents.unbounded() {
+            // contents does -- a take's first frame, a sequence's start, known
+            // length or not -- unless the box loops, where what lies before
+            // frame zero is the tail of the iteration before it.
+            if !contents.looping && (contents.begins || contents.total.is_some()) {
                 new_off = new_off.max(orig.offset - orig.start / contents.frames_per_unit());
             }
             Placement {
