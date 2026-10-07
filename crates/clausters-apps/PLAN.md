@@ -2645,8 +2645,8 @@ Every entry carries a checkbox.
   element stays, as the notes editor's; a `Source` still carries `notes` and
   `osc` through the generic `node`. What that left open is the entry below.)*
 
-- ⬜ **A roll that paints what is played has no door and no example** *(left
-  2026-10-07 by the entry above)*. The host's roll takes `midi_in`: it opens
+- ✅ **A roll that paints what is played has no door and no example** *(left
+  2026-10-07 by the entry above; done the same day)*. The host's roll takes `midi_in`: it opens
   a MIDI port and paints incoming notes into the roll, reported as ordinary
   `"notes"` events. The bare builder was its only named door and
   `editors/pianoroll_midi` its only example, and both are gone; the notes
@@ -2655,6 +2655,21 @@ Every entry carries a checkbox.
   editor's recording (`X3.10`, through `PLAN.md` `T10`): whether a roll that
   records shows the notes as they arrive through this prop, or only the take
   the server wrote.
+  *(Done: the door is the notes editor's. `midi_in` is an option of the
+  editor -- `edit(sequence, midi_in=True)`, `midiIn` in the web client -- which
+  the crate's editor states on its roll and in every correction of it. What the
+  host paints comes back as the `"notes"` a hand's edit reports, so a played
+  note is an edit of the sequence: in the history, undone with the rest, and
+  drawn in every other window over it -- which the bare roll, over no sequence,
+  could not say. `editors/edit_notes` opens its first roll that way, in both
+  clients. Painting from a script needs no door at all now: a `MidiFunc` that
+  adds events to the sequence redraws the roll, which is what the removed
+  example did by hand with `/gui_set`. The recording question stays where it
+  was, with `X3.10`: this is the host's live input, at the play line, and a
+  take the server records is another thing. The host in a page opens no MIDI
+  input, so there the option is carried and nothing is painted:
+  `clients/gui/PLAN.md`, Found by use, "The host in a page opens no MIDI
+  input".)*
 
 - ⬜ **The score editor's editing rules as modules of their own** *(the
   user, 2026-10-06: "the editing rules of the score editor should be

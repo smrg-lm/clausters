@@ -357,6 +357,17 @@ test("a roll's ruler reads the sequence's own map", async () => {
     assert.deepEqual(roll.notes.slice(0, 5), [0, BEAT * 0.8, 60, 13, 0]);
 });
 
+test("a roll that paints what is played says so to the host", async () => {
+    // `midi_in` is the roll's own prop: the host opens its MIDI input and
+    // paints what arrives, reported as the notes a hand's edit reports.
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const plain = await opened(await edit(seq, { sampleRate: SR, open: false }));
+    assert.ok(!("midi_in" in picture(plain.host.trees[0] as GuiNode)), "off unless asked");
+    const painting = await opened(await edit(seq, { sampleRate: SR, midiIn: true, open: false }));
+    assert.equal(picture(painting.host.trees[0] as GuiNode).midi_in, 1);
+});
+
 test("a note keeps what the roll cannot draw", async () => {
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0, instrument: "bell" })]],
         { tempoMap: new TempoMap(TEMPO) });

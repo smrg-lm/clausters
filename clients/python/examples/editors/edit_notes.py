@@ -51,6 +51,14 @@ and no other. The rolls and the page are one history, so Ctrl+Z in any of the
 three takes back the last edit wherever it was made, and a note dragged in a
 roll is redrawn on the page.
 
+**The first window paints what is played** (``midi_in=True``). The host opens
+a MIDI input of its own, a port named ``clausters-gui``: route a keyboard into
+it. While the transport is stopped a key lands on the step cursor, a chord on
+one step, and the last key up moves the cursor on; while it plays, a key lands
+at the play line and lasts as long as it is held. Each one is an edit of the
+sequence like a note a hand drew, so it appears in the other windows and
+**Ctrl+Z** takes it back.
+
 **The lane under the grid is the sequence's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
@@ -129,7 +137,7 @@ first = notes.events[0]            # the first note, as an object
 first.automation.add({"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
 editor = edit(notes,
               sample_rate=session.server.query_info().nominal_sample_rate,
-              title="notes")
+              title="notes", midi_in=True)
 
 # %% [markdown]
 # ## The same notes, in hertz

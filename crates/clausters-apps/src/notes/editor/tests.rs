@@ -83,6 +83,42 @@ fn a_gesture_edits_the_shared_sequence_and_leaves_its_inverse() {
     assert_eq!(corrections[0].props["note_ids"], json!([1, 2]));
 }
 
+/// **A roll that paints what is played says so to the host**: opened with
+/// `midi_in`, or told by a `sync`, the roll carries the prop, and a correction
+/// states it either way. What the host paints comes back as `"notes"`, the
+/// report a hand's edit makes.
+#[test]
+fn a_roll_that_paints_what_is_played_carries_midi_in() {
+    let roll = |window: &Value| -> Value {
+        fn find(node: &Value) -> Option<&Value> {
+            if node["type"] == "notes" {
+                return Some(node);
+            }
+            node["children"].as_array()?.iter().find_map(find)
+        }
+        find(window).cloned().expect("the window holds a roll")
+    };
+    let mut plain = editor(shared());
+    assert!(
+        roll(&plain.window(7)).get("midi_in").is_none(),
+        "off by default"
+    );
+
+    let mut listening = new_json(shared(), r#"{"rate": 100.0, "midi_in": true}"#);
+    assert_eq!(roll(&listening.window(7))["midi_in"], 1);
+    call_json(
+        &mut listening,
+        r#"{"verb": "sync", "window": 1, "midi_in": false}"#,
+    );
+    let corrected: Value = serde_json::from_str(&call_json(
+        &mut listening,
+        r#"{"verb": "props", "widget": 7}"#,
+    ))
+    .unwrap();
+    assert_eq!(corrected["midi_in"], 0, "a correction states the switch");
+    assert!(roll(&listening.window(7)).get("midi_in").is_none());
+}
+
 #[test]
 fn a_roll_that_cannot_be_edited_refuses_and_says_why() {
     let mut e = new_json(shared(), r#"{"rate": 100.0, "editable": false}"#);

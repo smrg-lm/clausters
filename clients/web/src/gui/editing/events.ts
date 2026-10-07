@@ -126,6 +126,8 @@ export class NotesEditor extends Editor<EventSequence> {
     private readonly member: number;
     /** Whether a hand may edit the notes (`false` for a rendering). */
     readonly editable: boolean;
+    /** Whether the roll paints incoming MIDI into the sequence. */
+    readonly midiIn: boolean;
     /** The roll's vertical axis, `"midi"` or `"hz"`. */
     readonly yAxis: "midi" | "hz";
     /** The server it plays on, resolved when it first plays. */
@@ -143,6 +145,7 @@ export class NotesEditor extends Editor<EventSequence> {
         const domain = new NotesDomain();
         super(sequence, { title: "Notes", ...options, domain, view: new NotesView() });
         this.editable = options.editable ?? true;
+        this.midiIn = options.midiIn ?? false;
         this.yAxis = options.yAxis ?? "midi";
         this.#server = options.server ?? null;
         const opened = this.editing.openNotes(
@@ -156,6 +159,7 @@ export class NotesEditor extends Editor<EventSequence> {
                 w: this.size[0],
                 h: this.size[1],
                 chrome: this.chrome,
+                midi_in: this.midiIn,
             },
             domain,
         );
@@ -192,6 +196,7 @@ export class NotesEditor extends Editor<EventSequence> {
             window: this.windowId,
             rate: this.sampleRate,
             editable: this.editable,
+            midi_in: this.midiIn,
             title: this.title,
             w: this.size[0],
             h: this.size[1],
@@ -591,6 +596,18 @@ export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> 
     yAxis?: "midi" | "hz";
     /** The server it plays on; absent, the ambient one when it first plays. */
     server?: Server | null;
+    /**
+     * `true` for a roll that **paints what is played**: the host opens its
+     * MIDI input and writes each incoming note into the roll -- at the play
+     * cursor while the transport rolls, held as long as the key, or on the
+     * step cursor while it is stopped. Each one is an edit of the sequence,
+     * like a note a hand drew: recorded, and undone with the rest.
+     *
+     * A native host opens a port named `clausters-gui` to route a keyboard
+     * into. The host in a page opens none, so there the option is carried
+     * and nothing is painted.
+     */
+    midiIn?: boolean;
 }
 
 /** The number a sequence's structure key is made of: one per handle. */

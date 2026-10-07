@@ -87,15 +87,24 @@ class NotesEditor(Marking, Editor):
         title: the window's title.
         server: the `clausters.defs.Server` it plays on; ``None`` resolves the
             ambient one when it first plays.
+        midi_in: ``True`` for a roll that **paints what is played**: the host
+            opens its MIDI input (a port named ``clausters-gui`` to route a
+            keyboard into) and writes each incoming note into the roll -- at
+            the play cursor while the transport rolls, held as long as the
+            key, or on the step cursor while it is stopped. Each one is an
+            edit of the sequence, like a note a hand drew: recorded, and
+            undone with the rest.
     """
 
     def __init__(self, sequence, *, sample_rate: float, editable: bool = True,
                  y_axis: str = "midi", title: str = "Notes", server=None,
-                 **options):
+                 midi_in: bool = False, **options):
         domain = NotesDomain()
         super().__init__(sequence, sample_rate=sample_rate, domain=domain,
                          view=NotesView(), title=title, **options)
         self.editable = bool(editable)
+        #: Whether the roll paints incoming MIDI into the sequence.
+        self.midi_in = bool(midi_in)
         #: The roll's vertical axis, ``"midi"`` or ``"hz"``.
         self.y_axis = str(y_axis)
         self._server = server
@@ -109,7 +118,7 @@ class NotesEditor(Marking, Editor):
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
              "domain": self.y_axis, "title": self.title, "w": int(self.size[0]), "h": int(self.size[1]),
-             "chrome": self.chrome},
+             "chrome": self.chrome, "midi_in": self.midi_in},
             domain)
 
     @property
@@ -129,7 +138,7 @@ class NotesEditor(Marking, Editor):
     def _sync_core(self) -> None:
         """Hand the crate the window it is open in and the chrome."""
         self._call("sync", window=self._window, rate=self.sample_rate,
-                   editable=self.editable, title=self.title,
+                   editable=self.editable, midi_in=self.midi_in, title=self.title,
                    w=int(self.size[0]), h=int(self.size[1]))
 
     def open(self, host=None, id: "int | None" = None):

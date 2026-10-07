@@ -383,6 +383,16 @@ def _walk(node):
         yield from _walk(child)
 
 
+def test_a_roll_that_paints_what_is_played_says_so_to_the_host():
+    """``midi_in`` is the roll's own prop: the host opens its MIDI input and
+    paints what arrives, reported as the notes a hand's edit reports."""
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    plain, _ = opened(edit(seq, sample_rate=SR, open=False))
+    assert "midi_in" not in picture(plain.trees[0]), "off unless asked"
+    painting, _ = opened(edit(seq, sample_rate=SR, midi_in=True, open=False))
+    assert picture(painting.trees[0])["midi_in"] == 1
+
+
 def test_a_note_keeps_what_the_roll_cannot_draw():
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell"))],
                         tempo_map=TempoMap(TEMPO))

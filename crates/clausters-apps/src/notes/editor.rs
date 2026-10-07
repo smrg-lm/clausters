@@ -83,6 +83,12 @@ pub struct NotesEditor {
     range: Option<(f64, f64)>,
     /// Whether the window is composed with no chrome: no menu bar, no tools.
     bare: bool,
+    /// **Whether the roll paints what is played** (its `midi_in`): the host
+    /// opens its MIDI input and writes each incoming note into the roll -- at
+    /// the play cursor while the transport rolls, on the step cursor stopped
+    /// -- and reports the notes as a hand's edit, which is what they are to
+    /// the sequence: recorded, and undone, like any other.
+    midi_in: bool,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -98,6 +104,9 @@ struct Opened {
     version: i64,
     /// `false` for a window with no menu bar and no tools.
     chrome: bool,
+    /// Whether the roll paints incoming MIDI ([`NotesEditor::midi_in`]).
+    #[serde(rename = "midi_in")]
+    midi_in: bool,
 }
 
 /// The Y domain a caller names: a word -- `"midi"`, or `"hz"` from MIDI note
@@ -138,6 +147,7 @@ impl Default for Opened {
             h: 520,
             version: 1,
             chrome: true,
+            midi_in: false,
         }
     }
 }
@@ -157,6 +167,7 @@ impl NotesEditor {
             size: (1000, 520),
             range: None,
             bare: false,
+            midi_in: false,
         }
     }
 
@@ -175,7 +186,10 @@ impl NotesEditor {
     /// the editor answers for.
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
-        let drawn = props(&self.held(), &self.domain, self.rate, self.editable);
+        let mut drawn = props(&self.held(), &self.domain, self.rate, self.editable);
+        if self.midi_in {
+            drawn.insert("midi_in".into(), json!(1));
+        }
         let mut window = window(drawn, widget, &self.title, self.size);
         if !self.bare {
             use crate::chrome::{self, App};
@@ -206,6 +220,8 @@ impl NotesEditor {
         });
         props.insert("sel_start".into(), json!(start));
         props.insert("sel_len".into(), json!(len));
+        // the switch is the window's own, so a correction states it too
+        props.insert("midi_in".into(), json!(i32::from(self.midi_in)));
         vec![Correction {
             widget,
             props: Value::Object(props),
@@ -392,8 +408,9 @@ impl Converse for NotesEditor {
 }
 
 /// **A notes editor from JSON**: `{"rate", "editable", "domain", "title", "w",
-/// "h", "version", "chrome"}` over `sequence` -- `chrome` `false` for a window
-/// with no menu bar and no tools.
+/// "h", "version", "chrome", "midi_in"}` over `sequence` -- `chrome` `false`
+/// for a window with no menu bar and no tools, `midi_in` `true` for a roll
+/// that paints what is played.
 pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = NotesEditor::new(sequence, opened.rate, opened.version);
@@ -404,6 +421,7 @@ pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
     editor.bare = !opened.chrome;
+    editor.midi_in = opened.midi_in;
     editor
 }
 
@@ -423,7 +441,7 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `window` -- `widget`: the GuiDef, the roll under that id.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
-///   `domain`, `title`, `w`, `h`: `{}`.
+///   `midi_in`, `domain`, `title`, `w`, `h`: `{}`.
 /// - `state` -- the sequence, whole.
 /// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
 ///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
@@ -453,6 +471,9 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             }
             if let Some(editable) = request.get("editable").and_then(Value::as_bool) {
                 editor.editable = editable;
+            }
+            if let Some(midi_in) = request.get("midi_in").and_then(Value::as_bool) {
+                editor.midi_in = midi_in;
             }
             if let Some(domain) = request
                 .get("domain")

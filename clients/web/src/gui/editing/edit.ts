@@ -98,6 +98,11 @@ export interface EditOptions {
      */
     yAxis?: "midi" | "hz";
     /**
+     * **A sequence's own**, as `yAxis` is: a roll that paints what is played
+     * (`NotesEditorOptions.midiIn`).
+     */
+    midiIn?: boolean;
+    /**
      * **The presentation of a structure that has several.** A sequence is
      * edited as a `"roll"`, its default, or as a `"score"` -- the page it is
      * read into, in the score editor, where an edit changes in the sequence
@@ -195,7 +200,7 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
         // which is its default, or its page -- the score it is read into,
         // where an edit changes in the sequence only what it changed there.
         if (viewOf(view, ["roll", "score"] as const) === "score") {
-            const { yAxis: _axis, ...page } = rest;
+            const { yAxis: _axis, midiIn: _midi, ...page } = rest;
             return (await ScoreEditor.over(structure, {
                 ...page,
                 meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
