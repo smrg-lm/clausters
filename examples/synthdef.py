@@ -85,10 +85,9 @@ def py_default(name="py_default") -> SynthDef:
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
-    # One `out` control, so each side is written on its own: a channel list
-    # is laid on consecutive buses from a constant, not from a control.
-    left, right = pan2(sig, pan).items
-    return SynthDef(name, out(bus, left), out(bus + 1.0, right))
+    # One `out` control: the pair lands on that bus and the one after it,
+    # wherever a note sets it.
+    return SynthDef(name, out(bus, pan2(sig, pan)))
 
 def render_pbind(instrument: str, sdef: SynthDef | None):
     """Render the arpeggio on `instrument`; if `sdef` is given, score its

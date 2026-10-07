@@ -456,7 +456,7 @@ sdef = SynthDef("fb", out(0.0, sig), echo)    # echo as an output keeps the writ
 
 ### Multichannel: dup, channel lists and mix
 
-Multichannel on a UGen graph is an **explicit container**, the `ChannelList` — there is no sclang-style implicit expansion (`sine([440, 443])` does not fan out; a channel list reaching a single-channel input raises `TypeError` at serialization, pointing here). The container never crosses the wire: outputs unroll it onto consecutive buses and the serialization flattens it, so the server only ever sees single-channel UGens.
+Multichannel on a UGen graph is an **explicit container**, the `ChannelList` — there is no sclang-style implicit expansion (`sine([440, 443])` does not fan out; a channel list reaching a single-channel input raises `TypeError` at serialization, pointing here). The container never crosses the wire: outputs unroll it onto consecutive buses and the serialization flattens it, so the server only ever sees single-channel UGens. The bus they start from is a number or a control: `out(control("out", 0.0), pan2(sig, pos))` writes the pair on whatever bus a note sets `out` to and the one after it, which is what an instrument that plays into a track needs.
 
 ```python
 from clausters.defs import SynthDef, control, dup, mix, out, rand, sine, white_noise

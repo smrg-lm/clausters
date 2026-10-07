@@ -73,10 +73,9 @@ def _py_default_env(name="py_default_env") -> SynthDef:
     octaves = 0.5 + slide * 2.5 + press * 2.0 + bloom * (0.3 + amp * 1.2)
     cutoff = (freq * 2.0 ** octaves).min(16000.0)
     sig = rlpf(tone, cutoff, rq=0.8) * env * amp * (1.0 + press * 0.5) * 1.6
-    # One `out` control, so each side is written on its own: a channel list
-    # is laid on consecutive buses from a constant, not from a control.
-    left, right = pan2(sig, pan).items
-    return SynthDef(name, out(bus, left), out(bus + 1.0, right))
+    # One `out` control: the pair lands on that bus and the one after it,
+    # wherever a note sets it.
+    return SynthDef(name, out(bus, pan2(sig, pan)))
 
 
 # ---- structure (no server) ----
@@ -490,11 +489,28 @@ def test_channel_list_rejected_as_single_channel_input():
         chans(dup(sine(1.0)), sine(2.0))
 
 
-def test_multichannel_out_needs_a_constant_bus():
+def test_multichannel_out_lays_channels_on_a_control_bus():
+    """The first channel writes the control itself and each one after an
+    `Add` of its offset -- what the server reads as a bus it can order by."""
+    from clausters.defs import dup, out_ctl, replace_out
+
+    for write, kind in ((out, "Out"), (replace_out, "ReplaceOut"), (out_ctl, "OutCtl")):
+        spec = SynthDef("st", write(control("bus", 0.0), dup(sine(440.0), 3))).spec()
+        ugens = spec["ugens"]
+        writers = [u for u in ugens if u["kind"] == kind]
+        assert len(writers) == 3
+        assert writers[0]["inputs"][0] == {"control": 0}
+        for offset, writer in enumerate(writers[1:], start=1):
+            add = ugens[writer["inputs"][0]["ugen"]]
+            assert add["kind"] == "Add"
+            assert add["inputs"] == [{"control": 0}, {"const": float(offset)}]
+
+
+def test_multichannel_out_refuses_a_channel_list_as_its_bus():
     from clausters.defs import dup
 
-    with pytest.raises(TypeError, match="constant bus"):
-        out(control("bus", 0.0), dup(sine(440.0)))
+    with pytest.raises(TypeError, match="from one bus"):
+        out([0.0, 2.0], dup(sine(440.0)))
 
 
 # ---- envelopes (Env / env_gen) ----

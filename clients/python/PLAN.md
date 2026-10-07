@@ -5544,7 +5544,7 @@ work, where a pending item reads as done.)*
   and the dict is its `span` -- the time range, its own since a curve has no
   transport -- and `selected`, the points the sweep covers.)*
 
-- ⬜ **A channel list cannot be laid on a control's bus** *(found
+- ✅ **A channel list cannot be laid on a control's bus** *(found
   2026-10-06, giving the built-in `default` its `out` control;
   `crates/clausters-apps/PLAN.md`, "A track's gain automation does not reach
   its notes")*. `out(bus, [left, right])` lays the channels on `bus`,
@@ -5558,6 +5558,13 @@ work, where a pending item reads as done.)*
   static bus index (`docs/auto-order.md`); with that, a channel list on a
   control can be `Add(bus, i)` per channel and stay sortable. Both clients,
   in one change, with `replace_out` and `out_ctl`.
+  *(Fixed 2026-10-07: a writer given a channel list and a bus that is a
+  node writes the first channel on the node itself and each one after on
+  `Add(bus, i)`, in `out`, `replace_out` and `out_ctl` of both clients; a
+  constant bus is offset as before, and the only bus still refused is a
+  list of them. The twins of `default` are back to
+  `out(bus, pan2(sig, pan))` and still serialize to the built-in's spec,
+  and one parity vector holds the two clients to the same def.)*
 
 ## Future directions (a design that is not a fix)
 

@@ -29,11 +29,11 @@ from clausters.defs.ugens import (  # noqa: E402
     DoneAction, Env, chans, control, conv, dbrown, dbufrd, demand, dgeom,
     dibrown, disk_in, disk_out, diwhite, drand, dseq, dseries, dshuf, dstutter,
     dswitch1, dup, duty, dwhite, dxrand, env_gen, fft, ifft, impulse, lpf,
-    madd, mid_side, mix, out, pan2, pan_az, partconv_frames, pv_add,
+    madd, mid_side, mix, out, out_ctl, pan2, pan_az, partconv_frames, pv_add,
     pv_bin_shift, pv_brick_wall, pv_copy_phase, pv_kernel, pv_mag_above,
     pv_mag_below, pv_mag_clip, pv_mag_freeze, pv_mag_mul, pv_mag_shift,
-    pv_mag_smear, pv_max, pv_min, pv_mul, rotate2, saw, send_trig, sine,
-    stereo_width, svf, svf_morph, tduty, white_noise,
+    pv_mag_smear, pv_max, pv_min, pv_mul, replace_out, rotate2, saw,
+    send_trig, sine, stereo_width, svf, svf_morph, tduty, white_noise,
 )
 from clausters.defs.pv_expr import (  # noqa: E402
     bin_index, binfreq, mag, nbins, param, phase,
@@ -53,6 +53,18 @@ def synth_cases():
     cases.append((
         "controls_stereo",
         SynthDef("controls_stereo", out(0.0, dup(sine(freq) * amp))).spec(),
+    ))
+
+    # A channel list on a bus that is a control: the first channel writes the
+    # control, each one after an `Add` of its offset -- for all three writers.
+    bus = control("out", 0.0)
+    pair = dup(sine(440.0))
+    cases.append((
+        "stereo_on_control",
+        SynthDef(
+            "stereo_on_control",
+            out(bus, pair), replace_out(bus, pair), out_ctl(bus, pair),
+        ).spec(),
     ))
 
     # A control reused in two places serializes once and is referenced twice

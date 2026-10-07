@@ -52,6 +52,7 @@ import {
     midSide,
     mix,
     out,
+    outCtl,
     pan2,
     panAz,
     partconvFrames,
@@ -70,6 +71,7 @@ import {
     pvMax,
     pvMin,
     pvMul,
+    replaceOut,
     rotate2,
     saw,
     sendTrig,
@@ -120,6 +122,18 @@ const synthdefs: Record<string, () => SynthDef> = {
         const freq = control("freq", 440.0);
         const amp = control("amp", 0.2);
         return new SynthDef("controls_stereo", out(0.0, dup(sine(freq).mul(amp))));
+    },
+
+    // A channel list on a bus that is a control, for all three writers.
+    stereo_on_control: () => {
+        const bus = control("out", 0.0);
+        const pair = dup(sine(440.0));
+        return new SynthDef(
+            "stereo_on_control",
+            out(bus, pair),
+            replaceOut(bus, pair),
+            outCtl(bus, pair),
+        );
     },
 
     // A control reused in two places serializes once and is referenced twice.
@@ -463,6 +477,11 @@ test("a channel list cannot feed a single-channel input", () => {
         () => new SynthDef("bad", out(0.0, lpf(stereo as never, 800.0))).spec(),
         TypeError,
     );
+});
+
+test("a multichannel writer takes one bus, not a list of them", () => {
+    const stereo = dup(sine(440.0));
+    assert.throws(() => out([0.0, 2.0] as never, stereo), TypeError);
 });
 
 test("one control name cannot carry two definitions", () => {

@@ -8,7 +8,7 @@ def may hold only these and no `out` at all), streaming disk I/O, and the
 
 from ..expr import SynthExpr
 
-from .graph import ChannelList, Ugen
+from .graph import ChannelList, Ugen, _Node
 
 
 def in_(bus=0.0) -> Ugen:
@@ -23,14 +23,21 @@ def in_ctl(bus=0.0) -> Ugen:
 
 def _out_channels(kind, bus, signal):
     """One writer per channel on consecutive buses (``bus``, ``bus+1``, ...) --
-    the point where a channel list becomes buses. The base ``bus`` must be a
-    number: a signal bus cannot be offset per channel client-side."""
-    if isinstance(bus, bool) or not isinstance(bus, (int, float)):
+    the point where a channel list becomes buses. A constant ``bus`` is
+    offset here; a control (or any single-channel node) takes the first
+    channel itself and an ``Add`` of the offset for each one after, which the
+    server reads as a bus it can still order the node by."""
+    if isinstance(bus, bool) or not isinstance(bus, (int, float, _Node)):
         raise TypeError(
-            f"a multichannel {kind} needs a constant bus to lay channels on "
-            f"consecutive buses, got {bus!r}"
+            f"a multichannel {kind} lays its channels on consecutive buses "
+            f"from one bus -- a number or a single-channel node -- got {bus!r}"
         )
     sig = ChannelList(signal)
+    if isinstance(bus, _Node):
+        return ChannelList(
+            [Ugen(kind, [bus if i == 0 else bus + float(i), s])
+             for i, s in enumerate(sig.items)]
+        )
     return ChannelList(
         [Ugen(kind, [float(bus) + i, s]) for i, s in enumerate(sig.items)]
     )
@@ -40,7 +47,8 @@ def out_ctl(bus, signal) -> SynthExpr:
     """Writes ``signal``'s latest per-block value to a **control** ``bus`` -- the
     write side of `in_ctl`, so a node reading that bus (via ``/node_map`` or
     `in_ctl`) tracks it. Passes ``signal`` through as its output. A channel
-    list writes its channels to consecutive buses."""
+    list writes its channels to consecutive buses, from a number or from a
+    control alike."""
     if isinstance(signal, (ChannelList, list, tuple)):
         return _out_channels("OutCtl", bus, signal)
     return Ugen("OutCtl", [bus, signal])
@@ -49,7 +57,8 @@ def out_ctl(bus, signal) -> SynthExpr:
 def out(bus, signal) -> SynthExpr:
     """Sums ``signal`` into the audio ``bus`` (output happens only here). A
     channel list writes its channels to consecutive buses: ``out(0,
-    dup(sig))`` is a stereo output."""
+    dup(sig))`` is a stereo output, and so is ``out(control("out", 0.0),
+    dup(sig))``, which follows the control wherever a note sets it."""
     if isinstance(signal, (ChannelList, list, tuple)):
         return _out_channels("Out", bus, signal)
     return Ugen("Out", [bus, signal])
@@ -57,7 +66,8 @@ def out(bus, signal) -> SynthExpr:
 
 def replace_out(bus, signal) -> SynthExpr:
     """Overwrites the audio ``bus`` with ``signal`` instead of summing. A
-    channel list overwrites consecutive buses."""
+    channel list overwrites consecutive buses, from a number or from a
+    control alike."""
     if isinstance(signal, (ChannelList, list, tuple)):
         return _out_channels("ReplaceOut", bus, signal)
     return Ugen("ReplaceOut", [bus, signal])

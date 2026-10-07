@@ -88,6 +88,127 @@
       }
     },
     {
+      "name": "stereo_on_control",
+      "spec": {
+        "name": "stereo_on_control",
+        "controls": [
+          {
+            "name": "out",
+            "default": 0.0
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 440.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "Add",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "ReplaceOut",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "Add",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "ReplaceOut",
+            "inputs": [
+              {
+                "ugen": 5
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "OutCtl",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "Add",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "OutCtl",
+            "inputs": [
+              {
+                "ugen": 8
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "shared_control",
       "spec": {
         "name": "shared",

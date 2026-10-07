@@ -6,7 +6,7 @@
 // (a def may hold only these and no `out` at all), the streaming disk pair,
 // and the `localIn`/`localOut` feedback pair.
 
-import { ChannelList, Ugen, isList } from "./graph.ts";
+import { ChannelList, SynthLeaf, Ugen, channelBinop, isList } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 
 /**
@@ -20,28 +20,35 @@ export const inCtl = (bus: Channel = 0.0): Ugen => new Ugen("InCtl", [bus]);
 
 /**
  * One writer per channel on consecutive buses (`bus`, `bus+1`, ...) -- the
- * point where a channel list becomes buses. The base `bus` must be a number:
- * a signal bus cannot be offset per channel client-side.
+ * point where a channel list becomes buses. A constant `bus` is offset here;
+ * a control (or any single-channel node) takes the first channel itself and
+ * an `Add` of the offset for each one after, which the server reads as a bus
+ * it can still order the node by.
  */
 function outChannels(
     kind: string,
     bus: Channel,
     signal: ChannelList | readonly Channel[],
 ): ChannelList {
-    if (typeof bus !== "number") {
+    if (typeof bus !== "number" && !(bus instanceof SynthLeaf)) {
         throw new TypeError(
-            `a multichannel ${kind} needs a constant bus to lay channels on ` +
-                "consecutive buses",
+            `a multichannel ${kind} lays its channels on consecutive buses ` +
+                "from one bus -- a number or a single-channel node",
         );
     }
     const sig = new ChannelList(signal);
-    return new ChannelList(sig.items.map((s, i) => new Ugen(kind, [bus + i, s])));
+    return new ChannelList(
+        sig.items.map(
+            (s, i) => new Ugen(kind, [i === 0 ? bus : channelBinop(bus, "add", i), s]),
+        ),
+    );
 }
 
 /**
  * Sums `signal` into the audio `bus` (output happens only here). A channel
  * list writes its channels to consecutive buses: `out(0, dup(sig))` is a
- * stereo output.
+ * stereo output, and so is `out(control("out", 0.0), dup(sig))`, which
+ * follows the control wherever a note sets it.
  */
 export function out(bus: Channel, signal: Channel): Ugen;
 export function out(bus: Channel, signal: ChannelList | readonly Channel[]): ChannelList;
@@ -53,7 +60,10 @@ export function out(
     return new Ugen("Out", [bus, signal]);
 }
 
-/** Overwrites the audio `bus` with `signal` instead of summing. */
+/**
+ * Overwrites the audio `bus` with `signal` instead of summing. A channel list
+ * overwrites consecutive buses, from a number or from a control alike.
+ */
 export function replaceOut(bus: Channel, signal: Channel): Ugen;
 export function replaceOut(
     bus: Channel,
@@ -69,7 +79,9 @@ export function replaceOut(
 
 /**
  * Writes `signal`'s latest per-block value to a **control** `bus` -- the
- * write side of `inCtl`. Passes `signal` through as its output.
+ * write side of `inCtl`. Passes `signal` through as its output. A channel
+ * list writes its channels to consecutive buses, from a number or from a
+ * control alike.
  */
 export function outCtl(bus: Channel, signal: Channel): Ugen;
 export function outCtl(
