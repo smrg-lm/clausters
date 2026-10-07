@@ -2787,7 +2787,7 @@ One ordering detail worth stating because it was previously a known cost: **the 
     - **What it is called and who it is for.** The three books are named by platform; this one would be named by *role* (the host, its authors, its embedders), which is the first place the existing scheme stops fitting.
     Closing K16a means the decision is written in `docs/decisions.md` (it is exactly a non-obvious structural call), `CLAUDE.md` and the `documentation` skill say the new number, and **this entry is rewritten with the parts the answer implies** — K16b/K16c below are what is already clear whichever way it goes.
   - ⬜ **K16b — The widget author's guide.** What an element is; the trait's methods and which pass each one replaces; what the world context carries and what it deliberately does not; how a drag is owned by the element and sequenced by the machine; how an element fills a container's body role and is handed that container's axis; how an edit travels back in the owner's terms; how a registration is named on the wire; and where the line between an element and a container is drawn and why. Its home is K16a's answer; its content is not.
-  - ⬜ **K16c — The smallest complete proof that a third party can do it.** `examples/custom_element.rs` in the crate: registers one element, builds a window with K2's builder and opens it — no Python, no OSC, no JSON. It is also the manual test of the public door, which nothing else exercises end to end.
+  - ✅ **K16c — The smallest complete proof that a third party can do it.** *(Done 2026-10-07: `clients/gui/examples/custom_element.rs` registers a `step_pad` — a bar of cells a press lights one at a time — builds a window with `tree` and opens it with `host::gui::run`. It compiled against the public surface as it stands, with nothing made public for it: the trait, `Ctx`, `Input` and `Claim` through `clausters_gui::element`, `Draw`, `Metrics` and `Rect` through `host`. One thing an outside implementer meets: `Element::natural` answers a `Natural`, an alias in a `pub(crate)` module, so the example writes the tuple it stands for. Launched, the window opens under its title and the process runs until closed; what it draws and what a press does are still to be looked at by eye.)* `examples/custom_element.rs` in the crate: registers one element, builds a window with K2's builder and opens it — no Python, no OSC, no JSON. It is also the manual test of the public door, which nothing else exercises end to end.
 
 ### What stays out of the track
 
@@ -8382,10 +8382,10 @@ module of its own.
   doubles in the host's own state; sending them as such is the fix, with
   the readers of the event in both clients and `docs/gui-protocol.md`.
   *(Fixed: `"selection" start len` leaves as two doubles, and so do the
-  other frames a hand reports from that state -- the span of `"cut"` and of
+  other frames a hand reports from that state — the span of `"cut"` and of
   `"delete"`, and the position of `"paste"` and `"mix"`, which were floats
   for the same reason and are what the cut reads. The `min max` of a boxed
   sweep stay floats: they are values on the view's second axis and not
-  frames. Neither client changes -- both decode a double and a float to the
-  same number -- and the audio editor matches a sweep's start to its
+  frames. Neither client changes — both decode a double and a float to the
+  same number — and the audio editor matches a sweep's start to its
   `"locate"` exactly, `on_start` and its tolerance gone.)*

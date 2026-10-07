@@ -29,7 +29,9 @@
 //! has two doors of its own, and they are meant to be used together:
 //! [`tree`] builds a widget tree from Rust values and
 //! [`host::Host::define`] takes it, with no document written and parsed back;
-//! [`register`] adds a leaf the catalog does not have ([`Element`]).
+//! [`register`] adds a leaf the catalog does not have ([`Element`]). The
+//! crate's `examples/custom_element.rs` goes through both and nothing else: an
+//! element of its own, in a window built from Rust values.
 
 // This crate is the GUI host, read as *developer* documentation (much of it
 // with `--document-private-items`): a module's docs routinely name the private
