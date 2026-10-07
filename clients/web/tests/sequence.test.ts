@@ -319,3 +319,91 @@ test("a sequence curve goes to its notes and a chord gives it back", () => {
     second.automation.add({ pressure: true }, { points: [[0.0, 0.0], [2.0, 0.5]] });
     assert.throws(() => seq.automation.fromEvents({ pressure: true }), /cannot say both/);
 });
+
+test("a sequence is read as rows of the keys chosen", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, dur: 1.0 })],
+        [1.0, new Event({ degree: 2, dur: 0.5, velocity: 127 })],
+        [1.5, { pitches: [{ step: "e", alter: -1, octave: 4 }], dur: 2.0 }],
+    ]);
+    assert.deepEqual(seq.toRows(["midinote", "dur"]), [
+        [60, 1],
+        [64, 0.5],
+        [63, 2],
+    ]);
+    // a velocity has an amp; a key it lacks is null
+    assert.deepEqual(seq.toRows(["at", "amp", "pan"])[1], [1, 1, null]);
+});
+
+test("a line of rows plays back to back and reads back", () => {
+    const rows = [
+        [null, 0.5],
+        [60, 1],
+        [[64, 67], 1.5],
+        [null, 1],
+        [72, 2],
+    ];
+    const seq = EventSequence.fromRows(rows);
+    assert.deepEqual(
+        [...seq.events].map((e) => e.at),
+        [0.5, 1.5, 1.5, 4],
+    );
+    assert.deepEqual(seq.toRows(["midinote", "dur"], { line: true }), rows);
+    // one row per event otherwise, and rows that name their places keep them
+    assert.deepEqual(seq.toRows(["midinote"]), [[60], [64], [67], [72]]);
+    const placed = EventSequence.fromRows(
+        [
+            [2, 60],
+            [0, 72],
+        ],
+        ["at", "midinote"],
+    );
+    assert.deepEqual(placed.toRows(["at", "midinote"]), [
+        [0, 72],
+        [2, 60],
+    ]);
+    assert.throws(() => EventSequence.fromRows([[60]]), /row 0/);
+});
+
+test("a sequence is separated into its lines", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 72, dur: 1.0, staff: 0, voice: 0 })],
+        [0.0, new Event({ midinote: 60, dur: 2.0, staff: 0, voice: 1, channel: 1 })],
+        [0.0, new Event({ midinote: 48, dur: 2.0, staff: 1, voice: 0, channel: 2 })],
+    ]);
+    seq.setMidi("1.0");
+    seq.automation.add({ cc: 11, channel: 2 }, { points: [[0.0, 50.0]] });
+    const voices = seq.separate();
+    assert.deepEqual(
+        voices.map((part) => part.toRows(["midinote"])),
+        [[[72]], [[60]], [[48]]],
+    );
+    assert.deepEqual(
+        voices.map((part) => part.automation.length),
+        [0, 0, 1],
+    );
+    // an event keeps the id it had
+    assert.deepEqual(
+        voices.flatMap((part) => part.toRows(["id"])),
+        seq.toRows(["id"]),
+    );
+    const bass = voices[2];
+    assert.deepEqual(bass.toRows(["staff", "channel"]), [[0, 2]], "its staff is the top one");
+    assert.equal(bass.midi, "1.0");
+    assert.equal(seq.separate("staff").length, 2);
+    assert.equal(seq.separate("channel").length, 3);
+    assert.equal(seq.length, 3, "the whole is not changed");
+    // a line whose note bends on its own is a channel to each note
+    bass.setMidi("2.0");
+    bass.events.item(0).automation.add(
+        { bend: true },
+        {
+            points: [
+                [0.0, 0.0],
+                [2.0, 2.0],
+            ],
+        },
+    );
+    assert.equal(bass.separate("channel")[0].midi, "mpe");
+    assert.throws(() => seq.separate("track" as "voice"), /separated by/);
+});

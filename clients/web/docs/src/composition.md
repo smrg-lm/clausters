@@ -385,6 +385,60 @@ note carries the hairpin, `"curve"` leaves the attacks unmarked, and `dynamics_c
 (11, expression). What is no note's — the meter, the key, the clefs, the page
 and its text, a slur — is kept in the sequence's `notation` section.
 
+**Which MIDI specification the sequence is written for** follows from what its
+notes carry, by one rule. A curve is a channel's or one note's, whatever the
+specification, and the specification is what says the second. So a score whose
+notes carry no curve of their own renders as MIDI 1.0, a channel to a voice.
+One with a glissando — a note bending on its own — is MPE where the score is
+one line, since there each note takes a channel and the line's own curves the
+master's; and MIDI 2.0 where it is several voices, which says a note's curve
+and a channel's side by side.
+
+### A sequence as plain data, and in parts
+
+What the editor made is in the events, and a page often wants it back as
+numbers of its own. `toRows` chooses the keys and answers a list of rows in
+that order:
+
+```js
+const seq = score.renderEvents();
+seq.toRows(["midinote", "dur"]);         // [[60, 1], [62, 0.5], ...]
+seq.toRows(["at", "pitches", "value"]);  // where, and as written
+```
+
+A key is read as the event means it, not as it happens to spell it: a note
+written by its `degree`, its `freq` or only its `pitches` has a `midinote`, and
+one that states a `velocity` has an `amp`. `"at"` is the event's beat; a key
+the event does not hold is `null`. That is one row per event, the sequence as
+it is placed.
+
+`{ line: true }` answers the other shape, **one line played back to back**, the way
+a pattern writes one: notes that start together are one row whose differing
+keys hold lists (a chord), `dur` is the time to the next row, and a silence is
+a row of its own, every key `null` but its `dur`. `EventSequence.fromRows`
+reads either shape back, so a list of plain numbers is a sequence a roll opens:
+
+```js
+const line = seq.toRows(["midinote", "dur"], { line: true });  // [[null, 0.5], [60, 1], [[64, 67], 1.5]]
+const again = EventSequence.fromRows(line);                    // the same notes, at the same beats
+```
+
+A score of several voices is not one line, and `separate` takes the sequence
+apart: `seq.separate("voice")` answers a new sequence for each voice,
+`"staff"` one for each staff and `"channel"` one for each channel. Each part
+holds its events with the ids they had, the curves of its channels, the tempo
+map and what the whole says of its page, cut to the part — by voice or by
+staff a part is a score of its own, whose staff is the top one. Each names the
+specification the rule above gives it, so a voice with a glissando separated
+from a score in MIDI 2.0 is MPE on its own. A part is read as a line, or put on
+a track of its own:
+
+```js
+for (const voice of score.renderEvents().separate("voice")) {
+    console.log(voice.toRows(["midinote", "dur"], { line: true }));
+}
+```
+
 `examples/notation/score-editor.html` is the whole of it: a document opened, operated on, edited,
 played, saved and rendered.
 

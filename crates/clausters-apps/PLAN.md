@@ -2294,7 +2294,44 @@ Every entry carries a checkbox.
   The notation keys (`X5.7`) are what makes the exact case exact: a sequence
   whose events carry them is read back with nothing to decide.
 
-- ⬜ **A sequence as primitive data, by the keys chosen** *(the user,
+  **Decided 2026-10-06, with the user, and taken with the entry below and
+  with `N9` (`clients/gui/PLAN.md`) as one sequence of work:**
+
+  - **The sequence is the structure, and the page is a reading of it.** The
+    reading is a function in Rust, beside the render
+    (`clausters_document::events::score`), that decides only what the events
+    do not say; it replaces the reduction each client wrote
+    (`sheet_from_timeline`, `sheetFromTimeline`). **It never rewrites the
+    sequence**: what was played from a keyboard keeps the times and the
+    lengths that arrived, and how finely it is snapped is a parameter of the
+    reading, changed without touching the data. The meter is given, not
+    found, and tuplets are asked for: finding a meter or an irregular value
+    in a performance takes an algorithm this does not attempt.
+  - **An edit on the page changes in the sequence only what it changed on
+    the page.** The page is rendered before the edit and after it, and an
+    event the two renders agree on is a note the edit did not touch: its
+    event in the sequence stays as it was, with its time, its level and its
+    curves. A note the edit touched takes the render's event, notation keys
+    and all, so what was decided on the page persists in the sequence. The
+    other answer -- the sequence replaced whole by the render -- was weighed
+    and left: the first edit on the page would snap every note of a
+    performance.
+  - **A curve is a note's or a channel's, and that is the criterion both
+    ways**, whatever MIDI specification the sequence names: a note's curve is
+    a note's mark (a bend straight to the next note a glissando, a level
+    moving inside the note a hairpin over it), a channel's is its voice's (the
+    dynamics, the hairpins, the pedal), and a curve that is not the shape a
+    mark renders as stays a curve of the sequence. In MIDI 1.0 and 2.0 a
+    channel says the voice; in MPE a channel is a note's, so the zone is the
+    part and its voices are found.
+  - A score held as itself is as it was: saved as MEI, and `render_events`
+    one way.
+
+  **The steps:** the reading, bound in both clients as the score's
+  constructor from a sequence; `edit(sequence, view="score")` with the edit
+  written back as above; then `N9`.
+
+- ✅ **A sequence as primitive data, by the keys chosen** *(the user,
   2026-10-05, planning `X5`)*. A sequence the score editor or the roll made
   holds everything in its events, and a client wants it back as its own plain
   data -- `[(note, dur), ...]`, or any other set of keys. So the verb chooses
@@ -2302,6 +2339,25 @@ Every entry carries a checkbox.
   clients, over the events. It waits for `X5.7`, since the keys it chooses
   from are the ones that table settles. Open: what an event without one of the
   chosen keys yields, and whether a chord is one row or several.
+  **Done 2026-10-06.** `sequence.to_rows(*keys)` (`toRows(keys)`), over
+  `clausters_document::events::rows` through the door the sequence already
+  had, so no symbol is new. **A key is read as the event means it** -- a
+  `midinote` from a `degree`, a `freq` or `pitches` alone, an `amp` from a
+  `velocity`, a `sustain` through `dur` -- `at` and `id` are the event's own,
+  and **a key the event does not hold is null**. **A chord is several rows or
+  one, by the shape asked for**: a row per event is the sequence as it is
+  placed, and `line=True` is one line played back to back, as a pattern
+  writes it -- notes that start together one row whose differing keys hold
+  lists, `dur` the time to the next row, a silence a row of its own.
+  `EventSequence.from_rows` reads either back, which is what makes a list of
+  plain numbers a sequence. **With it, by the user the same day**: the voices
+  of a score are sequences of their own -- `sequence.separate(by)`, by voice,
+  staff or channel, each part with its curves and what the whole says of its
+  page -- and the MIDI specification follows one rule
+  (`EventSequence::midi_fit`): MIDI 1.0 where no note carries a curve of its
+  own, MPE where one does and the sequence is one line, MIDI 2.0 where it is
+  several. The render names its sequence by that rule, so a one-voice score
+  with a glissando is MPE now, where it was 2.0.
 
 - ⬜ **Time-stretch: an edge that changes the material rather than the window**
   *(moved here from `clients/gui/PLAN.md` by the user, 2026-10-04: it is the

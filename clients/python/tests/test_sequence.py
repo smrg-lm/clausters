@@ -295,3 +295,53 @@ def test_a_sequence_curve_goes_to_its_notes_and_a_chord_gives_it_back():
     second.automation.add({"pressure": True}, [(0.0, 0.0), (2.0, 0.5)])
     with pytest.raises(ValueError, match="cannot say both"):
         seq.automation.from_events({"pressure": True})
+
+
+def test_a_sequence_is_read_as_rows_of_the_keys_chosen():
+    seq = EventSequence([
+        (0.0, Event(midinote=60, dur=1.0)),
+        (1.0, Event(degree=2, dur=0.5, velocity=127)),
+        (1.5, {"pitches": [{"step": "e", "alter": -1, "octave": 4}], "dur": 2.0}),
+    ])
+    assert seq.to_rows("midinote", "dur") == [(60.0, 1.0), (64.0, 0.5), (63.0, 2.0)]
+    placed = seq.to_rows("at", "amp", "pan")
+    assert placed[1] == (1.0, 1.0, None), "a velocity has an amp; a key it lacks is None"
+
+
+def test_a_line_of_rows_plays_back_to_back_and_reads_back():
+    rows = [(None, 0.5), (60.0, 1.0), ([64.0, 67.0], 1.5), (None, 1.0), (72.0, 2.0)]
+    seq = EventSequence.from_rows(rows)
+    assert [e.at for e in seq.events] == [0.5, 1.5, 1.5, 4.0]
+    assert seq.to_rows("midinote", "dur", line=True) == rows
+    # one row per event otherwise, and rows that name their places keep them
+    assert seq.to_rows("midinote") == [(60.0,), (64.0,), (67.0,), (72.0,)]
+    placed = EventSequence.from_rows([(2.0, 60), (0.0, 72)], ("at", "midinote"))
+    assert placed.to_rows("at", "midinote") == [(0.0, 72.0), (2.0, 60.0)]
+    with pytest.raises(ValueError, match="row 0"):
+        EventSequence.from_rows([(60,)])
+
+
+def test_a_sequence_is_separated_into_its_lines():
+    seq = EventSequence([
+        (0.0, Event(midinote=72, dur=1.0, staff=0, voice=0)),
+        (0.0, Event(midinote=60, dur=2.0, staff=0, voice=1, channel=1)),
+        (0.0, Event(midinote=48, dur=2.0, staff=1, voice=0, channel=2)),
+    ])
+    seq.set_midi("1.0")
+    seq.automation.add({"cc": 11, "channel": 2}, [(0.0, 50.0)])
+    voices = seq.separate()
+    assert [part.to_rows("midinote") for part in voices] == [[(72.0,)], [(60.0,)], [(48.0,)]]
+    assert [len(part.automation) for part in voices] == [0, 0, 1]
+    kept = [row for part in voices for row in part.to_rows("id")]
+    assert kept == seq.to_rows("id"), "an event keeps the id it had"
+    bass = voices[2]
+    assert bass.to_rows("staff", "channel") == [(0, 2)], "its staff is the top one"
+    assert bass.midi == "1.0"
+    assert len(seq.separate("staff")) == 2 and len(seq.separate("channel")) == 3
+    assert len(seq) == 3, "the whole is not changed"
+    # a line whose note bends on its own is a channel to each note
+    bass.set_midi("2.0")
+    bass.events[0].automation.add({"bend": True}, [(0.0, 0.0), (2.0, 2.0)])
+    assert bass.separate("channel")[0].midi == "mpe"
+    with pytest.raises(ValueError, match="separated by"):
+        seq.separate("track")

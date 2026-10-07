@@ -283,6 +283,72 @@ class EventSequence:
 
         return play_sequence(self, at, server)
 
+    # ---- plain data, and parts ----
+
+    def to_rows(self, *keys: str, line: bool = False) -> list:
+        """**The sequence as plain data**: a list of tuples, each the values
+        of ``keys`` in that order --
+
+            sequence.to_rows("midinote", "dur")     # [(60.0, 1.0), (62.0, 0.5), ...]
+
+        -- one row per event, in beat order. A key is read **as the event
+        means it**, not as it happens to spell it: a note written by its
+        ``degree``, its ``freq`` or only its ``pitches`` has a ``midinote``,
+        one that states a ``velocity`` has an ``amp``, and ``sustain`` is read
+        through ``dur`` and ``legato``. ``"at"`` is the event's beat and
+        ``"id"`` its identity; any other key is the value the event holds, and
+        a key it does not hold is ``None``.
+
+        With ``line=True`` the rows are **one line played back to back**, the
+        way a pattern writes one: notes that start together are one row, a key
+        they differ in holding the list of their values (a chord); ``dur`` is
+        the time to the next row; and a silence -- where a row's own length
+        ends before the next one starts -- is a row of its own, every key
+        ``None`` but its ``dur``. A sequence of several voices is one line a
+        voice at a time (`separate`). `from_rows` reads either shape back."""
+        read = self._seq.call("rows", keys=list(keys), line=bool(line))
+        return [tuple(row) for row in read["rows"]]
+
+    @classmethod
+    def from_rows(cls, rows, keys=("midinote", "dur")) -> "EventSequence":
+        """**A sequence from plain data**: rows of ``keys``, the way back from
+        `to_rows` --
+
+            EventSequence.from_rows([(60, 1), (None, 0.5), ([64, 67], 1.5)])
+
+        Where ``"at"`` is among the keys each row is placed there; otherwise
+        the rows play back to back, each lasting its ``dur`` (a beat where
+        there is none). A row that states none of the pitch keys it was asked
+        for is a silence: it takes its time and is no event. A key holding a
+        list is a chord, a note to each value -- and ``pitches``, a note to
+        each written pitch. ``None`` is a key the event does not state.
+        `ValueError` for a row that is not as long as ``keys``."""
+        sequence = cls()
+        sequence._seq.call("loadrows", keys=list(keys),
+                           rows=[list(row) for row in rows])
+        return sequence
+
+    def separate(self, by: str = "voice") -> "list[EventSequence]":
+        """**The sequence in parts**: a new sequence for each voice
+        (``"voice"``, the events' ``staff`` and ``voice``), each staff
+        (``"staff"``) or each channel (``"channel"``) that has events, in
+        that order. What a score rendered into one sequence
+        (`clausters.gui.notation.Score.render_events`) is taken apart with, a
+        line to a sequence -- to read each as rows, or to put each on a track
+        of its own.
+
+        Each part holds the events of its line with the ids they had, the
+        curves of the channels those events are on, the tempo map, and what
+        the whole says of its page, cut to the part: by voice or by staff the
+        part is a score of its own, whose staff is the top one. Where the
+        whole names a MIDI specification each part names the narrowest that
+        says what it holds: MIDI 1.0 where no note carries a curve of its
+        own, MPE where one does and the part is one line (a channel to each
+        note), MIDI 2.0 where it is several. This sequence is not changed.
+        `ValueError` for another ``by``."""
+        parts = self._seq.call("separate", by=str(by))["parts"]
+        return [type(self).from_data(part) for part in parts]
+
     # ---- MIDI files ----
 
     def midi_messages(self, ppq: int = 960) -> list:

@@ -4062,6 +4062,27 @@ Whatever symbols the model itself needs owe their rows either way
   it. And it is a box of the multitrack, whose development is postponed
   (`X9`).)*
 
+  **Decided 2026-10-06, with the user**, and taken after "From the roll to the
+  score", which it reads its notes with:
+
+  - **The box holds the sequence**, and the score is its reading: one
+    sequence, two presentations. Which one is the widget's, as `view` is for
+    a box of samples.
+  - **The time axis is the box's: proportional notation.** Each note stands
+    at its time on the ruler, in line with the other tracks; beams and slurs
+    stretch between them. **What has no duration takes no room on the
+    axis**: the meter and its changes are written above the staff, and the
+    first clef and key signature use the room before the first note. It is
+    the editor's continuous view under those rules. The other answer --
+    bars in line with the ruler and the engraver's spacing inside them -- was
+    weighed and left: the notes would not stand under the cursor.
+  - **Size.** The staff is fitted to the row's height, and under a floor it
+    can be read at the box is drawn as a roll.
+  - **Editing.** Read-only on the multitrack; a double click opens the score
+    editor over the sequence.
+  - The engraver is the port the score editor is handed; with none, the box
+    is drawn as a roll.
+
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
 here and none of them is a milestone any more: the **surface** is N5's, being a

@@ -379,6 +379,81 @@ export class EventSequence {
         return playSequence(this, at, await main.serverOrBoot(server));
     }
 
+    // ---- plain data, and parts ----
+
+    /**
+     * **The sequence as plain data**: a list of rows, each the values of
+     * `keys` in that order --
+     *
+     * ```ts
+     * sequence.toRows(["midinote", "dur"]);   // [[60, 1], [62, 0.5], ...]
+     * ```
+     *
+     * -- one row per event, in beat order. A key is read **as the event means
+     * it**, not as it happens to spell it: a note written by its `degree`,
+     * its `freq` or only its `pitches` has a `midinote`, one that states a
+     * `velocity` has an `amp`, and `sustain` is read through `dur` and
+     * `legato`. `"at"` is the event's beat and `"id"` its identity; any other
+     * key is the value the event holds, and a key it does not hold is `null`.
+     *
+     * With `line: true` the rows are **one line played back to back**, the
+     * way a pattern writes one: notes that start together are one row, a key
+     * they differ in holding the list of their values (a chord); `dur` is the
+     * time to the next row; and a silence -- where a row's own length ends
+     * before the next one starts -- is a row of its own, every key `null` but
+     * its `dur`. A sequence of several voices is one line a voice at a time
+     * ({@link EventSequence.separate}). {@link EventSequence.fromRows} reads
+     * either shape back.
+     */
+    toRows(keys: string[], { line = false }: { line?: boolean } = {}): unknown[][] {
+        return this.call("rows", { keys, line }).rows;
+    }
+
+    /**
+     * **A sequence from plain data**: rows of `keys`, the way back from
+     * {@link EventSequence.toRows} --
+     *
+     * ```ts
+     * EventSequence.fromRows([[60, 1], [null, 0.5], [[64, 67], 1.5]]);
+     * ```
+     *
+     * Where `"at"` is among the keys each row is placed there; otherwise the
+     * rows play back to back, each lasting its `dur` (a beat where there is
+     * none). A row that states none of the pitch keys it was asked for is a
+     * silence: it takes its time and is no event. A key holding a list is a
+     * chord, a note to each value -- and `pitches`, a note to each written
+     * pitch. `null` is a key the event does not state. Throws for a row that
+     * is not as long as `keys`.
+     */
+    static fromRows(rows: unknown[][], keys: string[] = ["midinote", "dur"]): EventSequence {
+        const sequence = new EventSequence();
+        sequence.call("loadrows", { keys, rows });
+        return sequence;
+    }
+
+    /**
+     * **The sequence in parts**: a new sequence for each voice (`"voice"`,
+     * the events' `staff` and `voice`), each staff (`"staff"`) or each
+     * channel (`"channel"`) that has events, in that order. What a score
+     * rendered into one sequence (`gui.notation.Score.renderEvents`) is taken
+     * apart with, a line to a sequence -- to read each as rows, or to put
+     * each on a track of its own.
+     *
+     * Each part holds the events of its line with the ids they had, the
+     * curves of the channels those events are on, the tempo map, and what the
+     * whole says of its page, cut to the part: by voice or by staff the part
+     * is a score of its own, whose staff is the top one. Where the whole
+     * names a MIDI specification each part names the narrowest that says what
+     * it holds: MIDI 1.0 where no note carries a curve of its own, MPE where
+     * one does and the part is one line (a channel to each note), MIDI 2.0
+     * where it is several. This sequence is not changed. Throws for another
+     * `by`.
+     */
+    separate(by: "voice" | "staff" | "channel" = "voice"): EventSequence[] {
+        const parts: unknown[] = this.call("separate", { by }).parts;
+        return parts.map((part) => EventSequence.fromData(part));
+    }
+
     // ---- MIDI files ----
 
     /**

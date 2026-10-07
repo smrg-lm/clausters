@@ -978,6 +978,14 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 /// - `"ids"`: `{"ids": [id]}`, the events' ids in beat order -- of those at
 ///   exactly `at`, when it is given, or of those in the half-open window
 ///   `[from, to)`, either end left open when it is not.
+/// - `"rows"` with `keys`: `{"rows": [[value]]}`, the sequence as plain data
+///   -- a row per event, each the values of `keys` in their order
+///   ([`rows::rows`]); with `"line": true`, as one line played back to back
+///   ([`rows::line`]).
+/// - `"loadrows"` with `keys` and `rows`: the sequence becomes the one those
+///   rows say ([`rows::from_rows`]), answering `{"len": n}`.
+/// - `"separate"` with `by` (`"voice"`, `"staff"` or `"channel"`):
+///   `{"parts": [sequence]}`, a sequence for each ([`rows::separate`]).
 /// - `"automation"`: `{"automation": [curve]}`, the sequence's curves -- or,
 ///   with `id`, that event's, and `null` when it holds no such event.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
@@ -1096,6 +1104,40 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
             };
             json!({ "ids": ids })
         }
+        Some("rows") => {
+            let keys = words(&request, "keys");
+            let line = request.get("line").and_then(Value::as_bool) == Some(true);
+            let read = if line {
+                rows::line(sequence, &keys)
+            } else {
+                rows::rows(sequence, &keys)
+            };
+            json!({ "rows": read })
+        }
+        Some("loadrows") => {
+            let keys = words(&request, "keys");
+            let written = request
+                .get("rows")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            match rows::from_rows(&keys, &written) {
+                Ok(read) => {
+                    *sequence = read;
+                    json!({"len": sequence.events.len()})
+                }
+                Err(error) => json!({ "error": error }),
+            }
+        }
+        Some("separate") => {
+            let by = request.get("by").and_then(Value::as_str).unwrap_or("voice");
+            match rows::By::parse(by) {
+                Some(by) => json!({ "parts": rows::separate(sequence, by) }),
+                None => json!({"error": format!(
+                    "a sequence is separated by \"voice\", \"staff\" or \"channel\", not by {by:?}"
+                )}),
+            }
+        }
         Some("automation") => match request.get("id").and_then(Value::as_u64) {
             Some(id) => sequence
                 .get(id)
@@ -1133,16 +1175,29 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
     answer.to_string()
 }
 
+/// The list of words a request holds under `key`.
+fn words(request: &Value, key: &str) -> Vec<String> {
+    request
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Whether `request` is a verb that changes the sequence (`apply`,
-/// `loadmidi`, `loadump`). Every other verb reads.
+/// `loadmidi`, `loadump`, `loadrows`). Every other verb reads.
 pub fn mutates(request: &str) -> bool {
     serde_json::from_str::<Value>(request)
         .ok()
         .and_then(|r| r.get("verb").and_then(Value::as_str).map(str::to_owned))
-        .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi" | "loadump"))
+        .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi" | "loadump" | "loadrows"))
 }
 
 mod midi;
+pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]
 pub mod score;

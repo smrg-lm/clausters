@@ -102,7 +102,8 @@ What it shows, in the order it does it:
   script that edits through the handle. The keys stay, and F1 shows them all
   on a sheet its close mark or Escape takes down. What a hand writes there is
   read where everything else is, on the score: `on_change` is told once per
-  gesture, and prints the pitches of the sequence the score renders into.
+  gesture, and prints the rows of the sequence the score renders into, a
+  voice at a time.
   The whole window is closed first: a second editor over the score would draw
   on the first one's widgets, so `edit` hands back the editor that is open.
 * **Closing loses nothing.** The score is the script's: the window closes at
@@ -278,20 +279,26 @@ def roll():
 # nothing to send or to keep current. The keys are not chrome and stay: N and
 # the letters write, the arrows and Delete act on the selection, the space bar
 # plays, Ctrl+Z walks back, and F1 lists them all. What a hand writes there is read on the score, like everything else:
-# `on_change` is told once per gesture, and what it prints is the line as the
-# code would take it on -- the pitches of the sequence the score renders into.
+# `on_change` is told once per gesture, and what it prints is the score as the
+# code would take it on -- each voice of the sequence it renders into
+# (`separate`) as rows of `(midinote, dur)` played back to back (`to_rows`): a
+# chord is a list, a silence `None`.
 # The whole window is closed first: `edit` over a score with an editor open on
 # it hands that one back, since a second window over the score would draw on
 # the first one's widgets.
 
 # %%
 def alone():
-    """The same score in a window with no chrome, which prints the pitches
-    it renders into after each gesture."""
+    """The same score in a window with no chrome, which prints the rows it
+    renders into, a voice at a time, after each gesture."""
     editor.close()
     page = edit(score, chrome=False, title="The page alone", width=900, height=600)
-    page.on_change = lambda: print(
-        [event["midinote"] for _, event in score.render_events()])
+
+    def rows():
+        voices = score.render_events().separate("voice")
+        return [voice.to_rows("midinote", "dur", line=True) for voice in voices]
+
+    page.on_change = lambda: print(rows())
     return page
 
 

@@ -40,8 +40,9 @@
 //! - **The pedal is a lane**, controller 64 on each channel of its staff, and
 //!   **a glissando is a note's own curve** over its pitch, in semitones, to
 //!   the note it is written to -- played as a pitch bend of that note alone,
-//!   which a MIDI 1.0 channel cannot carry, so a sequence with one is MIDI
-//!   2.0.
+//!   which a MIDI 1.0 channel cannot carry: a sequence with one is MPE where
+//!   the score is one line and MIDI 2.0 where it is several
+//!   (`EventSequence::midi_fit`).
 //!
 //! A tie is one sound, as the interpreter reads it: the chain is one event,
 //! whose `value` is the chain's whole written length -- two tied quarters
@@ -58,11 +59,8 @@ use clausters_core::notation::{
 };
 use clausters_core::ratio::Ratio;
 
-use super::{Event, EventSequence, MidiSpec};
+use super::{Event, EventSequence};
 use crate::multitrack::Automation;
-
-/// The most channels a MIDI 1.0 port has.
-const MIDI_CHANNELS: usize = 16;
 
 /// The channel each voice renders on: `(staff, voice)` to its channel, counted
 /// from the top staff's first voice.
@@ -200,7 +198,6 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
             ..Event::new(note.t, Value::Object(keys))
         });
     }
-    let glissandos = notes.iter().any(|n| n.gliss.is_some_and(|g| g != 0.0));
 
     // What is no note's: the sheet, without its items.
     let spanners: Vec<Value> = sheet
@@ -244,19 +241,16 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         next_id: events.len() as u64,
         events,
         automation: lanes,
-        // Every curve a render writes is a channel's, which MIDI 1.0 says --
-        // as long as there are channels for the voices, and no note bends on
-        // its own.
-        midi: if glissandos {
-            Some(MidiSpec::Midi2)
-        } else {
-            (channel_of.len() <= MIDI_CHANNELS).then_some(MidiSpec::Midi1)
-        },
+        midi: None,
         notation: Some(Value::Object(notation)),
         tempo_map: Some(played.tempo_map(interp.beat_unit)),
         ..EventSequence::default()
     };
     sequence.hold();
+    // What its curves need said: a channel's alone is MIDI 1.0, as long as
+    // there are channels for the voices; a note bending on its own is MPE
+    // where the score is one line and MIDI 2.0 where it is several.
+    sequence.midi = sequence.midi_fit();
     Ok(sequence)
 }
 
@@ -370,7 +364,7 @@ fn pedals(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::CurveKind;
+    use crate::events::{CurveKind, MidiSpec};
     use clausters_core::notation::{Marks, Pitch, Spanner, Staff, Step, Voice};
 
     fn pitch(step: Step, alter: i32) -> Pitch {
@@ -455,7 +449,14 @@ mod tests {
         // straight in semitones, which a pitch bend makes geometric in frequency
         let ends: Vec<f64> = gliss.automation[0].points.iter().map(|p| p.value).collect();
         assert_eq!(ends, vec![0.0, 4.0], "C to E");
-        assert_eq!(sequence.midi, Some(MidiSpec::Midi2));
+        // one line whose note bends on its own: a channel to a note
+        assert!(matches!(sequence.midi, Some(MidiSpec::Mpe { .. })));
+        // and beside a second voice, a note's curve next to a channel's
+        score.staves[0].voices.push(Voice {
+            items: (9..=16).map(plain).collect(),
+        });
+        let two = render(&score, &Interpretation::default()).unwrap();
+        assert_eq!(two.midi, Some(MidiSpec::Midi2));
     }
 
     /// A glissando out of a tied chain holds the chain's pitch and starts at

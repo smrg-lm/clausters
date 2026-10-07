@@ -146,17 +146,17 @@ its plan; the plan is where its acceptance is read.
   box of the multitrack**, `N7` and `N9` *(`clients/gui/PLAN.md`, "N track —
   notation: the score model, and what is written on it")*. What a page lets a
   hand do is answered: `N8` closed 2026-10-05 as the score editor's `X5.0`,
-  and `X5` built the rest of the hand on it. The two left are each a
-  **decision** before they are work, and neither is about the hand.
+  and `X5` built the rest of the hand on it. Neither of the two left is about
+  the hand, and `N7` is a **decision** before it is work.
   **`N7`** — what opening somebody else's score should preserve, since the
   reader stores an engraver's beams and page breaks as though a writer had
   chosen them; no longer invisible, since the score editor opens a foreign
   file, lays it out in runs at its page breaks and changes its rhythms.
   **`N9`** — a score as a box of the multitrack, drawn the way a box of notes
-  is drawn as a piano roll. **Related:** the score editor its double click
-  opens is built, so `N9` waits elsewhere — on "From the roll to the score"
-  (`crates/clausters-apps/PLAN.md`, Future directions) if the box engraves a
-  roll's notes, and on the multitrack's development resuming (`X9`).
+  is drawn as a piano roll. **Related:** `N9`'s decisions are taken (its
+  entry), and it is the last step of one sequence of work: "From the roll to
+  the score" (`crates/clausters-apps/PLAN.md`, Future directions), whose
+  reading it draws its notes with, comes first.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
   continued, `X9`**
@@ -325,7 +325,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
   audio editor; whether a roll with no sequence stays; from the roll to the
-  score; a sequence as primitive data, by the keys chosen; the score editor's
+  score; the score editor's
   editing rules as modules; what a score editor's hand expects and this one
   has not; dynamics as a model of the instrument and of hearing; a glissando
   that arrives without a new attack). Every one of them carries its own checkbox in its own

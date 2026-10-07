@@ -143,7 +143,8 @@ over the status line, and nothing else composed around it -- the light window
 of a page that edits through the handle. The keys stay, and F1 shows them all
 on a sheet its close mark or Escape takes down. What a hand writes there is
 read where everything else is, on the score: <code>onChange</code> is told once
-per gesture, and logs the pitches of the sequence the score renders into.
+per gesture, and logs the rows of the sequence the score renders into, a voice
+at a time.
 The whole window is closed first: a second editor over the score would draw on
 the first one's widgets, so <code>edit</code> hands back the editor that is
 open.
@@ -235,8 +236,10 @@ B c d e | f2 e d | c B A B | G4 |
       // selection, the space bar plays, Ctrl+Z walks back, and F1 lists them
       // all. What a hand writes there is read on the
       // score, like everything else: `onChange` is told once per gesture, and
-      // what it logs is the line as the code would take it on -- the pitches
-      // of the sequence the score renders into. The whole window is closed
+      // what it logs is the score as the code would take it on -- each voice
+      // of the sequence it renders into (`separate`) as rows of
+      // `[midinote, dur]` played back to back (`toRows`): a chord is a list,
+      // a silence `null`. The whole window is closed
       // first: `edit` over a score with an editor open on it hands that one
       // back, since a second window over the score would draw on the first
       // one's widgets.
@@ -247,7 +250,8 @@ B c d e | f2 e d | c B A B | G4 |
           stage: el("alone"),
         });
         page.onChange = () => log(JSON.stringify(
-          [...score.renderEvents()].map(([, event]) => event.props.midinote)));
+          score.renderEvents().separate("voice")
+            .map((voice) => voice.toRows(["midinote", "dur"], { line: true }))));
         return page;
       };
 
