@@ -46,9 +46,11 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       Two differences, both the page's and neither a surface: the script's cells
       are buttons here, because a browser starts no audio without a gesture --
       the first click is what an AudioContext needs, and it is why opening the
-      server is a button rather than the first line to run; and where the script
-      sleeps between cells to let the sound happen, the page simply leaves the
-      buttons there. Both are the same three calls in the same order.
+      server is a button rather than the first line to run. A cell is a button
+      because running one is what a hand does in the script too; what a cell
+      does on its own clock it does here as well, so the phrase's two seconds
+      are awaited before the line that says its synths freed themselves. Both
+      are the same three calls in the same order.
 
       Serve clients/web (the package root) and open
       /examples/basics/hello-note.html -- the page imports ../../dist, so the
@@ -59,6 +61,7 @@ instrument, and it carries the gated envelope that makes a note end.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       let server = null;
 
@@ -85,13 +88,14 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       // ---- a short phrase ----
       // With no clock in context, `play` uses the default session's clock,
       // created and started for you.
-      function phrase() {
+      async function phrase() {
         play(new seq.Pbind({
           instrument: "default",
           degree: new seq.Pseq([0, 2, 4, 7]),
           dur: 0.4,
         }));
-        log("played; synths free themselves after their sustain");
+        await sleep(2000);
+        log("played; synths freed themselves after their sustain");
       }
 
       $("open").onclick = () => open().catch((e) => log(`error: ${e}`));

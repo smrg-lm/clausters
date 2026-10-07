@@ -74,6 +74,11 @@ each.</div>
         $("log").scrollTop = $("log").scrollHeight;
       };
 
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      //: Long enough to hear each state before the next call changes it.
+      const PAUSE = 2000;
+
       let a = null, b = null, other = null, low = null;
 
       async function run() {
@@ -113,6 +118,8 @@ each.</div>
       $("freeall").onclick = async () => {
         (other ?? b).freeAll();
         log("b freed every node: the fifth drops to a single note");
+        // Long enough to hear it, as the script waits before it closes.
+        await sleep(PAUSE);
         if (other) {
           other.close();
           log("the attached handle closed, and b is still up: "
@@ -121,8 +128,9 @@ each.</div>
         $("freeall").disabled = true;
       };
 
-      $("stopboth").onclick = () => {
+      $("stopboth").onclick = async () => {
         low.free();
+        await sleep(500);
         // Each handle booted its engine, so closing it stops that engine --
         // ownership, the same rule the script's `close` follows for the
         // process it started.

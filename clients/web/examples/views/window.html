@@ -35,7 +35,6 @@ only the GUI host.</div>
 
       <div class="row">
         <button id="run">open the waveform</button>
-        <button id="slower" disabled>point the source at a slower sine</button>
       </div>
       <div id="stage"></div>
       <pre id="log"></pre>
@@ -45,10 +44,12 @@ only the GUI host.</div>
       The web sibling of clients/python/examples/views/window.py, call for call:
       the source, the view, the open, then `sig.set(...)` with other samples.
 
-      Two differences, both the platform's: the host draws into the element this
-      page places rather than opening an OS window (so `Esc` and the close
-      button are the document's business), and the script's `time.sleep(2)`
-      before the second signal is a button here.
+      One difference, the platform's: the host draws into the element this
+      page places rather than opening an OS window, so `Esc` and the close
+      button are the document's business. The two seconds before the second
+      signal are the script's, awaited here where the script sleeps: what is
+      being shown is a view changing under a source that was pointed elsewhere,
+      with nobody touching it.
 
       Serve clients/web (the package root) and open /examples/views/window.html.
       Build it first: ./build.sh
@@ -64,6 +65,7 @@ only the GUI host.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       /**
        * A sine that decays across the buffer, so the waveform shows both the
@@ -86,16 +88,14 @@ only the GUI host.</div>
           gui.waveform({ name: "wave", data: sig }),
         ).open($("stage"));
         log("the host drew the waveform; zoom and pan it with the pointer");
-        $("slower").disabled = false;
+
+        await sleep(2000);
+        sig.set(decayingSine(8000, 40.0));
+        log("the same view now draws a slower sine -- the source was pointed at "
+          + "other samples, and every live widget it feeds was pushed to");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("slower").onclick = () => {
-        sig.set(decayingSine(8000, 40.0));
-        $("slower").disabled = true;
-        log("the same view now draws a slower sine -- the source was pointed at "
-          + "other samples, and every live widget it feeds was pushed to");
-      };
     </script>
   </body>
 </html>

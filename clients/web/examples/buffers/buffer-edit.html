@@ -43,10 +43,8 @@ edit <i>is</i> and no samples cross the wire at all, which is the difference
 between editing a table and editing a five-minute take.</div>
 
       <div class="row">
-        <button id="run">boot and read the table</button>
-        <button id="edits" disabled>the three client edits</button>
-        <button id="refusal" disabled>what a write refuses</button>
-        <button id="server" disabled>the server's own edits</button>
+        <button id="boot">boot and read the table</button>
+        <button id="run" disabled>run: hear the edits</button>
       </div>
       <pre id="log"></pre>
     </main>
@@ -57,11 +55,13 @@ between editing a table and editing a five-minute take.</div>
       writes as a routine on the session's clock, the refusal, and the four
       server-side edits chained without waiting.
 
-      The one difference is the shape of the run: the script sleeps on the main
-      thread while the clock plays and then moves to the next stage, and a page
-      has one thread it must not block -- so each stage is a button. The
-      routines themselves are the same routines, yielding the same beats on the
-      session's clock.
+      The run is the script's `run()`, stage after stage on the script's own
+      clock: the three client edits, six and a half seconds for them to play,
+      the refusal, the server's edits, eight seconds, and the read back. Where
+      the script sleeps on the main thread while the clock plays, the page
+      awaits the same span -- which blocks nothing. The two buttons are the two
+      things a hand does in the script too: run the cells that bring it up,
+      and call `run()`.
 
       Serve clients/web (the package root) and open
       /examples/buffers/buffer-edit.html. Build it first: ./build.sh
@@ -76,12 +76,14 @@ between editing a table and editing a five-minute take.</div>
         $("log").scrollTop = $("log").scrollHeight;
       };
 
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
       const FRAMES = 512;
       let session = null, server = null, buf = null;
       let samples = null, reversedTable = null, faded = null;
 
-      async function run() {
-        $("run").disabled = true;
+      async function boot() {
+        $("boot").disabled = true;
         session = (await Session.embed()).activate();
         server = session.server;
 
@@ -108,10 +110,7 @@ between editing a table and editing a five-minute take.</div>
         reversedTable = [...samples].reverse();
         faded = samples.map((s, i) => s * (1.0 - i / samples.length));
 
-        // The clock has to be running for a routine to fire: playing one on a
-        // stopped clock queues it forever, silently.
-        session.start();
-        for (const id of ["edits", "refusal", "server"]) $(id).disabled = false;
+        $("run").disabled = false;
       }
 
       function* sequence() {
@@ -177,15 +176,27 @@ between editing a table and editing a five-minute take.</div>
         }
       }
 
-      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("edits").onclick = () => new Routine(sequence).play();
-      $("refusal").onclick = () => refusal().catch((e) => log(`error: ${e}`));
-      $("server").onclick = () => {
+      /**
+       * Play the three versions, show what a write refuses, then the server's
+       * own edits.
+       */
+      async function run() {
+        $("run").disabled = true;
+        // The clock has to be running for a routine to fire: playing one on a
+        // stopped clock queues it forever, silently.
+        session.start();
+        new Routine(sequence).play();
+        // The page waits while the clock plays -- never inside a routine,
+        // which runs *on* that clock.
+        await sleep(6500);
+        await refusal();
         new Routine(editedByTheServer).play();
-        // The script sleeps out the routine here and then reads back; a page
-        // waits the same span without blocking anything.
-        setTimeout(() => readBack().catch((e) => log(`error: ${e}`)), 8000);
-      };
+        await sleep(8000);
+        await readBack();
+      }
+
+      $("boot").onclick = () => boot().catch((e) => log(`error: ${e}`));
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
     </script>
   </body>
 </html>

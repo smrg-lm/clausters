@@ -4255,7 +4255,7 @@ finished work, where a pending item reads as done.
   the same default (`plot` resolves a session's host) and the same gap, so
   whatever is decided is decided for both.
 
-- ⬜ **A page turns a script's sequence into a button, and then explains why**
+- ✅ **A page turns a script's sequence into a button, and then explains why**
   *(found 2026-08-27 and 2026-08-28, in the manual review, on `panels/style`
   and `panels/text`; both pages are fixed in their commits — what is left is
   the class and the sweep)*. Both twins replaced a timed list with one button
@@ -4283,6 +4283,47 @@ finished work, where a pending item reads as done.
   something a person does (the autoplay gesture, "open the window") or for a
   step the script also takes on its own. It is not legitimate as the page's
   answer to a script's clock.
+
+  **The sweep, done 2026-10-07**, over every pair whose script sleeps on the
+  main thread (the 83 pages read against their scripts for that one property).
+  It found the class twice over: the button standing in for a clock, and the
+  prose that wrote the drift down as a rule — "a page must not block", "each
+  verb is a button", "a page has one thread it must not block". A page awaits,
+  which blocks nothing, so none of those sentences was ever true.
+
+  - **A sequence that had become buttons**, now the script's run on the
+    script's clock: `buffers/buffer-edit` (four stages were four buttons; the
+    script's `run()` is one call with its 6.5 s and 8 s in it, and the page now
+    has the two buttons the script has — bring it up, call `run()`),
+    `panels/attach` (the attached handle let go when a hand pressed a button,
+    where the script lets go two seconds after the windows open) and
+    `views/window` (the second signal was a button, where what the script shows
+    is a view changing under a repointed source with nobody touching it).
+  - **A cell kept as a button, but its own clock lost**: `transport/conductor`
+    read the followers' positions on a button press, where the script reads
+    them three times 0.7 s apart after the play, and split the locate and the
+    stop the script does 1.5 s apart into two buttons; `transport/timeline`
+    read the position when the next button was pressed, where the script reads
+    it 1.2 s after the play; `io/servers` closed the attached handle the
+    instant every node was freed, so the fifth dropping to one note could not
+    be heard, and stopped `a` with no wait after freeing its note;
+    `basics/hello-note` said the phrase's synths had freed themselves before
+    the phrase had played; `panels/panel` set the cutoff in the same turn the
+    panels opened, where the script waits half a second so the change is seen.
+    A cell is what a hand runs in the script too, so these keep their buttons
+    and await what the cell sleeps.
+  - **Prose that described a page that no longer existed**:
+    `transport/sync` already ran the script's tour on one button, and its note
+    still told the reader to press a "join late" button it does not have.
+
+  What was read and left: every pair whose script loops with `sleep` until a
+  window closes (`views/analyzer`, `meters`, `nodetree`, `scope`, `vumeter`,
+  `panels/canvas`) already drives the page from a frame clock, which is that
+  loop's own spelling; `basics/tempo-canon` and `tempo-map` poll the clocks on
+  an interval as the scripts do; `transport/freeze` keeps a button per cell
+  and awaits the three seconds inside the one that has them. The eight pages
+  changed were run in a browser by pressing their buttons in order, each to
+  its last line, with no error.
 
 - ✅ **No page in the suite exercises a `canvas`, and three bugs lived behind
   that** *(found 2026-08-28, in the manual review; the three are fixed in their

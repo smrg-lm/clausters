@@ -48,10 +48,11 @@ forward.</div>
       call: the captured timeline at its own tempo, the added accent, the
       session it plays on, and the transport verbs.
 
-      The one difference is the shape of the run: the script sleeps between the
-      verbs and a page has one thread it must not block, so each verb is a
-      button and the position is read when you press one. The verbs, their
-      arguments and their order are the script's.
+      Where the script is run cell by cell, each cell here is a button: play,
+      locate, loop, pause and stop. What a cell does on its own clock it does
+      here too -- the position is read 1.2 s after the play, as the script
+      reads it -- because a page awaits where the script sleeps. The verbs,
+      their arguments and their order are the script's.
 
       Serve clients/web (the package root) and open
       /examples/transport/timeline.html. Build it first: ./build.sh
@@ -67,6 +68,7 @@ forward.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       let session = null, timeline = null;
 
@@ -89,13 +91,13 @@ forward.</div>
 
         session = (await Session.embed({ latency: 0.1 })).activate();
         timeline.play({ at: 0.0 });
-        log("playing from beat 0");
+        await sleep(1200);
+        log(`position after ~1.2 s: beat ${timeline.position().toFixed(2)}`);
         for (const id of ["locate", "loop", "stop"]) $(id).disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
       $("locate").onclick = () => {
-        log(`position now: beat ${timeline.position().toFixed(2)}`);
         timeline.locate(1.0);
         log("located to beat 1.0");
       };

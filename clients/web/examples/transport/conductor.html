@@ -38,10 +38,9 @@ of the client id space so two of them never hand out the same node id.</div>
 
       <div class="row">
         <button id="run">bring the followers up</button>
-        <button id="play" disabled>conductor: play</button>
-        <button id="positions" disabled>read both positions</button>
-        <button id="locate" disabled>locate to the top</button>
-        <button id="stop" disabled>conductor: stop</button>
+        <button id="play" disabled>press play</button>
+        <button id="locate" disabled>locate to the top, then stop</button>
+        <button id="close" disabled>close</button>
       </div>
       <pre id="log"></pre>
     </main>
@@ -56,8 +55,12 @@ of the client id space so two of them never hand out the same node id.</div>
       server process** and the followers connect to it over sockets; here the
       shared server is the engine in this tab and the three clients are three
       carriers over it -- which is the same arrangement (one server, several
-      independent clients, disjoint id shares) with no process anywhere. And the
-      script's sleeps between verbs are buttons, since a page must not block.
+      independent clients, disjoint id shares) with no process anywhere. And
+      where the script is run cell by cell, each cell here is a button: bring
+      the followers up, press play, locate and stop, close. What a cell does on
+      its own clock it does here too -- the three readings of the positions
+      come 0.7 s apart after the play, and the stop a second and a half after
+      the locate -- because a page awaits where the script sleeps.
 
       Serve clients/web (the package root) and open
       /examples/transport/conductor.html. Build it first: ./build.sh
@@ -72,6 +75,8 @@ of the client id space so two of them never hand out the same node id.</div>
         $("log").textContent += line + "\n";
         $("log").scrollTop = $("log").scrollHeight;
       };
+
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       //: Two beats a second, and the figure is four bars of two notes.
       const TEMPO = 2.0;
@@ -126,27 +131,49 @@ of the client id space so two of them never hand out the same node id.</div>
         followers.push(await makeFollower(440.0, { index: 1, of: 3 }));
         followers.push(await makeFollower(550.0, { index: 2, of: 3 }));
         log("two followers up, their timelines on the conductor's transport");
-        for (const id of ["play", "positions", "locate", "stop"]) $(id).disabled = false;
+        for (const id of ["play", "locate", "close"]) $(id).disabled = false;
       }
 
-      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("play").onclick = async () => {
-        await conductor.transportPlay();
+      // One broadcast, and both timelines are rolling on the one position.
+      async function play() {
         log("conductor: play");
-      };
-      $("positions").onclick = async () => {
-        await Promise.all(followers.map((f) => f.timeline.refresh()));
-        const at = followers.map((f) => f.timeline.position().toFixed(2));
-        log(`  follower positions: ${JSON.stringify(at)}  (one position, not two estimates)`);
-      };
-      $("locate").onclick = async () => {
+        await conductor.transportPlay();
+        for (let i = 0; i < 3; i += 1) {
+          await sleep(700);
+          await Promise.all(followers.map((f) => f.timeline.refresh()));
+          const places = followers.map((f) => f.timeline.position().toFixed(2));
+          log(`  follower positions: ${JSON.stringify(places)}  (one position, not two estimates)`);
+        }
+      }
+
+      // A locate is the engine's: it moves the position, and each follower
+      // hears the broadcast and re-cues its plan from there.
+      async function locateThenStop() {
+        log("conductor: locate to the top");
         await conductor.transportLocateSample(0);
-        log("conductor: locate to the top -- every follower re-cues its plan");
-      };
-      $("stop").onclick = async () => {
+        await sleep(1500);
+        log("conductor: stop");
         await conductor.transportStop();
-        log("conductor: stop -- the transport freezes, and the plans with it");
-      };
+        await sleep(300);
+      }
+
+      /** Take every timeline off the transport and close every client. */
+      function close() {
+        for (const { server, timeline } of followers) {
+          timeline.transport = null;
+          server.close();
+        }
+        governed.free();
+        conductor.close();
+        log("done");
+        for (const id of ["play", "locate", "close"]) $(id).disabled = true;
+      }
+
+      const guard = (fn) => () => fn().catch((e) => log(`error: ${e}`));
+      $("run").onclick = guard(run);
+      $("play").onclick = guard(play);
+      $("locate").onclick = guard(locateThenStop);
+      $("close").onclick = () => close();
     </script>
   </body>
 </html>

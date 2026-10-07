@@ -42,7 +42,6 @@ same ids and the second would silently take the first's widgets.</div>
 
       <div class="row">
         <button id="run">boot, then attach</button>
-        <button id="stop-attached" disabled>stop the attached handle</button>
         <button id="stop-owner" disabled>stop the owner</button>
       </div>
       <div class="panes"><div id="a"></div><div id="b"></div></div>
@@ -61,6 +60,10 @@ same ids and the second would silently take the first's widgets.</div>
       stops" is about this document rather than about a process. And each window
       draws into an element the page places, rather than being an OS window.
 
+      The attached handle lets go two seconds after the windows are up, on the
+      script's own clock: the page awaits where the script sleeps. Stopping the
+      owner is a button because it is what a hand does in the script too.
+
       Serve clients/web (the package root) and open /examples/panels/attach.html.
       Build it first: ./build.sh
     -->
@@ -75,6 +78,7 @@ same ids and the second would silently take the first's widgets.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       let owner = null, attached = null;
 
@@ -122,17 +126,14 @@ same ids and the second would silently take the first's widgets.</div>
         log(`window ids: owner ${first.id}, guest ${second.id} -- `
           + "two windows, one host");
 
-        $("stop-attached").disabled = false;
+        await sleep(2000);
+        attached.stop();
+        log("the attached handle let go -- both windows are still drawing, "
+          + "because it never owned the host");
         $("stop-owner").disabled = false;
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("stop-attached").onclick = () => {
-        attached.stop();
-        $("stop-attached").disabled = true;
-        log("the attached handle let go -- both windows are still drawing, "
-          + "because it never owned the host");
-      };
       $("stop-owner").onclick = () => {
         owner.stop();
         $("stop-owner").disabled = true;

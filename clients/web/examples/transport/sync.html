@@ -21,9 +21,9 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>sync.py</code>, call for call: <b>two independent clients phase-aligned on
-one server's shared transport, and a timeline that obeys the conductor</b>. What
-the page adds is the <i>hand</i> -- the script runs the same sequence start to
-finish, and here each step is a button, so a late join can be pressed late.
+one server's shared transport, and a timeline that obeys the conductor</b>.
+The tour is the script's sequence start to finish, on the script's own clock:
+one button starts it, because a browser starts no audio without a gesture.
 
 The server keeps one <b>transport</b>: a beat grid <code>(originSample,
 tempo)</code> a conductor writes with <code>server.setTransport(...)</code>, plus
@@ -45,9 +45,9 @@ transport</b> (<code>timeline.transport = server</code>) plans its items onto
 it: the conductor rolls, freezes and seeks every follower at once. The server
 owns the time and plays no notes of its own.
 
-<b>What to listen for:</b> press "join late" while the first client is already
-waiting -- the two notes still land as one attack on the next bar, and however
-late you press it the offset never accumulates.
+<b>What to listen for:</b> the two clients' notes land as one attack on the
+next bar, though each computed that bar on its own; then the figure rolls,
+jumps to its second bar and stops, as the conductor says.
 
 Needs <code>./build.sh</code> in <code>clients/web</code> first
 (<code>dist/</code> is git-ignored). Open it over HTTP:

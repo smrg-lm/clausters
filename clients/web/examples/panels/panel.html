@@ -79,6 +79,7 @@ names, two independent panels.</div>
         $("log").textContent += line + "\n";
         $("log").scrollTop = $("log").scrollHeight;
       };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       // The named controls, so the page drives and listens to them by name.
       const CONTROLS = ["cutoff", "res", "gain", "mix", "bypass", "reset", "wave"];
@@ -139,6 +140,7 @@ names, two independent panels.</div>
         // per-widget `onEvent` on both: each handle fires with the new value(s).
         // No ids, no manual matching -- and turning the knob in one panel leaves
         // the other where it was.
+        await sleep(500);
         a.widget("cutoff").set({ value: 2000.0 });
         log("set the first panel's cutoff to 2000; now interact with the panels...");
 
