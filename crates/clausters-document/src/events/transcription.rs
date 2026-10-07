@@ -17,7 +17,7 @@
 //!   note outlasts the next one of its voice. Nothing here finds a meter or an
 //!   irregular value in a performance: the meter is given, and a tuplet is
 //!   read only where it is asked for.
-//! - **Where.** A staff is what the events say (`staff`), else a channel --
+//! - **Where.** A staff is what an event says (`staff`), else its channel --
 //!   in MIDI 1.0 and 2.0 a channel is a line -- and in an MPE zone, where a
 //!   channel is one note's, one staff for the zone. A voice is what the
 //!   events say (`voice`), else found: notes that start and end together are
@@ -463,7 +463,6 @@ pub fn read(
         .collect();
 
     // Where: the staff each is on.
-    let says_staff = notes.iter().any(|note| note.keys.contains_key("staff"));
     let channels: Vec<i64> = notes
         .iter()
         .map(|note| note.channel)
@@ -471,18 +470,14 @@ pub fn read(
         .into_iter()
         .collect();
     for note in &mut notes {
-        note.staff = if says_staff {
-            note.keys
-                .get("staff")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0) as usize
-        } else if mpe {
-            0
-        } else {
-            channels
+        let stated = note.keys.get("staff").and_then(Value::as_f64);
+        note.staff = match stated {
+            Some(staff) => staff as usize,
+            None if mpe => 0,
+            None => channels
                 .iter()
                 .position(|c| *c == note.channel)
-                .unwrap_or(0)
+                .unwrap_or(0),
         };
     }
     let staff_count = notes

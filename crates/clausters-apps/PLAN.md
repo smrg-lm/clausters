@@ -2372,6 +2372,28 @@ Every entry carries a checkbox.
       tuplets or not;
     - the keys are the fifteen major signatures, as the model's are.
   - ⬜ **`edit(sequence, view="score")`**, the edit written back.
+    - ✅ **The write-back.** *(Done 2026-10-06.
+      `clausters_document::events::writeback::write_back`: the page rendered
+      before the edit and after it, compared item by item. An item both
+      render alike leaves its events as the sequence has them; one they
+      render differently takes the difference alone -- each key the edit
+      changed, written with its family's coherence and the written pitch
+      last; a move in time added to where the event was played; its curves
+      where they differ. An item only the page after has is new events,
+      played by what plays the sequence, and one only the page before had is
+      events removed. A curve the two renders write alike stays the
+      sequence's own, and one they write differently is the render's, found
+      by what it drives and on which channel, whatever it is called. What
+      the page says of itself goes into the `notation` section part by part
+      where the edit changed it, what has two ends naming the sequence's own
+      events; a sequence that had no section gains one only then, and never
+      an `items` list, which is what says a sequence was rendered. With it,
+      the reading lets an event that states no `staff` take its channel's
+      beside others that state theirs.)*
+    - ⬜ **The editor over a sequence**: the score editor's entries as the
+      sequence's, one undo order with a roll over it, and the page read again
+      when the sequence changes under it; `edit(sequence, view="score")` in
+      both clients.
 
 - ✅ **A sequence as primitive data, by the keys chosen** *(the user,
   2026-10-05, planning `X5`)*. A sequence the score editor or the roll made
