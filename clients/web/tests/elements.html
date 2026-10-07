@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: one of every element, drawn</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; background: #0d0d12; color: #ddd;
+                   font-family: system-ui, sans-serif; line-height: 1.5; }
+      main { padding: 16px; }
+      #stage { width: 1200px; max-width: 100%; height: 1300px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>One of every element</h1>
+      <p>A window holding one of each element the host draws, left to draw for
+      a while. Nothing is driven: what is asserted is that the host builds
+      every one, draws them, and is still answering afterwards.</p>
+      <button id="boot">run</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The acceptance for the element catalogue as a whole (clients/web/test.sh,
+      headless Chrome; ?smoke=1 auto-runs, verdict beaconed as a fetch and read
+      from the HTTP access log).
+
+      The other pages cover the families that were being built when each was
+      written -- plots, scopes, components, sequencing, MIDI, Faust, buffers --
+      so an element that shipped on the desktop before the browser front
+      existed was covered by none of them. A `canvas` drew nothing in a browser
+      and then panicked the host twice on the way to its first frame, and no
+      page had one.
+
+      This one mounts one of every element and asserts three things, none of
+      them about what an element looks like:
+
+        - the host built each one: a `/gui_query` answers with a type;
+        - it drew them: the stage holds a canvas with a size, and frames ran
+          for a second and a half over all of them;
+        - it is still there: every query is asked after that time, and a host
+          that panicked in a frame answers nothing and raises on the page.
+
+      A new element earns a row in `elements()` below; that is the whole cost
+      of covering it.
+    -->
+    <script type="module">
+      import { Session, gui } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      // A panic inside the wasm host is not an exception anybody awaits: it
+      // surfaces on the page, from the frame that raised it.
+      const raised = [];
+      addEventListener("error", (e) => raised.push(String(e.message || e.error)));
+      addEventListener("unhandledrejection", (e) => raised.push(String(e.reason)));
+
+      const SHADER = `
+fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
+    let ring = 0.5 + 0.5 * sin(length(uv * 2.0 - vec2<f32>(1.0, 1.0)) * 14.0 - u.time * 3.0);
+    return vec4<f32>(ring, uv.x, uv.y, 1.0);
+}
+`;
+
+      /** A second of a sine and its octave, as the samples a view draws. */
+      function take(frames = 4800) {
+        return Array.from({ length: frames }, (_, i) =>
+          0.5 * Math.sin(i * 0.05) + 0.25 * Math.sin(i * 0.1));
+      }
+
+      /** One of every element, each under the name it is asked for by. */
+      function elements() {
+        const samples = gui.source(take());
+        return [
+          // the controls
+          gui.label("a label", { name: "label" }),
+          gui.knob({ name: "knob", label: "knob", min: 0.0, max: 1.0, value: 0.4 }),
+          gui.slider({ name: "slider", label: "slider", min: 0.0, max: 1.0, value: 0.6 }),
+          gui.number({ name: "number", label: "number", min: 0.0, max: 10.0, value: 3.0 }),
+          gui.button({ name: "button", label: "button" }),
+          gui.toggle({ name: "toggle", label: "toggle", value: true }),
+          gui.text({ name: "text", value: "some text" }),
+          gui.choice(["one", "two", "three"], { name: "choice", index: 1 }),
+          gui.table({ name: "table", columns: ["a", "b"], rows: [["1", "2"], ["3", "4"]] }),
+          gui.files(".", { name: "files" }),
+          gui.separator({ name: "separator" }),
+          gui.progress(0.3, { name: "progress", label: "progress" }),
+          // the containers that draw something of their own
+          gui.tabs({ name: "tabs", titles: ["first", "second"] },
+            gui.label("page one"), gui.label("page two")),
+          gui.pager({ name: "pager" }, gui.label("a page")),
+          gui.toolbar({ name: "toolbar" }, gui.button({ label: "tool", verb: "loop", tip: "Loop" })),
+          gui.timeruler({ name: "timeruler", sampleRate: 48000.0 }),
+          // every view of a signal
+          gui.waveform({ name: "waveform", data: samples, channels: 1, sampleRate: 48000.0 }),
+          gui.spectrogram({ name: "spectrogram", data: samples, channels: 1, sampleRate: 48000.0 }),
+          gui.plot({ name: "plot", data: samples, channels: 1, sampleRate: 48000.0 }),
+          gui.scope(0, { name: "scope" }),
+          gui.phasescope(0, { name: "phasescope" }),
+          gui.spectrum(0, { name: "spectrum" }),
+          gui.meter(0, { name: "meter" }),
+          // the rest of the elements
+          gui.bpf({ name: "bpf", points: [[0.0, 0.0], [0.5, 1.0], [1.0, 0.2]] }),
+          gui.piano({ name: "piano" }),
+          gui.nodetree({ name: "nodetree" }),
+          gui.score({ name: "score" }),
+          gui.patch({ name: "patch" }),
+          gui.canvas(SHADER, { name: "canvas", label: "canvas" }),
+          // the two the editors draw, which no builder makes
+          gui.node("notes", {
+            name: "notes", notes: [0.0, 4800.0, 60.0, 100, 0], min: 48, max: 72,
+            sample_rate: 48000.0,
+          }),
+          gui.node("multitrack", { name: "multitrack" }),
+        ];
+      }
+
+      async function run() {
+        const session = (await Session.embed({ channels: 2 })).activate();
+        await session.gui();
+        const failures = [];
+        const check = (ok, what) => { if (!ok) failures.push(what); };
+
+        // Rows of four, so every element gets a rectangle worth drawing in.
+        const all = elements();
+        const rows = [];
+        for (let i = 0; i < all.length; i += 4) {
+          rows.push(gui.panel({ layout: "row" }, ...all.slice(i, i + 4)));
+        }
+        const stage = document.getElementById("stage");
+        const win = await gui.view(
+          { title: "one of every element", w: 1200, h: 1300, layout: "col" }, ...rows,
+        ).open(stage);
+
+        // Frames, over all of them: the live views animate, and the rest are
+        // drawn at least once and again on every repaint the others ask for.
+        await sleep(1500);
+
+        const canvas = stage.querySelector("canvas");
+        check(canvas !== null && canvas.width >= 100 && canvas.height >= 100,
+          `the stage holds no drawn canvas (${canvas?.width}x${canvas?.height})`);
+
+        const names = all.map((node) => String(node.name));
+        const types = {};
+        for (const name of names) {
+          try {
+            const info = await win.host.query(win.widget(name).id);
+            types[name] = info.type;
+            check(Boolean(info.type), `${name}: the host built nothing`);
+          } catch (err) {
+            check(false, `${name}: the host did not answer (${err})`);
+          }
+        }
+        log(names.map((name) => `${name}: ${types[name] ?? "-"}`).join("\n"));
+        check(raised.length === 0, `the page raised: ${raised.join(" | ")}`);
+
+        win.close();
+        session.close();
+        verdict(failures.length === 0
+          ? `PASS: ${names.length} elements built, drawn for 1.5 s and still answering`
+          : `FAIL: ${failures.join("; ")}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

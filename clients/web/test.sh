@@ -286,6 +286,7 @@ run_pages() {
     run_page session.html  # two sessions on two engines: the ambient verbs resolve right
     run_page plot.html     # the plot verb: its six kinds, each in its own window
     run_page scope.html    # the scope verb: its three views on live buses
+    run_page elements.html # one of every element, built, drawn and still answering
     run_page responders.html # OscFunc over the engine's own notifications
     run_page midi.html     # a pattern to a MIDI port on the engine's grid, and a MidiFunc back
     run_page catalogue.html # the filled-out UGen families, measured on the output

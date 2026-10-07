@@ -4136,9 +4136,9 @@ finished work, where a pending item reads as done.
   step the script also takes on its own. It is not legitimate as the page's
   answer to a script's clock.
 
-- ⬜ **No page in the suite exercises a `canvas`, and three bugs lived behind
+- ✅ **No page in the suite exercises a `canvas`, and three bugs lived behind
   that** *(found 2026-08-28, in the manual review; the three are fixed in their
-  commit — what is left is the coverage)*. The widget did nothing in a browser
+  commit — what is left is the coverage; the page written 2026-10-07)*. The widget did nothing in a browser
   and had never done anything: its view was never built, and once it was, the
   host panicked twice on the way to the first frame (a `block_on` a browser
   cannot serve, `std`'s `Instant`). None of the three is subtle. All three
@@ -4155,6 +4155,16 @@ finished work, where a pending item reads as done.
   shape the desktop's own squeeze test took (`clients/gui/PLAN.md`, "Nothing
   resizes a window, so nothing tests a squeeze") and is what would have caught
   all three of these at once.
+
+  *(Written: `tests/elements.html`, in the suite after `scope.html`. It mounts
+  one of every element — the controls, the containers that draw something of
+  their own, every view of a signal, the curve, the keyboard, the node tree,
+  an empty score and patcher, a shader `canvas`, and the roll and the
+  multitrack through the generic `node`, since no builder makes those two —
+  lets the host draw them for a second and a half, and then asks the host for
+  each: a `/gui_query` answers with a type, the stage holds a canvas with a
+  size, and the page raised nothing, which a panic inside a frame does. A new
+  element is one row of the page's `elements()`.)*
 
 - ✅ **`boot()` adopts the page's engine where the reference client refuses**
   *(found 2026-08-28, auditing the client's abstractions against the reference
