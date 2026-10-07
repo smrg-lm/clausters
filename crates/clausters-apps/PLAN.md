@@ -2405,12 +2405,15 @@ Every entry carries a checkbox.
       transcription's keys as its options, `ScoreEditor.over` the same as a
       constructor, and `view` refused for a presentation a structure does
       not have. What plays there is the sequence itself.)*
-      **Left open by it**: the page's cursor is drawn over the engraver's own
-      time, 120 quarters a minute, while what plays is the sequence on its
-      own tempo map -- the two agree for a sequence at that tempo, and how
-      the line follows another is to be heard with the example; and the
-      standalone host opens no sequence on a page, having no door that asks
-      for one.
+      **The page is on the sequence's time** *(found by the user the same
+      day, at the first look: the page's line ran twice as fast as the
+      rolls')*: an engraver counts a page at 120 quarters a minute where the
+      score states no tempo, and what plays over a sequence is the sequence
+      on its own map -- a beat a second where it states none. The editor
+      takes each time of the page to the beat the page puts it at, and from
+      there to where the sequence's map puts that beat.
+      **Left open by it**: the standalone host opens no sequence on a page,
+      having no door that asks for one.
 
 - ✅ **A sequence as primitive data, by the keys chosen** *(the user,
   2026-10-05, planning `X5`)*. A sequence the score editor or the roll made

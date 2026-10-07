@@ -4082,6 +4082,17 @@ Whatever symbols the model itself needs owe their rows either way
     editor over the sequence.
   - The engraver is the port the score editor is handed; with none, the box
     is drawn as a roll.
+  - **How a note stands at its time without being stretched** *(settled
+    reading the host, 2026-10-06)*: around each note is a stretch of the
+    engraving drawn as it is -- the head, its stem, its accidental, its dot,
+    its ledger lines -- moved whole to the note's time; between two of them
+    what joins notes (a beam, a slur, a hairpin, the staff's lines) is
+    stretched. A glyph is never stretched: it is placed where its own place
+    falls.
+  - **The first clef and key signature stay in view**: before the box's
+    first note while its start is on screen, and held at the left edge of
+    what is visible once the start has scrolled off -- as a roll's keyboard
+    is -- so the staff can always be read *(the user, 2026-10-06)*.
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still

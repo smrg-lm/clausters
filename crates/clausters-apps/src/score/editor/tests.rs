@@ -1979,3 +1979,50 @@ fn a_roll_and_a_page_over_one_sequence_are_one_order() {
     );
     assert!(refused.contains("error"), "{refused}");
 }
+
+#[test]
+fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
+    use clausters_core::notation::{Cursor, Page, default_interpretation};
+    use clausters_core::tempomap::TempoMap;
+    use clausters_document::events::transcription::Transcription;
+
+    let at = |ms: f64| Cursor {
+        t: ms,
+        x: 0.0,
+        y0: 0.0,
+        y1: 0.0,
+    };
+    // what an engraver says of a page with no tempo written: 120 quarters a
+    // minute, so the second, third and fourth beats at 500, 1000 and 1500 ms
+    let engraved = || Page {
+        draw: Default::default(),
+        cursors: vec![at(0.0), at(500.0), at(1000.0), at(1500.0)],
+        notes: Vec::new(),
+    };
+    let times = |editor: &ScoreEditor| {
+        let mut page = engraved();
+        editor.on_its_sequence_s_time(&mut page);
+        page.cursors.iter().map(|c| c.t).collect::<Vec<_>>()
+    };
+    let over = |sequence: &crate::notes::Shared| {
+        ScoreEditor::over(
+            holding(Vec::new()),
+            Arc::clone(sequence),
+            Transcription::default(),
+            default_interpretation(),
+            1,
+        )
+        .expect("reads")
+    };
+    // a sequence that states no tempo plays a beat a second: the line is at
+    // each beat when it sounds, not twice as early
+    let sequence = played();
+    assert_eq!(times(&over(&sequence)), [0.0, 1000.0, 2000.0, 3000.0]);
+    // and one with a map of its own is followed through it
+    sequence.lock().unwrap().tempo_map = Some(TempoMap::new(4.0));
+    assert_eq!(times(&over(&sequence)), [0.0, 250.0, 500.0, 750.0]);
+    // a score of its own keeps the engraver's time
+    let mut page = engraved();
+    opened().on_its_sequence_s_time(&mut page);
+    assert_eq!(page.cursors[1].t, 500.0);
+}

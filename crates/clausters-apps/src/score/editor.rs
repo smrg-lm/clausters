@@ -7,12 +7,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_core::notation::Interpretation;
 use clausters_core::notation::{
     AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, Sheet, View, field_of,
     item_id, layout_options, measure_id, pitch_near, sheet_to_mei,
 };
+use clausters_core::notation::{Interpretation, default_interpretation, performance};
 use clausters_core::ratio::Ratio;
+use clausters_core::tempomap::TempoMap;
 use clausters_document::Opaque;
 use clausters_document::events::transcription::{self, Transcription};
 use clausters_document::events::writeback::write_back;
@@ -780,7 +781,41 @@ impl ScoreEditor {
     fn page(&mut self) -> Page {
         self.lay_out();
         let paged = self.view == View::Page;
-        self.held().pages(if paged { PAGE_GAP } else { 0.0 }, paged)
+        let mut page = self.held().pages(if paged { PAGE_GAP } else { 0.0 }, paged);
+        self.on_its_sequence_s_time(&mut page);
+        page
+    }
+
+    /// **Over a sequence, the page's times are the sequence's.** An engraver
+    /// counts a page in its own time -- 120 quarters a minute where the score
+    /// states no tempo -- and the play cursor is drawn over that. What plays
+    /// over a sequence is the sequence, on its own tempo map, so each time of
+    /// the page is taken to the beat the page puts it at and from there to
+    /// where the sequence's map puts that beat: the line is where the sound
+    /// is, whatever the sequence's tempo and however it changes.
+    fn on_its_sequence_s_time(&self, page: &mut Page) {
+        let Some(over) = &self.over else {
+            return;
+        };
+        let Ok(played) = performance(over.sheet.clone(), &default_interpretation()) else {
+            return;
+        };
+        let engraved = played.tempo_map(over.how.beat_unit.max(1));
+        // one beat a second where it states none, as a roll's axis reads it
+        let own = over
+            .seen
+            .tempo_map
+            .clone()
+            .unwrap_or_else(|| TempoMap::new(1.0));
+        let to = |ms: f64| own.secs_at(engraved.beats_at(ms / 1000.0)) * 1000.0;
+        for cursor in &mut page.cursors {
+            cursor.t = to(cursor.t);
+        }
+        for note in &mut page.notes {
+            let end = to(note.t + note.dur);
+            note.t = to(note.t);
+            note.dur = end - note.t;
+        }
     }
 
     /// **The elements an item is drawn as**: every id of the page that is the
