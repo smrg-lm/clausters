@@ -244,32 +244,16 @@ impl OscServer {
     /// The network-side twin of the engine's bundle classifier: whether any
     /// command in `cmds` targets a node at or under `group`, walked on the
     /// **mirror** rather than the engine's tree (the engine's is not reachable
-    /// from here). Kept in step with `Engine::bundle_is_governed` by hand.
+    /// from here). The walk is the mirror's own
+    /// ([`TreeMirror::is_descendant_of`](crate::osc::graph::TreeMirror::is_descendant_of)),
+    /// which a test holds to the engine's.
     fn packet_targets_group(&self, cmds: &[Cmd], group: i32) -> bool {
         cmds.iter().any(|cmd| {
             cmd_target_nodes(cmd)
                 .iter()
                 .flatten()
-                .any(|id| self.mirror_is_descendant_of(*id, group))
+                .any(|id| self.translator.mirror.is_descendant_of(*id, group))
         })
-    }
-
-    /// Walks the network-side mirror up from `id` to see whether `group` is on
-    /// its parent chain. `id == group` counts, as it does engine-side.
-    fn mirror_is_descendant_of(&self, id: i32, group: i32) -> bool {
-        let mut current = id;
-        // Bounded by the mirror's size: a parent chain cannot be longer, and an
-        // unbounded walk here would hang the network thread on a corrupt tree.
-        for _ in 0..=MAX_NODES {
-            if current == group {
-                return true;
-            }
-            match self.translator.mirror.parent(current) {
-                Some(parent) => current = parent,
-                None => return false,
-            }
-        }
-        false
     }
 }
 

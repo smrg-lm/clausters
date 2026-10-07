@@ -38,7 +38,6 @@ use tracing::{error, info, warn};
 use crate::dsp::ReplyKind;
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
-use crate::node::MAX_NODES;
 use crate::osc::ClientId;
 use crate::osc::translate::{CmdTranslator, control_key, parse_buffer_gen, parse_buffer_msg};
 use clausters_net::loopback;

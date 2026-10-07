@@ -1658,6 +1658,191 @@ mod tests {
         assert_eq!(refuse(&mut t, 4, 2, AddAction::Tail), Reject::GroupFull);
     }
 
+    // ---- the engine's tree against the network's mirror ----
+
+    use crate::osc::graph::{MirrorBody, TreeMirror};
+
+    /// One step of a walk both trees take.
+    #[derive(Debug, Clone, Copy)]
+    enum Step {
+        Group(i32, i32, AddAction),
+        Synth(i32, i32, AddAction),
+        Move(i32, i32, Place),
+        Free(i32),
+        FreeAll(i32),
+        DeepFree(i32),
+    }
+
+    /// The engine's tree as `(id, parent, children)` rows, the root first and
+    /// each group's children in execution order.
+    fn engine_rows(tree: &NodeTree) -> Vec<(i32, i32, Vec<i32>)> {
+        let mut rows = Vec::new();
+        let mut pending = vec![tree.find(ROOT_NODE_ID).unwrap()];
+        while let Some(idx) = pending.pop() {
+            let slot = tree.slot(idx).unwrap();
+            let children: Vec<usize> = match &slot.kind {
+                NodeKind::Group(group) => group.children.clone(),
+                NodeKind::Synth { .. } => Vec::new(),
+            };
+            // the root is its own parent in the mirror, and has none here
+            let parent = if slot.id == ROOT_NODE_ID {
+                ROOT_NODE_ID
+            } else {
+                tree.id_of(slot.parent)
+            };
+            rows.push((
+                slot.id,
+                parent,
+                children.iter().map(|&c| tree.id_of(c)).collect(),
+            ));
+            pending.extend(children.into_iter().rev());
+        }
+        rows
+    }
+
+    /// The mirror's tree in the same rows.
+    fn mirror_rows(mirror: &TreeMirror) -> Vec<(i32, i32, Vec<i32>)> {
+        let mut rows = Vec::new();
+        let mut pending = vec![ROOT_NODE_ID];
+        while let Some(id) = pending.pop() {
+            let children = mirror.children(id).map_or_else(Vec::new, <[i32]>::to_vec);
+            rows.push((id, mirror.get(id).unwrap().parent, children.clone()));
+            pending.extend(children.into_iter().rev());
+        }
+        rows
+    }
+
+    /// Applies `step` to both trees and answers whether each took it.
+    fn take(tree: &mut NodeTree, mirror: &mut TreeMirror, step: Step) -> (bool, bool) {
+        let synth = || NodeKind::Synth {
+            node: Box::new(MockSynth {
+                done: DoneAction::None,
+            }),
+            usage: StageMask::default(),
+        };
+        let body = || MirrorBody::Synth {
+            def_name: String::new(),
+            controls: Vec::new(),
+            usage: Default::default(),
+            bus_controls: Vec::new(),
+            maps: Vec::new(),
+        };
+        match step {
+            Step::Group(id, target, action) => (
+                tree.insert(
+                    id,
+                    NodeKind::Group(Group::new()),
+                    target,
+                    action,
+                    &mut |_| {},
+                )
+                .is_ok(),
+                mirror
+                    .insert(id, MirrorBody::group(false), target, action)
+                    .is_ok(),
+            ),
+            Step::Synth(id, target, action) => (
+                tree.insert(id, synth(), target, action, &mut |_| {})
+                    .is_ok(),
+                mirror.insert(id, body(), target, action).is_ok(),
+            ),
+            Step::Move(id, target, place) => (
+                tree.move_node(id, target, place),
+                mirror.move_node(id, target, place).is_some(),
+            ),
+            Step::Free(id) => {
+                let known = mirror.get(id).is_some() && id != ROOT_NODE_ID;
+                mirror.remove(id);
+                (tree.free(id, &mut |_| {}), known)
+            }
+            Step::FreeAll(id) => {
+                let group = mirror.children(id).is_some();
+                mirror.free_all(id);
+                (tree.free_all(id, &mut |_| {}), group)
+            }
+            Step::DeepFree(id) => {
+                let group = mirror.children(id).is_some();
+                mirror.deep_free(id);
+                (tree.deep_free(id, &mut |_| {}), group)
+            }
+        }
+    }
+
+    /// **The network's mirror and the engine's tree are one tree.** They are
+    /// two implementations of the same rules, on two threads, and nothing else
+    /// holds them together: the same walk is put to both -- every add action,
+    /// every place of a move, the three frees, over ids that exist, that are
+    /// gone and that were never there -- and after each step both took it or
+    /// both refused it, and the two trees read the same, row for row.
+    #[test]
+    fn the_mirror_and_the_engine_s_tree_take_the_same_walk() {
+        const ACTIONS: [AddAction; 5] = [
+            AddAction::Head,
+            AddAction::Tail,
+            AddAction::Before,
+            AddAction::After,
+            AddAction::Replace,
+        ];
+        const PLACES: [Place; 4] = [Place::Head, Place::Tail, Place::Before, Place::After];
+        // A fixed sequence: the same walk on every run, and a failure names
+        // its step.
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = |below: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % below) as i32
+        };
+        let mut tree = NodeTree::new();
+        let mut mirror = TreeMirror::new();
+        // Few ids, and most picks among what the tree holds (or, for a new
+        // node, among what it does not): a step mostly lands, and now and then
+        // names a node that is gone, a synth where a group is wanted, an id in
+        // use, or the node itself.
+        const IDS: u64 = 24;
+        let mut taken = 0;
+        for n in 0..4000 {
+            let live: Vec<i32> = mirror_rows(&mirror).iter().map(|row| row.0).collect();
+            let gone: Vec<i32> = (0..IDS as i32).filter(|id| !live.contains(id)).collect();
+            let mut among = |ids: &[i32]| {
+                if ids.is_empty() || next(8) == 0 {
+                    next(IDS)
+                } else {
+                    ids[next(ids.len() as u64) as usize]
+                }
+            };
+            let (id, target, fresh) = (among(&live), among(&live), among(&gone));
+            let step = match next(12) {
+                0..=2 => Step::Group(fresh, target, ACTIONS[next(5) as usize]),
+                3..=5 => Step::Synth(fresh, target, ACTIONS[next(5) as usize]),
+                6..=8 => Step::Move(id, target, PLACES[next(4) as usize]),
+                9 => Step::Free(id),
+                10 => Step::FreeAll(id),
+                _ => Step::DeepFree(id),
+            };
+            let (engine, mirrored) = take(&mut tree, &mut mirror, step);
+            assert_eq!(engine, mirrored, "step {n}, {step:?}: taken by one only");
+            taken += usize::from(engine);
+            assert_eq!(
+                engine_rows(&tree),
+                mirror_rows(&mirror),
+                "step {n}, {step:?}: the trees differ"
+            );
+            // the ancestor walk, over every pair of ids: live, gone and never there
+            for a in 0..IDS as i32 {
+                for b in 0..IDS as i32 {
+                    assert_eq!(
+                        tree.is_descendant_of(a, b),
+                        mirror.is_descendant_of(a, b),
+                        "step {n}, {step:?}: whether {a} is at or under {b}"
+                    );
+                }
+            }
+        }
+        // the walk is of steps both took, not of four thousand refusals
+        assert!(taken > 1000, "only {taken} of 4000 steps were taken");
+    }
+
     #[test]
     fn sibling_resolution_at_the_edges() {
         let t = tree_1_2_3();

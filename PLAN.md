@@ -2674,13 +2674,26 @@ where it came from).
   server with several transports makes it hold one of them
   (`server.transport(id)`) with nothing else in the surface moving.
 
-- ⬜ **Two node trees kept in step by hand** *(the server audit,
-  2026-09-25)*. The network's `TreeMirror` and the engine's `NodeTree` implement the
+- ✅ **Two node trees kept in step by hand** *(the server audit,
+  2026-09-25; the test written 2026-10-07)*. The network's `TreeMirror` and the engine's `NodeTree` implement the
   same semantics (insert by add action, move, free all, deep free, the ancestor
   walk), and `dispatch.rs` says one rule is "kept in step with
   `Engine::bundle_is_governed` by hand". Two threads, two sets of rules, so two
   implementations are defensible; nothing checks them against each other. A
   test driving both with one sequence of operations is the cheap guard.
+  *(Written: `node::tests::the_mirror_and_the_engine_s_tree_take_the_same_walk`
+  puts one fixed walk of four thousand steps to both — every add action, every
+  place of a move, the three frees, over ids that are live, gone and never
+  there — and after each step both took it or both refused it, the two trees
+  read the same row for row, and the ancestor walk agrees over every pair of
+  ids. **It found one difference.** The network's walk was a method of the
+  dispatcher, which the test could not reach, so it moved onto the mirror
+  (`TreeMirror::is_descendant_of`) — and there an id the tree does not hold
+  was at or under itself, where the engine answers `false` for any unknown
+  id. So a `/sched_atTransport` whose packet names the transport's group
+  after that group was freed passed the network's check, though the engine's
+  tree holds no such node to govern; the mirror now answers as the engine
+  does.)*
 
 - ⬜ **MIDI 2.0 from outside the server** *(named 2026-09-30, closing
   `crates/clausters-apps/PLAN.md` `X3.11d4`)*. MIDI 2.0 reaches the server

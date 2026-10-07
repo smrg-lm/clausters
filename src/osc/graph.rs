@@ -338,6 +338,31 @@ impl TreeMirror {
         self.nodes.get(&id).map(|n| n.parent)
     }
 
+    /// Whether `id` sits at or under `ancestor`, by the parent links: the
+    /// network's reading of what `NodeTree::is_descendant_of` answers on the
+    /// engine's tree, and held to it by a test that walks both
+    /// (`node::tests`). `id == ancestor` counts, and an id the tree does not
+    /// hold is under nothing, itself included.
+    ///
+    /// Bounded by the mirror's size: a parent chain cannot be longer, and an
+    /// unbounded walk would hang the network thread on a corrupt tree.
+    pub fn is_descendant_of(&self, id: i32, ancestor: i32) -> bool {
+        if !self.nodes.contains_key(&ancestor) {
+            return false;
+        }
+        let mut current = id;
+        for _ in 0..=self.nodes.len() {
+            if current == ancestor {
+                return true;
+            }
+            match self.parent(current) {
+                Some(parent) => current = parent,
+                None => return false,
+            }
+        }
+        false
+    }
+
     pub fn set_auto(&mut self, group: i32, auto: bool) -> Result<(), String> {
         match self.nodes.get_mut(&group).map(|n| &mut n.body) {
             Some(MirrorBody::Group { auto: flag, .. }) => {
