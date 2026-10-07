@@ -188,10 +188,10 @@ pub(crate) fn tool(verb: &str, label: &str, symbol: bool, tip: &str) -> Value {
 /// host's verbs: back to the start, play or stop, on to the end, the loop.
 fn transport() -> Vec<Value> {
     vec![
-        tool("to_start", &glyph(TO_START), true, "Go to start (Home)"),
-        tool("play", PLAY, true, "Play or stop (Space)"),
-        tool("to_end", &glyph(TO_END), true, "Go to end (End)"),
-        tool("loop", LOOP, true, "Loop (L)"),
+        tool("to_start", &glyph(TO_START), true, "Go to start"),
+        tool("play", PLAY, true, "Play or stop"),
+        tool("to_end", &glyph(TO_END), true, "Go to end"),
+        tool("loop", LOOP, true, "Loop"),
     ]
 }
 

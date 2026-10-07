@@ -718,7 +718,9 @@ export interface WidgetOptions {
     enabled?: boolean;
     /**
      * A short text shown beside the pointer once it has rested on the widget.
-     * It goes when the pointer leaves, on a press and on a key.
+     * It goes when the pointer leaves, on a press and on a key. On a button
+     * that performs a `verb` the host adds the key bound to that verb, in
+     * parentheses, so a tip never states a key itself.
      */
     tip?: string;
     /**

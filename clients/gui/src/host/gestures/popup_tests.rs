@@ -696,6 +696,35 @@ fn a_tip_shows_once_the_pointer_has_rested_and_goes_when_it_leaves() {
     assert_eq!(tip_of(&host), None);
 }
 
+/// **A tool's tip shows the key of its verb**, read from the key table as the
+/// tip comes up: the chord the table binds, the one a rebinding left, and
+/// nothing for a verb no key performs or a button that is no tool.
+#[test]
+fn a_tool_s_tip_shows_the_key_of_its_verb() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"row","children":[
+            {"id":5,"type":"button","label":"L","w":60,"verb":"loop","tip":"Loop"},
+            {"id":6,"type":"button","label":"X","w":60,"verb":"export","tip":"Export"},
+            {"id":7,"type":"button","label":"B","w":60,"tip":"a plain button"}]}"#,
+    );
+    let ctx = ctx();
+    let tip = |host: &Host, id: i32| {
+        let at = mid(rect_of(host, &ctx, id));
+        host.tip_at(1, ctx.fb_w, ctx.fb_h, at.0, at.1).map(|t| t.1)
+    };
+    assert_eq!(tip(&host, 5).as_deref(), Some("Loop (L)"));
+    assert_eq!(
+        tip(&host, 6).as_deref(),
+        Some("Export"),
+        "no key performs it"
+    );
+    assert_eq!(tip(&host, 7).as_deref(), Some("a plain button"));
+    let table = serde_json::json!({"loop": "Ctrl+L", "export": "F9"});
+    host.keys.overlay_json(table.as_object().unwrap());
+    assert_eq!(tip(&host, 5).as_deref(), Some("Loop (Ctrl+L)"));
+    assert_eq!(tip(&host, 6).as_deref(), Some("Export (F9)"));
+}
+
 #[test]
 fn a_press_and_a_key_take_a_tip_down() {
     let mut host = host_from(TIPS);

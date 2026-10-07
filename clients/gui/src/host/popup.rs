@@ -767,7 +767,26 @@ impl super::Host {
             .iter()
             .filter(|p| p.rect.contains(x, y) && p.clip.is_none_or(|c| c.contains(x, y)))
             .rev()
-            .find_map(|p| Some((p.widget.id?, p.widget.tip.clone()?)))
+            .find_map(|p| {
+                let (id, tip) = (p.widget.id?, p.widget.tip.clone()?);
+                // **A tool's tip shows its key**: a button that performs a
+                // verb is pressed by the chord the key table binds to it, so
+                // the tip names that chord as a menu entry does -- read from
+                // the table now, and so the one a rebinding left.
+                let key = p
+                    .widget
+                    .kind
+                    .as_element()
+                    .and_then(|el| el.tool_verb())
+                    .and_then(|verb| self.keys.label(verb));
+                Some((
+                    id,
+                    match key {
+                        Some(key) => format!("{tip} ({key})"),
+                        None => tip,
+                    },
+                ))
+            })
     }
 
     /// The menu bar's band in window `def_id`'s framebuffer, when it has one.

@@ -333,7 +333,7 @@ fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
             STOP,
             ids.map(|i| i.stop),
         ),
-        chrome::tool("loop", chrome::LOOP, true, "Loop (L)"),
+        chrome::tool("loop", chrome::LOOP, true, "Loop"),
         // A reading, written on every tick of the transport: drawn on the
         // window's live layer, so a write costs the label and not the window
         // -- and as wide as its longest reading, so a tick moves no tool.
