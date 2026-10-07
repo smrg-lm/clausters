@@ -397,6 +397,18 @@ impl Default for Multitrack {
 
 impl Multitrack {}
 
+/// **Draws inside the stack's own rectangle**: a row scrolled half off either
+/// end is drawn whole and cut here, so it never paints over the ruler, the
+/// toolbar or whatever stands above or below the stack. What the caller had
+/// clipped to is kept, and put back.
+fn within(d: &mut Draw, rect: Rect, paint: impl FnOnce(&mut Draw)) {
+    let outer = d.parts().0.clip();
+    let inner = outer.map_or(rect, |clip| clip.intersect(rect));
+    d.parts().0.set_clip(Some(inner));
+    paint(d);
+    d.parts().0.set_clip(outer);
+}
+
 /// **The clips are boxes on rows**, which is the one thing the box arithmetic
 /// asks of whoever holds some.
 ///
@@ -472,10 +484,10 @@ impl Element for Multitrack {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        self.paint(d, ctx)
+        within(d, ctx.rect, |d| self.paint(d, ctx));
     }
     fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
-        self.paint_live(d, ctx)
+        within(d, ctx.rect, |d| self.paint_live(d, ctx));
     }
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.press_at(at, input)

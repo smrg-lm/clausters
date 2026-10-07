@@ -2441,3 +2441,45 @@ fn a_box_of_notes_stops_at_its_start_and_runs_on_past_its_end() {
         "past the last note"
     );
 }
+
+/// **A stack scrolled down draws nothing above itself**: a row half off the
+/// top is cut at the stack's edge, not painted over what stands above it --
+/// the ruler, the toolbar.
+#[test]
+fn a_scrolled_stack_paints_inside_its_own_rect() {
+    use crate::host::paint::{Draw, Mesh};
+    use crate::host::theme::Theme;
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1,
+                       "three", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 500, 0, "", -1, "b", "two", 0, 500, 0, "", -1]}"#,
+    ));
+    mt.scroll = 60.0;
+    let world = crate::host::world::World::default();
+    let metrics = Metrics::default();
+    let rect = Rect::new(0.0, 100.0, 800.0, 200.0);
+    let ctx = Ctx {
+        world: &world,
+        metrics: &metrics,
+        rect,
+        indent: 120.0,
+        scale: 1.0,
+        time: None,
+        clip: None,
+        focused: false,
+        hovered: false,
+        clock: 0.0,
+    };
+    let mut mesh = Mesh::new();
+    let theme = Theme::default();
+    mt.draw(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
+    let drawn = mesh.extent().expect("the stack drew");
+    assert!(
+        drawn.y >= rect.y - 0.5,
+        "drawn from {} above the stack at {}",
+        drawn.y,
+        rect.y
+    );
+    assert!(drawn.y + drawn.h <= rect.y + rect.h + 0.5);
+    assert_eq!(mesh.clip(), None, "and the caller's clip is put back");
+}
