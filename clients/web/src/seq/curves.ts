@@ -365,13 +365,14 @@ export class CurveEmitter {
 
     /**
      * The rate a curve is stepped at: the clock's, when it is on the server's
-     * samples, else the engine's default.
+     * samples, else the one the server answered when its handle asked.
      *
      * @internal
      */
     sampleRate(clock: TempoClock | null): number {
         const timebase = clock?.timebase;
-        return timebase instanceof SampleClockTimebase ? timebase.sampleRate : RATE;
+        if (timebase instanceof SampleClockTimebase) return timebase.sampleRate;
+        return this.server.sampleRate ?? RATE;
     }
 
     /** Whether nothing is being followed. @internal */

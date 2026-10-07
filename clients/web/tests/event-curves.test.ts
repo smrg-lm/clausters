@@ -92,6 +92,20 @@ test("an event's curve sets its control from its start to its end", async () => 
     assert.equal(sets(score, "freq").length + sets(score, "pan").length, 0);
 });
 
+test("a curve is stepped at the rate the server answered", async () => {
+    // Off the sample clock nothing but the handle knows the server's rate:
+    // it keeps what `/server_query` answered, and a block is 64 of those.
+    const ramp = new Automation({ target: { control: "amp" }, points: [[0.0, 0.0], [0.25, 1.0]] });
+    const score = await played(function* () {
+        new Event({ freq: 440, amp: 0.2, dur: 1.0, legato: 0.5, automation: [ramp] }).play();
+        yield 1.0;
+    }, (session) => {
+        session.server.sampleRate = 44_100;
+    });
+    const step = 64 / 44_100;
+    sets(score, "amp").slice(1, 4).forEach(([t], i) => assert.ok(near(t, (i + 1) * step)));
+});
+
 test("a curve reaches a note to its off and no further", async () => {
     // A `/node_set` to a node that is gone fails an offline render, and the
     // off is the last instant a client knows the node is there.

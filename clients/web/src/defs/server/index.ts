@@ -314,6 +314,14 @@ export class Server {
      */
     sizing: ServerSizing;
     /**
+     * The sample rate the server runs at, as `/server_query` answered it to
+     * {@link Server.reconcile}; `null` on a handle that never asked. What
+     * steps a value once a block reads it here, since it cannot await a query.
+     *
+     * @internal
+     */
+    sampleRate: number | null = null;
+    /**
      * The four allocators, built on first use rather than in the constructor.
      *
      * Every one of them is a core registry, and the core is wasm a page loads:
@@ -762,6 +770,7 @@ export class Server {
             transports: info.transports,
         };
         this.built = {};        // rebuilt against the sizes just read
+        this.sampleRate = info.nominalSampleRate;
         return this;
     }
 
