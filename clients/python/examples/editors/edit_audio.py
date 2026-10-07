@@ -27,7 +27,9 @@ last frame. **Space**
 plays from the cursor to the end of the take, or of the selection, with the
 play cursor following the sound and going back to the position cursor when
 the pass ends; a second press stops it there sooner. **L** switches the loop:
-looping, the selection -- or the whole take -- plays over and over. The
+looping, the selection -- or the whole take -- plays over and over, and a
+selection drawn again while it loops is where it loops next: the loop follows
+the drag, and the sound goes to the new start when the drag is let go. The
 **meter** beside the take reads its level while it plays and falls when it
 stops, and neither a play nor a stop clicks: the editor sounds the take through
 nodes of its own, whose output fades in and out with the transport.
