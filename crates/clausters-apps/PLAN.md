@@ -2292,6 +2292,11 @@ Every entry carries a checkbox.
   its `notation` section, which a page already reads), or both -- and what the
   page of that sequence writes, since an engraver counts 120 quarters a minute
   where a score states no tempo and a page says its tempo with a mark.
+  *(The user, the same day: the bars may stand on the roll's ruler, where it
+  already counts them -- but the meter has to be able to change along the
+  roll as it does on a page. So what the ruler reads is not one meter but the
+  page's own grid, its meters by measure, which the sequence's `notation`
+  section holds and a reading already takes.)*
 
 - ⬜ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
   the conversion to a roll goes one way, and the way back takes decisions
