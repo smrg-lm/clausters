@@ -3563,6 +3563,32 @@ pub fn sheet_render_events(sheet: &str, interp: &str) -> Result<String, JsError>
     serde_json::to_string(&sequence).map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// **Read a sequence into a score**, as JSON `{"sheet", "items"}`: the way
+/// back from [`sheet_render_events`] -- what the events say of their page
+/// written as they say it, and what they do not decided by `how`, the
+/// transcription (`clausters_document::events::transcription::read`).
+/// `interp` is the reading whose dynamics name a level. Each of the two is
+/// empty for its default.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetReadEvents)]
+pub fn sheet_read_events(sequence: &str, how: &str, interp: &str) -> Result<String, JsError> {
+    use clausters_document::events::transcription::{Transcription, read};
+    let sequence: clausters_document::events::EventSequence =
+        serde_json::from_str(sequence).map_err(|e| JsError::new(&format!("sequence: {e}")))?;
+    let how: Transcription = if how.trim().is_empty() {
+        Transcription::default()
+    } else {
+        serde_json::from_str(how).map_err(|e| JsError::new(&format!("transcription: {e}")))?
+    };
+    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
+        clausters_core::notation::default_interpretation()
+    } else {
+        serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
+    };
+    let read = read(&sequence, &how, &interp).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&read).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// The default interpretation, as JSON -- every number the reading depends on,
 /// and the value an override starts from.
 ///

@@ -39,6 +39,7 @@ import {
     setMarks,
     setMeter,
     setPitches,
+    sheetFromEvents,
     sheetFromMei,
     sheetFromNotes,
     sheetFromTimeline,
@@ -62,6 +63,7 @@ import { Event, NOTATION_KEYS, synthRender } from "../src/seq/event.ts";
 import { event_notation_keys as coreNotationKeys } from "../src/core/clausters_core_web.js";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 import * as notation from "../src/gui/notation/index.ts";
 import { setEngraverUrl } from "../src/gui/notation/index.ts";
 
@@ -535,14 +537,15 @@ test("written pitches and a written value reach the page as they are", () => {
     }).staves[0].voices[0].items[0];
     assert.deepEqual(item.pitches.map((p) => [p.step, p.alter]), [["f", -1], ["a", -1]]);
     assert.deepEqual(item.dur, [1, 12]);
-    // a chord one of whose notes gave a number is spelled, all of it
+    // each note of a chord is its own event, so each keeps what it says: the
+    // one written stays as written, the one that gave a number is spelled
     const mixed = new Timeline();
     mixed.add(0, new Event({ pitches: [pitch("f", 4, -1)], midinote: 64, dur: 1 }));
     mixed.add(0, new Event({ midinote: 68, dur: 1 }));
     const spelled = (sheetFromTimeline(mixed) as unknown as {
-        staves: { voices: { items: { pitches: { step: string }[] }[] }[] }[];
+        staves: { voices: { items: { pitches: { step: string; alter: number }[] }[] }[] }[];
     }).staves[0].voices[0].items[0];
-    assert.deepEqual(spelled.pitches.map((p) => p.step), ["e", "g"]);
+    assert.deepEqual(spelled.pitches.map((p) => [p.step, p.alter]), [["f", -1], ["g", 1]]);
 });
 
 /** One staff of two voices: p rising to f over the first, a chord in it. */
@@ -864,4 +867,66 @@ test("the signs, the staves and the marks at a point are the model's", () => {
         [1],
     );
     assert.throws(() => notation.setGroups(eight, [{ first: 0, last: 3, symbol: "brace" }]));
+});
+
+test("a played sequence is read as a score and stays as it was", () => {
+    const played = new EventSequence([
+        [0.03, new Event({ midinote: 62, dur: 0.93, amp: 0.05 })],
+        [1.01, new Event({ midinote: 66, dur: 0.48, amp: 0.052 })],
+        [2.0, new Event({ midinote: 69, dur: 2.02, amp: 0.25 })],
+        [2.02, new Event({ midinote: 74, dur: 1.97, amp: 0.25 })],
+        [4.0, new Event({ midinote: 49, dur: 4.0, channel: 1 })],
+    ]);
+    type Items = { pitches?: unknown[]; dur: number[]; marks?: { dynamic?: string } }[];
+    const itemsOf = (sheet: unknown): Items =>
+        (sheet as { staves: { voices: { items: Items }[] }[] }).staves[0].voices[0].items;
+    const before = played.data();
+    const read = sheetFromEvents(played) as unknown as { key: string; staves: { clef: string }[] };
+    assert.deepEqual(
+        itemsOf(read).map((item) => [(item.pitches ?? []).length, item.dur]),
+        [
+            [1, [1, 4]],
+            [1, [1, 8]],
+            [0, [1, 8]],
+            [2, [1, 2]],
+        ],
+    );
+    assert.deepEqual(played.data(), before, "reading changes nothing");
+    // a channel is a staff, its clef by its register, and the key is found
+    assert.deepEqual(
+        read.staves.map((staff) => staff.clef),
+        ["G2", "F4"],
+    );
+    assert.equal(read.key, "D");
+    // the levels are named by the reading's own dynamics, where they change
+    const first = itemsOf(read);
+    assert.equal(first[0].marks?.dynamic, "p");
+    assert.equal(first[3].marks?.dynamic, "ff");
+    assert.equal(first[1].marks, undefined);
+    // another reading of the same take, and one that is told its key
+    const coarse = sheetFromEvents(played, { division: 4, key: "C", dynamics: false });
+    assert.deepEqual(itemsOf(coarse)[1].dur, [1, 4]);
+    assert.equal((coarse as unknown as { key: string }).key, "C");
+    assert.equal(itemsOf(coarse)[0].marks, undefined);
+    assert.throws(
+        () => sheetFromEvents(played, { quantize: 16 } as unknown as { division: number }),
+        /quantize/,
+    );
+});
+
+test("a score rendered into a sequence reads back as the same page", () => {
+    const written = sheetFromNotes(
+        [
+            new Event({ midinote: 65, dur: 1.0, articulations: ["stacc"] }),
+            rest(0.5),
+            new Event({ midinote: 70, dur: 0.5 }),
+            new Event({ midinote: 72, dur: 2.0, dynamic: "f" }),
+        ],
+        { meter: "3/4", key: "F", clef: "G2" },
+    );
+    const rendered = toSequence(written);
+    assert.deepEqual(toMei(sheetFromEvents(rendered)), toMei(written));
+    // each voice read on its own is a score of its own
+    const voice = rendered.separate("voice")[0];
+    assert.deepEqual(toMei(sheetFromEvents(voice)), toMei(written));
 });

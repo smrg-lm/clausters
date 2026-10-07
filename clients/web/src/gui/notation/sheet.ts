@@ -31,6 +31,7 @@ import {
     sheetApply,
     sheetOps,
     sheetPerform,
+    sheetReadEvents,
     sheetRenderEvents,
     sheetToMei,
     voiceToSheet as coreVoiceToSheet,
@@ -318,6 +319,123 @@ export function renderEvents(sheet: Sheet, interp?: Interpretation): RenderedSeq
     return JSON.parse(
         sheetRenderEvents(JSON.stringify(sheet), interp ? JSON.stringify(interp) : ""),
     ) as RenderedSequence;
+}
+
+/**
+ * **How a sequence is read into a score** where its events do not say: the
+ * transcription. Every key is optional.
+ */
+export interface Transcription {
+    /** The meter, as `"3/4"`. Left out, the sequence's own, else 4/4. */
+    meter?: string;
+    /**
+     * The key, as a tonic name (`"Bb"`). Left out, the sequence's own, else
+     * the signature most of its notes are in.
+     */
+    key?: string;
+    /**
+     * The clef of every staff the sequence does not say one for. Left out,
+     * each staff's is chosen by its register.
+     */
+    clef?: string;
+    /** Which written value a beat is, as its denominator: `4`, a quarter. */
+    beatUnit?: number;
+    /**
+     * The smallest written value an onset is snapped to, as its denominator:
+     * `16`, a sixteenth.
+     */
+    division?: number;
+    /**
+     * The tuplets a beat may be read as, each the parts it is divided in:
+     * `[3]` admits triplets.
+     */
+    tuplets?: number[];
+    /** The most voices found on one staff: `2`. */
+    voices?: number;
+    /** Whether levels are read back as dynamics and hairpins: `true`. */
+    dynamics?: boolean;
+}
+
+/** The keys of a {@link Transcription}. */
+export const TRANSCRIPTION_KEYS = [
+    "meter",
+    "key",
+    "clef",
+    "beatUnit",
+    "division",
+    "tuplets",
+    "voices",
+    "dynamics",
+] as const;
+
+/** A sequence read into a score: the sheet, and which item each event became. */
+export interface ReadSequence {
+    /** The score. */
+    sheet: Sheet;
+    /** `[event id, item id]` for every note read; a chord's events name one item. */
+    items: [number, number][];
+}
+
+/**
+ * Read **the data of a sequence** into a score -- the way back from
+ * {@link renderEvents} -- and answer the sheet with which item each event
+ * became.
+ *
+ * What the events say of their page is written as they say it -- the notation
+ * keys (`seq.NOTATION_KEYS`) and, in a sequence a score was rendered into, its
+ * `notation` section, so that one reads back as it was written. What they do
+ * not say is decided by `how`, the {@link Transcription}:
+ *
+ * - `meter`: left out, the sequence's own, else 4/4. No meter is found in a
+ *   performance.
+ * - `key`: left out, the sequence's own, else the signature most of its notes
+ *   are in. A number is spelled by it, the spelling nearest the tonic on the
+ *   line of fifths, or by the event's `spelling`.
+ * - `clef`: left out, the sequence's own, else chosen by each staff's register.
+ * - `beatUnit` (4): which written value a beat is.
+ * - `division` (16): the smallest written value an onset is snapped to.
+ * - `tuplets` (`[]`): `[3]` admits triplets, read in a beat whose onsets they
+ *   fit clearly better.
+ * - `voices` (2): the most voices found on one staff. A staff is what the
+ *   events say, else a channel -- in an MPE zone, where a channel is one
+ *   note's, one staff for the zone -- and a note that starts under another
+ *   goes to the next voice.
+ * - `dynamics` (`true`): whether levels are read back -- a curve of the
+ *   staff's channel made of steps and straight ramps as dynamics and hairpins,
+ *   else a dynamic where the level of the notes changes. A curve of any other
+ *   shape was drawn by hand and is no hairpin.
+ *
+ * `interp` is the reading whose dynamics name a level. **The sequence is not
+ * changed**: what was played keeps the times that arrived, and reading it
+ * again with another `how` is all changing it takes.
+ */
+export function readEvents(
+    sequence: unknown,
+    how: Transcription = {},
+    interp?: Interpretation,
+): ReadSequence {
+    const unknown = Object.keys(how).find(
+        (key) => !(TRANSCRIPTION_KEYS as readonly string[]).includes(key),
+    );
+    if (unknown !== undefined) {
+        throw new TypeError(
+            `a sequence is not read by "${unknown}": a transcription has ` +
+                TRANSCRIPTION_KEYS.join(", "),
+        );
+    }
+    const { beatUnit, ...written } = how;
+    const said: Record<string, unknown> = { ...written };
+    if (beatUnit !== undefined) said.beat_unit = beatUnit;
+    for (const key of Object.keys(said)) {
+        if (said[key] === undefined || said[key] === null) delete said[key];
+    }
+    return JSON.parse(
+        sheetReadEvents(
+            JSON.stringify(sequence),
+            JSON.stringify(said),
+            interp ? JSON.stringify(interp) : "",
+        ),
+    ) as ReadSequence;
 }
 
 /** A sequence as {@link renderEvents} writes it: plain data. */

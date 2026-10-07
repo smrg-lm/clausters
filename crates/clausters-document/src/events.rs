@@ -1201,6 +1201,8 @@ pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]
 pub mod score;
+#[cfg(feature = "notation")]
+pub mod transcription;
 
 #[cfg(test)]
 mod tests;

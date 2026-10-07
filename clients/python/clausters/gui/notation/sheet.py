@@ -193,6 +193,54 @@ def render_events(sheet: dict, interp: dict | None = None) -> dict:
                          _u8(b), len(b.encode("utf-8"))))
 
 
+def read_events(sequence, how: dict | None = None,
+                interp: dict | None = None) -> dict:
+    """Read **the data of a sequence** into a score -- the way back from
+    `render_events` -- and answer ``{"sheet": ..., "items": [[event_id,
+    item_id], ...]}``: the sheet, and which item each event became (a chord's
+    events name one item).
+
+    What the events say of their page is written as they say it -- the
+    notation keys (`clausters.seq.event.NOTATION_KEYS`) and, in a sequence a
+    score was rendered into, its ``notation`` section, so that one reads back
+    as it was written. What they do not say is decided by ``how``, the
+    transcription, every key of it optional:
+
+    - ``meter`` (``"3/4"``): left out, the sequence's own, else 4/4. No meter
+      is found in a performance.
+    - ``key`` (``"Bb"``): left out, the sequence's own, else the signature
+      most of its notes are in. A number is spelled by it, the spelling
+      nearest the tonic on the line of fifths, or by the event's ``spelling``.
+    - ``clef``: left out, the sequence's own, else chosen by each staff's
+      register.
+    - ``beat_unit`` (4): which written value a beat is.
+    - ``division`` (16): the smallest written value an onset is snapped to,
+      as its denominator.
+    - ``tuplets`` (``[]``): the tuplets a beat may be read as, each the parts
+      it is divided in -- ``[3]`` admits triplets, read in a beat whose onsets
+      they fit clearly better.
+    - ``voices`` (2): the most voices found on one staff. A staff is what the
+      events say, else a channel -- in an MPE zone, where a channel is one
+      note's, one staff for the zone -- and a note that starts under another
+      goes to the next voice.
+    - ``dynamics`` (``True``): whether levels are read back -- a curve of the
+      staff's channel made of steps and straight ramps as dynamics and
+      hairpins, else a dynamic where the level the notes state changes. A
+      curve of any other shape was drawn by hand and is no hairpin.
+
+    ``interp`` is the reading whose dynamics name a level. **The sequence is
+    not changed**: what was played keeps the times that arrived, and reading
+    it again with another ``how`` is all changing it takes.
+    """
+    a = json.dumps(sequence)
+    b = json.dumps(how if how is not None else {})
+    c = json.dumps(interp if interp is not None else {})
+    return _unwrap(_text(_core().clausters_core_sheet_read_events,
+                         _u8(a), len(a.encode("utf-8")),
+                         _u8(b), len(b.encode("utf-8")),
+                         _u8(c), len(c.encode("utf-8"))))
+
+
 def to_notes(sheet: dict, interp: dict | None = None) -> list:
     """Read ``sheet`` into the notes it **sounds**, in time order.
 

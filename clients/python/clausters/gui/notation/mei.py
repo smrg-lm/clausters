@@ -1,118 +1,115 @@
 """The two directions between the client's sequencing data and a score.
 
 The third way into the engraver, beside typed score text and the SVG adapter:
-turn the client's own `clausters.seq` data (Event, Timeline) into MEI -- the
-format `clausters.gui.notation.engrave` already reads -- so a melody or a
-bounced timeline is *seen* and edited as notation, the inverse of the
-score->sound flow.
+turn the client's own `clausters.seq` data (an `Event` run, a `Timeline`, an
+`EventSequence`) into a score, so a melody, a bounced timeline or a take
+played from a keyboard is *seen* and edited as notation -- and back again,
+`to_timeline` and `to_sequence`, which read a sheet into what it sounds.
 
-**And back again.** `to_timeline` is the return trip: a sheet read into what it
-sounds (`clausters.gui.notation.to_notes`, which is where the symbols are
-honoured) and placed on a `clausters.seq.timeline.Timeline` of `Event`s. It is
-here rather than beside the model because it is the same seam in the other
-direction -- building `Event`s reads Python-native types and stays in this
-client, while what a staccato *means* is one implementation in Rust.
-
-The **seam this module is** is worth naming, because it is where the
-agnostic/shell line falls and it is what a richer encoding extends: the
-reduction here is the client's half (it reads Python-native types and flattens
-them into a *voice*, a monophonic-per-slot stream of ticks and MIDI pitches),
-and laying that voice out into barred, tied measures is the shared half in
-``clausters_core::notation``. Every client writes the same document from the
-same voice.
+**Both directions are the core's.** A score is rendered into events by
+`clausters.gui.notation.render_events`, and events are read into a score by
+`clausters.gui.notation.read_events`: what the events say of their page is
+written as they say it, and what they do not -- when a note falls on the
+page, in which voice, spelled how -- is decided there, once, for every client.
+What this module adds is the client's own types on either side.
 """
 
 from __future__ import annotations
 
-import json
-
-from ...seq.event import NOTATION_KEYS
 from . import sheet
 
-# 32nd-note resolution: every duration snaps to an integer number of these, so
-# the encoder's barline splitting and tie decomposition are exact integer
-# arithmetic. Mirrors `clausters_core::notation`, which does that work.
-_TPW = 32  # ticks per whole note
+#: The keys of a transcription (`clausters.gui.notation.read_events`): how a
+#: sequence is read where its events do not say.
+TRANSCRIPTION_KEYS = ("meter", "key", "clef", "beat_unit", "division",
+                      "tuplets", "voices", "dynamics")
 
-def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
-               beat_unit: int = 4) -> str:
+
+def from_notes(notes, **how) -> str:
     """Engrave a **monophonic** run of events into an MEI string.
 
     ``notes`` is any iterable of `clausters.seq.event.Event` (a
-    `clausters.seq.event.rest` becomes a rest); each occupies its written
+    `clausters.seq.event.rest` is a silence); each occupies its written
     ``dur`` beats back to back, so this is the notation of a melody the way a
-    ``Pbind``/``Routine`` sequence reads it. The pitch is the event's
-    `Event.midinote` (rounded to the nearest semitone), the value is ``dur``.
-
-    An event may also say what the note is **on a page**
-    (`clausters.seq.event.NOTATION_KEYS`): ``articulations``, ``dynamic``,
-    ``ornament``, ``grace``, ``stem``, ``spelling``, ``accidental`` and ``tie``
-    reach the score under their own names, and an explicit ``sustain`` becomes
-    how long the note is *held* -- but only where no articulation already says
-    so, since a staccato that was also written as a short length would be
-    shortened twice on the way back.
-
-    Returns the MEI to hand to `engrave` (a one-shot display list), `Score` (to
-    edit and redraw) or `Score.from_notes` (the two in one). ``meter`` (``"4/4"``)
-    sets the barring, ``clef`` (``"G2"``/``"F4"``/``"C3"``) the staff, ``key``
-    the key signature and sharp-vs-flat spelling, and ``beat_unit`` what one beat
-    is worth (``4`` = a quarter, matching ``TEMPO``/``L:1/4``).
-
-    A duration that is not a single note value is written as **tied** notes (a
-    dotted value when exact, e.g. ``1.5`` beats -> a dotted quarter), and a note
-    that overruns a barline is split and tied across it. Off-grid durations
-    (finer than a 32nd, e.g. a triplet) snap to the grid here, on the way in:
-    the model itself holds an exact rational, so a tuplet is representable the
-    moment a caller can express one -- writing it is the emission milestone.
+    ``Pbind``/``Routine`` sequence reads it. ``how`` is the transcription, as
+    `sheet_from_events` takes it. Returns the MEI to hand to `engrave` or
+    `Score`.
     """
-    return sheet.to_mei(sheet_from_notes(notes, meter=meter, clef=clef,
-                                         key=key, beat_unit=beat_unit))
+    return sheet.to_mei(sheet_from_notes(notes, **how))
 
 
-def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
-                  key: str = "C", beat_unit: int = 4) -> str:
-    """Engrave a `clausters.seq.timeline.Timeline` -- or a
-    `clausters.seq.EventSequence`, read the same way -- into an MEI string.
-
-    The timeline's placements become the score's rhythm: events **sharing a
-    beat** are written as one chord, a gap between a group's written end and the
-    next onset becomes a rest, and a gap before the first onset is a leading
-    rest. Events that carry no pitch (an ``"osc"`` or ``"midi"`` one) are
-    skipped, as are rest events (they read as silence, i.e. a gap).
-
-    Each group is written for its **shortest** ``dur`` (one layer, so it is
-    clamped never to overrun the next onset -- the model holds several voices
-    already, and writing them is the emission milestone). Options and the tie/barline behaviour are
-    as `from_notes`; returns the MEI for `engrave`/`Score`/`Score.from_timeline`.
-    """
-    return sheet.to_mei(sheet_from_timeline(timeline, meter=meter, clef=clef,
-                                            key=key, beat_unit=beat_unit))
+def from_timeline(timeline, **how) -> str:
+    """Engrave a `clausters.seq.timeline.Timeline` -- its placed events, as
+    `sheet_from_events` reads them -- into an MEI string."""
+    return sheet.to_mei(sheet_from_events(timeline, **how))
 
 
 # -- stopping at the model ----------------------------------------------------
-# The same two reductions, handing back the **sheet** rather than the MEI. What
+# The same reductions, handing back the **sheet** rather than the MEI. What
 # they are for is everything the model can do that a string cannot: operate on
 # the score, and read it back into sound.
 
 
-def sheet_from_notes(notes, *, meter: str = "4/4", clef: str = "G2",
-                     key: str = "C", beat_unit: int = 4) -> dict:
-    """`from_notes`, stopping at the score model instead of the MEI.
+def sheet_from_events(sequence, *, interp: dict | None = None, **how) -> dict:
+    """Read a `clausters.seq.EventSequence` -- or a
+    `clausters.seq.timeline.Timeline`, or any ``(beat, event)`` pairs -- into
+    a sheet: the way back from `to_sequence`.
 
-    The sheet is what `clausters.gui.notation.to_mei` writes and what
-    `clausters.gui.notation.to_notes` reads back, so a caller that wants to
-    operate on the score -- or hear it as the page says rather than as the events
-    said -- starts here.
+    An event's notation keys (`clausters.seq.event.NOTATION_KEYS`) are
+    written as they say, and a sequence a score was rendered into is read
+    back as it was written. What the events do not say is decided by the
+    transcription, the keyword arguments
+    (`clausters.gui.notation.read_events` describes each): ``meter``,
+    ``key``, ``clef``, ``beat_unit``, ``division`` (the smallest written
+    value an onset is snapped to), ``tuplets``, ``voices`` and ``dynamics``.
+    ``interp`` is the reading whose dynamics name a level.
+
+    Events that carry no pitch (an ``"osc"`` or ``"midi"`` one) are skipped,
+    and a rest is a silence. **The sequence is not changed** -- a take keeps
+    the times it was played with, and is read again with another ``division``
+    by calling this again.
     """
-    return sheet.from_voice(_voice_from_notes(notes, beat_unit),
-                            meter=meter, clef=clef, key=key)
+    return sheet.read_events(_data(sequence), _how(how), interp)["sheet"]
 
 
-def sheet_from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
-                        key: str = "C", beat_unit: int = 4) -> dict:
-    """`from_timeline`, stopping at the score model instead of the MEI."""
-    return sheet.from_voice(_voice_from_timeline(timeline, beat_unit),
-                            meter=meter, clef=clef, key=key)
+def sheet_from_notes(notes, *, interp: dict | None = None, **how) -> dict:
+    """`from_notes`, stopping at the score model instead of the MEI: the run
+    placed back to back, each event at the end of the one before it, and read
+    as `sheet_from_events` reads a sequence -- in one voice, as a line is."""
+    at, placed = 0.0, []
+    for event in notes:
+        placed.append((at, event))
+        at += float(event["dur"])
+    how.setdefault("voices", 1)
+    return sheet.read_events(_data(placed), _how(how), interp)["sheet"]
+
+
+def sheet_from_timeline(timeline, *, interp: dict | None = None, **how) -> dict:
+    """`sheet_from_events`, under the name it had: a timeline's placed events
+    read into a sheet."""
+    return sheet_from_events(timeline, interp=interp, **how)
+
+
+def _how(how: dict) -> dict:
+    """The transcription a caller's keywords say, refusing a word that is
+    none of its keys."""
+    unknown = [key for key in how if key not in TRANSCRIPTION_KEYS]
+    if unknown:
+        raise TypeError(
+            f"a sequence is not read by {unknown[0]!r}: a transcription has "
+            f"{', '.join(TRANSCRIPTION_KEYS)}")
+    return {key: value for key, value in how.items() if value is not None}
+
+
+def _data(sequence) -> dict:
+    """What `read_events` takes: a sequence's data, or the events of
+    ``(beat, event)`` pairs as one."""
+    from ...seq.sequence import EventSequence, _keys
+
+    if isinstance(sequence, EventSequence):
+        return sequence.data()
+    return {"events": [{"at": float(beat), "data": _keys(event)}
+                       for beat, event in sequence
+                       if hasattr(event, "midinote") or isinstance(event, dict)]}
 
 
 def to_timeline(score, *, instruments=None, interp: dict | None = None,
@@ -138,7 +135,7 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     note is on the page (`clausters.seq.event.NOTATION_KEYS`) -- the pitch as
     it is written, its written value, its staff and voice, and its marks
     verbatim, not the ``sustain`` they produced -- so a timeline read from a
-    score and written back with `sheet_from_timeline` engraves the same notes.
+    score and written back with `sheet_from_events` engraves the same notes.
     What does not survive that trip is everything that is not one note's: a
     slur, a hairpin, the meter and the barlines, the title -- none of them can
     ride an event. A timeline holds events alone; `to_sequence` keeps the
@@ -190,113 +187,3 @@ def _instrument(instruments, staff: int):
     if isinstance(instruments, str):
         return instruments
     return instruments.get(staff)
-
-
-# -- the intermediate voice: back-to-back slots -----------------------------
-# One flat, monophonic-per-slot stream both entry points reduce to; a note slot
-# carries one midi, a chord slot several, a rest none. It crosses to the shared
-# encoder as JSON, one object per slot, which lays it out into barred, tied
-# measures and emits the XML.
-
-
-def _dur_ticks(beats: float, beat_unit: int) -> int:
-    """A *duration* in beats -> 32nd-note ticks (a whole note is ``beat_unit``
-    beats). At least one tick -- a sounding note never has zero length."""
-    return max(1, round(float(beats) * _TPW / beat_unit))
-
-
-def _pos_ticks(beat: float, beat_unit: int) -> int:
-    """A *position* on the beat axis -> 32nd-note ticks. Unlike a duration this
-    may be zero: beat 0 is tick 0, not tick 1, or a downbeat onset would push a
-    spurious rest before the first note and knock the whole bar off the grid."""
-    return round(float(beat) * _TPW / beat_unit)
-
-
-def _voice_from_notes(notes, beat_unit: int) -> list:
-    voice = []
-    for ev in notes:
-        ticks = _dur_ticks(ev["dur"], beat_unit)
-        if ev.get("type") == "rest":
-            voice.append({"ticks": ticks})
-        else:
-            slot = {"midis": [round(ev.midinote())], "ticks": ticks}
-            _write_marks(slot, [ev], ticks, beat_unit)
-            voice.append(slot)
-    return voice
-
-
-def _write_marks(slot: dict, events, ticks: int, beat_unit: int) -> None:
-    """Put what ``events`` say about the *page* onto ``slot``.
-
-    Every key is carried under its own name (`clausters.seq.event.Event` and
-    the slot agree on the vocabulary, which is what keeps the two directions
-    one thing), except the length in the air, which is the one place the two
-    do not line up:
-
-    **A ``sustain`` reaches the page only when nothing on the page already
-    says it.** An event that is both staccato and short is not two facts: the
-    staccato is the fact, and the short length is what an interpretation makes
-    of it. Written as both, the next reading would shorten an already
-    shortened note. So ``sounding`` is what the sustain says that no symbol
-    said -- and it is left out entirely when the note is held for its written
-    value, where it says nothing at all.
-
-    A chord is **one** slot and the model puts one set of marks on it, so the
-    events sharing a beat are read together and the first to say something
-    wins that key. Which is right rather than a compromise: what is written is
-    written on the chord, so a staccato any of its notes carries is the
-    chord's. A slot cannot hold two notes marked differently, and that is the
-    documented loss.
-    """
-    for key in NOTATION_KEYS:
-        if key == "pitches":
-            continue
-        for ev in events:
-            value = ev.get(key)
-            if value is not None:
-                slot[key] = value
-                break
-    # The written pitches are the chord's only when every one of its notes
-    # states its own: one that gave a number has to be spelled, and a slot
-    # spells all of its notes or none.
-    written = [ev.get("pitches") for ev in events]
-    if written and all(written):
-        slot["pitches"] = [pitch for pitches in written for pitch in pitches]
-    stated = next((ev for ev in events if ev.get("sustain") is not None), None)
-    if stated is None or slot.get("articulations"):
-        return
-    held = _dur_ticks(stated.sustain(), beat_unit)
-    if held != ticks:
-        slot["sounding"] = held
-
-
-def _voice_from_timeline(timeline, beat_unit: int) -> list:
-    """Group the timeline by onset beat into chord/note slots, filling the gaps
-    between them with rests."""
-    groups: dict[float, list] = {}
-    for beat, item in timeline:
-        # only a note: a raw OSC or MIDI message has no pitch, and a rest is
-        # silence
-        if not hasattr(item, "midinote") or item.get("type", "note") != "note":
-            continue
-        groups.setdefault(float(beat), []).append(item)
-
-    beats = sorted(groups)
-    voice = []
-    end = 0  # ticks consumed so far
-    for i, beat in enumerate(beats):
-        onset = _pos_ticks(beat, beat_unit)
-        if onset > end:  # a leading gap or a gap after a short note -> rest
-            voice.append({"ticks": onset - end})
-        ticks = _dur_ticks(min(ev["dur"] for ev in groups[beat]), beat_unit)
-        if i + 1 < len(beats):  # one layer: never overrun the next onset
-            nxt = _pos_ticks(beats[i + 1], beat_unit)
-            if nxt > onset:
-                ticks = min(ticks, nxt - onset)
-        slot = {"midis": [round(ev.midinote()) for ev in groups[beat]],
-                "ticks": ticks}
-        _write_marks(slot, groups[beat], ticks, beat_unit)
-        voice.append(slot)
-        end = onset + ticks
-    return voice
-

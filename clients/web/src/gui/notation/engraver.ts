@@ -22,8 +22,9 @@ import { readFileAt, writeFileAt } from "../../base/files.ts";
 import { SCORE_PAGE } from "../guidef.ts";
 import { Editing } from "../../history.ts";
 import type { Intent } from "../../document.ts";
-import { fromNotes, fromTimeline, toSequence } from "./mei.ts";
-import type { MeiOptions, PlaybackOptions } from "./mei.ts";
+import { fromNotes, sheetFromEvents, toSequence } from "./mei.ts";
+import type { Placed, PlaybackOptions, ReadOptions } from "./mei.ts";
+import { TRANSCRIPTION_KEYS, toMei } from "./sheet.ts";
 import type { EventSequence } from "../../seq/sequence.ts";
 import type { Op, Sheet } from "./sheet.ts";
 import type { Event } from "../../seq/event.ts";
@@ -164,25 +165,59 @@ export class Score {
     }
 
     /**
-     * An editable score built from a **monophonic** run of events -- the
-     * {@link fromNotes} encoder handed straight to {@link Score.open}.
+     * An editable score built from a **monophonic** run of events -- each
+     * lasting its `dur`, back to back, a rest a silence. The transcription's
+     * keys ({@link Score.fromEvents}) say how it is read; the rest of
+     * `options` is {@link Score.open}'s.
      */
     static fromNotes(
         notes: Iterable<Event>,
-        options: MeiOptions & EngraveOptions = {},
+        options: ReadOptions & EngraveOptions = {},
     ): Promise<Score> {
-        return Score.open(fromNotes(notes, options), options);
+        const [how, engraving] = transcriptionOf(options);
+        return Score.open(fromNotes(notes, how), engraving);
     }
 
     /**
-     * An editable score built from a `Timeline` (chords from simultaneous
-     * events, rests from gaps).
+     * An editable score read from an `EventSequence` -- the way back from
+     * {@link Score.renderEvents} -- or from a `Timeline`'s placed events, or
+     * any `[beat, event]` pairs.
+     *
+     * What the events say of their page is written as they say it: a sequence
+     * a score was rendered into reads back as it was written, and an event's
+     * notation keys (`seq.NOTATION_KEYS`) are its note. What they do not say
+     * is decided by the **transcription**, each key of which has a default
+     * (`readEvents` describes them): `meter`, `key` and `clef` (left out: the
+     * sequence's own, else 4/4, the signature most notes are in, and a clef
+     * by register), `beatUnit`, `division` (the smallest written value an
+     * onset is snapped to, 16), `tuplets` (`[3]` admits triplets), `voices`
+     * (the most on a staff, 2) and `dynamics` (whether levels are read back
+     * as dynamics and hairpins). `interp` is the reading whose dynamics name a
+     * level; any other key is {@link Score.open}'s.
+     *
+     * **The score is a new one and the sequence is not changed**: a take
+     * keeps the times it was played with, and a coarser or a finer page of it
+     * is this call again with another `division`. Nothing made on this score
+     * travels to the sequence; a sequence edited on its page is `gui.edit`
+     * with `view: "score"`.
+     */
+    static fromEvents(
+        sequence: Placed,
+        options: ReadOptions & EngraveOptions = {},
+    ): Promise<Score> {
+        const [how, engraving] = transcriptionOf(options);
+        return Score.open(toMei(sheetFromEvents(sequence, how)), engraving);
+    }
+
+    /**
+     * {@link Score.fromEvents} over a `Timeline`: its placed events, chords
+     * from the ones that start together and rests from the gaps.
      */
     static fromTimeline(
         timeline: Timeline,
-        options: MeiOptions & EngraveOptions = {},
+        options: ReadOptions & EngraveOptions = {},
     ): Promise<Score> {
-        return Score.open(fromTimeline(timeline, options), options);
+        return Score.fromEvents(timeline, options);
     }
 
     /**
@@ -498,4 +533,18 @@ export function pageJson(displayList: Page): Record<string, unknown> {
 export function svgToDisplayList(svg: string): Record<string, unknown> {
     const out = coreSvgToDisplayList(svg);
     return out ? (JSON.parse(out) as Record<string, unknown>) : {};
+}
+
+/**
+ * The transcription among `options`, and what is left of them: the keys a
+ * sequence is read by, apart from the ones a score is opened with.
+ */
+function transcriptionOf<T extends ReadOptions>(options: T): [ReadOptions, Omit<T, keyof ReadOptions>] {
+    const how: Record<string, unknown> = {};
+    const others: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(options)) {
+        const reads = key === "interp" || (TRANSCRIPTION_KEYS as readonly string[]).includes(key);
+        (reads ? how : others)[key] = value;
+    }
+    return [how as ReadOptions, others as Omit<T, keyof ReadOptions>];
 }

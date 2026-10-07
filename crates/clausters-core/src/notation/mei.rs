@@ -75,7 +75,7 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 
 /// One slot of a monophonic-per-slot voice: a note or chord (one or more MIDI
 /// pitches) or a rest, lasting `ticks` 32nd-notes. This is the flat, agnostic
-/// stream a client reduces its own sequencing data to; [`voice_to_mei`] lays it
+/// stream a caller writes a line in; [`voice_to_mei`] lays it
 /// out into barred, tied measures. A voice (a `&[Slot]`) is the composable
 /// per-layer primitive -- polyphony stacks several, it never widens the slot.
 ///
@@ -884,6 +884,12 @@ fn tuplet_ratio(dur: Ratio) -> Option<(i64, i64)> {
 
 /// Split a voice into the units the emitter writes: consecutive items sharing
 /// one tuplet ratio are one group, everything else is itself.
+///
+/// **A group ends where it first fills a written value**: three triplet
+/// eighths are a quarter and a group, and the three after them are the next
+/// one. So a line in triplets is a group to a beat rather than one group as
+/// long as the line -- which no barline could be drawn through, and which
+/// nobody writes.
 fn units(items: &[Item]) -> Vec<Unit<'_>> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -895,7 +901,12 @@ fn units(items: &[Item]) -> Vec<Unit<'_>> {
             }
             Some((num, numbase)) => {
                 let mut j = i + 1;
-                while j < items.len() && tuplet_ratio(items[j].dur()) == Some((num, numbase)) {
+                let mut total = items[i].dur();
+                while j < items.len()
+                    && tuplet_ratio(total).is_some()
+                    && tuplet_ratio(items[j].dur()) == Some((num, numbase))
+                {
+                    total = total + items[j].dur();
                     j += 1;
                 }
                 out.push(Unit::Tuplet {
@@ -3016,6 +3027,22 @@ mod emission {
             3
         );
         assert_eq!(mei.matches("<measure").count(), 1);
+    }
+
+    /// A line in triplets is a group to each written value it fills, so it
+    /// runs over a barline: one group as long as the line could not.
+    #[test]
+    fn a_run_of_triplets_is_a_group_to_a_beat() {
+        let triplet = Ratio::new(1, 12);
+        let run = (1..=15).map(|id| note(Step::C, triplet, id)).collect();
+        let mine = sheet(vec![Staff {
+            clef: "G2".into(),
+            voices: vec![voice(run)],
+            ..Staff::default()
+        }]);
+        let mei = sheet_to_mei(&mine).expect("writes five beats of triplets");
+        assert_eq!(mei.matches("<tuplet").count(), 5, "{mei}");
+        assert_eq!(mei.matches("<measure").count(), 2);
     }
 
     #[test]

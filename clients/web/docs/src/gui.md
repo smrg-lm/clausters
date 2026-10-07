@@ -297,6 +297,45 @@ const win = await gui.view({ title: "score" },
     notation.scoreView(page, { name: "page", editable: true })).open();
 ```
 
+**A sequence is read the same way**, and it is the way back from a score
+rendered into one. `Score.fromEvents(sequence)` reads an `EventSequence` — or
+a timeline's placed events, which is what `fromTimeline` does — into a new
+score:
+
+```ts
+const take = seq.EventSequence.fromSmf(bytes);        // played from a keyboard
+const page3 = await notation.Score.fromEvents(take, { meter: "3/4", division: 8 });
+```
+
+What the events say of their page is written as they say it, so a sequence a
+score was rendered into reads back as it was written. What they do not say is
+decided by the **transcription**, each key of it optional:
+
+| Key | What it decides | Left out |
+| --- | --- | --- |
+| `meter` | the barring, `"3/4"` | the sequence's own, else 4/4 |
+| `key` | the signature, and with it how a number is spelled | the sequence's own, else the signature most notes are in |
+| `clef` | the clef of a staff the sequence says none for | chosen by each staff's register |
+| `beatUnit` | which written value a beat is | 4, a quarter |
+| `division` | the smallest written value an onset is snapped to | 16, a sixteenth |
+| `tuplets` | the tuplets a beat may be read as, `[3]` for triplets | none |
+| `voices` | the most voices found on one staff | 2 |
+| `dynamics` | whether levels are read back as dynamics and hairpins | `true` |
+
+A staff is what the events say (`staff`), else a channel — and in an MPE zone,
+where a channel is one note's, one staff for the zone. A level is read back
+from a curve of the staff's channel on the dynamics' controller where it is
+made of steps and straight ramps — a step a dynamic, a ramp a hairpin — and
+otherwise from the notes, a dynamic where their level changes; the names are
+the reading's (`interp`, whose `dynamics` say what each is worth), and a curve
+of any other shape was drawn by hand and stays a curve.
+
+**Reading changes nothing.** A take keeps the times and the lengths that
+arrived, and a coarser or a finer page of it is `fromEvents` again with
+another `division`. No meter and no irregular value is found in a performance:
+the meter is given, and a triplet is read only where `tuplets` asks for it and
+a beat's onsets fit it clearly better.
+
 Opening a score is the layer's one asynchronous step, and only because the
 engraver is **fetched on demand**: nothing in the runtime imports it, so a page
 that draws no notation never downloads it. Everything after that — drawing,

@@ -538,7 +538,14 @@ pub use time::*;
 /// short-time Fourier transform the GUI host draws a spectrogram from, as the
 /// cache it maps. The analysis moved to the core from the host, which read
 /// a format nothing else could write. Additive.
-pub const CORE_ABI_VERSION: u32 = 84;
+/// **v85 a sequence is read into a score.**
+/// `clausters_core_sheet_read_events`: the way back from v83's render -- a
+/// sequence's events read into a sheet, what they do not say decided by the
+/// transcription that crosses with them. Additive. The render's `notation`
+/// section gained `controls`, `marks` and `groups` and writes each staff as
+/// it is written; a sequence with one curve of a note's own and one line is
+/// now named MPE where it was named MIDI 2.0.
+pub const CORE_ABI_VERSION: u32 = 85;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

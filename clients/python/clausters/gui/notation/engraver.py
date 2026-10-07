@@ -20,7 +20,8 @@ import os
 
 from ... import _libpath, _native
 from ._abi import _MISSING, _engraver, _text, _u8
-from .mei import from_notes, from_timeline
+from . import sheet as _sheet
+from .mei import TRANSCRIPTION_KEYS, from_notes, sheet_from_events
 from .sheet import _unwrap
 
 # Where the SMuFL data the engraver reads lives. verovio bakes a resource path
@@ -367,22 +368,50 @@ class Score:
         return True
 
     @classmethod
-    def from_notes(cls, notes, *, meter: str = "4/4", clef: str = "G2",
-                   key: str = "C", beat_unit: int = 4, **kw) -> "Score":
-        """An editable `Score` built from a **monophonic** run of events -- the
-        `from_notes` encoder handed straight to the constructor. ``kw`` passes
-        ``scale``/``page_width`` through. See `from_notes` for the mapping."""
-        return cls(from_notes(notes, meter=meter, clef=clef, key=key,
-                              beat_unit=beat_unit), **kw)
+    def from_notes(cls, notes, **kw) -> "Score":
+        """An editable `Score` built from a **monophonic** run of events --
+        each lasting its ``dur``, back to back, a rest a silence. The
+        transcription's keys (`from_events`) say how it is read; ``kw`` passes
+        ``scale``/``page_width`` through."""
+        how = {key: kw.pop(key) for key in TRANSCRIPTION_KEYS if key in kw}
+        return cls(from_notes(notes, **how), **kw)
 
     @classmethod
-    def from_timeline(cls, timeline, *, meter: str = "4/4", clef: str = "G2",
-                      key: str = "C", beat_unit: int = 4, **kw) -> "Score":
-        """An editable `Score` built from a `Timeline` (chords from simultaneous
-        events, rests from gaps) -- the `from_timeline` encoder handed to the
-        constructor. ``kw`` passes ``scale``/``page_width`` through."""
-        return cls(from_timeline(timeline, meter=meter, clef=clef, key=key,
-                                 beat_unit=beat_unit), **kw)
+    def from_events(cls, sequence, *, interp: "dict | None" = None, **kw) -> "Score":
+        """An editable `Score` read from a `clausters.seq.EventSequence` --
+        the way back from `render_events` -- or from a
+        `clausters.seq.Timeline`'s placed events, or any ``(beat, event)``
+        pairs.
+
+        What the events say of their page is written as they say it: a
+        sequence a score was rendered into reads back as it was written, and
+        an event's notation keys (`clausters.seq.event.NOTATION_KEYS`) are
+        its note. What they do not say is decided by the **transcription**,
+        keyword arguments each of which has a default
+        (`clausters.gui.notation.read_events` describes them): ``meter``,
+        ``key`` and ``clef`` (left out: the sequence's own, else 4/4, the
+        signature most notes are in, and a clef by register), ``beat_unit``,
+        ``division`` (the smallest written value an onset is snapped to, 16),
+        ``tuplets`` (``[3]`` admits triplets), ``voices`` (the most on a
+        staff, 2) and ``dynamics`` (whether levels are read back as dynamics
+        and hairpins). ``interp`` is the reading whose dynamics name a level;
+        any other keyword (``scale``, ``page_width``) is the constructor's.
+
+        **The score is a new one and the sequence is not changed**: a take
+        keeps the times it was played with, and a coarser or a finer page of
+        it is this call again with another ``division``. Nothing made on this
+        score travels to the sequence; a sequence edited on its page is
+        `clausters.gui.editing.edit` with ``view="score"``.
+        """
+        how = {key: kw.pop(key) for key in TRANSCRIPTION_KEYS if key in kw}
+        read = sheet_from_events(sequence, interp=interp, **how)
+        return cls(_sheet.to_mei(read), **kw)
+
+    @classmethod
+    def from_timeline(cls, timeline, **kw) -> "Score":
+        """`from_events` over a `clausters.seq.Timeline`: its placed events,
+        chords from the ones that start together and rests from the gaps."""
+        return cls.from_events(timeline, **kw)
 
 
 def engrave(data: str, *, page: int = 1, scale: int = 40,

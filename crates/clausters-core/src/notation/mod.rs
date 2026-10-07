@@ -12,9 +12,10 @@
 //!   `clausters-notation` crate) or a wasm verovio, both emitting the same SVG,
 //!   so cross-client parity is structural.
 //! - [`voice_to_mei`] lays a monophonic-per-slot [`Slot`] stream out into
-//!   barred, tied MEI. A client reduces its own sequencing data (an `Event`
-//!   run, a `Timeline`) to that voice -- that reduction reads client-native
-//!   types and stays per-client; this is the language-agnostic step below it.
+//!   barred, tied MEI: the flat form a caller writes a line in by hand. A
+//!   client's sequencing data is not reduced to it -- a sequence of events is
+//!   read into a sheet by `clausters_document::events::transcription`, once,
+//!   for every client.
 //! - [`Score`] is the stateful, editable document: the order an edit is made
 //!   in, when the layout has to be re-run and reloaded, and the undo stack of
 //!   MEI snapshots. It drives an [`Engraver`] -- the port a binding implements,

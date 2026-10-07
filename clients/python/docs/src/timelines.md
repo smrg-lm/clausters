@@ -184,7 +184,7 @@ seq = timeline.render_events(until=16)      # what the timeline played, as data
 
 **It goes one way.** The sequence holds what the timeline produced, not the timeline: a generator, a nested timeline, a tempo curve inside a child are gone from it, and nothing rebuilds the timeline from the sequence. The two coexist — the timeline is the code, the sequence what it made — and the sequence is what a notes editor edits.
 
-A sequence also goes to a **MIDI file** and back: `seq.to_smf(ppq=480)` is the file's bytes, every note as its note-on and note-off and the tempo map as the file's tempo, and `EventSequence.from_smf(data)` reads one, pairing each note-on with the note-off that closes it. An `"osc"` event has no MIDI spelling and is left out of a file, and a tempo ramp is written as the step at its breakpoint, since a file's tempo only steps. From a **score**, `notation.to_sequence(sheet)` reads the same events `to_timeline` does, and `notation.sheet_from_timeline(seq)` engraves a sequence as it does a timeline.
+A sequence also goes to a **MIDI file** and back: `seq.to_smf(ppq=480)` is the file's bytes, every note as its note-on and note-off and the tempo map as the file's tempo, and `EventSequence.from_smf(data)` reads one, pairing each note-on with the note-off that closes it. An `"osc"` event has no MIDI spelling and is left out of a file, and a tempo ramp is written as the step at its breakpoint, since a file's tempo only steps. From a **score**, `notation.to_sequence(sheet)` reads the same events `to_timeline` does, and `notation.sheet_from_events(seq)` reads a sequence back into a sheet.
 
 ## On a server's transport
 
@@ -215,7 +215,7 @@ The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport'
 
 ## Seeing a timeline as a score
 
-A timeline is timed pitches — the same thing a score draws. `clausters.gui.notation.from_timeline` engraves one as music notation: events sharing a beat become a chord, gaps become rests, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
+A timeline is timed pitches — the same thing a score draws. `clausters.gui.notation.from_timeline` engraves one as music notation: events that start together become a chord, gaps become rests, a note that starts under another goes to a second voice, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
 
 ```python
 from clausters.gui import notation
@@ -223,6 +223,45 @@ from clausters.gui import notation
 score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
 dl = score.display_list()          # the engraved page, for the score widget
 ```
+
+**A sequence is read the same way**, and it is the way back from a score
+rendered into one. `Score.from_events(sequence)` reads an `EventSequence` —
+or a timeline's placed events, which is what `from_timeline` does — into a new
+score:
+
+```python
+take = EventSequence.from_smf(open("take.mid", "rb").read())   # played from a keyboard
+score = notation.Score.from_events(take, meter="3/4", division=8)
+```
+
+What the events say of their page is written as they say it, so a sequence a
+score was rendered into reads back as it was written. What they do not say is
+decided by the **transcription**, the keyword arguments, each with a default:
+
+| Key | What it decides | Left out |
+| --- | --- | --- |
+| `meter` | the barring, `"3/4"` | the sequence's own, else 4/4 |
+| `key` | the signature, and with it how a number is spelled | the sequence's own, else the signature most notes are in |
+| `clef` | the clef of a staff the sequence says none for | chosen by each staff's register |
+| `beat_unit` | which written value a beat is | 4, a quarter |
+| `division` | the smallest written value an onset is snapped to | 16, a sixteenth |
+| `tuplets` | the tuplets a beat may be read as, `[3]` for triplets | none |
+| `voices` | the most voices found on one staff | 2 |
+| `dynamics` | whether levels are read back as dynamics and hairpins | `True` |
+
+A staff is what the events say (`staff`), else a channel — and in an MPE zone,
+where a channel is one note's, one staff for the zone. A level is read back
+from a curve of the staff's channel on the dynamics' controller where it is
+made of steps and straight ramps — a step a dynamic, a ramp a hairpin — and
+otherwise from the notes, a dynamic where their level changes; the names are
+the reading's (`interp=`, whose `dynamics` say what each is worth), and a
+curve of any other shape was drawn by hand and stays a curve.
+
+**Reading changes nothing.** A take keeps the times and the lengths that
+arrived, and a coarser or a finer page of it is `from_events` again with
+another `division`. No meter and no irregular value is found in a performance:
+the meter is given, and a triplet is read only where `tuplets` asks for it and
+a beat's onsets fit it clearly better.
 
 **An event can also say what the note is on a page.** Beside what it sounds,
 an event carries the **notation keys** — twelve of them, reserved so none

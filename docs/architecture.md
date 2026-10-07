@@ -1101,6 +1101,24 @@ its target so that everything that plays a lane by its channel needs to learn
 nothing. Both clients' `to_timeline` and `to_sequence` are this render, and a
 score's `render_events` is `to_sequence` of its sheet.
 
+**And a sequence is read into a score in one place too**
+(`clausters_document::events::transcription::read`), which decides only what
+the events do not say: an event's notation keys are written as they say, and
+the section above — which the render fills with the staves as they are
+written, what has two ends and what stands at a point by event id, and the
+marks no key says — makes a rendered score read back as it was written.
+Everything else is a rule there rather than in a client: an onset snapped to
+its beat's grid, a staff to a channel (one staff to an MPE zone, where a
+channel is a note's), a voice found where notes overlap, a number spelled by
+the key on the line of fifths, a level read back as a dynamic or a hairpin
+where a curve is made of steps and straight ramps. The sequence is never
+changed by it — how finely it is read is the `Transcription` that crosses
+with it — and both clients' `sheet_from_events` and `Score.from_events` are
+this reading. What a sequence is as plain data (`events::rows`: rows by the
+keys chosen, a line played back to back, the sequence in parts by voice,
+staff or channel, and the MIDI specification that says what it holds) is in
+the same crate, behind the door a sequence already had.
+
 **The chrome is optional, and it is absent rather than hidden.** A standalone
 host opens the window whole, since with no holder beside it the window is the
 only way to reach what the editor does. A client has the handle, and may open

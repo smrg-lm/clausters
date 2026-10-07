@@ -381,6 +381,68 @@ pub unsafe extern "C" fn clausters_core_sheet_render_events(
     unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
+/// **Read a sequence into a score**, the way back from
+/// [`clausters_core_sheet_render_events`]: what the events say of their page
+/// written as they say it, and what they do not decided by `how`
+/// (`clausters_document::events::transcription::read`). Written to `out` in
+/// the envelope the other sheet calls answer in -- `{"ok": {"sheet": <the
+/// sheet>, "items": [[event id, item id]]}}` or `{"error": "..."}` -- and the
+/// byte count it needs is returned, `0` when `sequence` is null.
+///
+/// `sequence` is the sequence's data, whole or a bare list of events. `how`
+/// is the transcription -- the meter, the key, the clef, the beat, the
+/// smallest value, the tuplets admitted, the voices a staff may have,
+/// whether levels are read as dynamics -- and `interp` the reading whose
+/// dynamics name a level; each null or `{}` for its default, any field left
+/// out keeping its own.
+///
+/// # Safety
+/// Each pointer must be readable for its length, and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_read_events(
+    sequence: *const u8,
+    sequence_len: usize,
+    how: *const u8,
+    how_len: usize,
+    interp: *const u8,
+    interp_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_document::events::EventSequence;
+    use clausters_document::events::transcription::{Transcription, read};
+    // SAFETY: caller guarantees the ranges.
+    let Some(sequence) = (unsafe { text(sequence, sequence_len) }) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees the ranges; a null pointer is the default.
+    let (how, interp) = unsafe { (text(how, how_len), text(interp, interp_len)) };
+    let how = match how.as_deref().filter(|s| !s.trim().is_empty()) {
+        None => Ok(Transcription::default()),
+        Some(text) => serde_json::from_str::<Transcription>(text),
+    };
+    let interp = match interp.as_deref().filter(|s| !s.trim().is_empty()) {
+        None => Ok(default_interpretation()),
+        Some(text) => serde_json::from_str::<Interpretation>(text),
+    };
+    let json = match (
+        serde_json::from_str::<EventSequence>(&sequence),
+        how,
+        interp,
+    ) {
+        (Err(e), _, _) => envelope_error(&format!("the sequence could not be read: {e}")),
+        (_, Err(e), _) => envelope_error(&format!("the transcription could not be read: {e}")),
+        (_, _, Err(e)) => envelope_error(&format!("the interpretation could not be read: {e}")),
+        (Ok(sequence), Ok(how), Ok(interp)) => match read(&sequence, &how, &interp) {
+            Ok(read) => serde_json::json!({ "ok": read }).to_string(),
+            Err(e) => envelope_error(&e),
+        },
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
 /// The default interpretation, as JSON -- every number the reading depends on.
 ///
 /// **The parity surface for the reading**, and the value an override starts

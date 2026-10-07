@@ -2331,6 +2331,48 @@ Every entry carries a checkbox.
   constructor from a sequence; `edit(sequence, view="score")` with the edit
   written back as above; then `N9`.
 
+  - ✅ **The reading.** *(Done 2026-10-06.
+    `clausters_document::events::transcription::read`, behind the crate's
+    `notation` feature and bound as `clausters_core_sheet_read_events`: a
+    sequence and a `Transcription` -- the meter, the key, the clef, the beat,
+    the smallest value (`division`, a sixteenth), the tuplets admitted, the
+    most voices on a staff, whether levels are read -- answered as the sheet
+    and which item each event became. An onset is snapped to its beat's grid,
+    and a beat is a tuplet's only where one is asked for (or stated by an
+    event's `value`) and fits its onsets clearly better, the ends weighing a
+    quarter of an onset; a note is cut and tied where such a beat ends, since
+    a tuplet fills its beat. A staff is a channel and a voice is found, a
+    note that starts under another going to the next; in an MPE zone the
+    staff is the zone. A number is spelled by the key -- the signature most
+    notes are in where none is given -- on the line of fifths, four under the
+    tonic to seven over. A level is read from a curve of steps and straight
+    ramps on the dynamics' controller, else from the notes where it changes;
+    a line at one level is written with no dynamic. **The exact case**: the
+    render's section gained the staves as they are written, `controls` and
+    `groups`, and `marks` -- what a note carries that no notation key says --
+    so a rendered score reads back the same MEI. `Score.from_events` and
+    `sheet_from_events` in both clients are this reading, and the reduction
+    each client wrote is deleted; `from_timeline` and `from_notes` are the
+    same reading under the names they had, so a chord under a melody is now a
+    second voice where it was clamped to one layer, and each note of a chord
+    keeps the spelling its own event states. **The emitter changed with
+    it**: a run of tuplet values is a group to each written value it fills,
+    where it was one group as long as the run, which no barline could cross.
+    Core ABI 85.)*
+    **Left open by it**, each for when it is met:
+    - a level is named by the interpretation's own table, whose amplitudes
+      are a synth's: a take's MIDI velocities all fall at its top, so a
+      caller reading one hands in a table of its own. It is the entry
+      "Dynamics need a model of the instrument and of hearing".
+    - a score's repeats are played out in its sequence, so one with repeats
+      is read written out, on its first meter alone;
+    - a control standing on a rest has no event to name and is not in the
+      section;
+    - an end that falls in a beat with no onset is snapped to `division`,
+      tuplets or not;
+    - the keys are the fifteen major signatures, as the model's are.
+  - ⬜ **`edit(sequence, view="score")`**, the edit written back.
+
 - ✅ **A sequence as primitive data, by the keys chosen** *(the user,
   2026-10-05, planning `X5`)*. A sequence the score editor or the roll made
   holds everything in its events, and a client wants it back as its own plain

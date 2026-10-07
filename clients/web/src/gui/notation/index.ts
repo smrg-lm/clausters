@@ -21,8 +21,9 @@
 // **loaded on demand**: a page that never engraves never downloads it.
 //
 // There are three ways in: typed score text (ABC/PAE/MEI/MusicXML) handed to
-// `engrave`/`Score.open`; `fromNotes`/`fromTimeline`, which turn the client's
-// own `seq` data into MEI (the inverse direction, data->score); and
+// `engrave`/`Score.open`; `fromNotes`/`fromTimeline` and `sheetFromEvents`,
+// which read the client's own `seq` data into a score (the inverse direction,
+// data->score); and
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
 // and `playheadSync` are the two helpers that put a page on screen and *play* it.
 //
@@ -38,12 +39,13 @@ export type { EngraveOptions, Page } from "./engraver.ts";
 export {
     fromNotes,
     fromTimeline,
+    sheetFromEvents,
     sheetFromNotes,
     sheetFromTimeline,
     toSequence,
     toTimeline,
 } from "./mei.ts";
-export type { MeiOptions, PlaybackOptions, Slot } from "./mei.ts";
+export type { Placed, PlaybackOptions, ReadOptions, Slot } from "./mei.ts";
 export {
     addControl,
     addSpanner,
@@ -64,6 +66,7 @@ export {
     moveSteps,
     ops,
     pitch,
+    readEvents,
     removeControl,
     removeMeasures,
     removeSpanner,
@@ -94,6 +97,7 @@ export {
     toNotes,
     toVoice,
     transpose,
+    TRANSCRIPTION_KEYS,
 } from "./sheet.ts";
 export type {
     HeaderFields,
@@ -103,9 +107,11 @@ export type {
     OpSpec,
     PerformedNote,
     Ratio,
+    ReadSequence,
     RenderedSequence,
     Sheet,
     TextPlace,
+    Transcription,
     TransposeOptions,
 } from "./sheet.ts";
 export { playheadSync, scoreView } from "./view.ts";

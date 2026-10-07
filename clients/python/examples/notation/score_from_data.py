@@ -5,8 +5,8 @@ The companion to ``score_editor.py``, which opens a typed document in the
 score editor. Here the score is not typed at all -- it is generated from the client's own data. A `Timeline`
 of `Event`s (a chord progression under a melody) is turned into a score by
 `clausters.gui.notation.sheet_from_timeline`, engraved into the `score` display list,
-and shown in the window: chords stacked on the beat, the melody above them,
-rests where the data leaves gaps.
+and shown in the window: the melody in one voice, the chords held under it in
+a second, rests where the data leaves gaps.
 
 This is the inverse of the usual notation flow -- the events *are* the source
 and the score is the view of them (data -> score). What is then **played** is
@@ -133,10 +133,12 @@ def scene(display_list: dict, sample_rate: float) -> dict:
 
 # %% [markdown]
 # ## Engrave it
-# The score is generated from the timeline, not typed. `from_timeline` groups the
-# events sharing a beat into chords and fills the gaps with rests; the melody's
-# durations become the written note values (a 2-beat note a half, a 0.5-beat note
-# an eighth). One beat is a quarter (``beat_unit=4``).
+# The score is generated from the timeline, not typed. The reading is the
+# core's: events that start and end together are a chord, a note that starts
+# under another goes to a second voice -- the chords held under the melody --
+# and the gaps are rests; the melody's durations become the written note
+# values (a 2-beat note a half, a 0.5-beat note an eighth). One beat is a
+# quarter (``beat_unit=4``), and the meter and the key are given.
 
 # %%
 source = build_timeline()

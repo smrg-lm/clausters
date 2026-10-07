@@ -17,6 +17,7 @@ import pytest
 
 from clausters import Event
 from clausters.gui import notation, score
+from clausters.seq import EventSequence
 from clausters.seq.event import rest
 from clausters.seq.timeline import Timeline
 
@@ -826,12 +827,13 @@ def test_written_pitches_and_a_written_value_reach_the_page_as_they_are():
     item = notation.sheet_from_timeline(timeline)["staves"][0]["voices"][0]["items"][0]
     assert [(p["step"], p["alter"]) for p in item["pitches"]] == [("f", -1), ("a", -1)]
     assert item["dur"] == [1, 12]
-    # a chord one of whose notes gave a number is spelled, all of it
+    # each note of a chord is its own event, so each keeps what it says: the
+    # one written stays as written, the one that gave a number is spelled
     mixed = Timeline()
     mixed.add(0.0, Event(pitches=[notation.pitch("f", 4, -1)], midinote=64, dur=1.0))
     mixed.add(0.0, Event(midinote=68, dur=1.0))
     item = notation.sheet_from_timeline(mixed)["staves"][0]["voices"][0]["items"][0]
-    assert [p["step"] for p in item["pitches"]] == ["e", "g"]
+    assert [(p["step"], p["alter"]) for p in item["pitches"]] == [("f", -1), ("g", 1)]
 
 
 def _two_voices() -> dict:
@@ -1079,3 +1081,45 @@ def test_the_signs_the_staves_and_the_marks_at_a_point_are_the_models():
     assert notation.set_repeat(eight, 2)["grid"]["repeats"] == [1]
     with pytest.raises(ValueError):
         notation.set_groups(eight, [{"first": 0, "last": 3, "symbol": "brace"}])
+
+
+def test_a_played_sequence_is_read_as_a_score_and_stays_as_it_was():
+    played = EventSequence([
+        (0.03, Event(midinote=62, dur=0.93, amp=0.05)),
+        (1.01, Event(midinote=66, dur=0.48, amp=0.052)),
+        (2.0, Event(midinote=69, dur=2.02, amp=0.25)),
+        (2.02, Event(midinote=74, dur=1.97, amp=0.25)),
+        (4.0, Event(midinote=49, dur=4.0, channel=1)),
+    ])
+    before = played.data()
+    read = notation.sheet_from_events(played)
+    line = [(len(item.get("pitches", [])), item["dur"])
+            for item in read["staves"][0]["voices"][0]["items"]]
+    assert line == [(1, [1, 4]), (1, [1, 8]), (0, [1, 8]), (2, [1, 2])]
+    assert played.data() == before, "reading changes nothing"
+    # a channel is a staff, its clef by its register, and the key is found
+    assert [staff["clef"] for staff in read["staves"]] == ["G2", "F4"]
+    assert read["key"] == "D"
+    # the levels are named by the reading's own dynamics, where they change
+    first = read["staves"][0]["voices"][0]["items"]
+    assert first[0]["marks"]["dynamic"] == "p" and first[3]["marks"]["dynamic"] == "ff"
+    assert "marks" not in first[1]
+    # another reading of the same take, and one that is told its key
+    coarse = notation.sheet_from_events(played, division=4, key="C", dynamics=False)
+    assert coarse["staves"][0]["voices"][0]["items"][1]["dur"] == [1, 4]
+    assert coarse["key"] == "C" and "marks" not in coarse["staves"][0]["voices"][0]["items"][0]
+    with pytest.raises(TypeError, match="quantize"):
+        notation.sheet_from_events(played, quantize=16)
+
+
+def test_a_score_rendered_into_a_sequence_reads_back_as_the_same_page():
+    requires_engraver()
+    written = notation.Score.from_notes(
+        [Event(midinote=65, dur=1.0, articulations=["stacc"]), rest(0.5),
+         Event(midinote=70, dur=0.5), Event(midinote=72, dur=2.0, dynamic="f")],
+        meter="3/4", key="F", clef="G2")
+    back = notation.Score.from_events(written.render_events())
+    assert back.sheet() == written.sheet()
+    # each voice read on its own is a score of its own
+    voice = written.render_events().separate("voice")[0]
+    assert notation.Score.from_events(voice).sheet()["staves"] == written.sheet()["staves"]

@@ -26,8 +26,8 @@ The companion to <code>score-editor.html</code>, which opens a typed document in
 the score editor. Here the score is not typed at all -- it is generated from the client's own data. A
 <code>Timeline</code> of events (a chord progression under a melody) is turned
 into a score by <code>notation.sheetFromTimeline</code>, engraved into the
-<code>score</code> display list, and shown: chords
-stacked on the beat, the melody above them, rests where the data leaves gaps.
+<code>score</code> display list, and shown: the melody in one voice, the
+chords held under it in a second, rests where the data leaves gaps.
 
 This is the inverse of the usual notation flow -- the events <i>are</i> the
 source and the score is the view of them (data -> score). What is then

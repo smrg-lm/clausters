@@ -47,14 +47,14 @@ reading that turns it back into sound (`to_notes`, `interpretation`) -- and
 
 from .engraver import Score, engrave, page_json, svg_to_display_list
 from .mei import (
-    from_notes, from_timeline, sheet_from_notes, sheet_from_timeline,
-    to_sequence, to_timeline,
+    TRANSCRIPTION_KEYS, from_notes, from_timeline, sheet_from_events,
+    sheet_from_notes, sheet_from_timeline, to_sequence, to_timeline,
 )
 from .sheet import (
     add_control, add_spanner, apply, concat, delete, enter, header, insert, insert_measures,
     interpretation, invert, item_id, marks, measures, move_steps, ops, pitch,
     remove_measures,
-    remove_control, remove_spanner, render_events, repeat, retrograde, set_barline, set_break,
+    read_events, remove_control, remove_spanner, render_events, repeat, retrograde, set_barline, set_break,
     set_clef, set_dur, set_ending, set_groups, set_key, set_mark, set_multirests, set_repeat,
     set_staff,
     set_header, set_marks, set_meter, set_page, set_pitches, silence, stack,
@@ -110,7 +110,10 @@ __all__ = [
     "set_meter",
     "set_page",
     "set_pitches",
+    "read_events",
     "render_events",
+    "sheet_from_events",
+    "TRANSCRIPTION_KEYS",
     "sheet_from_mei",
     "sheet_from_notes",
     "sheet_from_timeline",

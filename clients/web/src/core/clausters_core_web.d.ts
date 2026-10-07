@@ -1733,6 +1733,16 @@ export function sheetOps(): string;
 export function sheetPerform(sheet: string, interp: string): string;
 
 /**
+ * **Read a sequence into a score**, as JSON `{"sheet", "items"}`: the way
+ * back from [`sheet_render_events`] -- what the events say of their page
+ * written as they say it, and what they do not decided by `how`, the
+ * transcription (`clausters_document::events::transcription::read`).
+ * `interp` is the reading whose dynamics name a level. Each of the two is
+ * empty for its default.
+ */
+export function sheetReadEvents(sequence: string, how: string, interp: string): string;
+
+/**
  * **Render a sheet into a sequence**, one way, as JSON: the events it sounds,
  * each still saying what it is on the page, a channel to a voice, a staff's
  * dynamics as lanes and what is no note's as the sequence's `notation`
@@ -2084,6 +2094,7 @@ export interface InitOutput {
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly sheetReadEvents: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly sheetRenderEvents: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
     readonly split_degree: (a: number) => [number, number];

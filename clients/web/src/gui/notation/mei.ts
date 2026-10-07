@@ -2,38 +2,25 @@
 // `clausters/gui/notation/mei.py`).
 //
 // The third way into the engraver, beside typed score text and the SVG adapter:
-// turn the client's own `seq` data (`Event`, `Timeline`) into MEI -- the format
-// `engrave` already reads -- so a melody or a bounced timeline is *seen* and
-// edited as notation, the inverse of the score->sound flow.
+// turn the client's own `seq` data (an `Event` run, a `Timeline`, an
+// `EventSequence`) into a score, so a melody, a bounced timeline or a take
+// played from a keyboard is *seen* and edited as notation -- and back again,
+// {@link toTimeline} and {@link toSequence}, which read a sheet into what it
+// sounds.
 //
-// **And back again.** {@link toTimeline} is the return trip: a sheet read into
-// what it sounds (`toNotes`, which is where the symbols are honoured) and placed
-// on a `seq.Timeline` of `Event`s. It is here rather than beside the model
-// because it is the same seam in the other direction -- building `Event`s reads
-// this language's types and stays in this client, while what a staccato *means*
-// is one implementation in Rust.
-//
-// **The seam this module is** is worth naming, because it is where the
-// agnostic/shell line falls and it is what a richer encoding extends: the
-// reduction here is the client's half (it reads this language's types and
-// flattens them into a *voice*, a monophonic-per-slot stream of ticks and MIDI
-// pitches), and laying that voice out into barred, tied measures is the shared
-// half in `clausters_core::notation`. Every client writes the same document
-// from the same voice.
+// **Both directions are the core's.** A score is rendered into events by
+// `renderEvents`, and events are read into a score by `readEvents`: what the
+// events say of their page is written as they say it, and what they do not --
+// when a note falls on the page, in which voice, spelled how -- is decided
+// there, once, for every client. What this module adds is the client's own
+// types on either side.
 
-import { NOTATION_KEYS, Event } from "../../seq/event.ts";
+import { Event } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import { EventSequence } from "../../seq/sequence.ts";
-import type { Interpretation, Sheet } from "./sheet.ts";
-import { fromVoice, renderEvents, toMei } from "./sheet.ts";
+import type { Interpretation, Sheet, Transcription } from "./sheet.ts";
+import { readEvents, renderEvents, toMei } from "./sheet.ts";
 import type { RenderedSequence } from "./sheet.ts";
-
-/**
- * 32nd-note resolution: every duration snaps to an integer number of these, so
- * the encoder's barline splitting and tie decomposition are exact integer
- * arithmetic. Mirrors `clausters_core::notation`, which does that work.
- */
-const TPW = 32; // ticks per whole note
 
 /**
  * One slot of the reduced voice: a note or chord, or a rest with no pitches.
@@ -74,97 +61,95 @@ export interface Slot {
     tie?: boolean;
 }
 
-/** What both entry points take past the data itself. */
-export interface MeiOptions {
-    /** The barring, as `"num/den"`. */
-    meter?: string;
-    /** The staff: a shape and a line, `"G2"`/`"F4"`/`"C3"`. */
-    clef?: string;
-    /** The key signature, and with it the sharp-vs-flat spelling. */
-    key?: string;
-    /** What one beat is worth (`4` = a quarter). */
-    beatUnit?: number;
-}
+/** What a sequence, a timeline or `[beat, event]` pairs are read from. */
+export type Placed = EventSequence | Timeline | Iterable<readonly [number, unknown]>;
+
+/** A transcription, and the reading whose dynamics name a level. */
+export type ReadOptions = Transcription & { interp?: Interpretation };
 
 /**
  * Engrave a **monophonic** run of events into an MEI string.
  *
- * `notes` is any iterable of `seq.Event` (a `rest` becomes a rest); each
- * occupies its written `dur` beats back to back, so this is the notation of a
- * melody the way a `Pbind`/`Routine` sequence reads it. The pitch is the event's
- * `midinote()` (rounded to the nearest semitone), the value is `dur`.
- *
- * An event may also say what the note is **on a page** (`seq.NOTATION_KEYS`):
- * `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `spelling`,
- * `accidental` and `tie` reach the score under their own names, and an explicit
- * `sustain` becomes how long the note is *held* -- but only where no
- * articulation already says so, since a staccato that was also written as a
- * short length would be shortened twice on the way back.
- *
- * Returns the MEI to hand to `engrave` (a one-shot display list) or to `Score`
- * (to edit and redraw).
- *
- * A duration that is not a single note value is written as **tied** notes (a
- * dotted value when exact, e.g. `1.5` beats -> a dotted quarter), and a note that
- * overruns a barline is split and tied across it. Off-grid durations (finer than
- * a 32nd, e.g. a triplet) snap to the grid here, on the way in: the model itself
- * holds an exact rational, so a tuplet is representable the moment a caller can
- * express one -- writing it is the emission milestone.
+ * `notes` is any iterable of `seq.Event` (a `rest` is a silence); each occupies
+ * its written `dur` beats back to back, so this is the notation of a melody
+ * the way a `Pbind`/`Routine` sequence reads it. `how` is the transcription,
+ * as {@link sheetFromEvents} takes it. Returns the MEI to hand to `engrave` or
+ * to `Score`.
  */
-export function fromNotes(
-    notes: Iterable<Event>,
-    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
-): string {
-    return toMei(sheetFromNotes(notes, { meter, clef, key, beatUnit }));
+export function fromNotes(notes: Iterable<Event>, how: ReadOptions = {}): string {
+    return toMei(sheetFromNotes(notes, how));
 }
 
 /**
- * Engrave a `seq.Timeline` -- or an `EventSequence`, read the same way -- into an
- * MEI string.
- *
- * The timeline's placements become the score's rhythm: events **sharing a beat**
- * are written as one chord, a gap between a group's written end and the next
- * onset becomes a rest, and a gap before the first onset is a leading rest.
- * Events that carry no pitch (an `"osc"` or `"midi"` one) are skipped, as are
- * rest events (they read as silence, i.e. a gap).
- *
- * Each group is written for its **shortest** `dur` (one layer, so it is clamped
- * never to overrun the next onset -- the model holds several voices already, and
- * writing them is the emission milestone). Options and the tie/barline
- * behaviour are as {@link fromNotes}.
+ * Engrave a `seq.Timeline` -- its placed events, as {@link sheetFromEvents}
+ * reads them -- into an MEI string.
  */
-export function fromTimeline(
-    timeline: Timeline | Iterable<readonly [number, unknown]>,
-    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
-): string {
-    return toMei(sheetFromTimeline(timeline, { meter, clef, key, beatUnit }));
+export function fromTimeline(timeline: Placed, how: ReadOptions = {}): string {
+    return toMei(sheetFromEvents(timeline, how));
 }
 
 // -- stopping at the model ----------------------------------------------------
-// The same two reductions, handing back the **sheet** rather than the MEI. What
+// The same reductions, handing back the **sheet** rather than the MEI. What
 // they are for is everything the model can do that a string cannot: operate on
 // the score, and read it back into sound.
 
 /**
- * {@link fromNotes}, stopping at the score model instead of the MEI.
+ * Read an `EventSequence` -- or a `seq.Timeline`, or any `[beat, event]` pairs
+ * -- into a sheet: the way back from {@link toSequence}.
  *
- * The sheet is what `toMei` writes and what `toNotes` reads back, so a caller
- * that wants to operate on the score -- or hear it as the page says rather than
- * as the events said -- starts here.
+ * An event's notation keys (`seq.NOTATION_KEYS`) are written as they say, and
+ * a sequence a score was rendered into is read back as it was written. What
+ * the events do not say is decided by the transcription (`readEvents`
+ * describes each key): `meter`, `key`, `clef`, `beatUnit`, `division` (the
+ * smallest written value an onset is snapped to), `tuplets`, `voices` and
+ * `dynamics`. `interp` is the reading whose dynamics name a level.
+ *
+ * Events that carry no pitch (an `"osc"` or `"midi"` one) are skipped, and a
+ * rest is a silence. **The sequence is not changed** -- a take keeps the times
+ * it was played with, and is read again with another `division` by calling
+ * this again.
+ */
+export function sheetFromEvents(sequence: Placed, { interp, ...how }: ReadOptions = {}): Sheet {
+    return readEvents(dataOf(sequence), how, interp).sheet;
+}
+
+/**
+ * {@link fromNotes}, stopping at the score model instead of the MEI: the run
+ * placed back to back, each event at the end of the one before it, and read as
+ * {@link sheetFromEvents} reads a sequence -- in one voice, as a line is.
  */
 export function sheetFromNotes(
     notes: Iterable<Event>,
-    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
+    { interp, ...how }: ReadOptions = {},
 ): Sheet {
-    return fromVoice(voiceFromNotes(notes, beatUnit), { meter, clef, key });
+    let at = 0;
+    const placed: [number, Event][] = [];
+    for (const event of notes) {
+        placed.push([at, event]);
+        at += Number(event.get("dur"));
+    }
+    return readEvents(dataOf(placed), { voices: 1, ...how }, interp).sheet;
 }
 
-/** {@link fromTimeline}, stopping at the score model instead of the MEI. */
-export function sheetFromTimeline(
-    timeline: Timeline | Iterable<readonly [number, unknown]>,
-    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
-): Sheet {
-    return fromVoice(voiceFromTimeline(timeline, beatUnit), { meter, clef, key });
+/**
+ * {@link sheetFromEvents}, under the name it had: a timeline's placed events
+ * read into a sheet.
+ */
+export function sheetFromTimeline(timeline: Placed, how: ReadOptions = {}): Sheet {
+    return sheetFromEvents(timeline, how);
+}
+
+/**
+ * What `readEvents` takes: a sequence's data, or the events of `[beat, event]`
+ * pairs as one.
+ */
+function dataOf(sequence: Placed): unknown {
+    if (sequence instanceof EventSequence) return sequence.data();
+    const events: { at: number; data: Record<string, unknown> }[] = [];
+    for (const [beat, item] of sequence) {
+        if (item instanceof Event) events.push({ at: Number(beat), data: item.keysData() });
+    }
+    return { events };
 }
 
 /** What {@link toTimeline} takes past the sheet itself. */
@@ -194,7 +179,7 @@ export interface PlaybackOptions {
  * **What is on the page comes with it.** Each event also carries the marks the
  * note was written with (`seq.NOTATION_KEYS`) -- its articulations verbatim, not the
  * `sustain` they produced -- so a timeline read from a score and written back
- * with {@link sheetFromTimeline} engraves the same page. What does not survive
+ * with {@link sheetFromEvents} engraves the same page. What does not survive
  * that trip is everything that is not one note's: a slur, a hairpin, a tuplet,
  * the meter and the barlines, the title -- none of them can ride an event, and
  * they are the reason a score is a score rather than a list of notes.
@@ -247,134 +232,4 @@ function instrumentFor(
     if (instruments === undefined) return undefined;
     if (typeof instruments === "string") return instruments;
     return instruments[staff];
-}
-
-// -- the intermediate voice: back-to-back slots -----------------------------
-// One flat, monophonic-per-slot stream both entry points reduce to; a note slot
-// carries one midi, a chord slot several, a rest none. It crosses to the shared
-// encoder as JSON, one object per slot, which lays it out into barred, tied
-// measures and emits the XML.
-
-/**
- * A *duration* in beats -> 32nd-note ticks (a whole note is `beatUnit` beats).
- * At least one tick -- a sounding note never has zero length.
- */
-function durTicks(beats: number, beatUnit: number): number {
-    return Math.max(1, Math.round((Number(beats) * TPW) / beatUnit));
-}
-
-/**
- * A *position* on the beat axis -> 32nd-note ticks. Unlike a duration this may be
- * zero: beat 0 is tick 0, not tick 1, or a downbeat onset would push a spurious
- * rest before the first note and knock the whole bar off the grid.
- */
-function posTicks(beat: number, beatUnit: number): number {
-    return Math.round((Number(beat) * TPW) / beatUnit);
-}
-
-function voiceFromNotes(notes: Iterable<Event>, beatUnit: number): Slot[] {
-    const voice: Slot[] = [];
-    for (const event of notes) {
-        const ticks = durTicks(Number(event.get("dur")), beatUnit);
-        if (event.get("type") === "rest") {
-            voice.push({ ticks });
-            continue;
-        }
-        const slot: Slot = { midis: [Math.round(event.midinote())], ticks };
-        writeMarks(slot, [event], ticks, beatUnit);
-        voice.push(slot);
-    }
-    return voice;
-}
-
-/**
- * Put what `events` say about the *page* onto `slot`.
- *
- * Every key is carried under its own name (`seq.Event` and the slot agree on
- * the vocabulary, which is what keeps the two directions one thing), except the
- * length in the air, which is the one place the two do not line up:
- *
- * **A `sustain` reaches the page only when nothing on the page already says
- * it.** An event that is both staccato and short is not two facts: the staccato
- * is the fact, and the short length is what an interpretation makes of it.
- * Written as both, the next reading would shorten an already shortened note. So
- * `sounding` is what the sustain says that no symbol said -- and it is left out
- * entirely when the note is held for its written value, where it says nothing.
- *
- * A chord is **one** slot and the model puts one set of marks on it, so the
- * events sharing a beat are read together and the first to say something wins
- * that key. Which is right rather than a compromise: what is written is written
- * on the chord, so a staccato any of its notes carries is the chord's. A slot
- * cannot hold two notes marked differently, and that is the documented loss.
- */
-function writeMarks(slot: Slot, events: Event[], ticks: number, beatUnit: number): void {
-    for (const key of NOTATION_KEYS) {
-        if (key === "pitches") continue;
-        for (const event of events) {
-            const value = event.get(key);
-            if (value !== undefined && value !== null) {
-                (slot as unknown as Record<string, unknown>)[key] = value;
-                break;
-            }
-        }
-    }
-    // The written pitches are the chord's only when every one of its notes
-    // states its own: one that gave a number has to be spelled, and a slot
-    // spells all of its notes or none.
-    const written = events.map((event) => event.get("pitches"));
-    if (written.length && written.every((pitches) => Array.isArray(pitches) && pitches.length)) {
-        (slot as unknown as Record<string, unknown>).pitches = written.flat();
-    }
-    const stated = events.find((e) => {
-        const sustain = e.get("sustain");
-        return sustain !== undefined && sustain !== null;
-    });
-    if (stated === undefined) return;
-    if ((slot.articulations ?? []).length) return;
-    const held = durTicks(stated.sustain(), beatUnit);
-    if (held !== ticks) slot.sounding = held;
-}
-
-/**
- * Group the timeline by onset beat into chord/note slots, filling the gaps
- * between them with rests.
- */
-function voiceFromTimeline(
-    timeline: Timeline | Iterable<readonly [number, unknown]>,
-    beatUnit: number,
-): Slot[] {
-    const groups = new Map<number, Event[]>();
-    for (const [beat, item] of timeline) {
-        // Only a note: a raw OSC or MIDI message has no pitch, and a rest is
-        // silence.
-        if (!(item instanceof Event) || (item.get("type") ?? "note") !== "note") continue;
-        const at = Number(beat);
-        const group = groups.get(at);
-        if (group === undefined) groups.set(at, [item]);
-        else group.push(item);
-    }
-
-    const beats = [...groups.keys()].sort((a, b) => a - b);
-    const voice: Slot[] = [];
-    let end = 0; // ticks consumed so far
-    for (let i = 0; i < beats.length; i++) {
-        const beat = beats[i] as number;
-        const events = groups.get(beat) as Event[];
-        const onset = posTicks(beat, beatUnit);
-        if (onset > end) voice.push({ ticks: onset - end }); // a gap -> a rest
-        let ticks = durTicks(
-            Math.min(...events.map((e) => Number(e.get("dur")))),
-            beatUnit,
-        );
-        if (i + 1 < beats.length) {
-            // One layer: never overrun the next onset.
-            const next = posTicks(beats[i + 1] as number, beatUnit);
-            if (next > onset) ticks = Math.min(ticks, next - onset);
-        }
-        const slot: Slot = { midis: events.map((e) => Math.round(e.midinote())), ticks };
-        writeMarks(slot, events, ticks, beatUnit);
-        voice.push(slot);
-        end = onset + ticks;
-    }
-    return voice;
 }

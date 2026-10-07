@@ -27,9 +27,12 @@
 //!   with nothing new to learn, and what edits them as one finds them by that
 //!   name.
 //! - **What is no note's** goes whole into the sequence's `notation` section:
-//!   the grid, the key, the clefs, the header, the page, and the spanners,
-//!   whose two ends are named by event id. `items` there says which item of
-//!   the sheet each event came from, since a chord's events share one.
+//!   the grid, the key, the staves as they are written, the header, the page,
+//!   the spanners, whose two ends are named by event id, and what is written
+//!   at a point (`controls`), named the same way. `items` there says which
+//!   item of the sheet each event came from, since a chord's events share
+//!   one, and `marks` what a note carries that no notation key says. It is
+//!   what makes the way back exact (`super::transcription`).
 //!
 //! - **What the page does to the time** is the sequence's tempo map: the
 //!   repeats, endings and jumps played out, a tempo mark the tempo from
@@ -219,9 +222,51 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         sheet
             .staves
             .iter()
-            .map(|staff| json!({"clef": staff.clef, "voices": staff.voices.len()}))
+            .map(|staff| {
+                // the staff as it is written, its voices counted
+                let mut said = serde_json::to_value(staff).unwrap_or_else(|_| json!({}));
+                said["clef"] = json!(staff.clef);
+                said["voices"] = json!(staff.voices.len());
+                said
+            })
             .collect(),
     );
+    if !sheet.groups.is_empty() {
+        notation.insert("groups".into(), json!(sheet.groups));
+    }
+    // What is written at a point, by the event of the item it stands on --
+    // one on a rest has no event to name, and is the page's alone.
+    let controls: Vec<Value> = sheet
+        .controls
+        .iter()
+        .filter_map(|control| {
+            let mut said = serde_json::to_value(control).ok()?;
+            said["on"] = json!(first_event.get(&control.on)?);
+            Some(said)
+        })
+        .collect();
+    if !controls.is_empty() {
+        notation.insert("controls".into(), Value::Array(controls));
+    }
+    // What a note carries that no notation key says -- a fingering, a
+    // syllable, a tremolo -- by its event, so a page read back has it.
+    let marks: Vec<Value> = sheet
+        .voices()
+        .flat_map(|voice| voice.items.iter())
+        .filter_map(|item| {
+            let mut more = item.marks()?.clone();
+            more.articulations.clear();
+            more.dynamic = None;
+            more.ornament = None;
+            more.grace = None;
+            more.stem = None;
+            more.sounding = None;
+            (!more.is_empty()).then(|| Some(json!([first_event.get(&item.id())?, more])))?
+        })
+        .collect();
+    if !marks.is_empty() {
+        notation.insert("marks".into(), Value::Array(marks));
+    }
     if !sheet.header.is_empty() {
         notation.insert("header".into(), json!(sheet.header));
     }
