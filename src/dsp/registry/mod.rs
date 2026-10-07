@@ -12,6 +12,7 @@
 //! not invent new control flow.
 
 use std::cell::Cell;
+use std::sync::Arc;
 
 use clausters_core::rng::SEED_STRIDE;
 
@@ -54,6 +55,7 @@ use crate::dsp::trig::{
 };
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{DoneAction, Rate, UGen};
+use crate::server::meters::Meters;
 
 /// Line length a delay row allocates when the def omits `max_delay`, in
 /// seconds. A default rather than a hard error, like `fft_size`'s -- but a def
@@ -136,6 +138,11 @@ pub struct BuildCtx {
     /// and every UGen in one graph must get a *different* stream: correlated
     /// "noise" sums to a comb filter rather than to more noise.
     seed: Cell<u64>,
+    /// The server's load table, for the UGens that own a thread (`DiskIn`,
+    /// `DiskOut`): the thread accounts its work there, as every other worker
+    /// of the server does. A table nobody reads unless
+    /// [`BuildCtx::metered`] is handed the server's.
+    pub meters: Arc<Meters>,
 }
 
 impl BuildCtx {
@@ -147,10 +154,19 @@ impl BuildCtx {
     /// process-global counter would make a render depend on how many synths
     /// happened to be built before it.
     pub fn new(sample_rate: f32, block_size: usize, seed: u64) -> Self {
+        Self::metered(sample_rate, block_size, seed, Meters::detached())
+    }
+
+    /// [`BuildCtx::new`] with the load table its UGens' threads report to --
+    /// what a server builds a synth with. Taking the table here rather than
+    /// swapping it in afterwards keeps a `/synth_new` from allocating one it
+    /// then throws away.
+    pub fn metered(sample_rate: f32, block_size: usize, seed: u64, meters: Arc<Meters>) -> Self {
         Self {
             sample_rate,
             block_size,
             seed: Cell::new(seed),
+            meters,
         }
     }
 

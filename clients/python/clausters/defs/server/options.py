@@ -316,7 +316,9 @@ class Load:
     """
 
     #: ``audio`` (the callback's block), ``dsp`` (a worker thread), ``net``
-    #: (the serving turn), ``nrt`` (the job queue) or ``faust`` (compiling).
+    #: (the serving turn), ``nrt`` (the job queue), ``faust`` (compiling), or
+    #: ``disk-in`` and ``disk-out`` (streaming: every ``DiskIn`` node's reading
+    #: together, and every ``DiskOut`` node's writing).
     role: str
     #: Which instance, for a role that has several. Only ``dsp`` does today.
     index: int

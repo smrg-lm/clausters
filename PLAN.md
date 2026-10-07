@@ -2860,7 +2860,7 @@ finished work, where a pending item reads as done.
   ints there: a group read as a synth is what a missed field looks like, and it
   would have surfaced as a corrupt drawing long after this change.
 
-- ⬜ **The disk threads are the one worker the load table cannot see** *(found
+- ✅ **The disk threads are the one worker the load table cannot see** *(found
   2026-09-15 while wiring M34: every other long-lived thread reaches the table,
   these do not)*. `DiskIn::open`/`DiskOut::open` (`src/dsp/disk.rs`) spawn their
   reader and writer from the **UGen registry**, during a synth's build, which is
@@ -2875,6 +2875,26 @@ finished work, where a pending item reads as done.
   idle in `/server_load` and honest in `top -H`, which is the one direction a
   meter must not be wrong in -- so it is named in `docs/schemas.md` as well as
   here.
+
+  **Fixed 2026-10-07.** Two roles, `disk-in` and `disk-out`, each one slot that
+  every thread of its kind adds to. The table reaches a UGen through
+  **`BuildCtx`** rather than `UGenConfig`: the config is the def's — static,
+  compiled once, shared by every instance and by every server that loads the
+  def — while the build context is "what the engine knows at build time",
+  which is exactly what a load table is, and it already existed for the sample
+  rate. `CmdTranslator::set_meters` hands the server's table over at boot and
+  `make_synth` builds with it (`UGenSynth::metered`); an offline render and a
+  test keep a table nobody reads.
+
+  A thread accounts **the stretches it worked, never the parks between them**
+  (`dsp::disk::Turn`): a stretch runs from one wait on the ring to the next and
+  counts only if something was done in it, so a reader waking to a ring still
+  full is not a call. Nothing of this is the audio thread's — `process` is the
+  same push and pop it was — and that is now held rather than assumed:
+  `tests/rt_safety.rs` had no case for the disk UGens at all, and gained
+  `disk_streams_do_not_allocate_on_the_audio_thread`, which runs both under
+  `assert_no_alloc` with a live table. The wiring from `/synth_new` to the
+  thread is held by `server_load_counts_the_disk_threads` in `tests/osc.rs`.
 
 - ✅ **A stop froze the piece's state, and it came back holding it** *(found
   2026-09-11 by ear in the multitrack example; fixed the same day)*. The

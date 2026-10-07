@@ -71,7 +71,8 @@ Two sections feed the client's defaults:
   block.
 
   `Server.load()` breaks that one CPU figure down by **role**: the audio block,
-  each DSP worker, the serving turn, the NRT job queue and the Faust compiler.
+  each DSP worker, the serving turn, the NRT job queue, the Faust compiler and
+  the streaming a `DiskIn` or a `DiskOut` does, each direction in a row.
   `status()` answers whether the server is keeping up, `load()` answers on
   what — a def compiling or a soundfile loading costs real time and shows in
   neither the average nor the peak. The server reports seconds since it booted

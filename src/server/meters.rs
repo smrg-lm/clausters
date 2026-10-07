@@ -22,7 +22,10 @@
 //! serving turn, an NRT job, a Faust compilation. That is what makes the
 //! reading portable -- a build where one of those runs somewhere else reports
 //! the same roles -- and it is why the wire says `dsp 2` rather than a thread
-//! name or a thread id.
+//! name or a thread id. It is also what lets a role be **several threads**: a
+//! `DiskIn` or `DiskOut` node owns an I/O thread of its own, there are as many
+//! as there are such nodes, and all of one kind add to one slot -- the table
+//! says how much time went into streaming, not which node spent it.
 //!
 //! **Busy over wall time, not per cent of a core.** A slot accumulates the
 //! time work was *in progress*. A DSP worker spinning for the next stage is
@@ -38,8 +41,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// What a slot measures. Roles with several instances (only `Dsp` today)
-/// carry an index; the rest are always index `0`.
+/// What a slot measures. Roles with several *slots* (only `Dsp` today) carry
+/// an index; the rest are always index `0`, however many threads add to them.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     /// The audio callback's whole block: draining commands, running the tree
@@ -57,6 +60,12 @@ pub enum Role {
     Nrt,
     /// Compiling a FaustDef.
     Faust,
+    /// Streaming soundfiles off the disk: the decoding every `DiskIn` node's
+    /// reader thread does, all of them together.
+    DiskIn,
+    /// Streaming to soundfiles: the writing every `DiskOut` node's writer
+    /// thread does, all of them together.
+    DiskOut,
 }
 
 impl Role {
@@ -68,18 +77,28 @@ impl Role {
             Role::Net => "net",
             Role::Nrt => "nrt",
             Role::Faust => "faust",
+            Role::DiskIn => "disk-in",
+            Role::DiskOut => "disk-out",
         }
     }
 }
 
-/// Roles past the audio slot and the workers: net, nrt and (with the feature)
-/// faust. A build without `faust` has no compiler thread, so it reports no
-/// such role rather than a row that can only ever read zero.
+/// Roles past the audio slot and the workers: net, nrt, (with the feature)
+/// faust, and the two disk roles. A build without `faust` has no compiler
+/// thread, so it reports no such role rather than a row that can only ever
+/// read zero.
 #[cfg(feature = "faust")]
-const TAIL_ROLES: [Role; 3] = [Role::Net, Role::Nrt, Role::Faust];
+const TAIL_ROLES: [Role; 5] = [
+    Role::Net,
+    Role::Nrt,
+    Role::Faust,
+    Role::DiskIn,
+    Role::DiskOut,
+];
 #[cfg(not(feature = "faust"))]
-const TAIL_ROLES: [Role; 2] = [Role::Net, Role::Nrt];
+const TAIL_ROLES: [Role; 4] = [Role::Net, Role::Nrt, Role::DiskIn, Role::DiskOut];
 
+#[derive(Debug)]
 struct Slot {
     role: Role,
     index: u32,
@@ -102,6 +121,7 @@ pub struct Load {
 
 /// The server's load table. Built at boot with one slot per role (and one per
 /// DSP worker), never resized, never locked.
+#[derive(Debug)]
 pub struct Meters {
     slots: Box<[Slot]>,
     workers: usize,
@@ -181,9 +201,9 @@ impl Meters {
         }
     }
 
-    /// Every slot, in wire order: audio, the workers by index, then net, nrt
-    /// and faust. Allocates, so it is the network thread's call and not the
-    /// audio thread's.
+    /// Every slot, in wire order: audio, the workers by index, then net, nrt,
+    /// faust and the two disk roles. Allocates, so it is the network thread's
+    /// call and not the audio thread's.
     pub fn report(&self) -> Vec<Load> {
         self.slots
             .iter()
@@ -254,6 +274,28 @@ mod tests {
         assert_eq!(dsp1.calls, 2);
         assert!((dsp1.busy - 0.0015).abs() < 1e-9);
         assert!(report.iter().filter(|l| l.calls > 0).count() == 1);
+    }
+
+    #[test]
+    fn several_threads_add_to_one_role() {
+        // A disk role is one slot however many nodes stream: each thread adds
+        // its own stretches and the row is their sum.
+        let meters = Meters::new(0);
+        let threads: Vec<_> = (0..3)
+            .map(|_| {
+                let meters = Arc::clone(&meters);
+                std::thread::spawn(move || meters.add(Role::DiskIn, 0, 2_000_000))
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let report = meters.report();
+        let row = report.iter().find(|l| l.role == Role::DiskIn).unwrap();
+        assert_eq!(row.calls, 3);
+        assert!((row.busy - 0.006).abs() < 1e-9);
+        let out = report.iter().find(|l| l.role == Role::DiskOut).unwrap();
+        assert_eq!(out.calls, 0, "the other direction is its own row");
     }
 
     #[test]

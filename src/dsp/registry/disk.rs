@@ -16,7 +16,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c, _| Box::new(DiskIn::open(c)),
+        |c, ctx| Box::new(DiskIn::open(c, &ctx.meters)),
     ),
     desc(
         "DiskOut",
@@ -27,7 +27,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c, _| Box::new(DiskOut::open(c)),
+        |c, ctx| Box::new(DiskOut::open(c, &ctx.meters)),
     ),
     // --- synth-private feedback (synth-coordinated execution) ---
     desc(

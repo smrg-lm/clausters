@@ -9,6 +9,7 @@ use crate::dsp::{
     Rate, ReplyMsg, UGen, USUAL_UGEN_INPUTS, at,
 };
 use crate::node::{ControlMap, SynthNode};
+use crate::server::meters::Meters;
 use crate::synthdef::{ControlType, InputRef, SynthDef};
 
 /// Built entirely on the network thread (allocates); `process` runs on the
@@ -168,7 +169,14 @@ impl UGenSynth {
     /// synths never share a noise stream and replaying a score replays the
     /// same noise.
     pub fn new(def: Arc<SynthDef>, sample_rate: f32, seed: u64) -> Self {
-        let build_ctx = BuildCtx::new(sample_rate, BLOCK_SIZE, seed);
+        Self::metered(def, sample_rate, seed, Meters::detached())
+    }
+
+    /// [`UGenSynth::new`] for a synth a server builds: the UGens that own a
+    /// thread (`DiskIn`, `DiskOut`) account its work in `meters`, the server's
+    /// load table.
+    pub fn metered(def: Arc<SynthDef>, sample_rate: f32, seed: u64, meters: Arc<Meters>) -> Self {
+        let build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, seed, meters);
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def

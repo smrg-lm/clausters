@@ -79,14 +79,15 @@ impl OscServer {
             crate::osc::wake::Waker,
         >,
     ) -> Self {
-        #[cfg(feature = "faust")]
         let meters = Arc::clone(handle.meters());
-        let translator = CmdTranslator::with_limits(
+        let mut translator = CmdTranslator::with_limits(
             handle.sample_rate,
             handle.audio_buses,
             handle.control_buses().len(),
             handle.limits,
         );
+        // The disk threads of the synths it builds are this server's workers.
+        translator.set_meters(Arc::clone(&meters));
         let transports = vec![Transport::default(); handle.limits.transports];
         Self {
             socket: None,

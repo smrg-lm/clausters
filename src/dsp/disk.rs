@@ -17,6 +17,14 @@
 //!   garbage FIFO): signal the I/O thread to stop and join it. Never on the
 //!   audio thread.
 //!
+//! **The I/O threads are in the load table.** There is one per node rather
+//! than a fixed count, so they have no slot each: every reader adds to the
+//! `disk-in` role and every writer to `disk-out` (`server::meters`), the
+//! stretches it worked and never the parks between them. The table reaches a
+//! thread through the build context (`BuildCtx::meters`), which is the
+//! server's own when the server builds the synth and a table nobody reads
+//! otherwise.
+//!
 //! Both are **mono per UGen**, like our other buffer UGens: `DiskIn` extracts
 //! one channel of the file (`chan` input); a stereo file needs two `DiskIn`s.
 //! `DiskOut` writes a mono WAV; record stereo with two `DiskOut`s to two paths.
@@ -32,6 +40,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::dsp::registry::UGenConfig;
 use crate::dsp::{ProcessCtx, UGen, at};
+use crate::server::meters::{Meters, Role, Stamp, stamp};
 use crate::server::nrt::{wav_format, write_wav_sample};
 
 /// Ring capacity in samples (~1.4 s of mono audio at 48 kHz; less per channel
@@ -40,6 +49,58 @@ const RING_SAMPLES: usize = 1 << 16;
 
 /// How long the I/O thread parks when its ring is full/empty before retrying.
 const PARK: Duration = Duration::from_millis(2);
+
+// ---- the load table ----
+
+/// An I/O thread's account in the load table: the stretches it worked, never
+/// the parks between them.
+///
+/// A stretch runs from one park to the next and is added only if something was
+/// done in it -- a thread that wakes to a ring still full, or still empty, did
+/// no work and is not a call. Dropping it closes the last stretch, so every
+/// way out of a thread's loop is accounted.
+struct Turn {
+    meters: Arc<Meters>,
+    role: Role,
+    since: Stamp,
+    worked: bool,
+}
+
+impl Turn {
+    fn new(meters: Arc<Meters>, role: Role) -> Self {
+        Self {
+            meters,
+            role,
+            since: stamp(),
+            worked: false,
+        }
+    }
+
+    /// Something was done in this stretch.
+    fn worked(&mut self) {
+        self.worked = true;
+    }
+
+    /// Closes the stretch, parks, and opens the next one.
+    fn park(&mut self) {
+        self.close();
+        std::thread::sleep(PARK);
+        self.since = stamp();
+    }
+
+    fn close(&mut self) {
+        if self.worked {
+            self.meters.add(self.role, 0, self.since.elapsed_nanos());
+            self.worked = false;
+        }
+    }
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
 
 // ---- symphonia open helper (streaming) ----
 
@@ -119,7 +180,9 @@ struct DiskInActive {
 }
 
 impl DiskIn {
-    pub fn open(config: &UGenConfig) -> Self {
+    /// Opens the file and starts its reader, which accounts its work to
+    /// `meters`.
+    pub fn open(config: &UGenConfig, meters: &Arc<Meters>) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskIn has no path; it will be silent");
             return Self { active: None };
@@ -139,9 +202,10 @@ impl DiskIn {
         let looping = config.looping;
         let handle = {
             let stop = Arc::clone(&stop);
+            let turn = Turn::new(Arc::clone(meters), Role::DiskIn);
             std::thread::Builder::new()
                 .name("diskin".into())
-                .spawn(move || reader_thread(path, opened, looping, producer, stop))
+                .spawn(move || reader_thread(path, opened, looping, producer, stop, turn))
                 .expect("failed to spawn the DiskIn thread")
         };
         Self {
@@ -201,6 +265,7 @@ fn reader_thread(
     looping: bool,
     mut producer: Producer<f32>,
     stop: Arc<AtomicBool>,
+    mut turn: Turn,
 ) {
     use symphonia::core::errors::Error as SymError;
 
@@ -217,13 +282,18 @@ fn reader_thread(
                 return;
             }
             match producer.push(pending[idx]) {
-                Ok(()) => idx += 1,
-                Err(_) => std::thread::sleep(PARK),
+                Ok(()) => {
+                    idx += 1;
+                    turn.worked();
+                }
+                Err(_) => turn.park(),
             }
         }
         pending.clear();
         idx = 0;
 
+        // Reading and decoding a packet is the work, whatever it yields.
+        turn.worked();
         match opened.format.next_packet() {
             Ok(Some(packet)) => {
                 if packet.track_id != opened.track_id {
@@ -271,7 +341,8 @@ struct DiskOutActive {
 }
 
 impl DiskOut {
-    pub fn open(config: &UGenConfig) -> Self {
+    /// Starts the writer, which accounts its work to `meters`.
+    pub fn open(config: &UGenConfig, meters: &Arc<Meters>) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskOut has no path; it will discard its input");
             return Self { active: None };
@@ -287,9 +358,10 @@ impl DiskOut {
         let handle = {
             let stop = Arc::clone(&stop);
             let sr = Arc::clone(&sample_rate);
+            let turn = Turn::new(Arc::clone(meters), Role::DiskOut);
             std::thread::Builder::new()
                 .name("diskout".into())
-                .spawn(move || writer_thread(path, format, consumer, stop, sr))
+                .spawn(move || writer_thread(path, format, consumer, stop, sr, turn))
                 .expect("failed to spawn the DiskOut thread")
         };
         Self {
@@ -348,6 +420,7 @@ fn writer_thread(
     mut consumer: Consumer<f32>,
     stop: Arc<AtomicBool>,
     sample_rate: Arc<AtomicU32>,
+    mut turn: Turn,
 ) {
     // Wait for the first process() to publish the rate (or an early stop).
     let rate = loop {
@@ -358,7 +431,7 @@ fn writer_thread(
         if stop.load(Ordering::Acquire) {
             return; // freed before it ever ran: nothing to write
         }
-        std::thread::sleep(PARK);
+        turn.park();
     };
 
     let (bits, sample_format) = match wav_format(&format) {
@@ -371,6 +444,8 @@ fn writer_thread(
         bits_per_sample: bits,
         sample_format,
     };
+    // Creating the file, writing into it and finalizing it are the work.
+    turn.worked();
     let mut writer = match hound::WavWriter::create(&path, spec) {
         Ok(w) => w,
         Err(e) => {
@@ -385,6 +460,7 @@ fn writer_thread(
     loop {
         match consumer.pop() {
             Ok(s) => {
+                turn.worked();
                 if !write_one(&mut writer, s) {
                     break;
                 }
@@ -400,10 +476,11 @@ fn writer_thread(
                     }
                     break;
                 }
-                std::thread::sleep(PARK);
+                turn.park();
             }
         }
     }
+    turn.worked();
     if let Err(e) = writer.finalize() {
         tracing::warn!("DiskOut: {path}: {e}");
     }

@@ -3466,6 +3466,9 @@ fn server_load_reports_every_role_cumulatively() {
     assert!(roles.contains(&"audio"), "roles: {roles:?}");
     assert!(roles.contains(&"net"), "roles: {roles:?}");
     assert!(roles.contains(&"nrt"), "roles: {roles:?}");
+    // The disk roles are listed whether or not anything streams.
+    assert!(roles.contains(&"disk-in"), "roles: {roles:?}");
+    assert!(roles.contains(&"disk-out"), "roles: {roles:?}");
     // This harness runs no worker threads, so there is no `dsp` row to report.
     assert!(!roles.contains(&"dsp"), "roles: {roles:?}");
     let audio_first = rows.iter().find(|r| r.0 == "audio").unwrap().clone();
@@ -3488,6 +3491,116 @@ fn server_load_reports_every_role_cumulatively() {
     assert!(net.3 > net_first.3, "the server served more turns");
     assert!(net.2 >= net_first.2, "busy time never goes back");
 
+    server.quit();
+}
+
+/// A `DiskOut` node's writer and a `DiskIn` node's reader are workers of the
+/// server like the rest, so what they spend shows in `/server_load`: one row
+/// per direction, every node of that kind adding to it. They are spawned while
+/// a synth is built, which is why this goes through the server -- the table
+/// has to reach a UGen's constructor from `/synth_new`.
+#[test]
+fn server_load_counts_the_disk_threads() {
+    let mut server = TestServer::spawn();
+    let path = std::env::temp_dir().join(format!("clausters_load_disk_{}.wav", std::process::id()));
+    let path = path.to_str().unwrap().to_string();
+    let send_def = |server: &TestServer, json: String| {
+        server.send(
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(json.into_bytes()),
+            ],
+        );
+        assert_eq!(
+            server.recv_until("/done").args[0],
+            OscType::String("/def_send".into())
+        );
+    };
+    let play = |server: &mut TestServer, def: &str, id: i32| {
+        server.send(
+            "/synth_new",
+            vec![
+                OscType::String(def.into()),
+                OscType::Int(id),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        );
+        server.wait_for_synth_count(1);
+    };
+    // Runs the engine and polls until `role` has been busy, answering its row.
+    let busy_row = |server: &mut TestServer, role: &str| {
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            for _ in 0..16 {
+                server.engine.process_block(&mut out);
+            }
+            server.send("/server_load", vec![]);
+            let rows = load_rows(&server.recv_until("/server_load.reply"));
+            let row = rows.iter().find(|r| r.0 == role).unwrap().clone();
+            if row.3 > 0 {
+                return (row, rows);
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{role} never reported any work"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+
+    server.send("/server_load", vec![]);
+    let idle = load_rows(&server.recv_until("/server_load.reply"));
+    for role in ["disk-in", "disk-out"] {
+        let row = idle.iter().find(|r| r.0 == role).unwrap();
+        assert_eq!(
+            (row.1, row.3),
+            (0, 0),
+            "{role} is idle with nothing streaming"
+        );
+    }
+
+    // A tone into a file: the writer creates it and drains the ring.
+    send_def(
+        &server,
+        format!(
+            r#"{{"name": "tape", "ugens": [
+                {{"kind": "Sine", "inputs": [{{"const": 220.0}}]}},
+                {{"kind": "DiskOut", "inputs": [{{"ugen": 0}}], "path": {path:?}, "format": "float"}}
+            ]}}"#
+        ),
+    );
+    play(&mut server, "tape", 1000);
+    let (writer, rows) = busy_row(&mut server, "disk-out");
+    assert!(writer.2 > 0.0, "the writer took some time: {}", writer.2);
+    let reader = rows.iter().find(|r| r.0 == "disk-in").unwrap();
+    assert_eq!(reader.3, 0, "nothing reads yet, and writing is not reading");
+
+    // Freeing the node joins its writer, which finalizes the file.
+    server.send("/node_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+
+    // The file streamed back: the reader decodes it into its ring.
+    send_def(
+        &server,
+        format!(
+            r#"{{"name": "deck", "ugens": [
+                {{"kind": "DiskIn", "inputs": [{{"const": 0.0}}], "path": {path:?}}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+            ]}}"#
+        ),
+    );
+    play(&mut server, "deck", 1001);
+    let (reader, rows) = busy_row(&mut server, "disk-in");
+    assert!(reader.2 > 0.0, "the reader took some time: {}", reader.2);
+    let writer_after = rows.iter().find(|r| r.0 == "disk-out").unwrap();
+    assert!(writer_after.3 >= writer.3, "a row never goes back");
+
+    server.send("/node_free", vec![OscType::Int(1001)]);
+    server.wait_for_synth_count(0);
+    std::fs::remove_file(&path).ok();
     server.quit();
 }
 

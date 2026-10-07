@@ -29,11 +29,13 @@
 //! happens on the one thread a page's engine has.
 
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::dsp::registry::UGenConfig;
 use crate::dsp::{ProcessCtx, UGen, at};
+use crate::server::meters::Meters;
 
 /// Ring capacity in samples, as natively (~1.4 s of mono at 48 kHz).
 const RING_SAMPLES: usize = 1 << 16;
@@ -219,7 +221,9 @@ struct Active {
 }
 
 impl DiskIn {
-    pub fn open(config: &UGenConfig) -> Self {
+    /// The load table is taken and unused: the reader here is the host, not a
+    /// thread of the engine, and `wasm32` has no clock to bracket with anyway.
+    pub fn open(config: &UGenConfig, _meters: &Arc<Meters>) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskIn has no path; it will be silent");
             return Self { active: None };
@@ -309,7 +313,8 @@ pub struct DiskOut {
 }
 
 impl DiskOut {
-    pub fn open(config: &UGenConfig) -> Self {
+    /// As [`DiskIn::open`]: the writer is the host.
+    pub fn open(config: &UGenConfig, _meters: &Arc<Meters>) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskOut has no path; it will discard its input");
             return Self { active: None };

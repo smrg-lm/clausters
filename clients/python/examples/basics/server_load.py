@@ -22,7 +22,8 @@ for the next packet;
 ``faust`` is compiling a FaustDef -- it already carries seconds before this
 example sends anything, because a server with persisted defs recompiles them
 at boot, and it is the clearest case of a cost neither CPU figure in ``status``
-can show.
+can show; ``disk-in`` and ``disk-out`` are streaming, what every ``DiskIn``
+node's reader and every ``DiskOut`` node's writer spend, summed per direction.
 
 ``busy`` is time the work was in progress, **not** per cent of a core: a DSP
 worker spinning for its next stage is burning a core and is idle by this

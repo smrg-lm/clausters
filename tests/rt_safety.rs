@@ -561,6 +561,114 @@ fn local_feedback_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
+/// Streaming to and from the disk: the node's I/O thread opens, decodes,
+/// writes and accounts its work in the server's load table, and none of that
+/// is the audio thread's -- `process` only pushes to and pops from a ring. The
+/// synths are built with the engine's own table, as a server builds them, so
+/// the accounting is live while the blocks run. Freeing a node hands its box
+/// to the garbage FIFO; the join of its thread happens where the garbage is
+/// collected, never in a block.
+#[test]
+fn disk_streams_do_not_allocate_on_the_audio_thread() {
+    use clausters::server::meters::Role;
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let path = std::env::temp_dir().join(format!("clausters_rt_disk_{}.wav", std::process::id()));
+    let path = path.to_str().unwrap().to_string();
+    let synth = |json: String, handle: &clausters::server::engine::EngineHandle| {
+        let spec: SynthDefSpec = serde_json::from_str(&json).unwrap();
+        Box::new(UGenSynth::metered(
+            Arc::new(compile(spec).unwrap()),
+            48_000.0,
+            SEED_STRIDE,
+            Arc::clone(handle.meters()),
+        ))
+    };
+    let add = |id: i32, synth: Box<UGenSynth>| Cmd::AddSynth {
+        id,
+        target: ROOT_NODE_ID,
+        action: AddAction::Tail,
+        synth,
+        usage: Default::default(),
+    };
+    let calls = |handle: &clausters::server::engine::EngineHandle, role: Role| {
+        let report = handle.meters().report();
+        report.iter().find(|l| l.role == role).unwrap().calls
+    };
+
+    // A tone into a file.
+    let tape = synth(
+        format!(
+            r#"{{"name": "tape", "ugens": [
+                {{"kind": "Sine", "inputs": [{{"const": 220.0}}]}},
+                {{"kind": "DiskOut", "inputs": [{{"ugen": 0}}], "path": {path:?}, "format": "float"}}
+            ]}}"#
+        ),
+        &handle,
+    );
+    handle.send(add(1000, tape)).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    // Collecting the garbage drops the synth, which joins its writer: by now
+    // the file is finalized and the writer's work is in the table.
+    assert_eq!(handle.collect_garbage(), 1);
+    assert!(
+        calls(&handle, Role::DiskOut) > 0,
+        "the writer accounted its work"
+    );
+
+    // The file streamed back, long enough for the reader to fill its ring and
+    // for the node to play some of it.
+    let deck = synth(
+        format!(
+            r#"{{"name": "deck", "ugens": [
+                {{"kind": "DiskIn", "inputs": [{{"const": 0.0}}], "path": {path:?}}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+            ]}}"#
+        ),
+        &handle,
+    );
+    handle.send(add(1001, deck)).ok().unwrap();
+    let mut heard = false;
+    for _ in 0..200 {
+        assert_no_alloc(|| {
+            for _ in 0..8 {
+                engine.process_block(&mut out);
+            }
+        });
+        heard |= out.iter().any(|s| *s != 0.0);
+        if heard && calls(&handle, Role::DiskIn) > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(heard, "the reader never delivered the file");
+    assert!(
+        calls(&handle, Role::DiskIn) > 0,
+        "the reader accounted its work"
+    );
+
+    handle.send(Cmd::FreeNode { id: 1001 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+    std::fs::remove_file(&path).ok();
+}
+
 /// The rate substrate: the `ir` init pass and the demand pull path must
 /// not allocate on the audio thread. `Rand.ir` runs its init once on the first
 /// block; `Demand`/`Dseq` step the sub-list every block. Both live entirely in

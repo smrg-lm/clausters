@@ -45,6 +45,7 @@ use crate::osc::graphdef::{
     ResolvedSurface, VOICE_SLOT, bus_channel, graph_audio_reserved, graph_control_reserved,
 };
 use crate::server::engine::Cmd;
+use crate::server::meters::Meters;
 use crate::server::nrt::NrtJob;
 #[cfg(feature = "synth")]
 use crate::synthdef::instance::UGenSynth;
@@ -174,6 +175,12 @@ pub struct CmdTranslator {
     /// twice asks for it.
     #[cfg_attr(not(feature = "synth"), allow(dead_code))]
     next_seed: Cell<u64>,
+    /// The load table the synths built here hand their I/O threads (`DiskIn`,
+    /// `DiskOut`). A table nobody reads until [`CmdTranslator::set_meters`]
+    /// hands over the server's -- which an offline render and a test never do,
+    /// having no `/server_load` to answer.
+    #[cfg_attr(not(feature = "synth"), allow(dead_code))]
+    meters: Arc<Meters>,
     /// Loaded SynthDefs; starts with the built-in "default".
     #[cfg(feature = "synth")]
     pub synth_defs: HashMap<String, Arc<SynthDef>>,
@@ -238,6 +245,12 @@ impl CmdTranslator {
         self.next_seed.set(seed);
     }
 
+    /// Hands over the server's load table, so the disk threads of the synths
+    /// built from here on are read by `/server_load`.
+    pub fn set_meters(&mut self, meters: Arc<Meters>) {
+        self.meters = meters;
+    }
+
     /// Configured bus counts with default pool limits.
     pub fn with_buses(sample_rate: f32, audio_buses: usize, control_buses: usize) -> Self {
         Self::with_limits(sample_rate, audio_buses, control_buses, Limits::default())
@@ -270,6 +283,7 @@ impl CmdTranslator {
         Self {
             sample_rate,
             next_seed: Cell::new(clausters_core::rng::entropy_seed()),
+            meters: Meters::detached(),
             #[cfg(feature = "synth")]
             synth_defs,
             node_defs: HashMap::new(),
@@ -322,7 +336,12 @@ impl CmdTranslator {
             let seed = self.next_seed.get();
             self.next_seed
                 .set(seed.wrapping_add(SEED_STRIDE.wrapping_mul(UGenSynth::seeds_needed(def))));
-            let synth = Box::new(UGenSynth::new(Arc::clone(def), self.sample_rate, seed));
+            let synth = Box::new(UGenSynth::metered(
+                Arc::clone(def),
+                self.sample_rate,
+                seed,
+                Arc::clone(&self.meters),
+            ));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }
         #[cfg(feature = "faust")]
