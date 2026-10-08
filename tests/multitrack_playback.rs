@@ -11,7 +11,7 @@ use clausters::server::nrtsession::{NrtSession, SessionConfig};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_document::multitrack::Window;
 use clausters_document::multitrack::nodes::SourceInfo;
-use clausters_document::multitrack::{Content, Multitrack, Region, Track};
+use clausters_document::multitrack::{Content, Fade, Multitrack, Region, Track};
 use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
 use clausters_editing::apply::{Endpoint, Step};
 use clausters_editing::playback::MultitrackPlayback;
@@ -71,7 +71,7 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
         tracks: vec![Track::new(NodeId(10), NodeId(11))],
         ..Multitrack::default()
     };
-    multitrack.tracks[0].take_lanes[0].place(Region::new(
+    let mut region = Region::new(
         NodeId(20),
         Second(0.0),
         Second(long),
@@ -85,7 +85,12 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
             start: 0.0,
             duration: long,
         }),
-    ));
+    );
+    // Butt edges: the take is shorter than the multitrack's default fade, and
+    // what is measured here is where it stops, not how.
+    region.fade_in = Some(Fade::of(Second(0.0)));
+    region.fade_out = Some(Fade::of(Second(0.0)));
+    multitrack.tracks[0].take_lanes[0].place(region);
     let sources = HashMap::from([(
         SourceId(1),
         SourceInfo {
@@ -382,4 +387,105 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
         "and under an open one it is, at its own level: {}",
         peak(open)
     );
+}
+
+/// **A region's own fades are heard at its edges**: a straight ramp from
+/// silence on its first frame to full level `fade_in` in, and back to silence
+/// on its last. A constant take, so the ramp is the only thing that moves; the
+/// box sits well after the play's own declick, so that ramp is not the one
+/// measured.
+#[test]
+fn a_region_fades_in_and_out_at_its_own_edges() {
+    let mut s = NrtSession::open(&SessionConfig {
+        sample_rate: SR,
+        channels: 2,
+        ..Default::default()
+    })
+    .expect("open");
+    let take = 32 * BLOCK;
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(take as i32), OscType::Int(1)],
+    );
+    s.settle_for(4);
+    send(
+        &mut s,
+        "/buffer_fill",
+        vec![
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(take as i32),
+            OscType::Float(0.5),
+        ],
+    );
+    s.settle_for(4);
+
+    let fade = 4 * BLOCK;
+    let secs = |frames: usize| frames as f64 / SR;
+    let at = 32 * BLOCK;
+    let mut multitrack = Multitrack {
+        tracks: vec![Track::new(NodeId(10), NodeId(11))],
+        ..Multitrack::default()
+    };
+    let mut region = Region::new(
+        NodeId(20),
+        Second(secs(at)),
+        Second(secs(take)),
+        Content::window(Window {
+            source: SourceRef {
+                source: SourceId(1),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start: 0.0,
+            duration: secs(take),
+        }),
+    );
+    region.fade_in = Some(Fade::of(Second(secs(fade))));
+    region.fade_out = Some(Fade::of(Second(secs(fade))));
+    multitrack.tracks[0].take_lanes[0].place(region);
+    let sources = HashMap::from([(
+        SourceId(1),
+        SourceInfo {
+            buffer: 0,
+            channels: 1,
+            duration: Some(secs(take)),
+        },
+    )]);
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = MultitrackPlayback::new(Endpoint::default());
+    let steps = playback
+        .sync(&multitrack, SR, &sources, 1.0, &mut ids)
+        .unwrap();
+    run(&mut s, steps);
+    let steps = playback.play();
+    run(&mut s, steps);
+
+    let out = s
+        .run_to_vec((at + take + 16 * BLOCK) as u64)
+        .expect("the render ran");
+    let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+    let first = left
+        .iter()
+        .position(|x| *x != 0.0)
+        .expect("the take is heard");
+    let last = left.iter().rposition(|x| *x != 0.0).expect("it sounded");
+    let full = left[first + take / 2];
+    assert!(full > 0.1, "the middle is the take at full level: {full}");
+    let near = |got: f32, want: f32, what: &str| {
+        assert!(
+            (got - want).abs() < 0.01 * full,
+            "{what}: {got}, not {want}"
+        );
+    };
+    // Rising: its first frame is one step of the ramp, half way is half.
+    near(left[first], full / fade as f32, "the first frame");
+    near(left[first + fade / 2 - 1], full * 0.5, "half way in");
+    near(left[first + fade + 4], full, "past the fade in");
+    // Falling, onto the last frame of the box.
+    assert_eq!(last + 1 - first, take, "the box sounds for its length");
+    near(left[last - fade / 2], full * 0.5, "half way out");
+    near(left[last - fade - 4], full, "before the fade out");
 }

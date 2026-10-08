@@ -2483,3 +2483,61 @@ fn a_scrolled_stack_paints_inside_its_own_rect() {
     assert!(drawn.y + drawn.h <= rect.y + rect.h + 0.5);
     assert_eq!(mesh.clip(), None, "and the caller's clip is put back");
 }
+
+/// **A box's fades are read by name and replaced whole**, as every list here
+/// is: a box the list does not name has none, and a negative length is none.
+#[test]
+fn the_fades_prop_names_each_boxs_fades() {
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 20000, 0, "", 0, "b", "one", 20000, 20000, 0, "", 0],
+            "fades": ["a", 480, 960, "b", -1, 240]}"#,
+    ));
+    assert_eq!(mt.fades.get("a"), Some(&(480.0, 960.0)));
+    assert_eq!(mt.fades.get("b"), Some(&(0.0, 240.0)));
+    assert!(mt.apply_prop("fades", &serde_json::json!(["b", 10, 0])));
+    assert_eq!(mt.fades.get("a"), None, "replaced whole");
+    assert_eq!(mt.fades.get("b"), Some(&(10.0, 0.0)));
+}
+
+/// **A box draws its fades**: a box given a quarter of its length to fade in
+/// and to fade out paints more than the same box with none -- a veil and a
+/// line at each end -- and a fade under a pixel is not drawn at all.
+#[test]
+fn a_box_paints_its_fades_and_none_under_a_pixel() {
+    use crate::host::paint::{Draw, Mesh};
+    use crate::host::theme::Theme;
+    let world = crate::host::world::World::default();
+    let metrics = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 800.0, 200.0);
+    let painted = |fades: &str| {
+        let mt = from_props(&props(&format!(
+            r#"{{"tracks": ["one", "", 100, 0, 0, 1, 1],
+                "clips": ["a", "one", 0, 48000, 0, "", -1],
+                "fades": {fades}}}"#
+        )));
+        let ctx = Ctx {
+            world: &world,
+            metrics: &metrics,
+            rect,
+            indent: 120.0,
+            scale: 1.0,
+            time: None,
+            clip: None,
+            focused: false,
+            hovered: false,
+            clock: 0.0,
+        };
+        let mut mesh = Mesh::new();
+        let theme = Theme::default();
+        mt.draw(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
+        mesh.vertex_count()
+    };
+    let plain = painted("[]");
+    let faded = painted(r#"["a", 12000, 12000]"#);
+    assert!(
+        faded >= plain + 2 * 12,
+        "two veils and two lines: {plain} -> {faded}"
+    );
+    assert_eq!(painted(r#"["a", 1, 1]"#), plain, "a fade under a pixel");
+}

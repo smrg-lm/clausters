@@ -860,7 +860,10 @@ fn split_region(
     let mut first = source.clone();
     first.id = left;
     first.length = at - source.position;
-    first.fade_out = None;
+    // **A cut where nothing moved is not heard**: the two edges it makes meet
+    // each other, so they are butt edges -- stated as a fade of length 0, since
+    // an edge that states none takes the multitrack's default.
+    first.fade_out = Some(Fade::of(Second(0.0)));
     if let Some(content) = left_content {
         first.content = content.clone();
     }
@@ -868,7 +871,7 @@ fn split_region(
     second.id = right;
     second.position = at;
     second.length = source.end() - at;
-    second.fade_in = None;
+    second.fade_in = Some(Fade::of(Second(0.0)));
     if let Some(content) = right_content {
         second.content = content.clone();
     }

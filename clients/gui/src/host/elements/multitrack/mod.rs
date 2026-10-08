@@ -239,6 +239,10 @@ pub struct Multitrack {
     /// source, on this multitrack's axis: the picture, the edge a hand pulls
     /// and the reader that sounds all cross by this one number.
     pub(super) rates: HashMap<String, f64>,
+    /// **Each box's fades**, `(in, out)` in frames of the view, by box name --
+    /// the `fades` prop. What the box's reader plays, drawn on the box so it is
+    /// seen where it is heard. A box not named here has none.
+    pub(super) fades: HashMap<String, (f64, f64)>,
     /// **The spans each join is made of**, by box name -- the `segments` prop.
     ///
     /// A box named here is drawn from the takes these spans read, span by span,
@@ -359,6 +363,7 @@ impl Default for Multitrack {
             tracks: Vec::new(),
             clips: Vec::new(),
             curves: Vec::new(),
+            fades: HashMap::new(),
             layers: Vec::new(),
             bodies: HashMap::new(),
             layer: None,

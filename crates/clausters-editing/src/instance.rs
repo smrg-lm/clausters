@@ -922,6 +922,8 @@ impl Instance {
                 ("span", reader.span),
                 ("start", reader.start),
                 ("rate", reader.rate),
+                ("fade_in", reader.fade_in),
+                ("fade_out", reader.fade_out),
             ]
             .into_iter()
             .map(|(port, value)| (port.to_string(), Port::Number(value)))

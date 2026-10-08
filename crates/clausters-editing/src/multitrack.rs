@@ -396,6 +396,37 @@ pub fn rates(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
+/// **The fades every box of samples is drawn with**, as flat `name in out`
+/// triples in frames of the view: how far into the box its fade in reaches, and how far
+/// before its end its fade out begins. A box with neither is not named.
+///
+/// A list of its own beside the septuple, for the reason `rates` is: the
+/// septuple is a fixed width every reader chunks by. It is what the reader
+/// plays (`nodes`, through the same [`Region::fades`]), so what is drawn is
+/// what is heard.
+///
+/// [`Region::fades`]: clausters_document::multitrack::Region::fades
+pub fn fades(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for box_ in picture::boxes(multitrack) {
+        if box_.fade_in <= 0.0 && box_.fade_out <= 0.0 {
+            continue;
+        }
+        // A box of notes is played by its voices, which no fade reaches yet:
+        // drawing one there would show what is not heard.
+        if box_.source.and_then(|s| look.sources.sequence(s)).is_some() {
+            continue;
+        }
+        let end = box_.position.0 + box_.length.0;
+        out.extend([
+            json!(box_.region.0.to_string()),
+            json!(look.frames_over(box_.position.0, box_.fade_in)),
+            json!(look.frames_over(end - box_.fade_out, box_.fade_out)),
+        ]);
+    }
+    out
+}
+
 /// **How many frames of a span's take one frame of the join is**: the take's
 /// own rate against the join's, which is what a part of a join at another rate
 /// is read through -- on the server by `dsp::stitch` and here by the drawing,
@@ -590,6 +621,7 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("hidden".into(), json!(hidden(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));
+    out.insert("fades".into(), Value::Array(fades(multitrack, look)));
     out.insert("segments".into(), Value::Array(segments(multitrack, look)));
     out.insert("notes".into(), Value::Array(notes(multitrack, look)));
     out
@@ -1132,7 +1164,7 @@ pub fn table(sources: &Value) -> HashMap<SourceId, i64> {
 mod tests {
     use super::*;
     use clausters_document::multitrack::Window;
-    use clausters_document::multitrack::{Automation, Content, Region, Track};
+    use clausters_document::multitrack::{Automation, Content, DEFAULT_FADE, Fade, Region, Track};
     use clausters_document::points::Point;
     use clausters_document::session::Location;
     use clausters_document::{Lifetime, NodeId, Opaque, Second, SourceRef};
@@ -1678,6 +1710,37 @@ mod tests {
         multitrack
     }
 
+    /// **Every box is drawn with the fades it plays**: the multitrack's default
+    /// where it states none, its own where it does, and nothing named where it
+    /// has a butt edge at both ends -- in frames of the view, its fade out
+    /// measured back from its end.
+    #[test]
+    fn the_fades_prop_is_what_the_boxes_play() {
+        let mut multitrack = halves();
+        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
+        regions[1].fade_in = Some(Fade::of(Second(0.0)));
+        regions[1].fade_out = Some(Fade::of(Second(0.25)));
+        let sources = HashMap::new();
+        assert_eq!(
+            fades(&multitrack, &look(&sources)),
+            vec![
+                json!("10"),
+                json!(480.0),
+                json!(480.0),
+                json!("11"),
+                json!(0.0),
+                json!(12_000.0)
+            ]
+        );
+        multitrack.defaults.fade = None;
+        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
+        regions[1].fade_out = Some(Fade::of(Second(0.0)));
+        assert!(
+            fades(&multitrack, &look(&sources)).is_empty(),
+            "no fade anywhere, none named"
+        );
+    }
+
     /// **The halves of a cut put back in order are the join they always were**:
     /// one window over one run, and nothing minted. A source made of one span of
     /// one take says nothing the take does not.
@@ -1818,7 +1881,6 @@ mod tests {
         let Location::Segments { parts } = &minted.source.location else {
             panic!("a join is segments: {:?}", minted.source.location);
         };
-        let seam = (picture::SEAM * 48_000.0) as u64;
         assert_eq!(parts.len(), 2);
         assert_eq!(
             parts[0].source.range,
@@ -1835,9 +1897,50 @@ mod tests {
                 end: 48_000
             })
         );
-        assert_eq!((parts[0].fade_in, parts[0].fade_out), (0, seam));
-        assert_eq!((parts[1].fade_in, parts[1].fade_out), (seam, 0));
+        // Neither box states a fade, so each edge is the multitrack's default
+        // (10 ms, 480 frames): the two that meet at the seam are carried into
+        // it, and the join adds none of its own.
+        let default = (DEFAULT_FADE * 48_000.0) as u64;
+        assert_eq!((parts[0].fade_in, parts[0].fade_out), (0, default));
+        assert_eq!((parts[1].fade_in, parts[1].fade_out), (default, 0));
         assert_eq!(minted.source.frames, Some(96_000));
+    }
+
+    /// **A join carries the fades its boxes have at the seam, and invents
+    /// none.** The tail, now in front, fades out over 10 ms and the head
+    /// behind it fades in over 20 ms: those two are the seam's, and the
+    /// join's outer edges -- the tail's fade in, the head's fade out -- stay
+    /// the joined box's own and are not repeated in the parts.
+    #[test]
+    fn a_join_carries_its_boxes_fades_into_the_seam() {
+        let mut multitrack = swapped();
+        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
+        // regions[1] is the tail, at 0; regions[0] the head, at 1 s.
+        regions[1].fade_in = Some(Fade::of(Second(0.005)));
+        regions[1].fade_out = Some(Fade::of(Second(0.010)));
+        regions[0].fade_in = Some(Fade::of(Second(0.020)));
+        regions[0].fade_out = Some(Fade::of(Second(0.005)));
+        let sources = HashMap::new();
+        let intents = read(
+            &multitrack,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&sources),
+        );
+        let [
+            MultitrackIntent::JoinRegions {
+                source: Some(minted),
+                ..
+            },
+        ] = intents.as_slice()
+        else {
+            panic!("a join that mints its source: {intents:?}");
+        };
+        let Location::Segments { parts } = &minted.source.location else {
+            panic!("a join is segments: {:?}", minted.source.location);
+        };
+        assert_eq!((parts[0].fade_in, parts[0].fade_out), (0, 480));
+        assert_eq!((parts[1].fade_in, parts[1].fade_out), (960, 0));
     }
 
     /// **A join reads what each box shows, not what its window claims**
@@ -2079,9 +2182,11 @@ mod tests {
                 // The half second of the join's first part the box shows.
                 part(72_000, 96_000, 0, 480),
                 // The half second of its second, its own seam kept, and cut
-                // where the next box starts.
+                // where the next box starts -- faded there as that box's edge
+                // is, by the multitrack's default.
                 part(0, 24_000, 480, 480),
-                // The box over the take, cut where it meets the join's box.
+                // The box over the take, its own edge's default fade at the
+                // seam.
                 part(0, 48_000, 480, 0),
             ]
         );

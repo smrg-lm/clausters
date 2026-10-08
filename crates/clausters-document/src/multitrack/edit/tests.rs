@@ -3,7 +3,7 @@
 //! vocabulary whose refusals are guesses.
 
 use super::*;
-use crate::multitrack::{Automation, TakeLane};
+use crate::multitrack::{Automation, DEFAULT_FADE, TakeLane};
 use crate::{Beat, Lifetime, SourceId, SourceRef};
 
 fn window(source: u64) -> crate::multitrack::Window {
@@ -276,6 +276,14 @@ fn a_split_names_the_two_identities_and_applying_it_twice_changes_nothing() {
         multitrack.locate(NodeId(111)).unwrap().2.content,
         Content::window(window(2))
     );
+    // **A cut where nothing moved is not heard**: the two edges it makes are
+    // butt edges, and the outer ones keep whatever the region had -- here the
+    // multitrack's default, which they still state nothing about.
+    let defaults = &multitrack.defaults;
+    let left = multitrack.locate(NodeId(110)).unwrap().2;
+    let right = multitrack.locate(NodeId(111)).unwrap().2;
+    assert_eq!(left.fades(defaults), (DEFAULT_FADE, 0.0));
+    assert_eq!(right.fades(defaults), (0.0, DEFAULT_FADE));
 
     let version = multitrack.version;
     let again = edit(&mut multitrack, split);

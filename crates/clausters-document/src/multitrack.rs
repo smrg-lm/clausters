@@ -255,10 +255,14 @@ pub struct Region {
     /// stack needs an order that survives a save. Higher is nearer the front.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub layer: u32,
-    /// The fade in from the region's start, when it has one.
+    /// The fade in from the region's start. `None` is **the multitrack's
+    /// default** ([`Defaults::fade`]), which is how every region is added with
+    /// one without any writer having to put it there; a region that wants a
+    /// butt edge says so with a fade of length 0. Read it through
+    /// [`Region::fades`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fade_in: Option<Fade>,
-    /// The fade out ending at the region's end, when it has one.
+    /// The fade out ending at the region's end, by the same rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fade_out: Option<Fade>,
     /// Silenced without being removed. The region's own, not its track's.
@@ -293,6 +297,23 @@ fn is_zero_u32(n: &u32) -> bool {
 }
 
 impl Region {
+    /// **The fades this region sounds and is drawn with**, `(in, out)` in
+    /// seconds: its own where it states one, the multitrack's default where it
+    /// does not, and none where neither has one. Each is at most the region,
+    /// so two that meet in the middle share it.
+    ///
+    /// The one reading of the rule, so a player, a picture and a join cannot
+    /// disagree about what an edge sounds like.
+    pub fn fades(&self, defaults: &Defaults) -> (f64, f64) {
+        let length = self.length.get().max(0.0);
+        let edge = |own: &Option<Fade>| {
+            own.as_ref()
+                .or(defaults.fade.as_ref())
+                .map_or(0.0, |f| f.length.get().max(0.0).min(length))
+        };
+        (edge(&self.fade_in), edge(&self.fade_out))
+    }
+
     /// A region placed at `position`, `length` long, filled with `content`.
     pub fn new(id: NodeId, position: Second, length: Second, content: Content) -> Self {
         Self {
@@ -767,9 +788,53 @@ pub struct Multitrack {
     /// The punch span, when one is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub punch: Option<Span>,
+    /// **What a property of a region is when the region does not say.**
+    #[serde(default, skip_serializing_if = "Defaults::is_default")]
+    pub defaults: Defaults,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
     pub extra: Extra,
+}
+
+/// **The session's defaults for the properties of a region**: what one is when
+/// it does not say -- written as defaults for a property rather than as a
+/// setting of some feature, so the same table can hold another property's
+/// default later.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Defaults {
+    /// The fade every region's edge has unless the region says otherwise:
+    /// [`DEFAULT_FADE`] seconds when a file names none, and `null` for none at
+    /// all in this session. An edge never meets the silence beside it as a
+    /// step unless somebody asked for one.
+    #[serde(default = "default_fade")]
+    pub fade: Option<Fade>,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Extra,
+}
+
+/// The length of a region's edge when nothing says otherwise, in seconds: a
+/// few milliseconds, long enough that a step into or out of silence is not a
+/// click and short enough that nothing that starts with an attack loses it.
+pub const DEFAULT_FADE: f64 = 0.010;
+
+fn default_fade() -> Option<Fade> {
+    Some(Fade::of(Second(DEFAULT_FADE)))
+}
+
+impl Default for Defaults {
+    fn default() -> Self {
+        Self {
+            fade: default_fade(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl Defaults {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 fn first_version() -> u64 {
@@ -791,6 +856,7 @@ impl Default for Multitrack {
             markers: Vec::new(),
             loop_span: None,
             punch: None,
+            defaults: Defaults::default(),
             extra: Extra::new(),
         }
     }
@@ -1190,5 +1256,48 @@ mod tests {
         let back = serde_json::to_value(&a).unwrap();
         assert_eq!(back["groove"]["name"], "mpc60");
         assert_eq!(back["tempo"][0]["swing"], 0.62);
+    }
+
+    /// **A region's edge is the multitrack's default unless it says
+    /// otherwise**: a region that states nothing fades in and out over the
+    /// default, one that states 0 has a butt edge, one that states a length
+    /// has it, and no fade is longer than its region.
+    #[test]
+    fn a_regions_fades_are_its_own_or_the_default() {
+        let defaults = Defaults::default();
+        let mut r = region(1, 0.0, 1.0);
+        assert_eq!(r.fades(&defaults), (DEFAULT_FADE, DEFAULT_FADE));
+        r.fade_in = Some(Fade::of(Second(0.0)));
+        r.fade_out = Some(Fade::of(Second(0.25)));
+        assert_eq!(r.fades(&defaults), (0.0, 0.25));
+        r.fade_out = Some(Fade::of(Second(3.0)));
+        assert_eq!(r.fades(&defaults).1, 1.0, "at most the region");
+
+        // A session with no default: the regions that state nothing meet the
+        // silence beside them as a step, which is now what was asked for.
+        let none = Defaults {
+            fade: None,
+            ..Defaults::default()
+        };
+        assert_eq!(region(2, 0.0, 1.0).fades(&none), (0.0, 0.0));
+    }
+
+    /// The default is not written while it is the default, and a session that
+    /// turned it off writes `null` and reads it back off -- not as the
+    /// default it would get from a file that names nothing.
+    #[test]
+    fn the_defaults_round_trip_and_stay_out_of_a_file_that_keeps_them() {
+        let plain = Multitrack::default();
+        let written = serde_json::to_value(&plain).unwrap();
+        assert!(written.get("defaults").is_none(), "{written}");
+        let read: Multitrack = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(read.defaults, Defaults::default());
+
+        let mut off = Multitrack::default();
+        off.defaults.fade = None;
+        let written = serde_json::to_value(&off).unwrap();
+        assert_eq!(written["defaults"]["fade"], serde_json::Value::Null);
+        let back: Multitrack = serde_json::from_value(written).unwrap();
+        assert_eq!(back.defaults.fade, None);
     }
 }

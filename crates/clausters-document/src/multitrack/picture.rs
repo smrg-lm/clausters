@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::multitrack::edit::{MintedSource, MultitrackIntent};
-use crate::multitrack::{Automation, Content, Multitrack, Region, TakeLane, Track, Window};
+use crate::multitrack::{Automation, Content, Fade, Multitrack, Region, TakeLane, Track, Window};
 use crate::session::{Location, Part, Source};
 use crate::{Lifetime, NodeId, Opaque, Point, Range, Second, SourceId, SourceRef};
 
@@ -98,6 +98,13 @@ pub struct Box {
     /// in, which is a fact about the samples rather than about the box and so
     /// is not here.
     pub playrate: f64,
+    /// **The fades the box is drawn and played with**, in seconds from its
+    /// start and before its end: [`Region::fades`], the region's own or the
+    /// multitrack's default.
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub fade_out: f64,
 }
 
 /// The key a client's fader is kept under in a track's opaque table.
@@ -146,6 +153,7 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
         };
         for region in &lane.regions {
             let (source, start, content, looping, playrate) = window_of(region);
+            let (fade_in, fade_out) = region.fades(&multitrack.defaults);
             out.push(Box {
                 region: region.id,
                 row: track.id,
@@ -161,6 +169,8 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
                 muted: region.muted,
                 looping,
                 playrate,
+                fade_in,
+                fade_out,
             });
         }
     }
@@ -583,6 +593,43 @@ pub fn read(
     out
 }
 
+/// **A cut where nothing moved is not heard**, whichever way it arrived: a box
+/// the report adds that begins where a box beside it ends, reading on from
+/// where that one stops in the same source, is the other half of a cut, and
+/// the edge the two share is a butt edge on both sides -- as
+/// [`MultitrackIntent::SplitRegion`] leaves it. Without it the two halves of a
+/// cut made in a window would each fade into the seam by the multitrack's
+/// default, a dip in the middle of a recording nobody moved.
+///
+/// Only a box the report adds is a half: `before` is the take lane as the
+/// multitrack held it, so two boxes that were already there and happen to
+/// meet keep the fades they have.
+fn butt_cuts(regions: &mut [Region], before: &[Region]) {
+    let is_new = |r: &Region| before.iter().all(|b| b.id != r.id);
+    let reads_on = |a: &Region, b: &Region| {
+        let (Some(sa), sta, _, false, ra) = window_of(a) else {
+            return false;
+        };
+        let (Some(sb), stb, _, false, _) = window_of(b) else {
+            return false;
+        };
+        sa == sb
+            && (a.end().0 - b.position.0).abs() < 1e-9
+            && (sta + a.length.get() * ra - stb).abs() < 1e-6
+    };
+    for i in 0..regions.len() {
+        for j in 0..regions.len() {
+            if i == j || !(is_new(&regions[i]) || is_new(&regions[j])) {
+                continue;
+            }
+            if reads_on(&regions[i], &regions[j]) {
+                regions[i].fade_out = Some(Fade::of(Second(0.0)));
+                regions[j].fade_in = Some(Fade::of(Second(0.0)));
+            }
+        }
+    }
+}
+
 /// An id past everything the multitrack already names -- its tracks, its take lanes, its
 /// regions **and its automations**, which share one id space.
 ///
@@ -607,19 +654,6 @@ pub fn fresh_id(multitrack: &Multitrack) -> u64 {
         .unwrap_or(0)
         + 1
 }
-
-/// The seam between two spans that do not continue each other, in seconds.
-///
-/// A step is a click however well the frames are read, so a cut gets the few
-/// milliseconds an editor puts on one. It is here rather than in a client
-/// because it is part of what the join *is*: two clients that chose their own
-/// would make the same edit sound different, which is the whole reason the
-/// arithmetic lives in this crate.
-///
-/// Only at a seam that is one -- two parts that *do* read on from each other are
-/// left alone, where a fade would be audible damage to material that was
-/// continuous.
-pub const SEAM: f64 = 0.010;
 
 /// A source id nothing is using -- neither this multitrack **nor whoever holds the
 /// samples**.
@@ -773,19 +807,20 @@ pub fn read_join(
     }
     let id = fresh_source(multitrack, taken);
     let frames = |secs: f64| (secs * rate).round().max(0.0) as u64;
-    let seam = frames(SEAM);
     let mut parts = Vec::new();
-    for (i, (source, start, duration, _)) in spans.iter().enumerate() {
-        // A seam is a seam only where the material is cut. Two parts that read
-        // on from each other are the same recording and are left alone.
-        let cut_before = i > 0 && {
-            let before = &spans[i - 1];
-            before.0 != *source || (*start - (before.1 + before.2)).abs() > frame
-        };
-        let cut_after = i + 1 < spans.len() && {
-            let after = &spans[i + 1];
-            after.0 != *source || (after.1 - (start + duration)).abs() > frame
-        };
+    let last_span = spans.len() - 1;
+    for (i, (source, start, duration, region)) in spans.iter().enumerate() {
+        // **A seam is faded as the boxes on either side of it say, and no
+        // more**: a box's fade at an edge the join makes inner -- its own, or
+        // the multitrack's default where it states none -- is carried
+        // into the part that edge begins or ends, and a box with none there
+        // meets its neighbour butt to butt. The join's outer edges are the
+        // joined box's own fades, which the edit gives it, and are not
+        // repeated in the parts. Nothing is invented here: a fade the boxes
+        // did not have is a fade nobody can see or change.
+        let (own_in, own_out) = region.fades(&multitrack.defaults);
+        let fade_in = if i > 0 { frames(own_in) } else { 0 };
+        let fade_out = if i < last_span { frames(own_out) } else { 0 };
         // **Flat, whatever the box windows.** A segment names a take and a
         // span of it, and a join is a new list of those -- never a list of
         // lists. A box over a join reads through to the takes that join is
@@ -801,12 +836,12 @@ pub fn read_join(
             frames_of,
         )?;
         let last = segments.len() - 1;
-        for (k, multitrack) in segments.iter_mut().enumerate() {
+        for (k, part) in segments.iter_mut().enumerate() {
             if k == 0 {
-                multitrack.fade_in = if cut_before { seam } else { 0 };
+                part.fade_in = fade_in;
             }
             if k == last {
-                multitrack.fade_out = if cut_after { seam } else { 0 };
+                part.fade_out = fade_out;
             }
         }
         parts.extend(segments);
@@ -1003,6 +1038,7 @@ fn lane_lists(
             ));
             next += 1;
         }
+        butt_cuts(&mut regions, &lane.regions);
         out.push(MultitrackIntent::SetTakeLane {
             take_lane: lane.id,
             regions,
@@ -1329,6 +1365,14 @@ mod tests {
             .expect("the tail");
         assert_eq!(tail.position, Second(2.0));
         assert_eq!(tail.content.as_window().map(|w| w.start), Some(2.0));
+        // **And the cut is not heard**: the two edges it made are butt edges,
+        // and the outer ones keep the multitrack's default.
+        let defaults = &multitrack.defaults;
+        assert_eq!(
+            first.fades(defaults),
+            (crate::multitrack::DEFAULT_FADE, 0.0)
+        );
+        assert_eq!(tail.fades(defaults), (0.0, crate::multitrack::DEFAULT_FADE));
     }
 
     /// **A curve holds an id like anything else does.** `fresh_id` answers

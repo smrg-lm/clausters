@@ -322,6 +322,9 @@ impl Multitrack {
                     roll.draw_body(d, cr, &space);
                 }
             }
+            if let Some(&(fade_in, fade_out)) = self.fades.get(&clip.name) {
+                track::draw_clip_fades(d, cr, &local, clip.place.dur, fade_in, fade_out);
+            }
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
             // off screen has no grip, because a handle for an edge nobody can

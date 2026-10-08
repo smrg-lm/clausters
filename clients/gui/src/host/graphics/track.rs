@@ -561,6 +561,56 @@ pub fn draw_clip(d: &mut Draw, cr: Rect, selected: bool) {
     mesh.border(cr, m.divider_w, edge);
 }
 
+/// **A box's own fades, drawn on it**: a line from the silent corner to full
+/// level, and the silenced part above it veiled -- the fade in rising from
+/// the bottom of the box's left edge to its top `fade_in` in, the fade out
+/// falling from its top to the bottom of its right edge. `local` is the
+/// box's own window over `[0, dur]` (`clip_local_view`), so a box scrolled
+/// half off still draws the part of its fade that shows, at the slope it has.
+///
+/// Drawn over the box's contents and under its label: a fade is part of what
+/// the box *is*, so it is seen with the samples it shapes.
+pub fn draw_clip_fades(
+    d: &mut Draw,
+    cr: Rect,
+    local: &View,
+    dur: f64,
+    fade_in: f64,
+    fade_out: f64,
+) {
+    let (mesh, m, theme) = d.parts();
+    let (top, bottom) = (cr.y, cr.y + cr.h);
+    let (left, right) = (cr.x, cr.x + cr.w);
+    let veil = theme.panel;
+    let edge = theme.object_edge;
+    // One ramp: `level(x)` is 0 at `silent` and 1 at `full`, and what is
+    // drawn is the stretch of it inside the box's rectangle.
+    let mut ramp = |silent: f32, full: f32| {
+        if (full - silent).abs() < 0.5 {
+            return;
+        }
+        let y = |x: f32| bottom - (x - silent) / (full - silent) * cr.h;
+        let (a, b) = (silent.min(full).max(left), silent.max(full).min(right));
+        if b <= a {
+            return;
+        }
+        mesh.quad([[a, top], [b, top], [b, y(b)], [a, y(a)]], veil);
+        mesh.line([a, y(a)], [b, y(b)], m.divider_w, edge);
+    };
+    if fade_in > 0.0 {
+        ramp(
+            local_x(cr, local, 0.0),
+            local_x(cr, local, fade_in.min(dur)),
+        );
+    }
+    if fade_out > 0.0 {
+        ramp(
+            local_x(cr, local, dur),
+            local_x(cr, local, (dur - fade_out).max(0.0)),
+        );
+    }
+}
+
 /// Which **ends** of a clip are on screen, read off the clip's own axis: the
 /// slice of `[0, dur]` its drawn rectangle shows. A clip scrolled half off the
 /// left is drawn starting at some `t > 0`, and its start is not on screen at

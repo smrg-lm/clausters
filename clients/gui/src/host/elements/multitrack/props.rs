@@ -66,6 +66,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
         rates: parse_rates(props),
+        fades: parse_fades(props),
         segments: parse_segments(props),
         meters: parse_meters(props),
         zoom: HashMap::new(),
@@ -354,6 +355,24 @@ pub(super) fn parse_rates(props: &Map<String, Value>) -> HashMap<String, f64> {
     out
 }
 
+/// The `fades` prop: flat `name in out` triples, each in frames of the view --
+/// how far into the box its fade in reaches and how far before its end its
+/// fade out begins.
+pub(super) fn parse_fades(props: &Map<String, Value>) -> HashMap<String, (f64, f64)> {
+    let Some(Value::Array(items)) = props.get("fades") else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for triple in items.as_chunks::<3>().0 {
+        let Some(name) = triple[0].as_str() else {
+            continue;
+        };
+        let length = |v: &Value| v.as_f64().unwrap_or(0.0).max(0.0);
+        out.insert(name.to_string(), (length(&triple[1]), length(&triple[2])));
+    }
+    out
+}
+
 /// A name set as a `/gui_set` value: the same space-separated list the prop
 /// takes.
 pub(super) fn names_of(v: &Value) -> Vec<String> {
@@ -594,6 +613,10 @@ impl Multitrack {
             }
             "rates" => {
                 self.rates = parse_rates(&parse::as_array_props("rates", v));
+                true
+            }
+            "fades" => {
+                self.fades = parse_fades(&parse::as_array_props("fades", v));
                 true
             }
             // **The notes the boxes over a sequence draw**, replaced whole

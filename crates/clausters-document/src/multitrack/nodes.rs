@@ -82,6 +82,13 @@ pub struct PlannedReader {
     /// reading speed is the source's rate against the engine's, which the
     /// reader takes off the buffer (`mixer::RATE`).
     pub rate: f64,
+    /// **The region's fade in**, in frames from where the box starts -- its
+    /// own `fade_in`, `0` for none (`mixer::FADE_IN`).
+    #[serde(default)]
+    pub fade_in: f64,
+    /// The region's fade out, in frames before where the box ends.
+    #[serde(default)]
+    pub fade_out: f64,
 }
 
 /// One curve, ready to be heard: the port it drives and the table a reader
@@ -427,6 +434,11 @@ pub fn plan_voiced(
             {
                 span = span.min(frames((duration - window.start).max(0.0) / *playrate));
             }
+            // **The region's fades**, at its edges -- not its window's: a box
+            // cut short of its source fades where it is cut. Its own, or the
+            // multitrack's default where it states none.
+            let (fade_in, fade_out) = region.fades(&multitrack.defaults);
+            let (fade_in, fade_out) = (frames(fade_in).min(span), frames(fade_out).min(span));
             let readers = (0..info.channels.max(1))
                 .map(|channel| PlannedReader {
                     channel,
@@ -441,6 +453,8 @@ pub fn plan_voiced(
                     start: window.start,
                     looping: *looping,
                     rate: *playrate,
+                    fade_in,
+                    fade_out,
                 })
                 .collect();
             let pair = (info.channels.max(1), channels);

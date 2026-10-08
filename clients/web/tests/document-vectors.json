@@ -2442,6 +2442,9 @@
                           "start": 0.0
                         }
                       },
+                      "fade_out": {
+                        "length": 0.0
+                      },
                       "id": 110,
                       "length": 2.0,
                       "position": 0.0
@@ -2458,6 +2461,9 @@
                           },
                           "start": 0.0
                         }
+                      },
+                      "fade_in": {
+                        "length": 0.0
                       },
                       "id": 111,
                       "length": 2.0,
