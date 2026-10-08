@@ -209,6 +209,20 @@ pub fn draw_with(
     lit: Option<usize>,
     selected: Option<usize>,
 ) {
+    draw_marked(d, ax, points, lit, selected, &|_| true);
+}
+
+/// [`draw_with`], marking as a handle only the points `handle` says are one:
+/// a point a hand cannot take is drawn as the curve passing through it, not
+/// as something to grab.
+pub fn draw_marked(
+    d: &mut Draw,
+    ax: &Axes,
+    points: &[BpfPoint],
+    lit: Option<usize>,
+    selected: Option<usize>,
+    handle: &dyn Fn(usize) -> bool,
+) {
     let (mesh, m, theme) = d.parts();
     if ax.body.w < 1.0 || ax.body.h <= 0.0 || points.is_empty() {
         return;
@@ -248,9 +262,9 @@ pub fn draw_with(
             theme.trace,
         );
     }
-    for p in points {
+    for (i, p) in points.iter().enumerate() {
         let x = ax.x(p.time);
-        if x >= ax.body.x && x <= ax.body.x + ax.body.w {
+        if handle(i) && x >= ax.body.x && x <= ax.body.x + ax.body.w {
             mesh.disc(x, ax.y(p.value), m.point_radius, theme.point);
         }
     }

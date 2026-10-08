@@ -202,6 +202,13 @@ impl Curve {
         ((index == 0 || index == 2) && ax.on_line(&self.points, at.0, at.1, m)).then_some(index)
     }
 
+    /// Whether point `i` is a handle: every point, or on a trapezoid the two
+    /// corners of its top -- its ends are where the box is silent, and no
+    /// hand takes them.
+    fn is_handle(&self, i: usize) -> bool {
+        !self.trapezoid || i == 1 || i == 2
+    }
+
     /// A corner of a trapezoid's top moved to `t`: in time only, between its
     /// neighbours.
     fn move_corner(&mut self, i: usize, t: f64) {
@@ -564,7 +571,9 @@ impl Element for Curve {
                     .and_then(|(x, _)| ax.hit_segment(&self.points, x)),
             }
         };
-        bpf::draw_with(d, &ax, &self.points, lit, self.selected);
+        bpf::draw_marked(d, &ax, &self.points, lit, self.selected, &|i| {
+            self.is_handle(i)
+        });
         if !self.body {
             self.draw_readout(d, ctx, &ax);
         }
@@ -615,7 +624,7 @@ impl Element for Curve {
             let (_mesh, m, _theme) = d.parts();
             self.axes(rect, 0.0, m, Some(*time))
         };
-        bpf::draw_with(d, &ax, &self.points, None, None);
+        bpf::draw_marked(d, &ax, &self.points, None, None, &|i| self.is_handle(i));
     }
 
     /// **A curve's own contents are its break-points and the segments between
@@ -1021,6 +1030,40 @@ mod tests {
         assert!(c.layer_hit((x(10.0), mid), &input(&m, rect, None)));
         c.press((x(10.0), mid), &input(&m, rect, None));
         assert!(matches!(c.grab, Some(Grab::Segment { index: 0, .. })));
+    }
+
+    /// **A trapezoid marks only its top's corners**: its ends are where the
+    /// box is silent and no hand takes them, so they are not drawn as
+    /// handles -- one disc less at each end than the same points as a curve.
+    #[test]
+    fn a_trapezoid_marks_only_the_corners_of_its_top() {
+        use crate::host::paint::Mesh;
+        use crate::host::theme::Theme;
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let points = r#""points":[0.0,0.0,1,0.0, 20.0,1.0,1,0.0, 80.0,1.0,1,0.0, 100.0,0.0,1,0.0]"#;
+        let drawn = |trapezoid: bool| {
+            let c = body(&props(&format!(
+                r#"{{"min":0.0,"max":1.0,"duration":100.0,"trapezoid":{trapezoid},{points}}}"#
+            )));
+            let mut mesh = Mesh::new();
+            let time = TimeSpace::of(
+                View {
+                    start: 0.0,
+                    len: 100.0,
+                },
+                100.0,
+            );
+            c.draw_body(
+                &mut Draw::new(&mut mesh, &m, &theme),
+                Rect::new(0.0, 0.0, 200.0, 100.0),
+                &time,
+            );
+            mesh.vertex_count()
+        };
+        let (curve, trapezoid) = (drawn(false), drawn(true));
+        assert!(trapezoid < curve, "two discs fewer: {curve} -> {trapezoid}");
+        assert_eq!((curve - trapezoid) % 2, 0, "one disc at each end");
     }
 
     /// Ctrl adds a point where there is none and removes the one under the
