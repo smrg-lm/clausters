@@ -396,45 +396,6 @@ pub fn rates(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
-/// **The fades every box of samples is drawn with**, as flat
-/// `name in out in_shape in_curve out_shape out_curve` septuples: in frames of
-/// the view how far into the box its fade in reaches and how far before its
-/// end its fade out begins, and each one's envelope segment shape
-/// (`clausters_core::envshape` numbers, the curvature for `curve`). A box with
-/// neither fade is not named.
-///
-/// A list of its own beside the box septuple, for the reason `rates` is: that
-/// septuple is a fixed width every reader chunks by. It is what the reader
-/// plays (`nodes`, through the same [`Region::edges`]), so what is drawn is
-/// what is heard.
-///
-/// [`Region::edges`]: clausters_document::multitrack::Region::edges
-pub fn fades(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
-    let mut out = Vec::new();
-    for box_ in picture::boxes(multitrack) {
-        if box_.fade_in <= 0.0 && box_.fade_out <= 0.0 {
-            continue;
-        }
-        // A box of notes is played by its voices, which no fade reaches yet:
-        // drawing one there would show what is not heard.
-        if box_.source.and_then(|s| look.sources.sequence(s)).is_some() {
-            continue;
-        }
-        let end = box_.position.0 + box_.length.0;
-        let [(in_shape, in_curve), (out_shape, out_curve)] = box_.fade_shapes;
-        out.extend([
-            json!(box_.region.0.to_string()),
-            json!(look.frames_over(box_.position.0, box_.fade_in)),
-            json!(look.frames_over(end - box_.fade_out, box_.fade_out)),
-            json!(in_shape),
-            json!(in_curve),
-            json!(out_shape),
-            json!(out_curve),
-        ]);
-    }
-    out
-}
-
 /// **How many frames of a span's take one frame of the join is**: the take's
 /// own rate against the join's, which is what a part of a join at another rate
 /// is read through -- on the server by `dsp::stitch` and here by the drawing,
@@ -529,11 +490,11 @@ pub fn fade_layers(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
 pub fn fade_points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
     for box_ in samples_boxes(multitrack, look) {
-        let Some((_, _, region)) = multitrack.locate(box_.region) else {
+        let Some((_, lane, region)) = multitrack.locate(box_.region) else {
             continue;
         };
         let name = format!("{}{}", picture::FADE_LAYER, box_.region.0);
-        for point in picture::fade_points(region, &multitrack.defaults) {
+        for point in picture::fade_points(lane, region, &multitrack.defaults) {
             out.push(json!(name));
             out.extend(
                 crate::points::quad(look.frame_at(point.at), &point)
@@ -683,7 +644,6 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("hidden".into(), json!(hidden(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));
-    out.insert("fades".into(), Value::Array(fades(multitrack, look)));
     out.insert("segments".into(), Value::Array(segments(multitrack, look)));
     out.insert("notes".into(), Value::Array(notes(multitrack, look)));
     out
@@ -1770,45 +1730,6 @@ mod tests {
         }
         multitrack.tracks.push(track);
         multitrack
-    }
-
-    /// **Every box is drawn with the fades it plays**: the multitrack's default
-    /// where it states none, its own where it does, and nothing named where it
-    /// has a butt edge at both ends -- in frames of the view, its fade out
-    /// measured back from its end.
-    #[test]
-    fn the_fades_prop_is_what_the_boxes_play() {
-        let mut multitrack = halves();
-        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
-        regions[1].fade_in = Some(Fade::of(Second(0.0)));
-        regions[1].fade_out = Some(Fade::of(Second(0.25)));
-        let sources = HashMap::new();
-        assert_eq!(
-            fades(&multitrack, &look(&sources)),
-            vec![
-                json!("10"),
-                json!(480.0),
-                json!(480.0),
-                json!(4),
-                json!(0.0),
-                json!(4),
-                json!(0.0),
-                json!("11"),
-                json!(0.0),
-                json!(12_000.0),
-                json!(4),
-                json!(0.0),
-                json!(4),
-                json!(0.0)
-            ]
-        );
-        multitrack.defaults.fade = None;
-        let regions = &mut multitrack.tracks[0].take_lanes[0].regions;
-        regions[1].fade_out = Some(Fade::of(Second(0.0)));
-        assert!(
-            fades(&multitrack, &look(&sources)).is_empty(),
-            "no fade anywhere, none named"
-        );
     }
 
     /// **The halves of a cut put back in order are the join they always were**:

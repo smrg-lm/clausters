@@ -156,7 +156,7 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
         };
         for region in &lane.regions {
             let (source, start, content, looping, playrate) = window_of(region);
-            let (edge_in, edge_out) = region.edges(&multitrack.defaults);
+            let (edge_in, edge_out) = lane.edges(region, &multitrack.defaults);
             let (fade_in, fade_out) = (edge_in.length, edge_out.length);
             out.push(Box {
                 region: region.id,
@@ -308,8 +308,12 @@ pub const FADE_LAYER: &str = "fade:";
 /// out begins, silence at its end -- four points in seconds from the box's
 /// start, each carrying the shape of the segment it starts (`shape` and
 /// `curve`, `envshape` numbers), the flat top a straight line.
-pub fn fade_points(region: &Region, defaults: &crate::multitrack::Defaults) -> Vec<Point> {
-    let (fade_in, fade_out) = region.edges(defaults);
+pub fn fade_points(
+    lane: &TakeLane,
+    region: &Region,
+    defaults: &crate::multitrack::Defaults,
+) -> Vec<Point> {
+    let (fade_in, fade_out) = lane.edges(region, defaults);
     let length = region.length.get().max(0.0);
     let point = |at: f64, value: f64, shape: i32, curve: f64| Point {
         at,
@@ -336,7 +340,7 @@ pub fn fade_points(region: &Region, defaults: &crate::multitrack::Defaults) -> V
 /// following the multitrack's default keeps following it.
 fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option<MultitrackIntent> {
     let id = NodeId(region.parse().ok()?);
-    let (_, _, held) = multitrack.locate(id)?;
+    let (_, lane, held) = multitrack.locate(id)?;
     let [p0, p1, p2, p3] = points else {
         return None;
     };
@@ -362,7 +366,7 @@ fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option
             Some(Fade::of(Second(length)).shaped(shape, curve))
         }
     };
-    let (was_in, was_out) = held.edges(&multitrack.defaults);
+    let (was_in, was_out) = lane.edges(held, &multitrack.defaults);
     let fade_in = side(p1.at - p0.at, shape_of(p0), &was_in, &held.fade_in);
     let fade_out = side(p3.at - p2.at, shape_of(p2), &was_out, &held.fade_out);
     (fade_in != held.fade_in || fade_out != held.fade_out).then_some(MultitrackIntent::FadeRegion {
@@ -1471,7 +1475,11 @@ mod tests {
         let multitrack = multitrack();
         let region = multitrack.tracks[0].take_lanes[0].regions[0].clone();
         let name = format!("{FADE_LAYER}{}", region.id.0);
-        let mut points = fade_points(&region, &multitrack.defaults);
+        let mut points = fade_points(
+            &multitrack.tracks[0].take_lanes[0],
+            &region,
+            &multitrack.defaults,
+        );
         let same = read_points(
             &multitrack,
             &[Curved {

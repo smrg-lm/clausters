@@ -2484,25 +2484,27 @@ fn a_scrolled_stack_paints_inside_its_own_rect() {
     assert_eq!(mesh.clip(), None, "and the caller's clip is put back");
 }
 
-/// **A box's fades are read by name and replaced whole**, as every list here
-/// is: a box the list does not name has none, a negative length is none, and
-/// each edge carries its envelope segment's shape.
+/// **A box's fades are read off its fade layer**: the trapezoid's sloped
+/// sides, each a length and its shape -- so what is veiled is the curve as it
+/// stands, a drag included -- and a hidden layer veils nothing.
 #[test]
-fn the_fades_prop_names_each_boxs_fades() {
+fn a_boxs_fades_are_read_off_its_fade_layer() {
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
-            "clips": ["a", "one", 0, 20000, 0, "", 0, "b", "one", 20000, 20000, 0, "", 0],
-            "fades": ["a", 480, 960, 4, 0, 1, 0, "b", -1, 240, 5, -3, 4, 0]}"#,
+            "clips": ["a", "one", 0, 20000, 0, "", 0],
+            "layers": ["fade:a", "a", "fade", 0, 1],
+            "points": ["fade:a", 0, 0, 4, 0, "fade:a", 480, 1, 1, 0,
+                       "fade:a", 19040, 1, 5, -3, "fade:a", 20000, 0, 1, 0]}"#,
     ));
-    let (a_in, a_out) = mt.fades["a"];
-    assert_eq!((a_in.length, a_in.shape), (480.0, 4));
-    assert_eq!((a_out.length, a_out.shape), (960.0, 1));
-    let (b_in, b_out) = mt.fades["b"];
-    assert_eq!((b_in.length, b_in.shape, b_in.curve), (0.0, 5, -3.0));
-    assert_eq!(b_out.length, 240.0);
-    assert!(mt.apply_prop("fades", &serde_json::json!(["b", 10, 0, 4, 0, 4, 0])));
-    assert!(!mt.fades.contains_key("a"), "replaced whole");
-    assert_eq!(mt.fades["b"].0.length, 10.0);
+    let (fade_in, fade_out) = mt.fade_edges("a").expect("a fade layer");
+    assert_eq!((fade_in.length, fade_in.shape), (480.0, 4));
+    assert_eq!(
+        (fade_out.length, fade_out.shape, fade_out.curve),
+        (960.0, 5, -3.0)
+    );
+    assert!(mt.fade_edges("b").is_none(), "no layer, no fades");
+    assert!(mt.set("hidden", &Value::from("fade:a")));
+    assert!(mt.fade_edges("a").is_none(), "hidden, not veiled");
 }
 
 /// **A box draws its fades**: a box given a quarter of its length to fade in
@@ -2519,7 +2521,8 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
         let mt = from_props(&props(&format!(
             r#"{{"tracks": ["one", "", 100, 0, 0, 1, 1],
                 "clips": ["a", "one", 0, 48000, 0, "", -1],
-                "fades": {fades}}}"#
+                "layers": ["fade:a", "a", "fade", 0, 1],
+                "points": {fades}}}"#
         )));
         let ctx = Ctx {
             world: &world,
@@ -2538,16 +2541,25 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
         mt.draw(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
         mesh.vertex_count()
     };
-    let plain = painted("[]");
-    let faded = painted(r#"["a", 12000, 12000, 4, 0, 1, 0]"#);
+    let trapezoid = |fade_in: f64, fade_out: f64| {
+        format!(
+            r#"["fade:a", 0, 0, 4, 0, "fade:a", {fade_in}, 1, 1, 0,
+                "fade:a", {}, 1, 1, 0, "fade:a", 48000, 0, 1, 0]"#,
+            48000.0 - fade_out
+        )
+    };
+    let plain = painted(&trapezoid(0.0, 0.0));
+    let faded = painted(&trapezoid(12000.0, 12000.0));
     assert!(
         faded >= plain + 2 * 12,
         "two traced segments, veiled: {plain} -> {faded}"
     );
-    assert_eq!(
-        painted(r#"["a", 1, 1, 4, 0, 4, 0]"#),
-        plain,
-        "a fade under a pixel"
+    // Under a pixel there is no veil: what is left is the curve's own line,
+    // which gains a segment where a fade of one frame breaks it.
+    let tiny = painted(&trapezoid(1.0, 1.0));
+    assert!(
+        tiny < plain + 12,
+        "a fade under a pixel veils nothing: {plain} -> {tiny}"
     );
 }
 

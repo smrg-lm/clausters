@@ -123,6 +123,26 @@ impl Multitrack {
     /// the `rates` prop says, or one frame per sample for a box it does not
     /// name, which is every box over a source written at this multitrack's own
     /// rate.
+    /// **Box `name`'s two fades**, read off its `fade:` layer: the trapezoid's
+    /// sloped sides, each a length in the box's own frames and the shape of
+    /// the segment it is. `None` for a box with no fade layer, or one that is
+    /// hidden -- what is not drawn is not veiled either.
+    pub(super) fn fade_edges(&self, name: &str) -> Option<(track::FadeEdge, track::FadeEdge)> {
+        let layer = format!("fade:{name}");
+        if self.hidden.contains(&layer) {
+            return None;
+        }
+        let [p0, p1, p2, p3] = self.bodies.get(&layer)?.points() else {
+            return None;
+        };
+        let edge = |from: &crate::host::structures::points::BpfPoint, to: f64| track::FadeEdge {
+            length: (to - from.time).max(0.0),
+            shape: from.shape,
+            curve: from.curve,
+        };
+        Some((edge(p0, p1.time), edge(p2, p3.time)))
+    }
+
     pub(super) fn rate_of(&self, name: &str) -> f64 {
         self.rates.get(name).copied().unwrap_or(1.0)
     }

@@ -322,7 +322,11 @@ impl Multitrack {
                     roll.draw_body(d, cr, &space);
                 }
             }
-            if let Some(&(fade_in, fade_out)) = self.fades.get(&clip.name) {
+            // **The silenced part of its fades, veiled**, read off the box's
+            // own fade layer -- the envelope a hand drags -- so the veil moves
+            // with the curve while it is dragged, rather than waiting for
+            // what the owner answers.
+            if let Some((fade_in, fade_out)) = self.fade_edges(&clip.name) {
                 track::draw_clip_fades(d, cr, &local, clip.place.dur, fade_in, fade_out);
             }
             track::draw_clip_label(d, cr, clip.shown());

@@ -501,3 +501,127 @@ fn a_region_fades_in_and_out_at_its_own_edges() {
     near(left[last - fade / 2], full * 0.5, "half way out");
     near(left[last - fade - 4], full, "before the fade out");
 }
+
+/// **Two regions that overlap crossfade at equal power**: two constant takes,
+/// the second placed over the last quarter of the first. Over the overlap the
+/// first fades out and the second fades in, each over all of it, so half way
+/// through each is at sin(pi/4) of its level -- and two uncorrelated sources
+/// there would keep their summed power. Before and after, each plays alone at
+/// full level.
+#[test]
+fn an_overlap_crossfades_at_equal_power() {
+    let mut s = NrtSession::open(&SessionConfig {
+        sample_rate: SR,
+        channels: 2,
+        ..Default::default()
+    })
+    .expect("open");
+    let take = 32 * BLOCK;
+    for buffer in 0..2 {
+        send(
+            &mut s,
+            "/buffer_alloc",
+            vec![
+                OscType::Int(buffer),
+                OscType::Int(take as i32),
+                OscType::Int(1),
+            ],
+        );
+        s.settle_for(4);
+        send(
+            &mut s,
+            "/buffer_fill",
+            vec![
+                OscType::Int(buffer),
+                OscType::Int(0),
+                OscType::Int(take as i32),
+                OscType::Float(0.5),
+            ],
+        );
+        s.settle_for(4);
+    }
+    let secs = |frames: usize| frames as f64 / SR;
+    let window = |source: u64| {
+        Content::window(Window {
+            source: SourceRef {
+                source: SourceId(source),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start: 0.0,
+            duration: secs(take),
+        })
+    };
+    let at = 32 * BLOCK;
+    let overlap = 8 * BLOCK;
+    let mut multitrack = Multitrack {
+        tracks: vec![Track::new(NodeId(10), NodeId(11))],
+        ..Multitrack::default()
+    };
+    // No default fade, so the only fades are the crossfade's.
+    multitrack.defaults.fade = None;
+    let lane = &mut multitrack.tracks[0].take_lanes[0];
+    lane.place(Region::new(
+        NodeId(20),
+        Second(secs(at)),
+        Second(secs(take)),
+        window(1),
+    ));
+    lane.place(Region::new(
+        NodeId(21),
+        Second(secs(at + take - overlap)),
+        Second(secs(take)),
+        window(2),
+    ));
+    let sources = HashMap::from([
+        (
+            SourceId(1),
+            SourceInfo {
+                buffer: 0,
+                channels: 1,
+                duration: Some(secs(take)),
+            },
+        ),
+        (
+            SourceId(2),
+            SourceInfo {
+                buffer: 1,
+                channels: 1,
+                duration: Some(secs(take)),
+            },
+        ),
+    ]);
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = MultitrackPlayback::new(Endpoint::default());
+    let steps = playback
+        .sync(&multitrack, SR, &sources, 1.0, &mut ids)
+        .unwrap();
+    run(&mut s, steps);
+    let steps = playback.play();
+    run(&mut s, steps);
+
+    let out = s
+        .run_to_vec((at + 2 * take + 16 * BLOCK) as u64)
+        .expect("the render ran");
+    let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+    let first = left.iter().position(|x| *x != 0.0).expect("it sounded");
+    let alone = left[first + take / 4];
+    assert!(alone > 0.1, "the first take alone: {alone}");
+    // Half way through the overlap both are at sin(pi/4) of the level one
+    // plays at alone, and these two are the same constant, so they sum to
+    // twice that.
+    let middle = left[first + take - overlap / 2];
+    let quarter = std::f32::consts::FRAC_PI_4.sin();
+    assert!(
+        (middle - 2.0 * quarter * alone).abs() < 0.02 * alone,
+        "half way through the crossfade: {middle}, not {}",
+        2.0 * quarter * alone
+    );
+    // After it, the second alone at full level.
+    let after = left[first + take + take / 4];
+    assert!(
+        (after - alone).abs() < 0.01 * alone,
+        "the second take alone: {after}"
+    );
+}

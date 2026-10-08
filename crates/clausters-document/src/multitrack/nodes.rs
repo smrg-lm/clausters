@@ -447,7 +447,7 @@ pub fn plan_voiced(
             // **The region's fades**, at its edges -- not its window's: a box
             // cut short of its source fades where it is cut. Its own, or the
             // multitrack's default where it states none.
-            let (edge_in, edge_out) = region.edges(&multitrack.defaults);
+            let (edge_in, edge_out) = lane.edges(region, &multitrack.defaults);
             let (fade_in, fade_out) = (
                 frames(edge_in.length).min(span),
                 frames(edge_out.length).min(span),
