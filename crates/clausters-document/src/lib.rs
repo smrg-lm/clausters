@@ -78,7 +78,7 @@ pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
 pub use events::{Event, EventSequence, EventsIntent};
 pub use history::{Applied, Editable, History, StructureId};
-pub use intent::{Against, Intent, Outcome, Rules, apply};
+pub use intent::{Against, Intent, Outcome, Rules, apply, apply_all};
 pub use log::{
     Entry, Log, MemorySpill, Redone, Spill, Step, Tree, Undone, apply_logged, apply_logged_in,
     inverse_of,

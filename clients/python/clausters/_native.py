@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 88
+CORE_ABI_VERSION = 89
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -753,6 +753,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_domain_edit.restype = ctypes.c_size_t
     lib.clausters_domain_edit.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_domain_edit_all.restype = ctypes.c_size_t
+    lib.clausters_domain_edit_all.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t,
     ]
@@ -2331,6 +2336,47 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
         return None
     out = (ctypes.c_ubyte * need)()
     n = _lib.clausters_domain_edit(*args, out, need)
+    return json.loads(ctypes.string_at(out, n).decode("utf-8"))
+
+
+def domain_edit_all(domain: str, state, payloads: list) -> "dict | None":
+    """**The edits one gesture came to, applied as one: all of them or none.**
+
+    A gesture is one thing a hand did, so it lands whole: an edit of it that
+    is refused, or that the vocabulary cannot read, refuses the gesture and
+    the state comes back as it was. The rule is the crate's, so a handler
+    applying a gesture's payloads never spells it -- calling `domain_edit`
+    once per payload is how a gesture comes to be left half applied.
+
+    Args:
+        domain: the vocabulary -- `MULTITRACK`, `POINTS` or `EVENTS`.
+        state: the structure in that vocabulary, as plain JSON-able data.
+        payloads: the gesture's edits, in order.
+
+    Returns:
+        ``{"state": ..., "applied": bool, "reason"?: ..., "pairs": [{"forward":
+        ..., "backward": ...}]}`` -- each edit that landed with the payload that
+        puts it back, to undo in the reverse order -- or ``None`` where
+        `domain_edit` answers ``None``.
+    """
+    _lib = lib()
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+
+    def _as_bytes(value):
+        raw = value.encode("utf-8") if isinstance(value, str) else \
+            json.dumps(value).encode("utf-8")
+        buf = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+        return ctypes.cast(buf, u8p), len(raw), buf
+
+    name_ptr, name_len, _n = _as_bytes(domain)
+    state_ptr, state_len, _s = _as_bytes(state)
+    edits_ptr, edits_len, _e = _as_bytes(list(payloads))
+    args = (name_ptr, name_len, state_ptr, state_len, edits_ptr, edits_len)
+    need = _lib.clausters_domain_edit_all(*args, None, 0)
+    if need == 0:
+        return None
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_domain_edit_all(*args, out, need)
     return json.loads(ctypes.string_at(out, n).decode("utf-8"))
 
 

@@ -597,6 +597,23 @@ edited["state"]                         # the multitrack, as JSON, with the regi
 edited["current"]                       # the edit that puts it back
 ```
 
+A gesture that comes to several edits — a block of regions dragged, a move
+and a split — goes through `domain_edit_all` instead, which applies them **as
+one: all of them or none**. One edit refused refuses the gesture, and the
+multitrack comes back as it was, with the reason; otherwise each edit that
+landed comes back beside the edit that puts it back, to undo in the reverse
+order. Calling `domain_edit` once per edit is how a gesture comes to be left
+half applied.
+
+```python
+from clausters.document import domain_edit_all
+
+gesture = domain_edit_all(MULTITRACK, written, [move, split])
+gesture["applied"]                      # False if either was refused
+gesture.get("reason")                   # and then why
+gesture["pairs"]                        # [{"forward": ..., "backward": ...}, ...]
+```
+
 Sixteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
 say the same thing) and `setactivetakelane`, which is comping's one verb. What a

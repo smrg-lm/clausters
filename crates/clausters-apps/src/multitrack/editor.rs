@@ -832,6 +832,42 @@ impl MultitrackEditor {
         out
     }
 
+    /// **The payloads of one history step, as one**: all of them or none,
+    /// through the same door a gesture lands by (`domain::edit_all`), so an
+    /// undo never leaves a multitrack half of the way back. One [`Applied`]
+    /// per payload that moved anything, each with the multitrack as the
+    /// whole step left it; none when the step was refused.
+    pub fn apply_step(&mut self, payloads: &[Value]) -> Vec<Applied> {
+        let state = serde_json::to_value(&*self.multitrack()).ok().map(Opaque);
+        let loads: Vec<Opaque> = payloads.iter().cloned().map(Opaque).collect();
+        let Some(gesture) = state.and_then(|state| domain::edit_all(MULTITRACK, &state, &loads))
+        else {
+            return Vec::new();
+        };
+        if gesture.reason.is_some() || !gesture.applied {
+            return Vec::new();
+        }
+        let Ok(after) = serde_json::from_value(gesture.state.0.clone()) else {
+            return Vec::new();
+        };
+        *self.multitrack() = after;
+        gesture
+            .pairs
+            .iter()
+            .map(|pair| {
+                let minted = minted(&pair.forward.0);
+                if let Some(source) = &minted {
+                    self.learn(source);
+                }
+                Applied {
+                    applied: true,
+                    minted,
+                    multitrack: Some(gesture.state.0.clone()),
+                }
+            })
+            .collect()
+    }
+
     /// **Every widget of the window, corrected**, with nothing to retire -- what
     /// a history step leaves behind, and what a second window over the multitrack
     /// is told when this one edited it.
@@ -1104,34 +1140,50 @@ impl MultitrackEditor {
         // **What the owner works out from what the hand moved**, before the
         // edit: see `derived` below.
         let before = self.widget.map(|id| self.derived(id));
-        let mut legs = Vec::new();
-        let mut moved = false;
-        for payload in &payloads {
-            if let Some(source) = minted(payload) {
-                self.learn(&source);
-                out.minted.push(source);
-            }
-            let Some((applied, current)) = self.edit(payload) else {
-                continue;
-            };
-            if !applied {
-                continue;
-            }
-            moved = true;
-            if let Some(backward) = current {
-                let holds_forward = self.joins_named(payload);
-                let holds_backward = self.joins_named(&backward);
-                legs.push(Leg {
-                    forward: json!({ "edit": payload }),
-                    backward,
-                    key: domain::coalesce_key(MULTITRACK, &Opaque(payload.clone()))
-                        .unwrap_or_default(),
-                    holds_forward,
-                    holds_backward,
-                });
-            }
+        // **The gesture lands whole or not at all** (`domain::edit_all`): an
+        // edit of it refused leaves the multitrack as it was, and the window
+        // is handed back what it should be drawing, with the reason.
+        let state = serde_json::to_value(&*self.multitrack()).ok().map(Opaque);
+        let loads: Vec<Opaque> = payloads.iter().cloned().map(Opaque).collect();
+        let Some(gesture) = state.and_then(|state| domain::edit_all(MULTITRACK, &state, &loads))
+        else {
+            return (None, Vec::new());
+        };
+        if let Some(why) = gesture.reason {
+            let corrections = self
+                .widget
+                .map_or_else(Vec::new, |id| self.resync(i64::from(id)));
+            return (Some(why), corrections);
         }
+        let moved = gesture.applied;
         if moved {
+            let Ok(after) = serde_json::from_value(gesture.state.0) else {
+                return (None, Vec::new());
+            };
+            *self.multitrack() = after;
+            // what a join minted is learned only once the join stands, and
+            // before its legs name what they hold
+            for pair in &gesture.pairs {
+                if let Some(source) = minted(&pair.forward.0) {
+                    self.learn(&source);
+                    out.minted.push(source);
+                }
+            }
+            // a lone edit with no inverse moves the version and leaves no
+            // entry; `edit_all` has refused one among several
+            let legs: Vec<Leg> = gesture
+                .pairs
+                .into_iter()
+                .filter_map(|pair| Some((pair.forward.0, pair.backward?.0)))
+                .map(|(forward, backward)| Leg {
+                    holds_forward: self.joins_named(&forward),
+                    holds_backward: self.joins_named(&backward),
+                    key: domain::coalesce_key(MULTITRACK, &Opaque(forward.clone()))
+                        .unwrap_or_default(),
+                    forward: json!({ "edit": forward }),
+                    backward,
+                })
+                .collect();
             if !legs.is_empty() {
                 out.record = Some(Record { label, legs });
             }
@@ -1561,6 +1613,46 @@ mod tests {
         editor.window(40, 41);
         editor.set_window(Some(39));
         editor
+    }
+
+    /// **A gesture lands whole or not at all**: one whose second edit is
+    /// refused leaves the first unmade, records nothing, keeps the version,
+    /// and hands the window back what to draw with the reason.
+    #[test]
+    fn a_gesture_with_a_refused_edit_leaves_the_multitrack_as_it_was() {
+        let mut ed = editor();
+        let start = ed.multitrack().clone();
+        let place = |region: u64, track: u64, lane: u64, at: f64| {
+            serde_json::to_value(MultitrackIntent::PlaceRegion {
+                region: NodeId(region),
+                track: NodeId(track),
+                take_lane: NodeId(lane),
+                position: Second(at),
+                layer: 0,
+            })
+            .unwrap()
+        };
+        let mut out = Outcome::default();
+        let (why, corrections) = ed.edited(
+            vec![place(12, 10, 11, 8.0), place(99, 10, 11, 1.0)],
+            "move".into(),
+            &mut out,
+        );
+        assert!(why.is_some(), "the refusal says why");
+        assert!(!corrections.is_empty(), "and the window is handed back");
+        assert_eq!(
+            *ed.multitrack(),
+            start,
+            "the first move is not left standing"
+        );
+        assert!(out.record.is_none());
+        assert_eq!(out.version, 0);
+
+        // the same move alone lands, recorded as one entry
+        let mut out = Outcome::default();
+        let (why, _) = ed.edited(vec![place(12, 10, 11, 8.0)], "move".into(), &mut out);
+        assert_eq!(why, None);
+        assert_eq!(out.record.map(|r| r.legs.len()), Some(1));
     }
 
     /// **The window that is the session's one holder asks before it closes

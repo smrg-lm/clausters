@@ -105,6 +105,10 @@ Each is small, owned by its plan, and blocked by nothing.
 - ⬜ **The crossfade switch acts on the edits that follow**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The rule moves from
   reading the multitrack to editing it.
+- ⬜ **A history step is whole on each structure, not across them**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A step spanning a
+  multitrack and a curve can stop half way; the fix puts back what it already
+  stepped.
 
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.

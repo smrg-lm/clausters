@@ -167,3 +167,74 @@ mod editing_a_structure_the_crate_can_hold {
         assert!(edit(POINTS, &not_points, &set(&[(0.0, 0.0)])).is_none());
     }
 }
+
+fn curve(values: &[f64]) -> Opaque {
+    Opaque(
+        serde_json::to_value(Points::new(
+            values
+                .iter()
+                .enumerate()
+                .map(|(i, v)| Point {
+                    at: i as f64,
+                    value: *v,
+                    data: Opaque::default(),
+                })
+                .collect(),
+        ))
+        .unwrap(),
+    )
+}
+
+fn set(values: &[f64]) -> Opaque {
+    let Opaque(points) = curve(values);
+    crate::points::payload(&PointsIntent::SetPoints {
+        points: serde_json::from_value::<Points>(points).unwrap().0,
+    })
+}
+
+#[test]
+fn a_gesture_lands_whole_and_its_pairs_put_it_back_in_reverse() {
+    let start = curve(&[0.0]);
+    let gesture = edit_all(POINTS, &start, &[set(&[0.5]), set(&[0.5]), set(&[1.0])]).unwrap();
+    assert!(gesture.applied);
+    assert_eq!(gesture.state, curve(&[1.0]));
+    assert_eq!(
+        gesture.pairs.len(),
+        2,
+        "the resend in the middle is no edit"
+    );
+
+    let mut back = gesture.state.clone();
+    for pair in gesture.pairs.iter().rev() {
+        back = edit(POINTS, &back, pair.backward.as_ref().unwrap())
+            .unwrap()
+            .state;
+    }
+    assert_eq!(back, start);
+}
+
+#[test]
+fn a_gesture_with_one_refused_edit_lands_not_at_all() {
+    let start = curve(&[0.0]);
+    let foreign = Opaque(serde_json::json!({"intent": "place", "node": 1, "offset": 0.0}));
+    let gesture = edit_all(POINTS, &start, &[set(&[0.5]), foreign]).unwrap();
+    assert!(!gesture.applied);
+    assert!(gesture.reason.is_some(), "and it says why");
+    assert_eq!(gesture.state, start, "the first edit is not left standing");
+    assert!(gesture.pairs.is_empty());
+}
+
+#[test]
+fn a_gesture_of_resends_changes_nothing_and_is_not_refused() {
+    let start = curve(&[0.0]);
+    let gesture = edit_all(POINTS, &start, &[set(&[0.0])]).unwrap();
+    assert!(!gesture.applied);
+    assert_eq!(gesture.reason, None);
+    assert_eq!(gesture.state, start);
+}
+
+#[test]
+fn a_gesture_in_a_vocabulary_held_elsewhere_has_no_answer() {
+    assert!(edit_all(TREE, &curve(&[0.0]), &[]).is_none());
+    assert!(edit_all("nonsense", &curve(&[0.0]), &[]).is_none());
+}

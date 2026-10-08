@@ -556,7 +556,10 @@ pub use time::*;
 /// `clausters_document_resolve` takes a tempo-map handle where it took a
 /// frames-per-beat ratio, so a selection may cross a tempo change. Breaking:
 /// one parameter changed type.
-pub const CORE_ABI_VERSION: u32 = 88;
+/// **v89 a gesture is applied as one.** `clausters_domain_edit_all`: the
+/// edits one gesture came to, all of them or none, with the payload that puts
+/// each back. Additive.
+pub const CORE_ABI_VERSION: u32 = 89;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

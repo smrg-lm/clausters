@@ -31,6 +31,7 @@ import {
     editingStitch as coreEditingStitch,
     editingLoad as coreEditingLoad,
     domainEdit as coreDomainEdit,
+    domainEditAll as coreDomainEditAll,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
 import type { TempoMap } from "./base/time.ts";
@@ -677,6 +678,50 @@ export function domainEdit(
 ): Edited | undefined {
     const answer = coreDomainEdit(domain, JSON.stringify(state), JSON.stringify(payload));
     return answer ? (JSON.parse(answer) as Edited) : undefined;
+}
+
+/** One edit of a gesture that landed, and the payload that puts it back. */
+export interface Pair {
+    /** The payload as it was applied. */
+    forward: unknown;
+    /**
+     * What puts the structure back where this payload found it. Absent for an
+     * edit the structure cannot describe back, which a gesture holds only when
+     * that edit is the whole of it.
+     */
+    backward?: unknown;
+}
+
+/** What {@link domainEditAll} answers: a gesture, landed whole or refused. */
+export interface Gesture {
+    /** The structure after the whole gesture, or as it was when it was refused. */
+    state: unknown;
+    /** Whether anything changed. */
+    applied: boolean;
+    /** Why the gesture was refused, when one of its edits was. */
+    reason?: string;
+    /** The edits that landed, in order: undone in the reverse order. */
+    pairs: Pair[];
+}
+
+/**
+ * **The edits one gesture came to, applied as one: all of them or none.**
+ *
+ * A gesture is one thing a hand did, so it lands whole: an edit of it that is
+ * refused, or that the vocabulary cannot read, refuses the gesture and the
+ * state comes back as it was. The rule is the crate's, so a handler applying a
+ * gesture's payloads never spells it -- calling {@link domainEdit} once per
+ * payload is how a gesture comes to be left half applied.
+ *
+ * `undefined` where {@link domainEdit} answers `undefined`.
+ */
+export function domainEditAll(
+    domain: string,
+    state: unknown,
+    payloads: readonly unknown[],
+): Gesture | undefined {
+    const answer = coreDomainEditAll(domain, JSON.stringify(state), JSON.stringify(payloads));
+    return answer ? (JSON.parse(answer) as Gesture) : undefined;
 }
 
 /** What one structure has to apply for a step, in the order it must apply it. */

@@ -607,7 +607,11 @@ and each is the generic `Editor` with a `Domain` and a `View` in it and nothing
 else. The inverse is the crate's, through `clausters_domain_edit`: the state
 goes in with the payload and comes back as what the structure now is *plus* what
 puts it back, in one call because the inverse has to be read before the edit
-lands. Two domains answer nothing there and both for a stated reason — the
+lands. A gesture of several edits goes through `clausters_domain_edit_all`,
+which applies them all or none: an edit refused refuses the gesture and hands
+the state back unchanged, so no handler — the applications' or a client's —
+leaves a gesture half applied, and an undo step lands on each structure the
+same way. Two domains answer nothing there and both for a stated reason — the
 arrangement's tree needs a version to check against and a grid to snap to (it
 has `clausters_document_apply`), and a span of samples is a **borrowed view**
 whose frames are in a server buffer, so its inverse rides on the wire instead

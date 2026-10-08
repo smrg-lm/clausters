@@ -36,6 +36,8 @@ What is here
 - `domain_edit` and `domain_coalesce_key` -- the same two questions for a
   structure that is **not** a document: a curve, a span of samples, a timeline
   of events.
+- `domain_edit_all` -- the edits one gesture came to, applied as one: all of
+  them or none.
 - `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `EVENTS` -- the domain names those
   two answer for.
 - `FIRST_VERSION` and `SESSION_FORMAT` -- the two version numbers the format
@@ -54,7 +56,8 @@ Usage::
 """
 
 from ._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
-                      History, Log, domain_coalesce_key, domain_edit)
+                      History, Log, domain_coalesce_key, domain_edit,
+                      domain_edit_all)
 
 #: The version an unedited document carries.
 #:
@@ -101,5 +104,6 @@ __all__ = [
     "apply_intent",
     "domain_coalesce_key",
     "domain_edit",
+    "domain_edit_all",
     "resolve_selection",
 ]

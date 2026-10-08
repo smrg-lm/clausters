@@ -259,6 +259,7 @@ export {
     applyIntent,
     domainCoalesceKey,
     domainEdit,
+    domainEditAll,
     resolveSelection,
 } from "./document.ts";
 export type {

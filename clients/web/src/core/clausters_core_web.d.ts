@@ -1278,6 +1278,17 @@ export function domainCoalesceKey(domain: string, payload: string): string;
 export function domainEdit(domain: string, state: string, payload: string): string;
 
 /**
+ * **The edits one gesture came to, applied as one: all of them or none** --
+ * the rule every caller applies a gesture by.
+ *
+ * `payloads` is a JSON array of payloads; the answer is `{"state", "applied",
+ * "reason"?, "pairs": [{"forward", "backward"}]}` -- the state after the whole
+ * gesture, or as it was when one of its edits was refused (and then why) --
+ * or an empty string where {@link domainEdit} answers one.
+ */
+export function domainEditAll(domain: string, state: string, payloads: string): string;
+
+/**
  * JS face: **what is sounding of a multitrack**, held across edits.
  *
  * The instance projection's state. The other two projections are functions of
@@ -1981,6 +1992,7 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly domainEditAll: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingDefaultTempo: () => number;
     readonly editingEventCurves: (a: number, b: number) => [number, number];
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];

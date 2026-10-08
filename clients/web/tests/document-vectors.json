@@ -2866,5 +2866,468 @@
       },
       "edited": null
     }
+  ],
+  "gestures": [
+    {
+      "domain": "multitrack",
+      "state": {
+        "tracks": [
+          {
+            "id": 10,
+            "name": "vocals",
+            "take_lanes": [
+              {
+                "id": 11,
+                "regions": [
+                  {
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 1
+                        },
+                        "start": 0.0
+                      }
+                    },
+                    "id": 100,
+                    "length": 4.0,
+                    "position": 0.0
+                  }
+                ]
+              },
+              {
+                "id": 12,
+                "regions": [
+                  {
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 2
+                        },
+                        "start": 0.0
+                      }
+                    },
+                    "id": 101,
+                    "length": 4.0,
+                    "position": 8.0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "channels": 1,
+            "id": 20,
+            "name": "guitar",
+            "take_lanes": [
+              {
+                "id": 21
+              }
+            ]
+          }
+        ]
+      },
+      "payloads": [
+        {
+          "intent": "placeregion",
+          "region": 100,
+          "track": 20,
+          "take_lane": 21,
+          "position": 16.0,
+          "layer": 1
+        },
+        {
+          "intent": "splitregion",
+          "region": 100,
+          "at": 17.0,
+          "left": 110,
+          "right": 111
+        }
+      ],
+      "gesture": {
+        "state": {
+          "tracks": [
+            {
+              "id": 10,
+              "name": "vocals",
+              "take_lanes": [
+                {
+                  "id": 11
+                },
+                {
+                  "id": 12,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 2
+                          },
+                          "start": 0.0
+                        }
+                      },
+                      "id": 101,
+                      "length": 4.0,
+                      "position": 8.0
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "channels": 1,
+              "id": 20,
+              "name": "guitar",
+              "take_lanes": [
+                {
+                  "id": 21,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
+                        }
+                      },
+                      "fade_out": {
+                        "length": 0.0
+                      },
+                      "id": 110,
+                      "layer": 1,
+                      "length": 1.0,
+                      "position": 16.0
+                    },
+                    {
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
+                        }
+                      },
+                      "fade_in": {
+                        "length": 0.0
+                      },
+                      "id": 111,
+                      "layer": 1,
+                      "length": 3.0,
+                      "position": 17.0
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "version": 3
+        },
+        "applied": true,
+        "pairs": [
+          {
+            "forward": {
+              "intent": "placeregion",
+              "layer": 1,
+              "position": 16.0,
+              "region": 100,
+              "take_lane": 21,
+              "track": 20
+            },
+            "backward": {
+              "intent": "placeregion",
+              "layer": 0,
+              "position": 0.0,
+              "region": 100,
+              "take_lane": 11,
+              "track": 10
+            }
+          },
+          {
+            "forward": {
+              "at": 17.0,
+              "intent": "splitregion",
+              "left": 110,
+              "region": 100,
+              "right": 111
+            },
+            "backward": {
+              "intent": "settakelane",
+              "regions": [
+                {
+                  "content": {
+                    "fill": "window",
+                    "window": {
+                      "duration": 4.0,
+                      "source": {
+                        "generation": 0,
+                        "lifetime": "session",
+                        "source": 1
+                      },
+                      "start": 0.0
+                    }
+                  },
+                  "id": 100,
+                  "layer": 1,
+                  "length": 4.0,
+                  "position": 16.0
+                }
+              ],
+              "take_lane": 21
+            }
+          }
+        ]
+      }
+    },
+    {
+      "domain": "multitrack",
+      "state": {
+        "tracks": [
+          {
+            "id": 10,
+            "name": "vocals",
+            "take_lanes": [
+              {
+                "id": 11,
+                "regions": [
+                  {
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 1
+                        },
+                        "start": 0.0
+                      }
+                    },
+                    "id": 100,
+                    "length": 4.0,
+                    "position": 0.0
+                  }
+                ]
+              },
+              {
+                "id": 12,
+                "regions": [
+                  {
+                    "content": {
+                      "fill": "window",
+                      "window": {
+                        "duration": 4.0,
+                        "source": {
+                          "generation": 0,
+                          "lifetime": "session",
+                          "source": 2
+                        },
+                        "start": 0.0
+                      }
+                    },
+                    "id": 101,
+                    "length": 4.0,
+                    "position": 8.0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "channels": 1,
+            "id": 20,
+            "name": "guitar",
+            "take_lanes": [
+              {
+                "id": 21
+              }
+            ]
+          }
+        ]
+      },
+      "payloads": [
+        {
+          "intent": "placeregion",
+          "region": 100,
+          "track": 20,
+          "take_lane": 21,
+          "position": 16.0,
+          "layer": 1
+        },
+        {
+          "intent": "placeregion",
+          "region": 999,
+          "track": 20,
+          "take_lane": 21,
+          "position": 0.0
+        }
+      ],
+      "gesture": {
+        "state": {
+          "tracks": [
+            {
+              "id": 10,
+              "name": "vocals",
+              "take_lanes": [
+                {
+                  "id": 11,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 1
+                          },
+                          "start": 0.0
+                        }
+                      },
+                      "id": 100,
+                      "length": 4.0,
+                      "position": 0.0
+                    }
+                  ]
+                },
+                {
+                  "id": 12,
+                  "regions": [
+                    {
+                      "content": {
+                        "fill": "window",
+                        "window": {
+                          "duration": 4.0,
+                          "source": {
+                            "generation": 0,
+                            "lifetime": "session",
+                            "source": 2
+                          },
+                          "start": 0.0
+                        }
+                      },
+                      "id": 101,
+                      "length": 4.0,
+                      "position": 8.0
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "channels": 1,
+              "id": 20,
+              "name": "guitar",
+              "take_lanes": [
+                {
+                  "id": 21
+                }
+              ]
+            }
+          ]
+        },
+        "applied": false,
+        "reason": "no such region",
+        "pairs": []
+      }
+    },
+    {
+      "domain": "points",
+      "state": [
+        {
+          "at": 0.0,
+          "value": 1.0
+        }
+      ],
+      "payloads": [
+        {
+          "intent": "setpoints",
+          "points": [
+            {
+              "at": 0.0,
+              "value": 1.0
+            }
+          ]
+        },
+        {
+          "intent": "setpoints",
+          "points": [
+            {
+              "at": 0.0,
+              "value": 0.5
+            }
+          ]
+        }
+      ],
+      "gesture": {
+        "state": [
+          {
+            "at": 0.0,
+            "value": 0.5
+          }
+        ],
+        "applied": true,
+        "pairs": [
+          {
+            "forward": {
+              "intent": "setpoints",
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 0.5
+                }
+              ]
+            },
+            "backward": {
+              "intent": "setpoints",
+              "points": [
+                {
+                  "at": 0.0,
+                  "value": 1.0
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "domain": "tree",
+      "state": [],
+      "payloads": [
+        {
+          "intent": "place",
+          "node": 1,
+          "offset": 0.0
+        }
+      ],
+      "gesture": null
+    },
+    {
+      "domain": "piotns",
+      "state": [],
+      "payloads": [],
+      "gesture": null
+    }
   ]
 }

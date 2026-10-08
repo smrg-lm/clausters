@@ -17,7 +17,7 @@ from clausters.multitrack import Multitrack
 from clausters.document import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE,
                                 Document, History, Log, apply_intent,
                                 domain_coalesce_key, domain_edit,
-                                resolve_selection)
+                                domain_edit_all, resolve_selection)
 
 
 def test_the_module_is_reachable_as_a_public_name():
@@ -26,14 +26,15 @@ def test_the_module_is_reachable_as_a_public_name():
 
 def test_the_door_carries_what_the_web_client_carries():
     # `clients/web/src/index.ts` exports History, Log, applyIntent,
-    # domainCoalesceKey, domainEdit and resolveSelection from document.ts, plus
+    # domainCoalesceKey, domainEdit, domainEditAll and resolveSelection from
+    # document.ts, plus
     # the module itself. One client with a public door and one without is the
     # asymmetry this module closed; a name added on one side and not the other
     # is how it would open again.
     assert {name for name in dir(clausters.document) if not name.startswith("_")} >= {
         "Document", "History", "Log", "apply_intent", "domain_coalesce_key",
-        "domain_edit", "resolve_selection", "TREE", "MULTITRACK", "POINTS",
-        "SAMPLES", "EVENTS",
+        "domain_edit", "domain_edit_all", "resolve_selection", "TREE",
+        "MULTITRACK", "POINTS", "SAMPLES", "EVENTS",
     }
     assert (TREE, MULTITRACK, POINTS, SAMPLES, EVENTS) == (
         "tree", "multitrack", "points", "samples", "events")
@@ -79,6 +80,22 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
     edited = domain_edit(POINTS, state, payload)
     assert edited is not None and edited["applied"]
     assert isinstance(domain_coalesce_key(POINTS, payload), str)
+
+
+def test_a_gesture_lands_whole_or_not_at_all():
+    # The crate's rule, so no handler loops `domain_edit` and leaves half a
+    # gesture standing: a refused edit hands the state back unchanged.
+    state = [{"at": 0.0, "value": 1.0, "data": {}}]
+    half = {"intent": "setpoints", "points": [{"at": 0.0, "value": 0.5, "data": {}}]}
+    foreign = {"intent": "place", "node": 1, "offset": 0.0}
+    refused = domain_edit_all(POINTS, state, [half, foreign])
+    assert refused is not None and not refused["applied"]
+    assert refused["reason"] and refused["state"] == state and refused["pairs"] == []
+
+    landed = domain_edit_all(POINTS, state, [half])
+    assert landed["applied"] and len(landed["pairs"]) == 1
+    assert landed["pairs"][0]["backward"] is not None
+    assert domain_edit_all(TREE, [], []) is None
 
 
 # ---- the multitrack: a whole multitrack state across the seam ----

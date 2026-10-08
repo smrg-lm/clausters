@@ -818,3 +818,33 @@ fn an_aggregates_own_restrictions_are_configured_like_any_other_config() {
     apply(&mut d, &intent, &Against::unstated(), &Rules::none());
     assert!(!apply(&mut d, &intent, &Against::unstated(), &Rules::none()).applied);
 }
+
+#[test]
+fn edits_applied_as_one_land_whole_or_not_at_all() {
+    let mut d = doc();
+    let start = d.clone();
+    let place = |node: u64, offset: f64| Intent::Place {
+        node: NodeId(node),
+        offset,
+        dur: None,
+    };
+    let refused = apply_all(
+        &mut d,
+        &[place(2, 3.0), place(99, 1.0)],
+        &Against::unstated(),
+        &Rules::none(),
+    )
+    .expect_err("a node that is gone refuses the run");
+    assert_eq!(refused.reason.as_deref(), Some("no such node"));
+    assert_eq!(d, start, "the first edit is not left standing");
+
+    let landed = apply_all(
+        &mut d,
+        &[place(2, 3.0), place(2, 3.0)],
+        &Against::at(start.version),
+        &Rules::none(),
+    )
+    .expect("one edit and its resend land");
+    assert_eq!(landed.iter().filter(|o| o.applied).count(), 1);
+    assert_ne!(d.root, start.root);
+}

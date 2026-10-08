@@ -147,6 +147,94 @@ pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
     }
 }
 
+/// One edit of a gesture that landed: the payload, and the one that puts it
+/// back, read before it did.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Pair {
+    /// The payload as it was applied.
+    pub forward: Opaque,
+    /// What puts the structure back where this payload found it -- `None`
+    /// for an edit the structure cannot describe back, which a gesture holds
+    /// only when that edit is the whole of it: the version moves and no entry
+    /// is left, as for any edit with no inverse.
+    pub backward: Option<Opaque>,
+}
+
+/// A gesture applied as one: **every one of its edits, or none of them**.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Gesture {
+    /// The structure after the whole gesture, or as it was when the gesture
+    /// was refused.
+    pub state: Opaque,
+    /// Whether anything changed. A gesture made only of resends changes
+    /// nothing and is refused by nobody.
+    pub applied: bool,
+    /// Why the gesture was refused, when one of its edits was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The edits that landed, in the order they did: what a history records
+    /// as the gesture's legs, undone in the reverse order.
+    pub pairs: Vec<Pair>,
+}
+
+/// Apply the edits one gesture came to -- an `Intake`'s payloads -- to a
+/// structure held as its own state, **all of them or none**.
+///
+/// A gesture is one thing a hand did, so it lands whole or not at all: an edit
+/// of it that is refused, or that the vocabulary cannot read, refuses the
+/// gesture, and the state comes back as it was. So does an edit the structure
+/// cannot describe back among several -- an entry holding the others would
+/// undo only part of what the hand did; alone, it is an edit with no inverse
+/// like any other, and lands without an entry. A gesture half applied would
+/// leave a structure no window drew. A resend inside a gesture is not a
+/// refusal: it changed nothing, and the rest still lands.
+///
+/// The one door every caller applies a gesture through -- the applications
+/// over the document and both clients' handlers -- so the rule is written
+/// once. `None` only when [`edit`] would answer it: a vocabulary whose state
+/// does not live in a caller's hand, or a state that will not read.
+pub fn edit_all(domain: &str, state: &Opaque, payloads: &[Opaque]) -> Option<Gesture> {
+    if !matches!(domain, MULTITRACK | POINTS | EVENTS) {
+        return None;
+    }
+    let refused = |reason: String| Gesture {
+        state: state.clone(),
+        applied: false,
+        reason: Some(reason),
+        pairs: Vec::new(),
+    };
+    let mut held = state.clone();
+    let mut pairs = Vec::new();
+    for payload in payloads {
+        // `None` is the domain's or the state's, never a payload's: a
+        // payload the vocabulary cannot read is refused with a reason
+        let edited = edit(domain, &held, payload)?;
+        if !edited.applied {
+            match edited.reason {
+                Some(reason) => return Some(refused(reason)),
+                None => continue,
+            }
+        }
+        pairs.push(Pair {
+            forward: payload.clone(),
+            backward: edited.current,
+        });
+        held = edited.state;
+    }
+    if pairs.len() > 1 && pairs.iter().any(|pair| pair.backward.is_none()) {
+        return Some(refused(
+            "an edit of this gesture could not be undone with the rest, so none of it is made"
+                .into(),
+        ));
+    }
+    Some(Gesture {
+        applied: !pairs.is_empty(),
+        state: held,
+        reason: None,
+        pairs,
+    })
+}
+
 /// The two directions, in the order that makes them true: the inverse first.
 fn edited<E: Editable + Serialize>(structure: &mut E, payload: &Opaque) -> Option<Edited> {
     let current = structure.current(payload);

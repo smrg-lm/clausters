@@ -623,7 +623,11 @@ class Editor:
         label = str(taken.get("label") or "edit")
         if len(payloads) == 1:
             return self._edit(payloads[0], label)
-        return self._edit_all(payloads, label)
+        if self._edit_all(payloads, label):
+            return True
+        if self._reason is not None:
+            self._resync(wid)
+        return False
 
     def interface(self, widget_id: int, tag: str, values) -> bool:
         """**An interface event**: a tag that asks this editor for something
@@ -707,39 +711,51 @@ class Editor:
 
     def _edit_all(self, payloads: list, label: str) -> bool:
         """Apply a run of payloads as **one** entry, so a block edit undoes the
-        way it was made.
+        way it was made -- **all of them or none**.
 
-        The same rule as `_edit` and it is spelled out only because there is no
-        one-call form for a transaction: each inverse is read immediately before
+        The same rule as `_edit`, and the crate's `domain_edit_all` for a
+        structure this client holds: each inverse is read immediately before
         *that* payload lands, never all of them up front -- an inverse read
-        against a state two edits ago puts back a state that never held.
+        against a state two edits ago puts back a state that never held. A
+        payload with no inverse among several refuses the gesture, since an
+        entry holding the others would undo only part of what the hand did;
+        that, or a domain that raises, puts back what had landed, so a gesture
+        is never left half applied.
         """
         if self.domain is None:
             return False
         legs = []
-        moved = False
-        for payload in payloads:
-            before = self.domain.current(self.structure, payload)
-            with self._editing.applying():
-                projected = self.domain.project(self.structure, payload)
-            if not projected:
-                continue
-            moved = True
-            if before is not None:
-                legs.append({"structure": self._registered(),
-                             "forward": {"edit": payload},
-                             "backward": before,
-                             "key": self.domain.coalesce_key(payload)})
-            self._editing.changed()
-        if not moved:
+        try:
+            for payload in payloads:
+                before = self.domain.current(self.structure, payload)
+                if before is None:
+                    self._put_back(legs)
+                    self._reason = ("an edit of this gesture could not be undone "
+                                    "with the rest, so none of it is made")
+                    return False
+                with self._editing.applying():
+                    projected = self.domain.project(self.structure, payload)
+                if projected:
+                    legs.append({"structure": self._registered(),
+                                 "forward": {"edit": payload},
+                                 "backward": before,
+                                 "key": self.domain.coalesce_key(payload)})
+        except BaseException:
+            self._put_back(legs)
+            raise
+        if not legs:
             return False
         log.debug("record [%s] %d leg(s)", label, len(legs))
-        if legs:
-            self._editing.record(legs, label=label)
-        else:
-            self._editing.moved()
+        self._editing.changed()
+        self._editing.record(legs, label=label)
         self.dirty = True
         return True
+
+    def _put_back(self, legs: list) -> None:
+        """Undo the legs of a gesture that will not land, newest first."""
+        with self._editing.applying():
+            for leg in reversed(legs):
+                self.domain.project(self.structure, leg["backward"])
 
     def _resync(self, widget_id: int):
         """Hand back what the widget should be drawing, without applying

@@ -180,6 +180,24 @@ DOMAIN_EDITS = [
     ("piotns", [], {"intent": "setpoints", "points": []}),
 ]
 
+#: Gestures of several edits, applied as one by `domain_edit_all`: one that
+#: lands whole, one whose second edit is refused and so lands not at all, one
+#: with a resend inside it, and the vocabularies that answer nothing.
+GESTURES = [
+    (_native.MULTITRACK, multitrack(),
+     [MOVE_BETWEEN_TRACKS, {"intent": "splitregion", "region": 100, "at": 17.0,
+                            "left": 110, "right": 111}]),
+    (_native.MULTITRACK, multitrack(),
+     [MOVE_BETWEEN_TRACKS, {"intent": "placeregion", "region": 999, "track": 20,
+                            "take_lane": 21, "position": 0.0}]),
+    (_native.POINTS,
+     [{"at": 0.0, "value": 1.0}],
+     [{"intent": "setpoints", "points": [{"at": 0.0, "value": 1.0}]},
+      {"intent": "setpoints", "points": [{"at": 0.0, "value": 0.5}]}]),
+    (_native.TREE, [], [{"intent": "place", "node": 1, "offset": 0.0}]),
+    ("piotns", [], []),
+]
+
 LOGGED = [
     ("move the event", {"intent": "place", "node": 2, "offset": 1.0}, 0.0),
     ("move the take", {"intent": "place", "node": 3, "offset": 6.0}, 0.0),
@@ -290,6 +308,14 @@ if __name__ == "__main__":
         for domain, state, payload in DOMAIN_EDITS
     ]
 
+    # And a gesture: its edits land as one or not at all, which is the crate's
+    # rule and not a loop each client writes.
+    gestures = [
+        {"domain": domain, "state": state, "payloads": payloads,
+         "gesture": _native.domain_edit_all(domain, state, payloads)}
+        for domain, state, payloads in GESTURES
+    ]
+
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({
         "start": starting_document(),
@@ -299,5 +325,6 @@ if __name__ == "__main__":
         "logged": logged,
         "domains": domains,
         "edited": edited,
+        "gestures": gestures,
     }, indent=2) + "\n")
     print(f"wrote {out}")

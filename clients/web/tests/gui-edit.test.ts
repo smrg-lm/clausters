@@ -1213,3 +1213,57 @@ test("the score plays on a transport of its own and hears an edit", {
     await editor.settled();
     assert.equal(server.sent.map(([addr]) => addr).at(-1), "/transport_play");
 });
+
+/**
+ * A gesture of two edits: the dial to the first value, then the second. A
+ * second value of `null` is an edit this domain cannot invert, and one of
+ * `"boom"` is one it fails to write.
+ */
+class TwoTurnDomain extends DialDomain {
+    override payloads(_structure: Dial, tag: string, values: readonly unknown[]): unknown[] {
+        if (tag !== "two") return [];
+        return values.map((value) => ({ intent: "setpoints", points: [{ at: 0.0, value }] }));
+    }
+
+    override current(structure: Dial, payload: unknown): unknown {
+        if ((payload as { points: { value: unknown }[] }).points[0]!.value === null) return null;
+        return super.current(structure, payload);
+    }
+
+    override project(structure: Dial, payload: unknown): boolean {
+        if ((payload as { points: { value: unknown }[] }).points[0]!.value === "boom") {
+            throw new Error("the dial would not turn");
+        }
+        return super.project(structure, payload);
+    }
+}
+
+test("a gesture lands whole or not at all", async () => {
+    // The Python twin is
+    // `test_gui_editing.py::test_a_gesture_lands_whole_or_not_at_all`.
+    const dial = new Dial();
+    dial.value = 0.25;
+    const editor = new Editor(dial, {
+        sampleRate: SR, domain: new TwoTurnDomain(), view: new DialView(),
+    });
+    const host = new FakeHost();
+    await editor.open(asHost(host));
+    const wid = ((host.trees[0] as GuiNode).children as GuiNode[])[0]?.id as number;
+
+    // an edit with no inverse among several: refused, the first one put back
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "two", 0.5, null]), false);
+    assert.equal(dial.value, 0.25);
+    assert.equal(editor.canUndo, false);
+    assert.notEqual(host.acks.at(-1)?.[2], undefined, "the refusal says why");
+
+    // a domain that fails half way: what landed is put back, the error stands
+    assert.throws(() => editor.apply("/gui_event", [wid, 2, 0, "two", 0.5, "boom"]));
+    assert.equal(dial.value, 0.25);
+    assert.equal(editor.canUndo, false);
+
+    // and the whole gesture is one entry, undone at once
+    assert.equal(editor.apply("/gui_event", [wid, 3, 0, "two", 0.5, 0.75]), true);
+    assert.equal(dial.value, 0.75);
+    assert.equal(editor.undo(), true);
+    assert.equal(dial.value, 0.25);
+});

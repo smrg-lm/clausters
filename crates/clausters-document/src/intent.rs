@@ -316,6 +316,40 @@ impl<I> Outcome<I> {
     }
 }
 
+/// Apply the edits of one gesture or one history step to a document, **all of
+/// them or none** -- the tree's twin of
+/// [`domain::edit_all`](crate::domain::edit_all), which holds the rule for
+/// every vocabulary kept as its own state.
+///
+/// Each edit goes through [`apply`]; the first is checked against `against`,
+/// and the rest against nothing, since they were made against the state the
+/// first one leaves. One refused -- by a rule or as stale -- puts the document
+/// back as it was and is answered as `Err`; otherwise every outcome, resends
+/// included, comes back in order.
+pub fn apply_all(
+    document: &mut Document,
+    intents: &[Intent],
+    against: &Against,
+    rules: &Rules,
+) -> Result<Vec<Outcome>, Outcome> {
+    let held = document.clone();
+    let mut outcomes = Vec::with_capacity(intents.len());
+    for (i, intent) in intents.iter().enumerate() {
+        let checked = if i == 0 {
+            against
+        } else {
+            &Against::unstated()
+        };
+        let outcome = apply(document, intent, checked, rules);
+        if !outcome.applied && (outcome.reason.is_some() || outcome.stale) {
+            *document = held;
+            return Err(outcome);
+        }
+        outcomes.push(outcome);
+    }
+    Ok(outcomes)
+}
+
 /// Apply an edit to a document.
 ///
 /// The only door. Bumps [`Document::version`] when the document changed, and

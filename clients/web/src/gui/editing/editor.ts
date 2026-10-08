@@ -801,7 +801,9 @@ export class Editor<S = unknown> implements Adopting {
         }
         const label = taken.label;
         if (payloads.length === 1) return this.edit(payloads[0], label);
-        return this.editAll(payloads, label);
+        if (this.editAll(payloads, label)) return true;
+        if (this.reason !== undefined && this.reason !== null) this.resync(id);
+        return false;
     }
 
     /**
@@ -895,39 +897,58 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * Apply a run of payloads as **one** entry, so a block edit undoes the way
-     * it was made.
+     * it was made -- **all of them or none**.
      *
-     * The same rule as {@link Editor.edit}, and it is spelled out only because
-     * there is no one-call form for a transaction: each inverse is read
-     * immediately before *that* payload lands, never all of them up front -- an
-     * inverse read against a state two edits ago puts back a state that never
-     * held.
+     * The same rule as {@link Editor.edit}, and the crate's `domainEditAll` for
+     * a structure this client holds: each inverse is read immediately before
+     * *that* payload lands, never all of them up front -- an inverse read
+     * against a state two edits ago puts back a state that never held. A
+     * payload with no inverse among several refuses the gesture, since an entry
+     * holding the others would undo only part of what the hand did; that, or a
+     * domain that throws, puts back what had landed, so a gesture is never left
+     * half applied.
      */
     protected editAll(payloads: readonly unknown[], label: string): boolean {
         if (this.domain === null) return false;
+        const domain = this.domain;
         const legs: RecordingLeg[] = [];
-        let moved = false;
-        for (const payload of payloads) {
-            const before = this.domain.current(this.structure, payload);
-            const domain = this.domain;
-            if (!this.editing.applying(() => domain.project(this.structure, payload))) continue;
-            moved = true;
-            if (before !== null && before !== undefined) {
+        try {
+            for (const payload of payloads) {
+                const before = domain.current(this.structure, payload);
+                if (before === null || before === undefined) {
+                    this.putBack(legs);
+                    this.reason =
+                        "an edit of this gesture could not be undone with the rest, so none of it is made";
+                    return false;
+                }
+                if (!this.editing.applying(() => domain.project(this.structure, payload))) continue;
                 legs.push({
                     structure: this.registered(),
                     forward: { edit: payload as Intent },
                     backward: before,
-                    key: this.domain.coalesceKey(payload),
+                    key: domain.coalesceKey(payload),
                 });
             }
-            this.editing.changed();
+        } catch (error) {
+            this.putBack(legs);
+            throw error;
         }
-        if (!moved) return false;
+        if (legs.length === 0) return false;
         log.debug("record [%s] %d leg(s)", label, legs.length);
-        if (legs.length > 0) this.editing.record(legs, { label });
-        else this.editing.moved();
+        this.editing.changed();
+        this.editing.record(legs, { label });
         this.dirty = true;
         return true;
+    }
+
+    /** Undo the legs of a gesture that will not land, newest first. */
+    private putBack(legs: readonly RecordingLeg[]): void {
+        const domain = this.domain;
+        if (domain === null) return;
+        this.editing.applying(() => {
+            for (const leg of [...legs].reverse()) domain.project(this.structure, leg.backward);
+            return true;
+        });
     }
 
     /**

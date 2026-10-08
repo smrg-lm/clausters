@@ -3727,3 +3727,17 @@ wrong.
   the meters before the strip they read (`tests/mixer_graph.rs`,
   `a_stereo_take_keeps_its_two_sides`). *(The sort reads that arithmetic
   since the entry above was closed, the same day; the two controls stayed.)*
+
+- ⬜ **A history step is whole on each structure, not across them**
+  *(found 2026-10-08, making a gesture land whole: `domain::edit_all` and
+  `clausters_document::apply_all`)*. A gesture now lands all or none, and so
+  does each structure's share of an undo or redo step -- the multitrack
+  editor's (`MultitrackEditor::apply_step`), the host's multitrack and tree
+  (`host::document::carry`). What is not whole is a step whose entry spans
+  **several** structures -- a multitrack and a curve edited by one gesture:
+  `Editing::step` hands each structure its legs in turn, so a refusal on the
+  second leaves the first stepped. A refusal there means the history and a
+  structure disagree, which no path is known to produce today. The fix is a
+  step that puts back the structures it already stepped when a later one
+  refuses -- each leg's opposite direction is in the same entry -- and
+  answers the step as not taken.

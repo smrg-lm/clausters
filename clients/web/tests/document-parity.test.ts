@@ -26,12 +26,14 @@ import {
     applyIntent,
     domainCoalesceKey,
     domainEdit,
+    domainEditAll,
     resolveSelection,
     SESSION_FORMAT,
 } from "../src/document.ts";
 import type {
     Against,
     ClaustersDocument,
+    Gesture,
     Edited,
     Intent,
     Outcome,
@@ -91,6 +93,13 @@ interface Vectors {
         state: unknown;
         payload: unknown;
         edited: Edited | null;
+    }[];
+    /** Gestures of several edits, applied as one. */
+    gestures: {
+        domain: string;
+        state: unknown;
+        payloads: unknown[];
+        gesture: Gesture | null;
     }[];
 }
 
@@ -353,6 +362,17 @@ test("a domain inverts its own edits the same way in both languages", () => {
             edited ?? null,
             `${domain}: ${JSON.stringify(payload)}`,
         );
+    }
+});
+
+test("a gesture lands whole or not at all the same way in both languages", () => {
+    // The rule a handler applies a gesture's edits by is the crate's: one
+    // refused edit leaves the state as it was. Both clients reach the same
+    // door, so both read the same answer.
+    assert.ok(vectors.gestures.length > 0, "the generator emitted the table");
+    for (const { domain, state, payloads, gesture } of vectors.gestures) {
+        const mine = domainEditAll(domain, state, payloads);
+        assert.deepEqual(mine ?? null, gesture ?? null, `${domain}: ${JSON.stringify(payloads)}`);
     }
 });
 

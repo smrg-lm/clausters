@@ -3371,6 +3371,34 @@ pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
     serde_json::to_string(&edited).unwrap_or_default()
 }
 
+/// **The edits one gesture came to, applied as one: all of them or none** --
+/// the rule every caller applies a gesture by.
+///
+/// `payloads` is a JSON array of payloads; the answer is `{"state", "applied",
+/// "reason"?, "pairs": [{"forward", "backward"}]}` -- the state after the whole
+/// gesture, or as it was when one of its edits was refused (and then why) --
+/// or an empty string where {@link domainEdit} answers one.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = domainEditAll)]
+pub fn domain_edit_all(domain: &str, state: &str, payloads: &str) -> String {
+    let (Ok(state), Ok(payloads)) = (
+        serde_json::from_str::<serde_json::Value>(state),
+        serde_json::from_str::<Vec<serde_json::Value>>(payloads),
+    ) else {
+        return String::new();
+    };
+    let payloads: Vec<clausters_document::Opaque> = payloads
+        .into_iter()
+        .map(clausters_document::Opaque)
+        .collect();
+    let Some(gesture) =
+        clausters_document::domain::edit_all(domain, &clausters_document::Opaque(state), &payloads)
+    else {
+        return String::new();
+    };
+    serde_json::to_string(&gesture).unwrap_or_default()
+}
+
 /// **The defs a multitrack of these widths is played by** -- `{"synth": [...],
 /// "graph": [...]}`, each list in the order it must be sent, or an empty string
 /// for a width nothing is written for.

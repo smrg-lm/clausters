@@ -1213,35 +1213,48 @@ impl Owner {
             let Effect::External { member, payloads } = effect else {
                 continue;
             };
-            for load in payloads {
-                let load = Opaque(load.clone());
-                if *member == self.multitrack_member {
-                    let Some(intent) = clausters_document::multitrack::edit::intent_of(&load)
-                    else {
-                        continue;
-                    };
-                    let outcome = clausters_document::multitrack::edit::apply(
-                        &mut self.multitrack,
-                        &intent,
-                        &Against::default(),
-                        &Rules::none(),
-                    );
+            // **A step lands whole on each description, or not at all**: the
+            // same doors a gesture lands by, so an undo never leaves the
+            // multitrack or the tree half of the way back.
+            if *member == self.multitrack_member {
+                let loads: Vec<Opaque> = payloads.iter().cloned().map(Opaque).collect();
+                let gesture = serde_json::to_value(&self.multitrack)
+                    .ok()
+                    .and_then(|state| {
+                        clausters_document::domain::edit_all(MULTITRACK, &Opaque(state), &loads)
+                    })
+                    .filter(|gesture| gesture.reason.is_none());
+                let Some(gesture) = gesture else {
                     out.push(Applied {
                         effective: None,
                         version: self.multitrack.version,
-                        applied: outcome.applied,
+                        applied: false,
                     });
-                } else if *member == self.tree {
-                    let Some(intent) = clausters_document::log::intent_of(&load) else {
-                        continue;
-                    };
-                    let outcome = clausters_document::apply(
-                        &mut self.document,
-                        &intent,
-                        &Against::default(),
-                        &Rules::none(),
-                    );
-                    out.push(self.report(outcome));
+                    continue;
+                };
+                if let Ok(after) = serde_json::from_value(gesture.state.0) {
+                    self.multitrack = after;
+                }
+                for _ in &gesture.pairs {
+                    out.push(Applied {
+                        effective: None,
+                        version: self.multitrack.version,
+                        applied: true,
+                    });
+                }
+            } else if *member == self.tree {
+                let intents: Vec<Intent> = payloads
+                    .iter()
+                    .filter_map(|load| clausters_document::log::intent_of(&Opaque(load.clone())))
+                    .collect();
+                match clausters_document::apply_all(
+                    &mut self.document,
+                    &intents,
+                    &Against::default(),
+                    &Rules::none(),
+                ) {
+                    Ok(outcomes) => out.extend(outcomes.into_iter().map(|o| self.report(o))),
+                    Err(refused) => out.push(self.report(refused)),
                 }
             }
         }

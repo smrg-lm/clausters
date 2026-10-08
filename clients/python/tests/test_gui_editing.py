@@ -197,6 +197,53 @@ def test_a_gesture_becomes_an_entry_and_the_entry_inverts():
     assert dial.value == 0.75
 
 
+class TwoTurnDomain(DialDomain):
+    """A gesture of two edits: the dial to the first value, then the second.
+    A second value of ``None`` is an edit this domain cannot invert, and one
+    of ``"boom"`` is one it fails to write."""
+
+    def payloads(self, structure, tag, values):
+        if tag != "two":
+            return []
+        return [{"intent": "setpoints", "points": [{"at": 0.0, "value": v}]}
+                for v in values]
+
+    def current(self, structure, payload):
+        if payload["points"][0]["value"] is None:
+            return None
+        return super().current(structure, payload)
+
+    def project(self, structure, payload) -> bool:
+        if payload["points"][0]["value"] == "boom":
+            raise RuntimeError("the dial would not turn")
+        return super().project(structure, payload)
+
+
+def test_a_gesture_lands_whole_or_not_at_all():
+    import pytest
+    dial = Dial(0.25)
+    ed = Editor(dial, sample_rate=SR, domain=TwoTurnDomain(), view=DialView())
+    host = FakeHost()
+    ed.open(host)
+    wid = host.tree["children"][0]["id"]
+
+    # an edit with no inverse among several: refused, the first one put back
+    assert ed.apply("/gui_event", [wid, 1, 0, "two", 0.5, None]) is False
+    assert dial.value == 0.25 and not ed.can_undo
+    assert host.pushes[-1][3] is not None, "the refusal says why"
+
+    # a domain that fails half way: what landed is put back, the error stands
+    with pytest.raises(RuntimeError):
+        ed.apply("/gui_event", [wid, 2, 0, "two", 0.5, "boom"])
+    assert dial.value == 0.25 and not ed.can_undo
+
+    # and the whole gesture is one entry, undone at once
+    assert ed.apply("/gui_event", [wid, 3, 0, "two", 0.5, 0.75]) is True
+    assert dial.value == 0.75
+    assert ed.undo() is True
+    assert dial.value == 0.25
+
+
 def test_a_resend_is_not_an_edit():
     dial = Dial(0.5)
     ed = an_editor(dial)

@@ -764,5 +764,57 @@ pub unsafe extern "C" fn clausters_domain_edit(
     unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
+/// **The edits one gesture came to, applied as one: all of them or none** --
+/// `domain::edit_all`, the rule every caller applies a gesture by.
+///
+/// `payloads` is a JSON array of payloads in `domain`'s vocabulary. The answer
+/// is `{"state", "applied", "reason"?, "pairs": [{"forward", "backward"}]}`:
+/// the state after the whole gesture, or as it was when one of its edits was
+/// refused (and then why), and each edit that landed with the payload that
+/// puts it back. `0` for a vocabulary [`clausters_domain_edit`] answers `0`
+/// for, or input that is not JSON.
+///
+/// # Safety
+/// `domain` must be null or readable for `domain_len` bytes, `state` null or
+/// readable for `state_len` bytes, `payloads` null or readable for
+/// `payloads_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_domain_edit_all(
+    domain: *const u8,
+    domain_len: usize,
+    state: *const u8,
+    state_len: usize,
+    payloads: *const u8,
+    payloads_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(domain), Some(raw_state), Some(raw_payloads)) = (
+        unsafe { text(domain, domain_len) },
+        unsafe { text(state, state_len) },
+        unsafe { text(payloads, payloads_len) },
+    ) else {
+        return 0;
+    };
+    let (Ok(state), Ok(payloads)) = (
+        serde_json::from_str::<serde_json::Value>(&raw_state),
+        serde_json::from_str::<Vec<serde_json::Value>>(&raw_payloads),
+    ) else {
+        return 0;
+    };
+    let payloads: Vec<Opaque> = payloads.into_iter().map(Opaque).collect();
+    let Some(gesture) = clausters_document::domain::edit_all(&domain, &Opaque(state), &payloads)
+    else {
+        return 0;
+    };
+    let Ok(answer) = serde_json::to_string(&gesture) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests;

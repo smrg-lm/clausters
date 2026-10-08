@@ -824,9 +824,9 @@ impl Editing {
                 let member = id as MemberId;
                 match &mut seat.member {
                     Member::Multitrack(editor) => {
-                        for payload in payloads {
-                            let done = editor.apply(&payload.0);
-                            applied |= done.applied;
+                        let loads: Vec<Value> = payloads.iter().map(|p| p.0.clone()).collect();
+                        for done in editor.apply_step(&loads) {
+                            applied = true;
                             out.effects.push(Effect::Multitrack {
                                 member,
                                 applied: done,
