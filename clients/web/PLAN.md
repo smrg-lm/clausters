@@ -4227,7 +4227,7 @@ finished work, where a pending item reads as done.
   and not the expected one — an assertion never run is an assertion never
   checked.
 
-- ⬜ **`open()` with no host resolves the ambient one, and a page that meant
+- ✅ **`open()` with no host resolves the ambient one, and a page that meant
   another handle gets a plausible wrong answer** *(found 2026-08-27, in the
   manual review, reading `panels/attach.html` against `attach.py`; that page is
   fixed in the commit — what is left is the class)*. A `View.open(element)`
@@ -4254,6 +4254,20 @@ finished work, where a pending item reads as done.
   sometimes asks is worse than one that always answers. The Python client has
   the same default (`plot` resolves a session's host) and the same gap, so
   whatever is decided is decided for both.
+
+  **Closed 2026-10-07: the resolution stays, and it was already settled.**
+  The same question came up again when a scope had to reach a server over a
+  socket ("`resolveHost` makes one for a server whose connection names an
+  address", below), and was answered there: the caller hands what it means,
+  so nothing is guessed. That is the third option above. A warning or a
+  refusal cannot be triggered by "more than one host is alive" without firing
+  on the legitimate cases — `plot` keeps a host of its own per server, and two
+  hosts in one program is `panels/two-hosts` — so the defect is the call that
+  leaves `host` out while meaning another handle, which the attach page was
+  and no longer is. What the class needed was the rule said where the call is
+  written: `View.open`'s documentation in both clients now says that leaving
+  `host` out always means the ambient one, and that a second handle that did
+  not adopt it is named.
 
 - ✅ **A page turns a script's sequence into a button, and then explains why**
   *(found 2026-08-27 and 2026-08-28, in the manual review, on `panels/style`

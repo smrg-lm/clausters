@@ -602,6 +602,13 @@ export class View implements GuiNode {
      * `setAmbientHost`, else the current or default session's host when one is
      * up, else a host the ambient layer opens on this page and owns.
      *
+     * **Leaving `host` out means the ambient one, always.** A page that holds
+     * a second handle which did not become the ambient one -- an
+     * `attach({ adoptAmbient: false })`, a host of its own -- names it here:
+     * nothing can tell which handle a window was meant for, and a window opened
+     * on the wrong one draws and answers like any other, with ids out of the
+     * other handle's share.
+     *
      * `element` is where a page draws it: the view takes that element's box,
      * and the canvas inside it is made for you. It is the browser's own
      * argument -- the Python client's `View.open` has no counterpart for it,

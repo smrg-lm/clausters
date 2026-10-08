@@ -396,6 +396,13 @@ class View(dict):
         default session's `gui` host, else a standalone host booted and owned by
         the ambient layer. Trailing ``blobs`` and an explicit ``id`` ride through
         to `clausters.gui.host.GuiHost.open` unchanged.
+
+        **Leaving ``host`` out means the ambient one, always.** A program that
+        holds a second handle which did not become the ambient one -- an
+        ``attach(adopt_ambient=False)``, a host of its own -- names it here:
+        nothing can tell which handle a window was meant for, and a window
+        opened on the wrong one draws and answers like any other, with ids out
+        of the other handle's share.
         """
         if host is None:
             from ..plot import _ambient_host
