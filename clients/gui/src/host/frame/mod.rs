@@ -1028,6 +1028,16 @@ fn draw_live_places(
             clock: inputs.world.clocks.at(widget.id),
         };
         el.draw_live(&mut Draw::new(mesh, m, th), &ctx);
+        // **The focus ring stays over what moves.** It is drawn with the
+        // picture, under this layer, so a live layer that reaches its edge --
+        // a multitrack's meters at rest, a column the height of its track --
+        // painted over the ring wherever they met. Drawn again here, it is the
+        // last thing of the element, as it is in the picture.
+        if ctx.focused {
+            mesh.set_clip(place.clip);
+            mesh.set_ink(Ink::default());
+            mesh.border(place.rect, m.focus_ring, th.focus);
+        }
     }
     mesh.set_clip(None);
     mesh.set_ink(Ink::default());
@@ -1778,6 +1788,99 @@ mod tests {
         );
         draw_live_places(&mut tick, tree, &kept.places, &at(24_000.0), &host.theme);
         assert!(tick.near(&whole.live, 0.0));
+    }
+
+    /// **A multitrack's meters stay inside the multitrack**: tracks taller
+    /// than the window, so the stack runs past the rectangle it is given at
+    /// the bottom, with a label under it -- and the live layer, drawn over
+    /// everything else, paints nothing outside the multitrack's placement.
+    #[test]
+    fn a_tall_multitracks_meters_stay_inside_it() {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+        const TALL: &str = r#"{"type":"window","children":[
+            {"id":2,"type":"label","text":"above","h":40},
+            {"id":5,"type":"multitrack",
+             "tracks":["one","",250,0,0,1.0,1,"two","",250,0,0,1.0,1,"three","",250,0,0,1.0,1],
+             "meters":["one",10,12,2,"two",14,16,2,"three",18,20,2],
+             "clips":["a","one",0,48000,0,"a",-1]},
+            {"id":7,"type":"label","text":"below","h":40}]}"#;
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(TALL.into())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let tree = host.window_def(1).unwrap();
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            ..FrameInputs::default()
+        };
+        let none = (HashMap::new(), HashMap::new());
+        let frame = picture(tree, &inputs, &host.theme, &none.0, &none.1, (800, 600));
+        let place = frame
+            .places
+            .iter()
+            .find(|p| p.path == [1])
+            .expect("the multitrack");
+        // The work area: the window less its status band and its menu bar,
+        // which are drawn over it after everything else.
+        let window = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let area = status::content(tree, inputs.status, window, inputs.metrics);
+        let area = crate::host::menubar::content(tree, area, inputs.metrics);
+        let bounds = place
+            .clip
+            .map_or(place.rect, |c| c.intersect(place.rect))
+            .intersect(area);
+        let drawn = frame.live.extent().expect("the meters drew");
+        assert!(
+            drawn.y >= bounds.y - 0.5 && drawn.y + drawn.h <= bounds.y + bounds.h + 0.5,
+            "the live layer spans {}..{}, the multitrack {}..{}",
+            drawn.y,
+            drawn.y + drawn.h,
+            bounds.y,
+            bounds.y + bounds.h
+        );
+    }
+
+    /// **The focus ring is over what moves**: a focused multitrack's live layer
+    /// ends with the ring, so the meters drawn there -- a column the height of
+    /// its track, at rest -- do not cover the ring where they reach the edge.
+    #[test]
+    fn the_focus_ring_is_drawn_over_the_live_layer() {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(MOVING.into())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let tree = host.window_def(1).unwrap();
+        let none = (HashMap::new(), HashMap::new());
+        let live = |focused: Option<i32>| {
+            let inputs = FrameInputs {
+                metrics: host.metrics_for(1),
+                focused,
+                ..FrameInputs::default()
+            };
+            picture(tree, &inputs, &host.theme, &none.0, &none.1, (800, 600))
+                .live
+                .vertex_count()
+        };
+        assert_eq!(
+            live(Some(5)),
+            live(None) + 4 * 6,
+            "the four strips of the ring, last"
+        );
     }
 
     /// **What a whole frame of the score editor costs**, the heaviest window

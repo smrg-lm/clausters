@@ -2588,3 +2588,51 @@ fn a_fade_corner_is_taken_and_the_flat_top_is_the_boxs() {
         "the flat top"
     );
 }
+
+/// **A scrolled stack's meters stay inside it too**: tall tracks scrolled
+/// down, and the live layer -- the meters, which move every frame and are
+/// drawn over everything else -- paints nothing above or below the stack's
+/// rectangle.
+#[test]
+fn a_scrolled_stacks_meters_paint_inside_its_own_rect() {
+    use crate::host::paint::{Draw, Mesh};
+    use crate::host::theme::Theme;
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 300, 0, 0, 1, 1, "two", "", 300, 0, 0, 1, 1,
+                       "three", "", 300, 0, 0, 1, 1],
+            "clips": [],
+            "meters": ["one", 100, -1, 2, "two", 110, -1, 2, "three", 120, -1, 2]}"#,
+    ));
+    mt.scroll = 450.0;
+    let world = crate::host::world::World::default();
+    let metrics = Metrics::default();
+    let rect = Rect::new(0.0, 100.0, 800.0, 200.0);
+    let ctx = Ctx {
+        world: &world,
+        metrics: &metrics,
+        rect,
+        indent: 120.0,
+        scale: 1.0,
+        time: None,
+        clip: None,
+        focused: false,
+        hovered: false,
+        clock: 0.0,
+    };
+    let mut mesh = Mesh::new();
+    let theme = Theme::default();
+    mt.draw_live(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
+    let drawn = mesh.extent().expect("the meters drew");
+    assert!(
+        drawn.y >= rect.y - 0.5,
+        "drawn from {} above the stack at {}",
+        drawn.y,
+        rect.y
+    );
+    assert!(
+        drawn.y + drawn.h <= rect.y + rect.h + 0.5,
+        "drawn to {} below the stack's end at {}",
+        drawn.y + drawn.h,
+        rect.y + rect.h
+    );
+}
