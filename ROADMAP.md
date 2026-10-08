@@ -105,6 +105,9 @@ Each is small, owned by its plan, and blocked by nothing.
 - ⬜ **The crossfade switch acts on the edits that follow**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The rule moves from
   reading the multitrack to editing it.
+- ⬜ **The audit reads `transport/conductor`'s two halves as different**
+  *(`clients/web/PLAN.md`, Found by use)*. The page's call sequence ends in a
+  `free` the script's does not.
 - ⬜ **A history step is whole on each structure, not across them**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A step spanning a
   multitrack and a curve can stop half way; the fix puts back what it already

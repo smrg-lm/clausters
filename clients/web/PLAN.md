@@ -4967,3 +4967,13 @@ sound.
   page, which closed the turn the verb had left marked. **Fixed 2026-10-06**:
   `#act` runs in `editing.turn(this, ...)`, as a gesture's delivery does; the
   two tests are now one test in two languages.
+
+- ⬜ **The audit reads `transport/conductor`'s two halves as different** *(found
+  2026-10-08, running `scripts/audit-example-pairs.py` over every pair while
+  closing other work)*. The page's call sequence ends with a `free` the
+  script's does not: both `close()`s free the governed group, so either the
+  script's `close` is not reached where the audit reads the sequence or the
+  page frees once more. Nothing in this pair was touched since `75685cc5`;
+  read the two side by side, decide which one is the program, and make the
+  other the same -- or declare the difference in `docs/example-parity.md` if
+  it is the platform's.
