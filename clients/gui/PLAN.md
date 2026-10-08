@@ -4301,6 +4301,33 @@ at the end (there is none).
   The open question it raised about a version across a load is in
   `crates/clausters-document/PLAN.md`'s "Open decisions".
 
+## V track — development: the host seen and driven by a script
+
+*(Added 2026-10-08 by the user, once every verb a window answers had become reachable from a script (`/gui_verb`): so that a change can be seen working without a person at the screen. Until now every screenshot in this plan was taken by hand. A development track: what it builds is for checking the host, and it ships in the host and both clients like everything else.)*
+
+**What it is for.** A script opens a window, drives it — verbs, edits, a drag, a pass of the transport — and asks for a picture after each step; whoever reads the pictures checks what the eye pass checks today. It is the by-eye check made repeatable: the examples stay the manual test surface, and a capture is how one is looked at without somebody sitting in front of it. The track has two halves: a window that is captured and played to (V1, V2), and the same with no window on the screen at all (V3–V5), which is independent of the first half's fronts and can be taken on its own.
+
+**Decided before opening it:**
+
+- **One more verb on the wire, not a second renderer.** `/gui_capture <window> <path>` draws the window's frame with the one `frame::render` the screen is drawn with, into an offscreen texture of the window's size, reads it back and writes a PNG; the host answers `/gui_captured <window> <path>` when the file is whole, so a script waits on the answer and not on a sleep. What is captured is therefore what the screen shows, by construction — a capture path of its own would be a second picture to keep in agreement with the first.
+- **A capture follows the turns before it.** A verb's edit goes to the window's owner and comes back as corrections, so a picture asked for right after a verb could show the window before the owner answered. The clients' `capture` waits until every turn it has outstanding is answered, then asks; the host captures after everything it has received.
+- **Both fronts, both clients.** The page front draws the same frame offscreen and writes the PNG into the page's own storage (OPFS, `docs/decisions.md`, "A path in a page is its own storage"); both clients have `editor.capture(path)` and `GuiHost.capture(id, path)`. A capture only the desktop has is the divergence the non-divergence rule forbids.
+- **No dependency for the file.** A PNG of stored (uncompressed) deflate blocks is a few dozen lines and needs no crate; a capture is read once and thrown away, so its size does not matter.
+- **Placement (the G7b rule): display-only.** The readback and the file are the host's; nothing for `clausters-core`.
+
+**The milestones — a window captured and played to:**
+
+- ⬜ **V1 — `/gui_capture`.** The verb, the offscreen draw and readback on both fronts, the PNG writer, the answer, and the two clients' `capture` with the wait. **Acceptance:** a script opens `editors/window_verbs`, quantizes, captures, pastes, captures, and the two pictures show the notes on the beats and then repeated after themselves; a capture of a window with a live view (a meter, a playhead) shows the frame of the moment it was asked for; the same from a page into its storage; the wire and the PNG writer are unit-tested, and the protocol page names the verb.
+- ⬜ **V2 — A hand played to a window.** A drag is a gesture, not a verb, so V1 cannot check one. `/gui_pointer <window> <kind> <x> <y> [mods]` hands the window's gesture machine a press, a move or a release at a point, as the front's own input does — the same `Gestures::press`/`drag`/`release` a mouse reaches, so a scripted drag is the drag. **Acceptance:** a script drags a note with snap to grid on and off and captures each, and the pictures show it on a beat and then where it was let go; the same in a page.
+
+**The milestones — the same with no window on the screen** (independent of V1–V2's fronts; they need V1's verb):
+
+The native front's capture puts a window in front of whoever is at the machine while a script drives it, and needs a display. The headless front (`--headless`) has neither — and today no GPU either: it runs the protocol and draws nothing. A capture from it is a host that opens **no window at all**, which is what a check run while somebody works, or on a machine with no display, needs. What it changes is the front, not the verb: the headless front has to own windows it never shows. `frame::render` is the per-window render both fronts already share, and a third caller that draws into a texture is the whole of what keeps the picture the screen's. wgpu can request an adapter with no compatible surface, and on Linux a software one exists where there is no card; whether a capture is still pixel-for-pixel the screen's on a software adapter (text, line smoothing) is the first thing to measure, and the answer decides whether a reference picture is ever compared byte for byte or only read.
+
+- ⬜ **V3 — The headless front draws.** It requests an adapter with no surface, keeps per-window GPU resources the way the windowed front does, and draws a window's frame offscreen at its declared `w`/`h`; with no adapter at all it says so and goes on as it does today.
+- ⬜ **V4 — It captures, and takes a hand.** V1's `/gui_capture` and V2's `/gui_pointer` on the headless front, the window never shown. **Acceptance:** `editors/window_verbs` driven by a script against a headless host captures the pictures V1 and V2 name, with no window on the screen; the difference between a hardware and a software adapter's picture is measured and written down.
+- ⬜ **V5 — A check that runs where nobody looks.** What V3 and V4 make possible: a script that drives an example through a headless host and leaves its pictures in the example tree's `out/`, so a change can be looked at after the fact — and, if V4's measurement allows it, a reference picture compared in a test.
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.

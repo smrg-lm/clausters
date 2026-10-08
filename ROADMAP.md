@@ -61,7 +61,7 @@ Where the work lives:
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
 | `Xx` | `crates/clausters-apps/PLAN.md` | the applications over the document, each written once |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx`, `Vx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model, the host seen and driven by a script |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
@@ -276,6 +276,13 @@ its plan; the plan is where its acceptance is read.
   plays itself and seeks — and two things stand: the roll's notes → timeline
   conversion is private to the notes editor, and `Ppar`/`Pmono` are a separate
   pattern-side question.
+
+- ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
+  *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven
+  by a script")*. A development track: `/gui_capture` and `/gui_pointer`, so
+  a change is checked from captured pictures rather than by a person at the
+  screen (`V1`, `V2`), and the same from a headless host with no window
+  shown (`V3`-`V5`), which can be taken on its own.
 
 - ⬜ **`G43` — text is shaped**, `G43a` and `G43b` *(`clients/gui/PLAN.md`,
   "G43 — Text is shaped: every script a field accepts is drawn right")*. A
