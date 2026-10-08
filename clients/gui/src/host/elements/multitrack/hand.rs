@@ -495,7 +495,15 @@ impl Multitrack {
             // deltas are clamped as one, so a block stopped at an edge does not
             // fold against it, and no clip is resized.
             Part::Body => {
-                let dt = boxes::snap(now - grab.grabbed_at, self.snap);
+                // The grabbed box lands on the grid and the block moves by
+                // what that took -- a line is a place on the axis, not a
+                // length a box travels by, which is what a beat grid needs.
+                let dt = match self.grid() {
+                    grid @ boxes::Grid::Beats { .. } => {
+                        grid.snap(grab.orig.offset + now - grab.grabbed_at) - grab.orig.offset
+                    }
+                    _ => boxes::snap(now - grab.grabbed_at, self.snap),
+                };
                 let dr = self.track_toward(input.rect, at.1) as f32 - grab.track as f32;
                 // **The grabbed box's own two edges look for a neighbour.** The
                 // box under the hand is what the hand is aiming with, so it is
@@ -694,7 +702,10 @@ impl Multitrack {
         match verb {
             Verb::Quantize => {
                 let held = self.selected.clone();
-                Some(if boxes::quantize(self, &held, self.snap) {
+                let grid = self.grid();
+                Some(if !grid.is_set() {
+                    Events::refused("quantize", "this multitrack has no grid to quantize to")
+                } else if boxes::quantize(self, &held, &grid) {
                     self.clips_event()
                 } else {
                     Events::refused("quantize", "these boxes are already on the grid")
@@ -703,7 +714,7 @@ impl Multitrack {
             // **At the window's cursor**: a key gesture has no pointer to read a
             // position from, and the window has one cursor for exactly that.
             Verb::Split => {
-                let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                let at = self.grid().snap(input.cursor.unwrap_or(0.0)).max(0.0);
                 Some(if self.split_held(at) {
                     self.clips_event()
                 } else {
@@ -753,7 +764,7 @@ impl Multitrack {
                 // **At the cursor**, and keeping the block's own shape: the
                 // earliest pasted clip lands there and the rest keep their
                 // distances, which is what makes a pasted block the same block.
-                let at = boxes::snap(input.cursor.unwrap_or(0.0), self.snap).max(0.0);
+                let at = self.grid().snap(input.cursor.unwrap_or(0.0)).max(0.0);
                 let offsets: Vec<f64> = block.iter().map(|c| c.place.offset).collect();
                 let placed = boxes::rebased(&offsets, at)?;
                 // **A paste needs two coordinates**, and the second is the

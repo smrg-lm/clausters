@@ -80,9 +80,16 @@ impl Multitrack {
     /// than a box a hand can still find.
     pub(super) fn bounds(&self) -> Bounds {
         Bounds {
-            grid: self.snap,
+            grid: self.grid(),
             ..Bounds::default()
         }
+    }
+
+    /// **The grid a box lands on**: the axis' `grid` in beats through the
+    /// multitrack's tempo map, else the track's own `snap` in units.
+    pub(super) fn grid(&self) -> crate::host::structures::boxes::Grid {
+        self.editor
+            .placement_grid(self.editor.sample_rate, self.snap)
     }
 
     /// The track header band `y` falls in, and the part of it `(x, y)` hit.

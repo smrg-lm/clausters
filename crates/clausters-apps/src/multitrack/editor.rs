@@ -284,6 +284,10 @@ pub struct MultitrackEditor {
     unsaved: bool,
     /// Whether the window is composed with no chrome ([`Window::bare`]).
     bare: bool,
+    /// **The grid a box lands on, in beats** ([`crate::DEFAULT_GRID`] until
+    /// somebody chooses one): what a drag snaps to and a quantize writes into
+    /// the multitrack, read through its tempo map. `0` for none.
+    grid: f64,
     /// **How a box of notes is drawn**: `"roll"`, or `"score"` -- its page,
     /// each note at its time. The window's own, like its zoom.
     notes_view: String,
@@ -360,6 +364,7 @@ impl MultitrackEditor {
             asks: false,
             unsaved: false,
             bare: false,
+            grid: crate::DEFAULT_GRID,
             notes_view: ROLL.into(),
             #[cfg(feature = "notation")]
             engraver: None,
@@ -656,6 +661,18 @@ impl MultitrackEditor {
         self.cursor
     }
 
+    /// The grid a box lands on, in beats; `0` for none.
+    pub fn grid(&self) -> f64 {
+        self.grid
+    }
+
+    /// **Sets the grid a box lands on**, in beats -- `0` for none. The
+    /// window's own, like its zoom; what it changes in the multitrack is what
+    /// a drag or a quantize then writes.
+    pub fn set_grid(&mut self, beats: f64) {
+        self.grid = beats.max(0.0);
+    }
+
     /// Places the position cursor, in seconds -- a caller's own verb, like a
     /// rewind.
     pub fn set_cursor(&mut self, secs: Option<f64>) {
@@ -949,6 +966,7 @@ impl MultitrackEditor {
             close_form: self.close_form,
             asks: self.asks,
             bare: self.bare,
+            grid: self.grid,
         })
     }
 
@@ -1469,8 +1487,10 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
 /// names the `verb` and carries its arguments:
 ///
 /// - `sync` -- `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
-///   `window`, `controls` (the transport row's ids): the state a caller holds,
-///   handed over before the verbs that read it.
+///   `window`, `controls` (the transport row's ids), `grid` (beats, `0` for
+///   none): the state a caller holds, handed over before the verbs that read
+///   it.
+/// - `grid` -- `{"grid": beats}`: the grid a box lands on.
 /// - `rewind`, `toggle`, `stop` -- `version`: the transport row's verbs, as a
 ///   script calls them, each an [`Outcome`].
 /// - `clock` -- `position` (beats): `{"text"}`, what the clock reads.
@@ -1519,8 +1539,12 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             if request.get("controls").is_some() {
                 editor.set_controls(serde_json::from_value(get("controls")).ok());
             }
+            if let Some(grid) = get("grid").as_f64() {
+                editor.set_grid(grid);
+            }
             "{}".into()
         }
+        "grid" => json!({ "grid": editor.grid() }).to_string(),
         "rewind" => outcome(&editor.rewind(version)),
         "toggle" => outcome(&editor.toggle(version)),
         "stop" => outcome(&editor.stop(version)),

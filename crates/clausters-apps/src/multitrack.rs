@@ -136,6 +136,8 @@ pub struct Window<'a> {
     /// that composes its own around it. The transport row stays, under the
     /// multitrack, where a window with chrome holds it in the toolbar.
     pub bare: bool,
+    /// The grid a box lands on, in beats; `0` for none.
+    pub grid: f64,
 }
 
 impl Window<'_> {
@@ -276,6 +278,9 @@ fn multitrack_props(w: &Window<'_>) -> Map<String, Value> {
     // The ruler's beats and bars are the multitrack's own tempo map drawn over its
     // seconds: the ruler's configuration, which moves no box.
     props.insert("tempo_map".into(), json!(w.tempo_map()));
+    // **The grid is a length in beats**, read through that same map: a line
+    // is a beat wherever the tempo puts it.
+    props.insert("grid".into(), json!(w.grid));
     props.insert("cursor".into(), json!(w.cursor_units()));
     props.insert("link".into(), json!(w.group()));
     props
@@ -446,6 +451,7 @@ mod tests {
             close_form: None,
             asks: false,
             bare: false,
+            grid: crate::DEFAULT_GRID,
         })
     }
 
@@ -561,6 +567,11 @@ mod tests {
             props["link"],
             json!(7),
             "the multitrack's own id names the group"
+        );
+        assert_eq!(
+            props["grid"],
+            json!(crate::DEFAULT_GRID),
+            "a grid in beats, read through the tempo map beside it"
         );
         let ruler = compose(Transport::Absent, None, |w| super::props(w, w.ruler));
         assert_eq!(

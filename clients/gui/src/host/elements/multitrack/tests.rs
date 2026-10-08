@@ -1794,9 +1794,11 @@ fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
 
     let mut mt = multitrack();
     mt.selected = vec![0];
+    // with no grid there is nothing to quantize to, and it says that rather
+    // than that the boxes are on one
     assert_eq!(
         press(&mut mt, Verb::Quantize),
-        Some("these boxes are already on the grid".to_string()),
+        Some("this multitrack has no grid to quantize to".to_string()),
     );
     assert_eq!(
         press(&mut mt, Verb::Split),

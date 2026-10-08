@@ -373,6 +373,19 @@ test("a roll that paints what is played says so to the host", async () => {
     assert.equal(picture(painting.host.trees[0] as GuiNode).midi_in, 1);
 });
 
+test("a roll lands on a grid in beats", async () => {
+    // The Python twin is `test_gui_edit.py::test_a_roll_lands_on_a_grid_in_beats`.
+    const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const editor = (await edit(seq, { sampleRate: SR, open: false })) as unknown as NotesEditor;
+    const { host } = await opened(editor);
+    const x = (picture(host.trees[0] as GuiNode).axes as { x: Record<string, unknown> }).x;
+    assert.equal(x.grid, 0.25);
+    assert.equal(editor.grid, 0.25);
+    editor.grid = 1.0;
+    assert.equal(editor.grid, 1.0);
+});
+
 test("a note keeps what the roll cannot draw", async () => {
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0, instrument: "bell" })]],
         { tempoMap: new TempoMap(TEMPO) });

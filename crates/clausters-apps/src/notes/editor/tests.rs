@@ -363,3 +363,28 @@ fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
     assert!(e.apply(&record.legs[0].backward));
     assert!(sequence.lock().unwrap().automation[0].points.is_empty());
 }
+
+/// **The roll lands on a grid in beats**, a sixteenth until somebody chooses
+/// another: the window states it on its time axis, a correction carries it,
+/// and the door reads and sets it.
+#[test]
+fn the_roll_has_a_grid_in_beats() {
+    let mut e = editor(shared());
+    let tree = e.window(40);
+    assert_eq!(
+        tree["children"][1]["axes"]["x"]["grid"],
+        json!(crate::DEFAULT_GRID)
+    );
+    assert_eq!(call_json(&mut e, r#"{"verb": "grid"}"#), r#"{"grid":0.25}"#);
+    call_json(&mut e, r#"{"verb": "sync", "grid": 1.0}"#);
+    assert_eq!(e.grid(), 1.0);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(
+        props["grid"],
+        json!(1.0),
+        "a correction states the grid it lands on"
+    );
+    call_json(&mut e, r#"{"verb": "sync", "grid": -3.0}"#);
+    assert_eq!(e.grid(), 0.0, "no negative grid: none");
+}

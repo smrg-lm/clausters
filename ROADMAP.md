@@ -311,10 +311,6 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
-- ⬜ **Quantize does nothing in the notes editor or the multitrack: no
-  application gives its views a grid** *(`crates/clausters-apps/PLAN.md`,
-  Found by use)*. A decision before code: a grid in beats resolved through the
-  tempo map, or views in beats; and the document's or the window's.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a

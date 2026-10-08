@@ -393,6 +393,18 @@ def test_a_roll_that_paints_what_is_played_says_so_to_the_host():
     assert picture(painting.trees[0])["midi_in"] == 1
 
 
+def test_a_roll_lands_on_a_grid_in_beats():
+    """A sixteenth until somebody chooses another: the roll's time axis says
+    so, and ``grid`` reads and sets it -- the window's own, like its zoom."""
+    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = edit(seq, sample_rate=SR, open=False)
+    host, _ = opened(editor)
+    assert picture(host.trees[0])["axes"]["x"]["grid"] == 0.25
+    assert editor.grid == 0.25
+    editor.grid = 1.0
+    assert editor.grid == 1.0
+
+
 def test_a_note_keeps_what_the_roll_cannot_draw():
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell"))],
                         tempo_map=TempoMap(TEMPO))

@@ -2689,6 +2689,7 @@
                   ],
                   "cursor": 0.0,
                   "curves": [],
+                  "grid": 0.25,
                   "hidden": "",
                   "layers": [
                     "fade:12",
@@ -3161,6 +3162,7 @@
                   ],
                   "cursor": 0.0,
                   "curves": [],
+                  "grid": 0.25,
                   "hidden": "",
                   "layers": [
                     "fade:12",
@@ -3381,6 +3383,7 @@
                   ],
                   "cursor": 0.0,
                   "curves": [],
+                  "grid": 0.25,
                   "hidden": "",
                   "layers": [
                     "fade:12",

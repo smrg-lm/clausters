@@ -474,12 +474,19 @@ impl Notes {
 
     /// The length a note is painted with when nothing said otherwise: the note
     /// grid, else a visible sliver of the window.
-    fn default_dur(&self, nav: &View) -> f64 {
-        if self.snap > 0.0 {
-            self.snap
+    fn default_dur(&self, nav: &View, at: f64) -> f64 {
+        let grid = self.grid();
+        if grid.is_set() {
+            grid.step_at(at)
         } else {
             (nav.len * 0.05).max(MIN_DUR)
         }
+    }
+
+    /// **The grid a note lands on**: the axis' `grid` in beats through its
+    /// tempo map, else the roll's own `snap` in units.
+    fn grid(&self) -> boxes::Grid {
+        self.editor.placement_grid(self.rate(0.0), self.snap)
     }
 }
 
@@ -951,7 +958,7 @@ impl Element for Notes {
                 // grid and the whole selection moves rigidly by that delta --
                 // the core clamps it as one.
                 let dt = match orig.first() {
-                    Some((_, s0, _)) => snap_to(s0 + (time - press_time), self.snap) - s0,
+                    Some((_, s0, _)) => self.grid().snap(s0 + (time - press_time)) - s0,
                     None => 0.0,
                 };
                 let mut dp = axis.pitch(at.1 as f32, r.grid) - press_pitch;
@@ -1006,13 +1013,16 @@ impl Element for Notes {
             }
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid -- the same grid a drag snaps to.
-            Verb::Quantize => Some(
-                if notes::quantize_notes(&mut self.notes, &self.selected, self.snap) {
+            Verb::Quantize => {
+                let grid = self.grid();
+                Some(if !grid.is_set() {
+                    Events::refused("quantize", "this roll has no grid to quantize to")
+                } else if notes::quantize_notes(&mut self.notes, &self.selected, &grid) {
                     self.notes_event()
                 } else {
                     Events::refused("quantize", "these notes are already on the grid")
-                },
-            ),
+                })
+            }
             // **Split and join**, the clip's own two verbs over notes -- same
             // verbs, same reading. A clip asks its owner to cut, because the
             // owner holds the element; a roll holds its notes and cuts them
@@ -1031,7 +1041,7 @@ impl Element for Notes {
             // It is also the sane reading on its own -- splitting every note in
             // the roll is not something anyone asks for by leaning on a key.
             Verb::Split if !self.selected.is_empty() => {
-                let at = snap_to(self.anchor(input), self.snap).max(0.0);
+                let at = self.grid().snap(self.anchor(input)).max(0.0);
                 let cut = notes::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
                     return Some(Events::refused(
@@ -1089,7 +1099,7 @@ impl Element for Notes {
                 // **At the cursor**: what is pasted starts where the window's
                 // cursor is, playing or not -- a paste has no pointer, and the
                 // cursor is the one position the window keeps.
-                let at = snap_to(self.anchor(input), self.snap).max(0.0);
+                let at = self.grid().snap(self.anchor(input)).max(0.0);
                 self.selected = notes::paste_notes(&mut self.notes, &block, at);
                 Some(self.notes_event())
             }
@@ -1110,10 +1120,15 @@ impl Element for Notes {
             return Some(self.notes_event());
         }
         if note.on {
-            let dur = if self.snap > 0.0 { self.snap } else { MIN_DUR };
+            let grid = self.grid();
             let start = match playhead {
-                Some(p) => snap_to(p, self.snap).max(0.0),
+                Some(p) => grid.snap(p).max(0.0),
                 None => self.step,
+            };
+            let dur = if grid.is_set() {
+                grid.step_at(start)
+            } else {
+                MIN_DUR
             };
             let index = self.insert(notes::Note {
                 id: 0,
@@ -1137,7 +1152,12 @@ impl Element for Notes {
             }
             // Step entry: the last key up advances the cursor one grid.
             None if self.held.is_empty() => {
-                self.step += if self.snap > 0.0 { self.snap } else { MIN_DUR };
+                let grid = self.grid();
+                self.step += if grid.is_set() {
+                    grid.step_at(self.step)
+                } else {
+                    MIN_DUR
+                };
             }
             None => {}
         }
@@ -1264,7 +1284,7 @@ impl Notes {
     /// the far edge this placement's edits stop at.
     fn edit_bounds(&self, input: &Input) -> Bounds {
         Bounds {
-            grid: self.snap,
+            grid: self.grid(),
             min_dur: MIN_DUR,
             limit: self.edit_limit(input),
         }
@@ -1430,9 +1450,12 @@ impl Notes {
                 // Ctrl on empty grid adds one there, then drags its end to set
                 // the length until release.
                 None if !is_body => {
-                    let time = snap_to(self.time_at(h.grid, &h.nav, at.0), self.snap).max(0.0);
+                    let time = self
+                        .grid()
+                        .snap(self.time_at(h.grid, &h.nav, at.0))
+                        .max(0.0);
                     let pitch = self.placed_pitch(h.axis, h.grid, at.1 as f32, 0.0);
-                    let dur = self.default_dur(&h.nav);
+                    let dur = self.default_dur(&h.nav, time);
                     let index = self.insert(notes::Note::new(time, dur, pitch));
                     self.drag = Some(Drag::Note {
                         index,
@@ -1536,15 +1559,6 @@ impl Notes {
         let _ = h;
         Claim::Decline
     }
-}
-
-/// Snaps `t` to the `grid`, the one rounding every note edit shares -- and it
-/// is [`boxes::snap`], the same one a clip's edge lands on. This used to be
-/// a second spelling of it whose no-grid arm returned the raw value while its
-/// own doc said whole units; the axis' unit is the sample, so "no grid" is the
-/// finest grid there is.
-fn snap_to(t: f64, grid: f64) -> f64 {
-    boxes::snap(t, grid)
 }
 
 /// The notes on the host-wide clipboard, when what is on it is a note block --
@@ -2666,5 +2680,31 @@ mod tests {
             (64.0, 90, 3),
             "the tail is the same note, cut"
         );
+    }
+
+    /// **A grid in beats is read through the tempo map**: a note quantizes to
+    /// the beat nearest it, and through a tempo change the beats are where
+    /// the map puts them -- one a second up to beat 4, two a second after.
+    #[test]
+    fn a_beat_grid_quantizes_through_the_tempo_map() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut r = roll(
+            r#"{"notes":[130.0,50.0,60.0,100,0,440.0,30.0,64.0,100,0],
+                "sample_rate":100.0,"grid":1.0,
+                "tempo_map":[{"beats":0,"tempo":1},{"beats":4,"tempo":2}]}"#,
+        );
+        let input = &mut KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+            cursor: None,
+        };
+        assert!(r.verb(Verb::Quantize, input).is_some());
+        let starts: Vec<f64> = r.notes.iter().map(|n| n.start).collect();
+        assert_eq!(starts, [100.0, 450.0], "beat 1, and beat 5 at 4.5 seconds");
+        assert_eq!(r.notes[1].dur, 30.0, "a quantize moves onsets only");
+        // and with no grid at all, it says there is none to quantize to
+        let mut bare = roll(r#"{"notes":[130.0,50.0,60.0,100,0]}"#);
+        let refused = bare.verb(Verb::Quantize, input).expect("an answer");
+        assert!(format!("{refused:?}").contains("no grid"), "{refused:?}");
     }
 }

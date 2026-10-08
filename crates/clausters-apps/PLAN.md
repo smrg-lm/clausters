@@ -3772,7 +3772,7 @@ wrong.
   makes; `docs/verbs.md` has no `gap` left. `clients/python/examples/editors/window_verbs.py`
   and its page are the by-eye check.
 
-- ⬜ **Quantize does nothing in the notes editor or the multitrack: no
+- ✅ **Quantize does nothing in the notes editor or the multitrack: no
   application gives its views a grid** *(found 2026-10-08, writing
   `editors/window_verbs`)*. The host quantizes to a view's `snap`
   (`structures::boxes::quantize`), and a roll or a lane with no `snap` has no
@@ -3785,4 +3785,15 @@ wrong.
   units become beats -- and then whether the grid is the document's (one per
   session, like its defaults) or the window's (a View-menu choice, like the
   notes' view).
+
+  **Closed 2026-10-08, the same day: the grid is in beats, the data the
+  document's** (decided with the user). The axis carries a `grid` in beats and
+  the host resolves it through the axis' tempo map (`boxes::Grid`,
+  `TempoMap::snap_secs`), for every placement a view makes -- a drag, a
+  paste, a split, step entry and the quantize. The notes editor and the
+  multitrack state a sixteenth until a script or a client chooses another
+  (`editor.grid`, both clients); the grid is the window's, like its zoom. What
+  a quantize leaves is written into the document, on its beat exactly
+  (`TempoMap::settle_beat` on every beat the notes axis reads back). The record
+  is `docs/decisions.md`, "A grid is a length in beats".
 

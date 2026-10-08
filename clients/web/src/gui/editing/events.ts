@@ -367,6 +367,23 @@ export class NotesEditor extends Editor<EventSequence> {
         return this.verb("quantize");
     }
 
+    /**
+     * **The grid a note lands on, in beats** -- `0.25` for a sixteenth, its
+     * default, and `0` for none. A grid is a length in beats, read through the
+     * tempo map, so its lines move with the tempo: what a drag snaps to and
+     * `quantize` writes into the sequence. The window's own, like its
+     * zoom: setting it is no edit. Set it to choose another:
+     * `editor.grid = 0.5`.
+     */
+    get grid(): number {
+        return Number(this.coreCall("grid").grid ?? 0);
+    }
+
+    set grid(beats: number) {
+        this.coreCall("sync", { grid: beats });
+        this.adopt();
+    }
+
     /** Pauses where it stands: a `resume` carries the notes on. */
     async pause(): Promise<this> {
         if (this.#elsewhere !== null) {

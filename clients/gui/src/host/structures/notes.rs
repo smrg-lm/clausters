@@ -389,7 +389,7 @@ const JOIN_TOL: f64 = 0.5;
 
 /// Quantize note onsets to the `grid` (timeline samples) -- the shared
 /// [`boxes::quantize`], which a lane's clips run the same way.
-pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool {
+pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: &boxes::Grid) -> bool {
     boxes::quantize(notes, indices, grid)
 }
 
@@ -409,7 +409,7 @@ mod tests {
     /// The bounds of an edit with its own floor.
     fn floor(min_dur: f64, limit: Limit) -> Bounds {
         Bounds {
-            grid: 0.0,
+            grid: boxes::Grid::None,
             min_dur,
             limit,
         }
@@ -678,18 +678,22 @@ mod tests {
             Note::new(260.0, 50.0, 64.0),
             Note::new(430.0, 50.0, 67.0),
         ];
-        assert!(quantize_notes(&mut notes, &[0, 1], 100.0));
+        assert!(quantize_notes(
+            &mut notes,
+            &[0, 1],
+            &boxes::Grid::units(100.0)
+        ));
         assert_eq!(
             (notes[0].start, notes[1].start, notes[2].start),
             (100.0, 300.0, 430.0)
         );
         // No selection: everything snaps; durations never move.
-        assert!(quantize_notes(&mut notes, &[], 100.0));
+        assert!(quantize_notes(&mut notes, &[], &boxes::Grid::units(100.0)));
         assert_eq!(notes[2].start, 400.0);
         assert_eq!(notes[2].dur, 50.0);
         // Already on the grid (or no grid): nothing to report.
-        assert!(!quantize_notes(&mut notes, &[], 100.0));
-        assert!(!quantize_notes(&mut notes, &[], 0.0));
+        assert!(!quantize_notes(&mut notes, &[], &boxes::Grid::units(100.0)));
+        assert!(!quantize_notes(&mut notes, &[], &boxes::Grid::None));
     }
 
     #[test]

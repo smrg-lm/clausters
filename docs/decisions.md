@@ -9848,3 +9848,32 @@ libraries, and may differ in the last place.
 
 Not taken: analyzing on demand at the screen's resolution from the samples,
 which would take the memory bound away. A cache holds no samples.
+
+## A grid is a length in beats, and a beat read back is settled on its line
+
+*(2026-10-08.)* Quantize did nothing in the notes editor or the multitrack: a
+view snapped to a `snap` in its own units, and no application set one. The
+grid that was missing is a musical one, and a musical grid is a length in
+**beats** — a sixteenth is a quarter of a beat wherever it falls — while the
+views measure samples, and a tempo map may change along the axis. So the
+grid travels as beats (the axis' `grid` prop) and the host resolves it
+through the axis' own tempo map (`TempoMap::snap_secs`): a line is a beat
+wherever the tempo puts it, which is where the beat ruler draws it. A grid in
+samples would have been right only where the tempo never moves.
+
+**What a quantize leaves is the document's**, as an edited take is the audio
+editor's: the notes are written back into the sequence, and the file saved
+from it holds them quantized. A raw performance stays raw until somebody
+quantizes it; a quantized one stays quantized. Only the grid is the window's
+— a presentation choice, like its zoom, which changes nothing by being set.
+
+**A beat read back through seconds is settled on the line it was meant
+for.** The view places in samples, so a note quantized to beat 3 comes back
+as `3.0000000000000004` wherever the map is not trivial, and a document
+would store that. `TempoMap::settle_beat` returns a beat within a billionth
+of a beat of a line of a 960-per-beat grid as that line exactly, and any
+other beat as it is: 960 is divided by every common division of a beat
+(halves, thirds, quarters, fifths, sixths, eighths and their powers), so a
+quantized note lands exactly and a note played off the grid is not moved by
+the trip. The notes axis applies it to every beat it reads back.
+

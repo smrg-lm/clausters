@@ -42,3 +42,10 @@ pub mod samples;
 #[cfg(feature = "notation")]
 pub mod score;
 pub mod turn;
+
+/// **The grid a roll and a multitrack land on when nobody chose one**, in
+/// beats: a sixteenth note. A grid is a length in beats and not in samples,
+/// so the host reads it through the axis' tempo map and its lines move with
+/// the tempo; what a quantize or a drag leaves on it is written into the
+/// document, which is where the edited data lives.
+pub const DEFAULT_GRID: f64 = 0.25;

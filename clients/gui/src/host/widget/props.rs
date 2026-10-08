@@ -25,6 +25,7 @@ use serde_json::Value;
 
 use super::WidgetKind;
 use super::parse::*;
+use crate::host::structures::boxes::Grid;
 
 /// How a container arranges its children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -422,6 +423,11 @@ pub struct EditorProps {
     pub tempo_map: Option<Arc<TempoMap>>,
     pub beat_at: f64,
     pub quant: f64,
+    /// **The grid a placement lands on, in beats** -- a quarter for a
+    /// sixteenth -- read through `tempo_map` (else `tempo` and `beat_at`), so
+    /// a line is a beat wherever the tempo puts it. `0` for none, where a
+    /// view's own `snap` (a length in units) is what it lands on.
+    pub grid: f64,
     pub sel_start: f64,
     pub sel_len: f64,
     pub playhead_at: f64,
@@ -540,6 +546,7 @@ impl EditorProps {
             tempo_map: props.get("tempo_map").and_then(parse_tempo_map),
             beat_at: number_f64(props, "beat_at", 0.0),
             quant: number_f64(props, "quant", 4.0),
+            grid: number_f64(props, "grid", 0.0).max(0.0),
             sel_start: number_f64(props, "sel_start", 0.0),
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
@@ -567,6 +574,22 @@ impl EditorProps {
                 .unwrap_or_default(),
             naming: None,
         }
+    }
+
+    /// **The grid a placement on this axis lands on**, on an axis of `rate`
+    /// units a second: `grid` beats through the axis' tempo map when it has a
+    /// grid, else a view's own `snap` units (`0` for whole units).
+    pub fn placement_grid(&self, rate: f64, snap: f64) -> Grid {
+        if self.grid <= 0.0 {
+            return Grid::units(snap);
+        }
+        let map = self.tempo_map.clone().unwrap_or_else(|| {
+            Arc::new(
+                TempoMap::anchored(self.tempo, self.beat_at, 0.0)
+                    .unwrap_or_else(|_| TempoMap::new(1.0)),
+            )
+        });
+        Grid::beats(self.grid, map, rate)
     }
 
     /// The chrome of a **clip body**: none of it. A body is drawn against the
@@ -636,6 +659,7 @@ impl EditorProps {
             }
             "beat_at" => set_f64(&mut self.beat_at, v),
             "quant" => set_f64(&mut self.quant, v),
+            "grid" => v.as_f64().map(|g| self.grid = g.max(0.0)).is_some(),
             "autofit" => truthy(v).map(|b| self.autofit = b).is_some(),
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),

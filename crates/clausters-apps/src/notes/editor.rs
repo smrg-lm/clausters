@@ -89,6 +89,10 @@ pub struct NotesEditor {
     /// -- and reports the notes as a hand's edit, which is what they are to
     /// the sequence: recorded, and undone, like any other.
     midi_in: bool,
+    /// **The grid a note lands on, in beats** ([`crate::DEFAULT_GRID`] until
+    /// somebody chooses one): what a drag snaps to and a quantize writes
+    /// into the sequence, read through its tempo map. `0` for none.
+    grid: f64,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -107,6 +111,8 @@ struct Opened {
     /// Whether the roll paints incoming MIDI ([`NotesEditor::midi_in`]).
     #[serde(rename = "midi_in")]
     midi_in: bool,
+    /// The grid in beats ([`NotesEditor::grid`]).
+    grid: f64,
 }
 
 /// The Y domain a caller names: a word -- `"midi"`, or `"hz"` from MIDI note
@@ -148,6 +154,7 @@ impl Default for Opened {
             version: 1,
             chrome: true,
             midi_in: false,
+            grid: crate::DEFAULT_GRID,
         }
     }
 }
@@ -168,7 +175,13 @@ impl NotesEditor {
             range: None,
             bare: false,
             midi_in: false,
+            grid: crate::DEFAULT_GRID,
         }
+    }
+
+    /// The grid a note lands on, in beats; `0` for none.
+    pub fn grid(&self) -> f64 {
+        self.grid
     }
 
     /// The sequence it edits.
@@ -187,6 +200,10 @@ impl NotesEditor {
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
         let mut drawn = props(&self.held(), &self.domain, self.rate, self.editable);
+        // the grid is an axis' own, as its tempo map is
+        if let Some(Value::Object(x)) = drawn.get_mut("axes").and_then(|a| a.get_mut("x")) {
+            x.insert("grid".into(), json!(self.grid));
+        }
         if self.midi_in {
             drawn.insert("midi_in".into(), json!(1));
         }
@@ -222,6 +239,7 @@ impl NotesEditor {
         props.insert("sel_len".into(), json!(len));
         // the switch is the window's own, so a correction states it too
         props.insert("midi_in".into(), json!(i32::from(self.midi_in)));
+        props.insert("grid".into(), json!(self.grid));
         vec![Correction {
             widget,
             props: Value::Object(props),
@@ -408,7 +426,7 @@ impl Converse for NotesEditor {
 }
 
 /// **A notes editor from JSON**: `{"rate", "editable", "domain", "title", "w",
-/// "h", "version", "chrome", "midi_in"}` over `sequence` -- `chrome` `false`
+/// "h", "version", "chrome", "midi_in", "grid"}` over `sequence` -- `chrome` `false`
 /// for a window with no menu bar and no tools, `midi_in` `true` for a roll
 /// that paints what is played.
 pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
@@ -422,6 +440,7 @@ pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     editor.size = (opened.w, opened.h);
     editor.bare = !opened.chrome;
     editor.midi_in = opened.midi_in;
+    editor.grid = opened.grid.max(0.0);
     editor
 }
 
@@ -441,7 +460,9 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `window` -- `widget`: the GuiDef, the roll under that id.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
-///   `midi_in`, `domain`, `title`, `w`, `h`: `{}`.
+///   `midi_in`, `grid` (in beats, `0` for none), `domain`, `title`, `w`, `h`:
+///   `{}`.
+/// - `grid` -- `{"grid": beats}`: the grid a note lands on.
 /// - `state` -- the sequence, whole.
 /// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
 ///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
@@ -475,6 +496,9 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(midi_in) = request.get("midi_in").and_then(Value::as_bool) {
                 editor.midi_in = midi_in;
             }
+            if let Some(grid) = request.get("grid").and_then(Value::as_f64) {
+                editor.grid = grid.max(0.0);
+            }
             if let Some(domain) = request
                 .get("domain")
                 .and_then(|d| serde_json::from_value::<Domain>(d.clone()).ok())
@@ -494,6 +518,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             "{}".into()
         }
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
+        "grid" => json!({ "grid": editor.grid }).to_string(),
         "span" => {
             editor.range = request
                 .get("span")

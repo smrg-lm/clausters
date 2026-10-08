@@ -20,7 +20,7 @@
   <body>
     <main>
       <div id="note">A window's verbs, asked for from a script:
-<code>editor.selectAll()</code>, <code>editor.cut()</code>,
+<code>editor.quantize()</code>, <code>editor.cut()</code>,
 <code>editor.verb("view_all")</code>.
 
 Every command a window has -- a menu entry, a key, a tool -- is a
@@ -37,10 +37,16 @@ Each verb has a <b>named member</b> -- <code>selectAll</code>,
 them are one line over one door, <code>editor.verb(name)</code>, which reaches
 any verb of the window, the ones with no member of their own included.
 
-What to look at: the roll opens with four notes. Press <b>again</b>: the notes
-are copied and pasted after themselves, and the view zooms out to show all of
-it (<code>verb("view_all")</code>, the R key). Press <b>clear</b>: every note
-is cut and the roll is empty; <b>back</b> pastes them at the start again.
+What to look at: the roll opens with four notes a little off the beat, and the
+page <code>tidy()</code>s them at once: every note is selected and
+<b>quantized</b> onto the beat nearest it. The grid is a length in beats -- a
+sixteenth by default, a whole beat here (<code>editor.grid = 1.0</code>) --
+read through the sequence's tempo map, and what the quantize leaves is written
+into the sequence: <code>notes.events</code> reads the beats 0, 1, 2, 3
+afterwards, exactly. Press <b>again</b>: the notes are copied and pasted after
+themselves, and the view zooms out to show all of it
+(<code>verb("view_all")</code>, the R key). Press <b>clear</b>: every note is
+cut and the roll is empty; <b>back</b> pastes them at the start again.
 <b>Ctrl+Z</b> on the roll takes each step back, as it would one made by hand.
 
 The verbs arrive through the window's event loop, as a gesture does, so what
@@ -53,6 +59,7 @@ the audio engine in the page, so the server a script would launch is
 <code>Session.embed</code> here.</div>
       <button id="run">open the roll</button>
       <div id="stage"></div>
+      <button id="tidy" disabled>tidy</button>
       <button id="again" disabled>again</button>
       <button id="clear" disabled>clear</button>
       <button id="back" disabled>back</button>
@@ -67,12 +74,13 @@ the audio engine in the page, so the server a script would launch is
 
       await loadCore();
 
-      // Four notes: an arpeggio, a beat each.
+      // Four notes, a little off the beat: an arpeggio played by hand, each
+      // note a little after or before its beat.
       const timeline = new Timeline([
-        [0.0, new Event({ midinote: 72, dur: 0.9 })],
-        [1.0, new Event({ midinote: 76, dur: 0.9 })],
-        [2.0, new Event({ midinote: 79, dur: 0.9 })],
-        [3.0, new Event({ midinote: 84, dur: 1.0 })],
+        [0.08, new Event({ midinote: 72, dur: 0.9 })],
+        [0.94, new Event({ midinote: 76, dur: 0.9 })],
+        [2.12, new Event({ midinote: 79, dur: 0.9 })],
+        [2.9, new Event({ midinote: 84, dur: 1.0 })],
       ]);
 
       async function run() {
@@ -86,6 +94,16 @@ the audio engine in the page, so the server a script would launch is
           title: "window verbs",
           stage: $("stage"),
         });
+
+        // Onto the beat: `selectAll` holds every note and `quantize` puts each
+        // on the line of the grid nearest it -- what Ctrl+A and then Q do on
+        // the roll. The grid is the window's own, like its zoom, and a whole
+        // beat here.
+        function tidy() {
+          editor.grid = 1.0;
+          editor.selectAll();
+          editor.quantize();
+        }
 
         // The window's verbs, by name: `selectAll` holds every note, `copy`
         // puts them on the clipboard, `toEnd` moves the position cursor to
@@ -114,16 +132,18 @@ the audio engine in the page, so the server a script would launch is
           editor.paste();
         }
 
+        $("again").disabled = false;
+        $("again").onclick = () => again();
         $("clear").disabled = false;
         $("clear").onclick = () => clear();
         $("back").disabled = false;
         $("back").onclick = () => back();
-        // The script's ending runs `again()` once and waits for the window;
+        // The script's ending runs `tidy()` once and waits for the window;
         // here the page runs it once and its button runs it again.
-        again();
-        $("again").disabled = false;
-        $("again").onclick = () => again();
-        log("again() repeats the notes, clear() cuts them, back() pastes them");
+        tidy();
+        $("tidy").disabled = false;
+        $("tidy").onclick = () => tidy();
+        log("tidy() quantizes the notes, again() repeats them, clear() cuts them, back() pastes them");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

@@ -881,6 +881,23 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /**
+     * **The grid a box lands on, in beats** -- `0.25` for a sixteenth, its
+     * default, and `0` for none. A grid is a length in beats, read through the
+     * tempo map, so its lines move with the tempo: what a drag snaps to and
+     * `quantize` writes into the multitrack. The window's own, like its
+     * zoom: setting it is no edit. Set it to choose another:
+     * `editor.grid = 0.5`.
+     */
+    get grid(): number {
+        return Number(this.coreCall("grid").grid ?? 0);
+    }
+
+    set grid(beats: number) {
+        this.coreCall("sync", { grid: beats });
+        this.adopt();
+    }
+
+    /**
      * **How a box of notes is drawn**: `"roll"`, a piano roll fitted to the
      * box, or `"score"` -- its page, the sequence read as notation
      * (`Score.fromEvents`) and drawn on the box's own axis, every note at its

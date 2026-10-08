@@ -497,6 +497,11 @@ impl fmt::Display for TempoError {
 
 impl std::error::Error for TempoError {}
 
+/// How many lines a beat has on the grid [`TempoMap::settle_beat`] settles
+/// onto: 960, which every common division of a beat divides -- 2, 3, 4, 5, 6,
+/// 8, 16, 32, 64 -- and the resolution music files have long counted in.
+pub const SETTLE_DIVISION: f64 = 960.0;
+
 /// The beat->second map: an ordered list of tempo segments with the
 /// seconds cached at every breakpoint.
 ///
@@ -921,6 +926,53 @@ impl TempoMap {
     pub fn span_beats(&self, b0: f64, secs: f64) -> f64 {
         self.beats_at(self.secs_at(b0) + secs) - b0
     }
+
+    /// **The beat nearest `b` on a grid of `step` beats** -- `b` itself when
+    /// there is no grid (`step` not positive).
+    ///
+    /// A grid is a length in beats, so it is the beat that is rounded, and the
+    /// result is exact on the grid: what a quantize writes into a document is
+    /// `1.0`, not the `0.9999999999999998` a trip through seconds would leave.
+    pub fn snap_beats(b: f64, step: f64) -> f64 {
+        if step > 0.0 && b.is_finite() {
+            (b / step).round() * step
+        } else {
+            b
+        }
+    }
+
+    /// **A beat read back from a second, settled where it was meant to be.**
+    ///
+    /// A beat that went through seconds and back -- a note placed on a grid
+    /// line on a sample axis, read back into a document -- carries the
+    /// rounding of the trip: `0.9999999999999998` where `1.0` was meant. A
+    /// beat within a billionth of a beat of a line of the finest common grid
+    /// ([`SETTLE_DIVISION`] lines a beat: halves, thirds, quarters, fifths,
+    /// sixths, eighths and their tuplets alike) is that line, exactly; any
+    /// other beat is returned as it is, so a note played off the grid stays
+    /// where it was played.
+    pub fn settle_beat(b: f64) -> f64 {
+        let lines = b * SETTLE_DIVISION;
+        let line = lines.round();
+        if b.is_finite() && (lines - line).abs() < 1e-9 * SETTLE_DIVISION {
+            line / SETTLE_DIVISION
+        } else {
+            b
+        }
+    }
+
+    /// **The second nearest `s` that falls on a grid of `step` beats**: `s`
+    /// read as a beat through the map, snapped ([`Self::snap_beats`]), and
+    /// back. A grid line is a beat, so under a changing tempo the lines
+    /// crowd and spread with it, and a note snapped through an accelerando
+    /// lands where the beat ruler draws the line.
+    pub fn snap_secs(&self, s: f64, step: f64) -> f64 {
+        if step > 0.0 && s.is_finite() {
+            self.secs_at(Self::snap_beats(self.beats_at(s), step))
+        } else {
+            s
+        }
+    }
 }
 
 /// `T > 0` and finite: the condition that makes the map invertible.
@@ -1041,6 +1093,34 @@ mod change_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A beat grid read through the map: under one tempo it is a fixed
+    /// length, and through a change the lines move with the beats.
+    #[test]
+    fn a_beat_grid_moves_with_the_tempo() {
+        assert_eq!(TempoMap::snap_beats(0.93, 0.25), 1.0);
+        assert_eq!(TempoMap::snap_beats(0.93, 0.0), 0.93, "no grid, no snap");
+        let steady = TempoMap::new(2.0); // two beats a second
+        assert_eq!(steady.snap_secs(0.13, 0.25), 0.125);
+        let mut changing = TempoMap::new(1.0);
+        changing.push(4.0, 2.0).unwrap(); // twice as fast from beat 4
+        // beat 5 is at 4.5 seconds: 4 at one beat a second, one more at two
+        assert!((changing.snap_secs(4.48, 1.0) - 4.5).abs() < 1e-12);
+        assert!((changing.snap_secs(3.6, 1.0) - 4.0).abs() < 1e-12);
+    }
+
+    /// A beat that went through seconds and back is settled on the line it
+    /// was meant for, and a beat off every line is left where it is.
+    #[test]
+    fn a_beat_read_back_settles_on_its_line() {
+        assert_eq!(TempoMap::settle_beat(0.9999999999999998), 1.0);
+        assert_eq!(TempoMap::settle_beat(1.0 / 3.0 + 1e-14), 320.0 / 960.0);
+        assert_eq!(TempoMap::settle_beat(0.1234), 0.1234, "off the grid, kept");
+        let mut map = TempoMap::new(1.0);
+        map.push(2.0, 1.7).unwrap();
+        let there = map.beats_at(map.secs_at(5.25));
+        assert_eq!(TempoMap::settle_beat(there), 5.25);
+    }
 
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} != {b}");

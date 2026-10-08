@@ -935,6 +935,14 @@ in the structure a moment after the call returns. A verb needs a window: with
 none open, `verb` answers `False`. `docs/verbs.md` in the repository lists
 every verb with the member that asks for it.
 
+**What a quantize, a drag and a paste land on is a grid in beats**, a
+sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`
+for none. It is read through the structure's tempo map, so a line is a beat
+wherever the tempo puts it, and what a quantize leaves is written into the
+document on its beat exactly — a note quantized to the third beat is at
+`3.0`, not at a second that rounds near it. The grid itself is the window's,
+like its zoom: setting it is no edit.
+
 ### What the hand marked, and what it swept
 
 Two things on a multitrack window are marked by hand and are not edits —

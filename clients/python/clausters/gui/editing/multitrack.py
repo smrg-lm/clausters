@@ -590,6 +590,21 @@ class MultitrackEditor(Marking, Editor):
         return changed
 
     @property
+    def grid(self) -> float:
+        """**The grid a box lands on, in beats** -- ``0.25`` for a
+        sixteenth, its default, and ``0`` for none. A grid is a length in
+        beats, read through the tempo map, so its lines move with the tempo:
+        what a drag snaps to and `quantize` writes into the multitrack. The
+        window's own, like its zoom: setting it is no edit. Set it to choose
+        another: ``editor.grid = 0.5``."""
+        return float(self._call("grid").get("grid", 0.0))
+
+    @grid.setter
+    def grid(self, beats: float) -> None:
+        self._call("sync", grid=float(beats))
+        self.adopt()
+
+    @property
     def notes_view(self) -> str:
         """**How a box of notes is drawn**: ``"roll"``, a piano roll fitted
         to the box, or ``"score"`` -- its page, the sequence read as notation

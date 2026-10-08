@@ -280,6 +280,21 @@ class NotesEditor(Marking, Editor):
         """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
         return self.verb("quantize")
 
+    @property
+    def grid(self) -> float:
+        """**The grid a note lands on, in beats** -- ``0.25`` for a
+        sixteenth, its default, and ``0`` for none. A grid is a length in
+        beats, read through the tempo map, so its lines move with the tempo:
+        what a drag snaps to and `quantize` writes into the sequence. The
+        window's own, like its zoom: setting it is no edit. Set it to choose
+        another: ``editor.grid = 0.5``."""
+        return float(self._call("grid").get("grid", 0.0))
+
+    @grid.setter
+    def grid(self, beats: float) -> None:
+        self._call("sync", grid=float(beats))
+        self.adopt()
+
     def pause(self) -> "NotesEditor":
         """Pause where it stands: a `resume` carries the notes on."""
         if self._elsewhere is not None:

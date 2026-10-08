@@ -2096,6 +2096,7 @@ mod tests {
             tempo_map: None,
             beat_at: 0.0,
             quant: 4.0,
+            grid: 0.0,
             autofit: true,
             sel_start: 0.0,
             sel_len: 0.0,

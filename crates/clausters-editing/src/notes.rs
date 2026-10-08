@@ -192,9 +192,12 @@ impl Axis {
         self.map.secs_at(beat) * self.rate
     }
 
-    /// A place on the axis, as a beat.
+    /// A place on the axis, as a beat -- settled on the line it was meant
+    /// for when it is a grid line read back through seconds
+    /// ([`TempoMap::settle_beat`]), so a quantized note is written into the
+    /// sequence on its beat exactly.
     pub fn beat(&self, units: f64) -> f64 {
-        self.map.beats_at(units / self.rate)
+        TempoMap::settle_beat(self.map.beats_at(units / self.rate))
     }
 }
 

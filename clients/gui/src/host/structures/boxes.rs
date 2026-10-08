@@ -36,6 +36,10 @@
 //! from: a clip is minted with a fresh name, a note keeps the pitch of the one
 //! it came from, and neither is something the arithmetic could state.
 
+use std::sync::Arc;
+
+use clausters_core::tempomap::TempoMap;
+
 /// Which part of a box a press grabbed: its body (move) or one of its edges
 /// (resize).
 ///
@@ -183,10 +187,10 @@ pub type Limit = Option<f64>;
 ///
 /// `limit` is not the contents: [`Contents`] is what lies *behind* the box and
 /// [`Limit`] is how far the thing *containing* it lets it go.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Bounds {
-    /// The drag grid an edge lands on; `0` means whole samples.
-    pub grid: f64,
+    /// The drag grid an edge lands on.
+    pub grid: Grid,
     /// The shortest a drag may leave the box.
     pub min_dur: f64,
     /// The far edge of the domain the box lives in.
@@ -196,9 +200,82 @@ pub struct Bounds {
 impl Default for Bounds {
     fn default() -> Self {
         Bounds {
-            grid: 0.0,
+            grid: Grid::None,
             min_dur: MIN_DUR,
             limit: None,
+        }
+    }
+}
+
+/// **What a placement lands on**: whole units, a fixed step of units, or a
+/// step in **beats** read through a tempo map.
+///
+/// The axis' unit is the sample, and a grid that is a length in samples is
+/// right only where the tempo never moves. A musical grid is a length in
+/// beats -- a sixteenth is a quarter of a beat wherever it falls -- so the
+/// beat grid carries the map that turns a sample into a beat, and its lines
+/// crowd and spread with the tempo, landing where the beat ruler draws them.
+#[derive(Debug, Clone, Default)]
+pub enum Grid {
+    /// No grid: whole units, the finest one there is.
+    #[default]
+    None,
+    /// A fixed step of units (a `snap` prop).
+    Units(f64),
+    /// A step of `step` beats, through `map`, on an axis of `rate` units a
+    /// second whose unit 0 is second 0.
+    Beats {
+        step: f64,
+        map: Arc<TempoMap>,
+        rate: f64,
+    },
+}
+
+impl Grid {
+    /// A fixed grid of `step` units, or none when `step` is not positive.
+    pub fn units(step: f64) -> Self {
+        if step > 0.0 {
+            Grid::Units(step)
+        } else {
+            Grid::None
+        }
+    }
+
+    /// A grid of `step` beats through `map` at `rate` units a second, or none
+    /// when `step` or `rate` is not positive.
+    pub fn beats(step: f64, map: Arc<TempoMap>, rate: f64) -> Self {
+        if step > 0.0 && rate > 0.0 {
+            Grid::Beats { step, map, rate }
+        } else {
+            Grid::None
+        }
+    }
+
+    /// Whether there are grid lines at all, rather than whole units.
+    pub fn is_set(&self) -> bool {
+        !matches!(self, Grid::None)
+    }
+
+    /// **The grid line nearest `v`** (units), or the nearest whole unit with
+    /// no grid.
+    pub fn snap(&self, v: f64) -> f64 {
+        match self {
+            Grid::None => v.round(),
+            Grid::Units(step) => snap(v, *step),
+            Grid::Beats { step, map, rate } => map.snap_secs(v / rate, *step) * rate,
+        }
+    }
+
+    /// **How long one grid step is, starting at the line nearest `v`** --
+    /// what a note entered on the grid lasts. Zero with no grid.
+    pub fn step_at(&self, v: f64) -> f64 {
+        match self {
+            Grid::None => 0.0,
+            Grid::Units(step) => *step,
+            Grid::Beats { step, map, rate } => {
+                let b = TempoMap::snap_beats(map.beats_at(v / rate), *step);
+                map.span_secs(b, b + step) * rate
+            }
         }
     }
 }
@@ -255,11 +332,11 @@ pub fn drag(
     let floor = bounds.min_dur.min(orig.dur.max(0.0));
     match part {
         Part::Body => Placement {
-            offset: place_body(snap(target, bounds.grid), orig.dur, bounds.limit),
+            offset: place_body(bounds.grid.snap(target), orig.dur, bounds.limit),
             ..orig
         },
         Part::End => {
-            let mut new_end = snap(target, bounds.grid);
+            let mut new_end = bounds.grid.snap(target);
             // The domain runs out where the picture does: a note in a clip's
             // body stops at the clip's own length, because past it the note is
             // still in the list and drawn by no pixel.
@@ -280,7 +357,7 @@ pub fn drag(
         Part::Start => {
             // A start drag holds the end still, so it needs no far edge of its
             // own: an edge already inside stays inside.
-            let mut new_off = snap(target, bounds.grid).min(end - floor).max(0.0);
+            let mut new_off = bounds.grid.snap(target).min(end - floor).max(0.0);
             // ...and the same at the head: the window cannot begin before the
             // contents does -- a take's first frame, a sequence's start, known
             // length or not -- unless the box loops, where what lies before
@@ -525,12 +602,11 @@ pub fn move_block<P: Placements + ?Sized>(
     }
 }
 
-/// Quantize box onsets to the `grid` (timeline samples): each offset snaps to
-/// the nearest grid line, durations untouched. `indices` picks the boxes (the
-/// selection); empty quantizes them all. A zero/negative grid is a no-op.
-/// Returns whether anything moved.
-pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64) -> bool {
-    if grid <= 0.0 {
+/// Quantize box onsets to the `grid`: each offset snaps to the nearest grid
+/// line, durations untouched. `indices` picks the boxes (the selection); empty
+/// quantizes them all. No grid is a no-op. Returns whether anything moved.
+pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: &Grid) -> bool {
+    if !grid.is_set() {
         return false;
     }
     let mut moved = false;
@@ -539,7 +615,7 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
             return;
         }
         let b = p.placement(i);
-        let offset = snap(b.offset, grid).max(0.0);
+        let offset = grid.snap(b.offset).max(0.0);
         if offset != b.offset {
             moved = true;
             p.set_placement(i, Placement { offset, ..b });
