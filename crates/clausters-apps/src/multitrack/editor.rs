@@ -1079,6 +1079,9 @@ impl MultitrackEditor {
         } else {
             taken.label
         };
+        // **What the owner works out from what the hand moved**, before the
+        // edit: see `derived` below.
+        let before = self.widget.map(|id| self.derived(id));
         let mut legs = Vec::new();
         let mut moved = false;
         for payload in &taken.payloads {
@@ -1114,7 +1117,43 @@ impl MultitrackEditor {
             out.changed = true;
             out.multitrack = serde_json::to_value(&*self.multitrack()).ok();
         }
-        (None, Vec::new())
+        // **What the hand did not draw is told**: a gesture that applies
+        // cleanly is acknowledged and the window keeps its own picture, which
+        // is right for what the hand moved and wrong for what the owner works
+        // out from it -- a box's fade envelope, stretched into a crossfade by
+        // the box it was dragged over. Those are corrected whenever the edit
+        // moved them.
+        // When the names the host was last told no longer match, `settle`
+        // sends the whole picture after this turn, these props with it, and a
+        // second push here would only repeat them.
+        let resent = self.told.as_ref().is_some_and(|told| *told != self.names());
+        let corrections = match (moved && !resent, before, self.widget) {
+            (true, Some(before), Some(id)) => {
+                let after = self.derived(id);
+                if after == before {
+                    Vec::new()
+                } else {
+                    vec![Correction {
+                        widget: i64::from(id),
+                        props: Value::Object(after),
+                    }]
+                }
+            }
+            _ => Vec::new(),
+        };
+        (None, corrections)
+    }
+
+    /// **The props of the multitrack the owner works out rather than the hand
+    /// draws**: the curve layers and every curve's points, a box's fade
+    /// envelope among them -- whose crossfade follows from where the boxes
+    /// beside it are, which no gesture on the box draws.
+    fn derived(&self, widget: i32) -> Map<String, Value> {
+        let picture = self.picture(widget);
+        ["layers", "points"]
+            .into_iter()
+            .filter_map(|key| Some((key.to_string(), picture.get(key)?.clone())))
+            .collect()
     }
 
     /// The cursor put back at the top and the transport cued there; answers the
@@ -1713,6 +1752,48 @@ mod tests {
         assert_eq!(position(&ed), 0.0);
         assert!(ed.apply(&record.legs[0].forward["edit"]).applied);
         assert_eq!(position(&ed), 2.0);
+    }
+
+    /// **A box dragged over another is answered with the crossfade**: the hand
+    /// drew the move, and the owner tells the window what follows from it --
+    /// the fade envelopes of both boxes, stretched over the overlap -- which
+    /// no gesture on the box draws. The longer the overlap, the longer the
+    /// crossfade.
+    #[test]
+    fn a_box_dragged_over_another_is_answered_with_the_crossfade() {
+        let fades_of = |props: &Value, name: &str| -> Vec<f64> {
+            props["points"]
+                .as_array()
+                .unwrap()
+                .chunks(5)
+                .filter(|p| p[0] == json!(name))
+                .map(|p| p[1].as_f64().unwrap())
+                .collect()
+        };
+        for (at, overlap) in [(3.0, 1.0), (3.5, 1.5)] {
+            let mut ed = editor();
+            // 12 is two seconds long, and 13 starts at four: 12 at three
+            // overlaps it by one second, at three and a half by one and a half.
+            let moved = boxes(&[("12", "10", at), ("13", "10", 4.0), ("22", "20", 0.0)]);
+            let out = ed.event(&event(40, 5, 1, "clips", moved), 1);
+            let Some(Answer::Push { corrections, .. }) = out.answer else {
+                panic!("the crossfade is told: {:?}", out.answer);
+            };
+            assert_eq!(corrections[0].widget, 40);
+            let props = &corrections[0].props;
+            // 12 fades out over the overlap, from where 13 starts to its end...
+            let twelve = fades_of(props, "fade:12");
+            assert!(
+                (twelve[3] - twelve[2] - overlap * SR).abs() < 1.0,
+                "{twelve:?}"
+            );
+            // ...and 13 fades in over the same span.
+            let thirteen = fades_of(props, "fade:13");
+            assert!(
+                (thirteen[1] - thirteen[0] - overlap * SR).abs() < 1.0,
+                "{thirteen:?}"
+            );
+        }
     }
 
     /// A report of what already holds is not an edit: nothing recorded, the
