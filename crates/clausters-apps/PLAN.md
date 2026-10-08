@@ -2558,7 +2558,10 @@ Every entry carries a checkbox.
 - ⬜ **What a bare window leaves to its handle** *(left by the entry above,
   2026-10-06)*. The reason a verb was refused is on the status line and not on
   the handle, so a client reading the answer cannot tell a refusal it could
-  fix from one it could not. Beside it, waiting for a use rather than for a
+  fix from one it could not. **The reason, done 2026-10-08**: the score
+  editor's outcome carries it (`Outcome::refused`), and both clients keep it
+  as the handle's `refused` -- set by a verb that answers false, cleared by
+  one that goes through. Beside it, still waiting for a use rather than for a
   fix: a form's question (the path of a first Ctrl+S) has no window to be
   asked in, and the handle's `save` is the way; the chrome's other parts one
   at a time; and a switch while the window is open, which is the window

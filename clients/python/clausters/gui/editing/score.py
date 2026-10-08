@@ -104,7 +104,8 @@ class ScoreEditor(Editor):
             through this handle and reads the score back. The keys stay (N
             and note entry, the arrows, Delete, the space bar, Ctrl+Z; F1
             shows them all), and so does every verb below. A verb refused
-            answers ``False`` and says why on the status line. What a form
+            answers ``False`` and says why on the status line and in
+            `refused`. What a form
             asked -- the path of a first Ctrl+S -- is asked of the handle
             instead (`save`), and the window's close mark closes it at once,
             since the score it edits is the one this handle holds.
@@ -117,6 +118,7 @@ class ScoreEditor(Editor):
         options.pop("sample_rate", None)
         self._server = server
         self._score = score
+        self._refused: "str | None" = None
         #: The sequence this page is the reading of, in an editor opened over
         #: one (`over`); ``None`` for an editor over a score of its own.
         self.sequence: "EventSequence | None" = over
@@ -190,6 +192,15 @@ class ScoreEditor(Editor):
         self._call("sync", window=self._window, title=self.title,
                    w=int(self.size[0]), h=int(self.size[1]),
                    path=getattr(self._score, "path", None))
+
+    @property
+    def refused(self) -> "str | None":
+        """**Why the last verb was refused**, or ``None`` when it was not: the
+        reason the status line shows, here for a script, which can tell a
+        refusal it can do something about (nothing selected) from one it
+        cannot. Every verb that answers ``False`` sets it, and every verb that
+        goes through clears it."""
+        return self._refused
 
     # ---- what is selected, and the value in hand ----
 
@@ -774,11 +785,12 @@ class ScoreEditor(Editor):
     def _act(self, call: dict) -> bool:
         """One verb, through the context: recorded by the crate, and the window
         corrected with what it answers. Whether the score changed; why it did
-        not is on the window's status bar."""
+        not is on the window's status bar and in `refused`."""
         with self._editing.turn(self):
             turned = self._editing.act(self._member, _plain(call))
             outcome = turned.get("outcome") or {}
             changed = bool(outcome.get("changed"))
+            self._refused = outcome.get("refused")
             if changed:
                 self.dirty = True
                 self._editing.changed()

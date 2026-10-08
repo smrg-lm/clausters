@@ -51,6 +51,8 @@ interface Pass {
 interface Outcome {
     turn?: string;
     changed?: boolean;
+    /** Why a verb a client called was refused, when it was. */
+    refused?: string;
     answer?: Answer;
     /** The file to write the score to, when the turn asked for a save. */
     save?: string;
@@ -167,7 +169,7 @@ export interface ScoreEditorOptions extends Omit<GenericEditorOptions<Score>, "s
      * the score back. The keys stay (N and note entry, the arrows, Delete,
      * the space bar, Ctrl+Z; F1 shows them all), and so does every verb of
      * the editor. A verb refused answers `false` and says why on the status
-     * line. What a form asked -- the path of a first Ctrl+S -- is asked of
+     * line and in {@link ScoreEditor.refused}. What a form asked -- the path of a first Ctrl+S -- is asked of
      * the handle instead ({@link ScoreEditor.save}), and the window's close
      * mark closes it at once, since the score it edits is the one this
      * handle holds.
@@ -352,6 +354,7 @@ export class ScoreEditor extends Editor<Score | EventSequence> {
     // ---- playing it ----
 
     #server: Server | null = null;
+    #refused: string | undefined = undefined;
     /**
      * The score as the sequence it plays as, rendered when it first plays and
      * again after every edit.
@@ -636,6 +639,17 @@ export class ScoreEditor extends Editor<Score | EventSequence> {
             h: this.size[1],
             path: this.score.path,
         });
+    }
+
+    /**
+     * **Why the last verb was refused**, or `undefined` when it was not: the
+     * reason the status line shows, here for a script, which can tell a
+     * refusal it can do something about (nothing selected) from one it
+     * cannot. Every verb that answers `false` sets it, and every verb that
+     * goes through clears it.
+     */
+    get refused(): string | undefined {
+        return this.#refused;
     }
 
     // ---- what is selected, and the value in hand ----
@@ -1119,6 +1133,7 @@ export class ScoreEditor extends Editor<Score | EventSequence> {
             const turned = this.editing.act(this.member, plain(call) as Record<string, unknown>);
             const outcome = (turned.outcome ?? {}) as Outcome;
             const changed = outcome.changed === true;
+            this.#refused = outcome.refused;
             if (changed) {
                 this.dirty = true;
                 this.editing.changed();

@@ -232,6 +232,23 @@ fn a_press_selects_and_the_status_line_says_what() {
     assert_eq!(editor.describe(), HINT);
 }
 
+/// **A verb refused says why on the handle**, not only on the status line:
+/// the outcome carries the reason, so a client can tell nothing selected from
+/// a verb that does not exist. One that went through carries none.
+#[test]
+fn a_refused_verb_carries_its_reason() {
+    let mut editor = opened();
+    let out = editor.act(&json!({"action": "articulation", "name": "stacc"}), 1);
+    assert!(!out.changed);
+    let why = out.refused.expect("a reason");
+    assert!(!why.is_empty());
+    let out = editor.act(&json!({"action": "nonsense"}), 1);
+    assert!(out.refused.expect("a reason").starts_with("no such verb"));
+    editor.event(&gesture("element", &[json!("n1")]), 1);
+    let out = editor.act(&json!({"action": "articulation", "name": "stacc"}), 1);
+    assert!(out.changed && out.refused.is_none());
+}
+
 #[test]
 fn a_verb_over_the_selection_is_one_entry_and_puts_back() {
     let mut editor = opened();
@@ -239,6 +256,7 @@ fn a_verb_over_the_selection_is_one_entry_and_puts_back() {
     let before = editor.held().mei();
     let out = editor.act(&json!({"action": "articulation", "name": "stacc"}), 1);
     assert!(out.changed);
+    assert!(out.refused.is_none());
     assert_eq!(out.version, 2);
     assert_eq!(
         first_marks(&editor).articulations,

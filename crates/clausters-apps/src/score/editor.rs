@@ -50,6 +50,13 @@ pub struct Outcome {
     pub record: Option<Record>,
     /// Whether the score changed.
     pub changed: bool,
+    /// **Why a verb a client called was refused**, when it was: the reason
+    /// the status line shows, on the handle as well, so a script can tell a
+    /// refusal it can do something about (nothing selected) from one it
+    /// cannot. `None` for a verb that was not refused, and for every turn
+    /// that is not a verb's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
     /// The version after the turn.
     pub version: i64,
     /// **What is selected after the turn**, as the page's element ids, when
@@ -1155,6 +1162,7 @@ impl ScoreEditor {
                 props: json!({"text": why}),
             });
         }
+        out.refused.clone_from(&reason);
         out.answer = Some(conversation::answer(0, out.version, reason, corrections));
         out
     }

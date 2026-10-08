@@ -217,9 +217,12 @@ def test_without_chrome_the_window_is_the_page_and_the_handle_edits(score):
     # renders into, for the code to go on from
     played = [event["midinote"] for _, event in score.render_events()]
     assert len(played) == len(_items(score)) and played[0] == 79
-    # a verb refused answers so, and the status line says why
+    # a verb refused answers so, and the status line and the handle say why
     editor.select([])
     assert not editor.tie()
+    assert editor.refused, "the reason is the handle's too"
+    editor.select([f"n{first}"])
+    assert editor.articulation("stacc") and editor.refused is None
     # and the whole window is what opens when nothing asks otherwise
     assert ScoreEditor(score).chrome is True
 

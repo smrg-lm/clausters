@@ -326,9 +326,13 @@ if (!existsSync(engraver)) {
         const played = [...score.renderEvents()].map(([, event]) => event.get("midinote"));
         assert.equal(played.length, items(score).length);
         assert.equal(played[0], 79);
-        // a verb refused answers so, and the status line says why
+        // a verb refused answers so, and the status line and the handle say why
         editor.select([]);
         assert.equal(editor.tie(), false);
+        assert.ok(editor.refused, "the reason is the handle's too");
+        editor.select([`n${first}`]);
+        assert.ok(editor.articulation("stacc"));
+        assert.equal(editor.refused, undefined);
         // and the whole window is what opens when nothing asks otherwise
         assert.equal(new ScoreEditor(score).chrome, true);
     });
