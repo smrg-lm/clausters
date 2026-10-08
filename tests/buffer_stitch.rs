@@ -74,6 +74,10 @@ fn part(
         OscType::Int(frames),
         OscType::Int(fade_in),
         OscType::Int(fade_out),
+        OscType::Int(1),
+        OscType::Float(0.0),
+        OscType::Int(1),
+        OscType::Float(0.0),
         OscType::Int(to),
     ]
 }
@@ -194,6 +198,10 @@ fn a_channel_map_routes_and_does_not_scale() {
         OscType::Int(2),
         OscType::Int(0),
         OscType::Int(0),
+        OscType::Int(1),
+        OscType::Float(0.0),
+        OscType::Int(1),
+        OscType::Float(0.0),
         OscType::Int(0),
         OscType::Int(0),
     ];
@@ -211,6 +219,10 @@ fn a_channel_map_routes_and_does_not_scale() {
         OscType::Int(2),
         OscType::Int(0),
         OscType::Int(0),
+        OscType::Int(1),
+        OscType::Float(0.0),
+        OscType::Int(1),
+        OscType::Float(0.0),
         OscType::Int(0),
         OscType::Int(-1),
     ];
@@ -289,7 +301,7 @@ fn a_join_that_cannot_be_read_is_refused() {
 #[ignore]
 fn what_a_join_costs_per_sample() {
     use clausters::dsp::buffer::Buffer;
-    use clausters::dsp::stitch::{PartSpec, Stitch};
+    use clausters::dsp::stitch::{FadeShape, PartSpec, Stitch};
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -314,6 +326,8 @@ fn what_a_join_costs_per_sample() {
                 frames: FRAMES,
                 fade_in: 0,
                 fade_out: 0,
+                fade_in_shape: FadeShape::LINEAR,
+                fade_out_shape: FadeShape::LINEAR,
                 map: vec![0],
             }],
             1,
@@ -333,6 +347,8 @@ fn what_a_join_costs_per_sample() {
                     frames: FRAMES / 256,
                     fade_in: 0,
                     fade_out: 0,
+                    fade_in_shape: FadeShape::LINEAR,
+                    fade_out_shape: FadeShape::LINEAR,
                     map: vec![0],
                 })
                 .collect(),
@@ -420,17 +436,10 @@ fn a_join_says_what_it_is_made_of() {
 
     send(&mut s, "/buffer_parts", vec![OscType::Int(2)]);
     let m = reply(&mut s, "/buffer_parts.reply").expect("the join answers");
-    let ints: Vec<i32> = m.args[3..]
-        .iter()
-        .map(|a| match a {
-            OscType::Int(i) => *i,
-            other => panic!("a part is ints: {other:?}"),
-        })
-        .collect();
     assert_eq!(m.args[1], OscType::Int(1), "one channel");
     assert_eq!(
-        ints,
-        vec![1, 2, 2, 0, 0, 0, 0, 0, 3, 1, 1, 0],
+        m.args[3..],
+        [part(1, 2, 2, 0, 0, 0), part(0, 0, 3, 1, 1, 0)].concat(),
         "the parts as they were given, in order"
     );
 
@@ -489,6 +498,10 @@ fn a_buffer_allocated_at_a_rate_of_its_own_joins_at_that_rate() {
             OscType::Int(4),
             OscType::Int(0),
             OscType::Int(0),
+            OscType::Int(1),
+            OscType::Float(0.0),
+            OscType::Int(1),
+            OscType::Float(0.0),
             OscType::Int(0),
         ],
     );

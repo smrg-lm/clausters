@@ -32,14 +32,19 @@ export const NUM_BUFFERS = 4096;
  *
  * `source` is a {@link Buffer} or a bare slot number, `start` the first frame
  * read from it and `frames` how many it contributes. `fadeIn` and `fadeOut` are
- * linear fades in frames, which is the few milliseconds an editor puts on a
- * cut: two spans that do not continue each other make a step, and a step is a
- * click however well the frames are read.
+ * fades in frames, which is the few milliseconds an editor puts on a cut: two
+ * spans that do not continue each other make a step, and a step is a click
+ * however well the frames are read.
  *
  * `channels` maps the join's channels onto the source's, one entry per channel
  * of the join -- the source channel that channel reads, or a negative number for
  * silence. It is routing and not level. Left out, channel *c* reads source
  * channel *c*, which is what a join of takes of the same width means.
+ *
+ * `fadeInShape` and `fadeOutShape` are each fade's envelope segment shape, by
+ * number (1 is linear, 4 equal power, 5 the custom curvature whose value is
+ * `fadeInCurve`/`fadeOutCurve`): linear unless stated, and what a join keeps
+ * of the shape a region's edge was drawn with.
  */
 export interface Part {
     source: Buffer | number;
@@ -48,6 +53,10 @@ export interface Part {
     fadeIn?: number;
     fadeOut?: number;
     channels?: number[];
+    fadeInShape?: number;
+    fadeInCurve?: number;
+    fadeOutShape?: number;
+    fadeOutCurve?: number;
 }
 
 /** What every `Buffer` constructor takes: which server, and how long to wait. */
@@ -866,7 +875,7 @@ export class Buffer {
         });
         const ints = msg.args.map((a) => Number(a));
         const channels = Math.max(1, ints[1] ?? 1);
-        const width = 5 + channels;
+        const width = 9 + channels;
         const out: Part[] = [];
         for (let at = 3; at + width <= ints.length; at += width) {
             out.push({
@@ -875,7 +884,11 @@ export class Buffer {
                 frames: ints[at + 2]!,
                 fadeIn: ints[at + 3]!,
                 fadeOut: ints[at + 4]!,
-                channels: ints.slice(at + 5, at + width),
+                fadeInShape: ints[at + 5]!,
+                fadeInCurve: ints[at + 6]!,
+                fadeOutShape: ints[at + 7]!,
+                fadeOutCurve: ints[at + 8]!,
+                channels: ints.slice(at + 9, at + width),
             });
         }
         return out;
@@ -1192,6 +1205,10 @@ function stitchParts(
             ["i", Math.trunc(part.frames)],
             ["i", Math.trunc(part.fadeIn ?? 0)],
             ["i", Math.trunc(part.fadeOut ?? 0)],
+            ["i", Math.trunc(part.fadeInShape ?? 1)],
+            ["f", part.fadeInCurve ?? 0.0],
+            ["i", Math.trunc(part.fadeOutShape ?? 1)],
+            ["f", part.fadeOutCurve ?? 0.0],
             ...mapped.map((c): MsgArg => ["i", Math.trunc(c)]),
         );
         frames += Math.trunc(part.frames);

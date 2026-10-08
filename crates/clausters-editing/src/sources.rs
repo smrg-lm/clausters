@@ -53,7 +53,7 @@ pub struct Held {
 
 /// One part of a join, resolved: a run of one buffer, and which of its channels
 /// feeds each channel of the join.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StitchPart {
     /// The buffer this span is read from.
@@ -62,10 +62,18 @@ pub struct StitchPart {
     pub start: u64,
     /// How many frames it contributes.
     pub frames: u64,
-    /// Frames of linear fade at its head.
+    /// Frames of fade at its head.
     pub fade_in: u64,
-    /// Frames of linear fade at its tail.
+    /// Frames of fade at its tail.
     pub fade_out: u64,
+    /// The fade in's segment shape (`clausters_core::envshape`).
+    pub fade_in_shape: i32,
+    /// Its curvature, which only the `curve` shape reads.
+    pub fade_in_curve: f64,
+    /// The fade out's segment shape.
+    pub fade_out_shape: i32,
+    /// Its curvature.
+    pub fade_out_curve: f64,
     /// **One entry per channel of the join**: which channel of this part feeds
     /// it, or `-1` for silence.
     ///
@@ -157,6 +165,10 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
             frames: contributed,
             fade_in: part.fade_in,
             fade_out: part.fade_out,
+            fade_in_shape: part.fade_in_shape.shape,
+            fade_in_curve: part.fade_in_shape.curve,
+            fade_out_shape: part.fade_out_shape.shape,
+            fade_out_curve: part.fade_out_shape.curve,
             channels: map_of(part, take.channels, channels),
         });
     }
@@ -174,7 +186,7 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
 /// source as an intent carries it reads the same, its `id` beside the rest --
 /// and `held` is the caller's table: source id to `{"buffer", "channels",
 /// "frames", "rate"}`. The answer is the [`Stitch`] with its parts' fades as
-/// `fadeIn`/`fadeOut`, or `null` where there is nothing to make: not a join, no
+/// `fadeIn`/`fadeOut` and their shapes (`fadeInShape`, `fadeInCurve`, `fadeOutShape`, `fadeOutCurve`), or `null` where there is nothing to make: not a join, no
 /// parts, or a part over a source the caller has not resolved.
 pub fn stitch_json(source: &str, held: &str) -> String {
     let Ok(source) = serde_json::from_str::<Source>(source) else {
@@ -233,6 +245,8 @@ mod tests {
             },
             fade_in: 0,
             fade_out: 0,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
             channels: None,
         }
     }

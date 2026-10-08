@@ -11,6 +11,8 @@ fn part(source: u64, start: u64, end: u64) -> Part {
         },
         fade_in: 0,
         fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
         channels: None,
     }
 }

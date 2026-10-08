@@ -571,10 +571,18 @@ export interface StitchPart {
     start: number;
     /** How many frames it contributes. */
     frames: number;
-    /** Frames of linear fade at its head. */
+    /** Frames of fade at its head. */
     fadeIn: number;
-    /** Frames of linear fade at its tail. */
+    /** Frames of fade at its tail. */
     fadeOut: number;
+    /** The fade in's envelope segment shape, by number. */
+    fadeInShape: number;
+    /** Its curvature, which only the custom-curvature shape reads. */
+    fadeInCurve: number;
+    /** The fade out's envelope segment shape, by number. */
+    fadeOutShape: number;
+    /** Its curvature. */
+    fadeOutCurve: number;
     /** One entry per channel of the join: the part's channel, or `-1`. */
     channels: number[];
 }

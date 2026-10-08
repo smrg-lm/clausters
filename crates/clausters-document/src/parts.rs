@@ -35,7 +35,7 @@
 
 use serde_json::json;
 
-use crate::session::Part;
+use crate::session::{Part, SeamShape};
 use crate::{Opaque, Range, SourceId};
 
 /// **The domain name a take made of parts is registered under** in a history.
@@ -96,9 +96,11 @@ pub fn span(parts: &[Part], from: u64, to: u64) -> Result<Vec<Part>, &'static st
         });
         if a != lo {
             cut.fade_in = 0;
+            cut.fade_in_shape = SeamShape::default();
         }
         if b != hi {
             cut.fade_out = 0;
+            cut.fade_out_shape = SeamShape::default();
         }
         out.push(cut);
     }
@@ -172,11 +174,13 @@ pub fn flatten(
                     && part.fade_in > 0
                 {
                     first.fade_in = part.fade_in;
+                    first.fade_in_shape = part.fade_in_shape;
                 }
                 if let Some(last) = read.last_mut()
                     && part.fade_out > 0
                 {
                     last.fade_out = part.fade_out;
+                    last.fade_out_shape = part.fade_out_shape;
                 }
                 out.extend(read);
             }
@@ -203,6 +207,7 @@ fn merged(parts: Vec<Part>) -> Vec<Part> {
                 end: b.end,
             });
             last.fade_out = part.fade_out;
+            last.fade_out_shape = part.fade_out_shape;
             continue;
         }
         out.push(part);

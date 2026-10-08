@@ -2087,6 +2087,8 @@ mod tests {
             },
             fade_in,
             fade_out,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
             channels: None,
         };
         struct Table(HashMap<SourceId, i64>, Vec<Part>);
@@ -2160,6 +2162,8 @@ mod tests {
             parts.iter().all(|p| p.source.source == SourceId(7)),
             "every part names the take, none the join: {parts:?}"
         );
+        let equal_power =
+            clausters_document::session::SeamShape::new(clausters_core::envshape::SHAPE_WELCH, 0.0);
         assert_eq!(
             parts,
             &vec![
@@ -2167,11 +2171,17 @@ mod tests {
                 part(72_000, 96_000, 0, 480),
                 // The half second of its second, its own seam kept, and cut
                 // where the next box starts -- faded there as that box's edge
-                // is, by the multitrack's default.
-                part(0, 24_000, 480, 480),
+                // is, by the multitrack's default, in its equal-power shape.
+                Part {
+                    fade_out_shape: equal_power,
+                    ..part(0, 24_000, 480, 480)
+                },
                 // The box over the take, its own edge's default fade at the
                 // seam.
-                part(0, 48_000, 480, 0),
+                Part {
+                    fade_in_shape: equal_power,
+                    ..part(0, 48_000, 480, 0)
+                },
             ]
         );
     }

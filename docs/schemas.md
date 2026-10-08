@@ -674,7 +674,7 @@ Buffer readers **and writers** are **mono** (one output per UGen, unlike scsynth
 
 **A cue point belongs to whoever carries a position.** `PlayBuf` and `RecordBuf` advance themselves, so each takes a `trigger`, a frame to cue to (`startPos`/`offset`) and a `doneAction`. `BufRd` and `BufWr` are driven by a phase signal and have no position of their own: re-cueing one means changing the signal that drives it, and a done action would have nothing to be done with.
 
-**A buffer can be a join over other buffers, and then it is read and never written.** `/buffer_stitch` installs a buffer whose samples are **spans of other buffers**: one part per source, each naming `srcBufnum`, the first frame it reads (`srcStart`), how many frames it contributes (`frames`), a linear `fadeIn`/`fadeOut` in frames, and then one channel-map entry per channel of the join — the source channel that channel reads, or a negative number for silence. The part group is fixed width for that reason: with a variadic map there would be no telling a map entry from the next part's buffer index, so its width is `5 + channels` and every part spells its whole map. `sampleRate` of `0` means the server's.
+**A buffer can be a join over other buffers, and then it is read and never written.** `/buffer_stitch` installs a buffer whose samples are **spans of other buffers**: one part per source, each naming `srcBufnum`, the first frame it reads (`srcStart`), how many frames it contributes (`frames`), a `fadeIn`/`fadeOut` in frames, the shape of each fade (`fadeInShape fadeInCurve fadeOutShape fadeOutCurve`: an envelope segment's shape number, an int, and the curvature only the `curve` shape reads, a float — `1 0.0` is the linear ramp), and then one channel-map entry per channel of the join — the source channel that channel reads, or a negative number for silence. A fade plays its shape as an envelope segment does, so a join made of regions sounds each seam with the shape its edge was drawn with. The part group is fixed width for that reason: with a variadic map there would be no telling a map entry from the next part's buffer index, so its width is `9 + channels` and every part spells its whole map. `sampleRate` of `0` means the server's.
 
 That is how a cut assembled from several takes — or from one take in another order — plays as **one** reader: without it the reader would have to change `bufnum` with sample accuracy, and `bufnum` is initial-rate, so every seam would be a new node and a control message in the middle of playback. An interpolating reader crossing a seam sees the next part rather than silence, and the fades are the few milliseconds an editor puts on a cut. What a join costs a reader is a lookup **per run and not per sample** — a reader advancing monotonically holds the part it is inside and reads the whole block out of it, so a read inside one is the indexed load a plain buffer costs, and the per-sample path is what the seam, a jump and a modulated rate fall back to.
 
@@ -705,7 +705,7 @@ That is how a cut assembled from several takes — or from one take in another o
 /buffer_setRange  bufnum [start blob]...    # write runs of samples (f32 LE blob)
 /buffer_setChannel      bufnum channel [frame value]...  # one channel, positions in frames
 /buffer_setRangeChannel bufnum channel [frame blob]...   # one channel, runs of frames
-/buffer_stitch    bufnum channels sampleRate [srcBufnum srcStart frames fadeIn fadeOut chan...]...  # a join, see below
+/buffer_stitch    bufnum channels sampleRate [srcBufnum srcStart frames fadeIn fadeOut fadeInShape fadeInCurve fadeOutShape fadeOutCurve chan...]...  # a join, see below
 /buffer_free      bufnum
 /buffer_attach    bufnum                    →  /done /buffer_attach bufnum   # map a shared buffer, see below
 /buffer_touch     bufnum channel start frames                  # a peer wrote a span; broadcast as /buffer_touched
@@ -717,7 +717,7 @@ That is how a cut assembled from several takes — or from one take in another o
 /buffer_export    bufnum path               →  /done /buffer_export bufnum
 /buffer_render    bufnum frames             →  /done /buffer_render bufnum   # offline sessions only, see below
 /buffer_stream    periodMs bucket bufnum...  →  /buffer_stream.reply  bufnum startFrame bucket blob   # the overview as it is written
-/buffer_parts     bufnum                    →  /buffer_parts.reply  bufnum channels sampleRate [srcBufnum srcStart frames fadeIn fadeOut chan...]...   # a join's parts; none when it owns its samples
+/buffer_parts     bufnum                    →  /buffer_parts.reply  bufnum channels sampleRate [srcBufnum srcStart frames fadeIn fadeOut fadeInShape fadeInCurve fadeOutShape fadeOutCurve chan...]...   # a join's parts; none when it owns its samples
 /buffer_peaks     bufnum [bucket=256] [start=0] [frames=-1]  →  /buffer_peaks.reply  bufnum startFrame bucket blob   # the overview as it stands
 ```
 

@@ -288,7 +288,7 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
 #[test]
 fn a_stitched_buffer_does_not_allocate_on_the_audio_thread() {
     use clausters::dsp::buffer::Buffer;
-    use clausters::dsp::stitch::{PartSpec, Stitch};
+    use clausters::dsp::stitch::{FadeShape, PartSpec, Stitch};
     use clausters::synthdef::SynthDefSpec;
 
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
@@ -329,6 +329,11 @@ fn a_stitched_buffer_does_not_allocate_on_the_audio_thread() {
             frames: 16,
             fade_in: 4,
             fade_out: 4,
+            fade_in_shape: FadeShape {
+                shape: clausters_core::envshape::SHAPE_WELCH,
+                curve: 0.0,
+            },
+            fade_out_shape: FadeShape::LINEAR,
             map: vec![0],
         })
         .collect();

@@ -762,6 +762,10 @@ fn a_shared_join_is_still_a_join() {
                 OscType::Int(4),
                 OscType::Int(0),
                 OscType::Int(0),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::Int(1),
+                OscType::Float(0.0),
                 OscType::Int(0),
             ],
         )
@@ -799,7 +803,7 @@ fn a_shared_join_is_still_a_join() {
     }
     assert_eq!(
         parts,
-        Some(3 + 6),
+        Some(3 + 10),
         "the header plus one part: sharing the samples did not flatten the join"
     );
 

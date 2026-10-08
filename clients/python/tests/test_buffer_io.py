@@ -218,6 +218,13 @@ def test_a_join_plays_as_one_buffer_and_says_what_it_is_made_of():
         (two.bufnum, 2, 2), (one.bufnum, 0, 2)]
     assert parts[0].channels == [0], "every part spells its whole map"
 
+    # A fade's shape comes back as it was given.
+    shaped = Buffer.stitch([Part(one, 0, 4, fade_in=2, fade_in_shape=4)],
+                           server=server)
+    back = shaped.parts()[0]
+    assert (back.fade_in, back.fade_in_shape, back.fade_out_shape) == (2, 4, 1)
+    shaped.free()
+
     # A buffer that owns its samples answers with no parts, which is the answer
     # to "is this a join" rather than a refusal.
     assert one.parts() == []

@@ -342,6 +342,10 @@ export class MultitrackDomain extends Domain<Multitrack> {
             fadeIn: part.fadeIn,
             fadeOut: part.fadeOut,
             channels: part.channels,
+            fadeInShape: part.fadeInShape,
+            fadeInCurve: part.fadeInCurve,
+            fadeOutShape: part.fadeOutShape,
+            fadeOutCurve: part.fadeOutCurve,
         }));
         this.bridge.sources.buffers.set(
             Math.trunc(id),

@@ -238,7 +238,11 @@ class MultitrackDomain(Domain):
             return
         parts = [Part(int(p["buffer"]), start=int(p["start"]),
                       frames=int(p["frames"]), fade_in=int(p["fadeIn"]),
-                      fade_out=int(p["fadeOut"]), channels=list(p["channels"]))
+                      fade_out=int(p["fadeOut"]), channels=list(p["channels"]),
+                      fade_in_shape=int(p["fadeInShape"]),
+                      fade_in_curve=float(p["fadeInCurve"]),
+                      fade_out_shape=int(p["fadeOutShape"]),
+                      fade_out_curve=float(p["fadeOutCurve"]))
                  for p in made["parts"]]
         # **Sent rather than waited on.** This runs inside the answer to a
         # gesture, and a join owns no samples: there is nothing to copy and

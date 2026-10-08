@@ -35,15 +35,20 @@ class Part(NamedTuple):
     at another rate is read through the ratio the two make, so a second of a
     44.1 kHz take fills 48000 frames of a 48 kHz join and reads 44100 of its
     own. The server takes that ratio off the buffers themselves. ``fade_in`` and
-    ``fade_out`` are linear fades in frames, which is the few milliseconds an
-    editor puts on a cut: two spans that do not continue each other make a step,
-    and a step is a click however well the frames are read.
+    ``fade_out`` are fades in frames, which is the few milliseconds an editor
+    puts on a cut: two spans that do not continue each other make a step, and a
+    step is a click however well the frames are read.
 
     ``channels`` maps the join's channels onto the source's, one entry per
     channel of the join -- the source channel that channel reads, or a negative
     number for silence. It is routing and not level. ``None`` reads channel *c*
     from source channel *c*, which is what a join of takes of the same width
     means.
+
+    ``fade_in_shape`` and ``fade_out_shape`` are each fade's envelope segment
+    shape, by number (1 is linear, 4 equal power, 5 the custom curvature whose
+    value is ``fade_in_curve``/``fade_out_curve``): linear unless stated, and
+    what a join keeps of the shape a region's edge was drawn with.
     """
 
     source: "Buffer | int"
@@ -52,6 +57,10 @@ class Part(NamedTuple):
     fade_in: int = 0
     fade_out: int = 0
     channels: "list | None" = None
+    fade_in_shape: int = 1
+    fade_in_curve: float = 0.0
+    fade_out_shape: int = 1
+    fade_out_curve: float = 0.0
 
 
 class Buffer:
@@ -244,7 +253,9 @@ class Buffer:
         for part in parts:
             source = part.source
             args += [int(getattr(source, "bufnum", source)), int(part.start),
-                     int(part.frames), int(part.fade_in), int(part.fade_out)]
+                     int(part.frames), int(part.fade_in), int(part.fade_out),
+                     int(part.fade_in_shape), float(part.fade_in_curve),
+                     int(part.fade_out_shape), float(part.fade_out_curve)]
             mapped = part.channels
             if mapped is None:
                 mapped = range(channels)
@@ -632,11 +643,15 @@ class Buffer:
         _, args = srv.request("/buffer_parts", self.bufnum, timeout=timeout,
                               expect=("/buffer_parts.reply",))
         channels = max(1, int(args[1]))
-        width = 5 + channels
+        width = 9 + channels
         return [Part(source=int(group[0]), start=int(group[1]),
                      frames=int(group[2]), fade_in=int(group[3]),
                      fade_out=int(group[4]),
-                     channels=[int(c) for c in group[5:]])
+                     fade_in_shape=int(group[5]),
+                     fade_in_curve=float(group[6]),
+                     fade_out_shape=int(group[7]),
+                     fade_out_curve=float(group[8]),
+                     channels=[int(c) for c in group[9:]])
                 for group in (args[3:][i:i + width]
                               for i in range(0, len(args) - 3, width))]
 

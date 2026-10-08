@@ -37,7 +37,7 @@ use serde_json::{Value, json};
 
 use crate::multitrack::edit::{MintedSource, MultitrackIntent};
 use crate::multitrack::{Automation, Content, Fade, Multitrack, Region, TakeLane, Track, Window};
-use crate::session::{Location, Part, Source};
+use crate::session::{Location, Part, SeamShape, Source};
 use crate::{Lifetime, NodeId, Opaque, Point, Range, Second, SourceId, SourceRef};
 
 /// One row of the view: a track, and the strip that is drawn beside it.
@@ -918,9 +918,18 @@ pub fn read_join(
         // joined box's own fades, which the edit gives it, and are not
         // repeated in the parts. Nothing is invented here: a fade the boxes
         // did not have is a fade nobody can see or change.
-        let (own_in, own_out) = region.fades(&multitrack.defaults);
-        let fade_in = if i > 0 { frames(own_in) } else { 0 };
-        let fade_out = if i < last_span { frames(own_out) } else { 0 };
+        //
+        // **And in the shape it was drawn with**: the seam plays the edge's
+        // own segment, so a curve bent on a box before the join is the curve
+        // heard after it, and an equal-power edge stays equal power.
+        let (own_in, own_out) = region.edges(&multitrack.defaults);
+        let shape = |edge: &crate::multitrack::Edge| SeamShape::new(edge.shape, edge.curve);
+        let fade_in = if i > 0 { frames(own_in.length) } else { 0 };
+        let fade_out = if i < last_span {
+            frames(own_out.length)
+        } else {
+            0
+        };
         // **Flat, whatever the box windows.** A segment names a take and a
         // span of it, and a join is a new list of those -- never a list of
         // lists. A box over a join reads through to the takes that join is
@@ -939,9 +948,19 @@ pub fn read_join(
         for (k, part) in segments.iter_mut().enumerate() {
             if k == 0 {
                 part.fade_in = fade_in;
+                part.fade_in_shape = if fade_in > 0 {
+                    shape(&own_in)
+                } else {
+                    SeamShape::default()
+                };
             }
             if k == last {
                 part.fade_out = fade_out;
+                part.fade_out_shape = if fade_out > 0 {
+                    shape(&own_out)
+                } else {
+                    SeamShape::default()
+                };
             }
         }
         parts.extend(segments);
@@ -1025,6 +1044,8 @@ fn segments_of(
             },
             fade_in: 0,
             fade_out: 0,
+            fade_in_shape: SeamShape::default(),
+            fade_out_shape: SeamShape::default(),
             channels: None,
         }]);
     };

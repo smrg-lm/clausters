@@ -270,6 +270,15 @@ test("a join plays as one buffer and says what it is made of", { skip: !hasServe
         );
         assert.deepEqual(parts[0]!.channels, [0], "every part spells its whole map");
 
+        // A fade's shape comes back as it was given.
+        const shaped = await Buffer.stitch(
+            [{ source: one, start: 0, frames: 4, fadeIn: 2, fadeInShape: 4 }],
+            { server },
+        );
+        const back = (await shaped.parts())[0]!;
+        assert.deepEqual([back.fadeIn, back.fadeInShape, back.fadeOutShape], [2, 4, 1]);
+        shaped.free();
+
         // A buffer that owns its samples answers with no parts, which is the
         // answer to "is this a join" rather than a refusal.
         assert.deepEqual(await one.parts(), []);

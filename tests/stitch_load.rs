@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
-use clausters::dsp::stitch::{PartSpec, Stitch};
+use clausters::dsp::stitch::{FadeShape, PartSpec, Stitch};
 use clausters::node::{AddAction, ROOT_NODE_ID};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
@@ -71,6 +71,8 @@ fn joined_with(src: &Arc<Buffer>, parts: usize, fade: usize) -> Arc<Buffer> {
             frames: span,
             fade_in: fade,
             fade_out: fade,
+            fade_in_shape: FadeShape::LINEAR,
+            fade_out_shape: FadeShape::LINEAR,
             map: vec![0],
         })
         .collect();

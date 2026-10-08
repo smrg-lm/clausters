@@ -252,7 +252,8 @@ impl OscServer {
     }
 
     /// `/buffer_parts bufnum` -> `/buffer_parts.reply bufnum channels sampleRate
-    /// [srcBufnum srcStart frames fadeIn fadeOut chan...]...`: what a join is
+    /// [srcBufnum srcStart frames fadeIn fadeOut fadeInShape fadeInCurve
+    /// fadeOutShape fadeOutCurve chan...]...`: what a join is
     /// made of, in the terms `/buffer_stitch` takes, so a reply can be edited
     /// and sent back.
     ///
@@ -288,6 +289,10 @@ impl OscServer {
                 out.push(OscType::Int(part.frames as i32));
                 out.push(OscType::Int(part.fade_in as i32));
                 out.push(OscType::Int(part.fade_out as i32));
+                out.push(OscType::Int(part.fade_in_shape.shape));
+                out.push(OscType::Float(part.fade_in_shape.curve));
+                out.push(OscType::Int(part.fade_out_shape.shape));
+                out.push(OscType::Float(part.fade_out_shape.curve));
                 for &to in part.map.iter() {
                     out.push(OscType::Int(to));
                 }

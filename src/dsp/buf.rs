@@ -456,7 +456,7 @@ impl UGen for BufInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsp::stitch::{PartSpec, Stitch};
+    use crate::dsp::stitch::{FadeShape, PartSpec, Stitch};
     use std::sync::Arc;
 
     /// **The run is an optimization, so it must answer exactly what the
@@ -482,6 +482,8 @@ mod tests {
                         frames: 8,
                         fade_in: 0,
                         fade_out: 0,
+                        fade_in_shape: FadeShape::LINEAR,
+                        fade_out_shape: FadeShape::LINEAR,
                         map: vec![0],
                     },
                     PartSpec {
@@ -491,6 +493,8 @@ mod tests {
                         frames: 8,
                         fade_in: 3,
                         fade_out: 3,
+                        fade_in_shape: FadeShape::LINEAR,
+                        fade_out_shape: FadeShape::LINEAR,
                         map: vec![0],
                     },
                     PartSpec {
@@ -500,6 +504,8 @@ mod tests {
                         frames: 8,
                         fade_in: 0,
                         fade_out: 0,
+                        fade_in_shape: FadeShape::LINEAR,
+                        fade_out_shape: FadeShape::LINEAR,
                         map: vec![0],
                     },
                 ],

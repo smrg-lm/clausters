@@ -683,29 +683,44 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
 /// `/buffer_allocRead` mean -- so the pair is one arm with one extra argument
 /// rather than two implementations of reading a file.
 /// The parts of a `/buffer_stitch`, one fixed-width group per source: `srcBufnum
-/// srcStart frames fadeIn fadeOut` and then one channel-map entry per channel of
-/// the stitched buffer.
+/// srcStart frames fadeIn fadeOut fadeInShape fadeInCurve fadeOutShape
+/// fadeOutCurve` and then one channel-map entry per channel of the stitched
+/// buffer.
 ///
 /// The group is fixed width **because** the map is variadic: with a tail of
 /// unknown length there is no telling a map entry from the next part's buffer
 /// index, so the width is read off the header's `channels` and every part
 /// spells its whole map. A map entry is a source channel, or negative for
 /// silence; it is routing and not level (see [`crate::dsp::stitch::Part::map`]).
+/// A fade's shape is an envelope segment's shape number and its curvature, a
+/// float; every other field is an int.
 fn stitch_parts(
     args: &[OscType],
     channels: usize,
     mirror: &BufferPool,
 ) -> Result<Vec<crate::dsp::stitch::PartSpec>, String> {
-    let width = 5 + channels;
+    use crate::dsp::stitch::FadeShape;
+    const HEAD: usize = 9;
+    const CURVES: [usize; 2] = [6, 8];
+    let width = HEAD + channels;
     if args.is_empty() || !args.len().is_multiple_of(width) {
         return Err(format!(
-            "each part is {width} ints: srcBufnum, srcStart, frames, fadeIn, fadeOut              and {channels} channel-map entries"
+            "each part is {width} arguments: srcBufnum, srcStart, frames, fadeIn, fadeOut, \
+             fadeInShape, fadeInCurve, fadeOutShape, fadeOutCurve and {channels} channel-map \
+             entries"
         ));
     }
     let mut parts = Vec::with_capacity(args.len() / width);
     for (n, group) in args.chunks_exact(width).enumerate() {
         let mut ints = Vec::with_capacity(width);
+        let mut curves = [0.0f32; 2];
         for (i, arg) in group.iter().enumerate() {
+            if let Some(k) = CURVES.iter().position(|&at| at == i) {
+                curves[k] = float_value(arg)
+                    .ok_or_else(|| format!("part {n}: argument {i} is not a number"))?;
+                ints.push(0);
+                continue;
+            }
             match arg {
                 OscType::Int(v) => ints.push(*v),
                 _ => return Err(format!("part {n}: argument {i} is not an int")),
@@ -731,7 +746,7 @@ fn stitch_parts(
                 source.frames()
             ));
         }
-        for (c, &to) in ints[5..].iter().enumerate() {
+        for (c, &to) in ints[HEAD..].iter().enumerate() {
             if to >= source.channels() as i32 {
                 return Err(format!(
                     "part {n}: channel {c} maps to source channel {to} and buffer {src} has {}",
@@ -746,7 +761,15 @@ fn stitch_parts(
             frames: frames as usize,
             fade_in: fade_in as usize,
             fade_out: fade_out as usize,
-            map: ints[5..].to_vec(),
+            fade_in_shape: FadeShape {
+                shape: ints[5],
+                curve: curves[0],
+            },
+            fade_out_shape: FadeShape {
+                shape: ints[7],
+                curve: curves[1],
+            },
+            map: ints[HEAD..].to_vec(),
         });
     }
     Ok(parts)

@@ -2292,7 +2292,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   become once the file is the source; how a session written with
   `Location::Events` opens.
 
-- ⬜ **A fade's curve is editable only if the curve drawn is the curve heard**
+- ✅ **A fade's curve is editable only if the curve drawn is the curve heard**
   *(found 2026-10-08 by the user)*. A box's `fade:` trapezoid lets a hand bend
   each sloped side: `points::bend_curve` sets the side's shape to `curve`
   with a curvature, `picture::read_fades` keeps both on the region's `Fade`,
@@ -2310,7 +2310,16 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   shape and a curvature per part's fade), to its builders in both clients
   and to `/buffer_parts`.
 
-- ⬜ **The crossfade switch acts on the edits that follow, and leaves the
+  **Closed 2026-10-08, the same day, by the sound following the picture.**
+  Measured, taking the bend off was not the smaller fix: the default
+  equal-power edge also played linear at a seam, and a script can state any
+  shape on a `Fade` in both clients, so keeping one shape would have meant
+  forbidding it there too. A seam now has a shape: `/buffer_stitch` and
+  `/buffer_parts` carry `fadeInShape fadeInCurve fadeOutShape fadeOutCurve`
+  per part, a join's `Part` keeps them (`SeamShape`), and the server plays a
+  part's fade through the same `shape_value` the reader and the picture use.
+
+- ✅ **The crossfade switch acts on the edits that follow, and leaves the
   overlaps already made as they are** *(stated 2026-10-08 by the user)*.
   Today `TakeLane::edges` works the crossfade out whenever the multitrack is
   read, from `Defaults::crossfade` and the overlaps as they stand, so

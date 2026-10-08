@@ -365,6 +365,10 @@ pub fn stitch_message(bufnum: i32, made: &Stitch) -> OscMessage {
         args.push(OscType::Int(part.frames as i32));
         args.push(OscType::Int(part.fade_in as i32));
         args.push(OscType::Int(part.fade_out as i32));
+        args.push(OscType::Int(part.fade_in_shape));
+        args.push(OscType::Float(part.fade_in_curve as f32));
+        args.push(OscType::Int(part.fade_out_shape));
+        args.push(OscType::Float(part.fade_out_curve as f32));
         // **Every part spells its whole map**, which is what makes the group
         // fixed width.
         for picked in &part.channels {

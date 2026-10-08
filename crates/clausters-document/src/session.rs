@@ -357,21 +357,30 @@ pub enum Location {
 /// [`crate::SourceRef::range`] already speaks. A `SegmentRef` measures a
 /// *window a multitrack places*, which is the musical side of the same fact and is
 /// where seconds belong.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Part {
     /// The source and the frames of it this part contributes, in its `range`.
     /// A part with no range contributes the whole of it.
     pub source: SourceRef,
-    /// Frames of linear fade in at this part's head.
+    /// Frames of fade in at this part's head.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub fade_in: u64,
-    /// Frames of linear fade out at its tail.
+    /// Frames of fade out at its tail.
     ///
     /// The two are what an editor puts on a cut: a seam between spans that do
     /// not continue each other is a step, and a step is a click however well
     /// the frames are read.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub fade_out: u64,
+    /// **The shape of each fade**, as an envelope segment's
+    /// (`clausters_core::envshape`), and its curvature: linear unless stated.
+    /// A seam a join makes out of a region's edge keeps the shape that edge
+    /// was drawn with, so the join sounds as the box looked.
+    #[serde(default, skip_serializing_if = "SeamShape::is_linear")]
+    pub fade_in_shape: SeamShape,
+    /// The fade out's, by the same rule.
+    #[serde(default, skip_serializing_if = "SeamShape::is_linear")]
+    pub fade_out_shape: SeamShape,
     /// Which channel of the source each channel of the join reads, or the
     /// identity mapping when absent -- which is the ordinary case and the reason
     /// it is an option rather than a list every part spells.
@@ -384,6 +393,60 @@ pub struct Part {
 
 fn is_zero(n: &u64) -> bool {
     *n == 0
+}
+
+/// **The shape of a part's fade**: an envelope segment's shape, written by
+/// its name (`"lin"`, `"wel"`, `"curve"` ...), and the curvature only `curve`
+/// reads. Linear when a file names none, which is what every seam was before
+/// a seam had a shape.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SeamShape {
+    /// The shape number.
+    #[serde(with = "seam_shape_name")]
+    pub shape: i32,
+    /// The curvature, for the `curve` shape; 0 otherwise.
+    #[serde(default)]
+    pub curve: f64,
+}
+
+impl Default for SeamShape {
+    fn default() -> Self {
+        Self {
+            shape: clausters_core::envshape::SHAPE_LINEAR,
+            curve: 0.0,
+        }
+    }
+}
+
+impl SeamShape {
+    /// A shape and its curvature.
+    pub fn new(shape: i32, curve: f64) -> Self {
+        Self { shape, curve }
+    }
+
+    /// Whether this is the straight ramp a seam with no shape is.
+    pub fn is_linear(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// A seam's shape number written as its name, and read back from it -- an
+/// unknown name is linear rather than a session that will not open.
+mod seam_shape_name {
+    use clausters_core::envshape::{SHAPE_HOLD, SHAPE_LINEAR, SHAPE_STEP, shape_name};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(shape: &i32, out: S) -> Result<S::Ok, S::Error> {
+        out.serialize_str(shape_name(*shape))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<i32, D::Error> {
+        let value = serde_json::Value::deserialize(input)?;
+        let name = value.as_str().unwrap_or_default();
+        Ok((SHAPE_STEP..=SHAPE_HOLD)
+            .find(|n| shape_name(*n) == name)
+            .unwrap_or(SHAPE_LINEAR))
+    }
 }
 
 /// A destructive edit session over one source, and whether it has been

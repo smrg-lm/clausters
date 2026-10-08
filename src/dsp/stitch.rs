@@ -100,13 +100,18 @@ pub struct Part {
     /// costs in the source, which is the direction every other number here
     /// runs in (`start` is the join's, `src_start` is the source's).
     pub rate: f64,
-    /// A linear fade over this many frames at the part's start, and at its end.
+    /// A fade over this many frames at the part's start, and at its end.
     /// Two spans that do not continue each other make a step, which is a click
     /// however well the frames themselves are read -- this is the few
     /// milliseconds every editor puts on a cut, and it belongs here because
     /// here is where the seam is.
     pub fade_in: usize,
     pub fade_out: usize,
+    /// **The shape of each fade**, as an envelope segment's: linear unless the
+    /// caller says otherwise. A region's fade is drawn as one of these shapes,
+    /// so a join made of regions keeps the shape each edge was drawn with.
+    pub fade_in_shape: FadeShape,
+    pub fade_out_shape: FadeShape,
     /// `1 / (fade + 1)` for each side, computed once: a fade is a multiply per
     /// sample rather than two integer-to-float conversions and a divide.
     fade_in_step: f32,
@@ -255,6 +260,29 @@ impl std::fmt::Debug for Part {
     }
 }
 
+/// **The shape of a part's fade**: an envelope segment's shape number
+/// (`clausters_core::envshape`) and its curvature, which only the `curve`
+/// shape reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FadeShape {
+    pub shape: i32,
+    pub curve: f32,
+}
+
+impl FadeShape {
+    /// A straight ramp, which is what a fade that names no shape is.
+    pub const LINEAR: Self = Self {
+        shape: clausters_core::envshape::SHAPE_LINEAR,
+        curve: 0.0,
+    };
+}
+
+impl Default for FadeShape {
+    fn default() -> Self {
+        Self::LINEAR
+    }
+}
+
 /// What a part is made of before its place in the stitch is known -- the shape a
 /// command parses into, so [`Stitch::new`] is the one place that computes the
 /// cumulative starts.
@@ -267,6 +295,8 @@ pub struct PartSpec {
     pub frames: usize,
     pub fade_in: usize,
     pub fade_out: usize,
+    pub fade_in_shape: FadeShape,
+    pub fade_out_shape: FadeShape,
     pub map: Vec<i32>,
 }
 
@@ -338,6 +368,8 @@ impl Stitch {
                 // is a triangle.
                 fade_in,
                 fade_out,
+                fade_in_shape: spec.fade_in_shape,
+                fade_out_shape: spec.fade_out_shape,
                 fade_in_step: 1.0 / (fade_in + 1) as f32,
                 fade_out_step: 1.0 / (fade_out + 1) as f32,
                 faded: fade_in > 0 || fade_out > 0,
@@ -457,13 +489,20 @@ fn holds(part: &Part, frame: usize) -> bool {
 /// The crossfade factor at `inner` frames into a part.
 #[inline]
 fn fade(part: &Part, inner: usize) -> f32 {
+    use clausters_core::envshape::shape_value;
     let mut gain = 1.0f32;
     if inner < part.fade_in {
-        gain *= (inner + 1) as f32 * part.fade_in_step;
+        let t = (inner + 1) as f32 * part.fade_in_step;
+        let FadeShape { shape, curve } = part.fade_in_shape;
+        gain *= shape_value(shape, curve, 0.0, 1.0, t);
     }
     let from_end = part.frames - 1 - inner;
     if from_end < part.fade_out {
-        gain *= (from_end + 1) as f32 * part.fade_out_step;
+        // The segment from full level to silence, `1 - t` of the way along:
+        // linear, it is the ramp it always was.
+        let t = (from_end + 1) as f32 * part.fade_out_step;
+        let FadeShape { shape, curve } = part.fade_out_shape;
+        gain *= shape_value(shape, curve, 1.0, 0.0, 1.0 - t);
     }
     gain
 }
@@ -484,6 +523,8 @@ mod tests {
             frames,
             fade_in: 0,
             fade_out: 0,
+            fade_in_shape: FadeShape::LINEAR,
+            fade_out_shape: FadeShape::LINEAR,
             map: vec![0],
         }
     }
@@ -578,6 +619,41 @@ mod tests {
     fn a_source_with_no_rate_is_refused() {
         let a = Arc::new(Buffer::new(vec![1.0, 2.0], 1, 2, 0.0));
         assert!(Stitch::new(vec![spec(&a, 0, 2)], 1, 48_000.0).is_err());
+    }
+
+    /// **A fade plays the shape it names**: linear is the ramp it always was,
+    /// and an equal-power fade is the quarter sine an envelope draws.
+    #[test]
+    fn a_fade_plays_its_shape() {
+        use clausters_core::envshape::{SHAPE_WELCH, shape_value};
+        let a = take(&[1.0; 8]);
+        let read = |shape: FadeShape| {
+            let s = Stitch::new(
+                vec![PartSpec {
+                    fade_in: 3,
+                    fade_out: 3,
+                    fade_in_shape: shape,
+                    fade_out_shape: shape,
+                    ..spec(&a, 0, 8)
+                }],
+                1,
+                48_000.0,
+            )
+            .expect("built");
+            (0..8).map(|f| s.sample(f, 0)).collect::<Vec<f32>>()
+        };
+        assert_eq!(
+            read(FadeShape::LINEAR),
+            vec![0.25, 0.5, 0.75, 1.0, 1.0, 0.75, 0.5, 0.25]
+        );
+        let welch = read(FadeShape {
+            shape: SHAPE_WELCH,
+            curve: 0.0,
+        });
+        assert_eq!(welch[0], shape_value(SHAPE_WELCH, 0.0, 0.0, 1.0, 0.25));
+        assert!(welch[0] > 0.25, "a quarter sine rises fast: {welch:?}");
+        assert_eq!(welch[7], shape_value(SHAPE_WELCH, 0.0, 1.0, 0.0, 0.75));
+        assert!(welch[7] < 0.4, "and falls fast at its end: {welch:?}");
     }
 
     /// **Two fades cannot eat each other.** Each is capped at half the part, so
