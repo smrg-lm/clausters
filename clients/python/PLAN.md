@@ -3604,7 +3604,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   **Adding a marker in the lane is refused, and says why** — see the entry
   below, which is what is left of this one.
 
-- ⬜ **A marker can be added in a roll and not named** *(named 2026-09-02,
+- ✅ **A marker can be added in a roll and not named** *(named 2026-09-02,
   closing the entry above)*. The lane's Ctrl+click adds a marker with no label,
   and a marker *is* the message it sends: with no address there is nothing to
   write onto the timeline, so the gesture is refused with the reason and the
@@ -3614,6 +3614,17 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   added from the script and dragged in the view. **Related:** the same missing
   entry is what a marker's *arguments* would need, and they are not drawn at
   all.
+  **Closed 2026-10-08, in two halves.** The roll's half was settled by the
+  user on 2026-09-07 (`clients/gui/PLAN.md`, "Messages are not the roll's to
+  edit, and nothing else edits them"): the OSC lane is read-only, a press
+  meant to edit it is refused, and an editor of messages is not a roll. The
+  host's half -- the capability this entry said was missing -- is built: a
+  **ruler** marker is named where it is put. A Ctrl+click puts it down with
+  its number selected in a name typed in place; Enter, Tab or a press
+  elsewhere gives it, and only then is `"markers"` reported; Escape takes it
+  away unreported; a double click renames one (`gestures::naming`, the name's
+  text and caret held as the view's `EditorProps::naming`, typed by the text
+  field's own editing).
 
 - ✅ **The score keeps a second history, and nothing joins the two**
   *(found 2026-09-02, in the same audit; fixed 2026-09-02)*. An engraved page

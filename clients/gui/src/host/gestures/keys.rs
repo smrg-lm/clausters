@@ -62,6 +62,11 @@ impl Gestures {
         if let Some(out) = self.popup_key(host, ctx, &key) {
             return Some(out);
         }
+        // **A marker's name being typed takes every key** until it is given
+        // or left (`naming`), as a field does.
+        if let Some(out) = super::naming::key(host, ctx, &key, clipboard) {
+            return Some(out);
+        }
         if key == Key::Tab {
             return Some(focus::step(host, ctx, ctx.shift));
         }

@@ -67,6 +67,7 @@ pub mod signal;
 mod slider;
 mod table;
 mod text;
+pub(crate) use text::edit_key;
 mod toggle;
 
 /// The constructor for a built-in element name, or `None` when no built-in

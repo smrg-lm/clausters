@@ -111,7 +111,7 @@ impl Text {
 ///
 /// Enter is the caller's to mean something by: here it breaks the line of a
 /// `multiline` text and is otherwise consumed and inert.
-pub(super) fn edit_key(
+pub(crate) fn edit_key(
     value: &mut String,
     caret: &mut Caret,
     multiline: bool,

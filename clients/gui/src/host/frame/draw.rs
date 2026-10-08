@@ -14,7 +14,7 @@ use crate::host::graphics::selection;
 use crate::host::graphics::signal::layers::{Domain, Paint};
 use crate::host::menubar;
 use crate::host::popup;
-use crate::host::widget::{Marker, RulerDir};
+use crate::host::widget::{Marker, Naming, RulerDir};
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
@@ -44,7 +44,17 @@ pub(crate) fn draw_time_ruler(
         metrics,
     );
     ruler::draw_ticks_h(d, strip, &ticks, editor.dir);
-    draw_markers(d, strip, nav, &editor.markers, editor.dir);
+    draw_markers(
+        d,
+        strip,
+        nav,
+        &editor.markers,
+        editor.dir,
+        editor.naming.as_ref(),
+    );
+    if let Some(naming) = &editor.naming {
+        draw_naming(d, strip, nav, &editor.markers, naming);
+    }
 }
 
 /// **Where the ruler strip is**, given the widget's rect and the body it is
@@ -77,10 +87,19 @@ pub(crate) fn marker_w(m: &Metrics) -> f32 {
 /// third would make three vertical lines mean three different things at a
 /// glance. What a marker is *for* is the click: the transport goes to the
 /// moment it was placed at, not to the pixel the hand landed on.
-fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: RulerDir) {
+fn draw_markers(
+    d: &mut Draw,
+    strip: Rect,
+    nav: &View,
+    markers: &[Marker],
+    dir: RulerDir,
+    naming: Option<&Naming>,
+) {
     if markers.is_empty() || strip.h <= 2.0 {
         return;
     }
+    // the marker whose name is being typed draws a field there instead
+    let named = naming.and_then(|n| markers.get(n.index));
     let (mesh, metrics, theme) = d.parts();
     // **The ruler's own caption**, the size its numbers are drawn at: a marker
     // is read against them, so it is measured against them. `micro_scale` --
@@ -106,7 +125,7 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: 
             RulerDir::Down => (strip.y + strip.h, strip.y + strip.h - h),
         };
         mesh.tri([x, apex], [x - half, base], [x + half, base], color);
-        if !marker.label.is_empty() {
+        if !marker.label.is_empty() && !named.is_some_and(|n| std::ptr::eq(n, marker)) {
             let w = font::width(&marker.label, scale);
             let lx = (x + half + metrics.divider_w).min((strip.x + strip.w - w).max(strip.x));
             // The tick labels' own row, so the marker's name and the numbers
@@ -120,6 +139,36 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: 
             font::text(mesh, &marker.label, lx, ly, scale, color);
         }
     }
+}
+
+/// **The name being typed for a marker**, drawn as a field where its label
+/// stands -- beside its arrow, on the ruler's strip -- with the caret and the
+/// selection a text entry draws: at least a few characters wide, so an empty
+/// name still shows where it will go, and held inside the strip.
+fn draw_naming(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], naming: &Naming) {
+    let Some(marker) = markers.get(naming.index) else {
+        return;
+    };
+    let frac = (marker.time - nav.start) / nav.len.max(1e-9);
+    if !(0.0..=1.0).contains(&frac) || strip.h <= 2.0 {
+        return;
+    }
+    let m = d.m;
+    let scale = m.caption_scale;
+    let x = strip.x + strip.w * frac as f32 + marker_w(m) * 0.5 + m.divider_w;
+    let w = (font::width(&naming.text, scale).max(font::width("/address", scale)) + 3.0 * m.pad)
+        .min(strip.w);
+    let x = x.min(strip.x + strip.w - w).max(strip.x);
+    let rect = Rect::new(x, strip.y, w, strip.h);
+    crate::host::graphics::controls::field(
+        d,
+        &naming.text,
+        None,
+        rect,
+        scale,
+        false,
+        Some(naming.caret),
+    );
 }
 
 /// **The marker a press at `x` landed on**, as an index into `markers` -- the

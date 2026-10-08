@@ -281,9 +281,8 @@ pub struct Marker {
     /// Where it is, in timeline sample units -- the *exact* position, kept
     /// whatever the zoom.
     pub time: f64,
-    /// What it says. A marker added by hand is **numbered** (`"1"`, `"2"`, ...)
-    /// until something renames it, which is what makes the gesture usable with
-    /// no text entry in front of it.
+    /// What it says. A marker added by hand starts **numbered** (`"1"`, `"2"`,
+    /// ...), selected in the name the hand types over it ([`Naming`]).
     pub label: String,
     /// Its own colour (`"#rrggbb"`/`"#rrggbbaa"`), or the theme's `flag` when
     /// it names none.
@@ -491,6 +490,27 @@ pub struct EditorProps {
     /// and a ruler is a strip every timeline view can reserve, so they ride
     /// here with the rest of the chrome rather than on one widget kind.
     pub markers: Vec<Marker>,
+    /// **The marker whose name is being typed**, while it is: view state, never
+    /// parsed from or sent over the wire, like a text field's caret. A hand
+    /// that adds a marker names it here before the owner hears of it, and a
+    /// double click on one renames it ([`Naming`]).
+    pub naming: Option<Naming>,
+}
+
+/// **A marker's name as it is being typed** on the ruler, in place of its
+/// label: which marker, the text so far and its caret, and whether the marker
+/// was just added -- the one an Escape takes away again, since its owner never
+/// heard of it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Naming {
+    /// The marker, as an index into [`EditorProps::markers`].
+    pub index: usize,
+    /// The name so far.
+    pub text: String,
+    /// The insertion point and the selection in it.
+    pub caret: crate::host::graphics::textedit::Caret,
+    /// Whether the marker was added by the gesture that opened the name.
+    pub added: bool,
 }
 
 impl EditorProps {
@@ -545,6 +565,7 @@ impl EditorProps {
                 .get("markers")
                 .and_then(parse_markers)
                 .unwrap_or_default(),
+            naming: None,
         }
     }
 
@@ -629,7 +650,10 @@ impl EditorProps {
             "sel_max" => set_f64(&mut self.sel_max, v),
             "markers" => match parse_markers(v) {
                 Some(markers) => {
+                    // the owner's markers are the ones there are: a name
+                    // being typed was over the ones they replace
                     self.markers = markers;
+                    self.naming = None;
                     true
                 }
                 None => false,

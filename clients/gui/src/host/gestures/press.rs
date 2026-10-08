@@ -111,6 +111,9 @@ impl Gestures {
         // reaching an element.
         self.count_press(ctx, cx, cy);
         self.click = None;
+        // **A press anywhere gives the name being typed**, as a field loses
+        // its edit to a click elsewhere; the press then goes on.
+        super::naming::commit(host, &mut out, ctx.def_id);
         // A press ends a rest: the tip that was up, or waiting, goes.
         self.press_began(host, ctx, (cx, cy), &mut out);
         // **The popup layer is modal**, so it is asked before the tree: an
@@ -446,17 +449,32 @@ impl Gestures {
                             cx,
                         )
                         .max(0.0);
-                        // **Numbered, not blank.** The label is what a client
-                        // is handed with the time, so a marker with none says
-                        // nothing to the reader or to the owner; the count is
-                        // the one name the host can give without asking.
+                        // **Numbered, and named before it is told.** The label
+                        // is what a client is handed with the time, so the new
+                        // marker opens its name (`naming`) with the count in
+                        // it, selected: typing replaces it, Enter keeps it,
+                        // and the owner hears of the marker once it has one.
                         let label = (markers.len() + 1).to_string();
                         markers.push(super::super::widget::Marker {
                             time,
-                            label,
+                            label: label.clone(),
                             color: None,
                         });
                         markers.sort_by(|a, b| a.time.total_cmp(&b.time));
+                        let index = markers
+                            .iter()
+                            .position(|m| m.time == time && m.label == label)
+                            .unwrap_or(0);
+                        if let Some(editor) = host
+                            .window_def_mut(def_id)
+                            .and_then(|t| t.find_mut(id))
+                            .and_then(|w| w.kind.editor_mut())
+                        {
+                            editor.markers = markers;
+                        }
+                        super::naming::open(host, def_id, id, index, true);
+                        out.push(GestureEffect::Redraw(def_id));
+                        return true;
                     }
                 }
                 super::nav::set_markers(host, out, def_id, id, markers);

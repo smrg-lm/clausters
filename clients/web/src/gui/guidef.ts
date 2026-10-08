@@ -820,10 +820,12 @@ export interface TimelineOptions extends WidgetOptions {
      * **The labelled points on the time axis**: `[time, label, color]` triples
      * (label and colour optional), drawn as an **arrow into the ruler's
      * ticks** -- never a line down the picture, which is what a playhead and a
-     * selection band are. **Ctrl+click** on the ruler adds one, numbered, or
-     * removes the one under the pointer, and a **click** on one puts the
-     * transport at the exact time it was placed at rather than at the pixel
-     * the hand landed on. **What is clicked is the arrow**, with the usual
+     * selection band are. **Ctrl+click** on the ruler adds one, numbered,
+     * with its name open where its label stands -- type over the number,
+     * Enter (or a click elsewhere) gives it the name, Escape takes the marker
+     * away -- or removes the one under the pointer; a **double click** on one
+     * opens its name to rename it, and a **click** puts the transport at the
+     * exact time it was placed at rather than at the pixel the hand landed on. **What is clicked is the arrow**, with the usual
      * slop around it: the label is text on the tick row, and making a word the
      * target would give a marker called `intro` ten times the reach of one
      * called `2`. An edit flows back as a flat `"markers"` event (`time label

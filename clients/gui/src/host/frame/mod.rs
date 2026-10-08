@@ -2113,6 +2113,7 @@ mod tests {
             link: None,
             offset: 0.0,
             markers: Vec::new(),
+            naming: None,
         }
     }
 

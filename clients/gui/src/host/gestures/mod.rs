@@ -456,6 +456,7 @@ mod element;
 mod focus;
 mod hover;
 mod keys;
+mod naming;
 mod nav;
 mod popups;
 

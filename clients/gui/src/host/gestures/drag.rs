@@ -383,10 +383,16 @@ impl Gestures {
                     .widget_kind(ctx.def_id, c.id)
                     .and_then(|k| k.editor().map(|e| e.markers.clone()))?;
                 super::nav::marker_under(host, ctx.def_id, c.id, strip, &markers, cx)
-                    .and_then(|i| markers.get(i).map(|m| m.time))
+                    .and_then(|i| markers.get(i).map(|m| (i, m.time)))
             });
             match marker {
-                Some(time) => super::nav::locate_at(host, &mut out, ctx, c.id, time),
+                // **A double click on a marker opens its name**: the first
+                // click already went to its moment.
+                Some((i, _)) if self.clicks() >= 2 => {
+                    super::naming::open(host, ctx.def_id, c.id, i, false);
+                    out.push(GestureEffect::Redraw(ctx.def_id));
+                }
+                Some((_, time)) => super::nav::locate_at(host, &mut out, ctx, c.id, time),
                 None => locate_timeline(host, &mut out, ctx, c.id, c.body, cx),
             }
         }
