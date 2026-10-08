@@ -51,6 +51,7 @@ use clausters_core::event::render::{self, Type};
 use clausters_core::tempomap::TempoMap;
 use clausters_document::events::{Event, EventSequence, EventsIntent};
 use clausters_document::multitrack::Automation;
+use clausters_document::timebase::Axis as TimeAxis;
 use clausters_document::{Beat, Opaque};
 
 use crate::events::{PAIR, label_of};
@@ -226,7 +227,7 @@ pub const CURVE_H: f64 = 40.0;
 /// `{"bend": ...}`, `{"pressure": ...}`, `{"timbre": ...}`, `{"control":
 /// name}` -- and a name on the curve wins over the label it gives. A sequence curve's `channel` (the notes' own count,
 /// from 0) is the channel it acts on, and none is every channel.
-fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
+fn curve_look<T: TimeAxis>(curve: &Automation<T>) -> (String, f64, f64, bool) {
     let target = curve.target.0.as_object();
     let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
     let read = |key: &str| target.and_then(|t| t.get(key)).and_then(Value::as_f64);
@@ -258,7 +259,11 @@ fn curve_look(curve: &Automation) -> (String, f64, f64, bool) {
 }
 
 /// A point as the wire carries it, `at` already in view units.
-fn point_values(name: &str, at: f64, point: &clausters_document::Point) -> [Value; 5] {
+fn point_values<T: TimeAxis>(
+    name: &str,
+    at: f64,
+    point: &clausters_document::Point<T>,
+) -> [Value; 5] {
     let [at, value, shape, curve] = crate::points::quad(at, point);
     [
         json!(name),
@@ -313,7 +318,7 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
                 json!(pitch),
             ]);
             for point in &curve.points {
-                let at = axis.units(event.at.0 + point.at) - from;
+                let at = axis.units(event.at.0 + point.at.0) - from;
                 out.points.extend(point_values(&name, at, point));
             }
         }
@@ -330,7 +335,7 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
         ]);
         for point in &curve.points {
             out.points
-                .extend(point_values(&name, axis.units(point.at), point));
+                .extend(point_values(&name, axis.units(point.at.0), point));
         }
     }
     out
@@ -471,19 +476,20 @@ fn curves(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
             ]));
         }
     }
-    let points_of = |name: &str, beat_at: &dyn Fn(f64) -> f64| -> Vec<clausters_document::Point> {
-        reported
-            .get(name)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|p| {
-                let p = p.as_array()?;
-                let f = |i: usize| p.get(i).and_then(Value::as_f64).unwrap_or(0.0);
-                Some(crate::points::point(beat_at(f(0)), f(1), f(2), f(3)))
-            })
-            .collect()
-    };
+    let points_of =
+        |name: &str, beat_at: &dyn Fn(f64) -> f64| -> Vec<clausters_document::Point<Beat>> {
+            reported
+                .get(name)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|p| {
+                    let p = p.as_array()?;
+                    let f = |i: usize| p.get(i).and_then(Value::as_f64).unwrap_or(0.0);
+                    Some(crate::points::point(Beat(beat_at(f(0))), f(1), f(2), f(3)))
+                })
+                .collect()
+        };
     let mut after = sequence.clone();
     let mut intents = Vec::new();
     for curve in &mut after.automation {

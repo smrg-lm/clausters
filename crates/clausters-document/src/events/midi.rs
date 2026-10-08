@@ -32,6 +32,7 @@ use clausters_core::event::render;
 use super::{CurveKind, Event, EventSequence, MidiSpec};
 use crate::multitrack::Automation;
 use crate::multitrack::nodes::value_at;
+use crate::timebase::Beat;
 use crate::{NodeId, Opaque, Point};
 
 /// A channel's bend range, in semitones, when no RPN 0 sets it.
@@ -48,9 +49,9 @@ const RAMP_STEP: f64 = 1.0 / 64.0;
 const PARAMETER_CCS: [u8; 6] = [6, 38, 98, 99, 100, 101];
 
 /// A point that holds until the next one.
-fn step(at: f64, value: f64) -> Point {
+fn step(at: f64, value: f64) -> Point<Beat> {
     Point {
-        at,
+        at: Beat(at),
         value,
         data: Opaque(json!({"shape": SHAPE_STEP, "curve": 0.0})),
     }
@@ -111,7 +112,7 @@ fn configuration(messages: &[(f64, Vec<u8>)]) -> (Option<MidiSpec>, HashMap<u8, 
 /// **A file's messages as a sequence's events and curves**, in beats: notes
 /// paired as `render::from_midi_messages` pairs them, every stream a curve of
 /// the sequence or of a note, and the spec the file is written for.
-pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>, MidiSpec) {
+pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation<Beat>>, MidiSpec) {
     let (zone, ranges) = configuration(messages);
     let spec = zone.unwrap_or(MidiSpec::Midi1);
     let zone_members = match spec {
@@ -176,14 +177,16 @@ pub(super) fn read(messages: &[(f64, Vec<u8>)]) -> (Vec<Event>, Vec<Automation>,
     };
     // Curves by what they are over: the sequence's by (channel or none,
     // target), a note's by (event index, target).
-    let mut channel_curves: Vec<(Value, Vec<Point>)> = Vec::new();
-    let mut notes: Vec<(usize, Value, Vec<Point>)> = Vec::new();
+    let mut channel_curves: Vec<(Value, Vec<Point<Beat>>)> = Vec::new();
+    let mut notes: Vec<(usize, Value, Vec<Point<Beat>>)> = Vec::new();
     let mut kept = Vec::with_capacity(events.len());
-    let mut add_channel_curve =
-        |target: Value, point: Point| match channel_curves.iter_mut().find(|(t, _)| *t == target) {
-            Some((_, points)) => points.push(point),
-            None => channel_curves.push((target, vec![point])),
-        };
+    let mut add_channel_curve = |target: Value, point: Point<Beat>| match channel_curves
+        .iter_mut()
+        .find(|(t, _)| *t == target)
+    {
+        Some((_, points)) => points.push(point),
+        None => channel_curves.push((target, vec![point])),
+    };
     for (i, event) in events.iter().enumerate() {
         let keys = event.keys();
         let at = event.at.0;
@@ -306,7 +309,7 @@ fn message(
 /// message at every point, and between two points of a ramp one wherever the
 /// message it samples to changes.
 fn sampled<T: PartialEq>(
-    points: &[Point],
+    points: &[Point<Beat>],
     from: f64,
     to: f64,
     origin: f64,
@@ -321,7 +324,7 @@ fn sampled<T: PartialEq>(
         }
     };
     for (i, point) in points.iter().enumerate() {
-        let at = origin + point.at;
+        let at = origin + point.at.0;
         if at > to {
             break;
         }
@@ -338,10 +341,10 @@ fn sampled<T: PartialEq>(
         if steps {
             continue;
         }
-        let end = (origin + next.at).min(to);
+        let end = (origin + next.at.0).min(to);
         let mut t = at + RAMP_STEP;
         while t < end {
-            emit(t, say(value_at(points, t - origin)));
+            emit(t, say(value_at(points, Beat(t - origin))));
             t += RAMP_STEP;
         }
     }
@@ -389,7 +392,7 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
             .automation
             .iter()
             .filter_map(|c| c.points.last())
-            .map(|p| p.at)
+            .map(|p| p.at.0)
             .fold(sustain, f64::max);
         end = end.max(at + reach);
         let channel = if is_note && !free_at.is_empty() {
@@ -469,7 +472,7 @@ pub(super) fn write(sequence: &EventSequence) -> Vec<(f64, Vec<u8>)> {
             (None, Some(channel)) => vec![channel.as_f64().unwrap_or(0.0) as u8],
             (None, None) => channels_used.clone(),
         };
-        let last = curve.points.last().map_or(0.0, |p| p.at);
+        let last = curve.points.last().map_or(0.0, |p| p.at.0);
         for channel in channels {
             let said = sampled(&curve.points, 0.0, last.max(end), 0.0, |v| {
                 message(kind, channel, None, v, CHANNEL_BEND)
@@ -602,7 +605,7 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
             .automation
             .iter()
             .filter_map(|c| c.points.last())
-            .map(|p| p.at)
+            .map(|p| p.at.0)
             .fold(sustain, f64::max);
         end = end.max(at + reach);
         let mut key = None;
@@ -663,7 +666,7 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
             Some(channel) => vec![channel.as_f64().unwrap_or(0.0) as u8],
             None => channels_used.clone(),
         };
-        let last = curve.points.last().map_or(0.0, |p| p.at);
+        let last = curve.points.last().map_or(0.0, |p| p.at.0);
         for channel in channels {
             let said = sampled(&curve.points, 0.0, last.max(end), 0.0, |v| {
                 packet(kind, channel, None, v)
@@ -681,7 +684,7 @@ pub(super) fn write_ump(sequence: &EventSequence) -> Vec<(f64, Vec<u32>)> {
 /// note's per-note bend, poly pressure, timbre (registered per-note 74) and
 /// assignable controllers as the note's own, a program change as an event.
 /// What else the clip holds -- a tempo is the caller's -- is not a note's.
-pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automation>) {
+pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automation<Beat>>) {
     let mut events: Vec<Event> = Vec::new();
     // Each note's channel, key and span, as it is paired.
     let mut spans: Vec<(u8, u8, f64, f64)> = Vec::new();
@@ -768,8 +771,8 @@ pub(super) fn read_ump(packets: &[(f64, Vec<u32>)]) -> (Vec<Event>, Vec<Automati
                 .map(|(i, _)| i)
         })
     };
-    let mut channel_curves: Vec<(Value, Vec<Point>)> = Vec::new();
-    let mut notes: Vec<(usize, Value, Vec<Point>)> = Vec::new();
+    let mut channel_curves: Vec<(Value, Vec<Point<Beat>>)> = Vec::new();
+    let mut notes: Vec<(usize, Value, Vec<Point<Beat>>)> = Vec::new();
     for (at, status, channel, index, extra, data) in said {
         let fraction = f64::from(data) / FULL;
         let bend = |range: f64| (f64::from(data) - CENTRE) / CENTRE * range;

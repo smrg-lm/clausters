@@ -253,7 +253,7 @@ pub enum MultitrackIntent {
         /// The curve.
         automation: NodeId,
         /// Its points, in order.
-        points: Vec<Point>,
+        points: Vec<Point<Second>>,
     },
     /// Whether an automation curve is shown -- a track's row or a region's
     /// layer, one curve at a time.
@@ -983,7 +983,7 @@ fn fade_region(
 fn set_automation(
     multitrack: &mut Multitrack,
     automation: NodeId,
-    points: &[Point],
+    points: &[Point<Second>],
 ) -> Outcome<MultitrackIntent> {
     let stated = MultitrackIntent::SetAutomation {
         automation,

@@ -21,9 +21,9 @@ fn ids() -> IdSpaces {
     )
 }
 
-fn point(at: f64, value: f64) -> Point {
+fn point(at: f64, value: f64) -> Point<Second> {
     Point {
-        at,
+        at: Second(at),
         value,
         data: clausters_document::Opaque::none(),
     }
@@ -44,7 +44,7 @@ fn note(id: &str, start: f64, channel: i64, curves: Vec<PlacedCurve>) -> Placed 
     }
 }
 
-fn curve(target: Value, points: Vec<Point>) -> PlacedCurve {
+fn curve(target: Value, points: Vec<Point<Second>>) -> PlacedCurve {
     PlacedCurve {
         id: String::new(),
         scope: String::new(),

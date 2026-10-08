@@ -72,7 +72,7 @@ pub struct Event {
     /// Curves over this event alone, their points in beats from its start.
     /// Read under `expression` too, its name before it was the multitrack's.
     #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "expression")]
-    pub automation: Vec<Automation>,
+    pub automation: Vec<Automation<Beat>>,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -119,7 +119,7 @@ pub struct EventSequence {
     pub tempo_map: Option<TempoMap>,
     /// Curves over the whole sequence -- CC, bend, pressure -- on its beats.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub automation: Vec<Automation>,
+    pub automation: Vec<Automation<Beat>>,
     /// **Which MIDI specification it is written for**, or none: a sequence
     /// for the server, where every curve is legal. See [`MidiSpec`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -161,7 +161,7 @@ enum Written {
         tempo_map: Option<TempoMap>,
         /// Read under `lanes` too, its name before it was the multitrack's.
         #[serde(default, alias = "lanes")]
-        automation: Vec<Automation>,
+        automation: Vec<Automation<Beat>>,
         #[serde(default)]
         midi: Option<MidiSpec>,
         #[serde(default)]
@@ -261,7 +261,7 @@ pub enum EventsIntent {
     /// more -- its id minted when it has none, and the answer says which.
     Automation {
         /// The curve, its points on the sequence's beats.
-        automation: Automation,
+        automation: Automation<Beat>,
     },
     /// One of the sequence's curves fewer.
     RemoveAutomation {
@@ -274,7 +274,7 @@ pub enum EventsIntent {
         /// Which event.
         id: u64,
         /// The curve, its points in beats from the event's start.
-        automation: Automation,
+        automation: Automation<Beat>,
     },
     /// One of an event's curves fewer.
     RemoveEventAutomation {
@@ -864,7 +864,7 @@ impl EventSequence {
 /// Whether two curves are one **channel group**'s: each names the same
 /// `group` in its target, and they aim at the same thing but for the channel
 /// -- the lanes a render writes for a staff of several voices.
-fn same_group(a: &Automation, b: &Automation) -> bool {
+fn same_group(a: &Automation<Beat>, b: &Automation<Beat>) -> bool {
     let (Some(x), Some(y)) = (a.target.0.as_object(), b.target.0.as_object()) else {
         return false;
     };

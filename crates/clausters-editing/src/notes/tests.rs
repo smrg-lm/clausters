@@ -216,7 +216,7 @@ fn a_marker_moves_by_its_label_and_a_new_one_is_refused() {
 fn curved() -> EventSequence {
     use clausters_document::{NodeId, Point};
     let point = |at: f64, value: f64| Point {
-        at,
+        at: Beat(at),
         value,
         data: Opaque::none(),
     };
@@ -334,7 +334,7 @@ fn a_points_report_is_the_edit_of_the_curve_it_changed() {
         panic!("a note's curve");
     };
     assert_eq!((id, automation.id), (1, bend));
-    assert_eq!(automation.points[1].at, 0.75);
+    assert_eq!(automation.points[1].at, Beat(0.75));
     assert_eq!(automation.points[1].value, 3.0);
     // An unchanged report is no edit.
     let same = intake_of(&s, &p.points, &axis);

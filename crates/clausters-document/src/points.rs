@@ -15,11 +15,13 @@
 //! # What this decides about curves: nothing
 //!
 //! A point is a position, a value, and whatever the client says about it. There
-//! is no interpolation shape *the crate reads*, no unit, no envelope semantics
-//! -- those belong to whoever renders the curve, and putting a guess at them
+//! is no interpolation shape *the crate reads* and no envelope semantics --
+//! those belong to whoever renders the curve, and putting a guess at them
 //! here would be deciding, on a seam's behalf, a question the client has not
 //! asked yet. The one thing a domain must supply is how an edit inverts, and
-//! *the points were these* inverts without knowing any of it.
+//! *the points were these* inverts without knowing any of it. The axis a
+//! position is on is the one thing a holder states, as the point's type
+//! parameter ([`Axis`]): a curve of this domain alone is in plain numbers.
 //!
 //! Deciding nothing is not the same as dropping it, which is what the `data`
 //! field on [`Point`] is for: a client's curve carries a shape per segment, and
@@ -30,6 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Opaque;
 use crate::history::{Applied, Editable};
+use crate::timebase::Axis;
 
 /// The domain name a curve's structure is registered under.
 pub const POINTS: &str = "points";
@@ -37,9 +40,10 @@ pub const POINTS: &str = "points";
 /// One break point: where it sits, what it says there, and whatever the client
 /// says about it.
 ///
-/// `at` is in whatever the curve is drawn against -- beats for an automation
-/// lane, seconds for an envelope -- and the crate does not ask which, for the
-/// same reason it does not interpret a leaf's configuration.
+/// `at` is on whatever axis the curve is drawn against -- seconds for a
+/// multitrack's automation, beats for a sequence's -- and that axis is the
+/// point's type ([`Axis`]): a holder that knows it says so, and a curve that
+/// is only a curve is in plain numbers.
 ///
 /// `data` is the same door [`Event`](crate::Event) has, and it is here for a
 /// reason found by using this domain: a client's curve is not only positions
@@ -50,9 +54,11 @@ pub const POINTS: &str = "points";
 /// vocabulary came back straight, which is losing the client's data rather than
 /// declining to interpret it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Point {
-    /// Where the point sits.
-    pub at: f64,
+#[serde(bound = "T: Axis")]
+pub struct Point<T = f64> {
+    /// Where the point sits, on the axis its holder places it on
+    /// ([`Axis`]): a curve of this domain alone says none, and is `f64`.
+    pub at: T,
     /// What the curve says there.
     pub value: f64,
     /// What the client says about it -- the shape of the segment it starts, and

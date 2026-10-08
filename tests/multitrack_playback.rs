@@ -258,7 +258,7 @@ fn a_tracks_gain_curve_reaches_a_note_its_own_curves_shape() {
     use clausters_editing::notes_playback::PlacedCurve;
 
     let level = |at: f64| Point {
-        at,
+        at: Second(at),
         value: 0.5,
         data: Opaque::none(),
     };
@@ -280,7 +280,7 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
     let opens = (64 * BLOCK) as f64 / SR;
     // The track's gain: closed, then open from `opens` on.
     let point = |at: f64, value: f64| Point {
-        at,
+        at: Second(at),
         value,
         data: Opaque::none(),
     };

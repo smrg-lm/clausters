@@ -45,7 +45,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::timebase::{Beat, Second};
+use crate::timebase::{Axis, Beat, Second};
 use crate::{NodeId, Opaque, Seconds, SourceId, SourceRef};
 
 pub mod edit;
@@ -358,7 +358,7 @@ pub struct Region {
     /// second vocabulary, a second domain and a second editor for the same
     /// picture.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub automation: Vec<Automation>,
+    pub automation: Vec<Automation<Second>>,
     /// What fills it.
     pub content: Content,
     /// Fields a newer writer wrote. See [`Extra`].
@@ -579,8 +579,14 @@ impl TakeLane {
 /// "cc": ...}` with a `channel` in a sequence. What is the same in all four --
 /// the points, their editing, their drawing, their tabulation -- is why it is
 /// one type.
+///
+/// **The axis is the type's parameter** ([`Axis`]): a track's and a region's
+/// curves are `Automation<Second>`, a sequence's and an event's
+/// `Automation<Beat>`, and a curve nothing places is `Automation<f64>`, the
+/// default. The wire is the same number on all of them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Automation {
+#[serde(bound = "T: Axis")]
+pub struct Automation<T = f64> {
     /// Its identity.
     pub id: NodeId,
     /// A label, when the target's own name is not what the user calls it.
@@ -595,7 +601,7 @@ pub struct Automation {
     /// The curve, `at` in the unit and from the origin of whatever holds it
     /// (see the type).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub points: Vec<crate::Point>,
+    pub points: Vec<crate::Point<T>>,
     /// Whether the curve is shown. **The view's**, and here rather than in the
     /// host because which curves a person had open is part of reopening the
     /// multitrack as they left it.
@@ -618,7 +624,7 @@ fn is_yes(b: &bool) -> bool {
     *b
 }
 
-impl Automation {
+impl<T: Axis> Automation<T> {
     /// A curve over `target`, with no points yet.
     pub fn new(id: NodeId, target: Opaque) -> Self {
         Self {
@@ -661,7 +667,7 @@ pub struct Track {
     pub active: usize,
     /// The curves over it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub automation: Vec<Automation>,
+    pub automation: Vec<Automation<Second>>,
     /// Silenced.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub muted: bool,
@@ -1072,7 +1078,7 @@ impl Multitrack {
     /// One walk, because a curve is a curve: what tells the two apart is how
     /// long they run and where they are drawn, which is the caller's question
     /// and not the lookup's.
-    pub fn automations(&self) -> impl Iterator<Item = &Automation> {
+    pub fn automations(&self) -> impl Iterator<Item = &Automation<Second>> {
         self.tracks.iter().flat_map(|t| {
             t.automation.iter().chain(
                 t.take_lanes
@@ -1083,12 +1089,12 @@ impl Multitrack {
     }
 
     /// The automation curve with this id, wherever it is.
-    pub fn automation(&self, id: NodeId) -> Option<&Automation> {
+    pub fn automation(&self, id: NodeId) -> Option<&Automation<Second>> {
         self.automations().find(|a| a.id == id)
     }
 
     /// The automation curve with this id, wherever it is, to be edited.
-    pub fn automation_mut(&mut self, id: NodeId) -> Option<&mut Automation> {
+    pub fn automation_mut(&mut self, id: NodeId) -> Option<&mut Automation<Second>> {
         self.tracks.iter_mut().find_map(|t| {
             if let Some(found) = t.automation.iter_mut().find(|a| a.id == id) {
                 return Some(found);

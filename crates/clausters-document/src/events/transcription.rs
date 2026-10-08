@@ -941,7 +941,7 @@ fn levels_read(
         line.sort();
         match lane {
             Some(lane) => {
-                let shape = |point: &crate::Point| {
+                let shape = |point: &crate::Point<crate::Beat>| {
                     point
                         .data
                         .0
@@ -973,7 +973,7 @@ fn levels_read(
                 let mut written: Option<String> = None;
                 for (i, point) in lane.points.iter().enumerate() {
                     let name = dynamic_near(interp, point.value / 127.0).map(str::to_owned);
-                    if let (Some(name), Some(id)) = (name, at_or_after(whole(point.at)))
+                    if let (Some(name), Some(id)) = (name, at_or_after(whole(point.at.0)))
                         && written.as_deref() != Some(name.as_str())
                     {
                         with_marks(sheet, id, |marks| marks.dynamic = Some(name.clone()));
@@ -986,8 +986,8 @@ fn levels_read(
                         shape(point) == SHAPE_LINEAR && (next.value - point.value).abs() > 1e-6;
                     if let (true, Some(from), Some(to)) = (
                         ramps,
-                        at_or_after(whole(point.at)),
-                        at_or_before(whole(next.at)),
+                        at_or_after(whole(point.at.0)),
+                        at_or_before(whole(next.at.0)),
                     ) && from != to
                     {
                         sheet.spanners.push(Spanner {

@@ -25,6 +25,7 @@ use serde_json::{Map, Value, json};
 use clausters_core::envshape::curve_axis;
 use clausters_document::Opaque;
 use clausters_document::points::Point;
+use clausters_document::timebase::Axis as TimeAxis;
 
 use crate::intake::Intake;
 
@@ -86,7 +87,7 @@ pub fn props_json(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> String
 ///
 /// The one reading of a point's `data` every curve on screen goes through:
 /// a curve editor's, a multitrack's automation and a roll's.
-pub fn quad(at: f64, point: &Point) -> [f64; QUAD] {
+pub fn quad<T: TimeAxis>(at: f64, point: &Point<T>) -> [f64; QUAD] {
     let data = point.data.0.as_object();
     let read = |key: &str, default: f64| {
         data.and_then(|d| d.get(key))
@@ -102,7 +103,7 @@ pub fn quad(at: f64, point: &Point) -> [f64; QUAD] {
 /// **What a shape is stays the client's.** The document carries a point's
 /// `data` and never reads it, which is what keeps an undo from putting a bent
 /// curve back straight; this only says where on the point it rides.
-pub fn point(at: f64, value: f64, shape: f64, curve: f64) -> Point {
+pub fn point<T: TimeAxis>(at: T, value: f64, shape: f64, curve: f64) -> Point<T> {
     Point {
         at,
         value,
@@ -112,13 +113,13 @@ pub fn point(at: f64, value: f64, shape: f64, curve: f64) -> Point {
 
 /// Whether two curves say the same thing, as a widget that holds them as `f32`
 /// hands them back: a report of an untouched curve is not an edit of it.
-pub fn same(a: &[Point], b: &[Point]) -> bool {
+pub fn same<T: TimeAxis>(a: &[Point<T>], b: &[Point<T>]) -> bool {
     let close = |x: f64, y: f64| (x - y).abs() <= 1e-4 * x.abs().max(1.0);
     a.len() == b.len()
         && a.iter().zip(b).all(|(p, q)| {
-            quad(p.at, p)
+            quad(p.at.number(), p)
                 .iter()
-                .zip(quad(q.at, q))
+                .zip(quad(q.at.number(), q))
                 .all(|(x, y)| close(*x, y))
         })
 }

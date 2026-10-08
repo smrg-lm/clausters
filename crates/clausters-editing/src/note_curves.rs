@@ -28,8 +28,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use clausters_core::event::render::Type;
 use clausters_core::event_graph::{self, BEND, Shape};
 use clausters_core::mixer::{AT, BUF, CURVE_STEP};
-use clausters_document::Point;
 use clausters_document::multitrack::nodes::{tabulate, value_at};
+use clausters_document::{Point, Second};
 use serde_json::{Value, json};
 
 use crate::apply::Applier;
@@ -151,12 +151,19 @@ fn by_control<'a>(curves: impl Iterator<Item = &'a PlacedCurve>) -> Vec<(String,
 
 /// A table from frame `first` to frame `last` of points placed from second
 /// `origin`.
-fn table(key: String, points: &[Point], first: f64, last: f64, origin: f64, rate: f64) -> Table {
+fn table(
+    key: String,
+    points: &[Point<Second>],
+    first: f64,
+    last: f64,
+    origin: f64,
+    rate: f64,
+) -> Table {
     Table {
         key,
         at: first,
         table: tabulate(first, last, CURVE_STEP, |frame| {
-            value_at(points, frame / rate - origin)
+            value_at(points, Second(frame / rate - origin))
         }),
     }
 }
@@ -203,8 +210,8 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
                 .into_iter()
                 .map(|(control, curve)| {
                     let points = &curve.points;
-                    let first = points[0].at * rate;
-                    let last = points[points.len() - 1].at * rate;
+                    let first = points[0].at.get() * rate;
+                    let last = points[points.len() - 1].at.get() * rate;
                     let key = format!("channel/{key}/{control}");
                     (control, table(key, points, first, last, 0.0, rate))
                 })
@@ -246,7 +253,9 @@ pub fn plan(placement: &Placement, rate: f64) -> CurvePlan {
             .into_iter()
             .map(|(control, curve)| {
                 let points = &curve.points;
-                let reach = event.end.max(event.start + points[points.len() - 1].at);
+                let reach = event
+                    .end
+                    .max(event.start + points[points.len() - 1].at.get());
                 let key = format!("note/{id}/{control}");
                 // In the note's own time: its reader counts from the sample
                 // the note starts on, so the table does too, and a note moved

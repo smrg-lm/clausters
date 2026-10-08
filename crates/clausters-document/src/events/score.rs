@@ -64,6 +64,7 @@ use clausters_core::ratio::Ratio;
 
 use super::{Event, EventSequence};
 use crate::multitrack::Automation;
+use crate::timebase::Beat;
 
 /// The channel each voice renders on: `(staff, voice)` to its channel, counted
 /// from the top staff's first voice.
@@ -321,7 +322,7 @@ fn dynamics(
     sheet: &Sheet,
     interp: &Interpretation,
     channel_of: &BTreeMap<(usize, usize), usize>,
-) -> Result<Vec<Automation>, String> {
+) -> Result<Vec<Automation<Beat>>, String> {
     let mut lanes = Vec::new();
     for level in levels(sheet.clone(), interp)? {
         // each point where it is heard: a repeated stretch twice
@@ -375,7 +376,7 @@ fn dynamics(
 fn pedals(
     pedals: &[(usize, f64, f64)],
     channel_of: &BTreeMap<(usize, usize), usize>,
-) -> Result<Vec<Automation>, String> {
+) -> Result<Vec<Automation<Beat>>, String> {
     let mut by_staff: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
     for &(staff, down, up) in pedals {
         by_staff.entry(staff).or_default().push((down, up));
@@ -522,7 +523,7 @@ mod tests {
         }];
         let sequence = render(&score, &Interpretation::default()).unwrap();
         let gliss = &sequence.events[0].automation[0];
-        let points: Vec<(f64, f64)> = gliss.points.iter().map(|p| (p.at, p.value)).collect();
+        let points: Vec<(f64, f64)> = gliss.points.iter().map(|p| (p.at.0, p.value)).collect();
         let sustain = sequence.events[0].keys()["sustain"].as_f64().unwrap();
         assert_eq!(points, vec![(0.0, 0.0), (1.0, 0.0), (sustain, 4.0)]);
     }
@@ -671,7 +672,7 @@ mod tests {
             assert_eq!(target["channel"], channel);
             assert_eq!(target["group"], "staff 1");
             // a ramp from p to f: 0.05 and 0.17 of full scale
-            let said: Vec<(f64, f64)> = lane.points.iter().map(|p| (p.at, p.value)).collect();
+            let said: Vec<(f64, f64)> = lane.points.iter().map(|p| (p.at.0, p.value)).collect();
             assert_eq!(said, vec![(0.0, 0.05 * 127.0), (2.0, 0.17 * 127.0)]);
             assert!(lane.points[0].data.is_empty(), "the first stretch ramps");
             assert_ne!(lane.id.0, 0, "a lane has an identity of the sequence's");

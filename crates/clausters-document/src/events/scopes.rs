@@ -21,6 +21,7 @@ use clausters_core::event::render;
 use super::{CurveKind, EventSequence, MidiSpec};
 use crate::multitrack::Automation;
 use crate::multitrack::nodes::value_at;
+use crate::timebase::Beat;
 use crate::{NodeId, Opaque, Point};
 
 /// How close two values of one curve are to be the same.
@@ -44,32 +45,32 @@ fn without_channel(target: &Value) -> Value {
 /// **A curve's stretch from beat `from` to `to`, as a curve of its own** that
 /// starts at 0: the value where it begins -- shaped as the segment it falls
 /// in -- every point inside, and the value where it ends.
-fn stretch(points: &[Point], from: f64, to: f64) -> Vec<Point> {
+fn stretch(points: &[Point<Beat>], from: f64, to: f64) -> Vec<Point<Beat>> {
     let shape_at = |at: f64| {
         points
             .iter()
             .rev()
-            .find(|p| p.at <= at)
+            .find(|p| p.at.0 <= at)
             .map_or(Opaque::none(), |p| p.data.clone())
     };
     let mut out = vec![Point {
-        at: 0.0,
-        value: value_at(points, from),
+        at: Beat(0.0),
+        value: value_at(points, Beat(from)),
         data: shape_at(from),
     }];
     out.extend(
         points
             .iter()
-            .filter(|p| p.at > from && p.at < to)
+            .filter(|p| p.at.0 > from && p.at.0 < to)
             .map(|p| Point {
-                at: p.at - from,
+                at: p.at - Beat(from),
                 ..p.clone()
             }),
     );
     if to > from {
         out.push(Point {
-            at: to - from,
-            value: value_at(points, to),
+            at: Beat(to - from),
+            value: value_at(points, Beat(to)),
             data: shape_at(to),
         });
     }
@@ -164,7 +165,7 @@ impl EventSequence {
             return Err(refusal(spec, target));
         }
         // Each note that has one: its event index, its span and its curve.
-        let mut spans: Vec<(usize, f64, f64, Vec<Point>)> = Vec::new();
+        let mut spans: Vec<(usize, f64, f64, Vec<Point<Beat>>)> = Vec::new();
         for (i, event) in self.events.iter().enumerate() {
             let keys = event.keys();
             if render::Type::of(&keys) != render::Type::Note
@@ -184,7 +185,7 @@ impl EventSequence {
                 .points
                 .iter()
                 .map(|p| Point {
-                    at: at + p.at,
+                    at: Beat(at) + p.at,
                     ..p.clone()
                 })
                 .collect();
@@ -207,11 +208,11 @@ impl EventSequence {
                         .3
                         .iter()
                         .chain(&second.3)
-                        .map(|p| p.at)
+                        .map(|p| p.at.0)
                         .filter(|t| *t > from && *t < to),
                 );
                 let differs = times.iter().any(|&t| {
-                    let (x, y) = (value_at(&first.3, t), value_at(&second.3, t));
+                    let (x, y) = (value_at(&first.3, Beat(t)), value_at(&second.3, Beat(t)));
                     (x - y).abs() > SAME * x.abs().max(y.abs()).max(1.0)
                 });
                 if differs {
@@ -232,18 +233,19 @@ impl EventSequence {
                 .all(|c| *c == channels[0])
                 .then(|| channels[0])
         });
-        let mut points: Vec<Point> = spans
+        let mut points: Vec<Point<Beat>> = spans
             .iter()
             .flat_map(|(_, from, to, curve)| {
                 curve
                     .iter()
-                    .filter(|p| p.at >= *from - SAME && p.at <= *to + SAME)
+                    .filter(|p| p.at.0 >= *from - SAME && p.at.0 <= *to + SAME)
                     .cloned()
                     .collect::<Vec<_>>()
             })
             .collect();
-        points.sort_by(|a, b| a.at.total_cmp(&b.at));
-        points.dedup_by(|b, a| (a.at - b.at).abs() <= SAME && (a.value - b.value).abs() <= SAME);
+        points.sort_by(|a, b| a.at.0.total_cmp(&b.at.0));
+        points
+            .dedup_by(|b, a| (a.at.0 - b.at.0).abs() <= SAME && (a.value - b.value).abs() <= SAME);
         let name = spans.iter().find_map(|(i, ..)| {
             self.events[*i]
                 .automation

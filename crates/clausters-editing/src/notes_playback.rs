@@ -52,7 +52,7 @@ use clausters_core::event_lane::{
 use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_core::osc::OscType;
 use clausters_core::tempomap::TempoMap;
-use clausters_document::{EventSequence, Point};
+use clausters_document::{EventSequence, Point, Second};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -104,8 +104,8 @@ pub struct PlacedCurve {
     pub scope: String,
     /// What it drives, as the sequence's curve names it.
     pub target: Value,
-    /// Its break-points, `at` in seconds.
-    pub points: Vec<Point>,
+    /// Its break-points, in seconds.
+    pub points: Vec<Point<Second>>,
 }
 
 /// **Events and the curves over their channels**, placed on one axis.
@@ -170,8 +170,9 @@ pub fn placed(sequence: &EventSequence) -> Placement {
                         .points
                         .iter()
                         .map(|p| Point {
-                            at: map.secs_at(event.at.0 + p.at) - start,
-                            ..p.clone()
+                            at: Second(map.secs_at(event.at.0 + p.at.0) - start),
+                            value: p.value,
+                            data: p.data.clone(),
                         })
                         .collect(),
                 })
@@ -198,8 +199,9 @@ pub fn placed(sequence: &EventSequence) -> Placement {
                 .points
                 .iter()
                 .map(|p| Point {
-                    at: map.secs_at(p.at),
-                    ..p.clone()
+                    at: Second(map.secs_at(p.at.0)),
+                    value: p.value,
+                    data: p.data.clone(),
                 })
                 .collect(),
         })

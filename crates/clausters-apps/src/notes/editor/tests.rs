@@ -359,7 +359,7 @@ fn a_curve_drawn_on_the_roll_is_an_edit_of_the_sequence() {
     let record = out.record.expect("an entry");
     assert_eq!(record.label, "draw a curve");
     let points = sequence.lock().unwrap().automation[0].points.clone();
-    assert_eq!((points[1].at, points[1].value), (1.0, 90.0));
+    assert_eq!((points[1].at.0, points[1].value), (1.0, 90.0));
     assert!(e.apply(&record.legs[0].backward));
     assert!(sequence.lock().unwrap().automation[0].points.is_empty());
 }

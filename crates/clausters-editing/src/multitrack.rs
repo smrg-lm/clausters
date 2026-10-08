@@ -498,7 +498,7 @@ pub fn fade_points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         for point in picture::fade_points(lane, region, &multitrack.defaults) {
             out.push(json!(name));
             out.extend(
-                crate::points::quad(look.frame_at(point.at), &point)
+                crate::points::quad(look.frame_at(point.at.get()), &point)
                     .into_iter()
                     .map(|n| json!(n)),
             );
@@ -524,7 +524,7 @@ pub fn points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         for point in &curve.points {
             out.push(json!(curve.automation.0.to_string()));
             out.extend(
-                crate::points::quad(look.frame_at(point.at), point)
+                crate::points::quad(look.frame_at(point.at.get()), point)
                     .into_iter()
                     .map(|n| json!(n)),
             );
@@ -719,7 +719,7 @@ pub fn placed_notes(
                     .points
                     .into_iter()
                     .map(|p| clausters_document::Point {
-                        at: position + (p.at - box_.start) / rate,
+                        at: Second(position + (p.at.get() - box_.start) / rate),
                         ..p
                     })
                     .collect(),
@@ -733,14 +733,14 @@ pub fn placed_notes(
 
 /// Points with every `at` taken to `origin + at * scale`.
 fn scaled(
-    points: Vec<clausters_document::Point>,
+    points: Vec<clausters_document::Point<Second>>,
     origin: f64,
     scale: f64,
-) -> Vec<clausters_document::Point> {
+) -> Vec<clausters_document::Point<Second>> {
     points
         .into_iter()
         .map(|p| clausters_document::Point {
-            at: origin + p.at * scale,
+            at: Second(origin) + p.at * scale,
             ..p
         })
         .collect()
@@ -867,7 +867,7 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
 /// move.
 fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
     let mut order: Vec<String> = Vec::new();
-    let mut found: HashMap<String, Vec<clausters_document::points::Point>> = HashMap::new();
+    let mut found: HashMap<String, Vec<clausters_document::points::Point<Second>>> = HashMap::new();
     for group in groups(values, POINT_QUINTUPLE) {
         let name = text(&group[0]);
         // A layer's time is its box's own, so a break-point inside one comes
@@ -877,7 +877,7 @@ fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
             Vec::new()
         });
         points.push(crate::points::point(
-            look.secs_at(number(&group[1])),
+            Second(look.secs_at(number(&group[1]))),
             number(&group[2]),
             number(&group[3]),
             number(&group[4]),
@@ -1456,17 +1456,17 @@ mod tests {
     }
 
     /// A curve with one point at the origin and one `at` seconds along.
-    fn curve(id: NodeId, at: f64) -> Automation {
+    fn curve(id: NodeId, at: f64) -> Automation<Second> {
         let mut a = Automation::new(id, Opaque::none());
         a.name = Some(format!("curve {}", id.0));
         a.points = vec![
             Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 0.0,
                 data: shape(),
             },
             Point {
-                at,
+                at: Second(at),
                 value: 1.0,
                 data: shape(),
             },
@@ -2271,7 +2271,7 @@ mod tests {
             made[0]
                 .points
                 .iter()
-                .map(|p| (p.at, p.value))
+                .map(|p| (p.at.0, p.value))
                 .collect::<Vec<_>>(),
             vec![(0.0, 1.0), (4.0, 1.0)]
         );

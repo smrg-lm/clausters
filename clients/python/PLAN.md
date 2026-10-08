@@ -1691,10 +1691,16 @@ becomes `seq.history`, and it needs no host, so it leaves `clausters.gui`:
   (`{"port": ...}` on a track, `{control|bend|pressure|timbre|cc}` with
   `channel`, `min`, `max` in a sequence). ✅ The type's doc comment said "`at`
   is in seconds", which was false in two of its four uses; it says what each
-  holder makes of it now *(with the rename)*. ⬜ `at` is still an untyped `f64`
+  holder makes of it now *(with the rename)*. ✅ `at` was an untyped `f64`
   among `Second` and `Beat` positions: a `Point` is shared with every other
   curve, so typing the axis per holder is a generic `Automation` (or a point
-  per unit), a change of its own rather than a rename's.
+  per unit), a change of its own rather than a rename's. **Done 2026-10-08**,
+  as the generic: `Point<T>` and `Automation<T>` over the crate's
+  `timebase::Axis` -- `Second` on a track and a region, `Beat` on a sequence
+  and an event, plain `f64` (the default) for a curve nothing places. The
+  wire is unchanged, so neither client moved; what is shared over curves
+  (sampling, drawing, comparing) is generic over the axis and leaves it only
+  through `Axis::number`.
 - ✅ **`UndoHistory`, not `History`** *(the user, 2026-10-01)*: what
   `seq.history` answers. `History` is already the crate's pile in both
   clients (`clausters.document.History`, the structures registered and the
@@ -1726,7 +1732,7 @@ kept beside the objects, and every call site is rewritten in the same pass
     *(Done 2026-10-01, one commit per rename: `EventLane`, `TrackRow` with
     the wire and the widget-level `Multitrack` deleted, `automation`,
     `TakeLane`, `OscMarker`, and `Automation`'s doc comment. The session
-    format is 5. Left open: `at`'s type, above, and the fifth sense of
+    format is 5. Left open then: `at`'s type, above (since done), and the fifth sense of
     "lane" found on the way, in Found by use.)*
   - ✅ **C57.1 — Reading.** `seq.events` with its identity map, `SeqEvent`
     (`at`, its keys, `automation`, `.event`), `at`/`range`/

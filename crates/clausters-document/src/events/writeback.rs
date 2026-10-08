@@ -34,6 +34,7 @@ use super::score::render;
 use super::{CurveKind, Event, EventSequence, MidiSpec};
 use crate::Opaque;
 use crate::multitrack::Automation;
+use crate::timebase::Beat;
 
 /// A sequence with a page's edit written back: the sequence, and which item
 /// of the page after each of its events is.
@@ -76,7 +77,7 @@ fn item_of(rendered: &EventSequence) -> BTreeMap<u64, u64> {
 }
 
 /// A curve without the identity a holder gave it.
-fn bare(curve: &Automation) -> Automation {
+fn bare(curve: &Automation<Beat>) -> Automation<Beat> {
     Automation {
         id: crate::NodeId(0),
         ..curve.clone()
@@ -96,7 +97,7 @@ fn alike(a: &Event, b: &Event) -> bool {
 
 /// What a curve of a sequence drives and on which channel: what makes two of
 /// them the same lane, whatever either is called.
-fn lane_of(curve: &Automation) -> String {
+fn lane_of(curve: &Automation<Beat>) -> String {
     let target = &curve.target.0;
     let kind = match CurveKind::of(target) {
         CurveKind::Cc(number) => format!("cc {number}"),
@@ -234,7 +235,7 @@ pub fn write_back(
     }
 
     // The curves: one the two renders write alike is the sequence's own.
-    let lanes = |rendered: &EventSequence| -> BTreeMap<String, Automation> {
+    let lanes = |rendered: &EventSequence| -> BTreeMap<String, Automation<Beat>> {
         rendered
             .automation
             .iter()

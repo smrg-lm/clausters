@@ -436,7 +436,7 @@ fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
         .push(curve);
 
     let points = vec![Point {
-        at: 0.0,
+        at: Second(0.0),
         value: 0.5,
         data: Opaque::none(),
     }];
@@ -495,12 +495,12 @@ fn an_automation_lane_is_edited_with_the_curves_own_verb() {
     let mut multitrack = multitrack();
     let points = vec![
         Point {
-            at: 0.0,
+            at: Second(0.0),
             value: 0.0,
             data: Opaque::none(),
         },
         Point {
-            at: 4.0,
+            at: Second(4.0),
             value: 1.0,
             data: Opaque(serde_json::json!({ "shape": "exp" })),
         },
@@ -817,7 +817,7 @@ fn vocabulary() -> Vec<MultitrackIntent> {
         MultitrackIntent::SetAutomation {
             automation: NodeId(22),
             points: vec![Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 1.0,
                 data: Opaque::none(),
             }],

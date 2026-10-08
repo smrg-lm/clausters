@@ -34,7 +34,8 @@ use clausters_core::mixer;
 use clausters_core::tempomap::TempoMap;
 
 use crate::multitrack::{Automation, Content, Multitrack, Track};
-use crate::{NodeId, SourceId};
+use crate::timebase::Axis;
+use crate::{NodeId, Second, SourceId};
 
 /// What a caller knows about a source that the document does not: where its
 /// samples are on a running server, and how wide they are.
@@ -218,7 +219,7 @@ pub struct Plan {
 /// *does* own is the shape the multitrack editor writes there, which is
 /// `{"port": "gain"}` and nothing else. A target that says something else is a
 /// curve this cannot hear, and it is left out rather than guessed at.
-pub fn curve_port(automation: &Automation) -> Option<&str> {
+pub fn curve_port<T: Axis>(automation: &Automation<T>) -> Option<&str> {
     automation.target.0.get("port")?.as_str()
 }
 
@@ -234,15 +235,16 @@ pub fn curve_port(automation: &Automation) -> Option<&str> {
 /// editor had already settled what those two keys mean -- its projection draws
 /// them and its reading writes them -- so a bent segment was drawn bent and
 /// heard straight (found 2026-09-13, by ear).
-pub fn value_at(points: &[crate::Point], at: f64) -> f64 {
+pub fn value_at<T: Axis>(points: &[crate::Point<T>], at: T) -> f64 {
+    let at = at.number();
     let first = &points[0];
-    if at <= first.at {
+    if at <= first.at.number() {
         return first.value;
     }
     for pair in points.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
-        if at < b.at {
-            let span = b.at - a.at;
+        if at < b.at.number() {
+            let span = b.at.number() - a.at.number();
             if span <= 0.0 {
                 return b.value;
             }
@@ -259,7 +261,7 @@ pub fn value_at(points: &[crate::Point], at: f64) -> f64 {
                 curve,
                 a.value as f32,
                 b.value as f32,
-                ((at - a.at) / span) as f32,
+                ((at - a.at.number()) / span) as f32,
             ));
         }
     }
@@ -290,7 +292,12 @@ pub fn tabulate(first: f64, last: f64, step: f64, value: impl Fn(f64) -> f64) ->
 /// `origin` is the second the curve's own axis starts at: a track's automation
 /// is on the timeline and a clip's is the box's own time, which is the whole
 /// difference between the two places a curve lives.
-fn curves(automation: &[Automation], origin: f64, step: f64, rate: f64) -> Vec<PlannedCurve> {
+fn curves(
+    automation: &[Automation<Second>],
+    origin: f64,
+    step: f64,
+    rate: f64,
+) -> Vec<PlannedCurve> {
     let frames = |secs: f64| secs * rate;
     let mut out = Vec::new();
     for curve in automation {
@@ -300,10 +307,10 @@ fn curves(automation: &[Automation], origin: f64, step: f64, rate: f64) -> Vec<P
         let Some(port) = curve_port(curve) else {
             continue;
         };
-        let first = frames(origin + curve.points[0].at);
-        let last = frames(origin + curve.points[curve.points.len() - 1].at);
+        let first = frames(origin + curve.points[0].at.get());
+        let last = frames(origin + curve.points[curve.points.len() - 1].at.get());
         let table = tabulate(first, last, step, |frame| {
-            value_at(&curve.points, frame / rate - origin)
+            value_at(&curve.points, Second(frame / rate - origin))
         });
         out.push(PlannedCurve {
             id: curve.id,
@@ -912,13 +919,13 @@ mod curve_tests {
     use crate::multitrack::{Automation, TakeLane, Track};
     use crate::timebase::Second;
 
-    fn curve(id: u64, target: serde_json::Value, points: &[(f64, f64)]) -> Automation {
+    fn curve(id: u64, target: serde_json::Value, points: &[(f64, f64)]) -> Automation<Second> {
         Automation {
             target: crate::Opaque(target),
             points: points
                 .iter()
                 .map(|&(at, value)| crate::Point {
-                    at,
+                    at: Second(at),
                     value,
                     data: crate::Opaque::none(),
                 })
@@ -927,7 +934,7 @@ mod curve_tests {
         }
     }
 
-    fn track_with(automation: Vec<Automation>) -> Multitrack {
+    fn track_with(automation: Vec<Automation<Second>>) -> Multitrack {
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.take_lanes[0] = TakeLane::new(NodeId(2));
         track.automation = automation;

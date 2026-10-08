@@ -1342,16 +1342,16 @@ mod tests {
     }
 
     /// A gain curve, which is the only target the plan can hear.
-    fn gain_curve(id: u64, top: f64) -> Automation {
+    fn gain_curve(id: u64, top: f64) -> Automation<Second> {
         let mut curve = Automation::new(NodeId(id), Opaque(json!({ "port": "gain" })));
         curve.points = vec![
             Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 0.0,
                 data: Opaque::none(),
             },
             Point {
-                at: 4.0,
+                at: Second(4.0),
                 value: top,
                 data: Opaque::none(),
             },

@@ -211,7 +211,7 @@ pub struct Curve {
     pub target: Opaque,
     /// The break-points. `at` is in seconds, like every placement here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub points: Vec<Point>,
+    pub points: Vec<Point<Second>>,
     /// Whether the row or layer is shown -- the view's own state, kept in the
     /// multitrack because which curves a person had open is part of reopening it as
     /// they left it.
@@ -243,7 +243,7 @@ pub fn layers(multitrack: &Multitrack) -> Vec<Curve> {
         .collect()
 }
 
-fn curve(automation: &Automation, owner: NodeId) -> Curve {
+fn curve(automation: &Automation<Second>, owner: NodeId) -> Curve {
     Curve {
         automation: automation.id,
         owner,
@@ -265,7 +265,7 @@ pub struct Curved {
     pub name: String,
     /// Its break-points, in order.
     #[serde(default)]
-    pub points: Vec<Point>,
+    pub points: Vec<Point<Second>>,
 }
 
 /// **What a `"points"` report means**, as edits in the multitrack's own vocabulary.
@@ -312,11 +312,11 @@ pub fn fade_points(
     lane: &TakeLane,
     region: &Region,
     defaults: &crate::multitrack::Defaults,
-) -> Vec<Point> {
+) -> Vec<Point<Second>> {
     let (fade_in, fade_out) = lane.edges(region, defaults);
     let length = region.length.get().max(0.0);
     let point = |at: f64, value: f64, shape: i32, curve: f64| Point {
-        at,
+        at: Second(at),
         value,
         data: Opaque(json!({ "shape": shape, "curve": curve })),
     };
@@ -338,13 +338,17 @@ pub fn fade_points(
 /// sloped side and the fade out the last, each a length and its shape. A side
 /// that did not move is left exactly as the region states it -- a region
 /// following the multitrack's default keeps following it.
-fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option<MultitrackIntent> {
+fn read_fades(
+    multitrack: &Multitrack,
+    region: &str,
+    points: &[Point<Second>],
+) -> Option<MultitrackIntent> {
     let id = NodeId(region.parse().ok()?);
     let (_, lane, held) = multitrack.locate(id)?;
     let [p0, p1, p2, p3] = points else {
         return None;
     };
-    let shape_of = |p: &Point| {
+    let shape_of = |p: &Point<Second>| {
         let data = p.data.0.as_object();
         let read = |key: &str| data.and_then(|d| d.get(key)).and_then(Value::as_f64);
         (
@@ -367,8 +371,13 @@ fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option
         }
     };
     let (was_in, was_out) = lane.edges(held, &multitrack.defaults);
-    let fade_in = side(p1.at - p0.at, shape_of(p0), &was_in, &held.fade_in);
-    let fade_out = side(p3.at - p2.at, shape_of(p2), &was_out, &held.fade_out);
+    let fade_in = side((p1.at - p0.at).get(), shape_of(p0), &was_in, &held.fade_in);
+    let fade_out = side(
+        (p3.at - p2.at).get(),
+        shape_of(p2),
+        &was_out,
+        &held.fade_out,
+    );
     (fade_in != held.fade_in || fade_out != held.fade_out).then_some(MultitrackIntent::FadeRegion {
         region: id,
         fade_in,
@@ -384,7 +393,7 @@ fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option
 /// as `0` -- so a curve reported back exactly as it was drawn came out as an
 /// *edit* in the page and as nothing in a script, which is one report meaning
 /// two things. Everything else compares as it always did.
-fn same_points(held: &[Point], reported: &[Point]) -> bool {
+fn same_points(held: &[Point<Second>], reported: &[Point<Second>]) -> bool {
     held.len() == reported.len()
         && held
             .iter()
@@ -524,12 +533,12 @@ pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackI
                 made.name = Some("gain".into());
                 made.points = vec![
                     Point {
-                        at: 0.0,
+                        at: Second(0.0),
                         value: 1.0,
                         data: Opaque::none(),
                     },
                     Point {
-                        at: span.max(1.0),
+                        at: Second(span.max(1.0)),
                         value: 1.0,
                         data: Opaque::none(),
                     },
@@ -1229,11 +1238,11 @@ mod tests {
         multitrack
     }
 
-    fn curve_at(id: NodeId, value: f64) -> Automation {
+    fn curve_at(id: NodeId, value: f64) -> Automation<Second> {
         let mut a = Automation::new(id, Opaque::none());
         a.name = Some(format!("curve {}", id.0));
         a.points = vec![Point {
-            at: 0.0,
+            at: Second(0.0),
             value,
             data: Opaque::none(),
         }];
@@ -1489,7 +1498,7 @@ mod tests {
         );
         assert!(same.is_empty(), "a look is not an edit: {same:?}");
 
-        points[1].at = 0.5;
+        points[1].at = Second(0.5);
         let moved = read_points(&multitrack, &[Curved { name, points }]);
         let [
             MultitrackIntent::FadeRegion {
@@ -1652,7 +1661,7 @@ mod tests {
         let stray = vec![Curved {
             name: "hello".into(),
             points: vec![Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 1.0,
                 data: Opaque::none(),
             }],
@@ -1669,7 +1678,7 @@ mod tests {
         let mut track = Track::new(NodeId(1), NodeId(2));
         let mut curve = Automation::new(NodeId(4), Opaque::none());
         curve.points = vec![Point {
-            at: 0.0,
+            at: Second(0.0),
             value: 0.0,
             data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.0 })),
         }];
@@ -1679,7 +1688,7 @@ mod tests {
         let spelled = vec![Curved {
             name: "4".into(),
             points: vec![Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 0.0,
                 data: Opaque(serde_json::json!({ "shape": 1.0, "curve": 0 })),
             }],
@@ -1689,7 +1698,7 @@ mod tests {
         let moved = vec![Curved {
             name: "4".into(),
             points: vec![Point {
-                at: 0.0,
+                at: Second(0.0),
                 value: 0.0,
                 data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.5 })),
             }],

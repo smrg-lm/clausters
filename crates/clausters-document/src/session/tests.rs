@@ -544,12 +544,12 @@ fn a_whole_session_round_trips_losslessly() {
     );
     level.points = vec![
         Point {
-            at: 0.0,
+            at: Second(0.0),
             value: 0.0,
             data: crate::Opaque::none(),
         },
         Point {
-            at: 16.0,
+            at: Second(16.0),
             value: 1.0,
             data: crate::Opaque(serde_json::json!({"shape": "exp"})),
         },

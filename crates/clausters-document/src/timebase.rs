@@ -178,6 +178,52 @@ axis! {
     ContentBeat(f64)
 }
 
+/// **The axis a curve's points are on**: a position type a break-point's `at`
+/// may be -- [`Second`] for a multitrack's curves, [`Beat`] for a sequence's,
+/// and a plain `f64` for a curve no holder places on either.
+///
+/// A curve is drawn, edited and tabulated the same on every axis, so what is
+/// written once over its points is written over this, and leaves the axis
+/// only through [`Axis::number`] -- where it draws a pixel or samples a table,
+/// which is arithmetic on plain numbers on purpose. What it never does is mix
+/// two axes: a point in beats is not a point in seconds, and the compiler now
+/// says so where a doc comment used to.
+pub trait Axis:
+    Copy + PartialEq + PartialOrd + Default + std::fmt::Debug + Serialize + for<'de> Deserialize<'de>
+{
+    /// The number, leaving the axis.
+    fn number(self) -> f64;
+    /// A position on this axis at this number.
+    fn at(number: f64) -> Self;
+}
+
+impl Axis for f64 {
+    fn number(self) -> f64 {
+        self
+    }
+    fn at(number: f64) -> Self {
+        number
+    }
+}
+
+impl Axis for Second {
+    fn number(self) -> f64 {
+        self.0
+    }
+    fn at(number: f64) -> Self {
+        Self(number)
+    }
+}
+
+impl Axis for Beat {
+    fn number(self) -> f64 {
+        self.0
+    }
+    fn at(number: f64) -> Self {
+        Self(number)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

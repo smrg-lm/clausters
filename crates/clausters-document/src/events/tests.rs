@@ -281,7 +281,7 @@ fn a_sequence_goes_to_midi_and_back() {
     assert_eq!(back.automation[0].target.0, json!({"cc": 7, "channel": 0}));
     assert_eq!(
         (
-            back.automation[0].points[0].at,
+            back.automation[0].points[0].at.0,
             back.automation[0].points[0].value
         ),
         (1.0, 99.0)
@@ -304,7 +304,7 @@ fn a_sequence_curve_and_a_notes_curve_are_set_whole_and_removed() {
     let note = sequence.events[0].id;
     let mut cc = Automation::new(NodeId(0), Opaque(json!({"cc": 74})));
     cc.points.push(crate::Point {
-        at: 0.0,
+        at: Beat(0.0),
         value: 0.5,
         data: Opaque::none(),
     });
@@ -321,7 +321,7 @@ fn a_sequence_curve_and_a_notes_curve_are_set_whole_and_removed() {
     );
     cc.id = NodeId(sequence_curve);
     cc.points.push(crate::Point {
-        at: 1.0,
+        at: Beat(1.0),
         value: 1.0,
         data: Opaque::none(),
     });
@@ -479,7 +479,7 @@ fn a_files_streams_are_sequence_curves_and_a_notes_pressure_its_own() {
     assert_eq!(s.midi, Some(MidiSpec::Midi1));
     let curve = |target: Value| s.automation.iter().find(|l| l.target.0 == target).unwrap();
     let volume = curve(json!({"cc": 7, "channel": 2}));
-    let points: Vec<(f64, f64)> = volume.points.iter().map(|p| (p.at, p.value)).collect();
+    let points: Vec<(f64, f64)> = volume.points.iter().map(|p| (p.at.0, p.value)).collect();
     assert_eq!(points, [(0.0, 100.0), (1.0, 50.0)]);
     // 0x60 << 7 is 12288, a half of the way up: 6 of the channel's 12.
     assert_eq!(
@@ -497,7 +497,7 @@ fn a_files_streams_are_sequence_curves_and_a_notes_pressure_its_own() {
         .unwrap();
     assert_eq!(note.automation[0].target.0, json!({"pressure": true}));
     assert_eq!(
-        note.automation[0].points[0].at, 0.5,
+        note.automation[0].points[0].at.0, 0.5,
         "from the note's start"
     );
     let kept: Vec<String> = s
@@ -576,7 +576,7 @@ fn a_sequence_writes_its_curves_as_the_spec_says_them() {
         c.points = points
             .iter()
             .map(|(at, value, shape)| crate::Point {
-                at: *at,
+                at: Beat(*at),
                 value: *value,
                 data: Opaque(json!({"shape": shape})),
             })
@@ -680,7 +680,7 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
     let curve = |target: Value, value: f64| {
         let mut c = Automation::new(NodeId(0), Opaque(target));
         c.points = vec![crate::Point {
-            at: 0.0,
+            at: Beat(0.0),
             value,
             data: Opaque(json!({"shape": 0})),
         }];
@@ -751,12 +751,12 @@ fn a_midi2_sequence_is_its_clips_packets_and_back() {
 }
 
 /// A curve's points as `(at, value)`, linear.
-fn ramp(target: Value, points: &[(f64, f64)]) -> Automation {
+fn ramp(target: Value, points: &[(f64, f64)]) -> Automation<Beat> {
     let mut c = Automation::new(NodeId(0), Opaque(target));
     c.points = points
         .iter()
         .map(|&(at, value)| crate::Point {
-            at,
+            at: Beat(at),
             value,
             data: Opaque(json!({"shape": 1})),
         })
@@ -803,7 +803,7 @@ fn a_sequence_curve_given_to_its_notes_is_each_ones_own() {
     for event in &s.events[..3] {
         let bend = &event.automation[0];
         assert_eq!(bend.target.0, json!({"bend": true}));
-        let points: Vec<(f64, f64)> = bend.points.iter().map(|p| (p.at, p.value)).collect();
+        let points: Vec<(f64, f64)> = bend.points.iter().map(|p| (p.at.0, p.value)).collect();
         assert_eq!(points, [(0.0, 1.0), (2.0, 3.0)], "beat 1 to 3 of the ramp");
     }
     assert!(
@@ -848,7 +848,7 @@ fn a_chords_curves_gather_back_into_its_sequence_curve() {
     let points: Vec<(f64, f64)> = s.automation[0]
         .points
         .iter()
-        .map(|p| (p.at, p.value))
+        .map(|p| (p.at.0, p.value))
         .collect();
     assert_eq!(
         points,
@@ -986,7 +986,7 @@ fn a_channel_group_is_edited_and_removed_as_one() {
     let mut edited = lane(0, "staff 1");
     edited.id = NodeId(ids[0]);
     edited.points.push(crate::Point {
-        at: 2.0,
+        at: Beat(2.0),
         value: 64.0,
         data: Opaque::none(),
     });

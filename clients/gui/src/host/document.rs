@@ -2471,12 +2471,12 @@ mod window_verb_tests {
         track.automation.push(Automation {
             points: vec![
                 Point {
-                    at: 0.0,
+                    at: clausters_document::Second(0.0),
                     value: 1.0,
                     data: Opaque::default(),
                 },
                 Point {
-                    at: 4.0,
+                    at: clausters_document::Second(4.0),
                     value: 1.0,
                     data: Opaque::default(),
                 },
@@ -2532,12 +2532,12 @@ mod window_verb_tests {
         track.automation.push(Automation {
             points: vec![
                 Point {
-                    at: 0.0,
+                    at: clausters_document::Second(0.0),
                     value: 1.0,
                     data: Opaque::default(),
                 },
                 Point {
-                    at: 4.0,
+                    at: clausters_document::Second(4.0),
                     value: 1.0,
                     data: Opaque::default(),
                 },
