@@ -439,13 +439,19 @@ def test_a_track_curve_is_a_row_and_a_box_curve_is_a_layer():
     assert drawn["curves"][4] == 2.0, "the domain, read out of the target"
     assert len(drawn["curves"]) == 6, "one row, six numbers"
     assert drawn["layers"][:3] == ["31", "12", "env"], "the box it is inside"
-    assert len(drawn["layers"]) == 5, "a layer states no height"
+    layers = [drawn["layers"][i:i + 5] for i in range(0, len(drawn["layers"]), 5)]
+    assert len(drawn["layers"]) % 5 == 0, "a layer states no height"
+    # And every box of samples has its fade envelope as a layer of its own.
+    fades = [layer for layer in layers if str(layer[0]).startswith("fade:")]
+    assert [f[0] for f in fades] == [f"fade:{f[1]}" for f in fades] and fades
+    assert len(layers) == 1 + len(fades)
 
 
 def test_every_curve_s_points_travel_in_one_list_on_this_window_s_axis():
     ed = editor(curved())
     flat = props(ed)["points"]
-    points = [flat[i:i + 5] for i in range(0, len(flat), 5)]
+    points = [flat[i:i + 5] for i in range(0, len(flat), 5)
+              if not str(flat[i]).startswith("fade:")]
     assert [p[0] for p in points] == ["30", "30", "31"]
     # A beat is a second at the reader's default, so the second break-point of
     # `gain` is at four seconds' worth of frames.

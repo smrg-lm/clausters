@@ -4954,6 +4954,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A press in a multitrack lands off its mark again at a density of 0.8** *(found 2026-10-08, driving a multitrack in a page from the automated browser, whose `devicePixelRatio` is 0.8)*. The same numbers as the entry below, which is closed: a 900x240 CSS canvas with a 960x256 backing store (1.0667) at a ratio of 0.8. A press on a fade envelope's corner trimmed the box's left edge instead, a press on its sloped side did the same, and the wheel zoomed about a time that was not under the pointer — while a host test pressing the same corner through the element (`a_fade_corner_is_taken_and_the_flat_top_is_the_boxs`) takes it. So either `at_fit` does not reach the path a multitrack's press, drag and wheel take, or what it fixed came back. Not diagnosed; the native window is not affected.
+
 - ✅ **A press lands off its mark in a page whose density changed after it
   opened** *(found 2026-10-06, driving the score editor's page from an
   automated browser, and seen the same day by the user in that window: "the

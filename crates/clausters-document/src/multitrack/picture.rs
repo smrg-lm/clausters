@@ -283,6 +283,9 @@ pub fn read_points(multitrack: &Multitrack, reported: &[Curved]) -> Vec<Multitra
     reported
         .iter()
         .filter_map(|curve| {
+            if let Some(region) = curve.name.strip_prefix(FADE_LAYER) {
+                return read_fades(multitrack, region, &curve.points);
+            }
             let id = curve.name.parse::<u64>().ok().map(NodeId)?;
             let held = multitrack.automation(id)?;
             (!same_points(&held.points, &curve.points)).then(|| MultitrackIntent::SetAutomation {
@@ -291,6 +294,82 @@ pub fn read_points(multitrack: &Multitrack, reported: &[Curved]) -> Vec<Multitra
             })
         })
         .collect()
+}
+
+/// **What a region's fade envelope is called as a layer**: `fade:` and the
+/// region's id. A box's two fades are drawn and edited as one envelope inside
+/// it -- the trapezoid [`fade_points`] writes -- with the editing of a clip's
+/// automation and none of its standing: it is no automation, and a report of
+/// it is read back as the region's own fades ([`read_points`]).
+pub const FADE_LAYER: &str = "fade:";
+
+/// **A region's fades as the envelope they make over its box**: silence at
+/// its start, full level where the fade in ends, full level where the fade
+/// out begins, silence at its end -- four points in seconds from the box's
+/// start, each carrying the shape of the segment it starts (`shape` and
+/// `curve`, `envshape` numbers), the flat top a straight line.
+pub fn fade_points(region: &Region, defaults: &crate::multitrack::Defaults) -> Vec<Point> {
+    let (fade_in, fade_out) = region.edges(defaults);
+    let length = region.length.get().max(0.0);
+    let point = |at: f64, value: f64, shape: i32, curve: f64| Point {
+        at,
+        value,
+        data: Opaque(json!({ "shape": shape, "curve": curve })),
+    };
+    let lin = clausters_core::envshape::SHAPE_LINEAR;
+    vec![
+        point(0.0, 0.0, fade_in.shape, fade_in.curve),
+        point(fade_in.length, 1.0, lin, 0.0),
+        point(
+            length - fade_out.length,
+            1.0,
+            fade_out.shape,
+            fade_out.curve,
+        ),
+        point(length, 0.0, lin, 0.0),
+    ]
+}
+
+/// A region's fades as a hand left its envelope: the fade in is the first
+/// sloped side and the fade out the last, each a length and its shape. A side
+/// that did not move is left exactly as the region states it -- a region
+/// following the multitrack's default keeps following it.
+fn read_fades(multitrack: &Multitrack, region: &str, points: &[Point]) -> Option<MultitrackIntent> {
+    let id = NodeId(region.parse().ok()?);
+    let (_, _, held) = multitrack.locate(id)?;
+    let [p0, p1, p2, p3] = points else {
+        return None;
+    };
+    let shape_of = |p: &Point| {
+        let data = p.data.0.as_object();
+        let read = |key: &str| data.and_then(|d| d.get(key)).and_then(Value::as_f64);
+        (
+            read("shape").map_or(clausters_core::envshape::SHAPE_WELCH, |s| s as i32),
+            read("curve").unwrap_or(0.0),
+        )
+    };
+    let side = |length: f64,
+                (shape, curve): (i32, f64),
+                was: &crate::multitrack::Edge,
+                own: &Option<Fade>| {
+        let length = length.max(0.0);
+        let same = (length - was.length).abs() < 1e-6
+            && shape == was.shape
+            && (curve - was.curve).abs() < 1e-6;
+        if same {
+            own.clone()
+        } else {
+            Some(Fade::of(Second(length)).shaped(shape, curve))
+        }
+    };
+    let (was_in, was_out) = held.edges(&multitrack.defaults);
+    let fade_in = side(p1.at - p0.at, shape_of(p0), &was_in, &held.fade_in);
+    let fade_out = side(p3.at - p2.at, shape_of(p2), &was_out, &held.fade_out);
+    (fade_in != held.fade_in || fade_out != held.fade_out).then_some(MultitrackIntent::FadeRegion {
+        region: id,
+        fade_in,
+        fade_out,
+    })
 }
 
 /// Whether two runs of break-points say the same thing.
@@ -1381,6 +1460,47 @@ mod tests {
             (crate::multitrack::DEFAULT_FADE, 0.0)
         );
         assert_eq!(tail.fades(defaults), (0.0, crate::multitrack::DEFAULT_FADE));
+    }
+
+    /// **A box's fade envelope comes back as its fades**: a report that moved
+    /// the corner of its top is the region's fade in at that length, the side
+    /// it did not touch stays as the region states it (here, the multitrack's
+    /// default), and a report that moved nothing is no edit.
+    #[test]
+    fn a_fade_envelope_report_is_the_regions_fades() {
+        let multitrack = multitrack();
+        let region = multitrack.tracks[0].take_lanes[0].regions[0].clone();
+        let name = format!("{FADE_LAYER}{}", region.id.0);
+        let mut points = fade_points(&region, &multitrack.defaults);
+        let same = read_points(
+            &multitrack,
+            &[Curved {
+                name: name.clone(),
+                points: points.clone(),
+            }],
+        );
+        assert!(same.is_empty(), "a look is not an edit: {same:?}");
+
+        points[1].at = 0.5;
+        let moved = read_points(&multitrack, &[Curved { name, points }]);
+        let [
+            MultitrackIntent::FadeRegion {
+                region: id,
+                fade_in,
+                fade_out,
+            },
+        ] = moved.as_slice()
+        else {
+            panic!("one fade edit: {moved:?}");
+        };
+        assert_eq!(*id, region.id);
+        assert_eq!(fade_in.as_ref().map(|f| f.length), Some(Second(0.5)));
+        assert_eq!(
+            fade_in.as_ref().map(|f| f.shape),
+            Some(clausters_core::envshape::SHAPE_WELCH),
+            "the shape it had"
+        );
+        assert_eq!(*fade_out, region.fade_out, "the side nobody touched");
     }
 
     /// **A curve holds an id like anything else does.** `fresh_id` answers

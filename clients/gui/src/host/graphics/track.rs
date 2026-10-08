@@ -570,11 +570,12 @@ pub struct FadeEdge {
     pub curve: f32,
 }
 
-/// **A box's own fades, drawn on it**: each one the envelope segment it is --
-/// from the silent corner to full level for the fade in, from full level to
-/// the silent corner for the fade out -- traced through
+/// **The silenced part of a box's fades, veiled**: above each one's envelope
+/// segment -- from the silent corner to full level for the fade in, from full
+/// level to the silent corner for the fade out -- traced through
 /// `clausters_core::envshape::shape_value`, the function the reader plays it
-/// with, and the silenced part above it veiled. `local` is the box's own
+/// with. The segment itself, with the corners a hand drags, is the box's
+/// `fade:` layer, a curve drawn over this. `local` is the box's own
 /// window over `[0, dur]` (`clip_local_view`), so a box scrolled half off
 /// still draws the part of its fade that shows, at the shape it has. A fade
 /// under a pixel is not drawn.
@@ -589,11 +590,10 @@ pub fn draw_clip_fades(
     fade_in: FadeEdge,
     fade_out: FadeEdge,
 ) {
-    let (mesh, m, theme) = d.parts();
+    let (mesh, _m, theme) = d.parts();
     let (top, bottom) = (cr.y, cr.y + cr.h);
     let (left, right) = (cr.x, cr.x + cr.w);
     let veil = theme.panel;
-    let edge = theme.object_edge;
     // One segment from `x0` (level `from`) to `x1` (level `to`), traced a
     // couple of pixels at a time inside the box's rectangle.
     let mut segment = |x0: f32, x1: f32, from: f32, to: f32, fade: FadeEdge| {
@@ -623,7 +623,6 @@ pub fn draw_clip_fades(
                 ],
                 veil,
             );
-            mesh.line([prev.0, prev.1], [next.0, next.1], m.divider_w, edge);
             prev = next;
         }
     };

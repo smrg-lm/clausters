@@ -420,6 +420,10 @@ pub(super) fn curve_bodies(
             let mut props = Map::new();
             props.insert("min".into(), Value::from(c.min));
             props.insert("max".into(), Value::from(c.max));
+            // A box's fade envelope is edited by a trapezoid's rules.
+            if c.name.starts_with("fade:") {
+                props.insert("trapezoid".into(), Value::from(true));
+            }
             if let Some(flat) = points.get(&c.name) {
                 props.insert("points".into(), Value::from(flat.clone()));
             }

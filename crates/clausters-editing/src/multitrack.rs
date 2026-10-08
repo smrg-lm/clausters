@@ -503,6 +503,56 @@ pub fn layers(multitrack: &Multitrack) -> Vec<Value> {
     out
 }
 
+/// **Every box of samples' fade envelope, as a layer of its own** -- the same
+/// quintuple a clip's automation is, named `fade:<region>`
+/// ([`picture::FADE_LAYER`]), from 0 to 1. The host draws and edits it with a
+/// clip automation's editing and a trapezoid's rules (its corners at
+/// silence, its top at full level), and a report of it comes back as the
+/// region's fades. A box of notes has none: its voices are not faded.
+pub fn fade_layers(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for box_ in samples_boxes(multitrack, look) {
+        let name = box_.region.0.to_string();
+        out.extend([
+            json!(format!("{}{name}", picture::FADE_LAYER)),
+            json!(name),
+            json!("fade"),
+            json!(0.0),
+            json!(1.0),
+        ]);
+    }
+    out
+}
+
+/// The break-points of every [`fade_layers`] envelope, as `points` carries
+/// any curve's: measured from the box's start.
+pub fn fade_points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for box_ in samples_boxes(multitrack, look) {
+        let Some((_, _, region)) = multitrack.locate(box_.region) else {
+            continue;
+        };
+        let name = format!("{}{}", picture::FADE_LAYER, box_.region.0);
+        for point in picture::fade_points(region, &multitrack.defaults) {
+            out.push(json!(name));
+            out.extend(
+                crate::points::quad(look.frame_at(point.at), &point)
+                    .into_iter()
+                    .map(|n| json!(n)),
+            );
+        }
+    }
+    out
+}
+
+/// The boxes whose fades are played: every box but one of notes.
+fn samples_boxes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<picture::Box> {
+    picture::boxes(multitrack)
+        .into_iter()
+        .filter(|b| b.source.and_then(|s| look.sources.sequence(s)).is_none())
+        .collect()
+}
+
 /// Every curve's break-points as flat quintuples, each naming the curve it is
 /// on -- one list for the rows and the layers alike.
 ///
@@ -624,8 +674,12 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("tracks".into(), Value::Array(tracks(multitrack)));
     out.insert("clips".into(), Value::Array(clips(multitrack, look)));
     out.insert("curves".into(), Value::Array(curves(multitrack)));
-    out.insert("layers".into(), Value::Array(layers(multitrack)));
-    out.insert("points".into(), Value::Array(points(multitrack, look)));
+    let mut drawn = layers(multitrack);
+    drawn.extend(fade_layers(multitrack, look));
+    out.insert("layers".into(), Value::Array(drawn));
+    let mut points = points(multitrack, look);
+    points.extend(fade_points(multitrack, look));
+    out.insert("points".into(), Value::Array(points));
     out.insert("hidden".into(), json!(hidden(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));

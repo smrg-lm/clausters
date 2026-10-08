@@ -74,6 +74,13 @@ pub struct Curve {
     /// its clip drew and rules nothing; a view draws its own field, its label
     /// and its strips, and shares only the *axis* with the group it is on.
     body: bool,
+    /// **A trapezoid**: four points, silence at both ends and full level
+    /// between -- a box's fade envelope. The same element and the same
+    /// gestures, with a trapezoid's rules: the two ends cannot be taken, the
+    /// two corners of the top move in time only and never past each other, a
+    /// point is neither added nor removed, and only the two sloped sides take
+    /// a press -- the flat top is the box's, so a press on it moves the box.
+    trapezoid: bool,
 }
 
 /// The parts of a standalone curve's rectangle ([`Curve::regions`]).
@@ -144,6 +151,7 @@ fn from_props(props: &Map<String, Value>) -> Curve {
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
         editor: standalone_chrome(props),
         body: false,
+        trapezoid: props.get("trapezoid").and_then(truthy).unwrap_or(false),
     }
 }
 
@@ -158,6 +166,49 @@ fn standalone_chrome(props: &Map<String, Value>) -> EditorProps {
 }
 
 impl Curve {
+    /// The point a press at `at` takes: any point within reach, or -- on a
+    /// trapezoid -- one of the two corners of its top, the nearest of the two
+    /// when both are in reach (a short fade puts one over the box's corner).
+    fn grab_point(&self, ax: &Axes, at: (f64, f64), m: &Metrics) -> Option<usize> {
+        if !self.trapezoid {
+            return ax.hit_point(&self.points, at.0, at.1, m);
+        }
+        if self.points.len() != 4 {
+            return None;
+        }
+        let radius = f64::from((m.point_radius + m.hit_slop).max(6.0));
+        [1usize, 2]
+            .into_iter()
+            .map(|i| {
+                let p = &self.points[i];
+                let (dx, dy) = (
+                    f64::from(ax.x(p.time)) - at.0,
+                    f64::from(ax.y(p.value)) - at.1,
+                );
+                (i, dx * dx + dy * dy)
+            })
+            .filter(|(_, d)| *d <= radius * radius)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    }
+
+    /// The segment a press at `at` bends: on a trapezoid, one of its two
+    /// sloped sides and only near its line.
+    fn grab_segment(&self, ax: &Axes, at: (f64, f64), m: &Metrics) -> Option<usize> {
+        let index = ax.hit_segment(&self.points, at.0)?;
+        if !self.trapezoid {
+            return Some(index);
+        }
+        ((index == 0 || index == 2) && ax.on_line(&self.points, at.0, at.1, m)).then_some(index)
+    }
+
+    /// A corner of a trapezoid's top moved to `t`: in time only, between its
+    /// neighbours.
+    fn move_corner(&mut self, i: usize, t: f64) {
+        let (lo, hi) = (self.points[i - 1].time, self.points[i + 1].time);
+        self.points[i].time = t.clamp(lo, hi.max(lo));
+    }
+
     /// The display mapping for this placement: **which rectangle** the picture
     /// is drawn in, and **which window** of time it is drawn over.
     ///
@@ -579,6 +630,10 @@ impl Element for Curve {
             return false;
         }
         let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
+        if self.trapezoid {
+            return self.grab_point(&ax, at, input.metrics).is_some()
+                || self.grab_segment(&ax, at, input.metrics).is_some();
+        }
         ax.body.contains(at.0, at.1)
             && (ax
                 .hit_point(&self.points, at.0, at.1, input.metrics)
@@ -596,7 +651,12 @@ impl Element for Curve {
             });
         }
         let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
-        let hit = ax.hit_point(&self.points, at.0, at.1, input.metrics);
+        let hit = self.grab_point(&ax, at, input.metrics);
+        // A trapezoid has its four points and no more: Ctrl adds and removes
+        // nothing on one, and the press goes back to the box.
+        if input.mods.ctrl && self.trapezoid {
+            return Claim::Decline;
+        }
         // Ctrl+click on a point removes it; elsewhere it adds one at the cursor
         // (which then drags until release).
         if input.mods.ctrl {
@@ -627,8 +687,10 @@ impl Element for Curve {
         // segment says is on offer. Inactive, the rectangle means the
         // container's own drag (moving a clip, resizing it), so the press goes
         // back to it.
-        if self.active(input.time)
-            && let Some(index) = ax.hit_segment(&self.points, at.0)
+        // A trapezoid's sloped sides are small and always its own, so they
+        // take a press whether or not the layer is the active one.
+        if (self.trapezoid || self.active(input.time))
+            && let Some(index) = self.grab_segment(&ax, at, input.metrics)
         {
             self.grab = Some(Grab::Segment {
                 index,
@@ -660,6 +722,10 @@ impl Element for Curve {
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
         match &mut self.grab {
+            Some(Grab::Point(i)) if self.trapezoid => {
+                let (i, t) = (*i, ax.t(at.0));
+                self.move_corner(i, t);
+            }
             Some(Grab::Point(i)) => ax.move_point(&mut self.points, *i, at.0, at.1),
             Some(Grab::Segment {
                 index,
@@ -897,6 +963,64 @@ mod tests {
         assert_eq!(msgs[0][0], OscType::String("points".into()));
         assert_eq!(msgs[0].len(), 1 + 4 * 2, "the tag plus a quad per point");
         assert!(c.grab.is_none());
+    }
+
+    /// **A trapezoid moves the corners of its top in time only**, and takes
+    /// nothing else: its ends cannot be grabbed, Ctrl adds and removes no
+    /// point, and its flat top goes back to the box -- while a sloped side is
+    /// bent like any segment.
+    #[test]
+    fn a_trapezoid_moves_its_top_corners_in_time_only() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 120.0, 120.0);
+        let fresh = || {
+            from_props(&props(
+                r#"{"min":0.0,"max":1.0,"duration":100.0,"trapezoid":true,
+                    "points":[0.0,0.0,4,0.0, 20.0,1.0,1,0.0, 80.0,1.0,4,0.0, 100.0,0.0,1,0.0]}"#,
+            ))
+        };
+        let field = controls::body_rect(rect, false, &m);
+        let x = |t: f64| field.x as f64 + t / 100.0 * field.w as f64;
+        let (top, bottom) = (field.y as f64, (field.y + field.h) as f64);
+
+        // The fade in's corner, dragged right and down: only its time moves,
+        // and not past the other corner.
+        let mut c = fresh();
+        c.press((x(20.0), top), &input(&m, rect, None));
+        assert!(matches!(c.grab, Some(Grab::Point(1))));
+        c.drag((x(95.0), bottom), &input(&m, rect, None));
+        assert_eq!((c.points[1].time, c.points[1].value), (80.0, 1.0));
+        assert_eq!(
+            c.release((0.0, 0.0), true, &input(&m, rect, None))
+                .into_messages()
+                .len(),
+            1
+        );
+
+        // An end is not a handle -- a press there is on the sloped side, and
+        // the end stays where it is -- Ctrl is no edit, the flat top is the
+        // box's.
+        let mut c = fresh();
+        c.press((x(0.0), bottom), &input(&m, rect, None));
+        assert!(!matches!(c.grab, Some(Grab::Point(_))));
+        c.drag((x(50.0), top), &input(&m, rect, None));
+        assert_eq!((c.points[0].time, c.points[0].value), (0.0, 0.0));
+        let mut c = fresh();
+        assert!(matches!(
+            c.press((x(50.0), top), &input(&m, rect, None)),
+            Claim::Decline
+        ));
+        let mut ctrl = input(&m, rect, None);
+        ctrl.mods.ctrl = true;
+        assert!(matches!(c.press((x(20.0), top), &ctrl), Claim::Decline));
+        assert_eq!(c.points.len(), 4);
+
+        // A sloped side bends, as any segment does.
+        // Half way through an equal-power rise is sin(pi/4) of full level.
+        let mid = bottom - std::f64::consts::FRAC_PI_4.sin() * (bottom - top);
+        assert!(c.layer_hit((x(10.0), mid), &input(&m, rect, None)));
+        c.press((x(10.0), mid), &input(&m, rect, None));
+        assert!(matches!(c.grab, Some(Grab::Segment { index: 0, .. })));
     }
 
     /// Ctrl adds a point where there is none and removes the one under the

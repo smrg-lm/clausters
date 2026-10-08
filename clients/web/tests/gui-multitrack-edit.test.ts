@@ -516,13 +516,23 @@ test("a track curve is a row and a box curve is a layer", () => {
     assert.equal(curves[4], 2.0, "the domain, read out of the target");
     assert.equal(curves.length, 6, "one row, six numbers");
     assert.deepEqual(layers.slice(0, 3), ["31", "12", "env"], "the box it is inside");
-    assert.equal(layers.length, 5, "a layer states no height");
+    assert.equal(layers.length % 5, 0, "a layer states no height");
+    // And every box of samples has its fade envelope as a layer of its own.
+    const fades: unknown[][] = [];
+    for (let i = 0; i < layers.length; i += 5) {
+        if (String(layers[i]).startsWith("fade:")) fades.push(layers.slice(i, i + 5));
+    }
+    assert.ok(fades.length > 0);
+    for (const f of fades) assert.equal(f[0], `fade:${f[1]}`);
+    assert.equal(layers.length / 5, 1 + fades.length);
 });
 
 test("every curve's points travel in one list on this window's axis", () => {
     const flat = props(editor(curved())).points as unknown[];
     const points: unknown[][] = [];
-    for (let i = 0; i + 5 <= flat.length; i += 5) points.push(flat.slice(i, i + 5));
+    for (let i = 0; i + 5 <= flat.length; i += 5) {
+        if (!String(flat[i]).startsWith("fade:")) points.push(flat.slice(i, i + 5));
+    }
     assert.deepEqual(points.map((p) => p[0]), ["30", "30", "31"]);
     // A beat is a second at the reader's default, so the second break-point of
     // `gain` is at four seconds' worth of frames.

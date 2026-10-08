@@ -2550,3 +2550,41 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
         "a fade under a pixel"
     );
 }
+
+/// **A box's fade corner is a handle**: a press on the corner of its fade
+/// envelope's top takes the `fade:` layer, not the box under it, and one on
+/// the flat top between the corners is the box's.
+#[test]
+fn a_fade_corner_is_taken_and_the_flat_top_is_the_boxs() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
+    let mt = from_props(&props(
+        r#"{"tracks": ["noise", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "noise", 0, 500, 0, "", 0],
+            "layers": ["fade:a", "a", "fade", 0, 1],
+            "points": ["fade:a", 0, 0, 4, 0, "fade:a", 100, 1, 1, 0,
+                       "fade:a", 400, 1, 4, 0, "fade:a", 500, 0, 1, 0]}"#,
+    ));
+    let time = mt_time(500.0);
+    let drawn = mt.curves_on_screen(rect, 100.0, &m, time);
+    let (_, layer, _) = drawn
+        .iter()
+        .find(|(n, ..)| *n == "fade:a")
+        .expect("the fade layer is drawn");
+    let x = |t: f64| layer.x as f64 + t / 500.0 * layer.w as f64;
+    let input = Input {
+        time,
+        ..input(&m, rect, 1000.0)
+    };
+    assert_eq!(
+        mt.curve_at((x(100.0), layer.y as f64 + 1.0), &input)
+            .as_deref(),
+        Some("fade:a"),
+        "the corner of the fade in"
+    );
+    assert_eq!(
+        mt.curve_at((x(250.0), layer.y as f64 + 1.0), &input),
+        None,
+        "the flat top"
+    );
+}
