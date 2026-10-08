@@ -75,6 +75,11 @@ document on its beat exactly — a note quantized to the third beat is at
 `3.0`, not at a second that rounds near it. The grid itself is the window's,
 like its zoom: setting it is no edit.
 
+**Snap to grid is a switch beside it**, on by default: with it off a drag, a
+paste and a split land where the hand puts them, and a quantize still moves
+onto the grid. G in the window and the View menu flip it, and so does
+`editor.snapToGrid = false`.
+
 ## `edit(x)`: one verb over the four structures
 
 `gui.edit` opens whichever editor the structure asks for, and it dispatches on

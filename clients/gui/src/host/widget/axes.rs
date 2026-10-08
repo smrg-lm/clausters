@@ -72,6 +72,7 @@ const X_AXIS: &[(&str, &str)] = &[
     ("beat_at", "beat_at"),
     ("quant", "quant"),
     ("grid", "grid"),
+    ("grid_snap", "grid_snap"),
     ("autofit", "autofit"),
     ("sample_rate", "sample_rate"),
     ("link", "link"),

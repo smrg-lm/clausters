@@ -138,6 +138,8 @@ pub struct Window<'a> {
     pub bare: bool,
     /// The grid a box lands on, in beats; `0` for none.
     pub grid: f64,
+    /// Whether a hand snaps to that grid.
+    pub snap: bool,
 }
 
 impl Window<'_> {
@@ -281,6 +283,7 @@ fn multitrack_props(w: &Window<'_>) -> Map<String, Value> {
     // **The grid is a length in beats**, read through that same map: a line
     // is a beat wherever the tempo puts it.
     props.insert("grid".into(), json!(w.grid));
+    props.insert("grid_snap".into(), json!(w.snap));
     props.insert("cursor".into(), json!(w.cursor_units()));
     props.insert("link".into(), json!(w.group()));
     props
@@ -452,6 +455,7 @@ mod tests {
             asks: false,
             bare: false,
             grid: crate::DEFAULT_GRID,
+            snap: true,
         })
     }
 

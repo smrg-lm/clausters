@@ -26,6 +26,10 @@ the R key). Run ``clear()``: every note is cut and the roll is empty;
 ``back()`` pastes them at the start again. **Ctrl+Z** in the window takes each
 step back, as it would one made by hand.
 
+**Drag a note**: it lands on a beat, the grid the quantize used. **Press G**
+(View > Snap to grid) and drag again: it lands where you put it, and Q still
+puts it back on the beat. ``editor.snap_to_grid`` is the same switch.
+
 The verbs arrive through the window's event loop, as a gesture does, so what
 a verb edited is in the sequence a moment after the call returns rather than
 when it does.

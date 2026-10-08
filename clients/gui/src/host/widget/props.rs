@@ -428,6 +428,10 @@ pub struct EditorProps {
     /// a line is a beat wherever the tempo puts it. `0` for none, where a
     /// view's own `snap` (a length in units) is what it lands on.
     pub grid: f64,
+    /// **Whether a placement snaps to that grid** -- the snap-to-grid switch.
+    /// Off, a drag, a paste, a split and step entry land where the hand put
+    /// them; `quantize` still moves onto the grid, which is what it is for.
+    pub grid_snap: bool,
     pub sel_start: f64,
     pub sel_len: f64,
     pub playhead_at: f64,
@@ -547,6 +551,7 @@ impl EditorProps {
             beat_at: number_f64(props, "beat_at", 0.0),
             quant: number_f64(props, "quant", 4.0),
             grid: number_f64(props, "grid", 0.0).max(0.0),
+            grid_snap: props.get("grid_snap").and_then(truthy).unwrap_or(true),
             sel_start: number_f64(props, "sel_start", 0.0),
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
@@ -578,8 +583,18 @@ impl EditorProps {
 
     /// **The grid a placement on this axis lands on**, on an axis of `rate`
     /// units a second: `grid` beats through the axis' tempo map when it has a
-    /// grid, else a view's own `snap` units (`0` for whole units).
+    /// grid and the snap-to-grid switch is on, whole units when it is off,
+    /// else a view's own `snap` units (`0` for whole units).
     pub fn placement_grid(&self, rate: f64, snap: f64) -> Grid {
+        if self.grid > 0.0 && !self.grid_snap {
+            return Grid::None;
+        }
+        self.quantize_grid(rate, snap)
+    }
+
+    /// **The grid a quantize moves onto**: the axis' `grid` in beats whether
+    /// or not placements snap to it, else a view's own `snap` units.
+    pub fn quantize_grid(&self, rate: f64, snap: f64) -> Grid {
         if self.grid <= 0.0 {
             return Grid::units(snap);
         }
@@ -660,6 +675,7 @@ impl EditorProps {
             "beat_at" => set_f64(&mut self.beat_at, v),
             "quant" => set_f64(&mut self.quant, v),
             "grid" => v.as_f64().map(|g| self.grid = g.max(0.0)).is_some(),
+            "grid_snap" => truthy(v).map(|on| self.grid_snap = on).is_some(),
             "autofit" => truthy(v).map(|b| self.autofit = b).is_some(),
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),

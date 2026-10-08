@@ -898,6 +898,22 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /**
+     * **Whether a hand snaps to the grid** -- the snap-to-grid switch, on until
+     * it is turned off. Off, a drag, a paste and a split land where the hand
+     * puts them; `quantize` still moves onto the grid. The window's own, like
+     * its grid: G in the window and the View menu flip it, and setting it is
+     * no edit: `editor.snapToGrid = false`.
+     */
+    get snapToGrid(): boolean {
+        return this.coreCall("grid").snap !== false;
+    }
+
+    set snapToGrid(on: boolean) {
+        this.coreCall("sync", { snap: on });
+        this.adopt();
+    }
+
+    /**
      * **How a box of notes is drawn**: `"roll"`, a piano roll fitted to the
      * box, or `"score"` -- its page, the sequence read as notation
      * (`Score.fromEvents`) and drawn on the box's own axis, every note at its

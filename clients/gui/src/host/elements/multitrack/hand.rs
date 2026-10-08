@@ -702,7 +702,7 @@ impl Multitrack {
         match verb {
             Verb::Quantize => {
                 let held = self.selected.clone();
-                let grid = self.grid();
+                let grid = self.quantize_grid();
                 Some(if !grid.is_set() {
                     Events::refused("quantize", "this multitrack has no grid to quantize to")
                 } else if boxes::quantize(self, &held, &grid) {

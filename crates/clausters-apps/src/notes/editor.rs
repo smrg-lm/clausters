@@ -65,6 +65,10 @@ pub struct Outcome {
 
 turn::turned!(Outcome);
 
+/// **The snap-to-grid switch**, as the window asks for it: a key (G), the
+/// View menu's entry, or a client's `verb("snap")`.
+pub const SNAP_VERB: &str = "snap";
+
 /// **A notes editor**: a shared sequence, the domain its roll is drawn in,
 /// and its end of the conversation.
 #[derive(Clone, Debug)]
@@ -93,6 +97,10 @@ pub struct NotesEditor {
     /// somebody chooses one): what a drag snaps to and a quantize writes
     /// into the sequence, read through its tempo map. `0` for none.
     grid: f64,
+    /// **Whether a hand snaps to that grid** -- the snap-to-grid switch, on
+    /// until somebody turns it off: off, a drag, a paste and step entry land
+    /// where the hand puts them, and a quantize still moves onto the grid.
+    snap: bool,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -176,12 +184,18 @@ impl NotesEditor {
             bare: false,
             midi_in: false,
             grid: crate::DEFAULT_GRID,
+            snap: true,
         }
     }
 
     /// The grid a note lands on, in beats; `0` for none.
     pub fn grid(&self) -> f64 {
         self.grid
+    }
+
+    /// Whether a hand snaps to the grid.
+    pub fn snap(&self) -> bool {
+        self.snap
     }
 
     /// The sequence it edits.
@@ -203,6 +217,7 @@ impl NotesEditor {
         // the grid is an axis' own, as its tempo map is
         if let Some(Value::Object(x)) = drawn.get_mut("axes").and_then(|a| a.get_mut("x")) {
             x.insert("grid".into(), json!(self.grid));
+            x.insert("grid_snap".into(), json!(self.snap));
         }
         if self.midi_in {
             drawn.insert("midi_in".into(), json!(1));
@@ -240,6 +255,7 @@ impl NotesEditor {
         // the switch is the window's own, so a correction states it too
         props.insert("midi_in".into(), json!(i32::from(self.midi_in)));
         props.insert("grid".into(), json!(self.grid));
+        props.insert("grid_snap".into(), json!(self.snap));
         vec![Correction {
             widget,
             props: Value::Object(props),
@@ -397,10 +413,24 @@ impl Converse for NotesEditor {
         args: &[Value],
         out: &mut Outcome,
     ) -> bool {
-        if message.addr != "/gui_event"
-            || !message.is_window
-            || !matches!(message.tag.as_str(), "play" | "loop")
-        {
+        if message.addr != "/gui_event" || !message.is_window {
+            return false;
+        }
+        // **The snap-to-grid switch** (G, the View menu): the window's own
+        // state, so nothing is recorded and the roll is told
+        if message.tag == SNAP_VERB {
+            self.snap = !self.snap;
+            out.turn = Kind::Route;
+            let roll = self.widget.map_or(0, i64::from);
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                None,
+                self.resync_widget(roll),
+            ));
+            return true;
+        }
+        if !matches!(message.tag.as_str(), "play" | "loop") {
             return false;
         }
         out.turn = Kind::Route;
@@ -460,9 +490,10 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `window` -- `widget`: the GuiDef, the roll under that id.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
-///   `midi_in`, `grid` (in beats, `0` for none), `domain`, `title`, `w`, `h`:
-///   `{}`.
-/// - `grid` -- `{"grid": beats}`: the grid a note lands on.
+///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
+///   switch), `domain`, `title`, `w`, `h`: `{}`.
+/// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
+///   whether a hand snaps to it.
 /// - `state` -- the sequence, whole.
 /// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
 ///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
@@ -499,6 +530,9 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(grid) = request.get("grid").and_then(Value::as_f64) {
                 editor.grid = grid.max(0.0);
             }
+            if let Some(snap) = request.get("snap").and_then(Value::as_bool) {
+                editor.snap = snap;
+            }
             if let Some(domain) = request
                 .get("domain")
                 .and_then(|d| serde_json::from_value::<Domain>(d.clone()).ok())
@@ -518,7 +552,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             "{}".into()
         }
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
-        "grid" => json!({ "grid": editor.grid }).to_string(),
+        "grid" => json!({ "grid": editor.grid, "snap": editor.snap }).to_string(),
         "span" => {
             editor.range = request
                 .get("span")

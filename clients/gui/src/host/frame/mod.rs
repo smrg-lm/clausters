@@ -2097,6 +2097,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             grid: 0.0,
+            grid_snap: true,
             autofit: true,
             sel_start: 0.0,
             sel_len: 0.0,

@@ -288,6 +288,10 @@ pub struct MultitrackEditor {
     /// somebody chooses one): what a drag snaps to and a quantize writes into
     /// the multitrack, read through its tempo map. `0` for none.
     grid: f64,
+    /// **Whether a hand snaps to that grid** -- the snap-to-grid switch, on
+    /// until somebody turns it off: off, a drag, a paste and a split land
+    /// where the hand puts them, and a quantize still moves onto the grid.
+    snap: bool,
     /// **How a box of notes is drawn**: `"roll"`, or `"score"` -- its page,
     /// each note at its time. The window's own, like its zoom.
     notes_view: String,
@@ -365,6 +369,7 @@ impl MultitrackEditor {
             unsaved: false,
             bare: false,
             grid: crate::DEFAULT_GRID,
+            snap: true,
             notes_view: ROLL.into(),
             #[cfg(feature = "notation")]
             engraver: None,
@@ -673,6 +678,17 @@ impl MultitrackEditor {
         self.grid = beats.max(0.0);
     }
 
+    /// Whether a hand snaps to the grid.
+    pub fn snap(&self) -> bool {
+        self.snap
+    }
+
+    /// **Turns the snap-to-grid switch on or off.** The window's own, like
+    /// its grid: what it changes is where the next drag lands.
+    pub fn set_snap(&mut self, on: bool) {
+        self.snap = on;
+    }
+
     /// Places the position cursor, in seconds -- a caller's own verb, like a
     /// rewind.
     pub fn set_cursor(&mut self, secs: Option<f64>) {
@@ -723,6 +739,7 @@ impl MultitrackEditor {
                         | STOP_VERB
                         | STOP_AT_END_VERB
                         | CROSSFADE_VERB
+                        | crate::notes::editor::SNAP_VERB
                         | NOTES_ROLL_VERB
                         | NOTES_SCORE_VERB
                 ))
@@ -967,6 +984,7 @@ impl MultitrackEditor {
             asks: self.asks,
             bare: self.bare,
             grid: self.grid,
+            snap: self.snap,
         })
     }
 
@@ -1065,6 +1083,21 @@ impl MultitrackEditor {
             let payload = serde_json::to_value(MultitrackIntent::SetDefaults { defaults })
                 .unwrap_or_default();
             return self.edited(vec![payload], "crossfade overlaps".into(), out);
+        }
+        // **The snap-to-grid switch** (G, the View menu): the window's own
+        // state, so nothing is recorded and the picture is corrected
+        if self.window.map(i64::from) == Some(widget) && tag == crate::notes::editor::SNAP_VERB {
+            self.snap = !self.snap;
+            let corrections = self
+                .widget
+                .map(|id| {
+                    vec![Correction {
+                        widget: i64::from(id),
+                        props: Value::Object(self.picture(id)),
+                    }]
+                })
+                .unwrap_or_default();
+            return (None, corrections);
         }
         // **The View menu's two ways to draw a box of notes**: the window's
         // own state, so nothing is recorded and the picture is corrected
@@ -1488,9 +1521,10 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
 ///
 /// - `sync` -- `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
 ///   `window`, `controls` (the transport row's ids), `grid` (beats, `0` for
-///   none): the state a caller holds, handed over before the verbs that read
-///   it.
-/// - `grid` -- `{"grid": beats}`: the grid a box lands on.
+///   none), `snap` (the snap-to-grid switch): the state a caller holds,
+///   handed over before the verbs that read it.
+/// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a box lands on, and
+///   whether a hand snaps to it.
 /// - `rewind`, `toggle`, `stop` -- `version`: the transport row's verbs, as a
 ///   script calls them, each an [`Outcome`].
 /// - `clock` -- `position` (beats): `{"text"}`, what the clock reads.
@@ -1542,9 +1576,12 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             if let Some(grid) = get("grid").as_f64() {
                 editor.set_grid(grid);
             }
+            if let Some(snap) = get("snap").as_bool() {
+                editor.set_snap(snap);
+            }
             "{}".into()
         }
-        "grid" => json!({ "grid": editor.grid() }).to_string(),
+        "grid" => json!({ "grid": editor.grid(), "snap": editor.snap() }).to_string(),
         "rewind" => outcome(&editor.rewind(version)),
         "toggle" => outcome(&editor.toggle(version)),
         "stop" => outcome(&editor.stop(version)),
@@ -1938,6 +1975,22 @@ mod tests {
                 "{thirteen:?}"
             );
         }
+    }
+
+    /// **Snap to grid is the window's switch**, from G or the View menu: no
+    /// edit, and the multitrack is told which way it now is.
+    #[test]
+    fn the_snap_to_grid_switch_is_the_window_s_verb() {
+        let mut ed = editor();
+        assert!(ed.snap(), "on unless turned off");
+        let menu = event(39, 6, 1, crate::turn::MENU, vec![json!("snap")]);
+        let out = ed.event(&menu, 1);
+        assert!(!ed.snap());
+        assert!(!out.changed && out.record.is_none(), "no edit");
+        let Some(Answer::Push { corrections, .. }) = out.answer else {
+            panic!("the window is told: {:?}", out.answer);
+        };
+        assert_eq!(corrections[0].props["grid_snap"], json!(false));
     }
 
     /// **The window's crossfade verb is an edit of the multitrack's

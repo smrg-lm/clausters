@@ -9867,6 +9867,15 @@ from it holds them quantized. A raw performance stays raw until somebody
 quantizes it; a quantized one stays quantized. Only the grid is the window's
 — a presentation choice, like its zoom, which changes nothing by being set.
 
+**Snapping to the grid is a switch, and the quantize does not read it.** A
+grid used for every placement takes the hand's freedom away: a note could no
+longer be put a little ahead of the beat. So the axis carries `grid_snap`
+beside `grid`, on by default — a hand lands on the grid while it is on, where
+it puts things while it is off — and the quantize moves onto the grid either
+way, because moving onto the grid is all a quantize is. The switch is a verb
+of the window (`snap`, G, the View menu) and a property of both clients'
+editors.
+
 **A beat read back through seconds is settled on the line it was meant
 for.** The view places in samples, so a note quantized to beat 3 comes back
 as `3.0000000000000004` wherever the map is not trivial, and a document

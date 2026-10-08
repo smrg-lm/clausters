@@ -488,6 +488,12 @@ impl Notes {
     fn grid(&self) -> boxes::Grid {
         self.editor.placement_grid(self.rate(0.0), self.snap)
     }
+
+    /// The grid a quantize moves notes onto: the axis' `grid` whether or not
+    /// a drag snaps to it.
+    fn quantize_grid(&self) -> boxes::Grid {
+        self.editor.quantize_grid(self.rate(0.0), self.snap)
+    }
 }
 
 /// Where a press landed and what it landed on.
@@ -1014,7 +1020,7 @@ impl Element for Notes {
             // Quantize the selected onsets (all of them when nothing is
             // selected) to the note grid -- the same grid a drag snaps to.
             Verb::Quantize => {
-                let grid = self.grid();
+                let grid = self.quantize_grid();
                 Some(if !grid.is_set() {
                     Events::refused("quantize", "this roll has no grid to quantize to")
                 } else if notes::quantize_notes(&mut self.notes, &self.selected, &grid) {
@@ -2702,6 +2708,13 @@ mod tests {
         let starts: Vec<f64> = r.notes.iter().map(|n| n.start).collect();
         assert_eq!(starts, [100.0, 450.0], "beat 1, and beat 5 at 4.5 seconds");
         assert_eq!(r.notes[1].dur, 30.0, "a quantize moves onsets only");
+        // with snap to grid off a hand lands where it is put, and a quantize
+        // still moves onto the grid: the switch is the hand's, not the verb's
+        r.editor.grid_snap = false;
+        assert!(!r.grid().is_set(), "a drag lands where the hand puts it");
+        r.notes[0].start = 130.0;
+        assert!(r.verb(Verb::Quantize, input).is_some());
+        assert_eq!(r.notes[0].start, 100.0, "the quantize is on the grid still");
         // and with no grid at all, it says there is none to quantize to
         let mut bare = roll(r#"{"notes":[130.0,50.0,60.0,100,0]}"#);
         let refused = bare.verb(Verb::Quantize, input).expect("an answer");

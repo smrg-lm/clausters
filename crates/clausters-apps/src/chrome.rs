@@ -20,6 +20,7 @@
 //! | `play` | play, or stop and go back to the position cursor |
 //! | `to_start`, `to_end` | the position cursor to either end |
 //! | `loop` | the loop switch |
+//! | `snap` | the snap-to-grid switch (not the audio editor's) |
 //! | `close` | the window, asked first where something would be lost |
 //! | `keys` | the window's keys |
 //!
@@ -147,6 +148,10 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
 
     let mut view = vec![entry(app, "view_all")];
+    if app != App::Audio {
+        // the snap-to-grid switch: a take has no grid
+        view.push(entry(app, "snap"));
+    }
     if app == App::Multitrack {
         view.extend([
             sep(),

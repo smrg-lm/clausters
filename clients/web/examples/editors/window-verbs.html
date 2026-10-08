@@ -49,6 +49,11 @@ themselves, and the view zooms out to show all of it
 cut and the roll is empty; <b>back</b> pastes them at the start again.
 <b>Ctrl+Z</b> on the roll takes each step back, as it would one made by hand.
 
+<b>Drag a note</b>: it lands on a beat, the grid the quantize used. <b>Press
+G</b> (View &gt; Snap to grid) and drag again: it lands where you put it, and Q
+still puts it back on the beat. <code>editor.snapToGrid</code> is the same
+switch.
+
 The verbs arrive through the window's event loop, as a gesture does, so what
 a verb edited is in the sequence a moment after the call returns rather than
 when it does.

@@ -58,6 +58,7 @@ The verdict is one of three:
 | `window` | `quantize` | `MultitrackEditor.quantize` `NotesEditor.quantize` | `MultitrackEditor.quantize` `NotesEditor.quantize` | **api** |
 | `window` | `split` | `MultitrackEditor.split` `NotesEditor.split` | `MultitrackEditor.split` `NotesEditor.split` | **api** |
 | `window` | `join` | `MultitrackEditor.join` `NotesEditor.join` | `MultitrackEditor.join` `NotesEditor.join` | **api** |
+| `window` | `snap` | `MultitrackEditor.snap_to_grid` `NotesEditor.snap_to_grid` | `MultitrackEditor.snapToGrid` `NotesEditor.snapToGrid` | **api** — a switch: `snap_to_grid = False` |
 | `window` | `delete` | `Editor.delete` | `Editor.delete` | **api** |
 | `window` | `select_all` | `Editor.select_all` | `Editor.selectAll` | **api** |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |

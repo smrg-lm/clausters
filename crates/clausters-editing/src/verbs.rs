@@ -70,6 +70,9 @@ pub const WINDOW: &[Verb] = &[
     verb("quantize", &["Q"], "Quantize"),
     verb("split", &["E"], "Split"),
     verb("join", &["J"], "Join"),
+    // the snap-to-grid switch: a drag, a paste, a split and step entry land
+    // on the grid while it is on, where the hand puts them while it is off
+    verb("snap", &["G"], "Snap to grid, on or off"),
     verb("delete", &["Delete", "Backspace"], "Delete"),
     verb("select_all", &["Ctrl+A"], "Select all"),
     verb("keys", &["F1"], "Keyboard shortcuts"),

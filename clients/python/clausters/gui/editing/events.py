@@ -295,6 +295,20 @@ class NotesEditor(Marking, Editor):
         self._call("sync", grid=float(beats))
         self.adopt()
 
+    @property
+    def snap_to_grid(self) -> bool:
+        """**Whether a hand snaps to the grid** -- the snap-to-grid switch,
+        on until it is turned off. Off, a drag, a paste and a split land where
+        the hand puts them; `quantize` still moves onto the grid. The window's
+        own, like its grid: G in the window and the View menu flip it, and
+        setting it is no edit: ``editor.snap_to_grid = False``."""
+        return bool(self._call("grid").get("snap", True))
+
+    @snap_to_grid.setter
+    def snap_to_grid(self, on: bool) -> None:
+        self._call("sync", snap=bool(on))
+        self.adopt()
+
     def pause(self) -> "NotesEditor":
         """Pause where it stands: a `resume` carries the notes on."""
         if self._elsewhere is not None:

@@ -403,6 +403,11 @@ def test_a_roll_lands_on_a_grid_in_beats():
     assert editor.grid == 0.25
     editor.grid = 1.0
     assert editor.grid == 1.0
+    # snap to grid is a switch beside it, on until it is turned off
+    assert picture(host.trees[0])["axes"]["x"]["grid_snap"] is True
+    assert editor.snap_to_grid is True
+    editor.snap_to_grid = False
+    assert editor.snap_to_grid is False and editor.grid == 1.0
 
 
 def test_a_note_keeps_what_the_roll_cannot_draw():

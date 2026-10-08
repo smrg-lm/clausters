@@ -384,6 +384,22 @@ export class NotesEditor extends Editor<EventSequence> {
         this.adopt();
     }
 
+    /**
+     * **Whether a hand snaps to the grid** -- the snap-to-grid switch, on until
+     * it is turned off. Off, a drag, a paste and a split land where the hand
+     * puts them; `quantize` still moves onto the grid. The window's own, like
+     * its grid: G in the window and the View menu flip it, and setting it is
+     * no edit: `editor.snapToGrid = false`.
+     */
+    get snapToGrid(): boolean {
+        return this.coreCall("grid").snap !== false;
+    }
+
+    set snapToGrid(on: boolean) {
+        this.coreCall("sync", { snap: on });
+        this.adopt();
+    }
+
     /** Pauses where it stands: a `resume` carries the notes on. */
     async pause(): Promise<this> {
         if (this.#elsewhere !== null) {

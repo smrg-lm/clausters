@@ -92,6 +92,13 @@ impl Multitrack {
             .placement_grid(self.editor.sample_rate, self.snap)
     }
 
+    /// The grid a quantize moves boxes onto: the axis' `grid` whether or not
+    /// a drag snaps to it.
+    pub(super) fn quantize_grid(&self) -> crate::host::structures::boxes::Grid {
+        self.editor
+            .quantize_grid(self.editor.sample_rate, self.snap)
+    }
+
     /// The track header band `y` falls in, and the part of it `(x, y)` hit.
     pub(super) fn header_at(
         &self,

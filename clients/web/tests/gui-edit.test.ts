@@ -384,6 +384,12 @@ test("a roll lands on a grid in beats", async () => {
     assert.equal(editor.grid, 0.25);
     editor.grid = 1.0;
     assert.equal(editor.grid, 1.0);
+    // snap to grid is a switch beside it, on until it is turned off
+    assert.equal(x.grid_snap, true);
+    assert.equal(editor.snapToGrid, true);
+    editor.snapToGrid = false;
+    assert.equal(editor.snapToGrid, false);
+    assert.equal(editor.grid, 1.0);
 });
 
 test("a note keeps what the roll cannot draw", async () => {

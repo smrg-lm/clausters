@@ -375,7 +375,10 @@ fn the_roll_has_a_grid_in_beats() {
         tree["children"][1]["axes"]["x"]["grid"],
         json!(crate::DEFAULT_GRID)
     );
-    assert_eq!(call_json(&mut e, r#"{"verb": "grid"}"#), r#"{"grid":0.25}"#);
+    assert_eq!(
+        call_json(&mut e, r#"{"verb": "grid"}"#),
+        r#"{"grid":0.25,"snap":true}"#
+    );
     call_json(&mut e, r#"{"verb": "sync", "grid": 1.0}"#);
     assert_eq!(e.grid(), 1.0);
     let props: Value =
@@ -387,4 +390,28 @@ fn the_roll_has_a_grid_in_beats() {
     );
     call_json(&mut e, r#"{"verb": "sync", "grid": -3.0}"#);
     assert_eq!(e.grid(), 0.0, "no negative grid: none");
+}
+
+/// **Snap to grid is a switch, and the window's verb**: on until it is turned
+/// off, by the window's G or its View menu, and a correction says which.
+#[test]
+fn the_snap_to_grid_switch_is_the_window_s_verb() {
+    let mut e = editor(shared());
+    let tree = e.window(40);
+    assert_eq!(tree["children"][1]["axes"]["x"]["grid_snap"], json!(true));
+    let window_verb = Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(39), json!(1), json!(0), json!("snap")],
+    };
+    e.event(&window_verb, 1);
+    assert!(!e.snap(), "off");
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(props["grid_snap"], json!(false), "and the roll is told");
+    assert_eq!(
+        call_json(&mut e, r#"{"verb": "grid"}"#),
+        r#"{"grid":0.25,"snap":false}"#
+    );
+    call_json(&mut e, r#"{"verb": "sync", "snap": true}"#);
+    assert!(e.snap());
 }
