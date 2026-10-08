@@ -3741,3 +3741,24 @@ wrong.
   step that puts back the structures it already stepped when a later one
   refuses -- each leg's opposite direction is in the same entry -- and
   answers the step as not taken.
+
+- ⬜ **Most of the windows' verbs have no client API** *(found 2026-10-08,
+  writing `docs/verbs.md`)*. An application is an API its clients' handlers
+  call, and a menu, a key or a tool is one more caller of it -- but of the 76
+  verbs in the one verb table (`clausters_editing::verbs`), 42 are reachable
+  only from the window: no member of either client does what they do. The
+  window's clipboard and editing verbs (`cut`, `copy`, `paste`, `mix`,
+  `delete`, `select_all`, `split`, `join`, `quantize`), its view and
+  transport verbs (`view_all`, `loop`, `to_end`; `to_start` is the
+  multitrack's `rewind` and no other editor's), the multitrack's
+  `stop_at_end`, `reset_heights` and `compact_tracks`, and note entry's
+  writing and moving keys (`pitch_*`, `chord_*`, the cursor's, `voice_*`,
+  `enter_rest`) and the score's `select_left`/`select_right`. The two
+  clients agree -- every one is missing from both -- so this is not a
+  divergence, and `clients/python/tests/test_verbs.py` keeps it that way.
+  **What it needs is a decision before code**: most of these act on what the
+  host holds (the selection, the focus, the clipboard, the view), so a
+  handler asks the host to perform them, which no command does today -- a
+  `/gui_*` command that performs a verb on a window would be one door for all
+  of them, against a member per verb per editor. Each row that closes moves
+  to `api` in `docs/verbs.md` in the same commit.

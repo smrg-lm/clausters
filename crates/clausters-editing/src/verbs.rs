@@ -10,6 +10,12 @@
 //! "Show the whole view" on the key sheet. Now a menu, a toolbar and the host's
 //! key table read the row, and a verb added is added here.
 //!
+//! **A client's handler is one more caller**, and the one nothing here ties to
+//! the table: `docs/verbs.md` names, row by row, the members of the two
+//! clients that do what each verb does -- or that none does yet -- and
+//! `clients/python/tests/test_verbs.py` holds it to this table and to both
+//! clients.
+//!
 //! **What a row is not**: where a verb sits in a menu. That is the menu's
 //! business -- a menu is a view over the verbs and orders them as it likes --
 //! so a row carries no menu path.

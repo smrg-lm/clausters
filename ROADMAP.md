@@ -308,6 +308,11 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
+- ⬜ **Most of the windows' verbs have no client API**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. 42 of the 76 verbs are
+  reachable only from a window, in both clients alike; `docs/verbs.md` lists
+  them. A decision before code: one host command that performs a verb on a
+  window, or a member per verb per editor.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a
