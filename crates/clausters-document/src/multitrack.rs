@@ -93,6 +93,12 @@ pub struct Fade {
     /// The curvature, for the `curve` shape; 0 otherwise.
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub curve: f64,
+    /// **Written by the automatic crossfade** rather than by a hand or a
+    /// script ([`Defaults::crossfade`]): a later edit that moves the overlap
+    /// moves this fade with it, and one that ends the overlap takes it away and
+    /// gives the region its own edge back. A fade anybody states is not one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub crossfade: bool,
 }
 
 fn equal_power() -> i32 {
@@ -141,6 +147,7 @@ impl Fade {
             length,
             shape: equal_power(),
             curve: 0.0,
+            crossfade: false,
         }
     }
 
@@ -475,53 +482,88 @@ pub struct TakeLane {
 
 impl TakeLane {
     /// **The edges `region` sounds and is drawn with on this lane**: its own
-    /// ([`Region::edges`]), and where it overlaps a neighbour, a **crossfade**
-    /// made of the fades the two already have -- the earlier one's fade out and
-    /// the later one's fade in each stretched to cover the overlap, so the
-    /// longer two regions overlap the longer they crossfade, and two
-    /// equal-power fades (the default shape) cross at constant power. Nothing
-    /// is stored: move either region and the crossfade follows.
-    ///
-    /// Only while the multitrack's [`Defaults::crossfade`] is on: off, a region
-    /// keeps the fades it states whatever overlaps it.
-    ///
-    /// What counts as an overlap, decided 2026-10-08: a neighbour that starts
-    /// before `region` and ends inside it stretches its fade in; one that
-    /// starts inside it and ends after it stretches its fade out; a stretch
-    /// never shortens a fade. **Only an edge on the default is stretched**: an
-    /// edge the region states -- a hand drew it, a script set it -- is the
-    /// region's word on that edge and is kept, shorter or longer than the
-    /// overlap, so a crossfade dragged shorter stays short. A region **inside** another, or two that start
-    /// or end on the same instant, keep their own fades -- there is no side
-    /// for one to fade out on while the other fades in. A muted region crosses
-    /// with nobody. Several neighbours: each edge takes the longest overlap
-    /// that reaches it. And two fades that would cross inside the region are
-    /// cut in proportion, as [`Region::edges`] cuts them.
+    /// fades as they are ([`Region::edges`]). A crossfade is not worked out
+    /// here: the edit that made the overlap wrote it into the two regions'
+    /// fades ([`TakeLane::crossfaded`]), so what an overlap sounds like is
+    /// whatever its fades say, whether the switch is on or off now.
     pub fn edges(&self, region: &Region, defaults: &Defaults) -> (Edge, Edge) {
-        let (mut fade_in, mut fade_out) = region.edges(defaults);
-        if defaults.crossfade && !region.muted {
-            let (start, end) = (region.position.get(), region.end().get());
-            for other in &self.regions {
-                if other.id == region.id || other.muted {
-                    continue;
-                }
-                let (o_start, o_end) = (other.position.get(), other.end().get());
-                if region.fade_in.is_none() && o_start < start && o_end > start && o_end < end {
-                    fade_in.length = fade_in.length.max(o_end - start);
-                }
-                if region.fade_out.is_none() && o_start > start && o_start < end && o_end > end {
-                    fade_out.length = fade_out.length.max(end - o_start);
-                }
+        region.edges(defaults)
+    }
+
+    /// **The fades the automatic crossfade gives `region`** on this lane,
+    /// `(in, out)` -- what an edit that leaves the lane like this writes into
+    /// the region while [`Defaults::crossfade`] is on.
+    ///
+    /// Where it overlaps a neighbour, the earlier one's fade out and the later
+    /// one's fade in each cover the overlap, so the longer two regions overlap
+    /// the longer they crossfade, and two equal-power fades (the default
+    /// shape) cross at constant power. A neighbour that starts before `region`
+    /// and ends inside it sets its fade in; one that starts inside it and ends
+    /// after it sets its fade out; the fade is never shorter than the default
+    /// one, and several neighbours give each edge the longest overlap that
+    /// reaches it. A region **inside** another, or two that start or end on the
+    /// same instant, cross nowhere -- there is no side for one to fade out on
+    /// while the other fades in -- and a muted region crosses with nobody.
+    ///
+    /// **Only an edge that is the default's or the crossfade's own is
+    /// written**: an edge the region states -- a hand drew it, a script set it
+    /// -- is the region's word on that edge and is kept, so a crossfade dragged
+    /// shorter stays short. An edge the crossfade wrote follows the overlap,
+    /// and where the overlap is gone it is taken away and the region has its
+    /// own edge back. `counts` says which neighbours an overlap is asked of:
+    /// the edit's own regions, so an overlap nobody touched -- made while the
+    /// switch was off -- is left as it is, unless `region` is one of them.
+    pub fn crossfaded(
+        &self,
+        region: &Region,
+        defaults: &Defaults,
+        counts: &dyn Fn(NodeId) -> bool,
+    ) -> (Option<Fade>, Option<Fade>) {
+        let (start, end) = (region.position.get(), region.end().get());
+        let base = defaults
+            .fade
+            .clone()
+            .unwrap_or_else(|| Fade::of(Second(0.0)));
+        let mut reach_in: Option<(f64, bool)> = None;
+        let mut reach_out: Option<(f64, bool)> = None;
+        let longest = |reach: &mut Option<(f64, bool)>, overlap: f64, counted: bool| {
+            let (was, any) = reach.unwrap_or((0.0, false));
+            *reach = Some((was.max(overlap), any || counted));
+        };
+        for other in &self.regions {
+            if region.muted || other.id == region.id || other.muted {
+                continue;
+            }
+            let counted = counts(region.id) || counts(other.id);
+            let (o_start, o_end) = (other.position.get(), other.end().get());
+            if o_start < start && o_end > start && o_end < end {
+                longest(&mut reach_in, o_end - start, counted);
+            }
+            if o_start > start && o_start < end && o_end > end {
+                longest(&mut reach_out, end - o_start, counted);
             }
         }
-        let length = region.length.get().max(0.0);
-        let both = fade_in.length + fade_out.length;
-        if both > length && both > 0.0 {
-            let k = length / both;
-            fade_in.length *= k;
-            fade_out.length *= k;
-        }
-        (fade_in, fade_out)
+        let side = |own: &Option<Fade>, reach: Option<(f64, bool)>| -> Option<Fade> {
+            let auto = own.as_ref().is_some_and(|f| f.crossfade);
+            if own.is_some() && !auto {
+                return own.clone();
+            }
+            match reach {
+                // A crossfade already there follows whichever overlap holds
+                // it; a new one is only made by an overlap the edit made.
+                Some((overlap, counted)) if auto || counted => Some(Fade {
+                    length: Second(base.length.get().max(overlap)),
+                    crossfade: true,
+                    ..base.clone()
+                }),
+                Some(_) => own.clone(),
+                None => None,
+            }
+        };
+        (
+            side(&region.fade_in, reach_in),
+            side(&region.fade_out, reach_out),
+        )
     }
 
     /// An empty take lane.
@@ -962,11 +1004,12 @@ pub struct Defaults {
     /// step unless somebody asked for one.
     #[serde(default = "default_fade")]
     pub fade: Option<Fade>,
-    /// **Whether two regions that overlap crossfade by themselves**: on, the
-    /// overlap stretches the earlier one's fade out and the later one's fade in
-    /// to cover it ([`TakeLane::edges`]); off, each keeps the fades it states and
-    /// the overlap is two regions summed. An automatic crossfade is a facility,
-    /// and one that can be turned off. On when a file names nothing.
+    /// **Whether an edit that makes two regions overlap crossfades them**: on,
+    /// the edit writes the crossfade into the earlier one's fade out and the
+    /// later one's fade in ([`TakeLane::crossfaded`]); off, each keeps the
+    /// fades it states and the overlap is two regions summed. A facility of
+    /// editing, and one that can be turned off: turning it off or on changes
+    /// no region, only the edits that follow. On when a file names nothing.
     #[serde(default = "on", skip_serializing_if = "is_on")]
     pub crossfade: bool,
     /// Fields a newer writer wrote. See [`Extra`].
@@ -1478,132 +1521,116 @@ mod tests {
         assert_eq!(back.defaults.fade, None);
     }
 
-    /// **Two regions that overlap crossfade over the overlap**, out of the
-    /// fades they already have: the earlier one's fade out and the later
-    /// one's fade in both cover it, and the longer the overlap the longer the
+    /// Every neighbour counts: what an edit that touched them all asks.
+    fn all(_: NodeId) -> bool {
+        true
+    }
+
+    /// The fades [`TakeLane::crossfaded`] gives the region at `i`, with
+    /// the lane left as it is.
+    fn crossed(lane: &TakeLane, i: usize, defaults: &Defaults) -> (Option<Fade>, Option<Fade>) {
+        lane.crossfaded(&lane.regions[i], defaults, &all)
+    }
+
+    fn length(fade: &Option<Fade>) -> Option<f64> {
+        fade.as_ref().map(|f| f.length.get())
+    }
+
+    /// **Two regions that overlap crossfade over the overlap**: the earlier
+    /// one's fade out and the later one's fade in both cover it, written as
+    /// the crossfade's own, and the longer the overlap the longer the
     /// crossfade.
     #[test]
     fn an_overlap_is_a_crossfade_as_long_as_the_overlap() {
         let defaults = Defaults::default();
         let mut lane = TakeLane::new(NodeId(9));
         lane.regions = vec![region(1, 0.0, 4.0), region(2, 3.0, 4.0)];
-        let (a, b) = (&lane.regions[0], &lane.regions[1]);
+        let (a_in, a_out) = crossed(&lane, 0, &defaults);
+        let (b_in, _) = crossed(&lane, 1, &defaults);
+        assert_eq!(length(&a_out), Some(1.0), "a fades out over the overlap");
+        assert_eq!(length(&b_in), Some(1.0), "b fades in over it");
+        assert_eq!(a_in, None, "a's start is its own");
+        let b_in = b_in.unwrap();
+        assert!(b_in.crossfade, "written as the crossfade's");
         assert_eq!(
-            lane.edges(a, &defaults).1.length,
-            1.0,
-            "a fades out over the overlap"
-        );
-        assert_eq!(lane.edges(b, &defaults).0.length, 1.0, "b fades in over it");
-        assert_eq!(
-            lane.edges(a, &defaults).0.length,
-            DEFAULT_FADE,
-            "a's start is its own"
-        );
-        assert_eq!(
-            lane.edges(b, &defaults).0.shape,
+            b_in.shape,
             clausters_core::envshape::SHAPE_WELCH,
             "equal power, so the two cross at constant power"
         );
 
         // Overlap more, and the crossfade is longer.
         lane.regions[1].position = Second(2.0);
-        let (a, b) = (&lane.regions[0], &lane.regions[1]);
-        assert_eq!(
-            (
-                lane.edges(a, &defaults).1.length,
-                lane.edges(b, &defaults).0.length
-            ),
-            (2.0, 2.0)
-        );
+        assert_eq!(length(&crossed(&lane, 0, &defaults).1), Some(2.0));
+        assert_eq!(length(&crossed(&lane, 1, &defaults).0), Some(2.0));
     }
 
-    /// **The edge cases**: a region inside another keeps its own fades and so
+    /// **What the crossfade wrote follows the overlap, and goes with it**: a
+    /// region whose fade the crossfade wrote gets a longer or a shorter one as
+    /// the overlap changes, and its own edge back once nothing overlaps it.
+    #[test]
+    fn a_crossfade_follows_its_overlap_and_goes_with_it() {
+        let defaults = Defaults::default();
+        let mut lane = TakeLane::new(NodeId(9));
+        lane.regions = vec![region(1, 0.0, 4.0), region(2, 3.0, 4.0)];
+        let (_, out) = crossed(&lane, 0, &defaults);
+        lane.regions[0].fade_out = out;
+        lane.regions[1].position = Second(3.5);
+        assert_eq!(
+            length(&crossed(&lane, 0, &defaults).1),
+            Some(0.5),
+            "shorter"
+        );
+        lane.regions[1].position = Second(6.0);
+        assert_eq!(crossed(&lane, 0, &defaults).1, None, "its own edge back");
+    }
+
+    /// **The edge cases**: a region inside another crosses nowhere and nor
     /// does the one around it; a muted region crosses with nobody; a fade a
-    /// region states is kept, longer or shorter; and two stretched fades that
-    /// would cross are cut in proportion.
+    /// region states is kept, longer or shorter; an overlap nobody touched is
+    /// left alone; and the fades as they are is what a lane sounds.
     #[test]
     fn the_edge_cases_of_an_overlap() {
         let defaults = Defaults::default();
         let mut lane = TakeLane::new(NodeId(9));
         lane.regions = vec![region(1, 0.0, 10.0), region(2, 2.0, 3.0)];
-        let (outer, inner) = (&lane.regions[0], &lane.regions[1]);
-        assert_eq!(
-            lane.edges(outer, &defaults),
-            outer.edges(&defaults),
-            "around"
-        );
-        assert_eq!(
-            lane.edges(inner, &defaults),
-            inner.edges(&defaults),
-            "inside"
-        );
+        assert_eq!(crossed(&lane, 0, &defaults), (None, None), "around");
+        assert_eq!(crossed(&lane, 1, &defaults), (None, None), "inside");
 
         let mut lane = TakeLane::new(NodeId(9));
         lane.regions = vec![region(1, 0.0, 4.0), region(2, 3.0, 4.0)];
         lane.regions[1].muted = true;
-        let a = &lane.regions[0];
-        assert_eq!(
-            lane.edges(a, &defaults).1.length,
-            DEFAULT_FADE,
-            "muted: no crossfade"
-        );
+        assert_eq!(crossed(&lane, 0, &defaults).1, None, "muted: no crossfade");
 
         lane.regions[1].muted = false;
-        lane.regions[0].fade_out = Some(Fade::of(Second(1.5)));
-        let a = &lane.regions[0];
         assert_eq!(
-            lane.edges(a, &defaults).1.length,
-            1.5,
-            "longer than the overlap: kept"
+            lane.crossfaded(&lane.regions[0], &defaults, &|_| false).1,
+            None,
+            "an overlap no edit touched: left as it is"
         );
-        lane.regions[0].fade_out = Some(Fade::of(Second(0.25)));
-        let a = &lane.regions[0];
+        for stated in [1.5, 0.25] {
+            lane.regions[0].fade_out = Some(Fade::of(Second(stated)));
+            assert_eq!(
+                length(&crossed(&lane, 0, &defaults).1),
+                Some(stated),
+                "a fade a hand left: kept"
+            );
+        }
         assert_eq!(
-            lane.edges(a, &defaults).1.length,
-            0.25,
-            "shorter than the overlap, as a hand left it: kept too"
-        );
-        assert_eq!(
-            lane.edges(&lane.regions[1], &defaults).0.length,
-            1.0,
+            length(&crossed(&lane, 1, &defaults).0),
+            Some(1.0),
             "while the other side, on the default, still covers the overlap"
         );
-
-        // Overlapped on both sides by most of itself: one second in and a
-        // second and a half out do not fit two, so both are cut by the same
-        // factor and meet.
-        let mut lane = TakeLane::new(NodeId(9));
-        lane.regions = vec![
-            region(1, 0.0, 3.0),
-            region(2, 2.0, 2.0),
-            region(3, 2.5, 3.0),
-        ];
-        let (fade_in, fade_out) = lane.edges(&lane.regions[1], &defaults);
-        assert!(
-            (fade_in.length + fade_out.length - 2.0).abs() < 1e-9,
-            "they fill it and meet"
-        );
-        assert!(
-            (fade_in.length / fade_out.length - 1.0 / 1.5).abs() < 1e-9,
-            "in proportion"
+        assert_eq!(
+            lane.edges(&lane.regions[1], &defaults),
+            lane.regions[1].edges(&defaults),
+            "what sounds is the fades as they are"
         );
     }
 
-    /// **The automatic crossfade can be turned off**: off, two regions that
-    /// overlap keep the fades they state, and the file says so -- while on,
-    /// the default, it writes nothing.
+    /// **The automatic crossfade can be turned off**, and the file says so --
+    /// while on, the default, it writes nothing.
     #[test]
     fn the_automatic_crossfade_can_be_turned_off() {
-        let mut lane = TakeLane::new(NodeId(9));
-        lane.regions = vec![region(1, 0.0, 4.0), region(2, 3.0, 4.0)];
-        let off = Defaults {
-            crossfade: false,
-            ..Defaults::default()
-        };
-        let a = &lane.regions[0];
-        assert_eq!(lane.edges(a, &off).1.length, DEFAULT_FADE);
-        assert_eq!(lane.edges(a, &Defaults::default()).1.length, 1.0);
-
         let mut multitrack = Multitrack::default();
         multitrack.defaults.crossfade = false;
         let written = serde_json::to_value(&multitrack).unwrap();

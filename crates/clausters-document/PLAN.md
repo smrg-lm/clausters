@@ -2335,3 +2335,13 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   own back), and whether one gesture that writes a crossfade is still one
   entry in the history.
 
+  **Closed 2026-10-08, the same day.** A hand's edit (`picture::read`) asks
+  `TakeLane::crossfaded` and writes the crossfade as `FadeRegion` edits in
+  the same report, so the move and its crossfade are one entry and one undo;
+  `TakeLane::edges` reads the fades as they are. Settled: a fade the
+  crossfade wrote is marked (`Fade::crossfade`), follows its overlap when a
+  later edit moves it, and goes when the overlap does, giving the region its
+  own edge back; a fade a hand or a script states is never written over; an
+  overlap no edit touched is left as it is; and a script's edits state the
+  fades they want -- the switch is the hand's facility.
+

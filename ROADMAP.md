@@ -95,20 +95,7 @@ The three sections, and the line between them:
 
 ## 1. Fixes
 
-Each is small, owned by its plan, and blocked by nothing.
-
-- ⬜ **A fade's curve drawn and heard** *(`crates/clausters-document/PLAN.md`,
-  Found by use, "A fade's curve is editable only if the curve drawn is the
-  curve heard")*. A join's seams play linear whatever the box drew; the
-  easiest of the two fixes goes first. **Related:** the next entry, the same
-  fades.
-- ⬜ **The crossfade switch acts on the edits that follow**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. The rule moves from
-  reading the multitrack to editing it.
-- ⬜ **A history step is whole on each structure, not across them**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A step spanning a
-  multitrack and a curve can stop half way; the fix puts back what it already
-  stepped.
+Each is small, owned by its plan, and blocked by nothing. None is open.
 
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.

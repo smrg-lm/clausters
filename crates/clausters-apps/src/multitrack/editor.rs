@@ -1095,7 +1095,8 @@ impl MultitrackEditor {
             return (None, Vec::new());
         }
         // **The automatic crossfade, on or off**: the multitrack's own default,
-        // so an edit -- recorded, undone, and answered with the fades it moved.
+        // so an edit -- recorded and undone. It moves no fade: it decides what
+        // the edits that follow write.
         if self.window.map(i64::from) == Some(widget) && tag == CROSSFADE_VERB {
             let mut defaults = self.multitrack().defaults.clone();
             defaults.crossfade = !defaults.crossfade;
@@ -1264,8 +1265,8 @@ impl MultitrackEditor {
         // **What the hand did not draw is told**: a gesture that applies
         // cleanly is acknowledged and the window keeps its own picture, which
         // is right for what the hand moved and wrong for what the owner works
-        // out from it -- a box's fade envelope, stretched into a crossfade by
-        // the box it was dragged over. Those are corrected whenever the edit
+        // out from it -- a box's fade envelope, which the edit wrote a
+        // crossfade into because of the box it was dragged over. Those are corrected whenever the edit
         // moved them.
         // When the names the host was last told no longer match, `settle`
         // sends the whole picture after this turn, these props with it, and a
@@ -1290,8 +1291,8 @@ impl MultitrackEditor {
 
     /// **The props of the multitrack the owner works out rather than the hand
     /// draws**: the curve layers and every curve's points, a box's fade
-    /// envelope among them -- whose crossfade follows from where the boxes
-    /// beside it are, which no gesture on the box draws.
+    /// envelope among them -- whose crossfade the edit writes from where the
+    /// boxes beside it are, which no gesture on the box draws.
     fn derived(&self, widget: i32) -> Map<String, Value> {
         let picture = self.picture(widget);
         ["layers", "points"]
@@ -2013,36 +2014,42 @@ mod tests {
     }
 
     /// **The window's crossfade verb is an edit of the multitrack's
-    /// defaults** -- recorded, undone -- answered with the fades it moved, the
-    /// overlap no longer stretching them. The state is the document's: the
-    /// verb arrives here from the Edit menu, and a client sets the same
-    /// default through `Multitrack.crossfade` with no window at all.
+    /// defaults** -- recorded, undone -- and it acts on the edits that follow:
+    /// the overlap a move made while it was on keeps the crossfade the move
+    /// wrote into its fades, and a move made while it is off writes none. The
+    /// state is the document's: the verb arrives here from the Edit menu, and
+    /// a client sets the same default through `Multitrack.crossfade` with no
+    /// window at all.
     #[test]
-    fn the_crossfade_switch_is_an_edit_answered_with_the_fades() {
+    fn the_crossfade_switch_acts_on_the_edits_that_follow() {
         let mut ed = editor();
+        let fade_out = |ed: &MultitrackEditor, id: u64| {
+            let multitrack = ed.multitrack();
+            let (_, _, region) = multitrack.locate(NodeId(id)).unwrap();
+            region.fade_out.clone()
+        };
         let over = boxes(&[("12", "10", 3.0), ("13", "10", 4.0), ("22", "20", 0.0)]);
-        ed.event(&event(40, 5, 1, "clips", over), 1);
+        let moved = ed.event(&event(40, 5, 1, "clips", over), 1);
         assert!(ed.multitrack().defaults.crossfade, "on unless turned off");
+        let legs = moved.record.expect("the move is recorded").legs;
+        assert!(legs.len() > 1, "the move and its crossfade are one entry");
+        let crossed = fade_out(&ed, 12).expect("the move wrote the crossfade");
+        assert!(crossed.crossfade && crossed.length.get() > 0.5);
 
         let menu = event(39, 6, 2, crate::turn::MENU, vec![json!(CROSSFADE_VERB)]);
         let out = ed.event(&menu, 2);
         assert!(!ed.multitrack().defaults.crossfade);
         assert!(out.changed);
         let record = out.record.expect("recorded, so it can be undone");
-        let Some(Answer::Push { corrections, .. }) = out.answer else {
-            panic!("the fades it moved are told: {:?}", out.answer);
-        };
-        let fade_out: Vec<f64> = corrections[0].props["points"]
-            .as_array()
-            .unwrap()
-            .chunks(5)
-            .filter(|p| p[0] == json!("fade:12"))
-            .map(|p| p[1].as_f64().unwrap())
-            .collect();
-        assert!(
-            fade_out[3] - fade_out[2] < 0.1 * SR,
-            "back to its own short fade: {fade_out:?}"
+        assert_eq!(
+            fade_out(&ed, 12),
+            Some(crossed),
+            "turning it off changes no region"
         );
+        let apart = boxes(&[("12", "10", 9.0), ("13", "10", 4.0), ("22", "20", 0.0)]);
+        ed.event(&event(40, 7, 3, "clips", apart), 3);
+        let crossed = fade_out(&ed, 12).expect("off, a move leaves the fades it finds");
+        assert!(crossed.crossfade);
         assert!(ed.apply(&record.legs[0].backward).applied);
         assert!(ed.multitrack().defaults.crossfade, "undone");
     }

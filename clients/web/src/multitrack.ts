@@ -1916,11 +1916,12 @@ export class Multitrack implements CurveHolder {
     }
 
     /**
-     * **Whether two regions that overlap crossfade by themselves**: on, the
-     * overlap stretches the earlier one's fade out and the later one's fade in
-     * to cover it; off, each keeps the fades it states and the overlap is the
-     * two summed. A default of the multitrack, on unless turned off, and set
-     * like any edit -- recorded, and drawn by every window over it.
+     * **Whether an edit by hand that makes two regions overlap crossfades
+     * them**: on, the edit writes the crossfade into the earlier one's fade out
+     * and the later one's fade in; off, it writes none and the overlap is the
+     * two summed. It acts on the edits that follow: turning it off or on
+     * changes no region. A default of the multitrack, on unless turned off,
+     * and set like any edit -- recorded, and drawn by every window over it.
      */
     get crossfade(): boolean {
         const defaults = (this.write().defaults ?? {}) as Extra;
@@ -1938,7 +1939,7 @@ export class Multitrack implements CurveHolder {
      * this multitrack, where a region that states nothing meets the silence
      * beside it as a step. A region's own {@link Region.fadeIn} and
      * {@link Region.fadeOut} win over it; one left `undefined` follows it, and
-     * so is the edge an overlap stretches into a crossfade. Set like any edit.
+     * so is an edge the crossfade writes over. Set like any edit.
      */
     get defaultFade(): Fade | undefined {
         const defaults = (this.write().defaults ?? {}) as Extra;

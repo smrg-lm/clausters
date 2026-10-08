@@ -656,14 +656,19 @@ it states one, and by the multitrack's default where it does not, which is
 10 ms of equal power until `multitrack.defaultFade` says otherwise (`undefined` for none at all).
 
 **A crossfade is two fades over an overlap**, not a third object. Two regions
-on one take lane that overlap crossfade by themselves: the earlier one's fade out
-and the later one's fade in are stretched to cover the overlap, so the more they
-overlap the longer the crossfade, and there is no crossfade to lose track of or
-keep in step with the two fades. Only an edge on the default is stretched: an
-edge the region states — drawn by a hand, set by a script — is kept, shorter
-or longer than the overlap. That is a facility of the multitrack and it can
-be turned off — `multitrack.crossfade = false`, a `setdefaults` edit like any other — after
-which each region keeps the fades it states and an overlap is the two summed.
+on one take lane that overlap are crossfaded by the edit that made the overlap: a box a hand moves,
+trims or pastes over another writes the crossfade into the two regions' own fades
+— the earlier one's fade out and the later one's fade in cover the overlap —
+in the same undo step as the move, so the more they overlap the longer the
+crossfade, and there is no crossfade to lose track of or keep in step with the
+two fades. Only an edge on the default, or one the crossfade wrote, is written:
+an edge the region states — drawn by a hand, set by a script — is kept, shorter
+or longer than the overlap. A crossfade follows its overlap when a later edit
+moves it, and goes when the overlap does. A script states the fades it wants
+and gets them. That is a facility of editing and it can be turned off —
+`multitrack.crossfade = false`, a `setdefaults` edit like any other — after which
+an edit writes no crossfade and an overlap it makes is the two summed; turning it
+off or on changes no region, only the edits that follow.
 
 **A split and a join ask you for the content.** They are the two edits that
 change how many regions there are, and the two the crate will not work out on

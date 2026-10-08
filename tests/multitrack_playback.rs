@@ -541,7 +541,8 @@ fn a_region_fades_in_and_out_at_its_own_edges() {
 }
 
 /// **Two regions that overlap crossfade at equal power**: two constant takes,
-/// the second placed over the last quarter of the first. Over the overlap the
+/// the second placed over the last quarter of the first, with the crossfade an
+/// edit writes. Over the overlap the
 /// first fades out and the second fades in, each over all of it, so half way
 /// through each is at sin(pi/4) of its level -- and two uncorrelated sources
 /// there would keep their summed power. Before and after, each plays alone at
@@ -612,6 +613,15 @@ fn an_overlap_crossfades_at_equal_power() {
         Second(secs(take)),
         window(2),
     ));
+    // The crossfade the edit that made the overlap writes into the two
+    // regions' fades.
+    let defaults = multitrack.defaults.clone();
+    let lane = &mut multitrack.tracks[0].take_lanes[0];
+    for i in 0..lane.regions.len() {
+        let (fade_in, fade_out) = lane.crossfaded(&lane.regions[i], &defaults, &|_| true);
+        lane.regions[i].fade_in = fade_in;
+        lane.regions[i].fade_out = fade_out;
+    }
     let sources = HashMap::from([
         (
             SourceId(1),

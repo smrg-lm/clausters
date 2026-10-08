@@ -35,7 +35,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::multitrack::edit::{MintedSource, MultitrackIntent};
+use crate::intent::{Against, Rules};
+use crate::multitrack::edit::{self, MintedSource, MultitrackIntent};
 use crate::multitrack::{Automation, Content, Fade, Multitrack, Region, TakeLane, Track, Window};
 use crate::session::{Location, Part, SeamShape, Source};
 use crate::{Lifetime, NodeId, Opaque, Point, Range, Second, SourceId, SourceRef};
@@ -690,6 +691,63 @@ pub fn read(
     out.extend(lane_lists(
         multitrack, &rows, &seen, &fresh, next_id, placed, reach_of,
     ));
+    let crossed = crossfades(multitrack, &out);
+    out.extend(crossed);
+    out
+}
+
+/// **The crossfades a hand's edit makes**, as the fades it writes: while the
+/// multitrack's [`Defaults::crossfade`](crate::multitrack::Defaults::crossfade)
+/// is on, an edit that leaves two regions overlapping writes the crossfade into
+/// their own fades ([`TakeLane::crossfaded`]), in the same report and so in the
+/// same entry of the history -- one undo takes the move and its crossfade back
+/// together.
+///
+/// A facility of editing and not of reading: turning the switch off changes no
+/// region, and an overlap made while it was off keeps the fades it has until an
+/// edit touches one of its regions. The regions an edit touches are the ones
+/// it placed, resized or made.
+fn crossfades(before: &Multitrack, intents: &[MultitrackIntent]) -> Vec<MultitrackIntent> {
+    if !before.defaults.crossfade || intents.is_empty() {
+        return Vec::new();
+    }
+    let mut after = before.clone();
+    for intent in intents {
+        edit::apply(&mut after, intent, &Against::unstated(), &Rules::none());
+    }
+    let placement = |multitrack: &Multitrack, id: NodeId| {
+        multitrack
+            .locate(id)
+            .map(|(_, lane, region)| (lane.id, region.position, region.length))
+    };
+    let touched: Vec<NodeId> = after
+        .tracks
+        .iter()
+        .flat_map(|track| track.take_lanes.iter())
+        .flat_map(|lane| lane.regions.iter().map(move |r| (lane.id, r)))
+        .filter(|(lane, region)| {
+            placement(before, region.id) != Some((*lane, region.position, region.length))
+        })
+        .map(|(_, region)| region.id)
+        .collect();
+    let counts = |id: NodeId| touched.contains(&id);
+    let mut out = Vec::new();
+    for lane in after
+        .tracks
+        .iter()
+        .flat_map(|track| track.take_lanes.iter())
+    {
+        for region in &lane.regions {
+            let (fade_in, fade_out) = lane.crossfaded(region, &after.defaults, &counts);
+            if fade_in != region.fade_in || fade_out != region.fade_out {
+                out.push(MultitrackIntent::FadeRegion {
+                    region: region.id,
+                    fade_in,
+                    fade_out,
+                });
+            }
+        }
+    }
     out
 }
 
