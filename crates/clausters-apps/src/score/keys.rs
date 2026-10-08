@@ -3,7 +3,7 @@
 //! and what a key sheet calls it.
 //!
 //! They are the application's and not the host's: the window carries them
-//! (its `verbs` prop, [`verbs`]), whether or not it has any chrome, and the
+//! (its `verbs` prop, [`verbs()`]), whether or not it has any chrome, and the
 //! host lays them into its key table under whatever the user bound -- so a
 //! `[gui.keys.note_entry]` in a config still wins, and F1 lists them in these
 //! words. The chords are the settled ones of notation programs.
