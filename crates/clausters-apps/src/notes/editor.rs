@@ -281,6 +281,17 @@ impl NotesEditor {
         turn::turn(self, event, version)
     }
 
+    /// **What a history step is put back to** when another structure of the
+    /// same step refuses it: the sequence.
+    pub(crate) fn before_step(&self) -> EventSequence {
+        self.held().clone()
+    }
+
+    /// Puts back what [`before_step`](Self::before_step) kept.
+    pub(crate) fn put_back(&mut self, kept: EventSequence) {
+        *self.held() = kept;
+    }
+
     /// **One payload of a history step**, applied to the sequence. Answers
     /// whether it changed.
     pub fn apply(&mut self, payload: &Value) -> bool {

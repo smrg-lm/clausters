@@ -218,6 +218,15 @@ impl std::fmt::Debug for ScoreEditor {
     }
 }
 
+/// What a score editor is put back to when a step it took part in is refused
+/// elsewhere ([`ScoreEditor::before_step`]).
+pub(crate) enum Kept {
+    /// The sequence the page is over.
+    Over(clausters_document::EventSequence),
+    /// The page, as MEI.
+    Page(String),
+}
+
 /// **The sequence a page is the reading of**, for an editor opened over one.
 ///
 /// The sequence is the structure and the page a reading of it
@@ -1111,6 +1120,37 @@ impl ScoreEditor {
     /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
         turn::turn(self, event, version)
+    }
+
+    /// **What a history step is put back to** when another structure of the
+    /// same step refuses it: the sequence the page is over, or the page.
+    pub(crate) fn before_step(&self) -> Kept {
+        match &self.over {
+            Some(over) => Kept::Over(
+                over.sequence
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            ),
+            None => Kept::Page(self.held().mei()),
+        }
+    }
+
+    /// Puts back what [`before_step`](Self::before_step) kept.
+    pub(crate) fn put_back(&mut self, kept: Kept) {
+        match (kept, &self.over) {
+            (Kept::Over(sequence), Some(over)) => {
+                *over.sequence.lock().unwrap_or_else(|e| e.into_inner()) = sequence;
+                self.follow();
+            }
+            (Kept::Page(mei), None) => {
+                let mut held = self.held();
+                if held.mei() != mei {
+                    let _ = held.load(&mei);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// **One payload of a history step**, put back on the score: the MEI it

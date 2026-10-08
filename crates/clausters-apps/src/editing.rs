@@ -814,9 +814,16 @@ impl Editing {
         let Some(walked) = self.history.walk(direction) else {
             return out;
         };
+        // **Whole on every structure, or on none**: what each member was before
+        // the step is kept, so a structure that refuses its legs puts back
+        // the ones the step already went through.
+        let mut kept: Vec<(usize, Kept)> = Vec::new();
+        let mut refused = false;
         let mut applied = false;
         for (structure, payloads) in &walked.legs {
             let mut written = false;
+            let mut seated = false;
+            let mut stepped = false;
             for (id, seat) in self.seats.iter_mut().enumerate() {
                 if seat.structure != *structure {
                     continue;
@@ -824,9 +831,11 @@ impl Editing {
                 let member = id as MemberId;
                 match &mut seat.member {
                     Member::Multitrack(editor) => {
+                        seated = true;
+                        kept.push((id, Kept::Multitrack(editor.before_step())));
                         let loads: Vec<Value> = payloads.iter().map(|p| p.0.clone()).collect();
                         for done in editor.apply_step(&loads) {
-                            applied = true;
+                            stepped = true;
                             out.effects.push(Effect::Multitrack {
                                 member,
                                 applied: done,
@@ -834,10 +843,12 @@ impl Editing {
                         }
                     }
                     Member::Audio(editor) => {
+                        seated = true;
+                        kept.push((id, Kept::Audio(editor.before_step())));
                         // The last list is the take: a step names one list per
                         // entry, and what it leaves is what is drawn.
                         if let Some(steps) = payloads.last().and_then(|p| editor.apply(&p.0)) {
-                            applied = true;
+                            stepped = true;
                             out.effects.push(Effect::Audio { member, steps });
                         }
                     }
@@ -846,11 +857,13 @@ impl Editing {
                     // the rest are corrected.
                     Member::Notes(editor) if !written => {
                         written = true;
+                        seated = true;
+                        kept.push((id, Kept::Notes(editor.before_step())));
                         let mut done = false;
                         for payload in payloads {
                             done |= editor.apply(&payload.0);
                         }
-                        applied |= done;
+                        stepped |= done;
                         out.effects.push(Effect::Notes {
                             member,
                             applied: done,
@@ -860,12 +873,14 @@ impl Editing {
                     // first applies the step and the rest are corrected.
                     Member::Points(editor) if !written => {
                         written = true;
+                        seated = true;
+                        kept.push((id, Kept::Points(editor.before_step())));
                         let mut left = None;
                         for payload in payloads {
                             left = editor.apply(&payload.0).or(left);
                         }
                         if let Some(points) = left {
-                            applied = true;
+                            stepped = true;
                             out.effects.push(Effect::Points { member, points });
                         }
                     }
@@ -875,19 +890,24 @@ impl Editing {
                     #[cfg(feature = "notation")]
                     Member::Score(editor) if !written => {
                         written = true;
+                        seated = true;
+                        kept.push((id, Kept::Score(editor.before_step())));
                         let mut done = false;
                         for payload in payloads {
                             done |= editor.apply(&payload.0);
                         }
-                        applied |= done;
+                        stepped |= done;
                         out.effects.push(Effect::Score {
                             member,
                             applied: done,
                         });
                     }
+                    // Carried out by the caller, after the step is taken:
+                    // nothing here to put back, and nothing that refuses.
                     Member::External { .. } if !written => {
                         written = true;
-                        applied |= !payloads.is_empty();
+                        seated = true;
+                        stepped |= !payloads.is_empty();
                         out.effects.push(Effect::External {
                             member,
                             payloads: payloads.iter().map(|p| p.0.clone()).collect(),
@@ -896,8 +916,20 @@ impl Editing {
                     _ => {}
                 }
             }
+            // A structure nobody holds any more has nobody to refuse it; one
+            // that is held and moved nothing refused the step.
+            if seated && !stepped {
+                refused = true;
+                break;
+            }
+            applied |= stepped;
         }
-        if !applied {
+        if refused || !applied {
+            for (id, state) in kept.into_iter().rev() {
+                if let Some(seat) = self.seats.get_mut(id) {
+                    state.put_back(&mut seat.member);
+                }
+            }
             self.history.step(match direction {
                 Direction::Undo => Direction::Redo,
                 Direction::Redo => Direction::Undo,
@@ -937,6 +969,31 @@ impl Editing {
             }
         }
         out
+    }
+}
+
+/// **What a member was before a history step**, put back when another
+/// structure of the same step refuses it.
+enum Kept {
+    Multitrack(crate::multitrack::editor::Kept),
+    Audio(audio::Kept),
+    Notes(clausters_document::EventSequence),
+    Points(clausters_document::multitrack::Automation),
+    #[cfg(feature = "notation")]
+    Score(crate::score::editor::Kept),
+}
+
+impl Kept {
+    fn put_back(self, member: &mut Member) {
+        match (self, member) {
+            (Kept::Multitrack(state), Member::Multitrack(editor)) => editor.put_back(state),
+            (Kept::Audio(state), Member::Audio(editor)) => editor.put_back(state),
+            (Kept::Notes(state), Member::Notes(editor)) => editor.put_back(state),
+            (Kept::Points(state), Member::Points(editor)) => editor.put_back(state),
+            #[cfg(feature = "notation")]
+            (Kept::Score(state), Member::Score(editor)) => editor.put_back(state),
+            _ => {}
+        }
     }
 }
 
@@ -1287,6 +1344,7 @@ mod tests {
     use super::*;
     use clausters_document::multitrack::Window;
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
+    use clausters_document::points::{Points, payload as points_payload};
     use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
 
     const SR: f64 = 48_000.0;
@@ -1942,6 +2000,47 @@ mod tests {
                 .unwrap()
                 .starts_with("move nothing")
         );
+        assert!(editing.can_undo(), "still there");
+        assert_eq!(editing.version(), version);
+    }
+
+    /// **A step is whole across structures**: one whose second structure
+    /// refuses puts back the first, which it had already stepped.
+    #[test]
+    fn a_step_refused_on_one_structure_puts_back_the_others() {
+        let mut editing = Editing::default();
+        let multitrack = editing.join("multitrack", a_multitrack());
+        let curve = call(
+            &mut editing,
+            json!({"verb": "openPoints", "key": "curve", "rate": 100.0,
+                   "points": [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0]}),
+        )["member"]
+            .clone();
+        let curve = int(&curve) as MemberId;
+        let held = |editing: &Editing| match &editing.seats[curve as usize].member {
+            Member::Points(editor) => editor.curve().lock().unwrap().points.clone(),
+            _ => unreachable!(),
+        };
+        let before = held(&editing);
+        let mut bent = Points(before.clone());
+        bent.0[1].value = 0.5;
+        let entry = Entry::new(
+            "both",
+            editing.structure(multitrack).unwrap(),
+            Step::Edit(Opaque(json!({"edit": {"nonsense": true}}))),
+            Opaque(json!({"nonsense": true})),
+        )
+        .and(
+            editing.structure(curve).unwrap(),
+            Step::Edit(points_payload(&Points(before.clone()).state())),
+            points_payload(&bent.state()),
+        );
+        assert!(editing.record_entry(entry));
+        let version = editing.version();
+        let refused = editing.step(Direction::Undo);
+        assert!(!refused.stepped);
+        assert!(refused.effects.is_empty());
+        assert_eq!(held(&editing), before, "the curve is put back");
         assert!(editing.can_undo(), "still there");
         assert_eq!(editing.version(), version);
     }

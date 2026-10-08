@@ -3728,7 +3728,7 @@ wrong.
   `a_stereo_take_keeps_its_two_sides`). *(The sort reads that arithmetic
   since the entry above was closed, the same day; the two controls stayed.)*
 
-- ⬜ **A history step is whole on each structure, not across them**
+- ✅ **A history step is whole on each structure, not across them**
   *(found 2026-10-08, making a gesture land whole: `domain::edit_all` and
   `clausters_document::apply_all`)*. A gesture now lands all or none, and so
   does each structure's share of an undo or redo step -- the multitrack
@@ -3741,6 +3741,14 @@ wrong.
   step that puts back the structures it already stepped when a later one
   refuses -- each leg's opposite direction is in the same entry -- and
   answers the step as not taken.
+
+  **Closed 2026-10-08, the same day**, by keeping rather than inverting:
+  `Editing::step` keeps what each member holds before handing it its legs
+  (`before_step`), and a structure held by a member that moves nothing puts
+  every structure already stepped back (`put_back`), moves the cursor back
+  and answers the step as not taken. Keeping is used over the entry's
+  opposite legs because a redo's opposite may be a step only its owner can
+  run (`a_step_refused_on_one_structure_puts_back_the_others`).
 
 - ✅ **Most of the windows' verbs have no client API** *(found 2026-10-08,
   writing `docs/verbs.md`)*. An application is an API its clients' handlers

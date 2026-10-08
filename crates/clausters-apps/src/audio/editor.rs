@@ -204,6 +204,10 @@ pub struct Follow {
     pub place: bool,
 }
 
+/// What an audio editor is put back to when a step it took part in is
+/// refused elsewhere ([`AudioEditor::before_step`]).
+pub(crate) struct Kept(Vec<Part>, BTreeSet<i64>);
+
 /// **An audio editor**: the take it opened, the list of parts it is now, the
 /// join that list is drawn from, and one view's end of the conversation.
 #[derive(Clone, Debug)]
@@ -662,6 +666,18 @@ impl AudioEditor {
             Pass::Loop { from, to } => Some(Follow { from, to, place }),
             Pass::Until { .. } => None,
         }
+    }
+
+    /// **What a history step is put back to** when another structure of the
+    /// same step refuses it: the list, and which takes are on disk.
+    pub(crate) fn before_step(&self) -> Kept {
+        Kept(self.list.clone(), self.spilled.clone())
+    }
+
+    /// Puts back what [`before_step`](Self::before_step) kept.
+    pub(crate) fn put_back(&mut self, kept: Kept) {
+        self.list = kept.0;
+        self.spilled = kept.1;
     }
 
     /// **A step of the history, applied**: the list a payload states becomes

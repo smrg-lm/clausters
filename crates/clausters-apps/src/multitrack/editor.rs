@@ -220,6 +220,13 @@ pub enum TransportVerb {
     },
 }
 
+/// What a multitrack editor is put back to when a step it took part in is
+/// refused elsewhere ([`MultitrackEditor::before_step`]).
+pub(crate) struct Kept(
+    clausters_document::multitrack::Multitrack,
+    HashMap<SourceId, Vec<clausters_document::session::Part>>,
+);
+
 /// What one payload of a history step did to the multitrack.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Applied {
@@ -847,6 +854,18 @@ impl MultitrackEditor {
     /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
         turn::turn(self, event, version)
+    }
+
+    /// **What a history step is put back to** when another structure of the
+    /// same step refuses it: the multitrack and the joins this editor knows.
+    pub(crate) fn before_step(&self) -> Kept {
+        Kept(self.multitrack().clone(), self.segments.clone())
+    }
+
+    /// Puts back what [`before_step`](Self::before_step) kept.
+    pub(crate) fn put_back(&mut self, kept: Kept) {
+        *self.multitrack() = kept.0;
+        self.segments = kept.1;
     }
 
     /// **One payload of a history step**, applied to the multitrack -- the inverse

@@ -294,6 +294,17 @@ impl PointsEditor {
         turn::turn(self, event, version)
     }
 
+    /// **What a history step is put back to** when another structure of the
+    /// same step refuses it: the curve.
+    pub(crate) fn before_step(&self) -> Automation {
+        self.held().clone()
+    }
+
+    /// Puts back what [`before_step`](Self::before_step) kept.
+    pub(crate) fn put_back(&mut self, kept: Automation) {
+        *self.held() = kept;
+    }
+
     /// **One payload of a history step**, applied to the curve. Answers the
     /// points it leaves, as quads, when it changed them.
     pub fn apply(&mut self, payload: &Value) -> Option<Vec<f64>> {
