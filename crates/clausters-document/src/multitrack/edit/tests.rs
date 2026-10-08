@@ -665,16 +665,10 @@ fn every_verb_inverts_to_what_the_multitrack_said_before_it() {
             edit(&mut multitrack, inverse).applied,
             "{intent:?} did not invert"
         );
-        assert_eq!(
-            (
-                multitrack.tracks,
-                multitrack.markers,
-                multitrack.tempo,
-                multitrack.meter
-            ),
-            (before.tracks, before.markers, before.tempo, before.meter),
-            "{intent:?}"
-        );
+        // The whole multitrack, so a verb over a part nobody listed -- a
+        // range, the defaults -- is checked like the rest.
+        multitrack.version = before.version;
+        assert_eq!(multitrack, before, "{intent:?}");
     }
 }
 
@@ -838,11 +832,57 @@ fn vocabulary() -> Vec<MultitrackIntent> {
         MultitrackIntent::SetMeterMap {
             meter: vec![Meter::at(Beat(0.0), 7, 8)],
         },
+        MultitrackIntent::ShowAutomation {
+            automation: NodeId(22),
+            visible: true,
+        },
+        MultitrackIntent::SetDefaults {
+            defaults: Defaults {
+                fade: None,
+                crossfade: false,
+                ..Defaults::default()
+            },
+        },
     ];
-    // The count is the enum's, so a verb added without an entry here fails the
-    // suite instead of slipping past every test that walks the vocabulary.
-    assert_eq!(all.len(), 14, "one of each verb, and the enum has 14");
+    // Every verb once: `verb` is an exhaustive match, so a verb added to the
+    // enum fails to compile here, and one added there without an entry here
+    // fails this count. A count typed by hand is what let two verbs through.
+    let mut seen = [false; VERBS];
+    for intent in &all {
+        let slot = verb(intent);
+        assert!(!seen[slot], "{intent:?} is in the vocabulary twice");
+        seen[slot] = true;
+    }
+    assert!(
+        seen.iter().all(|s| *s),
+        "a verb is missing from the vocabulary"
+    );
     all
+}
+
+/// How many verbs the enum has: the slots [`verb`] numbers.
+const VERBS: usize = 16;
+
+/// The slot each verb takes in [`vocabulary`]'s check.
+fn verb(intent: &MultitrackIntent) -> usize {
+    match intent {
+        MultitrackIntent::SetTracks { .. } => 0,
+        MultitrackIntent::SetActiveTakeLane { .. } => 1,
+        MultitrackIntent::SetTakeLane { .. } => 2,
+        MultitrackIntent::PlaceRegion { .. } => 3,
+        MultitrackIntent::TrimRegion { .. } => 4,
+        MultitrackIntent::SplitRegion { .. } => 5,
+        MultitrackIntent::JoinRegions { .. } => 6,
+        MultitrackIntent::FadeRegion { .. } => 7,
+        MultitrackIntent::SetAutomation { .. } => 8,
+        MultitrackIntent::ShowAutomation { .. } => 9,
+        MultitrackIntent::SetMarker { .. } => 10,
+        MultitrackIntent::RemoveMarker { .. } => 11,
+        MultitrackIntent::SetRange { .. } => 12,
+        MultitrackIntent::SetTempoMap { .. } => 13,
+        MultitrackIntent::SetMeterMap { .. } => 14,
+        MultitrackIntent::SetDefaults { .. } => 15,
+    }
 }
 
 // ---- through a history: one pile, two vocabularies ----
