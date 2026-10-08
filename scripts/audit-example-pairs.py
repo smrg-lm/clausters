@@ -1058,6 +1058,9 @@ def load_tables() -> Tables:
     idioms: list[Idiom] = []
     unpaired: dict[str, str] = {}
     allowances: dict[str, list[tuple[str, str, int]]] = {}
+    # A pair's allowances are one block: two blocks under one name used to be
+    # merged silently, and the second hid that the first had gone stale.
+    twice: list[str] = []
     for section in sections:
         title = section.splitlines()[0].strip().lower() if section.strip() else ""
         if title.startswith("the pairs that are not spelled alike"):
@@ -1096,7 +1099,14 @@ def load_tables() -> Tables:
                             n = -n      # from the start, not from the end
                         if name and side in ("python", "web"):
                             rows.append((side, name, n))
+                if key in allowances:
+                    twice.append(key)
                 allowances.setdefault(key, []).extend(rows)
+    if twice:
+        raise SystemExit(
+            f"{PARITY_DOC.name}: a pair's block is written twice -- "
+            + ", ".join(sorted(set(twice))) + "; make each one block"
+        )
     return Tables(pairs, idioms, unpaired, allowances)
 
 

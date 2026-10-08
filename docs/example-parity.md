@@ -142,7 +142,6 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `refresh` (first) | a follower's timeline put on the transport: the script's `timeline.transport = server` reads the transport's state before it returns, and a setter in TypeScript cannot await, so the page awaits the same read |
-| python | `free` | the script's ending: it frees the governed group it made before closing the clients |
 
 ### `transport/sync`
 
@@ -204,12 +203,6 @@ in the middle of an example.
 |---|---|---|
 | python | `stop` | the script's ending, as in `panels/skeleton` |
 
-### `transport/conductor`
-
-| Only in | Call | Why |
-|---|---|---|
-| python | `unfollow_transport` | the script's ending: its `close()` cell unfollows the shared transport and closes both clients and the conductor before the process exits |
-
 ### `io/midi_responder`
 
 | Only in | Call | Why |
@@ -244,6 +237,10 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `read` | the other half of the row above |
+| web | `play` | the other half of the row above |
 
 ### `panels/panel`
 
@@ -442,15 +439,6 @@ in the middle of an example.
 |---|---|---|
 | python | `ShmClient` | the two numbers the script prints for the finished take -- how many bytes of samples the region holds and how many its summary does -- are read off the mapped segment. A page maps nothing, which is the difference the whole pair is about |
 | python | `region_path` | the other half of the row above |
-
-### `faust/boxes_library`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
-| web | `boot` | the other half of the row above |
-| web | `read` | the other half of the row above |
-| web | `play` | the other half of the row above |
 
 ### `views/editor`
 

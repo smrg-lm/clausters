@@ -4968,7 +4968,7 @@ sound.
   `#act` runs in `editing.turn(this, ...)`, as a gesture's delivery does; the
   two tests are now one test in two languages.
 
-- ⬜ **The audit reads `transport/conductor`'s two halves as different** *(found
+- ✅ **The audit reads `transport/conductor`'s two halves as different** *(found
   2026-10-08, running `scripts/audit-example-pairs.py` over every pair while
   closing other work)*. The page's call sequence ends with a `free` the
   script's does not: both `close()`s free the governed group, so either the
@@ -4977,3 +4977,13 @@ sound.
   read the two side by side, decide which one is the program, and make the
   other the same -- or declare the difference in `docs/example-parity.md` if
   it is the platform's.
+
+  **Closed 2026-10-08, the same day: the two halves were one program, and
+  the declaration was stale.** Both `close()`s free the governed group; what
+  differed was `docs/example-parity.md`, which still said only the script
+  freed it (from before the page's `close()` did) and held a second
+  `transport/conductor` block naming an `unfollow_transport` the script no
+  longer calls. The audit merged two blocks under one name silently, which
+  is how the stale one hid; it now refuses a block written twice, and that
+  found a second pair written twice (`faust/boxes_library`), merged into one.
+
