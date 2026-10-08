@@ -87,6 +87,8 @@ class FakeHost:
         self.ids = GuiIdAllocator(base=20_000)
         #: What `subscribe` was handed -- an open editor's `apply`.
         self.subscribed: list = []
+        #: What `/gui_verb` was asked for: `(window, verb)`.
+        self.verbs: list = []
 
     def alloc_id(self) -> int:
         return self.ids.alloc()
@@ -115,6 +117,9 @@ class FakeHost:
 
     def set(self, wid, **props):
         self.sets.append((wid, props))
+
+    def verb(self, window, verb):
+        self.verbs.append((window, verb))
 
     def close(self, wid):
         self.closed = wid
@@ -242,6 +247,26 @@ def test_a_gesture_lands_whole_or_not_at_all():
     assert dial.value == 0.75
     assert ed.undo() is True
     assert dial.value == 0.25
+
+
+def test_a_window_verb_is_asked_of_the_host_by_name_or_by_member():
+    # `verb` is the door; a named member is one line over it, as a UGen
+    # builder is over the node it makes.
+    ed = an_editor()
+    assert ed.verb("split") is False, "no window, nothing to act on"
+    host = FakeHost()
+    ed.open(host)
+    assert ed.verb("view_all") is True
+    assert ed.select_all() is True and ed.paste() is True
+    assert host.verbs == [(999, "view_all"), (999, "select_all"), (999, "paste")]
+
+
+def test_a_note_entry_verb_is_spelled_from_its_argument():
+    import pytest
+    from clausters.gui.editing.score import _letter
+    assert _letter("C") == "c" and _letter(" g ") == "g"
+    with pytest.raises(ValueError):
+        _letter("H")
 
 
 def test_a_resend_is_not_an_edit():

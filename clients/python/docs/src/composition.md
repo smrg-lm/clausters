@@ -912,6 +912,29 @@ hand put it, and what comes back is where it landed — so a redo replays the
 edit**, so undoing needs no second path: it is the same intent machinery running
 backwards, and the window adopts the result exactly as it adopts a snap.
 
+### The window's verbs, from a script
+
+Every command a window has — a menu entry, a key, a tool — is a **verb**, and
+the verbs are an API: the script that opened the window asks for them the way
+the hand does. `editor.verb(name)` asks the host to perform any verb of the
+window on what its focus or its main view holds, through the same dispatch a
+key and a tool end in, and each verb has a named member that is one line over
+it:
+
+```python
+editor.select_all()          # Ctrl+A
+editor.copy()                # Ctrl+C
+editor.to_end()              # End
+editor.paste()               # Ctrl+V
+editor.verb("view_all")      # R, through the door every member is over
+```
+
+What a verb edits comes back as the edit a hand made — recorded, drawn,
+undone with Ctrl+Z — and it arrives through the window's event loop, so it is
+in the structure a moment after the call returns. A verb needs a window: with
+none open, `verb` answers `False`. `docs/verbs.md` in the repository lists
+every verb with the member that asks for it.
+
 ### What the hand marked, and what it swept
 
 Two things on a multitrack window are marked by hand and are not edits —

@@ -727,6 +727,30 @@ class MultitrackEditor(Marking, Editor):
         self._sync_core()
         self._take(self._call("toggle"))
 
+    def split(self) -> bool:
+        """Split what is held at the cursor -- the window's ``split`` (`verb`)."""
+        return self.verb("split")
+
+    def join(self) -> bool:
+        """Join a touching run of what is held -- the window's ``join`` (`verb`)."""
+        return self.verb("join")
+
+    def quantize(self) -> bool:
+        """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
+        return self.verb("quantize")
+
+    def stop_at_end(self) -> bool:
+        """Whether a pass stops where the contents end, on or off -- the window's ``stop_at_end`` (`verb`)."""
+        return self.verb("stop_at_end")
+
+    def reset_heights(self) -> bool:
+        """Every track back to its default height -- the window's ``reset_heights`` (`verb`)."""
+        return self.verb("reset_heights")
+
+    def compact_tracks(self) -> bool:
+        """Every track at its smallest height -- the window's ``compact_tracks`` (`verb`)."""
+        return self.verb("compact_tracks")
+
     def rewind(self):
         """Put the **position cursor** back at the top, and cue a stopped
         transport there.

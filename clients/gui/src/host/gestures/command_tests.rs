@@ -295,3 +295,47 @@ fn a_box_dragged_past_the_end_lengthens_the_axis() {
     g.release(&mut host, &ctx, body_x(0.99), y);
     assert!(host.timelines().total_of(70) > before);
 }
+
+/// **A client's `/gui_verb` is the tool's verb with no tool**: the host checks
+/// the window and hands the verb to the front, and the front performs it
+/// through the same dispatch -- here, every note of the `main` roll held, as
+/// the tool above holds them.
+#[test]
+fn a_verb_a_client_asks_for_is_the_one_a_tool_performs() {
+    use super::super::{GUI_VERB, HostEffect};
+    let mut host = host_from(ROLL);
+    let from = ClientId::Udp(std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        9000,
+    )));
+    let asked = |host: &mut Host, window: i32, verb: &str| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_VERB.into(),
+                args: vec![OscType::Int(window), OscType::String(verb.into())],
+            }),
+            from,
+        )
+    };
+    // a window that is not there is no one to ask
+    assert!(asked(&mut host, 99, "select_all").is_empty());
+    let effects = asked(&mut host, 1, "select_all");
+    let [HostEffect::Perform { window, verb }] = &effects[..] else {
+        panic!("the front is asked to perform it: {effects:?}");
+    };
+    assert_eq!((*window, verb.as_str()), (1, "select_all"));
+
+    let ctx = ctx();
+    Gestures::default().command(&mut host, &ctx, verb);
+    assert_eq!(selected_notes(&host, 90), vec![0, 1], "every note, held");
+
+    // a verb the host does not perform is the window's owner's, told as the
+    // window would tell it
+    let effects = Gestures::default().command(&mut host, &ctx, "make_coffee");
+    assert!(
+        emitted(&effects).iter().any(|(_, args)| args
+            .iter()
+            .any(|a| matches!(a, OscType::String(s) if s == "make_coffee"))),
+        "the owner is told: {effects:?}"
+    );
+}

@@ -202,10 +202,11 @@ impl Gestures {
         Some(out)
     }
 
-    /// **Performs the verb `name` for a tool or a menu entry**: what a key
-    /// bound to it would do, with no pointer -- the hand is on the tool, not on
-    /// what the tool acts on.
-    pub(super) fn command(
+    /// **Performs the verb `name` for a tool, a menu entry or a client's
+    /// `/gui_verb`**: what a key bound to it would do, with no pointer -- the
+    /// hand is on the tool, or nowhere on the window, not on what the verb
+    /// acts on.
+    pub(crate) fn command(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,

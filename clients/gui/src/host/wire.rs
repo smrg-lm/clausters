@@ -56,6 +56,7 @@ impl Host {
             GUI_METRICS => self.on_metrics(&msg.args, from, effects),
             GUI_KEYS => self.on_keys(&msg.args, from, effects),
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
+            GUI_VERB => self.on_verb(&msg.args, from, effects),
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
     }
@@ -220,6 +221,27 @@ impl Host {
             effects.push(HostEffect::Redraw(id));
         }
         diag::info!("{from}: {GUI_KEYS}: {} verb(s) bound", table.len());
+    }
+
+    /// `/gui_verb <window> <verb>` -- perform `verb` on the window rooted at
+    /// `window` ([`GUI_VERB`]). The host checks the window is there and hands
+    /// the verb to the front, which holds the window's context.
+    pub(super) fn on_verb(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(window), Some(verb)) = (int_arg(args, 0), string_arg(args, 1)) else {
+            return diag::warn!("{from}: {GUI_VERB} needs a window id and a verb");
+        };
+        if self.window_def(window).is_none() {
+            return diag::warn!("{from}: {GUI_VERB} {window} {verb}: no such window");
+        }
+        effects.push(HostEffect::Perform {
+            window,
+            verb: verb.to_string(),
+        });
     }
 
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the

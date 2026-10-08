@@ -340,6 +340,27 @@ test("GuiHost: a typeface a host cannot read leaves it drawing", {
     });
 });
 
+test("GuiHost: a verb a script asks for reaches the window's owner as the window would tell it", {
+    skip: !hasHost,
+}, async () => {
+    await withHost(async (gui) => {
+        gui.open(window({}, label("hello", { id: 7 })), { id: 1 });
+        const told: unknown[][] = [];
+        const off = gui.onMessage((msg) => {
+            if (msg.addr === "/gui_event") told.push(msg.args);
+        });
+        // `make_coffee` is no verb the host performs, so it is the owner's: the
+        // same `/gui_event` its key would send, here to the script that asked.
+        gui.verb(1, "make_coffee");
+        for (let i = 0; i < 50 && told.length === 0; i++) await sleep(20);
+        off();
+        assert.ok(
+            told.some((args) => args.includes("make_coffee")),
+            `the owner is told: ${JSON.stringify(told)}`,
+        );
+    });
+});
+
 // ---- what a caller sequences on: `closed`, and `wait` ----------------------
 
 test("GuiHost: a window says whether it is closed, and wait resolves when it is", async () => {

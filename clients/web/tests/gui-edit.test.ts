@@ -85,6 +85,11 @@ class FakeHost {
     onMessage(): () => void {
         return () => {};
     }
+    /** What `/gui_verb` was asked for: `[window, verb]`. */
+    verbs: [number, string][] = [];
+    verb(id: number | { id: number }, verb: string): void {
+        this.verbs.push([typeof id === "number" ? id : id.id, verb]);
+    }
     ack(
         seq: number,
         _docVersion = 0,
@@ -1266,4 +1271,20 @@ test("a gesture lands whole or not at all", async () => {
     assert.equal(dial.value, 0.75);
     assert.equal(editor.undo(), true);
     assert.equal(dial.value, 0.25);
+});
+
+test("a window verb is asked of the host by name or by member", async () => {
+    // The Python twin is `test_gui_editing.py::
+    // test_a_window_verb_is_asked_of_the_host_by_name_or_by_member`.
+    const editor = new Editor(new Dial(), {
+        sampleRate: SR, domain: new DialDomain(), view: new DialView(),
+    });
+    assert.equal(editor.verb("split"), false, "no window, nothing to act on");
+    const host = new FakeHost();
+    await editor.open(asHost(host));
+    const window = 900 + host.trees.length;
+    assert.equal(editor.verb("view_all"), true);
+    assert.equal(editor.selectAll(), true);
+    assert.equal(editor.paste(), true);
+    assert.deepEqual(host.verbs, [[window, "view_all"], [window, "select_all"], [window, "paste"]]);
 });

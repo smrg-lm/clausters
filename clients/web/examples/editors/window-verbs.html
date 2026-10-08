@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a window's verbs, from a script</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A window's verbs, asked for from a script:
+<code>editor.selectAll()</code>, <code>editor.cut()</code>,
+<code>editor.verb("view_all")</code>.
+
+Every command a window has -- a menu entry, a key, a tool -- is a
+<b>verb</b>, and the verbs are an API: the script that opened the window asks
+for them the way the hand does, and the host performs them through the same
+dispatch, on what the window's focus or its main view holds. So
+<code>editor.cut()</code> does exactly what Ctrl+X does in the window, and what
+it edits comes back as the edit a hand made: recorded, drawn, undone with
+Ctrl+Z.
+
+Each verb has a <b>named member</b> -- <code>selectAll</code>,
+<code>copy</code>, <code>paste</code>, <code>toEnd</code>,
+<code>quantize</code>, <code>split</code>, <code>join</code> -- and all of
+them are one line over one door, <code>editor.verb(name)</code>, which reaches
+any verb of the window, the ones with no member of their own included.
+
+What to look at: the roll opens with four notes. Press <b>again</b>: the notes
+are copied and pasted after themselves, and the view zooms out to show all of
+it (<code>verb("view_all")</code>, the R key). Press <b>clear</b>: every note
+is cut and the roll is empty; <b>back</b> pastes them at the start again.
+<b>Ctrl+Z</b> on the roll takes each step back, as it would one made by hand.
+
+The verbs arrive through the window's event loop, as a gesture does, so what
+a verb edited is in the sequence a moment after the call returns rather than
+when it does.
+
+Run <code>./build.sh</code> in <code>clients/web</code> first, serve the
+directory (<code>python3 -m http.server</code>) and open this page. It boots
+the audio engine in the page, so the server a script would launch is
+<code>Session.embed</code> here.</div>
+      <button id="run">open the roll</button>
+      <div id="stage"></div>
+      <button id="again" disabled>again</button>
+      <button id="clear" disabled>clear</button>
+      <button id="back" disabled>back</button>
+      <pre id="log"></pre>
+    </main>
+    <script type="module">
+      import { Session, gui, loadCore } from "../../dist/index.js";
+      import { Event, Timeline } from "../../dist/seq/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      await loadCore();
+
+      // Four notes: an arpeggio, a beat each.
+      const timeline = new Timeline([
+        [0.0, new Event({ midinote: 72, dur: 0.9 })],
+        [1.0, new Event({ midinote: 76, dur: 0.9 })],
+        [2.0, new Event({ midinote: 79, dur: 0.9 })],
+        [3.0, new Event({ midinote: 84, dur: 1.0 })],
+      ]);
+
+      async function run() {
+        $("run").disabled = true;
+        // The editor: the notes, rendered into the sequence the roll edits.
+        const session = (await Session.embed()).activate();
+        await session.gui();
+        const notes = await timeline.renderEvents();
+        const editor = await gui.edit(notes, {
+          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
+          title: "window verbs",
+          stage: $("stage"),
+        });
+
+        // The window's verbs, by name: `selectAll` holds every note, `copy`
+        // puts them on the clipboard, `toEnd` moves the position cursor to
+        // where the last note ends and `paste` lands the block there -- what
+        // Ctrl+A, Ctrl+C, End and Ctrl+V do on the roll, and the paste one
+        // entry of its history. The last line asks for the R key through the
+        // door itself, `verb("view_all")`: what `viewAll()` is one line over,
+        // and what reaches a verb no member names.
+        function again() {
+          editor.selectAll();
+          editor.copy();
+          editor.toEnd();
+          editor.paste();
+          editor.verb("view_all");
+        }
+
+        // Cut, and put back: `cut` takes what is held off the roll and onto
+        // the clipboard; `toStart` and `paste` put it back at the beginning.
+        function clear() {
+          editor.selectAll();
+          editor.cut();
+        }
+
+        function back() {
+          editor.toStart();
+          editor.paste();
+        }
+
+        $("clear").disabled = false;
+        $("clear").onclick = () => clear();
+        $("back").disabled = false;
+        $("back").onclick = () => back();
+        // The script's ending runs `again()` once and waits for the window;
+        // here the page runs it once and its button runs it again.
+        again();
+        $("again").disabled = false;
+        $("again").onclick = () => again();
+        log("again() repeats the notes, clear() cuts them, back() pastes them");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

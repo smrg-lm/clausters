@@ -775,6 +775,21 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_verb <id> <verb>` -- perform `verb` on window `id` (an id or a
+     * handle) as its key, its menu entry or its tool would.
+     *
+     * The window's verbs are an API, and this is its door: the verb is offered
+     * to the focused element, the window's `main` view and the window, and one
+     * none of them performs goes to the window's owner as the window would
+     * tell it. What it edits reaches the owner as the same `/gui_event` a
+     * gesture sends. An editor calls it as `editor.verb(name)`.
+     */
+    verb(id: number | { id: number }, verb: string): void {
+        const target = typeof id === "number" ? id : id.id;
+        this.send("/gui_verb", ["i", target], verb);
+    }
+
+    /**
      * `/gui_headClock <id> <which> [transport]` -- which counter the playheads
      * of `id` are drawn from: a window, or a widget and every view under it
      * that names none of its own. `id` is an id or a handle.

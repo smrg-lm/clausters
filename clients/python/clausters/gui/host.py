@@ -650,6 +650,19 @@ class GuiHost:
         """
         self._send("/gui_keys", json.dumps(dict(table)))
 
+    def verb(self, id, verb: str):
+        """``/gui_verb <id> <verb>`` -- perform ``verb`` on window ``id`` (an id
+        or a handle) as its key, its menu entry or its tool would.
+
+        The window's verbs are an API, and this is its door: the verb is
+        offered to the focused element, the window's ``main`` view and the
+        window, and one none of them performs goes to the window's owner as
+        the window would tell it. What it edits reaches the owner as the same
+        ``/gui_event`` a gesture sends. An editor calls it as
+        ``editor.verb(name)``.
+        """
+        self._send("/gui_verb", int(getattr(id, "id", id)), str(verb))
+
     def head_clock(self, id, which: str, transport: int = 0):
         """``/gui_headClock <id> <which> [transport]`` -- which counter the
         playheads of ``id`` are drawn from: a window, or a widget and every view

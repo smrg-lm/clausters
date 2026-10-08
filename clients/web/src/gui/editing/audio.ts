@@ -661,6 +661,11 @@ export class AudioEditor extends Editor<Buffer> {
         );
     }
 
+    /** Paste onto what is there, mixed with it -- the window's `mix` ({@link Editor.verb}). */
+    mix(): boolean {
+        return this.verb("mix");
+    }
+
     /**
      * **Writes the take as the edits have left it** -- over what it was opened
      * from (the file it was read from, or the server buffer it was opened

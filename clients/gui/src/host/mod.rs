@@ -638,6 +638,19 @@ pub const GUI_KEYS: &str = "/gui_keys";
 /// (`playhead_at` of `0`) and no message per frame, which is what lets a client
 /// hand playback to the transport and stop computing time.
 pub const GUI_CLOCK: &str = "/gui_headClock";
+/// `/gui_verb <window> <verb>` -- perform a verb on a window, as its key, its
+/// menu entry or its tool would.
+///
+/// **The window's verbs are an API, and this is its door.** A key, a menu
+/// entry and a tool all end in the one dispatch the gesture machine has --
+/// offered to the focused element, the window's `main` view, the window, and
+/// the window's owner -- and this reaches the same dispatch with no pointer,
+/// the hand being nowhere on the window: what a tool does. So a verb a script
+/// asks for does exactly what the same verb from the window does, and a verb
+/// added to the table is reachable from here without touching the protocol.
+/// What the verb edits reaches the owner as the same `/gui_event` the window
+/// would send, so the answer arrives the way a gesture's does.
+pub const GUI_VERB: &str = "/gui_verb";
 pub const GUI_INFO: &str = "/gui_info";
 pub const GUI_EVENT: &str = "/gui_event";
 pub const GUI_CLOSED: &str = "/gui_closed";
@@ -669,6 +682,10 @@ pub enum HostEffect {
     /// its live layers again. A reading written many times a second -- a
     /// clock's text -- costs its own triangles and not the window's.
     RedrawLive(i32),
+    /// `/gui_verb` asked for `verb` on the window rooted at `window`: the
+    /// front performs it through the gesture machine with that window's
+    /// context, as a tool would, and carries out what it does.
+    Perform { window: i32, verb: String },
 }
 
 /// The widget-protocol interpreter (transport- and GPU-agnostic). See

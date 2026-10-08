@@ -268,6 +268,18 @@ class NotesEditor(Marking, Editor):
         self._playback.load(start, range=range, looping=looping, end=self._end)
         return self
 
+    def split(self) -> bool:
+        """Split what is held at the cursor -- the window's ``split`` (`verb`)."""
+        return self.verb("split")
+
+    def join(self) -> bool:
+        """Join a touching run of what is held -- the window's ``join`` (`verb`)."""
+        return self.verb("join")
+
+    def quantize(self) -> bool:
+        """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
+        return self.verb("quantize")
+
     def pause(self) -> "NotesEditor":
         """Pause where it stands: a `resume` carries the notes on."""
         if self._elsewhere is not None:

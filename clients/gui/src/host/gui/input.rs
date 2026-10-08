@@ -114,6 +114,21 @@ impl App {
         }
     }
 
+    /// **A client asked for verb `verb` on window `def_id`** (`/gui_verb`):
+    /// performed through the window's own machine, as its tool would.
+    pub(super) fn perform_verb(&mut self, def_id: i32, verb: &str) {
+        if !self.windows.contains_key(&def_id) && self.pending.iter().any(|(id, _)| *id == def_id) {
+            self.pending_verbs.push((def_id, verb.to_string()));
+            return;
+        }
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return tracing::warn!("/gui_verb {def_id} {verb}: no window is open for it");
+        };
+        let effects = ws.gestures.command(&mut self.host, &ctx, verb);
+        self.apply_gesture_effects(effects);
+    }
+
     /// Press on a widget: the machine acts by kind and possibly starts a drag.
     pub(super) fn on_press(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {

@@ -279,6 +279,22 @@ impl WebApp {
         self.apply_gesture_effects(effects);
     }
 
+    /// **A client asked for verb `verb` on canvas `def`** (`/gui_verb`):
+    /// performed through the canvas' own machine, as its tool would -- the
+    /// native front's `perform_verb`, on this front's canvas.
+    pub(super) fn perform_verb(&mut self, def: i32, verb: &str) {
+        let Some(ctx) = self.window_ctx(def) else {
+            return log(&format!(
+                "/gui_verb {def} {verb}: no canvas holds that window"
+            ));
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.command(&mut self.host, &ctx, verb);
+        self.apply_gesture_effects(effects);
+    }
+
     /// Keyboard: the **one dispatch** the desktop front calls too
     /// ([`Gestures::press_key`](crate::host::gestures::Gestures::press_key)) --
     /// the focus, the key table and the verb it names. Escape with nothing open

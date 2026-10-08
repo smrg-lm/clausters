@@ -388,6 +388,60 @@ class ScoreEditor(Editor):
         """Turn the selected notes into rests of the same length."""
         return self._act({"action": "silence"})
 
+    def select_left(self) -> bool:
+        """Select the item before -- the window's ``select_left`` (`verb`)."""
+        return self.verb("select_left")
+
+    def select_right(self) -> bool:
+        """Select the item after -- the window's ``select_right`` (`verb`)."""
+        return self.verb("select_right")
+
+    def cursor_left(self) -> bool:
+        """In note entry: the cursor back -- the window's ``cursor_left`` (`verb`)."""
+        return self.verb("cursor_left")
+
+    def cursor_right(self) -> bool:
+        """In note entry: the cursor forward -- the window's ``cursor_right`` (`verb`)."""
+        return self.verb("cursor_right")
+
+    def bar_left(self) -> bool:
+        """In note entry: the cursor to the bar before -- the window's ``bar_left`` (`verb`)."""
+        return self.verb("bar_left")
+
+    def bar_right(self) -> bool:
+        """In note entry: the cursor to the bar after -- the window's ``bar_right`` (`verb`)."""
+        return self.verb("bar_right")
+
+    def staff_up(self) -> bool:
+        """In note entry: the cursor to the staff above -- the window's ``staff_up`` (`verb`)."""
+        return self.verb("staff_up")
+
+    def staff_down(self) -> bool:
+        """In note entry: the cursor to the staff below -- the window's ``staff_down`` (`verb`)."""
+        return self.verb("staff_down")
+
+    def enter_rest(self) -> bool:
+        """In note entry: write a rest at the cursor -- the window's ``enter_rest`` (`verb`)."""
+        return self.verb("enter_rest")
+
+    def write(self, pitch: str) -> bool:
+        """In note entry: **write the note ``pitch``** (``"A"`` to ``"G"``) at
+        the cursor, nearest the note before -- the window's ``pitch_a`` ...
+        ``pitch_g`` (`verb`)."""
+        return self.verb(f"pitch_{_letter(pitch)}")
+
+    def chord(self, pitch: str) -> bool:
+        """In note entry: **add ``pitch``** (``"A"`` to ``"G"``) to the chord
+        just written -- the window's ``chord_a`` ... ``chord_g`` (`verb`)."""
+        return self.verb(f"chord_{_letter(pitch)}")
+
+    def entry_voice(self, voice: int) -> bool:
+        """In note entry: **write in voice ``voice``** (1 to 4) from here on --
+        the window's ``voice_1`` ... ``voice_4`` (`verb`)."""
+        if int(voice) not in (1, 2, 3, 4):
+            raise ValueError(f"a voice is 1 to 4, not {voice!r}")
+        return self.verb(f"voice_{int(voice)}")
+
     def delete(self) -> bool:
         """Remove the selected items; what follows them moves earlier."""
         return self._act({"action": "delete"})
@@ -860,3 +914,11 @@ def is_score(structure) -> bool:
 
 
 __all__ = ["ScoreDomain", "ScoreEditor", "ScoreView", "is_score"]
+
+
+def _letter(pitch: str) -> str:
+    """A pitch's letter, as the note-entry verbs spell it: ``"C"`` is ``c``."""
+    letter = str(pitch).strip().lower()
+    if letter not in ("a", "b", "c", "d", "e", "f", "g"):
+        raise ValueError(f"a pitch is a letter A to G, not {pitch!r}")
+    return letter

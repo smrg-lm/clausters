@@ -1100,6 +1100,36 @@ export class MultitrackEditor extends Editor<Multitrack> {
         }
     }
 
+    /** Split what is held at the cursor -- the window's `split` ({@link Editor.verb}). */
+    split(): boolean {
+        return this.verb("split");
+    }
+
+    /** Join a touching run of what is held -- the window's `join` ({@link Editor.verb}). */
+    join(): boolean {
+        return this.verb("join");
+    }
+
+    /** Quantize what is selected to the grid -- the window's `quantize` ({@link Editor.verb}). */
+    quantize(): boolean {
+        return this.verb("quantize");
+    }
+
+    /** Whether a pass stops where the contents end, on or off -- the window's `stop_at_end` ({@link Editor.verb}). */
+    stopAtEnd(): boolean {
+        return this.verb("stop_at_end");
+    }
+
+    /** Every track back to its default height -- the window's `reset_heights` ({@link Editor.verb}). */
+    resetHeights(): boolean {
+        return this.verb("reset_heights");
+    }
+
+    /** Every track at its smallest height -- the window's `compact_tracks` ({@link Editor.verb}). */
+    compactTracks(): boolean {
+        return this.verb("compact_tracks");
+    }
+
     /**
      * Put the **position cursor** back at the top, and cue a stopped transport
      * there.

@@ -391,6 +391,7 @@ impl WebApp {
                         slot.request_redraw_live();
                     }
                 }
+                HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
             }
         }
     }

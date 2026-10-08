@@ -161,6 +161,10 @@ pub(super) struct App {
     pub(super) ws_conns: HashMap<u64, WsConn>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
+    /// `/gui_verb`s asked of a window still in `pending`, performed once it
+    /// opens: a script that opens a window and asks it for a verb at once
+    /// must not lose the verb to the event loop's start.
+    pub(super) pending_verbs: Vec<(i32, String)>,
     pub(super) resumed: bool,
     /// The last whole second the playhead clock was logged at, so the debug
     /// line is one a second rather than one a frame.
@@ -230,6 +234,7 @@ impl App {
             tcp_conns: HashMap::new(),
             ws_conns: HashMap::new(),
             pending: Vec::new(),
+            pending_verbs: Vec::new(),
             resumed: false,
             head_said: u64::MAX,
             started: Instant::now(),
@@ -399,6 +404,7 @@ impl App {
                         ws.repaint_live();
                     }
                 }
+                HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
             }
         }
     }
@@ -570,6 +576,9 @@ impl ApplicationHandler<UserEvent> for App {
         self.resumed = true;
         for (id, origin) in std::mem::take(&mut self.pending) {
             self.open_window(event_loop, id, origin);
+        }
+        for (id, verb) in std::mem::take(&mut self.pending_verbs) {
+            self.perform_verb(id, &verb);
         }
         // Standalone: a GuiDef pre-loaded into the host before the loop started
         // (no `/gui_def` over the wire) is opened now. Its events have no script

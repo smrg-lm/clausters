@@ -263,6 +263,15 @@ def test_font_hands_a_typeface_over_with_no_id():
     assert host._alloc.in_use == 0
 
 
+def test_verb_names_a_window_and_a_verb():
+    """``/gui_verb`` performs a verb on a window: the window by its id, or
+    by the handle `open` returned."""
+    host = GuiHost(interface=_Recorder())
+    host.verb(7, "split")
+    host.verb(type("Handle", (), {"id": 8})(), "select_all")
+    assert host._osc.sent == [("/gui_verb", 7, "split"), ("/gui_verb", 8, "select_all")]
+
+
 # ---- attach: the host this handle did not start -------------------------
 
 def test_attach_refuses_an_address_nobody_answers():

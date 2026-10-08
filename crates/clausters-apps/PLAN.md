@@ -3742,7 +3742,7 @@ wrong.
   refuses -- each leg's opposite direction is in the same entry -- and
   answers the step as not taken.
 
-- ⬜ **Most of the windows' verbs have no client API** *(found 2026-10-08,
+- ✅ **Most of the windows' verbs have no client API** *(found 2026-10-08,
   writing `docs/verbs.md`)*. An application is an API its clients' handlers
   call, and a menu, a key or a tool is one more caller of it -- but of the 76
   verbs in the one verb table (`clausters_editing::verbs`), 42 are reachable
@@ -3762,3 +3762,27 @@ wrong.
   `/gui_*` command that performs a verb on a window would be one door for all
   of them, against a member per verb per editor. Each row that closes moves
   to `api` in `docs/verbs.md` in the same commit.
+
+  **Closed 2026-10-08, the same day, by the one door.** `/gui_verb <window>
+  <verb>` reaches the host's one dispatch -- the one a key, a menu entry and a
+  tool end in -- with no pointer, so a verb a script asks for does what the
+  window does. Both clients have `editor.verb(name)` over it and a named
+  member per verb, one line each (`select_all`, `cut`, `split`, `write("C")`,
+  `entry_voice(2)` ...), the way a UGen builder is one line over the node it
+  makes; `docs/verbs.md` has no `gap` left. `clients/python/examples/editors/window_verbs.py`
+  and its page are the by-eye check.
+
+- ⬜ **Quantize does nothing in the notes editor or the multitrack: no
+  application gives its views a grid** *(found 2026-10-08, writing
+  `editors/window_verbs`)*. The host quantizes to a view's `snap`
+  (`structures::boxes::quantize`), and a roll or a lane with no `snap` has no
+  grid: the verb is refused as "these notes are already on the grid", from Q,
+  the Edit menu, the toolbar and `editor.quantize()` alike. No application sets
+  one (`grep '"snap"' crates/clausters-apps`), so a drag does not snap either.
+  **A decision first**: the applications' axes are in beats over a tempo map
+  and a view's `snap` is one number in its own units, so the grid is either
+  carried in beats and resolved through the map where a box lands, or the
+  units become beats -- and then whether the grid is the document's (one per
+  session, like its defaults) or the window's (a View-menu choice, like the
+  notes' view).
+

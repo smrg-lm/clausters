@@ -1033,6 +1033,70 @@ export class Editor<S = unknown> implements Adopting {
         this.corrections = [];
     }
 
+    // ---- the window's verbs ----
+
+    /**
+     * **Perform the window's verb `name`**, as its key, its menu entry or its
+     * tool would -- the door every verb of the one verb table is reached by
+     * from a script (`docs/verbs.md`). The host performs it on what the
+     * window's focus or its `main` view holds, and a verb that is this
+     * editor's comes back to it as the window's event would; what it edits
+     * arrives as a gesture's edit does, through the event loop.
+     *
+     * Answers whether it was asked: `false` with no window open, since a
+     * window's verb acts on what the window holds.
+     */
+    verb(name: string): boolean {
+        if (this.host === null || this.windowId === null) return false;
+        this.host.verb(this.windowId, name);
+        return true;
+    }
+
+    /** The whole of what the window's view holds, in view -- the window's `view_all` ({@link Editor.verb}). */
+    viewAll(): boolean {
+        return this.verb("view_all");
+    }
+
+    /** Cut what is selected -- the window's `cut` ({@link Editor.verb}). */
+    cut(): boolean {
+        return this.verb("cut");
+    }
+
+    /** Copy what is selected -- the window's `copy` ({@link Editor.verb}). */
+    copy(): boolean {
+        return this.verb("copy");
+    }
+
+    /** Paste at the cursor -- the window's `paste` ({@link Editor.verb}). */
+    paste(): boolean {
+        return this.verb("paste");
+    }
+
+    /** Delete what is selected -- the window's `delete` ({@link Editor.verb}). */
+    delete(): boolean {
+        return this.verb("delete");
+    }
+
+    /** Select everything the view holds -- the window's `select_all` ({@link Editor.verb}). */
+    selectAll(): boolean {
+        return this.verb("select_all");
+    }
+
+    /** The position cursor to the start -- the window's `to_start` ({@link Editor.verb}). */
+    toStart(): boolean {
+        return this.verb("to_start");
+    }
+
+    /** The position cursor to the end -- the window's `to_end` ({@link Editor.verb}). */
+    toEnd(): boolean {
+        return this.verb("to_end");
+    }
+
+    /** The loop switch, on or off -- the window's `loop` ({@link Editor.verb}). */
+    loop(): boolean {
+        return this.verb("loop");
+    }
+
     // ---- the history walk ----
 
     /**

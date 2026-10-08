@@ -460,6 +460,10 @@ class AudioEditor(Marking, Editor):
                       max(1, int(getattr(self.structure, "channels", 1) or 1)),
                       self.sample_rate, server=self._server)
 
+    def mix(self) -> bool:
+        """Paste onto what is there, mixed with it -- the window's ``mix`` (`verb`)."""
+        return self.verb("mix")
+
     def save(self, path: "str | None" = None, *, buffer=None,
              sample_format: str = "float"):
         """**Write the take as the edits have left it** -- over what it was

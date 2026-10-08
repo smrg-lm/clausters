@@ -26,6 +26,7 @@ use clausters_net::tcp::TcpHub;
 use clausters_net::ws::WsHub;
 use clausters_net::{ClientSlots, Waker};
 
+use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::{ClientId, Host, HostEffect};
 
 /// The default port for the GUI host's server front (UDP and TCP alike).
@@ -126,6 +127,26 @@ fn handle(
             HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
+            // A verb needs no picture: performed with a context of no size,
+            // and what it edits told to the client that asked.
+            HostEffect::Perform { window, verb } => {
+                let ctx = GestureCtx::new(window, 1, 1);
+                let effects = Gestures::default().command(host, &ctx, &verb);
+                for effect in effects {
+                    if let GestureEffect::Emit {
+                        def_id,
+                        widget_id,
+                        seq,
+                        args,
+                    } = effect
+                    {
+                        let message = host.event_message(widget_id, seq, args);
+                        if !host.deliver(def_id, &message) {
+                            send_reply(socket, tcp, ws, from, message);
+                        }
+                    }
+                }
+            }
         }
     }
 }

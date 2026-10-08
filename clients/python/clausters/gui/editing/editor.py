@@ -805,6 +805,60 @@ class Editor:
         self._acknowledge(0)
         self._corrections = []
 
+    # ---- the window's verbs ----
+
+    def verb(self, name: str) -> bool:
+        """**Perform the window's verb ``name``**, as its key, its menu entry
+        or its tool would -- the door every verb of the one verb table is
+        reached by from a script (``docs/verbs.md``). The host performs it on
+        what the window's focus or its ``main`` view holds, and a verb that is
+        this editor's comes back to it as the window's event would; what it
+        edits arrives as a gesture's edit does, through the event loop.
+
+        Answers whether it was asked: ``False`` with no window open, since a
+        window's verb acts on what the window holds.
+        """
+        if self._host is None or self._window is None:
+            return False
+        self._host.verb(self._window, str(name))
+        return True
+
+    def view_all(self) -> bool:
+        """The whole of what the window's view holds, in view -- the window's ``view_all`` (`verb`)."""
+        return self.verb("view_all")
+
+    def cut(self) -> bool:
+        """Cut what is selected -- the window's ``cut`` (`verb`)."""
+        return self.verb("cut")
+
+    def copy(self) -> bool:
+        """Copy what is selected -- the window's ``copy`` (`verb`)."""
+        return self.verb("copy")
+
+    def paste(self) -> bool:
+        """Paste at the cursor -- the window's ``paste`` (`verb`)."""
+        return self.verb("paste")
+
+    def delete(self) -> bool:
+        """Delete what is selected -- the window's ``delete`` (`verb`)."""
+        return self.verb("delete")
+
+    def select_all(self) -> bool:
+        """Select everything the view holds -- the window's ``select_all`` (`verb`)."""
+        return self.verb("select_all")
+
+    def to_start(self) -> bool:
+        """The position cursor to the start -- the window's ``to_start`` (`verb`)."""
+        return self.verb("to_start")
+
+    def to_end(self) -> bool:
+        """The position cursor to the end -- the window's ``to_end`` (`verb`)."""
+        return self.verb("to_end")
+
+    def loop(self) -> bool:
+        """The loop switch, on or off -- the window's ``loop`` (`verb`)."""
+        return self.verb("loop")
+
     # ---- the history walk ----
 
     def undo(self) -> bool:

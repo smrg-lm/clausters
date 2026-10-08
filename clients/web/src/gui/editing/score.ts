@@ -868,8 +868,79 @@ export class ScoreEditor extends Editor<Score | EventSequence> {
         return this.#act({ action: "silence" });
     }
 
+    /** Select the item before -- the window's `select_left` ({@link Editor.verb}). */
+    selectLeft(): boolean {
+        return this.verb("select_left");
+    }
+
+    /** Select the item after -- the window's `select_right` ({@link Editor.verb}). */
+    selectRight(): boolean {
+        return this.verb("select_right");
+    }
+
+    /** In note entry: the cursor back -- the window's `cursor_left` ({@link Editor.verb}). */
+    cursorLeft(): boolean {
+        return this.verb("cursor_left");
+    }
+
+    /** In note entry: the cursor forward -- the window's `cursor_right` ({@link Editor.verb}). */
+    cursorRight(): boolean {
+        return this.verb("cursor_right");
+    }
+
+    /** In note entry: the cursor to the bar before -- the window's `bar_left` ({@link Editor.verb}). */
+    barLeft(): boolean {
+        return this.verb("bar_left");
+    }
+
+    /** In note entry: the cursor to the bar after -- the window's `bar_right` ({@link Editor.verb}). */
+    barRight(): boolean {
+        return this.verb("bar_right");
+    }
+
+    /** In note entry: the cursor to the staff above -- the window's `staff_up` ({@link Editor.verb}). */
+    staffUp(): boolean {
+        return this.verb("staff_up");
+    }
+
+    /** In note entry: the cursor to the staff below -- the window's `staff_down` ({@link Editor.verb}). */
+    staffDown(): boolean {
+        return this.verb("staff_down");
+    }
+
+    /** In note entry: write a rest at the cursor -- the window's `enter_rest` ({@link Editor.verb}). */
+    enterRest(): boolean {
+        return this.verb("enter_rest");
+    }
+
+    /**
+     * In note entry: **write the note `pitch`** (`"A"` to `"G"`) at the cursor,
+     * nearest the note before -- the window's `pitch_a` ... `pitch_g`
+     * ({@link Editor.verb}).
+     */
+    write(pitch: string): boolean {
+        return this.verb(`pitch_${letter(pitch)}`);
+    }
+
+    /**
+     * In note entry: **add `pitch`** (`"A"` to `"G"`) to the chord just written
+     * -- the window's `chord_a` ... `chord_g` ({@link Editor.verb}).
+     */
+    chord(pitch: string): boolean {
+        return this.verb(`chord_${letter(pitch)}`);
+    }
+
+    /**
+     * In note entry: **write in voice `voice`** (1 to 4) from here on -- the
+     * window's `voice_1` ... `voice_4` ({@link Editor.verb}).
+     */
+    entryVoice(voice: number): boolean {
+        if (![1, 2, 3, 4].includes(voice)) throw new RangeError(`a voice is 1 to 4, not ${voice}`);
+        return this.verb(`voice_${voice}`);
+    }
+
     /** Remove the selected items; what follows them moves earlier. */
-    delete(): boolean {
+    override delete(): boolean {
         return this.#act({ action: "delete" });
     }
 
@@ -1237,4 +1308,13 @@ function keyOfScore(score: Score): number {
 /** Whether `edit` opens this in the score editor: a symbolic score. */
 export function isScore(structure: unknown): structure is Score {
     return structure instanceof Score;
+}
+
+/** A pitch's letter, as the note-entry verbs spell it: `"C"` is `c`. */
+function letter(pitch: string): string {
+    const l = pitch.trim().toLowerCase();
+    if (!["a", "b", "c", "d", "e", "f", "g"].includes(l)) {
+        throw new RangeError(`a pitch is a letter A to G, not ${JSON.stringify(pitch)}`);
+    }
+    return l;
 }

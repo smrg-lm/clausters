@@ -44,6 +44,29 @@ An editor orchestrates rather than performs, and it is four collaborators
 The rule that fixes all four: an editor owns **neither the data nor the
 history**. `View` here is not `guidef`'s `View`, which is a tree you can open.
 
+### The window's verbs, from a script
+
+Every command a window has — a menu entry, a key, a tool — is a **verb**, and
+the verbs are an API: the script that opened the window asks for them the way
+the hand does. `editor.verb(name)` asks the host to perform any verb of the
+window on what its focus or its main view holds, through the same dispatch a
+key and a tool end in, and each verb has a named member that is one line over
+it:
+
+```javascript
+editor.selectAll();          // Ctrl+A
+editor.copy();               // Ctrl+C
+editor.toEnd();              // End
+editor.paste();              // Ctrl+V
+editor.verb("view_all");     // R, through the door every member is over
+```
+
+What a verb edits comes back as the edit a hand made — recorded, drawn,
+undone with Ctrl+Z — and it arrives through the window's event loop, so it is
+in the structure a moment after the call returns. A verb needs a window: with
+none open, `verb` answers `false`. `docs/verbs.md` in the repository lists
+every verb with the member that asks for it.
+
 ## `edit(x)`: one verb over the four structures
 
 `gui.edit` opens whichever editor the structure asks for, and it dispatches on

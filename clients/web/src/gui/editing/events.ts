@@ -352,6 +352,21 @@ export class NotesEditor extends Editor<EventSequence> {
         return this;
     }
 
+    /** Split what is held at the cursor -- the window's `split` ({@link Editor.verb}). */
+    split(): boolean {
+        return this.verb("split");
+    }
+
+    /** Join a touching run of what is held -- the window's `join` ({@link Editor.verb}). */
+    join(): boolean {
+        return this.verb("join");
+    }
+
+    /** Quantize what is selected to the grid -- the window's `quantize` ({@link Editor.verb}). */
+    quantize(): boolean {
+        return this.verb("quantize");
+    }
+
     /** Pauses where it stands: a `resume` carries the notes on. */
     async pause(): Promise<this> {
         if (this.#elsewhere !== null) {
