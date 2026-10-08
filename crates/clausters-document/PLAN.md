@@ -1747,6 +1747,16 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   the meter is the smallest part of it, since the slot and the rule for its
   buses are already the tracks'.
 
+- ⬜ **The top of a box's fade trapezoid is the region's level** *(proposed
+  2026-10-08 by the user)*. The trapezoid's middle segment, between its two
+  corners, is a line a hand could raise and lower to set the region's gain,
+  and the box would then draw its top at that height. A region has no level
+  today -- `Track::level` is the fader, and a region's only gain is its two
+  fades -- so this is a field (`Region.level`, a linear gain, unity by
+  default and written only when it is not), an intent to set it, the reader's
+  multiply, the trapezoid's top made a grab in the curve element (vertical
+  only, its two corners moving together) and `Region.level` in both clients.
+
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
@@ -2279,4 +2289,38 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   reference, or edits as layers over the source); what `to_midi`/`from_midi`
   become once the file is the source; how a session written with
   `Location::Events` opens.
+
+- ⬜ **A fade's curve is editable only if the curve drawn is the curve heard**
+  *(found 2026-10-08 by the user)*. A box's `fade:` trapezoid lets a hand bend
+  each sloped side: `points::bend_curve` sets the side's shape to `curve`
+  with a curvature, `picture::read_fades` keeps both on the region's `Fade`,
+  and the reader plays them through `EnvShape` -- so on a region's own edges
+  the drawn curve should be the heard one (read from the code, not yet checked
+  by ear). Where they part is a **join**: a seam takes each box's fade
+  *length* into its part (`Part::fade_in`/`fade_out`) and `/buffer_stitch`
+  plays every part's fade as a straight ramp, so a curve drawn on an edge
+  before a join is played linear after it, and so is the default equal-power
+  one. The rule, from the user: if one shape is kept (equal power, `wel`),
+  the picture must not let a hand bend it; if not, the sound has to follow
+  what is drawn. **The first implementation is the easiest of the two**, and
+  that choice is made by measuring both: taking the bend off the trapezoid
+  is a host change, and a shaped seam is a change to `/buffer_stitch` (a
+  shape and a curvature per part's fade), to its builders in both clients
+  and to `/buffer_parts`.
+
+- ⬜ **The crossfade switch acts on the edits that follow, and leaves the
+  overlaps already made as they are** *(stated 2026-10-08 by the user)*.
+  Today `TakeLane::edges` works the crossfade out whenever the multitrack is
+  read, from `Defaults::crossfade` and the overlaps as they stand, so
+  turning the switch off takes the crossfade away from every overlap already
+  made, and turning it on gives it back to all of them. What the switch is
+  meant to be is a facility of editing: an edit that makes an overlap while
+  it is on writes the crossfade into the two regions' own fades, and turning
+  it off changes no region. That moves the rule from reading to editing --
+  the edit that moves or trims a box stretches its neighbours' fades and its
+  own, and `TakeLane::edges` goes back to reading each region's fades as
+  they are. Settled with it: what a later move does to a fade a crossfade
+  wrote (a box dragged out of the overlap keeps the long fade, or gets its
+  own back), and whether one gesture that writes a crossfade is still one
+  entry in the history.
 

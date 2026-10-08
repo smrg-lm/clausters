@@ -97,6 +97,15 @@ The three sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
+- ⬜ **A fade's curve drawn and heard** *(`crates/clausters-document/PLAN.md`,
+  Found by use, "A fade's curve is editable only if the curve drawn is the
+  curve heard")*. A join's seams play linear whatever the box drew; the
+  easiest of the two fixes goes first. **Related:** the next entry, the same
+  fades.
+- ⬜ **The crossfade switch acts on the edits that follow**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. The rule moves from
+  reading the multitrack to editing it.
+
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
@@ -294,8 +303,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks), the web client's (a node
   target, type-safe GuiDef/def schemas, a remote-server standalone page), the
-  Python client's three open questions, the document crate's interpreter
-  inside a standalone host, and the applications' (time-stretch from a clip's
+  Python client's three open questions, the document crate's (an
+  interpreter inside a standalone host; a region's level on the top of its
+  fade trapezoid), and the applications' (time-stretch from a clip's
   edge; what a bare window leaves to its
   handle; a box of notes that chooses its synth;
   effects in preview and several files in one
