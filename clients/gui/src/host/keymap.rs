@@ -32,6 +32,8 @@
 //! scripts bound (the config, a `--keys` file, `/gui_keys`). A declaration
 //! that arrives after a user's binding lands under it.
 
+use clausters_editing::verbs;
+
 use super::widget::element::{Key, Mods};
 
 /// A verb the **host** performs. Every other bound name is the application's,
@@ -103,76 +105,18 @@ impl Verb {
     }
 }
 
-/// The table the host starts from: every key the views answered to before the
-/// table existed, now as rows of it, and the application verbs every editor
-/// has (`undo`, `redo`, `save`).
-const DEFAULTS: &[(&str, &[&str])] = &[
-    ("undo", &["Ctrl+Z"]),
-    // Ctrl+Shift+Z is the spelling that works on a keyboard with no Y where an
-    // English one has one.
-    ("redo", &["Ctrl+Shift+Z", "Ctrl+Y"]),
-    ("save", &["Ctrl+S"]),
-    ("view_all", &["R"]),
-    ("play", &["Space"]),
-    ("loop", &["L"]),
-    ("to_start", &["Home"]),
-    ("to_end", &["End"]),
-    ("copy", &["Ctrl+C"]),
-    ("cut", &["Ctrl+X"]),
-    ("paste", &["Ctrl+V"]),
-    ("mix", &["Ctrl+Shift+V"]),
-    ("quantize", &["Q"]),
-    ("split", &["E"]),
-    ("join", &["J"]),
-    ("delete", &["Delete", "Backspace"]),
-    ("select_all", &["Ctrl+A"]),
-    ("keys", &["F1"]),
-];
-
-/// **What each verb of the default table does**, in the words a key sheet
-/// shows it with ([`Keymap::sheet`]). An application's verbs are named by the
-/// application ([`Keymap::declare`]); a verb nobody named is shown by its name
-/// ([`describe`]).
-const DESCRIBED: &[(&str, &str)] = &[
-    ("undo", "Undo"),
-    ("redo", "Redo"),
-    ("save", "Save"),
-    ("view_all", "Show the whole view"),
-    ("play", "Play or stop"),
-    ("loop", "Loop on or off"),
-    ("to_start", "Cursor to the start"),
-    ("to_end", "Cursor to the end"),
-    ("copy", "Copy"),
-    ("cut", "Cut"),
-    ("paste", "Paste"),
-    ("mix", "Paste onto what is there"),
-    ("quantize", "Quantize to the grid"),
-    ("split", "Split at the cursor"),
-    ("join", "Join what touches"),
-    ("delete", "Delete"),
-    ("select_all", "Select all"),
-    ("keys", "Show the keys"),
-];
-
 /// **What verb `verb` does**, as a key sheet says it where nobody declared
-/// words for it: the default table's words for its own verbs, and for any
-/// other the name, read as words (`select_all` is "Select all").
+/// words for it: the window's words from the one verb table
+/// ([`clausters_editing::verbs::WINDOW`]), and for any other verb the name,
+/// read as words (`select_all` is "Select all").
 pub fn describe(verb: &str) -> String {
-    if let Some((_, words)) = DESCRIBED.iter().find(|(v, _)| *v == verb) {
-        return (*words).to_string();
-    }
-    words(verb)
+    verbs::label(&[], verb)
 }
 
 /// A name as words: underscores are spaces and the first letter is a
 /// capital.
 fn words(name: &str) -> String {
-    let spaced = name.replace('_', " ");
-    let mut chars = spaced.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+    verbs::words(name)
 }
 
 /// One section of a window's key sheet ([`Keymap::sheet`]): what it is
@@ -516,8 +460,11 @@ impl Keymap {
 
     /// The host's own rows, the bottom layer.
     fn defaults(&mut self) {
-        for (verb, chords) in DEFAULTS {
-            let warnings = self.apply(None, verb, chords);
+        // the window's rows of the one verb table: every key the views
+        // answered to before the table existed, and the verbs every editor
+        // has (`undo`, `redo`, `save`)
+        for row in verbs::WINDOW.iter().filter(|row| !row.keys.is_empty()) {
+            let warnings = self.apply(None, row.name, row.keys);
             debug_assert!(warnings.is_empty(), "{warnings:?}");
         }
     }
@@ -657,6 +604,19 @@ impl Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every verb the host performs is a row of the one verb table, so a
+    /// menu, a tool and the key sheet show it in the same words.
+    #[test]
+    fn every_host_verb_is_a_row_of_the_verb_table() {
+        for (_, name) in Verb::ALL {
+            assert!(
+                verbs::find(verbs::WINDOW, name).is_some(),
+                "{name} is not in the verb table"
+            );
+        }
+        assert_eq!(describe("view_all"), "Zoom to fit");
+    }
 
     fn ctrl() -> Mods {
         Mods {
@@ -840,9 +800,9 @@ mod tests {
         // the arrows are note entry's, so the selection's are not listed
         assert_eq!(row(1, "Select the item before"), None);
         // and E is a pitch, so the table's split is gone
-        assert_eq!(row(2, "Split at the cursor"), None);
+        assert_eq!(row(2, "Split"), None);
         assert_eq!(row(2, "Redo").as_deref(), Some("Ctrl+Shift+Z, Ctrl+Y"));
-        assert_eq!(row(2, "Show the keys").as_deref(), Some("F1"));
+        assert_eq!(row(2, "Keyboard shortcuts").as_deref(), Some("F1"));
         // a window with no scopes has the table alone, and a verb nobody
         // described is shown by its name
         assert!(map.bind("select_all", &["Ctrl+A"]).is_empty());
@@ -856,7 +816,7 @@ mod tests {
         assert!(
             plain[0]
                 .rows
-                .contains(&("Split at the cursor".to_string(), "E".to_string()))
+                .contains(&("Split".to_string(), "E".to_string()))
         );
     }
 

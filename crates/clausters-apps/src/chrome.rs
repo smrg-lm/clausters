@@ -40,6 +40,8 @@
 
 use serde_json::{Value, json};
 
+use clausters_editing::verbs::{self, Verb};
+
 /// Which application a chrome is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum App {
@@ -86,8 +88,18 @@ pub(crate) fn glyph(code: &str) -> String {
         .unwrap_or_default()
 }
 
-fn entry(label: &str, verb: &str) -> Value {
-    json!({"label": label, "verb": verb})
+/// The verbs `app` adds to the window's: where its entries and tools find
+/// their words.
+fn scope(app: App) -> &'static [Verb] {
+    match app {
+        App::Multitrack => verbs::MULTITRACK,
+        App::Audio | App::Notes => &[],
+    }
+}
+
+/// A menu entry: the verb, in the words the verb table gives it.
+fn entry(app: App, verb: &str) -> Value {
+    json!({"label": verbs::label(scope(app), verb), "verb": verb})
 }
 
 fn sub(label: &str, entries: Vec<Value>) -> Value {
@@ -104,69 +116,61 @@ fn sep() -> Value {
 pub fn menu(app: App, saves: bool) -> Value {
     let mut file = Vec::new();
     if saves {
-        file.extend([entry("Save", "save"), sep()]);
+        file.extend([entry(app, "save"), sep()]);
     }
-    file.push(entry("Close", "close"));
+    file.push(entry(app, "close"));
 
     let mut edit = vec![
-        entry("Undo", "undo"),
-        entry("Redo", "redo"),
+        entry(app, "undo"),
+        entry(app, "redo"),
         sep(),
-        entry("Cut", "cut"),
-        entry("Copy", "copy"),
-        entry("Paste", "paste"),
+        entry(app, "cut"),
+        entry(app, "copy"),
+        entry(app, "paste"),
     ];
     if app == App::Audio {
-        edit.push(entry("Paste mixed", "mix"));
+        edit.push(entry(app, "mix"));
     }
-    edit.extend([
-        entry("Delete", "delete"),
-        sep(),
-        entry("Select all", "select_all"),
-    ]);
+    edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
     if app != App::Audio {
         edit.extend([
             sep(),
-            entry("Split", "split"),
-            entry("Join", "join"),
-            entry("Quantize", "quantize"),
+            entry(app, "split"),
+            entry(app, "join"),
+            entry(app, "quantize"),
         ]);
     }
     if app == App::Multitrack {
         // the automatic crossfade over an overlap: the multitrack's default,
         // which a client also sets as `Multitrack.crossfade`
-        edit.extend([sep(), entry("Crossfade overlaps, on or off", "crossfade")]);
+        edit.extend([sep(), entry(app, "crossfade")]);
     }
 
-    let mut view = vec![entry("Zoom to fit", "view_all")];
+    let mut view = vec![entry(app, "view_all")];
     if app == App::Multitrack {
         view.extend([
             sep(),
-            entry("Reset track heights", "reset_heights"),
-            entry("Compact tracks", "compact_tracks"),
+            entry(app, "reset_heights"),
+            entry(app, "compact_tracks"),
         ]);
         // how a box of notes is drawn: the window's own, like its zoom
-        view.extend([
-            sep(),
-            entry("Notes as rolls", "notes_roll"),
-            entry("Notes as scores", "notes_score"),
-        ]);
+        view.extend([sep(), entry(app, "notes_roll"), entry(app, "notes_score")]);
     }
 
-    let mut transport = vec![entry("Play or stop", "play")];
+    let mut transport = vec![entry(app, "play")];
     if app == App::Multitrack {
-        transport.extend([entry("Pause", "pause"), entry("Stop", "stop")]);
+        transport.extend([entry(app, "pause"), entry(app, "stop")]);
     }
     transport.extend([
         sep(),
-        entry("Go to start", "to_start"),
-        entry("Go to end", "to_end"),
+        entry(app, "to_start"),
+        entry(app, "to_end"),
         sep(),
-        entry("Loop", "loop"),
+        entry(app, "loop"),
     ]);
     if app == App::Multitrack {
         // where a pass ends, when it is not looped
-        transport.push(entry("Stop at end", "stop_at_end"));
+        transport.push(entry(app, "stop_at_end"));
     }
 
     let mut bar = vec![
@@ -176,18 +180,23 @@ pub fn menu(app: App, saves: bool) -> Value {
         sub("Transport", transport),
     ];
     if app == App::Multitrack {
-        bar.push(sub("Track", vec![entry("Add track", "add_track")]));
+        bar.push(sub("Track", vec![entry(app, "add_track")]));
     }
-    bar.push(sub("Help", vec![entry("Keyboard shortcuts", "keys")]));
+    bar.push(sub("Help", vec![entry(app, "keys")]));
     Value::Array(bar)
 }
 
-/// A tool: a flat button that performs `verb`, labelled with a symbol or a
-/// word.
-pub(crate) fn tool(verb: &str, label: &str, symbol: bool, tip: &str) -> Value {
+/// A tool: a flat button that performs `verb`, its face `symbol` drawn at
+/// twice the words' size, or the verb's words when it has none -- and its tip
+/// the verb's words either way.
+pub(crate) fn tool(app: App, verb: &str, symbol: Option<&str>) -> Value {
+    let words = verbs::label(scope(app), verb);
+    let face = symbol.map_or_else(|| words.clone(), str::to_string);
     let mut node =
-        json!({"type": "button", "flat": true, "verb": verb, "label": label, "tip": tip});
-    if symbol && let Some(map) = node.as_object_mut() {
+        json!({"type": "button", "flat": true, "verb": verb, "label": face, "tip": words});
+    if symbol.is_some()
+        && let Some(map) = node.as_object_mut()
+    {
         map.insert("text_size".into(), json!(SYMBOL_SIZE));
     }
     node
@@ -195,30 +204,22 @@ pub(crate) fn tool(verb: &str, label: &str, symbol: bool, tip: &str) -> Value {
 
 /// **The transport's tools**, for the two windows whose transport is the
 /// host's verbs: back to the start, play or stop, on to the end, the loop.
-fn transport() -> Vec<Value> {
+fn transport(app: App) -> Vec<Value> {
     vec![
-        tool("to_start", &glyph(TO_START), true, "Go to start"),
-        tool("play", PLAY, true, "Play or stop"),
-        tool("to_end", &glyph(TO_END), true, "Go to end"),
-        tool("loop", LOOP, true, "Loop"),
+        tool(app, "to_start", Some(&glyph(TO_START))),
+        tool(app, "play", Some(PLAY)),
+        tool(app, "to_end", Some(&glyph(TO_END))),
+        tool(app, "loop", Some(LOOP)),
     ]
 }
 
 /// **The edit tools** an application has beside the menu's.
 fn edits(app: App) -> Vec<Value> {
-    match app {
-        App::Audio => vec![
-            tool("cut", "Cut", false, "Cut the selection"),
-            tool("copy", "Copy", false, "Copy the selection"),
-            tool("paste", "Paste", false, "Paste at the cursor"),
-            tool("delete", "Delete", false, "Delete the selection"),
-        ],
-        App::Multitrack | App::Notes => vec![
-            tool("split", "Split", false, "Split at the cursor"),
-            tool("join", "Join", false, "Join what is selected"),
-            tool("quantize", "Quantize", false, "Quantize to the grid"),
-        ],
-    }
+    let verbs: &[&str] = match app {
+        App::Audio => &["cut", "copy", "paste", "delete"],
+        App::Multitrack | App::Notes => &["split", "join", "quantize"],
+    };
+    verbs.iter().map(|verb| tool(app, verb, None)).collect()
 }
 
 /// **The toolbar**, as a row: `lead` first (a transport of the
@@ -226,7 +227,7 @@ fn edits(app: App) -> Vec<Value> {
 /// then the edit tools.
 #[must_use]
 pub fn toolbar(app: App, lead: Option<Vec<Value>>) -> Value {
-    let mut children = lead.unwrap_or_else(transport);
+    let mut children = lead.unwrap_or_else(|| transport(app));
     if !children.is_empty() {
         children.push(json!({"type": "separator"}));
     }

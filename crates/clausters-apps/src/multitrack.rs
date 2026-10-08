@@ -336,12 +336,11 @@ fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
             STOP,
             ids.map(|i| i.stop),
         ),
-        chrome::tool("loop", chrome::LOOP, true, "Loop"),
+        chrome::tool(App::Multitrack, "loop", Some(chrome::LOOP)),
         chrome::tool(
+            App::Multitrack,
             editor::STOP_AT_END_VERB,
-            &chrome::glyph(chrome::TO_END),
-            true,
-            "Stop where the contents end, or roll on",
+            Some(&chrome::glyph(chrome::TO_END)),
         ),
         // A reading, written on every tick of the transport: drawn on the
         // window's live layer, so a write costs the label and not the window

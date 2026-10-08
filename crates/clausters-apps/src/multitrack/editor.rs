@@ -1330,13 +1330,14 @@ pub const STOP_AT_END_VERB: &str = "stop_at_end";
 pub const CROSSFADE_VERB: &str = "crossfade";
 
 /// The scope of the key table the multitrack window's own verbs are in.
-pub const KEYS: &str = "multitrack";
+pub const KEYS: &str = clausters_editing::verbs::MULTITRACK_SCOPE;
 
 /// **The window's `verbs` prop**: the verbs this application adds to the
-/// host's, each with its default chord and the words a key sheet shows.
+/// host's, each with its default chords and its words -- the rows of the one
+/// verb table ([`clausters_editing::verbs::MULTITRACK`]).
 #[must_use]
 pub fn verbs() -> Value {
-    json!({KEYS: {STOP_AT_END_VERB: {"keys": ["Shift+L"], "label": "Stop at the end, on or off"}}})
+    clausters_editing::verbs::declaration(&[(KEYS, clausters_editing::verbs::MULTITRACK)])
 }
 
 /// **The editor's tables as one**: which buffer each source was read into, how

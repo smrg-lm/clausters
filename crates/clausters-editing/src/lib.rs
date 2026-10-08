@@ -50,6 +50,7 @@ pub mod points;
 pub mod run;
 pub mod samples;
 pub mod sources;
+pub mod verbs;
 
 use serde_json::Value;
 
