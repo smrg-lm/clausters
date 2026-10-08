@@ -29,7 +29,8 @@
       the file is a valid WAV of about the right length, then plays it back
       through diskIn and asserts the bus carries the tone rather than silence.
       That last part is the one that matters: it is the only thing that says
-      the spans crossed the port and landed in the ring in time.
+      the spans crossed the port and landed in the ring in time. Then it streams
+      from a start frame: half way in it sounds, past the end it is silent.
     -->
     <script type="module">
       import { Session, opfs, loadCore, SynthDef, Synth, Bus, data }
@@ -94,12 +95,34 @@
         playing.free();
         log(`streamed back: peak ${peak.toFixed(3)} on bus ${playBus.index}`);
 
-        const ok = riff === "RIFF" && frames > 24000 && peak > 0.1;
+        // 3) From a start frame: half way in, the take still sounds; past its
+        //    end, a stream that does not loop has nothing to read and stays
+        //    silent -- which only holds if the first read was from there.
+        const level = async (start) => {
+          const name = `from${start}`;
+          await new SynthDef(name,
+            out(playBus.index, diskIn(0, { path: PATH, start }))).send(server);
+          const from = new Synth(name, {}, { server });
+          let top = 0;
+          for (let waited = 0; waited < 2000 && top <= 0.1; waited += 100) {
+            await wait(100);
+            const window = taps.window(playBus.index);
+            top = window ? Math.max(...window.samples.map(Math.abs)) : 0;
+          }
+          from.free();
+          await wait(200);
+          return top;
+        };
+        const half = await level(Math.floor(frames / 2));
+        const past = await level(Math.floor(frames) + 48000);
+        log(`from half way: peak ${half.toFixed(3)}; from past the end: peak ${past.toFixed(3)}`);
+
+        const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
-            `peak ${peak.toFixed(3)}`
-          : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}`);
+            `peak ${peak.toFixed(3)}, and from a start frame where it was asked to`
+          : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}, from half ${half}, from past ${past}`);
         await session.close();
       }
 

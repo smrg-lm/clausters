@@ -95,7 +95,7 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
     SelectX: "the value list is a variadic tail",
     Dswitch1: "the value list is a variadic tail",
     Poll: "the static label sits between two wire inputs",
-    DiskIn: "path/loop are static fields; only chan is an input",
+    DiskIn: "path/loop/start are static fields; only chan is an input",
     DiskOut: "path/format are static fields; only signal is an input",
     PV_Kernel: "mag/phase are static fields; the wire takes chain + params",
     PanAz: "numchans leads here and trails on the wire, beside the filled chan",

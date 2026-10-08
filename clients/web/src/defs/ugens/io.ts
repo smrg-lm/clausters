@@ -226,20 +226,27 @@ export const poll = (
 /**
  * Streams a file from disk, one file frame per server sample (no resampling --
  * pitch follows the sample-rate ratio). Mono per UGen: `chan` picks the
- * channel, a stereo file is two `diskIn`s. `loop` restarts at the end of the
- * stream. `path` and `loop` are **static** fields and ride in the options
- * object, so the positional parameter is the one input the wire has. For a handful of streams, not per-voice (each spawns its own I/O
- * thread natively, and its own reader in a page).
+ * channel, a stereo file is two `diskIn`s. `start` is the frame of the file
+ * the stream begins at (its top by default), and `loop` restarts at the file's
+ * top at the end of the stream. `path`, `loop` and `start` are **static**
+ * fields and ride in the options object, so the positional parameter is the
+ * one input the wire has. For a handful of streams, not per-voice (each spawns
+ * its own I/O thread natively, and its own reader in a page).
  */
 export interface DiskInOptions {
     /** The file to stream, on the server's filesystem. A **static** field. */
     path: string;
-    /** Restart at the end of the stream. A **static** field. */
+    /** Restart at the file's top at the end of the stream. A **static** field. */
     loop?: boolean;
+    /** The frame of the file the stream begins at, its top by default. A **static** field. */
+    start?: number;
 }
 
-export const diskIn = (chan: Channel = 0.0, { path, loop = false }: DiskInOptions): Ugen =>
-    new Ugen("DiskIn", [chan], { static: { path: String(path), loop: Boolean(loop) } });
+export const diskIn = (chan: Channel = 0.0, { path, loop = false, start = 0 }: DiskInOptions): Ugen => {
+    const fields: Record<string, unknown> = { path: String(path), loop: Boolean(loop) };
+    if (start) fields.start = Math.trunc(start);
+    return new Ugen("DiskIn", [chan], { static: fields });
+};
 
 /**
  * Streams `signal` to a mono WAV at `path` (`format` is `"int16"`, `"int24"`

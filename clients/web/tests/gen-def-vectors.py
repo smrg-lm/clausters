@@ -260,7 +260,7 @@ def synth_cases():
         "disk_io",
         SynthDef(
             "disk",
-            out(0.0, disk_out(disk_in(0.0, path="/tmp/loop.wav", loop=True) * 0.5,
+            out(0.0, disk_out(disk_in(0.0, path="/tmp/loop.wav", loop=True, start=480) * 0.5,
                               path="/tmp/take.wav",
                               format="float")),
         ).spec(),

@@ -297,7 +297,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
 - **The remaining "Future directions"** of each plan — the server's (a long take
-  played out of the pool and `DiskIn`'s missing start frame; generating the
+  played out of the pool -- a seek, and a join over files; generating the
   builders from the catalog instead of contrasting against them), the GUI's (a
   steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste

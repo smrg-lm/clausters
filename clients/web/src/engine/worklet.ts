@@ -470,6 +470,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             path: string;
             channels: number;
             looping: boolean;
+            start: number;
             format: string;
             samples: number;
         }[];
@@ -503,9 +504,11 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         path: string;
         channels: number;
         looping: boolean;
+        start: number;
         samples: number;
     }): void {
-        const state = this.spans.get(s.id) ?? { frame: 0, held: null, waiting: false, ended: false };
+        // the first read is from the stream's start; a loop goes back to the top
+        const state = this.spans.get(s.id) ?? { frame: s.start, held: null, waiting: false, ended: false };
         this.spans.set(s.id, state);
         // A stream is born not knowing its file's shape, and plays silence
         // until it does. Asking is the first thing owed it.

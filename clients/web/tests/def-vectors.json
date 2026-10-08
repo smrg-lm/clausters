@@ -2231,7 +2231,8 @@
               }
             ],
             "path": "/tmp/loop.wav",
-            "loop": true
+            "loop": true,
+            "start": 480
           },
           {
             "kind": "Mul",

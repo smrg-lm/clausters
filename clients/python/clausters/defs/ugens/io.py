@@ -167,17 +167,21 @@ def poll(trig, signal, trig_id=-1, *, label="poll") -> Ugen:
 # ---- streaming disk I/O (self-contained: one I/O thread + ring each) ----
 
 
-def disk_in(chan=0.0, *, path, loop=False) -> Ugen:
+def disk_in(chan=0.0, *, path, loop=False, start=0) -> Ugen:
     """Streams a file from disk, one file frame per server sample (no
     resampling -- pitch follows the sample-rate ratio). Mono per UGen: ``chan``
-    picks the channel, a stereo file is two `disk_in`\\ s. ``loop`` restarts at
-    the end of the stream. For a handful of streams, not per-voice (each spawns
-    its own I/O thread).
+    picks the channel, a stereo file is two `disk_in`\\ s. ``start`` is the
+    frame of the file the stream begins at (its top by default), and ``loop``
+    restarts at the file's top at the end of the stream. For a handful of
+    streams, not per-voice (each spawns its own I/O thread).
 
-    ``path`` and ``loop`` are **static** fields and are keyword-only --
-    ``disk_in(path="take.wav")`` -- so the one positional parameter is the one
-    input the wire has."""
-    return Ugen("DiskIn", [chan], static={"path": str(path), "loop": bool(loop)})
+    ``path``, ``loop`` and ``start`` are **static** fields and are
+    keyword-only -- ``disk_in(path="take.wav")`` -- so the one positional
+    parameter is the one input the wire has."""
+    static = {"path": str(path), "loop": bool(loop)}
+    if start:
+        static["start"] = int(start)
+    return Ugen("DiskIn", [chan], static=static)
 
 
 def disk_out(signal, *, path, format="int16") -> Ugen:

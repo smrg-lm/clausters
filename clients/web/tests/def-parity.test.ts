@@ -314,13 +314,13 @@ const synthdefs: Record<string, () => SynthDef> = {
         );
     },
 
-    // Streaming disk I/O: two static fields each, and a def whose root is the
+    // Streaming disk I/O: static fields beside the one input, and a def whose root is the
     // recorder's pass-through.
     disk_io: () =>
         new SynthDef(
             "disk",
             out(0.0, diskOut(
-                diskIn(0.0, { path: "/tmp/loop.wav", loop: true }).mul(0.5),
+                diskIn(0.0, { path: "/tmp/loop.wav", loop: true, start: 480 }).mul(0.5),
                 { path: "/tmp/take.wav", format: "float" },
             )),
         ),

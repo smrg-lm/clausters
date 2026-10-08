@@ -97,6 +97,10 @@ impl ControlType {
     }
 }
 
+fn is_zero_u64(n: &u64) -> bool {
+    *n == 0
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UGenSpec {
     pub kind: String,
@@ -113,6 +117,9 @@ pub struct UGenSpec {
     /// `DiskIn`: restart from the top of the file at end of stream.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
+    /// `DiskIn`: the frame of the file reading starts at, `0` for its top.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub start: u64,
     /// `DiskOut`: WAV sample format (`int16` | `int24` | `float`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
@@ -819,6 +826,7 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
     let mut config = UGenConfig {
         path: u.path.clone(),
         looping: u.looping,
+        start: u.start,
         format: u.format.clone(),
         op: op_index,
         clip,

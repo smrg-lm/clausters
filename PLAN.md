@@ -2657,6 +2657,17 @@ where it came from).
   fills becomes a stitch of segments, and the audio thread goes on reading a
   buffer and nothing more.
 
+  **The start frame, done 2026-10-08** -- the smallest step, as this entry
+  said. `DiskIn` takes a static `start` beside `path` and `loop` (the file
+  frame it begins at, `0` by default; a loop goes back to the file's top), in
+  both clients' builders (`disk_in(start=)`, `diskIn({ start })`) and in a
+  page, where the host's reader asks for its first span from there. The reader
+  thread reaches it by decoding up to it and throwing the frames away before
+  the ring sees them: exact in every format, since a compressed one has no
+  exact frame seek, and the audio thread's first frame is `start`. Still open
+  here: a seek under a moving playhead, a join's part that names a file, and
+  the prebuffering that makes either playable.
+
 - ⬜ **Free routing: a track's output is any bus, and a track can feed another**
   *(named 2026-09-10 in the node system's spec, left open on purpose)*. Group
   buses, folders and a sidechain are one capability: a track's output going

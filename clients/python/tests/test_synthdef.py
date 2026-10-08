@@ -388,7 +388,7 @@ def test_table_oscillators_and_shaper_serialize():
 
 
 def test_disk_io_serializes_with_static_fields():
-    # DiskIn/DiskOut carry path/loop/format as static fields next to inputs.
+    # DiskIn/DiskOut carry path/loop/start/format as static fields next to inputs.
     from clausters.defs import disk_in, disk_out
 
     spec = SynthDef(
@@ -400,6 +400,9 @@ def test_disk_io_serializes_with_static_fields():
     din, dout = by_kind["DiskIn"], by_kind["DiskOut"]
     assert din["inputs"] == [{"const": 1.0}]
     assert din["path"] == "/tmp/in.wav" and din["loop"] is True
+    assert "start" not in din, "the top of the file is not written"
+    later = SynthDef("later", out(0.0, disk_in(path="/tmp/in.wav", start=480))).spec()
+    assert next(u for u in later["ugens"] if u["kind"] == "DiskIn")["start"] == 480
     assert dout["path"] == "/tmp/rec.wav" and dout["format"] == "float"
     mul_index = spec["ugens"].index(by_kind["Mul"])
     assert dout["inputs"] == [{"ugen": mul_index}]

@@ -60,6 +60,9 @@ pub struct StreamRequest {
     pub channels: usize,
     /// `DiskIn`: restart from the top at end of stream.
     pub looping: bool,
+    /// `DiskIn`: the frame of the file the first read is from; a loop goes
+    /// back to the top.
+    pub start: u64,
     /// `DiskOut`: the WAV sample format (`int16` | `int24` | `float`).
     pub format: String,
     /// `DiskIn`: room in the ring, in samples -- how much the host may push.
@@ -78,6 +81,7 @@ struct Slot {
     path: String,
     channels: usize,
     looping: bool,
+    start: u64,
     format: String,
     end: End,
 }
@@ -147,6 +151,7 @@ pub fn poll() -> Vec<StreamRequest> {
                 path: slot.path.clone(),
                 channels: slot.channels,
                 looping: slot.looping,
+                start: slot.start,
                 format: slot.format.clone(),
                 samples: match &slot.end {
                     End::Feeding(p) => p.slots(),
@@ -241,6 +246,7 @@ impl DiskIn {
             path,
             channels: 0,
             looping: config.looping,
+            start: config.start,
             format: String::new(),
             end: End::Feeding(producer),
         });
@@ -328,6 +334,7 @@ impl DiskOut {
             path,
             channels: 1,
             looping: false,
+            start: 0,
             format,
             end: End::Draining(consumer),
         });

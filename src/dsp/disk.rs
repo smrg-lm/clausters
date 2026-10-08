@@ -200,12 +200,13 @@ impl DiskIn {
         let (producer, consumer) = RingBuffer::new(cap);
         let stop = Arc::new(AtomicBool::new(false));
         let looping = config.looping;
+        let start = config.start;
         let handle = {
             let stop = Arc::clone(&stop);
             let turn = Turn::new(Arc::clone(meters), Role::DiskIn);
             std::thread::Builder::new()
                 .name("diskin".into())
-                .spawn(move || reader_thread(path, opened, looping, producer, stop, turn))
+                .spawn(move || reader_thread(path, opened, looping, start, producer, stop, turn))
                 .expect("failed to spawn the DiskIn thread")
         };
         Self {
@@ -257,12 +258,20 @@ impl Drop for DiskIn {
     }
 }
 
-/// Decode loop: push interleaved f32 frames into `producer`, restarting from
-/// the top of the file when `looping`. Exits on `stop` or end of stream.
+/// Decode loop: push interleaved f32 frames into `producer`, from frame `start`
+/// on and restarting from the top of the file when `looping`. Exits on `stop`
+/// or end of stream.
+///
+/// **The start is reached by decoding up to it**, on this thread, and not by a
+/// seek: a compressed format has no exact frame seek (the reason
+/// `/buffer_read` decodes whole), and the frames before it are thrown away
+/// before the ring sees them, so the first one the audio thread pops is
+/// `start` whatever the format.
 fn reader_thread(
     path: String,
     mut opened: OpenFile,
     looping: bool,
+    start: u64,
     mut producer: Producer<f32>,
     stop: Arc<AtomicBool>,
     mut turn: Turn,
@@ -271,6 +280,10 @@ fn reader_thread(
 
     let mut pending: Vec<f32> = Vec::new();
     let mut idx = 0usize;
+    // samples still to throw away before the start
+    let mut skip = usize::try_from(start)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(opened.channels);
     loop {
         if stop.load(Ordering::Acquire) {
             return;
@@ -300,7 +313,12 @@ fn reader_thread(
                     continue;
                 }
                 match opened.decoder.decode(&packet) {
-                    Ok(decoded) => decoded.copy_to_vec_interleaved(&mut pending),
+                    Ok(decoded) => {
+                        decoded.copy_to_vec_interleaved(&mut pending);
+                        let dropped = skip.min(pending.len());
+                        idx = dropped;
+                        skip -= dropped;
+                    }
                     Err(SymError::DecodeError(_)) => continue,
                     Err(_) => return,
                 }

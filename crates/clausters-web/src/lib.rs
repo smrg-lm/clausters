@@ -470,8 +470,8 @@ impl WebServer {
     }
 
     /// Every open disk stream and what it wants right now, as JSON: an array of
-    /// `{id, direction: "in"|"out", path, channels, looping, format, samples}`.
-    /// `samples` is room to fill for an `in`, and samples waiting for an `out`.
+    /// `{id, direction: "in"|"out", path, channels, looping, start, format,
+    /// samples}`. `start` is the frame an `in` reads from first; `samples` is room to fill for an `in`, and samples waiting for an `out`.
     ///
     /// This is the whole interface between the graph and whatever is reading
     /// files: the host walks it each turn, fills what is hungry with
@@ -486,12 +486,13 @@ impl WebServer {
                 .into_iter()
                 .map(|r| {
                     format!(
-                        r#"{{"id":{},"direction":"{}","path":{},"channels":{},"looping":{},"format":{},"samples":{}}}"#,
+                        r#"{{"id":{},"direction":"{}","path":{},"channels":{},"looping":{},"start":{},"format":{},"samples":{}}}"#,
                         r.id,
                         if r.direction == Direction::In { "in" } else { "out" },
                         json_string(&r.path),
                         r.channels,
                         r.looping,
+                        r.start,
                         json_string(&r.format),
                         r.samples,
                     )

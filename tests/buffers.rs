@@ -1183,6 +1183,46 @@ fn diskout_records_then_diskin_streams_it_back() {
     handle.send(Cmd::FreeNode { id: 2000 }).ok().unwrap();
     render_channel(&mut engine, 2, 0);
     while handle.collect_garbage() > 0 {}
+
+    // **From a start frame**: the same file from frame 100 streams signal[100]
+    // first, and nothing before it ever reaches the ring.
+    let from = 100;
+    let positioned = spec_synth(json!({
+        "name": "from",
+        "ugens": [
+            {"kind": "DiskIn", "inputs": [{"const": 0.0}], "path": path, "start": from},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }));
+    handle.send(add_synth(3000, positioned)).ok().unwrap();
+    let mut collected: Vec<f32> = Vec::new();
+    let deadline = std::time::Instant::now() + NRT_DEADLINE;
+    let first = loop {
+        collected.extend(render_channel(&mut engine, 1, 0));
+        if let Some(p) = collected.iter().position(|v| *v != 0.0) {
+            break p;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "DiskIn from a start never produced anything"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    while collected.len() < first + 64 {
+        collected.extend(render_channel(&mut engine, 1, 0));
+    }
+    for k in 0..64 {
+        assert_eq!(
+            collected[first + k],
+            signal[from + k],
+            "frame {k} after the start is the file's frame {}",
+            from + k
+        );
+    }
+
+    handle.send(Cmd::FreeNode { id: 3000 }).ok().unwrap();
+    render_channel(&mut engine, 2, 0);
+    while handle.collect_garbage() > 0 {}
     std::fs::remove_file(&path).ok();
 }
 
