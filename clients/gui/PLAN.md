@@ -55,7 +55,7 @@ The varied uses (editor, notation, instrument panels) pull toward a web-capable 
 
 That substrate gives **one frontend and one GPU stack across all the targets**, which is why the browser staging (G11-G17) is incremental rather than a fork: the native desktop host comes first (fastest to iterate), the browser/WebGPU target is reached by swapping the native surface for a `<canvas>` while the renderers run unchanged, and an optional Tauri wrapper repackages the same web frontend as a native app.
 
-What we explicitly reject: betting the whole thing on a single native Rust toolkit (egui/iced/Vizia/Makepad) as the scriptable layer. That would force us to invent a widget protocol *and* solve Verovio over FFI *and* give up the web - paying all three costs. Those toolkits are excellent for a monolithic Rust app, which is not what this is.
+What we explicitly reject: building the host on a Rust GUI toolkit (egui/iced/Vizia/Makepad), whether as the scriptable layer or as the drawing backend under the protocol. *(Corrected 2026-10-08: this paragraph used to give three reasons, and two of them do not hold. Such a toolkit does not give up the web -- egui, for one, runs in a page through wasm over wgpu or WebGL; and notation never needed Verovio over FFI, since G31 engraves on the client and the host draws a display list.)* The reason that stands is the shape of the host. A toolkit gives the drawing and the input of widgets compiled into one program; what this host is made of is a widget tree that arrives over a protocol and stays the single source of truth, heavy views that are our own `wgpu` pipelines, and sizing rules of its own (the declared cell, integer text scales, pixel snapping). Under a toolkit the protocol, the tree, the heavy views and the gestures would still be ours to write, and the toolkit's layout model would be a second one to keep in agreement with the host's. What the decision costs is the commodity layers a toolkit ships -- a real typeface (K10), focus and the Tab ring (K6), menus and popups (G37), scrolling (G40), the clipboard (G42), composed input (IME, closed 2026-08-27) -- which the host has had to build itself; G43 is the one of them still open.
 
 ### Generic on the wire, typed in the renderer
 
@@ -71,7 +71,7 @@ That "transport- and GPU-agnostic logic" claim is made structural by a **platfor
 
 ### One drawing primitive for the light widgets
 
-The heavy views (`waveform`, the spectrogram/scopes) own custom GPU pipelines; everything else - panel chrome, the control widgets, and the text of labels and values - is built from a single primitive: a batch of flat-colored triangles (rect/quad/line/disc) drawn by one pipeline. A knob is a disc plus a swept pointer; text is a compact embedded bitmap font emitted as one small quad per lit pixel into that same batch - no glyph texture, no second pipeline. So adding a control is composition, not new GPU code, and the heavy-view machinery stays the only place with bespoke shaders. Proportional/large text (a real font rasterizer) is a deliberate later refinement; the fixed-cell font is enough for instrument-panel labels and read-outs.
+The heavy views (`waveform`, the spectrogram/scopes) own custom GPU pipelines; everything else - panel chrome, the control widgets, and the text of labels and values - is built from a single primitive: a batch of flat-colored triangles (rect/quad/line/disc) drawn by one pipeline. A knob is a disc plus a swept pointer; text was first a compact embedded bitmap font emitted as one small quad per lit pixel into that same batch - no glyph texture, no second pipeline. So adding a control is composition, not new GPU code, and the heavy-view machinery stays the only place with bespoke shaders. The bitmap face is still the floor every build draws with; a real typeface came later, as planned, behind the `font-atlas` feature (K10, on by default), and it adds one atlas texture and a textured pipeline drawn inside the same batch rather than a second batch.
 
 ## Guiding principle: serve the server and its clients, and reuse what exists
 
@@ -1685,6 +1685,26 @@ The two are chained: a file chooser is composed from rows, `G40`'s modal
   - **A page keeps the host's own clipboard** *(the user, 2026-10-04)*: the host draws inside a canvas, so reaching the browser's clipboard needs code on the page's side, and it waits under "Future directions" ("The page's clipboard reaches the browser's"). Everything else is the same in both fronts -- the edit menu, and the middle button pasting the last selection made inside the same host, which is the primary selection a page has.
 
   **Acceptance**: natively, text copied in a field pastes in another program and back, and the middle button pastes what another program selected; a block of samples copied and pasted inside the host is unchanged; the edit menu and the middle button work on a field in `examples/panels/chrome`, in a window and in a page.
+
+
+## G43 — Text is shaped: every script a field accepts is drawn right
+
+*(Added 2026-10-08, from the review of what building the host without a GUI toolkit has cost: of the commodity text and input layers a toolkit ships, this is the one the host does not have yet.)*
+
+**What is there.** K10 rasterizes a real face, but character by character: the atlas is keyed by `(character, pixel size)`, a string's width is the sum of per-character advances, and nothing between the string and the glyphs is a shaper. That is right for Latin, Greek and Cyrillic without marks and wrong for the rest: no ligatures, no contextual forms (Arabic joins every letter to its neighbours), no mark positioning (a combining accent sits where the advance left it, not over its base), no reordering (Devanagari's vowel signs), and no right-to-left runs. Since composed input closed (2026-08-27) a field *accepts* all of it, so the host takes text it then draws wrong. The bundled face makes the same limit twice over: `assets/fonts/subset.sh` keeps Latin, Greek and Cyrillic and drops the layout tables (`--layout-features=''`), because the rasterizer read neither.
+
+**Decided before opening it:**
+
+- **A shaper, behind `font-atlas`, and nothing else moves.** `rustybuzz` (a pure-Rust port of the standard shaping engine, wasm-safe, no system dependency -- the posture `fontdue` was chosen for) turns a run into glyph ids and positions; the atlas is keyed by `(glyph id, pixel size)` and rasterizes through `fontdue`'s indexed path. The bitmap floor is untouched: a build without the feature, or a host with no face loaded, draws exactly what it draws today.
+- **What is measured is what is drawn, still.** K10's rule carries over unchanged: the ellipsis cut, the word wrap, the caret, the selection band and the click-to-column hit-test read the shaped advances, never a per-character sum, so a wrap and the drawing cannot disagree.
+- **Direction is a paragraph's, resolved once.** A label is reordered by the Unicode bidirectional algorithm (`unicode-bidi`) into visual runs before shaping; a label's `align` keeps its meaning (start/end follow the paragraph's direction only if a prop asks for it -- decided in G43a, with the default the current left/right).
+- **Placement (the G7b rule): display-only.** Shaping is drawing; nothing for `clausters-core`, and nothing on the wire -- a label's text is already a string.
+- **The face covers what the host claims to draw.** The bundled subset keeps its layout tables and grows the scripts the acceptance names, or the host draws those from a system face natively and a fetched one in a page through the `FontSource` seam K10 already has. Which of the two -- or a size budget for the bundled file -- is decided in G43a with the measured sizes, since the face is compiled into every default build.
+
+**The milestones:**
+
+- ⬜ **G43a — Labels are shaped.** The shaper, the glyph-keyed atlas, the bidi reorder and the face's coverage, over every widget that draws text it does not edit. **Acceptance:** an example's labels in Arabic, Hebrew, Devanagari, and Latin with combining marks drawn correctly by eye in a window and in a page; tests shape a ligature, a joining sequence and a base-plus-mark against the face the host ships and check the glyph ids and offsets; the wasm build's size before and after is measured and recorded.
+- ⬜ **G43b — A field edits shaped text.** The caret moves by **grapheme cluster**, not by character (today it moves by characters); in mixed-direction text it keeps a logical position and draws at the visual one, and a selection over a direction change paints the runs it covers. The field's scroll window and its click-to-column hit-test read clusters. **Acceptance:** a caret walks a mixed Hebrew/Latin string cluster by cluster with the arrow keys and lands where it was clicked; a selection across the direction change copies the logical substring; the same in a page.
 
 
 ## L track — the look: layout, sizing and themes for the light widgets

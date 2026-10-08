@@ -273,6 +273,14 @@ its plan; the plan is where its acceptance is read.
   conversion is private to the notes editor, and `Ppar`/`Pmono` are a separate
   pattern-side question.
 
+- ⬜ **`G43` — text is shaped**, `G43a` and `G43b` *(`clients/gui/PLAN.md`,
+  "G43 — Text is shaped: every script a field accepts is drawn right")*. A
+  field accepts every script since composed input closed, and the host draws
+  only Latin, Greek and Cyrillic without marks right: `G43a` shapes and
+  reorders labels, `G43b` makes the field's caret and selection walk the
+  shaped text. **Related:** the bundled face's coverage and size, which `G43a`
+  decides with measured numbers.
+
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
