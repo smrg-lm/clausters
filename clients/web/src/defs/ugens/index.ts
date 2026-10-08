@@ -258,6 +258,7 @@ export {
     detectSilence,
     done,
     envGen,
+    envShape,
     envGenArgs,
     envToPoints,
     flatQuads,

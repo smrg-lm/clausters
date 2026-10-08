@@ -217,9 +217,7 @@
        },
        "fade_in": {
         "length": 4.0,
-        "shape": {
-         "curve": "exp"
-        }
+        "shape": "exp"
        },
        "id": 33,
        "layer": 1,

@@ -73,7 +73,7 @@ def build() -> Multitrack:
                      "muted": True,
                      "content": Content.onto(window(201, start=2.0), playrate=1.5,
                                              args={"seed": 7}).write(),
-                     "fade_in": Fade(length=4.0, shape={"curve": "exp"}).write()}]}],
+                     "fade_in": Fade(length=4.0, shape="exp").write()}]}],
              "automation": [
                  {"id": 34, "name": "level", "target": {"ctl": "level"}, "visible": True,
                   "points": [{"at": 0.0, "value": 0.0, "data": {}},

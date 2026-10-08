@@ -914,3 +914,42 @@ fn a_watcher_rejects_a_constant_source() {
     let err = compile(serde_json::from_value::<SynthDefSpec>(spec).unwrap()).unwrap_err();
     assert!(err.contains("must be another UGen"), "{err}");
 }
+
+/// **`EnvShape` is an `EnvGen` segment read at a position**: a phase ramp
+/// over one block through the welch shape from 0 to 1 is `sin(pi/2 * t)`,
+/// and the same from 1 to 0 is its equal-power partner `cos(pi/2 * t)` --
+/// the two a crossfade is made of. Out of range, the phase clamps.
+#[test]
+fn env_shape_reads_a_segment_at_a_position() {
+    let spec = |from: f32, to: f32| {
+        json!({
+            "name": "shape",
+            "controls": [],
+            "ugens": [
+                // 0..1 over the block: the sample index over 64.
+                {"kind": "Phasor", "inputs": [
+                    {"const": 0.0}, {"const": 1.0 / 64.0}, {"const": 0.0},
+                    {"const": 2.0}, {"const": 0.0}]},
+                {"kind": "EnvShape", "inputs": [
+                    {"ugen": 0}, {"const": from}, {"const": to},
+                    {"const": 4.0}, {"const": 0.0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+            ]
+        })
+    };
+    let half_pi = std::f32::consts::FRAC_PI_2;
+    let (mut engine, _h) = spawn(spec(0.0, 1.0));
+    let rise = render(&mut engine, 2);
+    let (mut engine, _h) = spawn(spec(1.0, 0.0));
+    let fall = render(&mut engine, 2);
+    for i in 0..BLOCK_SIZE {
+        let t = i as f32 / 64.0;
+        assert!((rise[i] - (half_pi * t).sin()).abs() < 1e-5, "rise {i}");
+        assert!((fall[i] - (half_pi * t).cos()).abs() < 1e-5, "fall {i}");
+        let power = rise[i] * rise[i] + fall[i] * fall[i];
+        assert!((power - 1.0).abs() < 1e-4, "equal power at {i}: {power}");
+    }
+    // The second block's phase runs past 1, and the level holds its end.
+    assert!((rise[BLOCK_SIZE + 10] - 1.0).abs() < 1e-6);
+    assert!(fall[BLOCK_SIZE + 10].abs() < 1e-6);
+}

@@ -367,6 +367,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `LocalOut` | channel, signal | writes `signal` into synth-private feedback channel `channel` (a constant); also passes `signal` through as its own output |
 | `EnvGen` | gate, level_scale, level_bias, time_scale, done_action, *envelope array* | breakpoint envelope; gate-driven, with a `done_action` that can free the node — see the envelope note below |
 | `Line` | start, end, dur, done_action | ramps from `start` to `end` over `dur` seconds, then holds; the same `done_action` set as `EnvGen`, which it is built on |
+| `EnvShape` | phase, start, end, shape, curve | **one envelope segment read at a position**: `phase` (clamped to 0..1) through the segment from `start` to `end`, in an `EnvGen` segment's shape number and curvature, by the very function `EnvGen` plays. Where `EnvGen` runs on time from a gate, this follows whatever drives `phase` — a box's fade reads the transport's position through it, so a locate jumps the fade and a stop holds it |
 | `XLine` | start, end, dur, done_action | `Line` in equal ratios instead of equal steps; `start`/`end` must be non-zero and share a sign |
 | `FreeSelf` | signal | passes `signal` through; frees the enclosing synth while it is greater than zero |
 | `PauseSelf` | signal | passes `signal` through; pauses the enclosing synth while it is greater than zero (resume with `/node_run 1`) |

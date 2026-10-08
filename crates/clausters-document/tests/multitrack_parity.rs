@@ -83,7 +83,10 @@ fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
     let second = &lane.regions[1];
     assert_eq!(second.layer, 1, "which one is on top");
     assert!(second.muted);
-    assert_eq!(second.fade_in.as_ref().unwrap().shape.0["curve"], "exp");
+    assert_eq!(
+        second.fade_in.as_ref().unwrap().shape,
+        clausters_core::envshape::SHAPE_EXPONENTIAL
+    );
     let Content::Window { playrate, args, .. } = &second.content else {
         panic!("a window");
     };

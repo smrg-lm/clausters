@@ -105,6 +105,9 @@ pub struct Box {
     pub fade_in: f64,
     #[serde(default)]
     pub fade_out: f64,
+    /// The two fades' segment shapes, `(shape, curve)` -- `envshape` numbers.
+    #[serde(default)]
+    pub fade_shapes: [(i32, f64); 2],
 }
 
 /// The key a client's fader is kept under in a track's opaque table.
@@ -153,7 +156,8 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
         };
         for region in &lane.regions {
             let (source, start, content, looping, playrate) = window_of(region);
-            let (fade_in, fade_out) = region.fades(&multitrack.defaults);
+            let (edge_in, edge_out) = region.edges(&multitrack.defaults);
+            let (fade_in, fade_out) = (edge_in.length, edge_out.length);
             out.push(Box {
                 region: region.id,
                 row: track.id,
@@ -171,6 +175,10 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
                 playrate,
                 fade_in,
                 fade_out,
+                fade_shapes: [
+                    (edge_in.shape, edge_in.curve),
+                    (edge_out.shape, edge_out.curve),
+                ],
             });
         }
     }

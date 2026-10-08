@@ -389,9 +389,9 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
     );
 }
 
-/// **A region's own fades are heard at its edges**: a straight ramp from
-/// silence on its first frame to full level `fade_in` in, and back to silence
-/// on its last. A constant take, so the ramp is the only thing that moves; the
+/// **A region's own fades are heard at its edges**, each an envelope segment in
+/// its own shape: from silence on its first frame to full level `fade_in` in,
+/// and back to silence on its last. A constant take, so the ramp is the only thing that moves; the
 /// box sits well after the play's own declick, so that ramp is not the one
 /// measured.
 #[test]
@@ -443,8 +443,10 @@ fn a_region_fades_in_and_out_at_its_own_edges() {
             duration: secs(take),
         }),
     );
+    // In: equal power, the default shape. Out: a straight line, chosen.
     region.fade_in = Some(Fade::of(Second(secs(fade))));
-    region.fade_out = Some(Fade::of(Second(secs(fade))));
+    region.fade_out =
+        Some(Fade::of(Second(secs(fade))).shaped(clausters_core::envshape::SHAPE_LINEAR, 0.0));
     multitrack.tracks[0].take_lanes[0].place(region);
     let sources = HashMap::from([(
         SourceId(1),
@@ -480,11 +482,21 @@ fn a_region_fades_in_and_out_at_its_own_edges() {
             "{what}: {got}, not {want}"
         );
     };
-    // Rising: its first frame is one step of the ramp, half way is half.
-    near(left[first], full / fade as f32, "the first frame");
-    near(left[first + fade / 2 - 1], full * 0.5, "half way in");
+    // Rising, equal power: a quarter sine through the fade, its first frame
+    // one step of it and half way at sin(pi/4).
+    let quarter = |t: f32| (std::f32::consts::FRAC_PI_2 * t).sin();
+    near(
+        left[first],
+        full * quarter(1.0 / fade as f32),
+        "the first frame",
+    );
+    near(
+        left[first + fade / 2 - 1],
+        full * quarter(0.5),
+        "half way in",
+    );
     near(left[first + fade + 4], full, "past the fade in");
-    // Falling, onto the last frame of the box.
+    // Falling in a straight line, onto the last frame of the box.
     assert_eq!(last + 1 - first, take, "the box sounds for its length");
     near(left[last - fade / 2], full * 0.5, "half way out");
     near(left[last - fade - 4], full, "before the fade out");

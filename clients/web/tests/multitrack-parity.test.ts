@@ -78,7 +78,7 @@ test("an overlap keeps its crossfade, its layer and its playrate", async () => {
     const second = lane.regions.item(1);
     assert.equal(second.layer, 1, "which one is on top");
     assert.equal(second.muted, true);
-    assert.deepEqual(second.fadeIn?.shape, { curve: "exp" });
+    assert.equal(second.fadeIn?.shape, "exp");
     assert.equal(second.content.playrate, 1.5);
     assert.deepEqual(second.content.args, { seed: 7 });
 });
@@ -207,7 +207,7 @@ test("each field is written through the multitrack's own verb", () => {
     const r = lane.regions.add(0, 4, window(), { name: "take" });
     r.length = 2;
     r.fadeIn = new Fade(0.5);
-    r.fadeOut = new Fade(0.25, { curve: "exp" });
+    r.fadeOut = new Fade(0.25, "curve", -4.0);
     r.muted = true;
     r.name = "kept";
     r.place(other, { position: 6 });
@@ -215,7 +215,8 @@ test("each field is written through the multitrack's own verb", () => {
     assert.equal(r.takeLane, other);
     assert.equal(r.track, other.track);
     assert.equal(r.fadeIn?.length, 0.5);
-    assert.deepEqual(r.fadeOut?.shape, { curve: "exp" });
+    assert.equal(r.fadeIn?.shape, "wel");
+    assert.deepEqual([r.fadeOut?.shape, r.fadeOut?.curve], ["curve", -4.0]);
     t.name = "drums";
     t.level = 0.7;
     t.soloed = true;

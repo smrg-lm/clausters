@@ -1013,6 +1013,32 @@
       ]
     },
     {
+      "name": "EnvShape",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "phase",
+          "default": 0.0
+        },
+        {
+          "name": "start",
+          "default": 0.0
+        },
+        {
+          "name": "end",
+          "default": 1.0
+        },
+        {
+          "name": "shape",
+          "default": 1.0
+        },
+        {
+          "name": "curve",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "FFT",
       "arity": 2,
       "inputs": [

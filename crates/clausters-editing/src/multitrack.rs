@@ -396,16 +396,19 @@ pub fn rates(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
-/// **The fades every box of samples is drawn with**, as flat `name in out`
-/// triples in frames of the view: how far into the box its fade in reaches, and how far
-/// before its end its fade out begins. A box with neither is not named.
+/// **The fades every box of samples is drawn with**, as flat
+/// `name in out in_shape in_curve out_shape out_curve` septuples: in frames of
+/// the view how far into the box its fade in reaches and how far before its
+/// end its fade out begins, and each one's envelope segment shape
+/// (`clausters_core::envshape` numbers, the curvature for `curve`). A box with
+/// neither fade is not named.
 ///
-/// A list of its own beside the septuple, for the reason `rates` is: the
+/// A list of its own beside the box septuple, for the reason `rates` is: that
 /// septuple is a fixed width every reader chunks by. It is what the reader
-/// plays (`nodes`, through the same [`Region::fades`]), so what is drawn is
+/// plays (`nodes`, through the same [`Region::edges`]), so what is drawn is
 /// what is heard.
 ///
-/// [`Region::fades`]: clausters_document::multitrack::Region::fades
+/// [`Region::edges`]: clausters_document::multitrack::Region::edges
 pub fn fades(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
     for box_ in picture::boxes(multitrack) {
@@ -418,10 +421,15 @@ pub fn fades(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             continue;
         }
         let end = box_.position.0 + box_.length.0;
+        let [(in_shape, in_curve), (out_shape, out_curve)] = box_.fade_shapes;
         out.extend([
             json!(box_.region.0.to_string()),
             json!(look.frames_over(box_.position.0, box_.fade_in)),
             json!(look.frames_over(end - box_.fade_out, box_.fade_out)),
+            json!(in_shape),
+            json!(in_curve),
+            json!(out_shape),
+            json!(out_curve),
         ]);
     }
     out
@@ -1727,9 +1735,17 @@ mod tests {
                 json!("10"),
                 json!(480.0),
                 json!(480.0),
+                json!(4),
+                json!(0.0),
+                json!(4),
+                json!(0.0),
                 json!("11"),
                 json!(0.0),
-                json!(12_000.0)
+                json!(12_000.0),
+                json!(4),
+                json!(0.0),
+                json!(4),
+                json!(0.0)
             ]
         );
         multitrack.defaults.fade = None;

@@ -116,29 +116,38 @@ function num(value: unknown, fallback = 0): number {
 }
 
 /**
- * A fade's length in seconds, and whatever the client says about its curve.
+ * **A region's fade**: how long it lasts, in seconds, and the shape of the one
+ * envelope segment it is.
  *
- * The shape is carried and never interpreted: what an exponential fade *is*
- * belongs to whoever renders it. Losing it would straighten every fade on a
- * reopen, which is a different act from declining to interpret it.
+ * A region's two fades make a trapezoid over its box -- from silence to full
+ * level, full level, back to silence -- and each sloped side is a segment like
+ * any other envelope's: `shape` is one of the names an `Env` segment takes
+ * (`"lin"`, `"exp"`, `"sin"`, `"wel"`, `"curve"` ...) and `curve` the
+ * curvature for `"curve"`. The default is `"wel"`, **equal power**: quick at
+ * first and slow at the end of a rise, so a fade out against a fade in of the
+ * same length keeps the summed power constant.
  */
 export class Fade {
     length: number;
-    shape: unknown;
+    shape: string;
+    curve: number;
 
-    constructor(length: number, shape?: unknown) {
+    constructor(length: number, shape = "wel", curve = 0.0) {
         this.length = length;
         this.shape = shape;
+        this.curve = curve;
     }
 
     write(): Extra {
         const out: Extra = { length: this.length };
-        if (this.shape !== undefined) out.shape = this.shape;
+        if (this.shape !== "wel") out.shape = this.shape;
+        if (this.curve !== 0) out.curve = this.curve;
         return out;
     }
 
     static read(written: Extra): Fade {
-        return new Fade(num(written.length), written.shape);
+        const shape = typeof written.shape === "string" ? written.shape : "wel";
+        return new Fade(num(written.length), shape, written.curve === undefined ? 0 : num(written.curve));
     }
 }
 

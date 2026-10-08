@@ -2485,19 +2485,24 @@ fn a_scrolled_stack_paints_inside_its_own_rect() {
 }
 
 /// **A box's fades are read by name and replaced whole**, as every list here
-/// is: a box the list does not name has none, and a negative length is none.
+/// is: a box the list does not name has none, a negative length is none, and
+/// each edge carries its envelope segment's shape.
 #[test]
 fn the_fades_prop_names_each_boxs_fades() {
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 20000, 0, "", 0, "b", "one", 20000, 20000, 0, "", 0],
-            "fades": ["a", 480, 960, "b", -1, 240]}"#,
+            "fades": ["a", 480, 960, 4, 0, 1, 0, "b", -1, 240, 5, -3, 4, 0]}"#,
     ));
-    assert_eq!(mt.fades.get("a"), Some(&(480.0, 960.0)));
-    assert_eq!(mt.fades.get("b"), Some(&(0.0, 240.0)));
-    assert!(mt.apply_prop("fades", &serde_json::json!(["b", 10, 0])));
-    assert_eq!(mt.fades.get("a"), None, "replaced whole");
-    assert_eq!(mt.fades.get("b"), Some(&(10.0, 0.0)));
+    let (a_in, a_out) = mt.fades["a"];
+    assert_eq!((a_in.length, a_in.shape), (480.0, 4));
+    assert_eq!((a_out.length, a_out.shape), (960.0, 1));
+    let (b_in, b_out) = mt.fades["b"];
+    assert_eq!((b_in.length, b_in.shape, b_in.curve), (0.0, 5, -3.0));
+    assert_eq!(b_out.length, 240.0);
+    assert!(mt.apply_prop("fades", &serde_json::json!(["b", 10, 0, 4, 0, 4, 0])));
+    assert!(!mt.fades.contains_key("a"), "replaced whole");
+    assert_eq!(mt.fades["b"].0.length, 10.0);
 }
 
 /// **A box draws its fades**: a box given a quarter of its length to fade in
@@ -2534,10 +2539,14 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
         mesh.vertex_count()
     };
     let plain = painted("[]");
-    let faded = painted(r#"["a", 12000, 12000]"#);
+    let faded = painted(r#"["a", 12000, 12000, 4, 0, 1, 0]"#);
     assert!(
         faded >= plain + 2 * 12,
-        "two veils and two lines: {plain} -> {faded}"
+        "two traced segments, veiled: {plain} -> {faded}"
     );
-    assert_eq!(painted(r#"["a", 1, 1]"#), plain, "a fade under a pixel");
+    assert_eq!(
+        painted(r#"["a", 1, 1, 4, 0, 4, 0]"#),
+        plain,
+        "a fade under a pixel"
+    );
 }

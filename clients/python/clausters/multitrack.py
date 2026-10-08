@@ -104,27 +104,36 @@ def _rest(written: dict, *known: str) -> dict:
 
 @dataclass
 class Fade:
-    """A fade's length in seconds, and whatever the client says about its curve.
+    """**A region's fade**: how long it lasts, in seconds, and the shape of the
+    one envelope segment it is.
 
-    The shape is carried and never interpreted, for the reason a curve's
-    interpolation is not this crate's to name: what an exponential fade *is*
-    belongs to whoever renders it. Losing it would straighten every fade on a
-    reopen, which is a different act from declining to interpret it.
+    A region's two fades make a trapezoid over its box -- from silence to full
+    level, full level, back to silence -- and each sloped side is a segment like
+    any other envelope's: ``shape`` is one of the names an `Env` segment takes
+    (``"lin"``, ``"exp"``, ``"sin"``, ``"wel"``, ``"curve"`` ...) and ``curve``
+    the curvature for ``"curve"``. The default is ``"wel"``, **equal power**:
+    quick at first and slow at the end of a rise, so a fade out against a fade
+    in of the same length keeps the summed power constant.
     """
 
     length: float
-    shape: "dict | None" = None
+    shape: str = "wel"
+    curve: float = 0.0
 
     def write(self) -> dict:
         out: dict = {"length": self.length}
-        if self.shape is not None:
+        if self.shape != "wel":
             out["shape"] = self.shape
+        if self.curve:
+            out["curve"] = self.curve
         return out
 
     @classmethod
     def read(cls, written: dict) -> "Fade":
+        shape = written.get("shape")
         return cls(length=float(written.get("length", 0.0)),
-                   shape=written.get("shape"))
+                   shape=shape if isinstance(shape, str) else "wel",
+                   curve=float(written.get("curve", 0.0)))
 
 
 @dataclass

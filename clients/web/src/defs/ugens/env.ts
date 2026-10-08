@@ -361,6 +361,34 @@ export const line = (
 ): Ugen => new Ugen("Line", [start, end, dur, Number(doneAction)]);
 
 /**
+ * **One envelope segment, read at a position**: `phase` in `[0, 1]` (clamped)
+ * through the segment from `start` to `end`, computed by the function
+ * `envGen` plays.
+ *
+ * `shape` is a segment's shape by the names an `Env` takes (`"lin"`, `"exp"`,
+ * `"sin"`, `"wel"` ...; `null` is `"lin"`) or its number, and `curve` the
+ * curvature for `"curve"` -- the pair a region's `Fade` carries.
+ *
+ * `envGen` runs on time: it starts on a gate and keeps its own pace. This is
+ * the segment driven from outside, for one that follows a position instead --
+ * a fade read off the transport, which a locate jumps and a stop holds:
+ *
+ * ```js
+ * const level = envShape(div(transportPos(), length), 0.0, 1.0, "wel");
+ * ```
+ */
+export function envShape(
+    phase: Channel,
+    start: Channel = 0.0,
+    end: Channel = 1.0,
+    shape: string | number | null = null,
+    curve: Channel = 0.0,
+): Ugen {
+    const number = typeof shape === "number" ? shape : resolveCurve(shape ?? "lin")[0];
+    return new Ugen("EnvShape", [phase, start, end, number, curve]);
+}
+
+/**
  * `line` in equal *ratios* rather than equal steps -- the shape that reads as
  * straight when it drives a frequency or a gain. `start` and `end` must be
  * non-zero and share a sign.

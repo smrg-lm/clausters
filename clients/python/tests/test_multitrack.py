@@ -109,13 +109,14 @@ def test_each_field_is_written_through_the_multitrack_s_own_verb():
     r = place(lane, 0.0, 4.0, name="take")
     r.length = 2.0
     r.fade_in = Fade(0.5)
-    r.fade_out = Fade(0.25, shape={"curve": "exp"})
+    r.fade_out = Fade(0.25, shape="curve", curve=-4.0)
     r.muted = True
     r.name = "kept"
     r.place(other, position=6.0)
     assert (r.position, r.length, r.muted, r.name) == (6.0, 2.0, True, "kept")
     assert r.take_lane is other and r.track is other.track
-    assert r.fade_in == Fade(0.5) and r.fade_out.shape == {"curve": "exp"}
+    assert r.fade_in == Fade(0.5) and r.fade_in.shape == "wel"
+    assert (r.fade_out.shape, r.fade_out.curve) == ("curve", -4.0)
     track.name, track.level, track.soloed = "drums", 0.7, True
     assert (track.name, track.level, track.soloed) == ("drums", 0.7, True)
     assert multitrack.version > 1, "every edit moves the multitrack's version"
@@ -234,7 +235,7 @@ def test_a_whole_multitrack_round_trips():
     first = place(lane, 0.0, 20.0, fade_out=Fade(length=4.0))
     second = lane.regions.add(
         16.0, 16.0, Content.onto(window(2), playrate=1.5, args={"seed": 7}),
-        layer=1, muted=True, fade_in=Fade(length=4.0, shape={"curve": "exp"}))
+        layer=1, muted=True, fade_in=Fade(length=4.0, shape="exp"))
     track.automation.add({"ctl": "level"}, [{"at": 0.0, "value": 0.0, "data": {}}],
                          visible=True)
 

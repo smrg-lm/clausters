@@ -209,3 +209,27 @@ impl UGen for EnvGen {
         self.finished
     }
 }
+
+/// **One envelope segment, read at a position**: `phase` in `[0, 1]`
+/// (clamped) through the segment from level `from` to level `to`, with the
+/// shape number and curvature an `EnvGen` segment takes -- evaluated by
+/// `clausters_core::envshape::shape_value`, the function `EnvGen` plays and a
+/// view draws.
+///
+/// `EnvGen` runs on time: it starts on a gate and moves at its own pace. This
+/// is the same arithmetic driven from outside, which is what a segment that
+/// must follow a **position** needs -- a box's fade, read off the transport,
+/// which a locate jumps and a stop holds.
+pub struct EnvShape;
+
+impl UGen for EnvShape {
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        for (i, s) in output.iter_mut().enumerate() {
+            let phase = at(inputs[0], i).clamp(0.0, 1.0);
+            let (from, to) = (at(inputs[1], i), at(inputs[2], i));
+            let shape = at(inputs[3], i) as i32;
+            let curve = at(inputs[4], i);
+            *s = shape_value(shape, curve, from, to, phase);
+        }
+    }
+}

@@ -924,6 +924,10 @@ impl Instance {
                 ("rate", reader.rate),
                 ("fade_in", reader.fade_in),
                 ("fade_out", reader.fade_out),
+                ("fade_in_shape", f64::from(reader.fade_in_shape.0)),
+                ("fade_in_curve", reader.fade_in_shape.1),
+                ("fade_out_shape", f64::from(reader.fade_out_shape.0)),
+                ("fade_out_curve", reader.fade_out_shape.1),
             ]
             .into_iter()
             .map(|(port, value)| (port.to_string(), Port::Number(value)))

@@ -59,6 +59,8 @@
 
 use serde_json::{Value, json};
 
+use crate::envshape;
+
 /// The prefix every def here is named with. Deliberately not `track` or `clip`
 /// on their own: a def name is global, and those two words are the most
 /// ambiguous ones available.
@@ -129,12 +131,22 @@ pub const CHAN: &str = "chan";
 pub const LOOP: &str = "loop";
 /// **How long a box's fade in lasts**, in frames from where it starts. A fade
 /// is the region's own -- a property of its edge, never its gain envelope --
-/// and the reader plays it: a straight ramp from silence on the box's first
-/// frame to full level `fade_in` frames in. `0` is a butt edge.
+/// and the reader plays it: an envelope segment from silence on the box's
+/// first frame to full level `fade_in` frames in, read at the box's position
+/// (`EnvShape`), in the shape [`FADE_IN_SHAPE`] names. `0` is a butt edge.
 pub const FADE_IN: &str = "fade_in";
 /// **How long a box's fade out lasts**, in frames before where it ends: the
 /// ramp falls to silence on the box's last frame. `0` is a butt edge.
 pub const FADE_OUT: &str = "fade_out";
+/// The **shape of a box's fade in**: the `envshape` number of the segment from
+/// silence to full level (`wel`, equal power, unless a region says otherwise).
+pub const FADE_IN_SHAPE: &str = "fade_in_shape";
+/// The curvature of the fade in, for the `curve` shape.
+pub const FADE_IN_CURVE: &str = "fade_in_curve";
+/// The shape of a box's fade out: the segment from full level to silence.
+pub const FADE_OUT_SHAPE: &str = "fade_out_shape";
+/// The curvature of the fade out, for the `curve` shape.
+pub const FADE_OUT_CURVE: &str = "fade_out_curve";
 
 /// The slot a clip's readers fill: one per channel of the source.
 pub const SOURCE_SLOT: &str = "source";
@@ -362,6 +374,10 @@ pub fn reader_def() -> Value {
             control("out1", 0.0),
             control(FADE_IN, 0.0),
             control(FADE_OUT, 0.0),
+            control(FADE_IN_SHAPE, envshape::SHAPE_WELCH as f32),
+            control(FADE_IN_CURVE, 0.0),
+            control(FADE_OUT_SHAPE, envshape::SHAPE_WELCH as f32),
+            control(FADE_OUT_CURVE, 0.0),
         ],
         "ugens": [
             // 0: engine samples since this box began; negative before it starts.
@@ -388,31 +404,40 @@ pub fn reader_def() -> Value {
             // 11..12: gated and levelled.
             {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 3}]},
             {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 8}]},
-            // 13..16: the fade in -- frames into the box, counting the first as
-            // one, over the fade's length, up to full level. A length under a
-            // frame is one frame, which is no fade, and keeps the division
-            // finite outside the window, where the gate zeroes it.
+            // 13..16: the fade in -- how far through it the box is, frames in
+            // counting the first as one over its length, read through its
+            // segment from silence to full level. A length under a frame is
+            // one frame, which is no fade, and keeps the division finite
+            // outside the window, where the gate zeroes it.
             {"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": 10}, {"const": 1.0}]},
             {"kind": "Add", "inputs": [{"ugen": 0}, {"const": 1.0}]},
             {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 14}, {"ugen": 13}]},
-            {"kind": "BinaryOpUGen", "op": "min", "inputs": [{"ugen": 15}, {"const": 1.0}]},
-            // 17..20: the fade out, the same from the other edge: frames left
-            // before the box ends.
+            {"kind": "EnvShape", "inputs": [
+                {"ugen": 15}, {"const": 0.0}, {"const": 1.0}, {"control": 12}, {"control": 13}
+            ]},
+            // 17..21: the fade out -- frames left before the box ends over its
+            // length is how much of it is still to come, so one minus that is
+            // how far through it the box is, read through its segment from
+            // full level to silence. Before it starts the phase is below zero
+            // and the segment holds full level.
             {"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": 11}, {"const": 1.0}]},
             {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"control": 4}, {"ugen": 0}]},
             {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 18}, {"ugen": 17}]},
-            {"kind": "BinaryOpUGen", "op": "min", "inputs": [{"ugen": 19}, {"const": 1.0}]},
-            // 21..22: both edges on what was read.
-            {"kind": "Mul", "inputs": [{"ugen": 16}, {"ugen": 20}]},
-            {"kind": "Mul", "inputs": [{"ugen": 12}, {"ugen": 21}]},
-            // 23..27: out, onto this reader's own channel of the clip's bus --
+            {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"const": 1.0}, {"ugen": 19}]},
+            {"kind": "EnvShape", "inputs": [
+                {"ugen": 20}, {"const": 1.0}, {"const": 0.0}, {"control": 14}, {"control": 15}
+            ]},
+            // 22..23: both edges on what was read.
+            {"kind": "Mul", "inputs": [{"ugen": 16}, {"ugen": 21}]},
+            {"kind": "Mul", "inputs": [{"ugen": 12}, {"ugen": 22}]},
+            // 24..28: out, onto this reader's own channel of the clip's bus --
             // `1 - chan` of it on the first and `chan` of it on the second.
             {"kind": "BinaryOpUGen", "op": "sub",
              "inputs": [{"const": 1.0}, {"control": 2}]},
-            {"kind": "Mul", "inputs": [{"ugen": 22}, {"ugen": 23}]},
-            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 24}]},
-            {"kind": "Mul", "inputs": [{"ugen": 22}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 26}]}
+            {"kind": "Mul", "inputs": [{"ugen": 23}, {"ugen": 24}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 25}]},
+            {"kind": "Mul", "inputs": [{"ugen": 23}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 27}]}
         ]
     })
 }
@@ -878,6 +903,10 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
             LOOP:  [{"member": 1, "control": LOOP}],
             FADE_IN:  [{"member": 1, "control": FADE_IN}],
             FADE_OUT: [{"member": 1, "control": FADE_OUT}],
+            FADE_IN_SHAPE:  [{"member": 1, "control": FADE_IN_SHAPE}],
+            FADE_IN_CURVE:  [{"member": 1, "control": FADE_IN_CURVE}],
+            FADE_OUT_SHAPE: [{"member": 1, "control": FADE_OUT_SHAPE}],
+            FADE_OUT_CURVE: [{"member": 1, "control": FADE_OUT_CURVE}],
             "source/gain": [{"member": 1, "control": GAIN}],
         },
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }

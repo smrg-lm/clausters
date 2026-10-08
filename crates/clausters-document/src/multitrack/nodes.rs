@@ -89,6 +89,16 @@ pub struct PlannedReader {
     /// The region's fade out, in frames before where the box ends.
     #[serde(default)]
     pub fade_out: f64,
+    /// The two fades' segment shapes and curvatures, `(shape, curve)` --
+    /// `clausters_core::envshape` numbers (`mixer::FADE_IN_SHAPE` ...).
+    #[serde(default = "equal_power")]
+    pub fade_in_shape: (i32, f64),
+    #[serde(default = "equal_power")]
+    pub fade_out_shape: (i32, f64),
+}
+
+fn equal_power() -> (i32, f64) {
+    (clausters_core::envshape::SHAPE_WELCH, 0.0)
 }
 
 /// One curve, ready to be heard: the port it drives and the table a reader
@@ -437,8 +447,11 @@ pub fn plan_voiced(
             // **The region's fades**, at its edges -- not its window's: a box
             // cut short of its source fades where it is cut. Its own, or the
             // multitrack's default where it states none.
-            let (fade_in, fade_out) = region.fades(&multitrack.defaults);
-            let (fade_in, fade_out) = (frames(fade_in).min(span), frames(fade_out).min(span));
+            let (edge_in, edge_out) = region.edges(&multitrack.defaults);
+            let (fade_in, fade_out) = (
+                frames(edge_in.length).min(span),
+                frames(edge_out.length).min(span),
+            );
             let readers = (0..info.channels.max(1))
                 .map(|channel| PlannedReader {
                     channel,
@@ -455,6 +468,8 @@ pub fn plan_voiced(
                     rate: *playrate,
                     fade_in,
                     fade_out,
+                    fade_in_shape: (edge_in.shape, edge_in.curve),
+                    fade_out_shape: (edge_out.shape, edge_out.curve),
                 })
                 .collect();
             let pair = (info.channels.max(1), channels);

@@ -561,12 +561,23 @@ pub fn draw_clip(d: &mut Draw, cr: Rect, selected: bool) {
     mesh.border(cr, m.divider_w, edge);
 }
 
-/// **A box's own fades, drawn on it**: a line from the silent corner to full
-/// level, and the silenced part above it veiled -- the fade in rising from
-/// the bottom of the box's left edge to its top `fade_in` in, the fade out
-/// falling from its top to the bottom of its right edge. `local` is the
-/// box's own window over `[0, dur]` (`clip_local_view`), so a box scrolled
-/// half off still draws the part of its fade that shows, at the slope it has.
+/// One fade as a box draws it: how long, in the box's own frames, and the
+/// envelope segment's shape (`clausters_core::envshape` number and curvature).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FadeEdge {
+    pub length: f64,
+    pub shape: i32,
+    pub curve: f32,
+}
+
+/// **A box's own fades, drawn on it**: each one the envelope segment it is --
+/// from the silent corner to full level for the fade in, from full level to
+/// the silent corner for the fade out -- traced through
+/// `clausters_core::envshape::shape_value`, the function the reader plays it
+/// with, and the silenced part above it veiled. `local` is the box's own
+/// window over `[0, dur]` (`clip_local_view`), so a box scrolled half off
+/// still draws the part of its fade that shows, at the shape it has. A fade
+/// under a pixel is not drawn.
 ///
 /// Drawn over the box's contents and under its label: a fade is part of what
 /// the box *is*, so it is seen with the samples it shapes.
@@ -575,39 +586,54 @@ pub fn draw_clip_fades(
     cr: Rect,
     local: &View,
     dur: f64,
-    fade_in: f64,
-    fade_out: f64,
+    fade_in: FadeEdge,
+    fade_out: FadeEdge,
 ) {
     let (mesh, m, theme) = d.parts();
     let (top, bottom) = (cr.y, cr.y + cr.h);
     let (left, right) = (cr.x, cr.x + cr.w);
     let veil = theme.panel;
     let edge = theme.object_edge;
-    // One ramp: `level(x)` is 0 at `silent` and 1 at `full`, and what is
-    // drawn is the stretch of it inside the box's rectangle.
-    let mut ramp = |silent: f32, full: f32| {
-        if (full - silent).abs() < 0.5 {
+    // One segment from `x0` (level `from`) to `x1` (level `to`), traced a
+    // couple of pixels at a time inside the box's rectangle.
+    let mut segment = |x0: f32, x1: f32, from: f32, to: f32, fade: FadeEdge| {
+        if (x1 - x0).abs() < 1.0 {
             return;
         }
-        let y = |x: f32| bottom - (x - silent) / (full - silent) * cr.h;
-        let (a, b) = (silent.min(full).max(left), silent.max(full).min(right));
+        let y = |x: f32| {
+            let t = ((x - x0) / (x1 - x0)).clamp(0.0, 1.0);
+            let level = clausters_core::envshape::shape_value(fade.shape, fade.curve, from, to, t);
+            bottom - level.clamp(0.0, 1.0) * cr.h
+        };
+        let (a, b) = (x0.max(left), x1.min(right));
         if b <= a {
             return;
         }
-        mesh.quad([[a, top], [b, top], [b, y(b)], [a, y(a)]], veil);
-        mesh.line([a, y(a)], [b, y(b)], m.divider_w, edge);
+        let steps = ((b - a) / 2.0).ceil().max(1.0) as usize;
+        let mut prev = (a, y(a));
+        for k in 1..=steps {
+            let x = a + (b - a) * k as f32 / steps as f32;
+            let next = (x, y(x));
+            mesh.quad(
+                [
+                    [prev.0, top],
+                    [next.0, top],
+                    [next.0, next.1],
+                    [prev.0, prev.1],
+                ],
+                veil,
+            );
+            mesh.line([prev.0, prev.1], [next.0, next.1], m.divider_w, edge);
+            prev = next;
+        }
     };
-    if fade_in > 0.0 {
-        ramp(
-            local_x(cr, local, 0.0),
-            local_x(cr, local, fade_in.min(dur)),
-        );
+    if fade_in.length > 0.0 {
+        let x1 = local_x(cr, local, fade_in.length.min(dur));
+        segment(local_x(cr, local, 0.0), x1, 0.0, 1.0, fade_in);
     }
-    if fade_out > 0.0 {
-        ramp(
-            local_x(cr, local, dur),
-            local_x(cr, local, (dur - fade_out).max(0.0)),
-        );
+    if fade_out.length > 0.0 {
+        let x0 = local_x(cr, local, (dur - fade_out.length).max(0.0));
+        segment(x0, local_x(cr, local, dur), 1.0, 0.0, fade_out);
     }
 }
 

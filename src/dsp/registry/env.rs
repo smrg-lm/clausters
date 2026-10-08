@@ -52,4 +52,23 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Line::new(LineShape::Exponential)),
     )),
+    // One segment at a position rather than a time: what a fade that
+    // follows the transport reads.
+    desc(
+        "EnvShape",
+        Fixed(5),
+        &[
+            inp("phase", 0.0),
+            inp("start", 0.0),
+            inp("end", 1.0),
+            inp("shape", 1.0),
+            inp("curve", 0.0),
+        ],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(EnvShape),
+    ),
 ];

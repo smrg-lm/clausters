@@ -355,20 +355,35 @@ pub(super) fn parse_rates(props: &Map<String, Value>) -> HashMap<String, f64> {
     out
 }
 
-/// The `fades` prop: flat `name in out` triples, each in frames of the view --
-/// how far into the box its fade in reaches and how far before its end its
-/// fade out begins.
-pub(super) fn parse_fades(props: &Map<String, Value>) -> HashMap<String, (f64, f64)> {
+/// The `fades` prop: flat `name in out in_shape in_curve out_shape out_curve`
+/// septuples -- in frames of the view how far into the box its fade in
+/// reaches and how far before its end its fade out begins, and each one's
+/// envelope segment shape (`clausters_core::envshape` numbers).
+pub(super) fn parse_fades(
+    props: &Map<String, Value>,
+) -> HashMap<String, (track::FadeEdge, track::FadeEdge)> {
     let Some(Value::Array(items)) = props.get("fades") else {
         return HashMap::new();
     };
     let mut out = HashMap::new();
-    for triple in items.as_chunks::<3>().0 {
-        let Some(name) = triple[0].as_str() else {
+    for row in items.as_chunks::<7>().0 {
+        let Some(name) = row[0].as_str() else {
             continue;
         };
-        let length = |v: &Value| v.as_f64().unwrap_or(0.0).max(0.0);
-        out.insert(name.to_string(), (length(&triple[1]), length(&triple[2])));
+        let edge = |length: &Value, shape: &Value, curve: &Value| track::FadeEdge {
+            length: length.as_f64().unwrap_or(0.0).max(0.0),
+            shape: shape
+                .as_i64()
+                .map_or(clausters_core::envshape::SHAPE_WELCH, |s| s as i32),
+            curve: curve.as_f64().unwrap_or(0.0) as f32,
+        };
+        out.insert(
+            name.to_string(),
+            (
+                edge(&row[1], &row[3], &row[4]),
+                edge(&row[2], &row[5], &row[6]),
+            ),
+        );
     }
     out
 }

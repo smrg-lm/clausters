@@ -243,6 +243,30 @@ def line(start=0.0, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
     return Ugen("Line", [start, end, dur, float(done_action)])
 
 
+def env_shape(phase, start=0.0, end=1.0, shape=None, curve=0.0) -> Ugen:
+    """**One envelope segment, read at a position**: ``phase`` in ``[0, 1]``
+    (clamped) through the segment from ``start`` to ``end``, computed by the
+    function `env_gen` plays.
+
+    ``shape`` is a segment's shape by the names an `Env` takes (``"lin"``,
+    ``"exp"``, ``"sin"``, ``"wel"`` ... ``None`` is ``"lin"``) or its number,
+    and ``curve`` the curvature for ``"curve"`` -- the pair a region's `Fade`
+    carries.
+
+    `env_gen` runs on time: it starts on a gate and keeps its own pace. This
+    is the segment driven from outside, for one that follows a position
+    instead -- a fade read off the transport, which a locate jumps and a stop
+    holds::
+
+        level = env_shape(transport_pos() / length, 0.0, 1.0, "wel")
+    """
+    if shape is None or isinstance(shape, str):
+        number, _ = _resolve_curve(shape or "lin")
+    else:
+        number = shape
+    return Ugen("EnvShape", [phase, start, end, float(number), curve])
+
+
 def x_line(start=0.01, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
     """`line` in equal *ratios* rather than equal steps -- the shape that reads
     as straight when it drives a frequency or a gain.

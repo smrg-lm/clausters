@@ -25,7 +25,7 @@ use crate::dsp::demand::{
     RandKind,
 };
 use crate::dsp::disk::{DiskIn, DiskOut};
-use crate::dsp::envgen::EnvGen;
+use crate::dsp::envgen::{EnvGen, EnvShape};
 use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;

@@ -62,30 +62,104 @@ pub mod picture;
 /// languages is a way to lose a multitrack.
 pub type Extra = Map<String, Value>;
 
-/// The shape of a fade, carried and never interpreted.
+/// **A region's fade**: how long it lasts and the shape of the one envelope
+/// segment it is.
 ///
-/// A length plus whatever the client says about the curve, for the reason
-/// [`crate::points`] refuses to name interpolation shapes: what an exponential
-/// fade *is* belongs to whoever renders it, and guessing here would decide a
-/// question nobody has asked. Losing it would straighten every fade on a
-/// reopen, which is a different act from declining to interpret it.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+/// A region's two fades make a **trapezoid** over the box -- from silence to
+/// full level over the fade in, full level, and back to silence over the fade
+/// out -- and each sloped side is an envelope segment like any other: one of
+/// the shapes of `clausters_core::envshape` (`lin`, `exp`, `sin`, `wel`,
+/// `curve` ...), the very vocabulary an automation's segments and `EnvGen`
+/// speak, played by the same function the picture draws with. A fade in is
+/// the segment from 0 to 1, a fade out the one from 1 to 0.
+///
+/// The default shape is `wel`, **equal power**: a quarter sine, quick at first
+/// and slow at the end of a rise, so a fade out against a fade in of the same
+/// length keeps the summed power constant -- which is what an overlap of two
+/// regions plays as its crossfade.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fade {
     /// How long the fade lasts, in seconds.
     pub length: Second,
-    /// The curve, in the client's terms.
-    #[serde(default, skip_serializing_if = "Opaque::is_empty")]
-    pub shape: Opaque,
+    /// The segment's shape, by the name a client writes it with (`"wel"`,
+    /// `"lin"`, `"curve"` ...). A name this build does not know reads as the
+    /// default.
+    #[serde(
+        default = "equal_power",
+        with = "shape_name",
+        skip_serializing_if = "is_equal_power"
+    )]
+    pub shape: i32,
+    /// The curvature, for the `curve` shape; 0 otherwise.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub curve: f64,
+}
+
+fn equal_power() -> i32 {
+    clausters_core::envshape::SHAPE_WELCH
+}
+
+fn is_equal_power(shape: &i32) -> bool {
+    *shape == equal_power()
+}
+
+fn is_zero_f64(value: &f64) -> bool {
+    *value == 0.0
+}
+
+/// A shape number written as its name, and read back from it.
+mod shape_name {
+    use clausters_core::envshape::{SHAPE_HOLD, SHAPE_STEP, shape_name};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(shape: &i32, out: S) -> Result<S::Ok, S::Error> {
+        out.serialize_str(shape_name(*shape))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<i32, D::Error> {
+        // Anything that is not a known name -- a client's own object from
+        // before the shape was a segment's, a typo -- is the default, rather
+        // than a session that will not open.
+        let value = serde_json::Value::deserialize(input)?;
+        let name = value.as_str().unwrap_or_default();
+        Ok((SHAPE_STEP..=SHAPE_HOLD)
+            .find(|n| shape_name(*n) == name)
+            .unwrap_or(super::equal_power()))
+    }
+}
+
+impl Default for Fade {
+    fn default() -> Self {
+        Self::of(Second(DEFAULT_FADE))
+    }
 }
 
 impl Fade {
-    /// A fade of this length, with nothing said about its curve.
+    /// A fade of this length, equal power.
     pub fn of(length: Second) -> Self {
         Self {
             length,
-            shape: Opaque::none(),
+            shape: equal_power(),
+            curve: 0.0,
         }
     }
+
+    /// The same, with this segment shape and curvature.
+    pub fn shaped(mut self, shape: i32, curve: f64) -> Self {
+        self.shape = shape;
+        self.curve = curve;
+        self
+    }
+}
+
+/// **One edge of a region as it sounds**: the fade there, resolved against
+/// the multitrack's default and cut to the region -- its length in seconds and
+/// its segment's shape. A length of 0 is a butt edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Edge {
+    pub length: f64,
+    pub shape: i32,
+    pub curve: f64,
 }
 
 /// **A window onto a source**: which one, from where, for how long.
@@ -297,21 +371,45 @@ fn is_zero_u32(n: &u32) -> bool {
 }
 
 impl Region {
-    /// **The fades this region sounds and is drawn with**, `(in, out)` in
-    /// seconds: its own where it states one, the multitrack's default where it
-    /// does not, and none where neither has one. Each is at most the region,
-    /// so two that meet in the middle share it.
+    /// **The edges this region sounds and is drawn with**, `(in, out)`: its
+    /// own fade where it states one, the multitrack's default where it does
+    /// not, and a butt edge where neither has one. Two that would overlap
+    /// inside a short region are cut in proportion so they meet and do not
+    /// cross: the trapezoid becomes a triangle, never a dip.
     ///
     /// The one reading of the rule, so a player, a picture and a join cannot
     /// disagree about what an edge sounds like.
-    pub fn fades(&self, defaults: &Defaults) -> (f64, f64) {
-        let length = self.length.get().max(0.0);
+    pub fn edges(&self, defaults: &Defaults) -> (Edge, Edge) {
         let edge = |own: &Option<Fade>| {
-            own.as_ref()
-                .or(defaults.fade.as_ref())
-                .map_or(0.0, |f| f.length.get().max(0.0).min(length))
+            let fade = own.as_ref().or(defaults.fade.as_ref());
+            fade.map_or(
+                Edge {
+                    length: 0.0,
+                    shape: equal_power(),
+                    curve: 0.0,
+                },
+                |f| Edge {
+                    length: f.length.get().max(0.0),
+                    shape: f.shape,
+                    curve: f.curve,
+                },
+            )
         };
-        (edge(&self.fade_in), edge(&self.fade_out))
+        let (mut fade_in, mut fade_out) = (edge(&self.fade_in), edge(&self.fade_out));
+        let length = self.length.get().max(0.0);
+        let both = fade_in.length + fade_out.length;
+        if both > length && both > 0.0 {
+            let k = length / both;
+            fade_in.length *= k;
+            fade_out.length *= k;
+        }
+        (fade_in, fade_out)
+    }
+
+    /// The lengths of [`Self::edges`], in seconds.
+    pub fn fades(&self, defaults: &Defaults) -> (f64, f64) {
+        let (fade_in, fade_out) = self.edges(defaults);
+        (fade_in.length, fade_out.length)
     }
 
     /// A region placed at `position`, `length` long, filled with `content`.
@@ -819,7 +917,7 @@ pub struct Defaults {
 pub const DEFAULT_FADE: f64 = 0.010;
 
 fn default_fade() -> Option<Fade> {
-    Some(Fade::of(Second(DEFAULT_FADE)))
+    Some(Fade::default())
 }
 
 impl Default for Defaults {
