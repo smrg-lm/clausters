@@ -1013,3 +1013,134 @@ fn a_channel_group_is_edited_and_removed_as_one() {
         .unwrap();
     assert_eq!(sequence.automation.len(), 1, "the group went whole");
 }
+
+// ---- the rules the vocabulary keeps, over every verb ----
+
+/// A chord whose channel-0 notes each hold a bend of their own, and a
+/// sequence curve beside them: what every verb has something to act on in.
+/// Answers the sequence curve's id and the first note's bend's.
+fn every_verb_fixture() -> (EventSequence, NodeId, NodeId) {
+    let mut s = chord();
+    let bend = s
+        .edit(EventsIntent::Automation {
+            automation: ramp(
+                json!({"bend": true, "channel": 0}),
+                &[(0.0, 0.0), (4.0, 4.0)],
+            ),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    s.edit(EventsIntent::AutomationToEvents {
+        curve: NodeId(bend),
+    })
+    .unwrap();
+    let cc = s
+        .edit(EventsIntent::Automation {
+            automation: ramp(json!({"cc": 74, "channel": 0}), &[(0.0, 0.0), (4.0, 1.0)]),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    let held = s.events[0].automation[0].id;
+    (s, NodeId(cc), held)
+}
+
+/// One of each verb over [`every_verb_fixture`], checked like the
+/// multitrack's: an exhaustive match numbers the verbs, so a new one fails
+/// to compile until it has an entry here.
+fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
+    let all = vec![
+        EventsIntent::SetEvents {
+            events: vec![note(3.0, 48)],
+        },
+        EventsIntent::Add {
+            event: note(5.0, 70),
+        },
+        EventsIntent::Remove { id: 4 },
+        EventsIntent::Move {
+            id: 4,
+            at: Beat(2.5),
+        },
+        EventsIntent::Set {
+            id: 4,
+            key: "midinote".into(),
+            value: json!(73),
+        },
+        EventsIntent::Keys {
+            id: 4,
+            data: Opaque(json!({"midinote": 59})),
+        },
+        EventsIntent::Tempo {
+            tempo_map: Some(TempoMap::new(3.0)),
+        },
+        EventsIntent::Automation {
+            automation: ramp(json!({"cc": 1}), &[(0.0, 0.5)]),
+        },
+        EventsIntent::RemoveAutomation { curve: cc },
+        EventsIntent::EventAutomation {
+            id: 4,
+            automation: ramp(json!({"pressure": true}), &[(0.0, 0.25)]),
+        },
+        EventsIntent::RemoveEventAutomation { id: 1, curve: held },
+        // MIDI 2.0, since 1.0 has no per-note bend and refuses the fixture
+        EventsIntent::Midi {
+            midi: Some(MidiSpec::Midi2),
+        },
+        EventsIntent::AutomationToEvents { curve: cc },
+        EventsIntent::EventsToAutomation {
+            target: Opaque(json!({"bend": true})),
+            channel: Some(0),
+        },
+        EventsIntent::Restore {
+            sequence: Box::new(EventSequence::new(vec![note(0.0, 48)])),
+        },
+    ];
+    let slot = |intent: &EventsIntent| match intent {
+        EventsIntent::SetEvents { .. } => 0,
+        EventsIntent::Add { .. } => 1,
+        EventsIntent::Remove { .. } => 2,
+        EventsIntent::Move { .. } => 3,
+        EventsIntent::Set { .. } => 4,
+        EventsIntent::Keys { .. } => 5,
+        EventsIntent::Tempo { .. } => 6,
+        EventsIntent::Automation { .. } => 7,
+        EventsIntent::RemoveAutomation { .. } => 8,
+        EventsIntent::EventAutomation { .. } => 9,
+        EventsIntent::RemoveEventAutomation { .. } => 10,
+        EventsIntent::Midi { .. } => 11,
+        EventsIntent::AutomationToEvents { .. } => 12,
+        EventsIntent::EventsToAutomation { .. } => 13,
+        EventsIntent::Restore { .. } => 14,
+    };
+    let mut seen = [false; 15];
+    for intent in &all {
+        assert!(!seen[slot(intent)], "{intent:?} is listed twice");
+        seen[slot(intent)] = true;
+    }
+    assert!(seen.iter().all(|s| *s), "a verb is missing");
+    all
+}
+
+#[test]
+fn every_verb_applies_and_inverts_to_the_sequence_it_started_from() {
+    use crate::history::Editable;
+    let (_, cc, held) = every_verb_fixture();
+    for intent in every_verb(cc, held) {
+        let (mut sequence, _, _) = every_verb_fixture();
+        let before = sequence.clone();
+        let edit = payload(&intent);
+        let Some(inverse) = sequence.current(&edit) else {
+            panic!("{intent:?} cannot be described, so it cannot be logged");
+        };
+        assert!(sequence.apply(&edit).applied, "{intent:?} did not apply");
+        assert!(
+            sequence.apply(&inverse).applied,
+            "{intent:?} did not invert"
+        );
+        // The id counter is the one thing an undo does not wind back: an id
+        // handed out is never handed out again.
+        sequence.next_id = before.next_id;
+        assert_eq!(sequence, before, "{intent:?}");
+    }
+}

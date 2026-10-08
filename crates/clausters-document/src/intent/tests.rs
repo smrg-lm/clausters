@@ -236,6 +236,45 @@ fn every_intent_is_absolute_and_reports_an_effective_value() {
 }
 
 #[test]
+fn every_intent_inverts_to_the_document_it_started_from() {
+    // The inverse is read out of the document before the edit lands, then
+    // applied: the tree is what it was. `WriteSamples` is the documented
+    // exception -- the samples it overwrote are not in the document, so its
+    // inverse is the empty write and the caller keeps the span -- and the
+    // match says so rather than leaving it out silently.
+    let intents = [
+        Intent::Place {
+            node: NodeId(2),
+            offset: 1.0,
+            dur: Some(2.0),
+        },
+        Intent::Configure {
+            node: NodeId(2),
+            config: config(serde_json::json!({"amp": 0.5})),
+        },
+        Intent::SetMembers {
+            node: NodeId(1),
+            members: vec![placed(0.0, clang(2))],
+        },
+    ];
+    for intent in &intents {
+        match intent {
+            Intent::Place { .. } | Intent::Configure { .. } | Intent::SetMembers { .. } => {}
+            Intent::WriteSamples { .. } => unreachable!("not invertible from the document"),
+        }
+        let mut d = doc();
+        let before = d.root.clone();
+        let inverse = crate::log::inverse_of(&d, intent).expect("an inverse");
+        assert!(apply(&mut d, intent, &Against::unstated(), &Rules::none()).applied);
+        assert!(
+            apply(&mut d, &inverse, &Against::unstated(), &Rules::none()).applied,
+            "{intent:?} did not invert"
+        );
+        assert_eq!(d.root, before, "{intent:?}");
+    }
+}
+
+#[test]
 fn a_configuration_is_replaced_whole_rather_than_patched() {
     // A patch is a delta by another name: two overlapping patches applied out
     // of order give two different documents, which is what the absolute rule
