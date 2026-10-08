@@ -614,11 +614,18 @@ take lane *and* second, and an intent is absolute — so `placeregion` states al
 together. One entry in a history, one undo, and no moment in between where the
 region is on no take lane at all.
 
+**A region's fades are its own, with a default.** Every edge of a region —
+a box of samples or a box of notes alike — fades: by its own `fade_in`/`fade_out` where
+it states one, and by the multitrack's default where it does not, which is
+10 ms of equal power until `multitrack.default_fade` says otherwise (`None` for none at all).
+
 **A crossfade is two fades over an overlap**, not a third object. Two regions
 on one take lane that overlap crossfade by themselves: the earlier one's fade out
 and the later one's fade in are stretched to cover the overlap, so the more they
 overlap the longer the crossfade, and there is no crossfade to lose track of or
-keep in step with the two fades. That is a facility of the multitrack and it can
+keep in step with the two fades. Only an edge on the default is stretched: an
+edge the region states — drawn by a hand, set by a script — is kept, shorter
+or longer than the overlap. That is a facility of the multitrack and it can
 be turned off — `multitrack.crossfade = False`, a `setdefaults` edit like any other — after
 which each region keeps the fades it states and an overlap is the two summed.
 

@@ -97,6 +97,24 @@ pub struct PlannedReader {
     pub fade_out_shape: (i32, f64),
 }
 
+/// **A box of notes' edges**: where it is on the transport and the fades it
+/// plays its voices through (`mixer::input_def`) -- what a reader carries for
+/// a box of samples, with nothing to read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlannedEdges {
+    /// Where the box begins on the transport, in frames.
+    pub at: f64,
+    /// How long it lasts, in frames.
+    pub span: f64,
+    /// The fade in, in frames from where it starts.
+    pub fade_in: f64,
+    /// The fade out, in frames before where it ends.
+    pub fade_out: f64,
+    /// The two fades' segment shapes and curvatures, `(shape, curve)`.
+    pub fade_in_shape: (i32, f64),
+    pub fade_out_shape: (i32, f64),
+}
+
 fn equal_power() -> (i32, f64) {
     (clausters_core::envshape::SHAPE_WELCH, 0.0)
 }
@@ -147,6 +165,10 @@ pub struct PlannedClip {
     /// reads it where a box of samples reads its source.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub voices: usize,
+    /// **A box of notes' edges**, which its voice bus is heard through; `None`
+    /// for a box of samples, whose readers carry them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edges: Option<PlannedEdges>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -400,6 +422,18 @@ pub fn plan_voiced(
                 if !widths.contains(&pair) {
                     widths.push(pair);
                 }
+                // **Its fades, as a box of samples has them**: a region's edges
+                // are the region's whatever fills it.
+                let (edge_in, edge_out) = lane.edges(region, &multitrack.defaults);
+                let span = frames(region.length.get()).max(0.0);
+                let edges = PlannedEdges {
+                    at: frames(region.position.get()),
+                    span,
+                    fade_in: frames(edge_in.length).min(span),
+                    fade_out: frames(edge_out.length).min(span),
+                    fade_in_shape: (edge_in.shape, edge_in.curve),
+                    fade_out_shape: (edge_out.shape, edge_out.curve),
+                };
                 clips.push(PlannedClip {
                     region: region.id,
                     slot: mixer::VOICE_SLOT.to_string(),
@@ -413,6 +447,7 @@ pub fn plan_voiced(
                         sample_rate,
                     ),
                     voices: mixer::VOICE_CHANNELS,
+                    edges: Some(edges),
                 });
                 continue;
             }
@@ -492,6 +527,7 @@ pub fn plan_voiced(
                     sample_rate,
                 ),
                 voices: 0,
+                edges: None,
             });
         }
         tracks.push(PlannedTrack {
@@ -797,6 +833,19 @@ mod tests {
         assert_eq!(notes.voices, mixer::VOICE_CHANNELS);
         assert!(notes.readers.is_empty());
         assert_eq!(notes.mute, 1.0, "the box's own mute is its strip's");
+        let region = multitrack.tracks[0].take_lanes[0].regions[1].clone();
+        let edges = notes.edges.as_ref().expect("a box of notes has its edges");
+        assert_eq!(edges.at, region.position.get() * 48_000.0);
+        assert_eq!(edges.span, region.length.get() * 48_000.0);
+        assert_eq!(
+            edges.fade_in,
+            crate::multitrack::DEFAULT_FADE * 48_000.0,
+            "and fades in by the multitrack's default, as a box of samples does"
+        );
+        assert!(
+            clips[0].edges.is_none(),
+            "a box of samples' readers carry them"
+        );
         assert!(
             planned
                 .widths

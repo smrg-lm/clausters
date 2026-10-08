@@ -833,6 +833,22 @@ impl Instance {
                     },
                 );
             }
+            // **And plays its edges through it**, the fades a reader plays for
+            // a box of samples.
+            if let Some(edges) = &clip.edges {
+                for (port, value) in [
+                    (mixer::AT, edges.at),
+                    (mixer::SPAN, edges.span),
+                    (mixer::FADE_IN, edges.fade_in),
+                    (mixer::FADE_OUT, edges.fade_out),
+                    (mixer::FADE_IN_SHAPE, f64::from(edges.fade_in_shape.0)),
+                    (mixer::FADE_IN_CURVE, edges.fade_in_shape.1),
+                    (mixer::FADE_OUT_SHAPE, f64::from(edges.fade_out_shape.0)),
+                    (mixer::FADE_OUT_CURVE, edges.fade_out_shape.1),
+                ] {
+                    ports.insert(port.to_string(), Port::Number(value));
+                }
+            }
             let held = self.clips.get(&id).cloned();
             // **What a `set` cannot express.** A source of another width is
             // another clip def, so that clip is made again. A clip that changed

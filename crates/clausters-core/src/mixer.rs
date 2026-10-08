@@ -914,12 +914,21 @@ pub fn clip_graph(inputs: usize, outputs: usize) -> Result<Value, String> {
 }
 
 /// **A box's voice bus onto its clip**: [`VOICE_CHANNELS`] channels read off
-/// the buses `in0..` name and written onto `out0..`, at unity.
+/// the buses `in0..` name and written onto `out0..`, through the box's fades.
 ///
 /// Each bus index is a control of its own, as a reader's are
 /// ([`reader_def`]), rather than a base and an offset: the wiring is whole in
 /// the graph that holds it, and the group's sort orders the `In` and the
 /// `Out` by controls it reads with nothing worked out.
+///
+/// # A box of notes fades as a box of samples does
+///
+/// A region's fades are its edges whatever fills it, so the voices are heard
+/// through the very envelope a reader plays ([`reader_def`]): [`AT`] and
+/// [`SPAN`] say where the box is on the transport, [`FADE_IN`] and
+/// [`FADE_OUT`] how long its edges are, in frames, and the shapes theirs.
+/// Outside the box the envelope is silence, as a reader's gate is: a note's
+/// tail past the box's end is cut there, as a recording past it is.
 pub fn input_def() -> Value {
     let mut controls = Vec::new();
     for channel in 0..VOICE_CHANNELS {
@@ -928,13 +937,53 @@ pub fn input_def() -> Value {
     for channel in 0..VOICE_CHANNELS {
         controls.push(control(&format!("out{channel}"), 0.0));
     }
-    let mut ugens = Vec::new();
+    let edges = 2 * VOICE_CHANNELS;
+    controls.extend([
+        control(AT, 0.0),
+        control(SPAN, 0.0),
+        control(FADE_IN, 0.0),
+        control(FADE_OUT, 0.0),
+        control(FADE_IN_SHAPE, envshape::SHAPE_WELCH as f32),
+        control(FADE_IN_CURVE, 0.0),
+        control(FADE_OUT_SHAPE, envshape::SHAPE_WELCH as f32),
+        control(FADE_OUT_CURVE, 0.0),
+    ]);
+    let (at, span, fade_in, fade_out) = (edges, edges + 1, edges + 2, edges + 3);
+    let (in_shape, in_curve, out_shape, out_curve) = (edges + 4, edges + 5, edges + 6, edges + 7);
+    // The reader's envelope, ugen for ugen ([`reader_def`], 0..3 and 13..22):
+    // the gate, the fade in and the fade out, multiplied.
+    let mut ugens = vec![
+        // 0..3: engine samples since the box began, and whether that is inside it.
+        json!({"kind": "TransportPos", "inputs": [{"control": at}]}),
+        json!({"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0.0}]}),
+        json!({"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": span}]}),
+        json!({"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]}),
+        // 4..7: the fade in.
+        json!({"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": fade_in}, {"const": 1.0}]}),
+        json!({"kind": "Add", "inputs": [{"ugen": 0}, {"const": 1.0}]}),
+        json!({"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 5}, {"ugen": 4}]}),
+        json!({"kind": "EnvShape", "inputs": [
+            {"ugen": 6}, {"const": 0.0}, {"const": 1.0}, {"control": in_shape}, {"control": in_curve}
+        ]}),
+        // 8..12: the fade out.
+        json!({"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": fade_out}, {"const": 1.0}]}),
+        json!({"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"control": span}, {"ugen": 0}]}),
+        json!({"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 9}, {"ugen": 8}]}),
+        json!({"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"const": 1.0}, {"ugen": 10}]}),
+        json!({"kind": "EnvShape", "inputs": [
+            {"ugen": 11}, {"const": 1.0}, {"const": 0.0}, {"control": out_shape}, {"control": out_curve}
+        ]}),
+        // 13..14: the envelope, gated.
+        json!({"kind": "Mul", "inputs": [{"ugen": 7}, {"ugen": 12}]}),
+        json!({"kind": "Mul", "inputs": [{"ugen": 13}, {"ugen": 3}]}),
+    ];
+    let envelope = 14;
     for channel in 0..VOICE_CHANNELS {
+        let read = ugens.len();
         ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
-    }
-    for channel in 0..VOICE_CHANNELS {
+        ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": read}, {"ugen": envelope}]}));
         ugens.push(json!({"kind": "Out", "inputs": [
-            {"control": VOICE_CHANNELS + channel}, {"ugen": channel}]}));
+            {"control": VOICE_CHANNELS + channel}, {"ugen": read + 1}]}));
     }
     json!({ "name": input_name(), "controls": controls, "ugens": ugens })
 }
@@ -959,6 +1008,15 @@ pub fn voices_graph(outputs: usize) -> Result<Value, String> {
         PAN:   [{"member": 0, "control": PAN}],
         WIDTH: [{"member": 0, "control": WIDTH}],
         MUTE:  [{"member": 0, "control": MUTE}],
+        // The box's edges, which the input plays (`input_def`).
+        AT:       [{"member": 1, "control": AT}],
+        SPAN:     [{"member": 1, "control": SPAN}],
+        FADE_IN:  [{"member": 1, "control": FADE_IN}],
+        FADE_OUT: [{"member": 1, "control": FADE_OUT}],
+        FADE_IN_SHAPE:  [{"member": 1, "control": FADE_IN_SHAPE}],
+        FADE_IN_CURVE:  [{"member": 1, "control": FADE_IN_CURVE}],
+        FADE_OUT_SHAPE: [{"member": 1, "control": FADE_OUT_SHAPE}],
+        FADE_OUT_CURVE: [{"member": 1, "control": FADE_OUT_CURVE}],
     });
     for channel in 0..inputs {
         wiring.insert(format!("out{channel}"), json!(format!("src:{channel}")));

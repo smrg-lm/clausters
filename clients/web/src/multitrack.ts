@@ -1916,10 +1916,6 @@ export class Multitrack implements CurveHolder {
     }
 
     /**
-     * Where the loop is, or `undefined`. Whether looping is *on* is the
-     * transport's; what the multitrack holds is where.
-     */
-    /**
      * **Whether two regions that overlap crossfade by themselves**: on, the
      * overlap stretches the earlier one's fade out and the later one's fade in
      * to cover it; off, each keeps the fades it states and the overlap is the
@@ -1936,6 +1932,33 @@ export class Multitrack implements CurveHolder {
         this.editIntent({ intent: "setdefaults", defaults }, "crossfade overlaps");
     }
 
+    /**
+     * **The fade every region's edge has unless the region states one**: 10 ms
+     * of equal power when nothing was set, and `undefined` for none at all in
+     * this multitrack, where a region that states nothing meets the silence
+     * beside it as a step. A region's own {@link Region.fadeIn} and
+     * {@link Region.fadeOut} win over it; one left `undefined` follows it, and
+     * so is the edge an overlap stretches into a crossfade. Set like any edit.
+     */
+    get defaultFade(): Fade | undefined {
+        const defaults = (this.write().defaults ?? {}) as Extra;
+        if (!("fade" in defaults)) return new Fade(0.01);
+        const fade = defaults.fade as Extra | null;
+        return fade === null ? undefined : Fade.read(fade);
+    }
+
+    set defaultFade(fade: Fade | undefined) {
+        const defaults: Extra = {
+            ...((this.write().defaults ?? {}) as Extra),
+            fade: fade === undefined ? null : fade.write(),
+        };
+        this.editIntent({ intent: "setdefaults", defaults }, "set the default fade");
+    }
+
+    /**
+     * Where the loop is, or `undefined`. Whether looping is *on* is the
+     * transport's; what the multitrack holds is where.
+     */
     get loopSpan(): Span | undefined {
         const span = this.write().loop_span as Extra | undefined;
         return span ? Span.read(span) : undefined;

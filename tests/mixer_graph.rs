@@ -1369,6 +1369,10 @@ fn one_box_of_notes(s: &mut NrtSession, bus: i32) -> (i32, i32, i32, i32) {
             OscType::Float(bus as f32),
             OscType::String(mixer::voice_port(1)),
             OscType::Float((bus + 1) as f32),
+            // The box's own extent, which its voices are heard inside: from
+            // the transport's start, for far longer than any test runs.
+            OscType::String(mixer::SPAN.into()),
+            OscType::Float(1.0e9),
         ],
     );
     // **The voices' group goes before the multitrack**, so a voice writes its

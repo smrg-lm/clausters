@@ -225,6 +225,13 @@ test("each field is written through the multitrack's own verb", () => {
     multitrack.crossfade = false;
     assert.equal(multitrack.crossfade, false);
     assert.equal((multitrack.write().defaults as { crossfade?: boolean }).crossfade, false);
+    assert.deepEqual(multitrack.defaultFade, new Fade(0.01), "10 ms unless set");
+    multitrack.defaultFade = new Fade(0.05, "lin");
+    assert.deepEqual(multitrack.defaultFade, new Fade(0.05, "lin"));
+    multitrack.defaultFade = undefined;
+    assert.equal(multitrack.defaultFade, undefined);
+    assert.equal((multitrack.write().defaults as { fade?: unknown }).fade, null);
+    assert.equal(multitrack.crossfade, false, "one default set leaves the other");
     assert.ok(multitrack.version > 1, "every edit moves the multitrack's version");
 });
 

@@ -1728,6 +1728,27 @@ class Multitrack:
                    "crossfade overlaps")
 
     @property
+    def default_fade(self) -> "Fade | None":
+        """**The fade every region's edge has unless the region states one**:
+        10 ms of equal power when nothing was set, and ``None`` for none at all
+        in this multitrack, where a region that states nothing meets the
+        silence beside it as a step. A region's own `Region.fade_in` and
+        `Region.fade_out` win over it; one left at ``None`` follows it, and so
+        is the edge an overlap stretches into a crossfade. Set like any edit."""
+        defaults = self.write().get("defaults", {})
+        if "fade" not in defaults:
+            return Fade(0.010)
+        fade = defaults["fade"]
+        return None if fade is None else Fade.read(fade)
+
+    @default_fade.setter
+    def default_fade(self, fade: "Fade | None") -> None:
+        defaults = dict(self.write().get("defaults", {}))
+        defaults["fade"] = None if fade is None else fade.write()
+        self._edit({"intent": "setdefaults", "defaults": defaults},
+                   "set the default fade")
+
+    @property
     def loop_span(self) -> "Span | None":
         """Where the loop is, or ``None``. Whether looping is *on* is the
         transport's; what the multitrack holds is where."""

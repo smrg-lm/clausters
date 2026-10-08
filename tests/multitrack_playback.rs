@@ -276,6 +276,69 @@ fn a_tracks_gain_curve_reaches_a_note_its_own_curves_shape() {
 fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::PlacedCurve>) {
     use clausters_document::multitrack::Automation;
     use clausters_document::{Opaque, Point};
+
+    let opens = (64 * BLOCK) as f64 / SR;
+    // The track's gain: closed, then open from `opens` on.
+    let point = |at: f64, value: f64| Point {
+        at,
+        value,
+        data: Opaque::none(),
+    };
+    let mut gain = Automation::new(NodeId(30), Opaque(serde_json::json!({"port": "gain"})));
+    gain.points = vec![
+        point(0.0, 0.0),
+        point(opens, 0.0),
+        point(opens + BLOCK as f64 / SR, 1.0),
+    ];
+    let left = a_note_in_a_box(curves, |multitrack| {
+        multitrack.tracks[0].automation = vec![gain];
+    });
+    let closed = &left[8 * BLOCK..56 * BLOCK];
+    let open = &left[96 * BLOCK..160 * BLOCK];
+    let peak = |frames: &[f32]| frames.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(
+        peak(closed) < 1e-3,
+        "under a closed track the note is not heard: {}",
+        peak(closed)
+    );
+    assert!(
+        (peak(open) - 0.5).abs() < 0.02,
+        "and under an open one it is, at its own level: {}",
+        peak(open)
+    );
+}
+
+/// **A box of notes fades at its own edges**, as a box of samples does: a
+/// constant note over a box of a fifth of a second with a straight fade of
+/// 50 ms at each end is at half its level half way into either, and silent
+/// past the box's end.
+#[test]
+fn a_box_of_notes_fades_at_its_own_edges() {
+    let linear = clausters_core::envshape::SHAPE_LINEAR;
+    let left = a_note_in_a_box(Vec::new(), |multitrack| {
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
+        region.length = Second(0.2);
+        region.fade_in = Some(Fade::of(Second(0.05)).shaped(linear, 0.0));
+        region.fade_out = Some(Fade::of(Second(0.05)).shaped(linear, 0.0));
+    });
+    let at = |secs: f64| left[(secs * SR) as usize];
+    let near = |got: f32, want: f32, what: &str| {
+        assert!((got - want).abs() < 0.01, "{what}: {got}, not {want}");
+    };
+    near(at(0.025), 0.25, "half way into the fade in");
+    near(at(0.1), 0.5, "between the fades, the note's own level");
+    near(at(0.175), 0.25, "half way into the fade out");
+    near(at(0.21), 0.0, "and past the box, nothing");
+}
+
+/// One note of half amplitude, a constant, over a box of a second that is
+/// the only one on its track, with `curves` of its own and the multitrack as
+/// `shape` leaves it: the left channel of what is heard, over its first
+/// quarter second.
+fn a_note_in_a_box(
+    curves: Vec<clausters_editing::notes_playback::PlacedCurve>,
+    shape: impl FnOnce(&mut Multitrack),
+) -> Vec<f32> {
     use clausters_editing::notes_playback::{Placed, Placement};
 
     let mut s = NrtSession::open(&SessionConfig {
@@ -306,7 +369,6 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
     s.settle_for(4);
 
     // A box of a second, whose source is a sequence: no buffer is behind it.
-    let opens = (64 * BLOCK) as f64 / SR;
     let mut multitrack = Multitrack {
         tracks: vec![Track::new(NodeId(10), NodeId(11))],
         ..Multitrack::default()
@@ -326,19 +388,7 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
             duration: 1.0,
         }),
     ));
-    // The track's gain: closed, then open from `opens` on.
-    let point = |at: f64, value: f64| Point {
-        at,
-        value,
-        data: Opaque::none(),
-    };
-    let mut gain = Automation::new(NodeId(30), Opaque(serde_json::json!({"port": "gain"})));
-    gain.points = vec![
-        point(0.0, 0.0),
-        point(opens, 0.0),
-        point(opens + BLOCK as f64 / SR, 1.0),
-    ];
-    multitrack.tracks[0].automation = vec![gain];
+    shape(&mut multitrack);
 
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
     let mut playback = MultitrackPlayback::new(Endpoint::default());
@@ -374,19 +424,7 @@ fn under_a_tracks_gain_curve(curves: Vec<clausters_editing::notes_playback::Plac
         left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
         s.settle_for(1);
     }
-    let closed = &left[8 * BLOCK..56 * BLOCK];
-    let open = &left[96 * BLOCK..160 * BLOCK];
-    let peak = |frames: &[f32]| frames.iter().fold(0.0f32, |m, x| m.max(x.abs()));
-    assert!(
-        peak(closed) < 1e-3,
-        "under a closed track the note is not heard: {}",
-        peak(closed)
-    );
-    assert!(
-        (peak(open) - 0.5).abs() < 0.02,
-        "and under an open one it is, at its own level: {}",
-        peak(open)
-    );
+    left
 }
 
 /// **A region's own fades are heard at its edges**, each an envelope segment in

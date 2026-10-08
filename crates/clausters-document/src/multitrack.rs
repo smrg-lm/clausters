@@ -488,7 +488,10 @@ impl TakeLane {
     /// What counts as an overlap, decided 2026-10-08: a neighbour that starts
     /// before `region` and ends inside it stretches its fade in; one that
     /// starts inside it and ends after it stretches its fade out; a stretch
-    /// never shortens a fade. A region **inside** another, or two that start
+    /// never shortens a fade. **Only an edge on the default is stretched**: an
+    /// edge the region states -- a hand drew it, a script set it -- is the
+    /// region's word on that edge and is kept, shorter or longer than the
+    /// overlap, so a crossfade dragged shorter stays short. A region **inside** another, or two that start
     /// or end on the same instant, keep their own fades -- there is no side
     /// for one to fade out on while the other fades in. A muted region crosses
     /// with nobody. Several neighbours: each edge takes the longest overlap
@@ -503,10 +506,10 @@ impl TakeLane {
                     continue;
                 }
                 let (o_start, o_end) = (other.position.get(), other.end().get());
-                if o_start < start && o_end > start && o_end < end {
+                if region.fade_in.is_none() && o_start < start && o_end > start && o_end < end {
                     fade_in.length = fade_in.length.max(o_end - start);
                 }
-                if o_start > start && o_start < end && o_end > end {
+                if region.fade_out.is_none() && o_start > start && o_start < end && o_end > end {
                     fade_out.length = fade_out.length.max(end - o_start);
                 }
             }
@@ -1509,8 +1512,8 @@ mod tests {
     }
 
     /// **The edge cases**: a region inside another keeps its own fades and so
-    /// does the one around it; a muted region crosses with nobody; a stretch
-    /// never shortens a fade a region states; and two stretched fades that
+    /// does the one around it; a muted region crosses with nobody; a fade a
+    /// region states is kept, longer or shorter; and two stretched fades that
     /// would cross are cut in proportion.
     #[test]
     fn the_edge_cases_of_an_overlap() {
@@ -1546,6 +1549,18 @@ mod tests {
             lane.edges(a, &defaults).1.length,
             1.5,
             "longer than the overlap: kept"
+        );
+        lane.regions[0].fade_out = Some(Fade::of(Second(0.25)));
+        let a = &lane.regions[0];
+        assert_eq!(
+            lane.edges(a, &defaults).1.length,
+            0.25,
+            "shorter than the overlap, as a hand left it: kept too"
+        );
+        assert_eq!(
+            lane.edges(&lane.regions[1], &defaults).0.length,
+            1.0,
+            "while the other side, on the default, still covers the overlap"
         );
 
         // Overlapped on both sides by most of itself: one second in and a

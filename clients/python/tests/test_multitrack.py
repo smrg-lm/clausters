@@ -123,6 +123,13 @@ def test_each_field_is_written_through_the_multitrack_s_own_verb():
     multitrack.crossfade = False
     assert not multitrack.crossfade
     assert multitrack.write()["defaults"]["crossfade"] is False
+    assert multitrack.default_fade == Fade(0.010), "10 ms unless set"
+    multitrack.default_fade = Fade(0.05, shape="lin")
+    assert multitrack.default_fade == Fade(0.05, shape="lin")
+    multitrack.default_fade = None
+    assert multitrack.default_fade is None
+    assert multitrack.write()["defaults"]["fade"] is None
+    assert not multitrack.crossfade, "one default set leaves the other"
     assert multitrack.version > 1, "every edit moves the multitrack's version"
 
 
