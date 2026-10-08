@@ -44,7 +44,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Content, Fade, Marker, Meter, Multitrack, Region, Span, Tempo, Track};
+use super::{Content, Defaults, Fade, Marker, Meter, Multitrack, Region, Span, Tempo, Track};
 use crate::history::{Applied, Editable};
 use crate::intent::{Against, Outcome, Rules};
 use crate::session::Source;
@@ -314,6 +314,13 @@ pub enum MultitrackIntent {
         /// The entries; kept in position order.
         meter: Vec<Meter>,
     },
+    /// What the multitrack's defaults are now, whole -- the fade a region
+    /// that states none takes, and whether overlaps crossfade by themselves.
+    /// Small, and stated whole for the reason the tempo map is.
+    SetDefaults {
+        /// The defaults.
+        defaults: Defaults,
+    },
 }
 
 impl MultitrackIntent {
@@ -334,6 +341,7 @@ impl MultitrackIntent {
             Self::RemoveMarker { .. } => "removemarker",
             Self::SetRange { .. } => "setrange",
             Self::SetTempoMap { .. } => "settempomap",
+            Self::SetDefaults { .. } => "setdefaults",
             Self::SetMeterMap { .. } => "setmetermap",
         }
     }
@@ -359,7 +367,7 @@ impl MultitrackIntent {
             }
             Self::SetMarker { marker, .. } | Self::RemoveMarker { marker } => Some(*marker),
             Self::SetTracks { .. } | Self::SetRange { .. } => None,
-            Self::SetTempoMap { .. } | Self::SetMeterMap { .. } => None,
+            Self::SetTempoMap { .. } | Self::SetMeterMap { .. } | Self::SetDefaults { .. } => None,
         }
     }
 
@@ -413,7 +421,8 @@ impl MultitrackIntent {
             | Self::RemoveMarker { .. }
             | Self::SetRange { .. }
             | Self::SetTempoMap { .. }
-            | Self::SetMeterMap { .. } => {}
+            | Self::SetMeterMap { .. }
+            | Self::SetDefaults { .. } => {}
         }
         out
     }
@@ -536,6 +545,7 @@ fn edit(
         MultitrackIntent::RemoveMarker { marker } => remove_marker(multitrack, *marker),
         MultitrackIntent::SetRange { range, span } => set_range(multitrack, *range, *span),
         MultitrackIntent::SetTempoMap { tempo } => set_tempo_map(multitrack, tempo),
+        MultitrackIntent::SetDefaults { defaults } => set_defaults(multitrack, defaults),
         MultitrackIntent::SetMeterMap { meter } => set_meter_map(multitrack, meter),
     }
 }
@@ -638,6 +648,9 @@ pub fn current(multitrack: &Multitrack, intent: &MultitrackIntent) -> Option<Mul
         }),
         MultitrackIntent::SetMeterMap { .. } => Some(MultitrackIntent::SetMeterMap {
             meter: multitrack.meter.clone(),
+        }),
+        MultitrackIntent::SetDefaults { .. } => Some(MultitrackIntent::SetDefaults {
+            defaults: multitrack.defaults.clone(),
         }),
     }
 }
@@ -1072,6 +1085,17 @@ fn set_tempo_map(multitrack: &mut Multitrack, tempo: &[Tempo]) -> Outcome<Multit
         return Outcome::unchanged(stated);
     }
     multitrack.tempo = ordered;
+    Outcome::changed(stated)
+}
+
+fn set_defaults(multitrack: &mut Multitrack, defaults: &Defaults) -> Outcome<MultitrackIntent> {
+    let stated = MultitrackIntent::SetDefaults {
+        defaults: defaults.clone(),
+    };
+    if multitrack.defaults == *defaults {
+        return Outcome::unchanged(stated);
+    }
+    multitrack.defaults = defaults.clone();
     Outcome::changed(stated)
 }
 

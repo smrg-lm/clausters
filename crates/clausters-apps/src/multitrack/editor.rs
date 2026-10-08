@@ -35,7 +35,7 @@ use serde_json::{Map, Value, json};
 
 use clausters_core::tempoclock::samples_to_secs;
 use clausters_document::multitrack::Multitrack;
-use clausters_document::multitrack::edit::MULTITRACK;
+use clausters_document::multitrack::edit::{MULTITRACK, MultitrackIntent};
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Opaque, SourceId, domain};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
@@ -705,6 +705,7 @@ impl MultitrackEditor {
                         | PAUSE_VERB
                         | STOP_VERB
                         | STOP_AT_END_VERB
+                        | CROSSFADE_VERB
                         | NOTES_ROLL_VERB
                         | NOTES_SCORE_VERB
                 ))
@@ -1002,6 +1003,15 @@ impl MultitrackEditor {
             out.transport = Some(TransportVerb::StopAtEnd);
             return (None, Vec::new());
         }
+        // **The automatic crossfade, on or off**: the multitrack's own default,
+        // so an edit -- recorded, undone, and answered with the fades it moved.
+        if self.window.map(i64::from) == Some(widget) && tag == CROSSFADE_VERB {
+            let mut defaults = self.multitrack().defaults.clone();
+            defaults.crossfade = !defaults.crossfade;
+            let payload = serde_json::to_value(MultitrackIntent::SetDefaults { defaults })
+                .unwrap_or_default();
+            return self.edited(vec![payload], "crossfade overlaps".into(), out);
+        }
         // **The View menu's two ways to draw a box of notes**: the window's
         // own state, so nothing is recorded and the picture is corrected
         if self.window.map(i64::from) == Some(widget)
@@ -1079,12 +1089,24 @@ impl MultitrackEditor {
         } else {
             taken.label
         };
+        self.edited(taken.payloads, label, out)
+    }
+
+    /// **Applies `payloads` as one edit labelled `label`**: recorded with the
+    /// payloads that put it back, the version moved, and answered with what
+    /// the owner works out from it when that moved.
+    fn edited(
+        &mut self,
+        payloads: Vec<Value>,
+        label: String,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
         // **What the owner works out from what the hand moved**, before the
         // edit: see `derived` below.
         let before = self.widget.map(|id| self.derived(id));
         let mut legs = Vec::new();
         let mut moved = false;
-        for payload in &taken.payloads {
+        for payload in &payloads {
             if let Some(source) = minted(payload) {
                 self.learn(&source);
                 out.minted.push(source);
@@ -1249,6 +1271,11 @@ pub const STOP_VERB: &str = "stop";
 /// **The window's end switch**: whether a pass stops where the contents end
 /// or rolls on -- a key, the Transport menu's entry and the tool beside Loop.
 pub const STOP_AT_END_VERB: &str = "stop_at_end";
+/// **The automatic crossfade, on or off**, as the window asks for it: a flip
+/// of [`Defaults::crossfade`](clausters_document::multitrack::Defaults), the
+/// multitrack's own state, through the same `SetDefaults` edit a client's
+/// `Multitrack.crossfade` makes. The Edit menu's entry is one caller of it.
+pub const CROSSFADE_VERB: &str = "crossfade";
 
 /// The scope of the key table the multitrack window's own verbs are in.
 pub const KEYS: &str = "multitrack";
@@ -1794,6 +1821,41 @@ mod tests {
                 "{thirteen:?}"
             );
         }
+    }
+
+    /// **The window's crossfade verb is an edit of the multitrack's
+    /// defaults** -- recorded, undone -- answered with the fades it moved, the
+    /// overlap no longer stretching them. The state is the document's: the
+    /// verb arrives here from the Edit menu, and a client sets the same
+    /// default through `Multitrack.crossfade` with no window at all.
+    #[test]
+    fn the_crossfade_switch_is_an_edit_answered_with_the_fades() {
+        let mut ed = editor();
+        let over = boxes(&[("12", "10", 3.0), ("13", "10", 4.0), ("22", "20", 0.0)]);
+        ed.event(&event(40, 5, 1, "clips", over), 1);
+        assert!(ed.multitrack().defaults.crossfade, "on unless turned off");
+
+        let menu = event(39, 6, 2, crate::turn::MENU, vec![json!(CROSSFADE_VERB)]);
+        let out = ed.event(&menu, 2);
+        assert!(!ed.multitrack().defaults.crossfade);
+        assert!(out.changed);
+        let record = out.record.expect("recorded, so it can be undone");
+        let Some(Answer::Push { corrections, .. }) = out.answer else {
+            panic!("the fades it moved are told: {:?}", out.answer);
+        };
+        let fade_out: Vec<f64> = corrections[0].props["points"]
+            .as_array()
+            .unwrap()
+            .chunks(5)
+            .filter(|p| p[0] == json!("fade:12"))
+            .map(|p| p[1].as_f64().unwrap())
+            .collect();
+        assert!(
+            fade_out[3] - fade_out[2] < 0.1 * SR,
+            "back to its own short fade: {fade_out:?}"
+        );
+        assert!(ed.apply(&record.legs[0].backward).applied);
+        assert!(ed.multitrack().defaults.crossfade, "undone");
     }
 
     /// A report of what already holds is not an edit: nothing recorded, the

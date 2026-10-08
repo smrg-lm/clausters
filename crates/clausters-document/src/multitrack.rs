@@ -482,6 +482,9 @@ impl TakeLane {
     /// equal-power fades (the default shape) cross at constant power. Nothing
     /// is stored: move either region and the crossfade follows.
     ///
+    /// Only while the multitrack's [`Defaults::crossfade`] is on: off, a region
+    /// keeps the fades it states whatever overlaps it.
+    ///
     /// What counts as an overlap, decided 2026-10-08: a neighbour that starts
     /// before `region` and ends inside it stretches its fade in; one that
     /// starts inside it and ends after it stretches its fade out; a stretch
@@ -493,7 +496,7 @@ impl TakeLane {
     /// cut in proportion, as [`Region::edges`] cuts them.
     pub fn edges(&self, region: &Region, defaults: &Defaults) -> (Edge, Edge) {
         let (mut fade_in, mut fade_out) = region.edges(defaults);
-        if !region.muted {
+        if defaults.crossfade && !region.muted {
             let (start, end) = (region.position.get(), region.end().get());
             for other in &self.regions {
                 if other.id == region.id || other.muted {
@@ -950,6 +953,13 @@ pub struct Defaults {
     /// step unless somebody asked for one.
     #[serde(default = "default_fade")]
     pub fade: Option<Fade>,
+    /// **Whether two regions that overlap crossfade by themselves**: on, the
+    /// overlap stretches the earlier one's fade out and the later one's fade in
+    /// to cover it ([`TakeLane::edges`]); off, each keeps the fades it states and
+    /// the overlap is two regions summed. An automatic crossfade is a facility,
+    /// and one that can be turned off. On when a file names nothing.
+    #[serde(default = "on", skip_serializing_if = "is_on")]
+    pub crossfade: bool,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
     pub extra: Extra,
@@ -964,10 +974,19 @@ fn default_fade() -> Option<Fade> {
     Some(Fade::default())
 }
 
+fn on() -> bool {
+    true
+}
+
+fn is_on(value: &bool) -> bool {
+    *value
+}
+
 impl Default for Defaults {
     fn default() -> Self {
         Self {
             fade: default_fade(),
+            crossfade: true,
             extra: Extra::new(),
         }
     }
@@ -1547,5 +1566,30 @@ mod tests {
             (fade_in.length / fade_out.length - 1.0 / 1.5).abs() < 1e-9,
             "in proportion"
         );
+    }
+
+    /// **The automatic crossfade can be turned off**: off, two regions that
+    /// overlap keep the fades they state, and the file says so -- while on,
+    /// the default, it writes nothing.
+    #[test]
+    fn the_automatic_crossfade_can_be_turned_off() {
+        let mut lane = TakeLane::new(NodeId(9));
+        lane.regions = vec![region(1, 0.0, 4.0), region(2, 3.0, 4.0)];
+        let off = Defaults {
+            crossfade: false,
+            ..Defaults::default()
+        };
+        let a = &lane.regions[0];
+        assert_eq!(lane.edges(a, &off).1.length, DEFAULT_FADE);
+        assert_eq!(lane.edges(a, &Defaults::default()).1.length, 1.0);
+
+        let mut multitrack = Multitrack::default();
+        multitrack.defaults.crossfade = false;
+        let written = serde_json::to_value(&multitrack).unwrap();
+        assert_eq!(written["defaults"]["crossfade"], false);
+        let back: Multitrack = serde_json::from_value(written).unwrap();
+        assert!(!back.defaults.crossfade);
+        let plain = serde_json::to_value(Multitrack::default()).unwrap();
+        assert!(plain.get("defaults").is_none(), "on writes nothing");
     }
 }

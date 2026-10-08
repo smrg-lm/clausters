@@ -338,6 +338,23 @@ test("a region over a sequence draws its notes", () => {
     assert.deepEqual(drawn[1].slice(1, 4), [SR, 0.5 * SR, 64.0]);
 });
 
+test("a page turns the crossfade off without a menu", () => {
+    // The automatic crossfade is the multitrack's, not the menu's: a page turns
+    // it off through the multitrack, and that is a turn of the editor's history
+    // like the menu's -- recorded, drawn, undone.
+    const held = multitrack();
+    const ed = editor(held);
+    const host = wired(ed);
+    const context = Editing.of(held);
+    context.attach(ed); // what an open does: the window is a view
+    const pushed = host.pushes;
+    held.crossfade = false;
+    assert.equal(context.undoLabel, "crossfade overlaps");
+    assert.ok(host.pushes > pushed, "the window is corrected");
+    assert.ok(ed.undo());
+    assert.ok(held.crossfade);
+});
+
 test("a page's change to a sequence a box reads is the multitrack's turn", () => {
     // The multitrack claims the sequences its boxes read, so a page's change to
     // one is recorded in the multitrack's order, the boxes draw it, and the

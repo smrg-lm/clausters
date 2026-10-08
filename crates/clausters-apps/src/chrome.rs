@@ -132,6 +132,11 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry("Quantize", "quantize"),
         ]);
     }
+    if app == App::Multitrack {
+        // the automatic crossfade over an overlap: the multitrack's default,
+        // which a client also sets as `Multitrack.crossfade`
+        edit.extend([sep(), entry("Crossfade overlaps, on or off", "crossfade")]);
+    }
 
     let mut view = vec![entry("Zoom to fit", "view_all")];
     if app == App::Multitrack {

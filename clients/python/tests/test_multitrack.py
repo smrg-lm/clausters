@@ -119,6 +119,10 @@ def test_each_field_is_written_through_the_multitrack_s_own_verb():
     assert (r.fade_out.shape, r.fade_out.curve) == ("curve", -4.0)
     track.name, track.level, track.soloed = "drums", 0.7, True
     assert (track.name, track.level, track.soloed) == ("drums", 0.7, True)
+    assert multitrack.crossfade, "on unless turned off"
+    multitrack.crossfade = False
+    assert not multitrack.crossfade
+    assert multitrack.write()["defaults"]["crossfade"] is False
     assert multitrack.version > 1, "every edit moves the multitrack's version"
 
 

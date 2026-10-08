@@ -278,6 +278,22 @@ def test_a_box_of_notes_is_drawn_as_its_page_and_opens_on_it():
     assert "scores" in props(again)
 
 
+def test_a_script_turns_the_crossfade_off_without_a_menu():
+    """**The automatic crossfade is the multitrack's, not the menu's**: a
+    script turns it off through the multitrack, and that is a turn of the
+    editor's history like the menu's -- recorded, drawn, undone."""
+    held = multitrack()
+    ed = editor(held)
+    host = _wired(ed)
+    ed._editing.attach(ed)          # what an open does: the window is a view
+    pushed = host.pushes
+    held.crossfade = False
+    assert ed._editing.undo_label == "crossfade overlaps"
+    assert host.pushes > pushed, "the window is corrected"
+    assert ed.undo()
+    assert held.crossfade
+
+
 def test_a_scripts_change_to_a_sequence_a_box_reads_is_the_multitracks_turn():
     """The multitrack claims the sequences its boxes read, so a script's
     change to one is recorded in the multitrack's order, the boxes draw it,

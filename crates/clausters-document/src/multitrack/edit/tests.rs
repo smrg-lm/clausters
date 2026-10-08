@@ -1058,3 +1058,23 @@ fn the_crate_names_the_multitracks_vocabulary_where_a_caller_asks_for_it() {
         "and a payload written in another vocabulary says so"
     );
 }
+
+/// **The defaults are one edit, undone like any other**: turning the automatic
+/// crossfade off changes the multitrack, its inverse puts it back, and saying
+/// it again changes nothing.
+#[test]
+fn the_defaults_are_set_whole_and_undone() {
+    let mut multitrack = multitrack();
+    let off = MultitrackIntent::SetDefaults {
+        defaults: Defaults {
+            crossfade: false,
+            ..Defaults::default()
+        },
+    };
+    let back = current(&multitrack, &off).expect("an inverse");
+    assert!(edit(&mut multitrack, off.clone()).applied);
+    assert!(!multitrack.defaults.crossfade);
+    assert!(!edit(&mut multitrack, off).applied, "absolute");
+    assert!(edit(&mut multitrack, back).applied);
+    assert!(multitrack.defaults.crossfade);
+}

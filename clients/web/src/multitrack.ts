@@ -1919,6 +1919,23 @@ export class Multitrack implements CurveHolder {
      * Where the loop is, or `undefined`. Whether looping is *on* is the
      * transport's; what the multitrack holds is where.
      */
+    /**
+     * **Whether two regions that overlap crossfade by themselves**: on, the
+     * overlap stretches the earlier one's fade out and the later one's fade in
+     * to cover it; off, each keeps the fades it states and the overlap is the
+     * two summed. A default of the multitrack, on unless turned off, and set
+     * like any edit -- recorded, and drawn by every window over it.
+     */
+    get crossfade(): boolean {
+        const defaults = (this.write().defaults ?? {}) as Extra;
+        return defaults.crossfade === undefined ? true : Boolean(defaults.crossfade);
+    }
+
+    set crossfade(on: boolean) {
+        const defaults: Extra = { ...((this.write().defaults ?? {}) as Extra), crossfade: on };
+        this.editIntent({ intent: "setdefaults", defaults }, "crossfade overlaps");
+    }
+
     get loopSpan(): Span | undefined {
         const span = this.write().loop_span as Extra | undefined;
         return span ? Span.read(span) : undefined;

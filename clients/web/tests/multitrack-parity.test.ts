@@ -221,6 +221,10 @@ test("each field is written through the multitrack's own verb", () => {
     t.level = 0.7;
     t.soloed = true;
     assert.deepEqual([t.name, t.level, t.soloed], ["drums", 0.7, true]);
+    assert.ok(multitrack.crossfade, "on unless turned off");
+    multitrack.crossfade = false;
+    assert.equal(multitrack.crossfade, false);
+    assert.equal((multitrack.write().defaults as { crossfade?: boolean }).crossfade, false);
     assert.ok(multitrack.version > 1, "every edit moves the multitrack's version");
 });
 

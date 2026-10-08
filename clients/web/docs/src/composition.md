@@ -582,14 +582,15 @@ edited.state;                       // the multitrack, as JSON, with the region 
 edited.current;                     // the edit that puts it back
 ```
 
-Fifteen verbs, in three groups. What a **track** is: `settracks` (the tracks
+Sixteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
 say the same thing) and `setactivetakelane`, which is comping's one verb. What a
 **region** is: `settakelane` (a take lane's regions, whole), `placeregion`, `trimregion`,
 `splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `showautomation` (one curve shown or hidden, which a
 reopened multitrack keeps), `setmarker`, `removemarker`, `setrange` (the loop
-or the punch span), `settempomap` and `setmetermap`.
+or the punch span), `settempomap`, `setmetermap` and `setdefaults` (what a
+region is when it does not say, and whether overlaps crossfade).
 
 Three things about them are worth knowing before you write against them.
 
@@ -598,9 +599,13 @@ take lane *and* second, and an intent is absolute — so `placeregion` states al
 together. One entry in a history, one undo, and no moment in between where the
 region is on no take lane at all.
 
-**A crossfade is two fades over an overlap**, not a third object: `faderegion`
-on each of the two regions, which is what the model already holds. There is no
-crossfade to lose track of, and nothing to keep in step with the two fades.
+**A crossfade is two fades over an overlap**, not a third object. Two regions
+on one take lane that overlap crossfade by themselves: the earlier one's fade out
+and the later one's fade in are stretched to cover the overlap, so the more they
+overlap the longer the crossfade, and there is no crossfade to lose track of or
+keep in step with the two fades. That is a facility of the multitrack and it can
+be turned off — `multitrack.crossfade = false`, a `setdefaults` edit like any other — after
+which each region keeps the fades it states and an overlap is the two summed.
 
 **A split and a join ask you for the content.** They are the two edits that
 change how many regions there are, and the two the crate will not work out on

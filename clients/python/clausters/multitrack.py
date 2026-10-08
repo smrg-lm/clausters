@@ -1712,6 +1712,22 @@ class Multitrack:
                    "set the meter")
 
     @property
+    def crossfade(self) -> bool:
+        """**Whether two regions that overlap crossfade by themselves**: on, the
+        overlap stretches the earlier one's fade out and the later one's fade
+        in to cover it; off, each keeps the fades it states and the overlap is
+        the two summed. A default of the multitrack, on unless turned off, and
+        set like any edit -- recorded, and drawn by every window over it."""
+        return bool(self.write().get("defaults", {}).get("crossfade", True))
+
+    @crossfade.setter
+    def crossfade(self, on: bool) -> None:
+        defaults = dict(self.write().get("defaults", {}))
+        defaults["crossfade"] = bool(on)
+        self._edit({"intent": "setdefaults", "defaults": defaults},
+                   "crossfade overlaps")
+
+    @property
     def loop_span(self) -> "Span | None":
         """Where the loop is, or ``None``. Whether looping is *on* is the
         transport's; what the multitrack holds is where."""
