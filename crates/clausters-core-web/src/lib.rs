@@ -1149,6 +1149,27 @@ pub fn bound(op: &str, x: f64, lo: f64, hi: f64) -> Result<f64, JsError> {
     Ok(builtins::apply_bound(op, x as f32, lo as f32, hi as f32) as f64)
 }
 
+/// JS face: one numeric function by name (`"degrad"`, `"erf"`, `"snap"`,
+/// `"bilin"`, ...) over its arguments, in `f64`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn calc(op: &str, args: &[f64]) -> Result<f64, JsError> {
+    let c = clausters_core::numeric::Calc::from_name(op)
+        .ok_or_else(|| JsError::new(&format!("unknown numeric function '{op}'")))?;
+    Ok(clausters_core::numeric::apply_calc(c, args))
+}
+
+/// JS face: one scale function by name (`"degkey"`, `"keydeg"`,
+/// `"nearestinscale"`, `"nearestinlist"`) of `x` over `list`, `steps` to the
+/// octave.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = scaleCalc)]
+pub fn scale_calc(op: &str, x: f64, list: &[f64], steps: f64) -> Result<f64, JsError> {
+    let c = clausters_core::numeric::ScaleCalc::from_name(op)
+        .ok_or_else(|| JsError::new(&format!("unknown scale function '{op}'")))?;
+    Ok(clausters_core::numeric::apply_scale_calc(c, x, list, steps))
+}
+
 /// JS face: one range map by name (`"linlin"`, `"linexp"`, `"lincurve"`, ...),
 /// with `clip` naming what an out-of-range input is trimmed to (`"minmax"`,
 /// `"min"`, `"max"`, `"none"`). `curve` is read only by the bent pair and the

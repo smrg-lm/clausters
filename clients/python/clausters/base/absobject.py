@@ -85,6 +85,7 @@ class AbstractObject:
     def acos(self): return self._compose_unop("acos")
     def atan(self): return self._compose_unop("atan")
     def exp(self): return self._compose_unop("exp")
+    def exp10(self): return self._compose_unop("exp10")
     def log(self): return self._compose_unop("log")
     def log10(self): return self._compose_unop("log10")
     def sqrt(self): return self._compose_unop("sqrt")

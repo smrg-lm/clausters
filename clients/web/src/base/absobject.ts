@@ -114,6 +114,7 @@ export abstract class AbstractObject<
     acos(): TSelf { return this.unop("acos"); }
     atan(): TSelf { return this.unop("atan"); }
     exp(): TSelf { return this.unop("exp"); }
+    exp10(): TSelf { return this.unop("exp10"); }
     log(): TSelf { return this.unop("log"); }
     log10(): TSelf { return this.unop("log10"); }
     log2(): TSelf { return this.unop("log2"); }

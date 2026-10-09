@@ -75,6 +75,8 @@ In wasm neither applies: a call returns the bytes or the string.
 |---|---|---|
 | `clausters_core_unary` | `unary` | |
 | `clausters_core_binary` | `binary` | |
+| `clausters_core_calc` | `calc` | `idiom` — the numeric functions that are not operators (`degrad`, `erf`, `snap`, `bilin`, …), in `f64`; C takes the function by number, wasm by name |
+| `clausters_core_scale_calc` | `scale_calc` | `idiom` — the same for the four that read a scale or a sorted list (`degkey`, `keydeg`, `nearestinscale`, `nearestinlist`) |
 | `clausters_core_bound` | `bound` | `idiom` — `clip`/`wrap`/`fold` between two bounds; the same sequence-against-one-value split as `unary`/`binary` |
 | `clausters_core_map` | `map` | `idiom` — the range maps (`linlin`, `linexp`, `lincurve`, …). C takes a whole sequence and writes it through an out pointer, as it does for the op tables above; wasm maps one value, and the client loops — the same split `unary`/`binary` already have, for the same reason (a ctypes call is worth batching, a wasm-bindgen call is not) |
 | `clausters_core_whitenoise` | — | **gap** — `JsRng` steps values one at a time; there is no buffer fill, so a browser cannot reproduce a server noise stream in one call |

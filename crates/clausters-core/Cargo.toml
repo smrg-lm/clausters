@@ -17,6 +17,10 @@ notation = ["dep:roxmltree", "dep:regex"]
 # Only the `osc` module needs it; the builtins/rng/tempoclock hot paths are
 # dependency-free and allocation-free so the audio thread can call them.
 rosc = "0.11"
+# The `numeric` module's special functions (`erf`, `tgamma`, the Bessel
+# functions), which std does not have: an established implementation rather
+# than one written here.
+libm = "0.2"
 # The `notation` feature only (all wasm-safe, pure Rust): roxmltree reads the
 # verovio SVG (a single read-only DOM, no writer), and regex parses its
 # transforms and glyph refs exactly as the Python original did.

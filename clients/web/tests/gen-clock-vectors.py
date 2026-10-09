@@ -80,6 +80,27 @@ BINARY = ["add", "sub", "mul", "div", "pow", "min", "max", "round", "trunc",
 BINARY_INPUTS = [(3.0, 2.0), (-1.5, 0.25), (440.0, 1.5), (0.7, 0.3),
                  (-7.0, 3.0)]
 
+#: The numeric functions that are not operators, each called with the same
+#: positional arguments in both clients.
+MAJOR = [0.0, 2.0, 4.0, 5.0, 7.0, 9.0, 11.0]
+CALC = [
+    ("degrad", [180.0]), ("raddeg", [1.5]), ("cbrt", [-27.0]), ("log1p", [1e-9]),
+    ("expm1", [1e-9]), ("erf", [0.5]), ("erfc", [3.0]), ("tgamma", [4.5]),
+    ("lgamma", [10.0]), ("zapgremlins", [1e-20]), ("zapgremlins", [0.25]),
+    ("wrap1", [1.25]), ("fold1", [-1.5]), ("even", [6.0]), ("odd", [6.0]),
+    ("graycode", [11.0]), ("nextpowerof", [9.0, 2.0]), ("nextpoweroftwo", [8.0]),
+    ("nextpowerofthree", [10.0]), ("previouspowerof", [9.0, 2.0]),
+    ("moddif", [0.9, 0.1, 1.0]), ("softround", [1.2, 1.0, 0.05, 0.5]),
+    ("snap", [1.02, 1.0, 0.05, 1.0]), ("lcurve", [0.5, 1.0, 0.0, 1.0, 1.0]),
+    ("gausscurve", [0.5, 1.0, 0.0, 1.0]), ("lg3interp", [0.25, 0.0, 1.0, 4.0, 9.0]),
+    ("calcfeedback", [0.2, -2.0]),
+    ("bilin", [0.25, 0.5, 0.0, 1.0, 10.0, 0.0, 100.0]),
+    ("biexp", [300.0, 100.0, 10.0, 1000.0, 0.0, -1.0, 1.0]),
+    ("besselj", [1.0, 2.5]), ("bessely", [0.0, 2.5]),
+    ("degkey", [1.1, MAJOR]), ("degkey", [-1.0, MAJOR]), ("keydeg", [3.0, MAJOR]),
+    ("nearestinscale", [13.0, MAJOR]), ("nearestinlist", [3.4, [1.0, 3.0, 7.0]]),
+]
+
 BOUND = ["clip", "wrap", "fold"]
 BOUND_INPUTS = [(5.0, 1.0, 3.0), (-5.0, 1.0, 3.0), (2.0, 1.0, 3.0),
                 (3.5, 1.0, 3.0), (-0.75, -0.5, 0.5), (12.3, 0.0, 1.0)]
@@ -265,6 +286,10 @@ def main():
         "binary": [
             {"op": op, "a": a, "b": b, "y": jnum(getattr(builtins, op)(a, b))}
             for op in BINARY for (a, b) in BINARY_INPUTS
+        ],
+        "calc": [
+            {"fn": name, "args": args, "y": jnum(getattr(builtins, name)(*args))}
+            for name, args in CALC
         ],
         "bound": [
             {"op": op, "x": x, "lo": lo, "hi": hi,

@@ -82,6 +82,7 @@ interface Vectors {
     unary: { op: string; x: number; y: number | string }[];
     binary: { op: string; a: number; b: number; y: number | string }[];
     bound: { op: string; x: number; lo: number; hi: number; y: number | string }[];
+    calc: { fn: string; args: (number | number[])[]; y: number | boolean | string }[];
     rng: {
         seed: number; floats: number[]; below: number[]; childFloats: number[];
         afterSpawn: number[]; draws: [string, number | boolean | string][];
@@ -305,6 +306,19 @@ test("the builtins compute in f32, as the server does", () => {
             hi: number,
         ) => number;
         assertSame(c.op, fn(c.x, c.lo, c.hi), expected(c.y), `${c.op}(${c.x}, ${c.lo}, ${c.hi})`);
+    }
+});
+
+test("the numeric functions answer what the Python client's do", () => {
+    // f64 throughout, and several go through `exp`, `ln` or `cbrt` -- held to
+    // the shapes' few-ulp tolerance for the reason `ulpsApart` gives.
+    for (const c of v.calc) {
+        const fn = (builtins as Record<string, unknown>)[c.fn] as (
+            ...args: (number | number[])[]
+        ) => number | boolean;
+        const got = fn(...c.args);
+        if (typeof c.y === "boolean") assert.equal(got, c.y, c.fn);
+        else assertClose(got as number, expected(c.y), `${c.fn}(${c.args.join(", ")})`);
     }
 });
 

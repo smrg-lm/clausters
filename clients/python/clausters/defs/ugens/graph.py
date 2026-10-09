@@ -40,7 +40,8 @@ _MAP_OPS = frozenset({
     "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin",
 })
 _UNOP_OPS = frozenset({
-    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
+    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "exp10",
+    "log",
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",

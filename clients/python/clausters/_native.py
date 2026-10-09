@@ -461,6 +461,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
     # per crossing. The map's own numbers are scalars -- one range for the
     # sequence, not a range per element.
+    lib.clausters_core_calc.restype = ctypes.c_double
+    lib.clausters_core_calc.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
+    lib.clausters_core_scale_calc.restype = ctypes.c_double
+    lib.clausters_core_scale_calc.argtypes = [
+        ctypes.c_uint32, ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t,
+        ctypes.c_double,
+    ]
     lib.clausters_core_bound.restype = ctypes.c_int32
     lib.clausters_core_bound.argtypes = [
         ctypes.c_uint32, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t,
@@ -3177,6 +3184,63 @@ def binary(op: int, a, b):
     if rc != 0:
         raise ValueError(f"clausters_core_binary failed ({rc})")
     return out[0] if (a_scalar and b_scalar) else out
+
+
+class Calc(IntEnum):
+    """The numeric functions that are not operators; values match
+    ``clausters_core::numeric::Calc``."""
+
+    DEGRAD = 0
+    RADDEG = 1
+    CBRT = 2
+    LOG1P = 3
+    EXPM1 = 4
+    ERF = 5
+    ERFC = 6
+    TGAMMA = 7
+    LGAMMA = 8
+    ZAPGREMLINS = 9
+    WRAP1 = 10
+    FOLD1 = 11
+    EVEN = 12
+    ODD = 13
+    GRAYCODE = 14
+    NEXTPOWEROF = 15
+    PREVIOUSPOWEROF = 16
+    MODDIF = 17
+    SOFTROUND = 18
+    SNAP = 19
+    LCURVE = 20
+    GAUSSCURVE = 21
+    LG3INTERP = 22
+    CALCFEEDBACK = 23
+    BILIN = 24
+    BIEXP = 25
+    BESSELJ = 26
+    BESSELY = 27
+
+
+class ScaleCalc(IntEnum):
+    """The functions that read a scale or a sorted list; values match
+    ``clausters_core::numeric::ScaleCalc``."""
+
+    DEGKEY = 0
+    KEYDEG = 1
+    NEARESTINSCALE = 2
+    NEARESTINLIST = 3
+
+
+def calc(op: int, *args: float) -> float:
+    """Applies numeric function `op` (a `Calc`) to its arguments, in f64."""
+    a = (ctypes.c_double * len(args))(*[float(x) for x in args])
+    return lib().clausters_core_calc(int(op), a, len(args))
+
+
+def scale_calc(op: int, x: float, values, steps: float = 12.0) -> float:
+    """Applies scale function `op` (a `ScaleCalc`) to `x` over `values` (a
+    scale or a sorted list), `steps` to the octave."""
+    v = (ctypes.c_double * len(values))(*[float(e) for e in values])
+    return lib().clausters_core_scale_calc(int(op), float(x), v, len(values), float(steps))
 
 
 def bound(op: int, x, lo, hi):

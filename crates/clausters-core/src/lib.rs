@@ -108,6 +108,7 @@ pub mod midi;
 pub mod mixer;
 #[cfg(feature = "notation")]
 pub mod notation;
+pub mod numeric;
 pub mod osc;
 pub mod oscil;
 pub mod patch;

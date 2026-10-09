@@ -16,6 +16,8 @@ import {
     bark_to_hz as coreBarkToHz,
     binary as coreBinary,
     bound as coreBound,
+    calc as coreCalc,
+    scaleCalc as coreScaleCalc,
     degree_to_midinote as coreDegreeToMidinote,
     hz_to_bark as coreHzToBark,
     hz_to_mel as coreHzToMel,
@@ -242,6 +244,156 @@ export const cpsbark = scaleFn(coreHzToBark);
 
 /** Bark to hertz, the analytic inverse of {@link cpsbark}. */
 export const barkcps = scaleFn(coreBarkToHz);
+
+// ---- the numeric functions that are not operators ----
+//
+// sclang's functions on a number that no UGen computes, so they are not in the
+// operator table and not f32: computed in f64 as sclang computes them, once, in
+// `clausters_core::numeric`. Each takes a number or an array for its first
+// argument; the rest are plain numbers.
+
+const calcOp = (op: string, x: Num, ...args: number[]): Num =>
+    isSeq(x) ? x.map((v) => coreCalc(op, Float64Array.from([v, ...args]))) :
+        coreCalc(op, Float64Array.from([x, ...args]));
+const calc1 = (op: string): UnaryFn => ((x: Num) => calcOp(op, x)) as UnaryFn;
+const asBool = (r: Num): boolean | boolean[] =>
+    Array.isArray(r) ? r.map((v) => v !== 0) : r !== 0;
+
+/** Degrees to radians. */
+export const degrad = calc1("degrad");
+/** Radians to degrees. */
+export const raddeg = calc1("raddeg");
+/** The real cube root. */
+export const cbrt = calc1("cbrt");
+/** `log(1 + x)`, exact near zero. */
+export const log1p = calc1("log1p");
+/** `exp(x) - 1`, exact near zero. */
+export const expm1 = calc1("expm1");
+/** The error function. */
+export const erf = calc1("erf");
+/** The complementary error function, `1 - erf(x)`, exact in its tail. */
+export const erfc = calc1("erfc");
+/** The gamma function. */
+export const tgamma = calc1("tgamma");
+/** `log |gamma(x)|`. */
+export const lgamma = calc1("lgamma");
+/**
+ * `x`, or 0 where it is a denormal, an infinity, a NaN or past 1e15 -- what
+ * keeps a feedback path from carrying one.
+ */
+export const zapgremlins = calc1("zapgremlins");
+/** `x` wrapped into `-1..1` by one shift. */
+export const wrap1 = calc1("wrap1");
+/** `x` folded into `-1..1` by one reflection. */
+export const fold1 = calc1("fold1");
+/** Whether the whole part of `x` is even. */
+export const even = (x: Num): boolean | boolean[] => asBool(calcOp("even", x));
+/** Whether the whole part of `x` is odd. */
+export const odd = (x: Num): boolean | boolean[] => asBool(calcOp("odd", x));
+/** The Gray code of the whole part of `x`: `x ^ (x >> 1)`. */
+export const graycode = calc1("graycode");
+/** The least power of `base` at or above `x` (a power maps to itself). */
+export const nextpowerof = (x: Num, base: number): Num => calcOp("nextpowerof", x, base);
+/** The least power of two at or above `x`. */
+export const nextpoweroftwo = (x: Num): Num => nextpowerof(x, 2);
+/** The least power of three at or above `x`. */
+export const nextpowerofthree = (x: Num): Num => nextpowerof(x, 3);
+/** The power of `base` below the one `nextpowerof` gives. */
+export const previouspowerof = (x: Num, base: number): Num =>
+    calcOp("previouspowerof", x, base);
+/**
+ * The distance from `x` to `b` on a circle of circumference `mod`: 0.9 and
+ * 0.1 are 0.2 apart on the unit circle, not 0.8.
+ */
+export const moddif = (x: Num, b = 0.0, mod = 1.0): Num => calcOp("moddif", x, b, mod);
+/**
+ * `x` pulled toward its nearest multiple of `resolution` by `strength` when it
+ * is **farther** than `margin` from it.
+ */
+export const softround = (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
+    calcOp("softround", x, resolution, margin, strength);
+/**
+ * `x` pulled toward its nearest multiple of `resolution` by `strength` when it
+ * is **within** `margin` of it -- a magnet for the grid.
+ */
+export const snap = (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
+    calcOp("snap", x, resolution, margin, strength);
+/** The logistic curve `a * (m*e^-x + 1) / (n*e^-x + 1)`. */
+export const lcurve = (x: Num, a = 1.0, m = 0.0, n = 1.0, tau = 1.0): Num =>
+    calcOp("lcurve", x, a, m, n, tau);
+/** The Gaussian bell `a * exp(-(x - b)^2 / (2 c^2))`. */
+export const gausscurve = (x: Num, a = 1.0, b = 0.0, c = 1.0): Num =>
+    calcOp("gausscurve", x, a, b, c);
+/**
+ * Lagrange cubic interpolation at `x1` in `0..1` between `b` and `c`, with
+ * `a` and `d` their outer neighbours.
+ */
+export const lg3interp = (x1: Num, a: number, b: number, c: number, d: number): Num =>
+    calcOp("lg3interp", x1, a, b, c, d);
+/**
+ * The feedback coefficient that decays a delay of `delaytime` by 60 dB in
+ * `decaytime` (a negative `decaytime` inverts it).
+ */
+export const calcfeedback = (delaytime: Num, decaytime: number): Num =>
+    calcOp("calcfeedback", delaytime, decaytime);
+
+const CLIP_NUMBER: Record<string, number> = { minmax: 0, min: 1, max: 2, none: 3 };
+
+/**
+ * A linear map with a centre: `x` read off `inLo..inCenter..inHi`, each half
+ * mapped linearly onto its half of the output.
+ */
+export const bilin = (
+    x: Num, inCenter: number, inLo: number, inHi: number,
+    outCenter: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => calcOp("bilin", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!);
+
+/** {@link bilin} read off an exponential input. */
+export const biexp = (
+    x: Num, inCenter: number, inLo: number, inHi: number,
+    outCenter: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => calcOp("biexp", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!);
+
+/** The Bessel function of the first kind, integer order `n`, at `x`. */
+export const besselj = (n: number, x: Num): Num =>
+    isSeq(x) ? x.map((v) => coreCalc("besselj", Float64Array.from([n, v]))) :
+        coreCalc("besselj", Float64Array.from([n, x]));
+
+/** The Bessel function of the second kind, integer order `n`, at `x`. */
+export const bessely = (n: number, x: Num): Num =>
+    isSeq(x) ? x.map((v) => coreCalc("bessely", Float64Array.from([n, v]))) :
+        coreCalc("bessely", Float64Array.from([n, x]));
+
+// ---- scales and sorted lists ----
+
+const scaleOp = (op: string, x: Num, values: readonly number[], steps: number): Num => {
+    const list = Float64Array.from(values);
+    return isSeq(x) ? x.map((v) => coreScaleCalc(op, v, list, steps)) :
+        coreScaleCalc(op, x, list, steps);
+};
+
+/**
+ * Scale degree to key: `degree` indexes `scale` (offsets within one octave of
+ * `steps`) with octave carry, and a fraction is an alteration as SuperCollider
+ * writes it -- `1.1` is degree 1 raised a semitone.
+ */
+export const degkey = (degree: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("degkey", degree, scale, steps);
+
+/**
+ * Key to scale degree, the inverse of {@link degkey}: a key between two
+ * degrees is a fractional degree, linearly between them.
+ */
+export const keydeg = (key: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("keydeg", key, scale, steps);
+
+/** The key of `scale` nearest to `x`, in `x`'s own octave of `steps`. */
+export const nearestinscale = (x: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("nearestinscale", x, scale, steps);
+
+/** The value of the sorted list `values` nearest to `x`. */
+export const nearestinlist = (x: Num, values: readonly number[]): Num =>
+    scaleOp("nearestinlist", x, values, 0);
 
 // ---- range maps (SuperCollider's warp family) ----
 //

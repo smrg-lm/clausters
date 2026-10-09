@@ -2172,16 +2172,24 @@ Measured while opening the arc (2026-10-09):
   from its own stream off the graph's seed walk. The generator is the one the
   server and the clients already shared; replaying scsynth's Taus88 stream was
   declined by the user (see the arc's preamble).
-- ⬜ **C67 — The numeric functions that are not operators.** In the core and
-  `builtins`, joined lowercase like `midicps`: `degkey`/`keydeg` (scale degree
-  to key and back), `nearestinlist`, `nearestinscale`, `bilin`, `biexp`,
-  `lcurve`, `gausscurve`, `softround`, `snap`, `moddif`, `wrap1`, `fold1`,
-  `zapgremlins`, `lg3interp`, `calcfeedback`, `degrad`, `raddeg`, `even`,
-  `odd`, `graycode`, `nextpoweroftwo` and its neighbours; and from the libm
-  rather than by hand, `cbrt`, `log1p`, `expm1`, `erf`, `erfc`, `tgamma`,
-  `lgamma` and the Bessel functions it carries. Closes the divergence the
-  survey found: `exp10` and `degreeToMidinote` are in the web client's
-  `builtins` and not in Python's.
+- ✅ **C67 — The numeric functions that are not operators** *(done
+  2026-10-09)*. `clausters_core::numeric`: a `Calc` table — `degrad`,
+  `raddeg`, `cbrt`, `log1p`, `expm1`, `erf`, `erfc`, `tgamma`, `lgamma`,
+  `zapgremlins`, `wrap1`, `fold1`, `even`, `odd`, `graycode`,
+  `nextpowerof`/`previouspowerof` (with `nextpoweroftwo`/`nextpowerofthree`
+  in the clients), `moddif`, `softround`, `snap`, `lcurve`, `gausscurve`,
+  `lg3interp`, `calcfeedback`, `bilin`, `biexp`, `besselj`, `bessely` — and a
+  `ScaleCalc` table — `degkey`, `keydeg`, `nearestinscale`, `nearestinlist` —
+  each one C door and one wasm export, and named functions in both clients'
+  `builtins`. **`f64`**, as sclang computes them: no UGen computes them, so
+  there is no `f32` result to match. The special functions come from the
+  `libm` crate, never by hand. Two deliberate departures from sclang, both
+  recorded where they live: a power maps to itself under `nextpowerof`
+  (sclang's `ceil(ln x / ln b)` sends `8.0.nextPowerOfTwo` to 16), and
+  `degkey` reads a fractional degree the way the rest of the core does
+  (`split_degree`). The divergence the survey found is closed: `exp10` is in
+  Python's `builtins` and on both graphs now, and `degree_to_midinote` is in
+  Python's `builtins` beside the web client's `degreeToMidinote`.
 - ⬜ **C68 — Functions over arrays.** `blend` (two numbers or two arrays point
   by point), `blendat`, `normalize`, `normalizesum`, `resamp0`/`resamp1`,
   `indexinbetween`, `indexofgreaterthan`, `integrate`, `differentiate`,

@@ -116,6 +116,36 @@ def test_scsynth_operators_and_two_bounds():
         assert B.clip(x, -1.25, 1.25) == B.clip2(x, 1.25)
 
 
+def test_numeric_functions_and_scales():
+    # sclang's functions that are not operators, in f64 through the core.
+    _ffi_or_skip()
+    import math
+    assert B.degrad(180.0) == pytest.approx(math.pi)
+    assert B.raddeg(math.pi) == pytest.approx(180.0)
+    assert B.cbrt(-27.0) == pytest.approx(-3.0)
+    assert B.erf(0.0) == 0.0 and B.tgamma(5.0) == pytest.approx(24.0)
+    assert B.zapgremlins([1e-20, 0.5, math.inf]) == [0.0, 0.5, 0.0]
+    assert (B.wrap1(1.25), B.fold1(1.25)) == (-0.75, 0.75)
+    assert (B.even(4), B.odd(4), B.graycode(5)) == (True, False, 7)
+    assert B.nextpoweroftwo(8) == 8.0 and B.nextpoweroftwo(9) == 16.0
+    assert B.previouspowerof(9, 2) == 8.0 and B.nextpowerofthree(9) == 9.0
+    assert B.moddif(0.9, 0.1) == pytest.approx(0.2)
+    assert B.snap(1.02) == 1.0 and B.snap(1.2) == 1.2
+    assert B.softround(1.2, strength=0.5) == pytest.approx(1.1)
+    assert B.gausscurve(0.0) == 1.0
+    assert B.calcfeedback(1.0, 1.0) == pytest.approx(0.001)
+    assert B.bilin([0.25, 0.75], 0.5, 0.0, 1.0, 10.0, 0.0, 100.0) == [5.0, 55.0]
+    assert B.besselj(0, 0.0) == 1.0
+    major = [0, 2, 4, 5, 7, 9, 11]
+    assert B.degkey([0, 2, 7, -1], major) == [0.0, 4.0, 12.0, -1.0]
+    assert B.degkey(1.1, major) == 3.0
+    assert B.keydeg(3, major) == 1.5
+    assert B.nearestinscale(6, major) == 7.0
+    assert B.nearestinlist(3.4, [1, 3, 7]) == 3.0
+    assert B.exp10(2.0) == 100.0
+    assert B.degree_to_midinote(0, 0, 5, 0, major) == 60.0
+
+
 def test_smoothing_windows_s8():
     # S8: the FFT-chain windows are the shared core, exposed for binary parity
     # (same shape the server's FFT/IFFT applies).

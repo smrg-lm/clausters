@@ -357,6 +357,7 @@ dependencies = [
 name = "clausters-core"
 version = "0.11.0"
 dependencies = [
+ "libm",
  "microfft",
  "regex",
  "rosc",

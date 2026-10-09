@@ -184,6 +184,7 @@ def reciprocal(x): return _unop(UnaryOp.RECIP, x)
 def frac(x): return _unop(UnaryOp.FRAC, x)
 def sign(x): return _unop(UnaryOp.SIGN, x)
 def log2(x): return _unop(UnaryOp.LOG2, x)
+def exp10(x): return _unop(UnaryOp.EXP10, x)
 def sinh(x): return _unop(UnaryOp.SINH, x)
 def cosh(x): return _unop(UnaryOp.COSH, x)
 def tanh(x): return _unop(UnaryOp.TANH, x)
@@ -248,6 +249,233 @@ def cpsbark(x):
 def barkcps(x):
     """Bark to hertz, the analytic inverse of `cpsbark`."""
     return _scale(_native.bark_to_hz, x)
+
+
+# ---- the numeric functions that are not operators (native, f64) ----
+#
+# sclang's functions on a number that no UGen computes, so they are not in the
+# operator table and not f32: computed in f64 as sclang computes them, once, in
+# ``clausters_core::numeric``. Each takes a number or a sequence for its first
+# argument; the rest are plain numbers.
+
+Calc = _native.Calc
+ScaleCalc = _native.ScaleCalc
+
+
+def _calc(op, x, *args):
+    if _is_seq(x):
+        return [_native.calc(op, float(v), *args) for v in x]
+    return _native.calc(op, float(x), *args)
+
+
+def degrad(x):
+    """Degrees to radians."""
+    return _calc(Calc.DEGRAD, x)
+
+
+def raddeg(x):
+    """Radians to degrees."""
+    return _calc(Calc.RADDEG, x)
+
+
+def cbrt(x):
+    """The real cube root."""
+    return _calc(Calc.CBRT, x)
+
+
+def log1p(x):
+    """``log(1 + x)``, exact near zero."""
+    return _calc(Calc.LOG1P, x)
+
+
+def expm1(x):
+    """``exp(x) - 1``, exact near zero."""
+    return _calc(Calc.EXPM1, x)
+
+
+def erf(x):
+    """The error function."""
+    return _calc(Calc.ERF, x)
+
+
+def erfc(x):
+    """The complementary error function, ``1 - erf(x)``, exact in its tail."""
+    return _calc(Calc.ERFC, x)
+
+
+def tgamma(x):
+    """The gamma function."""
+    return _calc(Calc.TGAMMA, x)
+
+
+def lgamma(x):
+    """``log |gamma(x)|``."""
+    return _calc(Calc.LGAMMA, x)
+
+
+def zapgremlins(x):
+    """`x`, or 0 where it is a denormal, an infinity, a NaN or past 1e15 --
+    what keeps a feedback path from carrying one."""
+    return _calc(Calc.ZAPGREMLINS, x)
+
+
+def wrap1(x):
+    """`x` wrapped into ``-1..1`` by one shift."""
+    return _calc(Calc.WRAP1, x)
+
+
+def fold1(x):
+    """`x` folded into ``-1..1`` by one reflection."""
+    return _calc(Calc.FOLD1, x)
+
+
+def even(x):
+    """Whether the whole part of `x` is even."""
+    r = _calc(Calc.EVEN, x)
+    return [v != 0.0 for v in r] if _is_seq(x) else r != 0.0
+
+
+def odd(x):
+    """Whether the whole part of `x` is odd."""
+    r = _calc(Calc.ODD, x)
+    return [v != 0.0 for v in r] if _is_seq(x) else r != 0.0
+
+
+def graycode(x):
+    """The Gray code of the whole part of `x`: ``x ^ (x >> 1)``."""
+    r = _calc(Calc.GRAYCODE, x)
+    return [int(v) for v in r] if _is_seq(x) else int(r)
+
+
+def nextpowerof(x, base):
+    """The least power of `base` at or above `x` (a power maps to itself)."""
+    return _calc(Calc.NEXTPOWEROF, x, base)
+
+
+def nextpoweroftwo(x):
+    """The least power of two at or above `x`."""
+    return nextpowerof(x, 2.0)
+
+
+def nextpowerofthree(x):
+    """The least power of three at or above `x`."""
+    return nextpowerof(x, 3.0)
+
+
+def previouspowerof(x, base):
+    """The power of `base` below the one `nextpowerof` gives."""
+    return _calc(Calc.PREVIOUSPOWEROF, x, base)
+
+
+def moddif(x, b=0.0, mod=1.0):
+    """The distance from `x` to `b` on a circle of circumference `mod`:
+    0.9 and 0.1 are 0.2 apart on the unit circle, not 0.8."""
+    return _calc(Calc.MODDIF, x, b, mod)
+
+
+def softround(x, resolution=1.0, margin=0.05, strength=1.0):
+    """`x` pulled toward its nearest multiple of `resolution` by `strength`
+    when it is **farther** than `margin` from it."""
+    return _calc(Calc.SOFTROUND, x, resolution, margin, strength)
+
+
+def snap(x, resolution=1.0, margin=0.05, strength=1.0):
+    """`x` pulled toward its nearest multiple of `resolution` by `strength`
+    when it is **within** `margin` of it -- a magnet for the grid."""
+    return _calc(Calc.SNAP, x, resolution, margin, strength)
+
+
+def lcurve(x, a=1.0, m=0.0, n=1.0, tau=1.0):
+    """The logistic curve ``a * (m*e^-x + 1) / (n*e^-x + 1)``."""
+    return _calc(Calc.LCURVE, x, a, m, n, tau)
+
+
+def gausscurve(x, a=1.0, b=0.0, c=1.0):
+    """The Gaussian bell ``a * exp(-(x - b)^2 / (2 c^2))``."""
+    return _calc(Calc.GAUSSCURVE, x, a, b, c)
+
+
+def lg3interp(x1, a, b, c, d):
+    """Lagrange cubic interpolation at `x1` in ``0..1`` between `b` and `c`,
+    with `a` and `d` their outer neighbours."""
+    return _calc(Calc.LG3INTERP, x1, a, b, c, d)
+
+
+def calcfeedback(delaytime, decaytime):
+    """The feedback coefficient that decays a delay of `delaytime` by 60 dB
+    in `decaytime` (a negative `decaytime` inverts it)."""
+    return _calc(Calc.CALCFEEDBACK, delaytime, decaytime)
+
+
+def _clip_number(clip):
+    return int(Clip[clip.upper()] if isinstance(clip, str) else Clip(clip))
+
+
+def bilin(x, in_center, in_lo, in_hi, out_center, out_lo, out_hi, clip="minmax"):
+    """A linear map with a centre: `x` read off ``in_lo..in_center..in_hi``,
+    each half mapped linearly onto its half of the output."""
+    return _calc(Calc.BILIN, x, in_center, in_lo, in_hi, out_center, out_lo,
+                 out_hi, _clip_number(clip))
+
+
+def biexp(x, in_center, in_lo, in_hi, out_center, out_lo, out_hi, clip="minmax"):
+    """`bilin` read off an exponential input."""
+    return _calc(Calc.BIEXP, x, in_center, in_lo, in_hi, out_center, out_lo,
+                 out_hi, _clip_number(clip))
+
+
+def besselj(n, x):
+    """The Bessel function of the first kind, integer order `n`, at `x`."""
+    if _is_seq(x):
+        return [_native.calc(Calc.BESSELJ, float(n), float(v)) for v in x]
+    return _native.calc(Calc.BESSELJ, float(n), float(x))
+
+
+def bessely(n, x):
+    """The Bessel function of the second kind, integer order `n`, at `x`."""
+    if _is_seq(x):
+        return [_native.calc(Calc.BESSELY, float(n), float(v)) for v in x]
+    return _native.calc(Calc.BESSELY, float(n), float(x))
+
+
+# ---- scales and sorted lists (native, f64) ----
+
+def _scale_calc(op, x, values, steps):
+    values = [float(v) for v in values]
+    if _is_seq(x):
+        return [_native.scale_calc(op, float(v), values, steps) for v in x]
+    return _native.scale_calc(op, float(x), values, steps)
+
+
+def degkey(degree, scale, steps=12):
+    """Scale degree to key: `degree` indexes `scale` (offsets within one octave
+    of `steps`) with octave carry, and a fraction is an alteration as
+    SuperCollider writes it -- ``1.1`` is degree 1 raised a semitone."""
+    return _scale_calc(ScaleCalc.DEGKEY, degree, scale, steps)
+
+
+def keydeg(key, scale, steps=12):
+    """Key to scale degree, the inverse of `degkey`: a key between two degrees
+    is a fractional degree, linearly between them."""
+    return _scale_calc(ScaleCalc.KEYDEG, key, scale, steps)
+
+
+def nearestinscale(x, scale, steps=12):
+    """The key of `scale` nearest to `x`, in `x`'s own octave of `steps`."""
+    return _scale_calc(ScaleCalc.NEARESTINSCALE, x, scale, steps)
+
+
+def nearestinlist(x, values):
+    """The value of the sorted list `values` nearest to `x`."""
+    return _scale_calc(ScaleCalc.NEARESTINLIST, x, values, 0.0)
+
+
+def degree_to_midinote(degree, alter, octave, root, scale):
+    """Scale degree to MIDI note number in the pitch space `octave` / `root` /
+    `scale` -- the reading an `Event`'s ``degree`` key gets, and the web
+    client's ``degreeToMidinote``."""
+    return _native.degree_to_midinote(float(degree), float(alter), float(octave),
+                                      float(root), [float(v) for v in scale])
 
 
 # ---- range maps (native, f32 -- SuperCollider's warp family) ----
@@ -327,7 +555,7 @@ def exprange(x, lo=0.01, hi=1.0):
 # the key is the def format's, the value is this client's.
 UNARY = {
     "neg": neg, "abs": abs, "sin": sin, "cos": cos, "tan": tan, "asin": asin,
-    "acos": acos, "atan": atan, "exp": exp, "log": log, "log10": log10,
+    "acos": acos, "atan": atan, "exp": exp, "exp10": exp10, "log": log, "log10": log10,
     "log2": log2, "sqrt": sqrt, "floor": floor, "ceil": ceil, "rint": rint,
     "asint": asinteger, "asfloat": asfloat, "squared": squared, "cubed": cubed,
     "recip": reciprocal, "frac": frac, "sign": sign, "sinh": sinh, "cosh": cosh,

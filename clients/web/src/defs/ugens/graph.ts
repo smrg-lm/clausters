@@ -54,7 +54,8 @@ export const MAP_OPS = new Set([
 ]);
 /** @internal -- the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
 export const UNOP_OPS = new Set([
-    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
+    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "exp10",
+    "log",
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",

@@ -1195,6 +1195,12 @@ export function bundle_resolve(request: string): string;
 export function bundle_validate(request: string): void;
 
 /**
+ * JS face: one numeric function by name (`"degrad"`, `"erf"`, `"snap"`,
+ * `"bilin"`, ...) over its arguments, in `f64`.
+ */
+export function calc(op: string, args: Float64Array): number;
+
+/**
  * JS face: the **peak and RMS** of one channel of an interleaved buffer, as
  * `[peak, rms]` -- what a render reports back about what it produced. The
  * stride walk measures a render without deinterleaving it first, so a page
@@ -1741,6 +1747,13 @@ export function samplesMeasures(request: string): string;
 export function samples_to_secs(samples: number, sample_rate: number): number;
 
 /**
+ * JS face: one scale function by name (`"degkey"`, `"keydeg"`,
+ * `"nearestinscale"`, `"nearestinlist"`) of `x` over `list`, `steps` to the
+ * octave.
+ */
+export function scaleCalc(op: string, x: number, list: Float64Array, steps: number): number;
+
+/**
  * Beats at `secs` for the affine clock `(tempo, base_beats, base_seconds)`.
  */
 export function secs_to_beats(tempo: number, base_beats: number, base_seconds: number, secs: number): number;
@@ -1990,6 +2003,7 @@ export interface InitOutput {
     readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
     readonly bundle_validate: (a: number, b: number) => [number, number];
+    readonly calc: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
     readonly conversationAnswer: (a: number, b: number) => [number, number];
     readonly conversationRead: (a: number, b: number, c: number, d: number) => [number, number];
@@ -2158,6 +2172,7 @@ export interface InitOutput {
     readonly sampleclockmodel_span: (a: number) => number;
     readonly samplesMeasures: (a: number, b: number) => [number, number];
     readonly samples_to_secs: (a: number, b: number) => number;
+    readonly scaleCalc: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly scheduler_clear: (a: number) => void;
     readonly scheduler_isEmpty: (a: number) => number;
     readonly scheduler_len: (a: number) => number;

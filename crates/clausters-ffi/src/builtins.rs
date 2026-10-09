@@ -106,6 +106,52 @@ pub unsafe extern "C" fn clausters_core_bound(
     0
 }
 
+/// Applies numeric function `op` (a `clausters_core::numeric::Calc`) to the
+/// `n` arguments at `args` -- `degrad`, `erf`, `snap`, `bilin` and the rest of
+/// the sclang functions that are not operators, in `f64`. NaN on an unknown
+/// function, a null `args` or fewer arguments than the function reads.
+///
+/// # Safety
+/// `args` must be readable for `n` `f64`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_calc(op: u32, args: *const f64, n: usize) -> f64 {
+    let Some(op) = clausters_core::numeric::Calc::from_u32(op) else {
+        return f64::NAN;
+    };
+    if args.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: caller guarantees the range above.
+    let a = unsafe { std::slice::from_raw_parts(args, n) };
+    clausters_core::numeric::apply_calc(op, a)
+}
+
+/// Applies scale function `op` (a `clausters_core::numeric::ScaleCalc`:
+/// `degkey`, `keydeg`, `nearestinscale`, `nearestinlist`) to `x` over the `n`
+/// values at `list`, `steps` to the octave. NaN on an unknown function or an
+/// empty or null list.
+///
+/// # Safety
+/// `list` must be readable for `n` `f64`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_scale_calc(
+    op: u32,
+    x: f64,
+    list: *const f64,
+    n: usize,
+    steps: f64,
+) -> f64 {
+    let Some(op) = clausters_core::numeric::ScaleCalc::from_u32(op) else {
+        return f64::NAN;
+    };
+    if list.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: caller guarantees the range above.
+    let l = unsafe { std::slice::from_raw_parts(list, n) };
+    clausters_core::numeric::apply_scale_calc(op, x, l, steps)
+}
+
 /// Applies range map `op` to `input` (broadcast if `in_len == 1`) into `out`,
 /// writing `n` samples -- the `linlin`/`linexp`/... family, over a whole
 /// sequence in one crossing.
