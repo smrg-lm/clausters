@@ -137,6 +137,31 @@ def _answers(addr: str, reply: str, args) -> bool:
 
 
 class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
+    """A handle on a Clausters server: what the client sends through.
+
+    It owns the communication interface and the allocators of the server's
+    nodes, buses and buffers, and every command, query and def send goes
+    through it. Building one starts nothing: `boot` starts a server and
+    attaches to it, `attach` takes a server that is already running, and
+    `quit` stops it. Swapping `interface` retargets everything sent through
+    the handle, live or into an offline score.
+
+    Args:
+        host: the server's address; the config file's ``[client]`` section,
+            then ``127.0.0.1``, when not given.
+        port: the server's port; the config file, then 57110.
+        interface: a communication interface to use instead of building one
+            (an offline score's, for instance); `transport` is ignored then.
+        latency: seconds added to real-time timetags so events land on time;
+            0.1 on a real-time interface and 0.0 on a score by default.
+        options: the server's configuration, which sizes the allocators;
+            `ServerOptions()` by default.
+        transport: ``"tcp"`` (the default), ``"udp"`` or ``"ws"``.
+        timeout: seconds a blocking round trip waits for its reply.
+        share: the slice of the server's id spaces this handle allocates from,
+            when several clients share one server; the whole of them by default.
+    """
+
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
                  transport: "str | None" = None, timeout: float = 5.0,

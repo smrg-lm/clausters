@@ -267,7 +267,7 @@ gd["mix"]                   # a surface port, plus the targets it drives inside
 
 ### The UGen set
 
-`clausters.defs.ugens` exposes a callable per UGen kind in the server's registry (the arithmetic kinds come from operators rather than callables — see [Operators compose UGens](#operators-compose-ugens)):
+`clausters.defs.ugens` exposes a callable per UGen kind in the server's registry (the arithmetic kinds come from operators rather than callables — see [Maths on a UGen graph](#maths-on-a-ugen-graph)):
 
 | Group | Callable | Does |
 | --- | --- | --- |
