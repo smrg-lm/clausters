@@ -126,6 +126,8 @@ fn main() {
 
     bench_fused();
 
+    bench_math();
+
     bench_spectral();
 
     bench_node_commands();
@@ -502,6 +504,132 @@ fn bench_fused() {
             f_ma / u_ma,
             f_s4 / u_s4
         );
+    }
+}
+
+/// The rows that call a transcendental **per sample** -- an operator over an
+/// audio-rate signal, a range map, an envelope segment -- which is where the
+/// libm the core calls shows up at the engine rather than in a coefficient
+/// computed once a block.
+///
+/// Every row shares its source (a `Sine`, itself a per-sample `sin` in `f64`),
+/// so the column to read is the difference between rows, and the bare `Sine`
+/// row is that baseline. The envelopes run one 100-second segment, so the whole
+/// measurement stays inside the shape being timed.
+fn bench_math() {
+    let def = |name: &str, ugens: serde_json::Value| -> Arc<clausters::synthdef::SynthDef> {
+        Arc::new(
+            compile(
+                serde_json::from_value(serde_json::json!({
+                    "name": name,
+                    "controls": [{"name": "freq", "default": 440.0}],
+                    "ugens": ugens,
+                }))
+                .unwrap(),
+            )
+            .expect("math def compiles"),
+        )
+    };
+    let sine = serde_json::json!({"kind": "Sine", "inputs": [{"control": 0}]});
+    let out =
+        |at: usize| serde_json::json!({"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": at}]});
+    let unop = |op: &str| {
+        def(
+            &format!("cmp_math_{op}"),
+            serde_json::json!([
+                sine,
+                {"kind": "UnaryOpUGen", "op": op, "inputs": [{"ugen": 0}]},
+                out(1)
+            ]),
+        )
+    };
+    // The note and decibel rows scale the bipolar source into the range the
+    // conversion is used over, so the timing is not of an edge case.
+    let scaled = |op: &str, mul: f64, add: f64| {
+        def(
+            &format!("cmp_math_{op}"),
+            serde_json::json!([
+                sine,
+                {"kind": "MulAdd", "inputs": [{"ugen": 0}, {"const": mul}, {"const": add}]},
+                {"kind": "UnaryOpUGen", "op": op, "inputs": [{"ugen": 1}]},
+                out(2)
+            ]),
+        )
+    };
+    let pow = def(
+        "cmp_math_pow",
+        serde_json::json!([
+            sine,
+            {"kind": "UnaryOpUGen", "op": "abs", "inputs": [{"ugen": 0}]},
+            {"kind": "BinaryOpUGen", "op": "pow", "inputs": [{"ugen": 1}, {"const": 1.7}]},
+            out(2)
+        ]),
+    );
+    let linexp = def(
+        "cmp_math_linexp",
+        serde_json::json!([
+            sine,
+            {"kind": "RangeMapUGen", "op": "linexp", "inputs": [
+                {"ugen": 0}, {"const": -1.0}, {"const": 1.0},
+                {"const": 20.0}, {"const": 20000.0}]},
+            out(1)
+        ]),
+    );
+    // EnvGen: gate, levelScale, levelBias, timeScale, doneAction, init, one
+    // segment, no release or loop node, then [target, secs, shape, curve].
+    let env = |name: &str, shape: f64, curve: f64| {
+        def(
+            name,
+            serde_json::json!([
+                sine,
+                {"kind": "EnvGen", "inputs": [
+                    {"const": 1.0}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                    {"const": 0.0}, {"const": 0.001}, {"const": 1.0},
+                    {"const": -99.0}, {"const": -99.0},
+                    {"const": 1.0}, {"const": 100.0}, {"const": shape}, {"const": curve}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 1}]},
+                out(2)
+            ]),
+        )
+    };
+    let bare = def("cmp_math_sine", serde_json::json!([sine, out(0)]));
+
+    let rows: Vec<(&str, Arc<clausters::synthdef::SynthDef>)> = vec![
+        ("sine", bare),
+        ("sin", unop("sin")),
+        ("tanh", unop("tanh")),
+        ("exp", unop("exp")),
+        ("midicps", scaled("midicps", 24.0, 60.0)),
+        ("dbamp", scaled("dbamp", 30.0, -30.0)),
+        ("pow", pow),
+        ("linexp", linexp),
+        ("env-curve", env("cmp_math_env_curve", 5.0, -4.0)),
+        ("env-exp", env("cmp_math_env_exp", 2.0, 0.0)),
+        ("env-sine", env("cmp_math_env_sine", 3.0, 0.0)),
+    ];
+
+    say!("\nper-sample transcendentals over a shared Sine source (xRT):");
+    let mut header = format!("  {:>6}", "synths");
+    for (name, _) in &rows {
+        header.push_str(&format!("  {name:>9}"));
+    }
+    say!("{header}");
+    for &n in &[32usize, 128, 512] {
+        let mut line = format!("  {n:>6}");
+        for (name, d) in &rows {
+            let d = Arc::clone(d);
+            let xrt = bench(n, move |_| {
+                Box::new(UGenSynth::new(
+                    Arc::clone(&d),
+                    SAMPLE_RATE as f32,
+                    SEED_STRIDE,
+                ))
+            }) * BLOCK_SIZE as f64
+                / SAMPLE_RATE;
+            record(format!("math/{name}/{n}"), Some(xrt), None, true);
+            line.push_str(&format!("  {xrt:>8.1}x"));
+        }
+        say!("{line}");
     }
 }
 

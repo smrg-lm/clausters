@@ -13,7 +13,7 @@
 // The segment interpolation itself (the SC shape curves) lives once in the
 // shared core, so a client drawing an envelope evaluates exactly what this
 // UGen plays.
-use clausters_core::envshape::shape_value;
+use clausters_core::envshape::{Segment, shape_value};
 
 use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
@@ -37,7 +37,17 @@ pub struct EnvGen {
     start_level: f32,
     last_val: f32,
     done_action: DoneAction,
+    /// The segment being played, prepared once ([`Segment::new`]) with what it
+    /// was prepared from. A segment's inputs may be signals, so the key is
+    /// compared every sample and the segment rebuilt only when one moved --
+    /// which is what keeps the exponential and bent shapes from paying a
+    /// logarithm per sample.
+    prepared: Option<(SegmentKey, Segment)>,
 }
+
+/// What a prepared [`Segment`] was built from: the segment's index, its start
+/// level and its target, shape and curvature.
+type SegmentKey = (usize, f32, f32, i32, f32);
 
 impl Default for EnvGen {
     fn default() -> Self {
@@ -57,6 +67,7 @@ impl EnvGen {
             start_level: 0.0,
             last_val: 0.0,
             done_action: DoneAction::None,
+            prepared: None,
         }
     }
 }
@@ -189,7 +200,16 @@ impl UGen for EnvGen {
             let curve = at(inputs[base + 3], i);
 
             let frac = self.segment_phase as f32 / dur_samples as f32;
-            let val = shape_value(shape, curve, self.start_level, target, frac);
+            let key = (self.current_segment, self.start_level, target, shape, curve);
+            let segment = match self.prepared {
+                Some((k, segment)) if k == key => segment,
+                _ => {
+                    let segment = Segment::new(shape, curve, self.start_level, target);
+                    self.prepared = Some((key, segment));
+                    segment
+                }
+            };
+            let val = segment.at(frac);
 
             self.last_val = val;
             *out = val * level_scale + level_bias;

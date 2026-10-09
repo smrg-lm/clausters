@@ -49,50 +49,101 @@ pub fn shape_name(shape: i32) -> &'static str {
 /// The endpoints hold: every shape yields `a` at `t == 0` and tends to `b` as
 /// `t -> 1`; the exact target is committed by the caller when the segment
 /// completes, so `t` never actually reaches 1.
+///
+/// [`Segment::new`] then [`Segment::at`]: a caller reading one segment at
+/// many positions -- `EnvGen`, every sample of a segment -- prepares it once
+/// and gets the same value.
 #[inline]
 pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
-    use core::f32::consts::{FRAC_PI_2, PI};
-    match shape {
-        // Step: jump to the target immediately and hold it for the duration.
-        SHAPE_STEP => b,
-        // Hold: stay at the start level; the jump to the target happens when
-        // the segment completes.
-        SHAPE_HOLD => a,
-        // Exponential: equal ratios, which is exactly the map `warp` writes
-        // between two levels -- including the rule for the levels that have no
-        // ratio (a zero endpoint, a sign change). That rule is the server's
-        // `XLine`'s too, so it is read from one place rather than restated.
-        SHAPE_EXPONENTIAL => crate::warp::exp_value(t, a, b),
-        // Sine: equal-power ease in/out (half a cosine).
-        SHAPE_SINE => a + (b - a) * (1.0 - (PI * t).cos()) * 0.5,
-        // Welch: a quarter sine, concave for a rise and convex for a fall.
-        SHAPE_WELCH => {
-            if b >= a {
-                a + (b - a) * (FRAC_PI_2 * t).sin()
-            } else {
-                b + (a - b) * (FRAC_PI_2 * (1.0 - t)).sin()
+    Segment::new(shape, c, a, b).at(t)
+}
+
+/// One envelope segment with everything that does not depend on the position
+/// worked out: the exponential and bent shapes' powers, the cubed shape's
+/// roots. What is left for [`Segment::at`] is the per-sample half, which is
+/// what keeps an envelope from paying a logarithm and an exponential on every
+/// sample of a segment whose levels have not moved.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Segment {
+    form: Form,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Form {
+    Step { b: f32 },
+    Hold { a: f32 },
+    Linear { a: f32, b: f32 },
+    Warp(crate::warp::Write),
+    Sine { a: f32, b: f32 },
+    WelchRise { a: f32, b: f32 },
+    WelchFall { a: f32, b: f32 },
+    Squared { ra: f32, rb: f32 },
+    Cubed { ra: f32, rb: f32 },
+}
+
+impl Segment {
+    /// The segment from `a` to `b` in shape `shape` (curvature `c`, read by
+    /// the custom-curvature shape only).
+    #[inline]
+    pub fn new(shape: i32, c: f32, a: f32, b: f32) -> Segment {
+        let form = match shape {
+            // Step: jump to the target immediately and hold it for the duration.
+            SHAPE_STEP => Form::Step { b },
+            // Hold: stay at the start level; the jump to the target happens
+            // when the segment completes.
+            SHAPE_HOLD => Form::Hold { a },
+            // Exponential: equal ratios, which is exactly the map `warp` writes
+            // between two levels -- including the rule for the levels that
+            // have no ratio (a zero endpoint, a sign change). That rule is the
+            // server's `XLine`'s too, so it is read from one place rather than
+            // restated.
+            SHAPE_EXPONENTIAL => Form::Warp(crate::warp::Write::exp(a, b)),
+            // Sine: equal-power ease in/out (half a cosine).
+            SHAPE_SINE => Form::Sine { a, b },
+            // Welch: a quarter sine, concave for a rise and convex for a fall.
+            SHAPE_WELCH if b >= a => Form::WelchRise { a, b },
+            SHAPE_WELCH => Form::WelchFall { a, b },
+            // Custom curvature: `c` bends the segment (0 == linear, positive
+            // builds slowly then fast, negative the reverse).
+            SHAPE_CURVE => Form::Warp(crate::warp::Write::curve(a, b, c)),
+            // Squared / cubed: interpolate the square/cube root linearly, then
+            // raise back. Squared clamps to non-negative levels (its root is
+            // real only there); cubed uses the sign-preserving real cube root.
+            SHAPE_SQUARED => Form::Squared {
+                ra: a.max(0.0).sqrt(),
+                rb: b.max(0.0).sqrt(),
+            },
+            SHAPE_CUBED => Form::Cubed {
+                ra: a.cbrt(),
+                rb: b.cbrt(),
+            },
+            // Linear (1) and any unknown shape.
+            _ => Form::Linear { a, b },
+        };
+        Segment { form }
+    }
+
+    /// The level at position `t` in `[0, 1)`.
+    #[inline]
+    pub fn at(self, t: f32) -> f32 {
+        use core::f32::consts::{FRAC_PI_2, PI};
+        match self.form {
+            Form::Step { b } => b,
+            Form::Hold { a } => a,
+            Form::Linear { a, b } => a + t * (b - a),
+            Form::Warp(write) => write.at(t),
+            Form::Sine { a, b } => a + (b - a) * (1.0 - (PI * t).cos()) * 0.5,
+            Form::WelchRise { a, b } => a + (b - a) * (FRAC_PI_2 * t).sin(),
+            Form::WelchFall { a, b } => b + (a - b) * (FRAC_PI_2 * (1.0 - t)).sin(),
+            Form::Squared { ra, rb } => {
+                let s = ra + t * (rb - ra);
+                s * s
+            }
+            Form::Cubed { ra, rb } => {
+                let s = ra + t * (rb - ra);
+                s * s * s
             }
         }
-        // Custom curvature: `c` bends the segment (0 == linear, positive builds
-        // slowly then fast, negative the reverse).
-        SHAPE_CURVE => crate::warp::curve_value(t, a, b, c),
-        // Squared / cubed: interpolate the square/cube root linearly, then raise
-        // back. Squared clamps to non-negative levels (its root is real only
-        // there); cubed uses the sign-preserving real cube root.
-        SHAPE_SQUARED => {
-            let ra = a.max(0.0).sqrt();
-            let rb = b.max(0.0).sqrt();
-            let s = ra + t * (rb - ra);
-            s * s
-        }
-        SHAPE_CUBED => {
-            let ra = a.cbrt();
-            let rb = b.cbrt();
-            let s = ra + t * (rb - ra);
-            s * s * s
-        }
-        // Linear (1) and any unknown shape.
-        _ => a + t * (b - a),
     }
 }
 

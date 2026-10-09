@@ -211,43 +211,61 @@ impl Read {
 /// Where a map **writes** a position to: an output axis, prepared like
 /// [`Read`] and the exact inverse of it axis for axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Write {
-    Lin { lo: f32, span: f32 },
-    Exp { lo: f32, ratio: f32 },
-    Curve { a: f32, b: f32, grow: f32 },
+pub(crate) enum Write {
+    Lin {
+        lo: f32,
+        span: f32,
+    },
+    /// `lo * ratio^t`, held as `log2(ratio)` in `f64` so the power is one
+    /// `exp2` per sample -- cheaper than a `powf`, and the same value as a
+    /// correctly rounded one on all but a vanishing share of arguments.
+    Exp {
+        lo: f32,
+        log2_ratio: f64,
+    },
+    /// `b - a * grow^t`, the power held the same way as [`Write::Exp`]'s.
+    Curve {
+        a: f32,
+        b: f32,
+        log2_grow: f64,
+    },
 }
 
 impl Write {
     #[inline]
-    fn lin(lo: f32, hi: f32) -> Write {
+    pub(crate) fn lin(lo: f32, hi: f32) -> Write {
         Write::Lin { lo, span: hi - lo }
     }
 
     #[inline]
-    fn exp(lo: f32, hi: f32) -> Write {
+    pub(crate) fn exp(lo: f32, hi: f32) -> Write {
         match exp_ends(lo, hi) {
             Some((lo_e, hi_e)) => Write::Exp {
                 lo: lo_e,
-                ratio: hi_e / lo_e,
+                log2_ratio: ((hi_e / lo_e) as f64).log2(),
             },
             None => Write::lin(lo, hi),
         }
     }
 
     #[inline]
-    fn curve(lo: f32, hi: f32, curve: f32) -> Write {
+    pub(crate) fn curve(lo: f32, hi: f32, curve: f32) -> Write {
         match curve_terms(lo, hi, curve) {
-            Some((a, b, grow)) => Write::Curve { a, b, grow },
+            Some((a, b, grow)) => Write::Curve {
+                a,
+                b,
+                log2_grow: (grow as f64).log2(),
+            },
             None => Write::lin(lo, hi),
         }
     }
 
     #[inline]
-    fn at(self, t: f32) -> f32 {
+    pub(crate) fn at(self, t: f32) -> f32 {
         match self {
             Write::Lin { lo, span } => t * span + lo,
-            Write::Exp { lo, ratio } => ratio.powf(t) * lo,
-            Write::Curve { a, b, grow } => b - a * grow.powf(t),
+            Write::Exp { lo, log2_ratio } => (t as f64 * log2_ratio).exp2() as f32 * lo,
+            Write::Curve { a, b, log2_grow } => b - a * (t as f64 * log2_grow).exp2() as f32,
         }
     }
 }
