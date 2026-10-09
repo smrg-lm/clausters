@@ -99,6 +99,14 @@ CALC = [
     ("besselj", [1.0, 2.5]), ("bessely", [0.0, 2.5]),
     ("degkey", [1.1, MAJOR]), ("degkey", [-1.0, MAJOR]), ("keydeg", [3.0, MAJOR]),
     ("nearestinscale", [13.0, MAJOR]), ("nearestinlist", [3.4, [1.0, 3.0, 7.0]]),
+    ("blend", [1.0, 3.0, 0.25]), ("blend", [[0.0, 10.0], [4.0, 20.0, 30.0], 0.5]),
+    ("blendat", [[0.0, 10.0, 20.0, 30.0], 3.5, "wrap"]),
+    ("blendat", [[0.0, 10.0, 20.0, 30.0], 1.25]),
+    ("normalize", [[2.0, 4.0, 3.0], -1.0, 1.0]), ("normalizesum", [[1.0, 3.0]]),
+    ("integrate", [[1.0, 2.0, 3.0]]), ("differentiate", [[1.0, 3.0, 6.0]]),
+    ("resamp0", [[0.0, 10.0, 20.0], 5]), ("resamp1", [[0.0, 10.0, 20.0], 6]),
+    ("asrandomtable", [[1.0, 2.0, 4.0, 2.0, 1.0], 8]),
+    ("indexinbetween", [[1.0, 3.0, 7.0], 5.0]), ("indexofgreaterthan", [[1.0, 3.0, 7.0], 2.0]),
 ]
 
 BOUND = ["clip", "wrap", "fold"]
@@ -121,7 +129,12 @@ SEEDS = [1, 12345, 2**31]
 
 def jnum(value):
     """A float as JSON can carry it: the number itself, or a tag for the
-    non-finite results (JSON has no NaN/Infinity literal)."""
+    non-finite results (JSON has no NaN/Infinity literal). A boolean, a
+    missing value and a list keep their shape."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [jnum(v) for v in value]
     value = float(value)
     if value != value:
         return "nan"
@@ -151,6 +164,8 @@ def rng_run(seed):
         ["irand2", stream.irand2(5)], ["irrand", stream.irrand(3, 9)],
         ["choose", stream.choose(["a", "b", "c"])],
         ["wchoose", stream.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
+        ["tablerand", stream.tablerand([0.0, 0.1, 0.5, 1.0])],
+        ["scramble", stream.scramble(["a", "b", "c", "d", "e"])],
     ]
     return {
         "seed": seed,

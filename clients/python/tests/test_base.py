@@ -146,6 +146,39 @@ def test_numeric_functions_and_scales():
     assert B.degree_to_midinote(0, 0, 5, 0, major) == 60.0
 
 
+def test_list_functions():
+    # sclang's functions over a whole list, in f64 through the core.
+    _ffi_or_skip()
+    assert B.blend(1.0, 3.0, 0.25) == 1.5
+    assert B.blend([0.0, 10.0], [4.0, 20.0, 30.0]) == [2.0, 15.0, 15.0]
+    assert B.blendat([0, 10, 20, 30], 1.25) == 12.5
+    assert B.blendat([0, 10, 20, 30], 3.5, "wrap") == 15.0
+    assert B.blendat([0, 10, 20, 30], 3.5, "fold") == 25.0
+    assert B.normalize([2, 4, 3]) == [0.0, 1.0, 0.5]
+    assert B.normalizesum([1, 3]) == [0.25, 0.75]
+    assert B.integrate([1, 2, 3]) == [1.0, 3.0, 6.0]
+    assert B.differentiate([1, 3, 6]) == [1.0, 2.0, 3.0]
+    assert B.resamp1([0, 10], 5) == [0.0, 2.5, 5.0, 7.5, 10.0]
+    assert B.resamp0([0, 10, 20], 5) == [0.0, 10.0, 10.0, 20.0, 20.0]
+    assert B.indexinbetween([1, 3, 7], 5) == 1.5
+    assert B.indexofgreaterthan([1, 3, 7], 2) == 1
+    assert B.indexofgreaterthan([1, 3, 7], 9) is None
+    table = B.asrandomtable([1, 2, 4, 2, 1], 16)
+    assert len(table) == 16 and all(0.0 <= v <= 1.0 for v in table)
+
+
+def test_table_draws_and_scramble_come_from_the_context():
+    _ffi_or_skip()
+    from clausters import scramble, tablerand
+    from clausters.base.main import main
+    table = B.asrandomtable([1, 2, 4, 2, 1], 16)
+    main.seed(5)
+    a = [tablerand(table) for _ in range(4)], scramble("abcdef")
+    main.seed(5)
+    assert a == ([tablerand(table) for _ in range(4)], scramble("abcdef"))
+    assert sorted(a[1]) == list("abcdef")
+
+
 def test_smoothing_windows_s8():
     # S8: the FFT-chain windows are the shared core, exposed for binary parity
     # (same shape the server's FFT/IFFT applies).

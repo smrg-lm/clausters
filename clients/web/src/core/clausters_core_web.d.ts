@@ -726,11 +726,19 @@ export class Rng {
      */
     nextF64(): number;
     /**
+     * A uniformly random permutation of `0..n`.
+     */
+    scramble(n: number): Uint32Array;
+    /**
      * A child stream seeded from this one's next word: deterministic
      * derivation, so seeding a root reproduces every stream created under it,
      * in creation order.
      */
     spawn(): Rng;
+    /**
+     * One draw shaped by a table `asrandomtable` built.
+     */
+    tablerand(table: Float64Array): number;
     /**
      * The index `wchoose` picks from the relative `weights`.
      */
@@ -1165,6 +1173,13 @@ export function beats_to_secs(tempo: number, base_beats: number, base_seconds: n
 export function binary(op: string, a: number, b: number): number;
 
 /**
+ * JS face: `list` read at the fractional `index`, blended between the two
+ * values around it; `method` (`"clip"`, `"wrap"`, `"fold"`) says what an index
+ * past either end reads.
+ */
+export function blendAt(list: Float64Array, index: number, method: string): number;
+
+/**
  * JS face: one two-bound operator by name (`"clip"`, `"wrap"`, `"fold"`),
  * keeping `x` inside `lo..hi`.
  */
@@ -1479,6 +1494,12 @@ export function level_set(level: Float64Array, key: number, value: number): Floa
  * frame. An empty array when the two channels differ in length.
  */
 export function lissajous(left: Float32Array, right: Float32Array): Float32Array;
+
+/**
+ * JS face: one list function by name (`"normalize"`, `"integrate"`,
+ * `"resamp1"`, `"asrandomtable"`, ...) over `list` with its arguments.
+ */
+export function list(op: string, list: Float64Array, a: number, b: number): Float64Array;
 
 /**
  * JS face: **the loudness** of an interleaved buffer at `rate` Hz, as
@@ -1999,6 +2020,7 @@ export interface InitOutput {
     readonly beat_in_bar: (a: number, b: number) => number;
     readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
     readonly binary: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly blendAt: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly bound: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
@@ -2082,6 +2104,7 @@ export interface InitOutput {
     readonly level_resolve: (a: number, b: number) => [number, number];
     readonly level_set: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly list: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly loudness: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
@@ -2159,7 +2182,9 @@ export interface InitOutput {
     readonly rng_new: (a: number) => number;
     readonly rng_nextBelow: (a: number, b: number) => number;
     readonly rng_nextF64: (a: number) => number;
+    readonly rng_scramble: (a: number, b: number) => [number, number];
     readonly rng_spawn: (a: number) => number;
+    readonly rng_tablerand: (a: number, b: number, c: number) => number;
     readonly rng_windex: (a: number, b: number, c: number) => number;
     readonly sampleclockmodel_addAnchor: (a: number, b: number, c: number, d: number) => void;
     readonly sampleclockmodel_driftPpm: (a: number) => number;

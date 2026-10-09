@@ -438,6 +438,19 @@ def bessely(n, x):
     return _native.calc(Calc.BESSELY, float(n), float(x))
 
 
+def blend(a, b, frac=0.5):
+    """`frac` of the way from `a` to `b`. Any of the three may be a sequence,
+    and two lists blend point by point (the shorter extended cyclically)."""
+    args = (a, b, frac)
+    seqs = [_is_seq(v) for v in args]
+    if not _py.any(seqs):
+        return _native.calc(Calc.BLEND, float(a), float(b), float(frac))
+    n = _py.max(len(v) for v, q in zip(args, seqs) if q)
+    cols = [_extend(v, n) if q else [v] * n for v, q in zip(args, seqs)]
+    return [_native.calc(Calc.BLEND, float(x), float(y), float(f))
+            for x, y, f in zip(*cols)]
+
+
 # ---- scales and sorted lists (native, f64) ----
 
 def _scale_calc(op, x, values, steps):
@@ -476,6 +489,76 @@ def degree_to_midinote(degree, alter, octave, root, scale):
     client's ``degreeToMidinote``."""
     return _native.degree_to_midinote(float(degree), float(alter), float(octave),
                                       float(root), [float(v) for v in scale])
+
+
+# ---- lists (native, f64) ----
+#
+# sclang's functions that read or remake a whole list. The ones that draw
+# (`tablerand`, `scramble`) are random values and live with the others in
+# `clausters.base.rand`.
+
+ListOp = _native.ListOp
+
+
+def blendat(values, index, method="clip"):
+    """`values` read at the fractional `index`, blended between the two values
+    around it. `method` says what an index past either end reads: ``"clip"``
+    (held at the end), ``"wrap"`` or ``"fold"``."""
+    m = int(BoundOp[method.upper()]) if isinstance(method, str) else int(method)
+    if _is_seq(index):
+        return [_native.blend_at(values, float(i), m) for i in index]
+    return _native.blend_at(values, float(index), m)
+
+
+def normalize(values, lo=0.0, hi=1.0):
+    """`values` mapped linearly from their own range onto ``lo..hi``."""
+    return _native.list_op(ListOp.NORMALIZE, values, lo, hi)
+
+
+def normalizesum(values):
+    """`values` divided by their sum, so they sum to 1 -- the weights
+    `wchoose` reads, made explicit."""
+    return _native.list_op(ListOp.NORMALIZESUM, values)
+
+
+def integrate(values):
+    """The running sum of `values`."""
+    return _native.list_op(ListOp.INTEGRATE, values)
+
+
+def differentiate(values):
+    """Each value less the one before it (the first less 0)."""
+    return _native.list_op(ListOp.DIFFERENTIATE, values)
+
+
+def resamp0(values, size):
+    """`values` resampled to `size` values by taking the nearest."""
+    return _native.list_op(ListOp.RESAMP0, values, size)
+
+
+def resamp1(values, size):
+    """`values` resampled to `size` values by linear interpolation."""
+    return _native.list_op(ListOp.RESAMP1, values, size)
+
+
+def asrandomtable(values, size=None):
+    """The table `clausters.tablerand` draws from, with `values` as the
+    probability shape (higher is likelier), `size` entries long (the shape's
+    own length unless given)."""
+    return _native.list_op(ListOp.ASRANDOMTABLE, values,
+                           len(values) if size is None else size)
+
+
+def indexinbetween(values, x):
+    """The fractional index of `x` in the sorted list `values`."""
+    return _scale_calc(ScaleCalc.INDEXINBETWEEN, x, values, 0.0)
+
+
+def indexofgreaterthan(values, x):
+    """The first index of the sorted list `values` greater than `x`, or
+    ``None`` where none is."""
+    i = _native.scale_calc(ScaleCalc.INDEXOFGREATERTHAN, float(x), [float(v) for v in values])
+    return None if i < 0 else int(i)
 
 
 # ---- range maps (native, f32 -- SuperCollider's warp family) ----

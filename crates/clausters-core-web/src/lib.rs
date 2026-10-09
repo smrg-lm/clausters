@@ -1104,6 +1104,18 @@ impl JsRng {
         self.0.windex(weights) as f64
     }
 
+    /// One draw shaped by a table `asrandomtable` built.
+    pub fn tablerand(&mut self, table: &[f64]) -> f64 {
+        self.0.tablerand(table)
+    }
+
+    /// A uniformly random permutation of `0..n`.
+    pub fn scramble(&mut self, n: usize) -> Vec<u32> {
+        let mut out = vec![0; n];
+        self.0.scramble(&mut out);
+        out
+    }
+
     /// Uniform integer in `[0, n)`; 0 when `n` is 0.
     #[wasm_bindgen(js_name = nextBelow)]
     pub fn next_below(&mut self, n: f64) -> f64 {
@@ -1147,6 +1159,29 @@ pub fn bound(op: &str, x: f64, lo: f64, hi: f64) -> Result<f64, JsError> {
     let op = builtins::BoundOp::from_name(op)
         .ok_or_else(|| JsError::new(&format!("unknown bound op '{op}'")))?;
     Ok(builtins::apply_bound(op, x as f32, lo as f32, hi as f32) as f64)
+}
+
+/// JS face: one list function by name (`"normalize"`, `"integrate"`,
+/// `"resamp1"`, `"asrandomtable"`, ...) over `list` with its arguments.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn list(op: &str, list: &[f64], a: f64, b: f64) -> Result<Vec<f64>, JsError> {
+    let o = clausters_core::numeric::ListOp::from_name(op)
+        .ok_or_else(|| JsError::new(&format!("unknown list function '{op}'")))?;
+    let mut out = vec![0.0; o.output_len(list.len(), a)];
+    clausters_core::numeric::apply_list(o, list, a, b, &mut out);
+    Ok(out)
+}
+
+/// JS face: `list` read at the fractional `index`, blended between the two
+/// values around it; `method` (`"clip"`, `"wrap"`, `"fold"`) says what an index
+/// past either end reads.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = blendAt)]
+pub fn blend_at(list: &[f64], index: f64, method: &str) -> Result<f64, JsError> {
+    let m = builtins::BoundOp::from_name(method)
+        .ok_or_else(|| JsError::new(&format!("unknown blend method '{method}'")))?;
+    Ok(clausters_core::numeric::blend_at(list, index, m))
 }
 
 /// JS face: one numeric function by name (`"degrad"`, `"erf"`, `"snap"`,

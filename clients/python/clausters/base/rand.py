@@ -142,3 +142,14 @@ def choose(items):
 def wchoose(items, weights):
     """An element of ``items`` chosen with the relative ``weights``."""
     return current_rng().wchoose(items, weights)
+
+
+def tablerand(table):
+    """One draw shaped by ``table`` -- what `clausters.builtins.asrandomtable`
+    builds from a probability shape."""
+    return current_rng().tablerand(table)
+
+
+def scramble(items):
+    """``items`` in a uniformly random order (a new list)."""
+    return current_rng().scramble(items)

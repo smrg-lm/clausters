@@ -75,6 +75,8 @@ In wasm neither applies: a call returns the bytes or the string.
 |---|---|---|
 | `clausters_core_unary` | `unary` | |
 | `clausters_core_binary` | `binary` | |
+| `clausters_core_list` | `list` | `idiom` — the list functions (`normalize`, `integrate`, `resamp1`, `asrandomtable`, …): C writes into a buffer the caller sized from the op's output length, wasm returns the list |
+| `clausters_core_blendat` | `blend_at` | `idiom` — the read method is a `BoundOp` number in C and its name in wasm |
 | `clausters_core_calc` | `calc` | `idiom` — the numeric functions that are not operators (`degrad`, `erf`, `snap`, `bilin`, …), in `f64`; C takes the function by number, wasm by name |
 | `clausters_core_scale_calc` | `scale_calc` | `idiom` — the same for the four that read a scale or a sorted list (`degkey`, `keydeg`, `nearestinscale`, `nearestinlist`) |
 | `clausters_core_bound` | `bound` | `idiom` — `clip`/`wrap`/`fold` between two bounds; the same sequence-against-one-value split as `unary`/`binary` |
@@ -138,6 +140,8 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_rng_next_u64` | — | `n/a` — JavaScript has no `u64` to hand back; the float reads are the surface there |
 | `clausters_rng_draw` | `JsRng.draw` | `idiom` — the distributions (`rand`, `rrand`, `exprand`, `linrand`, `coin`, `irand`, `gauss`, …): C takes the distribution by number, wasm by name |
 | `clausters_rng_windex` | `JsRng.windex` | |
+| `clausters_rng_tablerand` | `JsRng.tablerand` | |
+| `clausters_rng_scramble` | `JsRng.scramble` | `idiom` — C writes the permutation through an out pointer, wasm returns it |
 | — | `JsRng.spawn` | **gap** — a child stream, the reproducible-substream primitive |
 
 ## The beat queue

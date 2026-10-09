@@ -112,3 +112,44 @@ pub unsafe extern "C" fn clausters_rng_windex(
     unsafe { *state = rng.state() };
     i as u64
 }
+
+/// Advances `*state` and returns one draw shaped by the `n`-value `table` an
+/// `asrandomtable` built (NaN when `n` is 0 or a pointer is null).
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null), and `table` readable
+/// for `n` `f64`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_tablerand(
+    state: *mut u64,
+    table: *const f64,
+    n: usize,
+) -> f64 {
+    if state.is_null() || table.is_null() || n == 0 {
+        return f64::NAN;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let t = unsafe { std::slice::from_raw_parts(table, n) };
+    let mut rng = Rng::from_state(unsafe { *state });
+    let v = rng.tablerand(t);
+    unsafe { *state = rng.state() };
+    v
+}
+
+/// Advances `*state` and writes a uniformly random permutation of `0..n`
+/// into `out` (nothing when `n` is 0 or a pointer is null).
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null), and `out` writable
+/// for `n` `u32`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_scramble(state: *mut u64, out: *mut u32, n: usize) {
+    if state.is_null() || out.is_null() || n == 0 {
+        return;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
+    let mut rng = Rng::from_state(unsafe { *state });
+    rng.scramble(o);
+    unsafe { *state = rng.state() };
+}

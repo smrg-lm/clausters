@@ -101,7 +101,7 @@ from .base.time import (
 from .base.main import default_session, main
 from .base.rand import (
     Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
-    irrand, linrand, rand, rand2, rrand, seed, spawn_rng, sum3rand, wchoose,
+    irrand, linrand, rand, rand2, rrand, scramble, seed, spawn_rng, sum3rand, tablerand, wchoose,
 )
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
@@ -205,6 +205,8 @@ __all__ = [
     "irrand",
     "choose",
     "wchoose",
+    "tablerand",
+    "scramble",
     # the root of every error this package raises; the leaves are in `errors`
     "ClaustersError",
 ]

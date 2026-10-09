@@ -15,7 +15,9 @@
 import {
     bark_to_hz as coreBarkToHz,
     binary as coreBinary,
+    blendAt as coreBlendAt,
     bound as coreBound,
+    list as coreList,
     calc as coreCalc,
     scaleCalc as coreScaleCalc,
     degree_to_midinote as coreDegreeToMidinote,
@@ -364,6 +366,21 @@ export const bessely = (n: number, x: Num): Num =>
     isSeq(x) ? x.map((v) => coreCalc("bessely", Float64Array.from([n, v]))) :
         coreCalc("bessely", Float64Array.from([n, x]));
 
+/**
+ * `frac` of the way from `a` to `b`. Any of the three may be an array, and two
+ * arrays blend point by point (the shorter extended cyclically).
+ */
+export const blend = (a: Num, b: Num, frac: Num = 0.5): Num => {
+    const args = [a, b, frac];
+    const seqs = args.filter(isSeq);
+    if (seqs.length === 0) return coreCalc("blend", Float64Array.from(args as number[]));
+    const n = Math.max(...seqs.map((v) => v.length));
+    const cols = args.map((v) => (isSeq(v) ? extend(v, n) : Array<number>(n).fill(v as number)));
+    return Array.from({ length: n }, (_, i) =>
+        coreCalc("blend", Float64Array.from([cols[0]![i]!, cols[1]![i]!, cols[2]![i]!])),
+    );
+};
+
 // ---- scales and sorted lists ----
 
 const scaleOp = (op: string, x: Num, values: readonly number[], steps: number): Num => {
@@ -394,6 +411,75 @@ export const nearestinscale = (x: Num, scale: readonly number[], steps = 12): Nu
 /** The value of the sorted list `values` nearest to `x`. */
 export const nearestinlist = (x: Num, values: readonly number[]): Num =>
     scaleOp("nearestinlist", x, values, 0);
+
+// ---- lists ----
+//
+// sclang's functions that read or remake a whole list. The ones that draw
+// (`tablerand`, `scramble`) are random values and live with the others in
+// `base/rand`.
+
+/** How an index past either end of a list reads. */
+export type BlendMethod = "clip" | "wrap" | "fold";
+
+/**
+ * `values` read at the fractional `index`, blended between the two values
+ * around it. `method` says what an index past either end reads: `"clip"`
+ * (held at the end), `"wrap"` or `"fold"`.
+ */
+export const blendat = (values: readonly number[], index: Num, method: BlendMethod = "clip"): Num => {
+    const list = Float64Array.from(values);
+    return isSeq(index) ? index.map((i) => coreBlendAt(list, i, method)) :
+        coreBlendAt(list, index, method);
+};
+
+const listOp = (op: string, values: readonly number[], a = 0, b = 0): number[] =>
+    Array.from(coreList(op, Float64Array.from(values), a, b));
+
+/** `values` mapped linearly from their own range onto `lo..hi`. */
+export const normalize = (values: readonly number[], lo = 0.0, hi = 1.0): number[] =>
+    listOp("normalize", values, lo, hi);
+
+/**
+ * `values` divided by their sum, so they sum to 1 -- the weights `wchoose`
+ * reads, made explicit.
+ */
+export const normalizesum = (values: readonly number[]): number[] => listOp("normalizesum", values);
+
+/** The running sum of `values`. */
+export const integrate = (values: readonly number[]): number[] => listOp("integrate", values);
+
+/** Each value less the one before it (the first less 0). */
+export const differentiate = (values: readonly number[]): number[] =>
+    listOp("differentiate", values);
+
+/** `values` resampled to `size` values by taking the nearest. */
+export const resamp0 = (values: readonly number[], size: number): number[] =>
+    listOp("resamp0", values, size);
+
+/** `values` resampled to `size` values by linear interpolation. */
+export const resamp1 = (values: readonly number[], size: number): number[] =>
+    listOp("resamp1", values, size);
+
+/**
+ * The table `tablerand` draws from, with `values` as the probability shape
+ * (higher is likelier), `size` entries long (the shape's own length unless
+ * given).
+ */
+export const asrandomtable = (values: readonly number[], size?: number): number[] =>
+    listOp("asrandomtable", values, size ?? values.length);
+
+/** The fractional index of `x` in the sorted list `values`. */
+export const indexinbetween = (values: readonly number[], x: Num): Num =>
+    scaleOp("indexinbetween", x, values, 0);
+
+/**
+ * The first index of the sorted list `values` greater than `x`, or `undefined`
+ * where none is.
+ */
+export const indexofgreaterthan = (values: readonly number[], x: number): number | undefined => {
+    const i = coreScaleCalc("indexofgreaterthan", x, Float64Array.from(values), 0);
+    return i < 0 ? undefined : i;
+};
 
 // ---- range maps (SuperCollider's warp family) ----
 //

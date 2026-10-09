@@ -296,6 +296,26 @@ impl Rng {
         }
     }
 
+    /// One draw shaped by a table [`ListOp::Asrandomtable`](crate::numeric::ListOp)
+    /// built: the table read at a uniform position, sclang's `tableRand`. An
+    /// empty table gives NaN.
+    pub fn tablerand(&mut self, table: &[f64]) -> f64 {
+        let at = self.draw(Draw::Rand, table.len().saturating_sub(1) as f64, 0.0);
+        crate::numeric::blend_at(table, at, crate::builtins::BoundOp::Clip)
+    }
+
+    /// A uniformly random permutation of `0..out.len()` into `out` --
+    /// sclang's `scramble`, Fisher-Yates with this stream's draws.
+    pub fn scramble(&mut self, out: &mut [u32]) {
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = i as u32;
+        }
+        for i in (1..out.len()).rev() {
+            let j = self.next_below(i as u64 + 1) as usize;
+            out.swap(i, j);
+        }
+    }
+
     /// The index `wchoose` picks: `weights` read as relative chances (they
     /// need not sum to 1), the first index whose running sum reaches a uniform
     /// draw over the total. An empty or all-zero list answers 0.
@@ -382,6 +402,14 @@ mod tests {
             "{counts:?}"
         );
         assert_eq!(r.windex(&[]), 0);
+        // A permutation, and a table draw within the table's range.
+        let mut p = [0u32; 10];
+        r.scramble(&mut p);
+        let mut sorted = p;
+        sorted.sort_unstable();
+        assert_eq!(sorted, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let t = [0.0, 0.25, 0.5, 1.0];
+        assert!((0..100).all(|_| (0.0..=1.0).contains(&r.tablerand(&t))));
     }
 
     #[test]

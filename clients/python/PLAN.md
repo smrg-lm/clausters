@@ -2190,10 +2190,19 @@ Measured while opening the arc (2026-10-09):
   (`split_degree`). The divergence the survey found is closed: `exp10` is in
   Python's `builtins` and on both graphs now, and `degree_to_midinote` is in
   Python's `builtins` beside the web client's `degreeToMidinote`.
-- ⬜ **C68 — Functions over arrays.** `blend` (two numbers or two arrays point
-  by point), `blendat`, `normalize`, `normalizesum`, `resamp0`/`resamp1`,
-  `indexinbetween`, `indexofgreaterthan`, `integrate`, `differentiate`,
-  `asrandomtable`/`tablerand`, `shuffle` — in the core, bound by both clients.
+- ✅ **C68 — Functions over arrays** *(done 2026-10-09)*. In
+  `clausters_core::numeric`: `blend` (`Calc::Blend`; two lists blend point by
+  point in the clients, the shorter extended cyclically), `blend_at` with
+  sclang's read past either end as a `BoundOp` (`clip`, `wrap`, `fold`), a
+  `ListOp` table — `normalize`, `normalizesum`, `integrate`, `differentiate`,
+  `resamp0`, `resamp1`, `asrandomtable` — and `indexinbetween`/
+  `indexofgreaterthan` in the scale table; in `clausters_core::rng`,
+  `tablerand` and `scramble`. New doors: `clausters_core_list`,
+  `clausters_core_blendat`, `clausters_rng_tablerand`,
+  `clausters_rng_scramble` and their wasm faces. Both clients' `builtins`
+  name the list functions and the random context draws `tablerand` and
+  `scramble`. The name is sclang's `scramble`, not the `shuffle` this entry
+  first said: sclang has no `shuffle` (its `perfectShuffle` is a riffle).
 - ⬜ **C69 — Documentation and the manual check.** The builtins page of both
   clients' books, the operator reference in the server's, and an example in
   each client that plays what changed in meaning (a signed `sqrt` and `pow`)

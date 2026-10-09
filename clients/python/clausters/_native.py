@@ -461,6 +461,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
     # per crossing. The map's own numbers are scalars -- one range for the
     # sequence, not a range per element.
+    lib.clausters_core_list.restype = ctypes.c_int32
+    lib.clausters_core_list.argtypes = [
+        ctypes.c_uint32, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t,
+        ctypes.c_double, ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t,
+    ]
+    lib.clausters_core_blendat.restype = ctypes.c_double
+    lib.clausters_core_blendat.argtypes = [
+        ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_double, ctypes.c_uint32,
+    ]
     lib.clausters_core_calc.restype = ctypes.c_double
     lib.clausters_core_calc.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
     lib.clausters_core_scale_calc.restype = ctypes.c_double
@@ -607,6 +616,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_rng_draw.argtypes = [u64p, ctypes.c_uint32, ctypes.c_double, ctypes.c_double]
     lib.clausters_rng_windex.restype = ctypes.c_uint64
     lib.clausters_rng_windex.argtypes = [u64p, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
+    lib.clausters_rng_tablerand.restype = ctypes.c_double
+    lib.clausters_rng_tablerand.argtypes = [u64p, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
+    lib.clausters_rng_scramble.restype = None
+    lib.clausters_rng_scramble.argtypes = [u64p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t]
     lib.clausters_rng_next_u64.restype = ctypes.c_uint64
     lib.clausters_rng_next_u64.argtypes = [u64p]
     f64p = ctypes.POINTER(ctypes.c_double)
@@ -3218,6 +3231,7 @@ class Calc(IntEnum):
     BIEXP = 25
     BESSELJ = 26
     BESSELY = 27
+    BLEND = 28
 
 
 class ScaleCalc(IntEnum):
@@ -3228,6 +3242,42 @@ class ScaleCalc(IntEnum):
     KEYDEG = 1
     NEARESTINSCALE = 2
     NEARESTINLIST = 3
+    INDEXINBETWEEN = 4
+    INDEXOFGREATERTHAN = 5
+
+
+class ListOp(IntEnum):
+    """The list functions; values match ``clausters_core::numeric::ListOp``."""
+
+    NORMALIZE = 0
+    NORMALIZESUM = 1
+    INTEGRATE = 2
+    DIFFERENTIATE = 3
+    RESAMP0 = 4
+    RESAMP1 = 5
+    ASRANDOMTABLE = 6
+
+
+def _doubles(values):
+    return (ctypes.c_double * len(values))(*[float(v) for v in values])
+
+
+def list_op(op: int, values, a: float = 0.0, b: float = 0.0) -> list:
+    """Applies list function `op` (a `ListOp`) to `values` with its arguments
+    `a` and `b`; returns the resulting list."""
+    n = len(values)
+    out_n = int(max(a, 0.0)) if op in (ListOp.RESAMP0, ListOp.RESAMP1, ListOp.ASRANDOMTABLE) else n
+    out = (ctypes.c_double * out_n)()
+    rc = lib().clausters_core_list(int(op), _doubles(values), n, float(a), float(b), out, out_n)
+    if rc != 0:
+        raise ValueError(f"clausters_core_list failed ({rc})")
+    return list(out)
+
+
+def blend_at(values, index: float, method: int = 0) -> float:
+    """`values` read at the fractional `index`, blended between the two around
+    it; `method` (a `BoundOp`) says what an index past either end reads."""
+    return lib().clausters_core_blendat(_doubles(values), len(values), float(index), int(method))
 
 
 def calc(op: int, *args: float) -> float:
@@ -3651,6 +3701,21 @@ class Rng:
         with self._lock:
             i = lib().clausters_rng_windex(ctypes.byref(self._state), w, len(weights))
         return items[i]
+
+    def tablerand(self, table) -> float:
+        """One draw shaped by a table `asrandomtable` built."""
+        t = _doubles(table)
+        with self._lock:
+            return lib().clausters_rng_tablerand(ctypes.byref(self._state), t, len(table))
+
+    def scramble(self, items) -> list:
+        """``items`` in a uniformly random order (a new list)."""
+        items = list(items)
+        order = (ctypes.c_uint32 * len(items))()
+        if items:
+            with self._lock:
+                lib().clausters_rng_scramble(ctypes.byref(self._state), order, len(items))
+        return [items[i] for i in order]
 
     def _next_u64(self) -> int:
         """The full-width random word (advances the stream one step).

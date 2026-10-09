@@ -82,10 +82,14 @@ interface Vectors {
     unary: { op: string; x: number; y: number | string }[];
     binary: { op: string; a: number; b: number; y: number | string }[];
     bound: { op: string; x: number; lo: number; hi: number; y: number | string }[];
-    calc: { fn: string; args: (number | number[])[]; y: number | boolean | string }[];
+    calc: {
+        fn: string;
+        args: (number | string | number[])[];
+        y: number | boolean | string | (number | string)[] | null;
+    }[];
     rng: {
         seed: number; floats: number[]; below: number[]; childFloats: number[];
-        afterSpawn: number[]; draws: [string, number | boolean | string][];
+        afterSpawn: number[]; draws: [string, number | boolean | string | string[]][];
     }[];
 }
 
@@ -314,11 +318,17 @@ test("the numeric functions answer what the Python client's do", () => {
     // the shapes' few-ulp tolerance for the reason `ulpsApart` gives.
     for (const c of v.calc) {
         const fn = (builtins as Record<string, unknown>)[c.fn] as (
-            ...args: (number | number[])[]
-        ) => number | boolean;
+            ...args: (number | string | number[])[]
+        ) => number | boolean | number[] | undefined;
         const got = fn(...c.args);
-        if (typeof c.y === "boolean") assert.equal(got, c.y, c.fn);
-        else assertClose(got as number, expected(c.y), `${c.fn}(${c.args.join(", ")})`);
+        const what = `${c.fn}(${JSON.stringify(c.args)})`;
+        if (typeof c.y === "boolean") assert.equal(got, c.y, what);
+        else if (c.y === null) assert.equal(got, undefined, what);
+        else if (Array.isArray(c.y)) {
+            const list = got as number[];
+            assert.equal(list.length, c.y.length, what);
+            c.y.forEach((y, i) => assertClose(list[i]!, expected(y), `${what}[${i}]`));
+        } else assertClose(got as number, expected(c.y), what);
     }
 });
 
@@ -344,7 +354,7 @@ test("the seeded stream replays the Python client's values", () => {
         for (const expected of run.afterSpawn) assert.equal(rng.rand(), expected);
         // The same calls in the same order as the generator made them. The two
         // that go through `ln`/`exp`/`sin` are held to the shapes' tolerance.
-        const got: [string, number | boolean | string][] = [
+        const got: [string, number | boolean | string | string[]][] = [
             ["rand", rng.rand(3.0)], ["rand2", rng.rand2(2.0)],
             ["rrand", rng.rrand(-1.0, 1.0)], ["exprand", rng.exprand(20.0, 20000.0)],
             ["linrand", rng.linrand(4.0)], ["bilinrand", rng.bilinrand(4.0)],
@@ -353,6 +363,8 @@ test("the seeded stream replays the Python client's values", () => {
             ["irand2", rng.irand2(5)], ["irrand", rng.irrand(3, 9)],
             ["choose", rng.choose(["a", "b", "c"])],
             ["wchoose", rng.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
+            ["tablerand", rng.tablerand([0.0, 0.1, 0.5, 1.0])],
+            ["scramble", rng.scramble(["a", "b", "c", "d", "e"])],
         ];
         got.forEach(([name, value], i) => {
             const [wantName, want] = run.draws[i]!;
@@ -360,7 +372,7 @@ test("the seeded stream replays the Python client's values", () => {
             if (name === "exprand" || name === "gauss") {
                 assertClose(value as number, want as number, name);
             } else {
-                assert.equal(value, want, name);
+                assert.deepEqual(value, want, name);
             }
         });
     }

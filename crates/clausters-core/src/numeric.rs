@@ -91,13 +91,16 @@ pub enum Calc {
     /// The Bessel function of the second kind of integer order `n` --
     /// `(n, x)`.
     Bessely = 27,
+    /// `x + frac * (y - x)`: `frac` of the way from `x` to `y` -- `(x, y,
+    /// frac)`. Over two lists, the two blended point by point.
+    Blend = 28,
 }
 
 impl Calc {
     /// Maps a C-ABI discriminant back to the enum.
     pub fn from_u32(v: u32) -> Option<Calc> {
         use Calc::*;
-        const ALL: [Calc; 28] = [
+        const ALL: [Calc; 29] = [
             Degrad,
             Raddeg,
             Cbrt,
@@ -126,6 +129,7 @@ impl Calc {
             Biexp,
             Besselj,
             Bessely,
+            Blend,
         ];
         ALL.get(v as usize).copied()
     }
@@ -162,6 +166,7 @@ impl Calc {
             Biexp => "biexp",
             Besselj => "besselj",
             Bessely => "bessely",
+            Blend => "blend",
         }
     }
 
@@ -175,7 +180,7 @@ impl Calc {
         use Calc::*;
         match self {
             Nextpowerof | Previouspowerof | Calcfeedback | Besselj | Bessely => 2,
-            Moddif => 3,
+            Moddif | Blend => 3,
             Softround | Snap | Gausscurve => 4,
             Lcurve | Lg3interp => 5,
             Bilin | Biexp => 8,
@@ -319,6 +324,7 @@ pub fn apply_calc(op: Calc, args: &[f64]) -> f64 {
                 read(x, lo, centre) * (out_centre - out_lo) + out_lo
             }
         }
+        Blend => x + arg(2) * (arg(1) - x),
         Besselj => libm::jn(x as i32, arg(1)),
         Bessely => libm::yn(x as i32, arg(1)),
     }
@@ -373,6 +379,11 @@ pub enum ScaleCalc {
     Nearestinscale = 2,
     /// The value of the sorted list nearest to `x`.
     Nearestinlist = 3,
+    /// The fractional index of `x` in a sorted list, linearly between the two
+    /// values around it.
+    Indexinbetween = 4,
+    /// The first index whose value is greater than `x`, or `-1` where none is.
+    Indexofgreaterthan = 5,
 }
 
 impl ScaleCalc {
@@ -383,6 +394,8 @@ impl ScaleCalc {
             1 => ScaleCalc::Keydeg,
             2 => ScaleCalc::Nearestinscale,
             3 => ScaleCalc::Nearestinlist,
+            4 => ScaleCalc::Indexinbetween,
+            5 => ScaleCalc::Indexofgreaterthan,
             _ => return None,
         })
     }
@@ -394,6 +407,8 @@ impl ScaleCalc {
             ScaleCalc::Keydeg => "keydeg",
             ScaleCalc::Nearestinscale => "nearestinscale",
             ScaleCalc::Nearestinlist => "nearestinlist",
+            ScaleCalc::Indexinbetween => "indexinbetween",
+            ScaleCalc::Indexofgreaterthan => "indexofgreaterthan",
         }
     }
 
@@ -423,6 +438,8 @@ pub fn apply_scale_calc(op: ScaleCalc, x: f64, list: &[f64], steps: f64) -> f64 
             nearest_in_list(list, floored_mod(x, steps)) + root
         }
         ScaleCalc::Nearestinlist => nearest_in_list(list, x),
+        ScaleCalc::Indexinbetween => index_in_between(list, x),
+        ScaleCalc::Indexofgreaterthan => index_of_greater_than(list, x).map_or(-1.0, |i| i as f64),
     }
 }
 
@@ -477,6 +494,178 @@ pub fn nearest_in_list(list: &[f64], x: f64) -> f64 {
     list[i]
 }
 
+/// The list read at a fractional `index`, blended between the two values
+/// around it -- sclang's `blendAt`. `method` says what an index past either end
+/// reads: held at the end ([`BoundOp::Clip`](crate::builtins::BoundOp::Clip),
+/// sclang's default), wrapped around, or folded back. An empty list gives NaN.
+pub fn blend_at(list: &[f64], index: f64, method: crate::builtins::BoundOp) -> f64 {
+    use crate::builtins::BoundOp;
+    let n = list.len() as i64;
+    if n == 0 {
+        return f64::NAN;
+    }
+    let at = |i: i64| -> f64 {
+        let i = match method {
+            BoundOp::Clip => i.clamp(0, n - 1),
+            BoundOp::Wrap => i.rem_euclid(n),
+            BoundOp::Fold => {
+                if n == 1 {
+                    0
+                } else {
+                    let period = 2 * (n - 1);
+                    let m = i.rem_euclid(period);
+                    if m < n { m } else { period - m }
+                }
+            }
+        };
+        list[i as usize]
+    };
+    let lo = index.ceil() as i64 - 1;
+    let (a, b) = (at(lo), at(lo + 1));
+    a + (index - lo as f64).abs() * (b - a)
+}
+
+/// The functions that turn one list into another. The discriminants are the
+/// stable C-ABI contract: append only.
+#[repr(u32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ListOp {
+    /// Every value mapped linearly from the list's own range onto `a..b`; a
+    /// list with no range gives `a` throughout.
+    Normalize = 0,
+    /// Every value divided by the list's sum, so the list sums to 1.
+    Normalizesum = 1,
+    /// The running sum.
+    Integrate = 2,
+    /// Each value less the one before it (the first less 0).
+    Differentiate = 3,
+    /// The list resampled to `a` values by taking the nearest.
+    Resamp0 = 4,
+    /// The list resampled to `a` values by linear interpolation.
+    Resamp1 = 5,
+    /// The table [`Rng::tablerand`](crate::rng::Rng::tablerand) reads to
+    /// draw with the list as a probability shape, `a` values long.
+    Asrandomtable = 6,
+}
+
+impl ListOp {
+    /// Maps a C-ABI discriminant back to the enum.
+    pub fn from_u32(v: u32) -> Option<ListOp> {
+        use ListOp::*;
+        Some(match v {
+            0 => Normalize,
+            1 => Normalizesum,
+            2 => Integrate,
+            3 => Differentiate,
+            4 => Resamp0,
+            5 => Resamp1,
+            6 => Asrandomtable,
+            _ => return None,
+        })
+    }
+
+    /// The function's name.
+    pub fn name(self) -> &'static str {
+        use ListOp::*;
+        match self {
+            Normalize => "normalize",
+            Normalizesum => "normalizesum",
+            Integrate => "integrate",
+            Differentiate => "differentiate",
+            Resamp0 => "resamp0",
+            Resamp1 => "resamp1",
+            Asrandomtable => "asrandomtable",
+        }
+    }
+
+    /// Resolves a name to the function (the inverse of [`name`](Self::name)).
+    pub fn from_name(name: &str) -> Option<ListOp> {
+        (0..).map_while(ListOp::from_u32).find(|o| o.name() == name)
+    }
+
+    /// How long the result is for an input of `n` values with argument `a`.
+    pub fn output_len(self, n: usize, a: f64) -> usize {
+        match self {
+            ListOp::Resamp0 | ListOp::Resamp1 | ListOp::Asrandomtable => a.max(0.0) as usize,
+            _ => n,
+        }
+    }
+}
+
+/// Applies a [`ListOp`] to `list` with its arguments `a` and `b`, writing
+/// [`ListOp::output_len`] values into `out` (which must be that long).
+pub fn apply_list(op: ListOp, list: &[f64], a: f64, b: f64, out: &mut [f64]) {
+    use ListOp::*;
+    match op {
+        Normalize => {
+            let lo = list.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = list.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            for (o, &x) in out.iter_mut().zip(list) {
+                // sclang's `linlin` with its default clip, which is what holds
+                // a list with no range at `a` rather than dividing by zero.
+                *o = if x <= lo {
+                    a
+                } else if x >= hi {
+                    b
+                } else {
+                    (x - lo) / (hi - lo) * (b - a) + a
+                };
+            }
+        }
+        Normalizesum => {
+            let r = 1.0 / list.iter().sum::<f64>();
+            for (o, &x) in out.iter_mut().zip(list) {
+                *o = x * r;
+            }
+        }
+        Integrate => {
+            let mut sum = 0.0;
+            for (o, &x) in out.iter_mut().zip(list) {
+                sum += x;
+                *o = sum;
+            }
+        }
+        Differentiate => {
+            let mut prev = 0.0;
+            for (o, &x) in out.iter_mut().zip(list) {
+                *o = x - prev;
+                prev = x;
+            }
+        }
+        Resamp0 | Resamp1 => {
+            if list.is_empty() {
+                out.fill(f64::NAN);
+                return;
+            }
+            let factor = (list.len() - 1) as f64 / (out.len() as f64 - 1.0).max(1.0);
+            for (i, o) in out.iter_mut().enumerate() {
+                let at = i as f64 * factor;
+                *o = if op == Resamp0 {
+                    list[((at + 0.5).floor() as usize).min(list.len() - 1)]
+                } else {
+                    blend_at(list, at, crate::builtins::BoundOp::Clip)
+                };
+            }
+        }
+        Asrandomtable => {
+            let size = out.len();
+            if list.is_empty() || size == 0 {
+                out.fill(f64::NAN);
+                return;
+            }
+            let mut shape = vec![0.0; size];
+            apply_list(Resamp1, list, size as f64, 0.0, &mut shape);
+            let mut running = vec![0.0; size];
+            apply_list(Integrate, &shape, 0.0, 0.0, &mut running);
+            let mut scaled = vec![0.0; size];
+            apply_list(Normalize, &running, 0.0, (size - 1) as f64, &mut scaled);
+            for (i, o) in out.iter_mut().enumerate() {
+                *o = index_in_between(&scaled, i as f64) / size as f64;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,7 +686,7 @@ mod tests {
                 op.name()
             );
         }
-        assert_eq!(Calc::from_u32(28), None);
+        assert_eq!(Calc::from_u32(29), None);
         for op in (0..).map_while(ScaleCalc::from_u32) {
             assert_eq!(ScaleCalc::from_name(op.name()), Some(op));
         }
@@ -566,5 +755,56 @@ mod tests {
         );
         assert_eq!(index_in_between(&[1.0, 3.0, 7.0], 5.0), 1.5);
         assert!(apply_scale_calc(ScaleCalc::Degkey, 0.0, &[], 12.0).is_nan());
+        let gt = |x| apply_scale_calc(ScaleCalc::Indexofgreaterthan, x, &[1.0, 3.0, 7.0], 0.0);
+        assert_eq!((gt(2.0), gt(9.0)), (1.0, -1.0));
+    }
+
+    #[test]
+    fn lists_blend_resample_and_reshape() {
+        use crate::builtins::BoundOp;
+        let l = [0.0, 10.0, 20.0, 30.0];
+        assert_eq!(blend_at(&l, 1.25, BoundOp::Clip), 12.5);
+        assert_eq!(blend_at(&l, 0.0, BoundOp::Clip), 0.0);
+        assert_eq!(blend_at(&l, 3.5, BoundOp::Clip), 30.0);
+        assert_eq!(blend_at(&l, 3.5, BoundOp::Wrap), 15.0);
+        assert_eq!(blend_at(&l, 3.5, BoundOp::Fold), 25.0);
+        assert_eq!(calc("blend", &[1.0, 3.0, 0.25]), 1.5);
+        let run = |op: ListOp, list: &[f64], a: f64, b: f64| {
+            let mut out = vec![0.0; op.output_len(list.len(), a)];
+            apply_list(op, list, a, b, &mut out);
+            out
+        };
+        assert_eq!(
+            run(ListOp::Normalize, &[2.0, 4.0, 3.0], 0.0, 1.0),
+            [0.0, 1.0, 0.5]
+        );
+        assert_eq!(run(ListOp::Normalize, &[5.0, 5.0], -1.0, 1.0), [-1.0, -1.0]);
+        assert_eq!(
+            run(ListOp::Normalizesum, &[1.0, 3.0], 0.0, 0.0),
+            [0.25, 0.75]
+        );
+        assert_eq!(
+            run(ListOp::Integrate, &[1.0, 2.0, 3.0], 0.0, 0.0),
+            [1.0, 3.0, 6.0]
+        );
+        assert_eq!(
+            run(ListOp::Differentiate, &[1.0, 3.0, 6.0], 0.0, 0.0),
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            run(ListOp::Resamp1, &[0.0, 10.0], 5.0, 0.0),
+            [0.0, 2.5, 5.0, 7.5, 10.0]
+        );
+        assert_eq!(
+            run(ListOp::Resamp0, &[0.0, 10.0, 20.0], 5.0, 0.0),
+            [0.0, 10.0, 10.0, 20.0, 20.0]
+        );
+        // A flat shape is the identity ramp: every position equally likely.
+        let table = run(ListOp::Asrandomtable, &[1.0, 1.0, 1.0, 1.0], 4.0, 0.0);
+        assert_eq!(table.len(), 4);
+        assert!(table.windows(2).all(|w| w[0] <= w[1]), "{table:?}");
+        for name in ["normalize", "resamp1", "asrandomtable"] {
+            assert_eq!(ListOp::from_name(name).map(|o| o.name()), Some(name));
+        }
     }
 }

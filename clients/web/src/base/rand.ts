@@ -134,6 +134,16 @@ export class Rng {
         return items[this.inner.windex(Float64Array.from(weights))]!;
     }
 
+    /** One draw shaped by a table `asrandomtable` built. */
+    tablerand(table: readonly number[]): number {
+        return this.inner.tablerand(Float64Array.from(table));
+    }
+
+    /** `items` in a uniformly random order (a new array). */
+    scramble<T>(items: readonly T[]): T[] {
+        return Array.from(this.inner.scramble(items.length), (i) => items[i]!);
+    }
+
     /** A child stream seeded from this one's next word. */
     spawn(): Rng {
         return new Rng(this.inner.spawn());
@@ -228,3 +238,12 @@ export const choose = <T>(items: readonly T[]): T => currentRng().choose(items);
 /** An element of `items` chosen with the relative `weights`. */
 export const wchoose = <T>(items: readonly T[], weights: readonly number[]): T =>
     currentRng().wchoose(items, weights);
+
+/**
+ * One draw shaped by `table` -- what `asrandomtable` builds from a probability
+ * shape.
+ */
+export const tablerand = (table: readonly number[]): number => currentRng().tablerand(table);
+
+/** `items` in a uniformly random order (a new array). */
+export const scramble = <T>(items: readonly T[]): T[] => currentRng().scramble(items);

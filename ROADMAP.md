@@ -203,11 +203,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The numeric builtins, `C68`-`C69`** *(`clients/python/PLAN.md`, "The
+- ⬜ **The numeric builtins, `C69`** *(`clients/python/PLAN.md`, "The
   numeric builtins: SuperCollider's vocabulary")*. **Taken first**, opened
-  2026-10-09 by the user; `C68` adds the functions over arrays in both
-  clients, and `C69` closes the arc. (`C63`, one libm for the core, was
-  dropped on its measurement; `C64`-`C67` shipped.)
+  2026-10-09 by the user: the documentation and the manual check close the
+  arc. (`C63`, one libm for the core, was dropped on its measurement;
+  `C64`-`C68` shipped.)
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

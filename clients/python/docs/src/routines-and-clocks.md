@@ -119,8 +119,8 @@ A routine that raises is dropped the same way, with its traceback on stderr: it 
 
 Everything random — `Pwhite`, `Prand`, and the draws named as sclang names
 them (`clausters.rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
-`gauss`, `coin`, `choose`, `wchoose`, and the whole-number `irand`, `irand2`,
-`irrand`) — draws from **one seedable context**, the sclang model. The context is the
+`gauss`, `coin`, `choose`, `wchoose`, `tablerand`, `scramble`, and the
+whole-number `irand`, `irand2`, `irrand`) — draws from **one seedable context**, the sclang model. The context is the
 **session**: each has its own root, so each reproduces independently.
 
 - `session.seed(n)` seeds *that* session's root. Called before you build and

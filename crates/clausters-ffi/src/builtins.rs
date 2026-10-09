@@ -63,6 +63,70 @@ pub unsafe extern "C" fn clausters_core_binary(
     0
 }
 
+/// Applies list function `op` (a `clausters_core::numeric::ListOp`:
+/// `normalize`, `normalizesum`, `integrate`, `differentiate`, `resamp0`,
+/// `resamp1`, `asrandomtable`) to the `n` values at `list` with its arguments
+/// `a` and `b`, writing `out_n` values -- which must be the op's
+/// `output_len(n, a)`. Returns 0 on success, -1 on an unknown op, -2 on a null
+/// pointer or a wrong output length.
+///
+/// # Safety
+/// `list` must be readable for `n` `f64`s and `out` writable for `out_n`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_list(
+    op: u32,
+    list: *const f64,
+    n: usize,
+    a: f64,
+    b: f64,
+    out: *mut f64,
+    out_n: usize,
+) -> i32 {
+    let Some(op) = clausters_core::numeric::ListOp::from_u32(op) else {
+        return -1;
+    };
+    if (list.is_null() && n > 0) || (out.is_null() && out_n > 0) || out_n != op.output_len(n, a) {
+        return -2;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let l = if n == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(list, n) }
+    };
+    let o = if out_n == 0 {
+        &mut [][..]
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(out, out_n) }
+    };
+    clausters_core::numeric::apply_list(op, l, a, b, o);
+    0
+}
+
+/// The `n` values at `list` read at the fractional `index`, blended between
+/// the two around it; `method` (a `BoundOp`) says what an index past either
+/// end reads. NaN on an unknown method or an empty or null list.
+///
+/// # Safety
+/// `list` must be readable for `n` `f64`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_blendat(
+    list: *const f64,
+    n: usize,
+    index: f64,
+    method: u32,
+) -> f64 {
+    let Some(method) = BoundOp::from_u32(method) else {
+        return f64::NAN;
+    };
+    if list.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: caller guarantees the range above.
+    let l = unsafe { std::slice::from_raw_parts(list, n) };
+    clausters_core::numeric::blend_at(l, index, method)
+}
+
 /// Applies two-bound operator `op` (`clip`/`wrap`/`fold`, a `BoundOp`) to `x`
 /// between `lo` and `hi`, each broadcast if its length is 1, into `out`,
 /// writing `n` samples. Same return codes as [`clausters_core_unary`].
