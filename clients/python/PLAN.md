@@ -2050,7 +2050,7 @@ existing examples rewritten rather than new ones:
   is the manual check: an event with a swell and a bend, and a channel's fade
   over a phrase.
 
-### The numeric builtins: one libm, SuperCollider's vocabulary (client arc, phased)
+### The numeric builtins: SuperCollider's vocabulary (client arc, phased)
 
 *Opened 2026-10-09 by the user.* `clausters.builtins` is a port of the value
 side of sc3's builtins and has stopped short of it: `blend`, `normalize`, the
@@ -2060,16 +2060,22 @@ operators scsynth's `UnaryOpUGen`/`BinaryOpUGen` have. The arc adds them **in th
 shared core**, so a value a client computes and the same operator on the audio
 thread are one function, and it settles first what "the same value" means.
 
-**The contract, as the user set it**: a builtin gives **the same bits** on the
-real-time server, in an offline render and in both clients, on every platform.
-scsynth is the reference for **semantics** (what `sqrt` of a negative is, what
-`mod` returns for a negative divisor), never for rounding: scsynth itself does
-not agree with itself — its audio-rate kernels for `sin`, `cos`, `tan`, `log`,
-`exp`, `tanh` and their neighbours are SIMD approximations while its
-control-rate ones call the system libm, and that libm differs per platform, so
-the same patch "sounds different" on each. The arc does not copy that. Nor does
-it rewrite what a library already gives: where sclang took a function from the
-C++ libraries, the core takes it from an established Rust one.
+**The contract**: a builtin is **one function in the shared core**, which the
+real-time server, an offline render and both clients all call, so they share a
+formula and, on one platform, the bits. scsynth is the reference for
+**semantics** (what `sqrt` of a negative is, what `mod` returns for a negative
+divisor), never for rounding: scsynth itself does not agree with itself — its
+audio-rate kernels for `sin`, `cos`, `tan`, `log`, `exp`, `tanh` and their
+neighbours are SIMD approximations while its control-rate ones call the system
+libm, and that libm differs per platform. Nor does the arc rewrite what a
+library already gives: where sclang took a function from the C++ libraries, the
+core takes it from an established Rust one.
+
+**The same bits across platforms was asked for and then declined** (the user,
+2026-10-09), on `C63`'s measurement: one portable libm makes native and wasm
+agree, and costs the audio thread too much on the platform that is fastest
+today. Native and wasm keep agreeing to an ulp, as `docs/decisions.md`
+("Native↔wasm render parity is a tight tolerance") already holds.
 
 **Every change of behaviour is measured before it lands** (the user,
 2026-10-09): what moves, by how much, at what cost — a regression is a defect
@@ -2096,26 +2102,28 @@ Measured while opening the arc (2026-10-09):
   scsynth's streams was **declined by the user**: matching a seed adds a second
   generator to a solved problem and opens divergences elsewhere.
 
-- ⬜ **C63 — One libm for the core.** The core's transcendentals go through the
-  `libm` crate on every target, so native and wasm are one implementation and
-  the bindings' parity tests assert equality again — including the tempo
-  shapes' 4-ulp allowance (`docs/decisions.md`, "The bindings share a formula,
-  not a libm") and, if it then holds, the geometric ramp's `powf`. The server's
-  operator UGens follow, being the same functions; `Sine` and the other UGens
-  that call a transcendental directly are inventoried and moved where the
-  measurement allows. Both records it overturns are rewritten:
-  "Native↔wasm render parity is a tight tolerance" rejected exactly this,
-  because it moved the native stream for nothing audible, and the user has
-  since set the contract above. **Measured before it lands**: the ops' and the
-  engine's cost before and after (`Sine` and `Pow` are where a libm call
-  dominates a block), the native stream's delta, and which golden files move
-  and by how much. **Out of reach, written as a gap**: a native FaustDef is
-  compiled by LLVM and calls the process's libm, so it keeps the system one;
-  in a page its imports are already bound to the engine's.
+- ~~**C63 — One libm for the core.**~~ **Dropped 2026-10-09 by the user, on
+  its measurement.** The core's transcendentals through the `libm` crate on
+  every target would have made native and wasm one implementation. Per call
+  against the system's (glibc 2.43, x86-64), in `f32`: `log` 1.05x, `sin`/`cos`
+  1.2x, `exp` 1.4-1.8x, `tan`/`tanh` 2.4-2.8x, `powf` 7.5x, and `exp10f` off a
+  correctly rounded result on ~40% of arguments; in `f64` it is at par but for
+  `exp` 1.7x, `ln` 1.5x, `log2` 2x and `pow` 4x. With the cheaper routes
+  written in (`exp2` for powers of two, `f64` rounded once for `exp10`,
+  `tanh` and a positive base's `pow`), the own cost per sample of an operator
+  over an audio-rate signal was still 1.5x (`exp`, `midicps`, `dbamp`), 1.7x
+  (`sin`), 1.8x (`tanh`) and 3.4x (`pow` with a moving base). The system's
+  `f32` functions are correctly rounded and fast, and no pure-Rust library
+  matches them. The record is `docs/decisions.md`, "Native↔wasm render parity
+  is a tight tolerance". **What it left**, shipped on its own: `EnvGen`
+  prepares a segment once instead of every sample, and a fixed-base power is
+  one `exp2` — the bent envelope 0.83x, the exponential 0.87x and `linexp`
+  0.85x of what they cost, and `bench_math` (`examples/bench.rs`) to measure
+  the per-sample transcendentals, which nothing timed before.
 - ⬜ **C64 — scsynth's semantics for the operators that exist.** `sqrt` and
   `pow` signed, `log10` of `abs(x)`, `mod` floored, `cpsoct` as `x/440`.
   `hypot` and `recip` keep their definitions: their difference is rounding,
-  which the one libm decides. Edge cases written down as the core's: an
+  which is the libm's to decide. Edge cases written down as the core's: an
   operand outside `i32` for the bitwise operators (a cast that saturates, where
   x86 gives `0x80000000`), shifts by a negative or `>= 32` count. **Measured**:
   every golden render and example that crosses one of the four (a `sqrt` or a

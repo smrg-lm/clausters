@@ -1585,6 +1585,24 @@ above the legitimate noise and three below any plausible DSP bug. The harness
 is `scripts/parity-web.sh` (native fixture generator + headless-Chrome page,
 the same scripted-page pattern as the GUI's `web/parity.html`).
 
+**Revisited 2026-10-09, with the cost measured, and kept.** The user asked for
+the same bits in every client on every platform, and one libm on every target
+was built and timed (`clients/python/PLAN.md`, `C63`). The values were not the
+obstacle — the native stream moves by an ulp, inaudibly — the audio thread
+was. The system's `f32` functions (glibc 2.43, x86-64) are correctly rounded
+and fast, and the `libm` crate is not: per call `sin`/`cos` 1.2x, `exp`
+1.4-1.8x, `tan`/`tanh` 2.4-2.8x, `powf` 7.5x, and its `exp10f` is off a
+correctly rounded result on ~40% of arguments. With every cheaper route
+written in — `exp2` for powers of two, `f64` rounded once for `exp10`, `tanh`
+and a positive base's `pow` — an operator over an audio-rate signal still cost
+1.5x to 1.8x per sample, and `pow` with a moving base 3.4x. The tolerance
+stays; what the attempt left in the tree is the measurement
+(`examples/bench.rs`, `bench_math`) and two optimizations it uncovered, which
+stand on any libm: `EnvGen` prepares a segment once (`envshape::Segment`), and
+a fixed-base power is one `exp2` (`warp`). Reopening this is a question of a
+portable libm that matches the system's speed, and the bench section is what
+answers it.
+
 ## The browser engine is one wasm instance inside the AudioWorklet, spoken to over the MessagePort
 
 Context (the B track): the live browser backend has to host GUI
