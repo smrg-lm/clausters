@@ -12,8 +12,10 @@ modules added after it were missing from the reference with no error.
 Each module gets `src/api/<dotted.name>.md`: its docstring, a contents list and
 its members. A package's page also lists its modules and subpackages, linked;
 a page the guide links to lists those guide pages back ("In the guide"); and a
-name in backticks that resolves to one documented object is a link to it
-(`Linker`), so a docstring's `boot` or `ServerOptions` reads as a reference.
+name in backticks that resolves to one documented object is a link to it, so a
+docstring's `boot` or `ServerOptions` reads as a reference. The table of those
+objects is also written to `api-names.json`, which `api_links.py` reads to link
+the hand-written pages the same way (see there).
 The pages are git-ignored and rebuilt by `build.sh`. mdBook renders only the
 pages `src/SUMMARY.md` names, so after generating, the script checks that the
 API block of `SUMMARY.md` is exactly the tree it wrote, and fails with the
@@ -26,10 +28,13 @@ re-runs itself with the interpreter of the `pydoc-markdown` command.
 """
 
 import io
+import json
 import os
 import re
 import shutil
 import sys
+
+import api_links
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLIENT = os.path.dirname(HERE)  # clients/python: pydoc-markdown.yml and clausters/
@@ -90,116 +95,6 @@ def summary_of(docstring) -> str:
     """A docstring's first paragraph, on one line."""
     text = getattr(docstring, "content", docstring) or ""
     return " ".join(text.strip().split("\n\n")[0].split())
-
-
-def member_ids(module) -> dict:
-    """Every documented object of a module, by dotted id (the id its `<a id>`
-    anchor carries), mapped to whether it is a member of the module itself
-    (a class or a function defined at its top) rather than of a class."""
-    ids = {}
-
-    def walk(obj, prefix: str, top: bool) -> None:
-        for member in getattr(obj, "members", None) or []:
-            ident = f"{prefix}.{member.name}"
-            ids[ident] = top
-            walk(member, ident, False)
-
-    walk(module, module.name, True)
-    return ids
-
-
-class Linker:
-    """Turns a name in backticks into a link to its entry in the reference.
-
-    A docstring names what it talks about in backticks -- `boot`, `Server`,
-    `clausters.seq.Pbind` -- and the reference has an anchor for each documented
-    object, so the name can be a link. It is one only when it resolves to exactly
-    one entry, tried in order: a member of the class the text is in (`boot` in
-    the `Server` section), a member of the module, a dotted name whose ending is
-    unique (`Server.boot`, `clausters.defs.server.Server`), and a class whose
-    name only one module defines. Anything else stays code: a parameter, a
-    value, a name two modules define, a lowercase name from another module.
-    """
-
-    SPAN = re.compile(r"(?<![`\[])`([A-Za-z_][A-Za-z0-9_.]*)(\(\))?`(?![`\]])")
-    ARG = re.compile(r"^(\s*- `[A-Za-z_][A-Za-z0-9_]*`)")
-
-    def __init__(self, modules: list) -> None:
-        self.modules = sorted((m.name for m in modules), key=len, reverse=True)
-        self.module_set = set(self.modules)
-        self.ids = {}
-        for module in modules:
-            self.ids.update(member_ids(module))
-        self.ids.update({m.name: False for m in modules})
-        self.by_last = {}
-        for ident, top in self.ids.items():
-            if top:
-                self.by_last.setdefault(ident.rpartition(".")[2], []).append(ident)
-
-    def module_of(self, ident: str) -> str:
-        return next(m for m in self.modules if ident == m or ident.startswith(m + "."))
-
-    def resolve(self, name: str, module: str, section: str):
-        if name.startswith("_") or "._" in name:
-            return None
-        if "." not in name:
-            scope = section
-            while scope and scope != module:
-                candidate = f"{scope}.{name}"
-                if candidate in self.ids:
-                    return candidate
-                scope = scope.rpartition(".")[0]
-            own = f"{module}.{name}"
-            # A submodule is named by its bare name only in its package's own
-            # docstring; in a member's text the same word is a parameter.
-            if own in self.ids and (own not in self.module_set or section == module):
-                return own
-            # Beyond the module, only a class: a lowercase word (`select`,
-            # `channels`) is a parameter or an attribute far more often than
-            # the one function elsewhere that happens to share it.
-            if not name[0].isupper():
-                return None
-            found = self.by_last.get(name, [])
-            return found[0] if len(found) == 1 else None
-        if name in self.ids:
-            return name
-        found = [i for i in self.ids if i.endswith("." + name)]
-        return found[0] if len(found) == 1 else None
-
-    def href(self, ident: str, module: str) -> str:
-        page = self.module_of(ident)
-        if ident == page:
-            return f"{page}.md"
-        return f"#{ident}" if page == module else f"{page}.md#{ident}"
-
-    def link(self, text: str, module: str) -> str:
-        """``text``, one module's page, with its names linked. Code blocks,
-        headings, existing links and an argument list's own names are left."""
-        out = []
-        section = module
-        fence = False
-        for line in text.split("\n"):
-            anchor = re.match(r'<a id="([^"]+)"></a>', line)
-            if anchor:
-                section = anchor.group(1)
-            if line.lstrip().startswith("```"):
-                fence = not fence
-            if fence or line.startswith("#") or line.lstrip().startswith("```"):
-                out.append(line)
-                continue
-            head = ""
-            arg = self.ARG.match(line)
-            if arg:
-                head, line = arg.group(1), line[arg.end():]
-
-            def sub(m):
-                target = self.resolve(m.group(1), module, section)
-                if target is None or target == section:
-                    return m.group(0)
-                return f"[{m.group(0)}]({self.href(target, module)})"
-
-            out.append(head + self.SPAN.sub(sub, line))
-        return "\n".join(out)
 
 
 def guide_pages() -> dict:
@@ -280,13 +175,16 @@ def main() -> int:
     for f in os.listdir(OUT):
         if f.endswith(".md"):
             os.remove(os.path.join(OUT, f))
-    linker = Linker(modules)
+    table = api_links.table_of(modules)
+    with open(api_links.TABLE, "w", encoding="utf-8") as fp:
+        json.dump(table, fp)
+    linker = api_links.Linker(table)
     guides = guide_pages()
     for module in modules:
         assert isinstance(module, docspec.Module)
         text = page(renderer, module, names, docs, guides.get(module.name, []))
         with open(os.path.join(OUT, f"{module.name}.md"), "w", encoding="utf-8") as fp:
-            fp.write(linker.link(text, module.name))
+            fp.write(linker.link(text, f"api/{module.name}.md", module.name))
 
     expected = summary_block(names)
     with open(SUMMARY, encoding="utf-8") as fp:

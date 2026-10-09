@@ -20,6 +20,15 @@ language = "en"
 [build]
 build-dir = "book"
 
+# Names in backticks in the hand-written pages become links into the API
+# reference (api_links.py, over the table gen_api.py writes). Without the
+# table -- mdbook run before gen_api.py -- the pages pass through unchanged.
+# The command finds the script through the book's root, which mdBook passes in
+# the context it writes to stdin: mdBook runs it from wherever mdBook itself was
+# run (the repository root on CI and Read the Docs, clients/python locally).
+[preprocessor.api-links]
+command = """python3 -c "import json, sys; sys.argv[1:2] == ['supports'] and sys.exit(0); d = json.load(sys.stdin); sys.path.insert(0, d[0]['root']); import api_links; api_links.run(d)" """
+
 [output.html]
 default-theme = "rust"
 preferred-dark-theme = "ayu"

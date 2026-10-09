@@ -8,7 +8,9 @@ the hand-written pages of ``docs/src/`` and the API reference that
 are copied as they are -- relative ``.md`` links and the ``<a id>`` anchors of
 the API pages work in any Markdown viewer that follows links -- with one
 change: mdBook's table of contents, ``SUMMARY.md``, becomes ``index.md``, the
-page a viewer opens first (`contents_page`).
+page a viewer opens first (`contents_page`), and the hand-written pages get the
+links to the API reference that mdBook's preprocessor gives the published book
+(``docs/api_links.py``), so a name is a link in both or in neither.
 
 The API pages need ``pydoc-markdown`` (see ``docs/build.sh``), so building the
 package does too. ``CLAUSTERS_SKIP_DOCS=1`` builds without the book, and
@@ -67,6 +69,20 @@ def stage() -> bool:
         )
     shutil.rmtree(OUT, ignore_errors=True)
     shutil.copytree(SRC, OUT, ignore=shutil.ignore_patterns("SUMMARY.md"))
+    sys.path.insert(0, os.path.join(HERE, "docs"))
+    import api_links
+
+    linker = api_links.load()
+    for root, dirs, files in os.walk(OUT):
+        dirs[:] = [d for d in dirs if os.path.join(root, d) != os.path.join(OUT, "api")]
+        for name in files:
+            if name.endswith(".md"):
+                path = os.path.join(root, name)
+                rel = os.path.relpath(path, OUT).replace(os.sep, "/")
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(linker.link(text, rel))
     with open(os.path.join(SRC, "SUMMARY.md"), encoding="utf-8") as f:
         summary = f.read()
     with open(os.path.join(OUT, "index.md"), "w", encoding="utf-8") as f:
