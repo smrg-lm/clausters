@@ -41,7 +41,11 @@ Building it adds a wgpu compile (a minute or two the first time). For a lighter,
 
 `pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line. On Linux it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, in every desktop distribution since 2022), which no wheel carries; the command says how to install it when it is missing.
 
-From a checkout, `scripts/install-local.sh` installs `clausters[editor]` the way PyPI would: it builds both wheels and installs them by name into a `.venv-local/` of its own, nothing editable (`--skip-build` reuses the artifacts already built, `--venv DIR` picks another environment).
+From a checkout, both paths go in one command, and pip takes the second as the `clausters-editor` the extra names, as it would take PyPI's:
+
+```sh
+pip install -e "./clients/python[editor]" ./clausters-editor/wheel
+```
 
 ### Runtime requirement: PipeWire (Linux)
 
