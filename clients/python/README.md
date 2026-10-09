@@ -280,7 +280,10 @@ arguments, for a lighter install.
 
 `scripts/install-venv.sh` does this step in one command: it creates `.venv` when
 it is missing, updates pip (`--group` takes 25.1) and runs the install above
-(`--no-editor` and `--no-dev` drop those pieces).
+(`--no-editor` and `--no-dev` drop those pieces). `--reset` first deletes the
+local state the server, the client and the editor keep -- config, data
+directory, the editor's environments, stale shared-memory segments -- after
+listing it, to start from a clean user.
 
 (To evaluate the examples cell by cell, open the `.py` in VS Code with the Python
 + Jupyter extensions, or a Jupyter notebook, and run its `# %%` cells — nothing
