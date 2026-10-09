@@ -30,8 +30,18 @@ pub struct Session {
     pid: AtomicU32,
 }
 
+/// The interpreter used when no environment is active, and the one new environments are
+/// created from: `CLAUSTERS_EDITOR_DEFAULT_PYTHON`, else the system Python. The launcher of
+/// the Python package sets it to the interpreter the package is installed in.
+pub fn default_python() -> String {
+    std::env::var("CLAUSTERS_EDITOR_DEFAULT_PYTHON")
+        .ok()
+        .filter(|exe| !exe.is_empty())
+        .unwrap_or_else(|| if cfg!(windows) { "python" } else { "python3" }.into())
+}
+
 /// The session's interpreter and environment name: `CLAUSTERS_EDITOR_PYTHON`, else the active
-/// environment, else the system Python.
+/// environment, else the default Python.
 fn python_exe(app: &AppHandle) -> (String, Option<String>) {
     if let Ok(exe) = std::env::var("CLAUSTERS_EDITOR_PYTHON") {
         return (exe, None);
@@ -39,10 +49,7 @@ fn python_exe(app: &AppHandle) -> (String, Option<String>) {
     if let Some((name, python)) = crate::envs::active_python(app) {
         return (python.to_string_lossy().into_owned(), Some(name));
     }
-    (
-        if cfg!(windows) { "python" } else { "python3" }.into(),
-        None,
-    )
+    (default_python(), None)
 }
 
 impl Session {

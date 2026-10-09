@@ -36,6 +36,26 @@ npm run tauri build    # binary and packages in src-tauri/target/release/bundle
 Options: `--prefix DIR` (another destination), `--no-build` (use the binary
 already built), `-y` (no confirmation). See `./install.sh --help`.
 
+## The Python package
+
+`wheel/` packages the application as a Python wheel, `clausters-editor`, which
+the clausters client installs as its `editor` extra (`pip install
+clausters[editor]`). Its `clausters-editor` command runs the bundled binary with
+the interpreter the package is installed in as the session's default, so the
+session imports what that environment has until another one is chosen.
+
+```sh
+pip wheel --no-deps -w dist wheel/   # builds the app and the wheel
+CLAUSTERS_EDITOR_SKIP_BUILD=1 pip wheel --no-deps -w dist wheel/   # with the binary already built
+```
+
+The wheel carries the binary, `docs/` and `licenses/`, about 4 MB; the system's
+web view stays outside it. On Linux that is WebKitGTK 4.1, which no wheel can
+carry, so the command checks for it and, when it is missing, prints how to
+install it on the distribution it runs on. The Linux tag is the build machine's
+glibc (`manylinux_X_Y`), which is why CI builds the published wheel on Ubuntu
+22.04, the oldest release with WebKitGTK 4.1.
+
 ### A test installation
 
 To try a version without touching the real installation or its data: install it
@@ -72,6 +92,9 @@ paths. The menu entry does not show up in the applications menu, because
 - Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
+- `CLAUSTERS_EDITOR_DEFAULT_PYTHON=/path/python` is the interpreter used when no
+  environment is active, and the one new environments are created from (`python3`
+  when unset). The Python package's command sets it.
 
 ## Layout
 
@@ -103,6 +126,7 @@ src-tauri/
   about.toml, about.hbs    the licenses `cargo about` accepts, and how it writes the crates' notices
   src/envs.rs              virtual environments (create, install, choose, delete)
 docs/                      Markdown documentation (bundled with the package)
+wheel/                     the Python package: setup.py stages the build, clausters_editor/_cli.py runs it
 licenses/                  THIRD-PARTY.txt: the license of every package the app ships, shipped
                            with it -- `npm run notices` writes it (needs `cargo about`)
 scripts/notices.mjs        what writes it: the Vite bundle's packages + `cargo about`

@@ -38,6 +38,13 @@ Issues = "https://github.com/smrg-lm/clausters/issues"
 clausters = "clausters._cli:main"
 clausters-gui = "clausters._cli:gui_main"
 
+# `pip install clausters[editor]`: the Python editor with an interactive
+# session, a separate package (clausters-editor/ in the repository) whose
+# `clausters-editor` command opens on the environment it is installed in. On
+# Linux it needs the system's WebKitGTK 4.1, which no wheel carries.
+[project.optional-dependencies]
+editor = ["clausters-editor>=0.1"]
+
 # Development-only dependencies (PEP 735): the test runner. Not part of the
 # published package -- install with `pip install --group dev` (or `uv sync`).
 [dependency-groups]

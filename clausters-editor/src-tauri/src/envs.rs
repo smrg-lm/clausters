@@ -183,7 +183,7 @@ pub async fn create_env(app: AppHandle, name: String, source: String) -> Result<
     shell_words::split(&source).map_err(|e| format!("Invalid install source: {e}"))?;
     exclusive(move || {
         log(&app, format!("Creating the environment '{name}'...\n"));
-        let base = PathBuf::from(if cfg!(windows) { "python" } else { "python3" });
+        let base = PathBuf::from(session::default_python());
         let created = run(
             &app,
             &base,

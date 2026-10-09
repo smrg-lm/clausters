@@ -1,0 +1,7 @@
+# Staged by setup.py from the Tauri build and the repository root.
+/clausters_editor/bin/
+/clausters_editor/lib/
+/clausters_editor/Resources/
+/COPYING
+/build/
+/dist/

@@ -1,0 +1,35 @@
+[build-system]
+# `wheel` for the platform-tagged wheel: the package carries a native binary
+# (see setup.py). setuptools>=77 for PEP 639's `license` expression.
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clausters-editor"
+# The application's own version, read from src-tauri/tauri.conf.json by setup.py
+# so it is written in one place.
+dynamic = ["version"]
+description = "A lightweight Python editor with an interactive session."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-or-later"
+# setup.py copies the repository's COPYING here before it builds.
+license-files = ["COPYING"]
+authors = [{ name = "Lucas Samaruga" }]
+dependencies = []
+
+[project.urls]
+Source = "https://github.com/smrg-lm/clausters/tree/main/clausters-editor"
+Issues = "https://github.com/smrg-lm/clausters/issues"
+
+[project.scripts]
+clausters-editor = "clausters_editor._cli:main"
+
+[tool.setuptools]
+packages = ["clausters_editor"]
+
+# The staged application: the binary in bin/ and Tauri's resources (the
+# documentation and the third-party licenses) where the binary looks for them,
+# which depends on the platform -- see setup.py.
+[tool.setuptools.package-data]
+clausters_editor = ["bin/*", "lib/**", "Resources/**"]

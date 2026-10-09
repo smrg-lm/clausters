@@ -1,6 +1,8 @@
 # The Python session
 
-The session is a single `python3` process that starts with the editor. Every
+The session is a single Python process that starts with the editor: the
+active environment's, else `python3` -- or, when the editor was installed with
+`pip`, the Python of the environment it was installed in. Every
 evaluation shares the same namespace, as in a console.
 
 - If the last statement is an expression, its value is shown after `->`.

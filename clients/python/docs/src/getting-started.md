@@ -37,6 +37,10 @@ The GUI host — the visual server that opens windows and renders widgets — is
 
 Building it adds a wgpu compile (a minute or two the first time). For a lighter, server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when installing; a source-checkout binary built under `clients/gui/target` (`cargo build --release --bin clausters-gui`, from `clients/gui`) is still used at runtime if present, and `CLAUSTERS_GUI_BIN` overrides the lookup.
 
+### The editor
+
+`pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line. On Linux it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, in every desktop distribution since 2022), which no wheel carries; the command says how to install it when it is missing.
+
 ### Runtime requirement: PipeWire (Linux)
 
 The bundled artifacts that touch an audio device — the in-process embedded server and the standalone `clausters` binary — are built with the project's default features, which include the PipeWire audio backend. They therefore **hard-link `libpipewire`** and expect PipeWire present at runtime (the standard on current Linux systems); on a host without it the library and the binary will not load. The offline renderer and the numeric core need no audio device, so `Session.nrt()` and `clausters._native` work anywhere. For an audio build that does not depend on PipeWire, build the server from source with plain ALSA — see the server guide's [getting started](https://clausters.readthedocs.io/en/latest/getting-started.html) (`cargo build --no-default-features --features synth,realtime`).

@@ -32,3 +32,8 @@ shell-words = "1.1.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The binary ships without its symbols: 16.6 MB -> 11 MB, for the Python
+# package as for the installer.
+[profile.release]
+strip = true
