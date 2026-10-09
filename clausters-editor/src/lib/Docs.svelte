@@ -29,7 +29,7 @@
   import { settings } from "./settings.svelte";
   import Grip from "./Grip.svelte";
   import { DocIndex, type DocResult } from "./docIndex";
-  import { PageFind } from "./pageFind.svelte";
+  import { PageFind, markMatches } from "./pageFind.svelte";
 
   let {
     onChooseFolder,
@@ -78,7 +78,7 @@
   $effect(() => {
     settings.dark;
     render();
-    tick().then(() => findInPage(false));
+    tick().then(() => attachFind(false));
   });
 
   const current = $derived(history[pos]);
@@ -110,8 +110,8 @@
     } else if (page.kind === "text") {
       source = null;
       shownPath = null;
-      html = "";
-      plain = page.text;
+      html = `<pre class="whitespace-pre-wrap">${escapeHtml(page.text)}</pre>`;
+      plain = null;
     } else {
       source = null;
       shownPath = null;
@@ -121,7 +121,7 @@
     await tick();
     if (page.scroll !== undefined) content.scrollTop = page.scroll;
     else scrollTo(page.kind === "doc" ? page.anchor : undefined);
-    findInPage(page.scroll === undefined && !(page.kind === "doc" && page.anchor));
+    attachFind(page.scroll === undefined && !(page.kind === "doc" && page.anchor));
   }
 
   // --- Finding text: in the page on screen, and in every document ---
@@ -135,13 +135,22 @@
   /** The documents' full-text index: built on the first search, again when the list changes. */
   let index: Promise<DocIndex> | null = null;
 
-  /** Marks the find bar's text in the page on screen (a results page marks its own),
-   *  from the section the page was opened at; `scroll` brings the current one into view. */
-  function findInPage(scroll: boolean) {
-    if (!content || !findOpen || current?.kind === "search") return finder.clear();
+  /** The page as it is drawn: with the find bar's text marked while it finds in the page. */
+  const shownHtml = $derived(findOpen && findScope === "page" ? markMatches(html, findTerm) : html);
+
+  /** Takes the marks of the page just drawn, from the section it was opened at;
+   *  `scroll` brings the current one into view. */
+  function attachFind(scroll: boolean) {
+    if (!content) return;
     const anchor = current?.kind === "doc" ? current.anchor : undefined;
     const after = anchor ? content.querySelector(`#${CSS.escape(anchor)}`) : null;
-    finder.run(content, findTerm, { after, scroll });
+    finder.attach(content, { after, scroll });
+  }
+
+  /** Marks the find bar's text again (it changed, or the bar opened), once the page is redrawn. */
+  async function findInPage() {
+    await tick();
+    attachFind(true);
   }
 
   /** Opens the find bar on the page on screen (Ctrl+F in the documentation). */
@@ -150,12 +159,14 @@
     findScope = "page";
     await tick();
     findInput?.select();
-    findInPage(true);
+    findInPage();
   }
 
+  /** Closes the find bar, giving the focus back to the page (where Ctrl+F opens it again). */
   function closeFind() {
     findOpen = false;
-    finder.clear();
+    content?.focus({ preventScroll: true });
+    findInPage();
   }
 
   /** Searches every document (Ctrl+Shift+F): for `query` when given, else the find bar's text. */
@@ -182,7 +193,9 @@
   function setScope(scope: "page" | "all") {
     findScope = scope;
     if (scope === "all") searchAll();
-    else findInPage(true);
+    // From the results, finding in a page goes back to the page they were searched from.
+    else if (current?.kind === "search" && pos > 0) back();
+    else findInPage();
     findInput?.focus();
   }
 
@@ -415,7 +428,7 @@
         class="h-7 min-w-0 flex-1 text-sm"
         placeholder={findScope === "page" ? "Find in this page" : "Search every document (Enter)"}
         spellcheck={false}
-        oninput={() => findScope === "page" && findInPage(true)}
+        oninput={() => findScope === "page" && findInPage()}
         onkeydown={onFindKey}
       />
       {#if findScope === "page"}
@@ -452,6 +465,8 @@
   <article
     class="prose prose-sm max-w-none min-h-0 flex-1 overflow-auto px-5 pt-4 pb-5
       prose-code:before:content-none prose-code:after:content-none
+      [&_mark.doc-find]:bg-yellow-300/40 [&_mark.doc-find]:text-inherit
+      [&_mark.doc-find-current]:bg-orange-400/70
       [&_mark.doc-hit]:bg-yellow-300/40 [&_mark.doc-hit]:text-inherit
       [&_.code-block]:relative [&_.copy-block]:absolute [&_.copy-block]:top-1.5 [&_.copy-block]:right-1.5
       [&_pre]:font-mono [&_pre]:text-(length:--code-size) [&_pre_code]:[font-size:inherit]"
@@ -485,7 +500,7 @@
     {:else if plain !== null}
       <pre class="whitespace-pre-wrap">{plain}</pre>
     {:else}
-      {@html html}
+      {@html shownHtml}
     {/if}
   </article>
 </div>

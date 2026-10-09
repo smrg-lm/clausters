@@ -1,48 +1,58 @@
-// Finding text in the page on screen. The matches are painted with the CSS Highlight
-// API, which leaves the page's DOM alone: the page is Svelte's, and nodes taken out
-// from under it break the view.
+// Finding text in the page on screen. The matches are marked in the page's HTML
+// before it is shown (`markMatches`), so the page is drawn with them like any other
+// element: painting them over the page afterwards (the CSS Highlight API) left the
+// marks of earlier searches on screen in the app's web view, and changing the
+// page's DOM in place breaks the view, which is Svelte's.
 
-const ALL = "doc-find";
-const CURRENT = "doc-find-current";
+/** `html` with every occurrence of `term`, ignoring case, inside a `<mark>`. Text in
+ *  tags (attributes, element names) is never touched: only the text nodes are. */
+export function markMatches(html: string, term: string): string {
+  const needle = term.trim().toLowerCase();
+  if (!needle) return html;
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+  for (const node of nodes) {
+    const text = node.data;
+    const lower = text.toLowerCase();
+    let at = lower.indexOf(needle);
+    if (at < 0) continue;
+    const parts = document.createDocumentFragment();
+    let last = 0;
+    for (; at >= 0; at = lower.indexOf(needle, last)) {
+      parts.append(text.slice(last, at));
+      const mark = document.createElement("mark");
+      mark.className = "doc-find";
+      mark.textContent = text.slice(at, at + needle.length);
+      parts.append(mark);
+      last = at + needle.length;
+    }
+    parts.append(text.slice(last));
+    node.replaceWith(parts);
+  }
+  return template.innerHTML;
+}
 
+/** The marked matches of the page on screen, and which one is the current one. */
 export class PageFind {
-  /** How many matches the page holds, and which one is the current one. */
   count = $state(0);
   index = $state(0);
-  #ranges: Range[] = [];
+  #marks: HTMLElement[] = [];
   #root: HTMLElement | null = null;
 
-  clear() {
-    CSS.highlights.delete(ALL);
-    CSS.highlights.delete(CURRENT);
-    this.#ranges = [];
-    this.count = 0;
-    this.index = 0;
-  }
-
-  /** Finds every occurrence of `term` in `root`, ignoring case. The current one is
-   *  the first after `after` when it is given, else the first; `scroll` brings it
-   *  into view. */
-  run(root: HTMLElement, term: string, { after = null as Element | null, scroll = true } = {}) {
-    this.clear();
+  /** Takes the marks `root` holds now (after the page was drawn with them). The
+   *  current one is the first after `after` when it is given, else the first;
+   *  `scroll` brings it into view. */
+  attach(root: HTMLElement, { after = null as Element | null, scroll = true } = {}) {
     this.#root = root;
-    const needle = term.trim().toLowerCase();
-    if (!needle) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = (node as Text).data.toLowerCase();
-      for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
-        const range = new Range();
-        range.setStart(node, at);
-        range.setEnd(node, at + needle.length);
-        this.#ranges.push(range);
-      }
-    }
-    this.count = this.#ranges.length;
+    this.#marks = [...root.querySelectorAll<HTMLElement>("mark.doc-find")];
+    this.count = this.#marks.length;
+    this.index = 0;
     if (!this.count) return;
-    CSS.highlights.set(ALL, new Highlight(...this.#ranges));
     const first = after
-      ? this.#ranges.findIndex((r) => after.compareDocumentPosition(r.startContainer) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ? this.#marks.findIndex((m) => after.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING)
       : 0;
     this.select(Math.max(0, first), scroll);
   }
@@ -54,11 +64,12 @@ export class PageFind {
 
   select(i: number, scroll: boolean) {
     if (!this.count || !this.#root) return;
+    this.#marks[this.index]?.classList.remove("doc-find-current");
     this.index = (i + this.count) % this.count;
-    const range = this.#ranges[this.index];
-    CSS.highlights.set(CURRENT, new Highlight(range));
+    const mark = this.#marks[this.index];
+    mark.classList.add("doc-find-current");
     if (!scroll) return;
     const box = this.#root.getBoundingClientRect();
-    this.#root.scrollTop += range.getBoundingClientRect().top - box.top - box.height / 2;
+    this.#root.scrollTop += mark.getBoundingClientRect().top - box.top - box.height / 2;
   }
 }
