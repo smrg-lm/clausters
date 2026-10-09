@@ -52,15 +52,17 @@
   color-scheme: dark;
 }
 
-/* What shadcn does not define: status colors from Tailwind's palette, and the code font. */
+/* What shadcn does not define: status and link colors from Tailwind's palette, and the code font. */
 :root {
   --success: var(--color-green-600);
   --warning: var(--color-amber-600);
+  --link: var(--color-sky-600);
   --mono: "JetBrains Mono", ui-monospace, monospace; /* set by settings.svelte.ts */
 }
 .dark {
   --success: var(--color-green-400);
   --warning: var(--color-amber-400);
+  --link: var(--color-sky-400);
 }
 
 @theme inline {
@@ -86,6 +88,7 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-link: var(--link);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

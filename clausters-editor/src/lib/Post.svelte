@@ -93,7 +93,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <pre
     class="m-0 min-h-0 flex-1 overflow-auto px-3 py-2 font-mono break-words whitespace-pre-wrap
-      [&_a]:underline [&_a]:underline-offset-2 [&_.err]:text-destructive [&_.info]:text-muted-foreground [&_.result]:text-success [&_.sys]:text-muted-foreground"
+      [&_a]:text-link [&_a]:underline [&_a]:underline-offset-2 [&_.err]:text-destructive [&_.info]:text-muted-foreground [&_.result]:text-success [&_.sys]:text-muted-foreground"
     style:font-size="var(--code-size)"
     bind:this={el}
     onclick={onClick}
