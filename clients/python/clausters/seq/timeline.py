@@ -27,11 +27,34 @@ play/stop/locate drives every timeline on it.
 import bisect
 import math
 import threading
+import weakref
 
 from .. import _native
 from ..base.main import main
 from ..base.stream import Routine, StopStream
 from .event import MidiItem, OscItem  # noqa: F401 -- re-exported where they were
+
+#: The players of the timelines played as roots, so that a panic halts them
+#: (`_panic`): one on a clock a panic emptied would otherwise go on saying it
+#: plays, with nothing left to wake it.
+_PLAYERS = weakref.WeakSet()
+
+
+def _panic(clocks, server) -> None:
+    """Halt every timeline that sounds on one of ``clocks`` or on a transport
+    of ``server`` -- a panic's part
+    (`clausters.base.environment.Environment.panic`), after the clocks were
+    emptied and before the server is silenced."""
+    for player in list(_PLAYERS):
+        if not player.running:
+            continue
+        if isinstance(player, _TransportPlayer):
+            owner = getattr(player.server, "_server", player.server)
+            if server is None or owner is not server:
+                continue
+        elif not any(player.clock is clock for clock in clocks):
+            continue
+        player.halt()
 
 
 class _Entry:
@@ -853,6 +876,7 @@ class _TransportPlayer:
         self._refuse_quant(quant)
         self.server.transport_play()
         self._reported["playing"] = True
+        _PLAYERS.add(self)
         return self
 
     def play(self, at, quant=None):
@@ -860,6 +884,7 @@ class _TransportPlayer:
         self.locate(at, cue=False)
         self.server.transport_play()
         self._reported["playing"] = True
+        _PLAYERS.add(self)
         self._plan(at)
         return self
 
@@ -1117,6 +1142,7 @@ class _Player:
                          - ambient.beats2secs(now))
         clock.locate(self.root_beat(self.root_secs(at) - delay))
         self.running = True
+        _PLAYERS.add(self)
         self._epoch += 1
         epoch = self._epoch
         self._engine = Routine(lambda: self._run(epoch, at))

@@ -39,6 +39,7 @@
   - [launch](api/clausters.launch.md)
   - [log](api/clausters.log.md)
   - [multitrack](api/clausters.multitrack.md)
+  - [panic](api/clausters.panic.md)
   - [play](api/clausters.play.md)
   - [plot](api/clausters.plot.md)
   - [render](api/clausters.render.md)

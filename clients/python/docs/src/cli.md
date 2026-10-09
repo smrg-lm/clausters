@@ -35,7 +35,7 @@ with a dash, so the two namespaces cannot collide.
 | Command | Sends | What it does |
 | --- | --- | --- |
 | `clausters status [--port <n>]` | `/server_query` | Reports whether a server answers, and how it is configured (rate, channels, buses). |
-| `clausters panic [--port <n>]` | `/group_deepFree 0` | Frees every node. The server stays up and keeps its defs, buffers and MIDI bindings — only the sound stops. |
+| `clausters panic [--port <n>]` | `/transport_stop` for each transport, `/sched_clear`, `/group_deepFree 0` | Silences it: every transport stopped, every queued bundle dropped, every node freed. The server stays up and keeps its defs, buffers and MIDI bindings — only the sound stops. |
 | `clausters stop [--port <n>]` | `/server_quit` | Stops the server. |
 
 `--port` defaults to `57110`; pass it to reach a server booted elsewhere.
@@ -53,7 +53,7 @@ Without them the only way out is `kill`, which is a blunter instrument than the
 server needs: `/server_quit` lets it shut its own device and streams down.
 
 The same three are available from Python as
-[`Server.free_all`](api/clausters.defs.server.md#clausters.defs.server.Server.free_all),
+[`Server.panic`](api/clausters.defs.server.md#clausters.defs.server.Server.panic),
 [`Server.quit`](api/clausters.defs.server.md#clausters.defs.server.Server.quit) and
 [`Server.query_info`](api/clausters.defs.server.queries.md#clausters.defs.server.queries.ServerQueries.query_info), on a
 handle from [`attach`](sessions.md#several-servers-and-the-one-you-did-not-start).

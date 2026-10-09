@@ -123,6 +123,7 @@ Once you have a session, a small set of methods drives it. Some are offline-only
 | `render(sample_rate, channels, path=None, seed=None)` | offline | Drains the clock logically (no waiting), then renders the score. Returns a [`RenderStats`](verbs.md#what-a-render-gives-back): frame/channel/event counts, per-channel `peak` and `rms`, the `seed` it used, and `samples` (interleaved float32 in a stdlib `array('f')`) unless `path` sent the audio to a file. |
 | `run(seconds)` | real-time | Starts the clock, advances it in real time for `seconds`, then stops. Returns `self`. (`live` and `embed`.) |
 | `start()` / `stop()` | real-time | Start or stop the real-time clock yourself when `run` (which does both) is not enough. Both return `self`. |
+| `panic()` | all | Stops everything the session plays and leaves it ready to play again: see [Stopping everything](#stopping-everything-panic). Returns `self`. |
 | `close()` | all | Closes the underlying `Server` and its interface (for `embed`, shuts the in-process server down). |
 
 `play` is the one call shared by both kinds, and that is the whole point — see the next section.
@@ -140,6 +141,32 @@ with Session.live() as session:
 An offline session holds no socket and renders synchronously, so the context manager is optional there — though harmless, and tidy if you mix both.
 
 One rule carries over from the rest of the client: a routine must never block the clock thread. `render()` and `run()` are *driver* calls you make from your own (main) thread, not from inside a routine — they advance the clock, so calling them from a routine the clock is running would deadlock it.
+
+## Stopping everything: `panic`
+
+`panic()` is the stop-everything key — sclang's `CmdPeriod`. On a session it stops whatever that session plays, in this order:
+
+1. **Its clocks are emptied**, so no routine, pattern or curve wakes again. The clocks keep their beat and go on running.
+2. **Its timelines are halted**, those on one of its clocks and those on a transport of its server.
+3. **Its server is silenced** (`Server.panic`): every transport stopped, every timed bundle still queued dropped, every node freed. Freeing the nodes alone (`free_all`) is not silence: a bundle already sent — the server `latency` ahead of every played event, a transport's plan — makes a node a moment later.
+4. **Every OSC and MIDI responder not marked `permanent` is freed.**
+
+Nothing is closed, so a `play` on the next line sounds. Two of those reach beyond the session, because they are not its own: the server is silenced whole, another client's sound included, and the responders belong to the program, not to a session. A responder that must outlive every panic says so — `OscFunc(func, "/fader", permanent=True)` — as one that keeps a controller mapped would. The `AppClock` is left alone: what runs on it draws, and is not played.
+
+The free-standing `panic()` stops the **session in force**, the one an ambient `play` would use: a `with session:` block's, the running routine's, else the default session — whose clocks are its default clock and every clock made with no session ambient.
+
+```python
+from clausters import Session, panic, play
+from clausters.defs import sine
+
+session = Session.live()
+with session:
+    play(sine(880) * 0.1)
+    panic()                 # the session in force: this one
+session.panic()             # the same, naming it
+```
+
+In clausters-editor, `Ctrl+.` interrupts the code that is running and then panics every open session and the default one, so the key that stops the code stops the sound too.
 
 ## The same code, live or offline
 
@@ -274,7 +301,7 @@ Each gets its own shared-memory segment, and they may share one def store — th
 
 ```python
 server = Server(port=57130).attach()   # raises if nobody answers there
-server.free_all()                      # cut the sound, keep the server
+server.panic()                         # cut the sound, keep the server
 server.quit()                          # or stop it altogether
 ```
 
@@ -303,7 +330,7 @@ From a terminal, the same three verbs need no script (see [the command line](cli
 
 ```sh
 clausters status --port 57130   # is anyone there, and how is it configured
-clausters panic --port 57130    # free every node; the server stays up
+clausters panic --port 57130    # silence it; the server stays up
 clausters stop  --port 57130    # /server_quit
 ```
 

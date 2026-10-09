@@ -963,6 +963,30 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         (this end lets go)."""
         self.send_msg("/group_deepFree", ROOT_NODE_ID)
 
+    def panic(self):
+        """**Silence the server**, leaving it running: every transport
+        stopped, every timed bundle still queued dropped (`sched_clear`), every
+        node freed (`free_all`), and the curves this handle was sending
+        forgotten. Returns ``self``.
+
+        `free_all` alone is not silence: a bundle already queued -- the
+        `latency` ahead of every played event, a ``/sched_at``, a transport's
+        plan -- makes a node a moment later, and a rolling transport goes on
+        making them. Like `free_all` it reaches the whole server, so another
+        client's sound stops too. What plays from this client's clocks is the
+        session's to stop: `clausters.Session.panic` does both."""
+        if self._curves is not None:
+            self._curves.clear()
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            return self     # an offline score has nothing sounding to stop
+        transports = (self.options.transports if self.options.transports is not None
+                      else DEFAULT_TRANSPORTS)
+        for transport in range(transports):
+            self.send_msg("/transport_stop", transport)
+        self.sched_clear()
+        self.free_all()
+        return self
+
     def quit(self):
         """Stop the server (``/server_quit``).
 

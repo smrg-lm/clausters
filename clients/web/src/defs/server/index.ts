@@ -1451,7 +1451,7 @@ export class Server {
         this.faults = new OscFunc(
             (msg) => console.warn(`clausters: node ${msg[1]}: ${msg[4]}`),
             "/node_fault",
-            { recv: this.receiver },
+            { recv: this.receiver, permanent: true },
         );
     }
 
@@ -1473,7 +1473,7 @@ export class Server {
                 this.#curves?.forget(Number(msg[1]));
             },
             "/node_end",
-            { recv: this.receiver },
+            { recv: this.receiver, permanent: true },
         );
     }
 
@@ -1575,6 +1575,30 @@ export class Server {
      */
     freeAll(): void {
         this.sendMsg("/group_deepFree", ROOT_NODE_ID);
+    }
+
+    /**
+     * **Silences the server**, leaving it running: every transport stopped,
+     * every timed bundle still queued dropped ({@link schedClear}), every node
+     * freed ({@link freeAll}), and the curves this handle was sending
+     * forgotten. Returns `this`.
+     *
+     * {@link freeAll} alone is not silence: a bundle already queued -- the
+     * {@link latency} ahead of every played event, a `/sched_at`, a
+     * transport's plan -- makes a node a moment later, and a rolling transport
+     * goes on making them. Like {@link freeAll} it reaches the whole server, so
+     * another client's sound stops too. What plays from this page's clocks is
+     * the session's to stop: `Session.panic` does both.
+     */
+    panic(): this {
+        this.#curves?.clear();
+        if (this.scoring) return this;      // an offline score has nothing sounding to stop
+        for (let transport = 0; transport < this.sizing.transports; transport++) {
+            this.sendMsg("/transport_stop", ["i", transport]);
+        }
+        this.schedClear();
+        this.freeAll();
+        return this;
     }
 
     /**

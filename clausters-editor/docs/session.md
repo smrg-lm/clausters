@@ -29,4 +29,22 @@ while True:
     time.sleep(0.1)
 ```
 
+The key also stops what the session's packages are still doing on their own:
+after interrupting the code, the editor calls the interrupt hook of every
+package imported in the session that registers one. With clausters imported,
+that is a panic: every session stops sounding -- its clocks, its timelines, its
+server -- and the responders not marked `permanent` are freed.
+
+A package registers its hook as an entry point in the
+`clausters_editor.interrupt` group, a function called with no arguments:
+
+```toml
+[project.entry-points."clausters_editor.interrupt"]
+mypackage = "mypackage._editor:interrupt"
+```
+
+The hook is called only when the package is already imported, so the key never
+imports anything; one that fails is reported in the post window and does not
+stop the others.
+
 [Back to the start](index.md#shortcuts)

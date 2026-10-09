@@ -88,7 +88,7 @@ export class TapStream {
         stream.responder = new OscFunc(
             (msg) => stream.take(msg),
             "/bus_tapStream.reply",
-            { recv: server.receiver },
+            { recv: server.receiver, permanent: true },
         );
         try {
             await server.streamTaps(periodMs, frames, buses, timeout);

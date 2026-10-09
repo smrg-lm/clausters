@@ -9916,3 +9916,49 @@ book lands on the same heading in the editor. And because the API pages are
 part of the book, building the wheel needs `pydoc-markdown`:
 `CLAUSTERS_SKIP_DOCS` leaves the book out of a development build, and a release
 refuses that skip as it refuses the others.
+
+## A panic stops what an environment plays, and the editor's interrupt key reaches it
+
+*(2026-10-09.)* `free_all` was the client's panic button, and it is not silence:
+a bundle already sent — the `latency` ahead of every played event, a
+`/sched_at`, a transport's plan — makes a node a moment later, a rolling
+transport goes on making them, and a routine on a client clock sends the next
+one. sclang's `CmdPeriod` is the field's answer and the model here: one verb that
+stops everything and closes nothing.
+
+**`panic` is the environment's**, so the default session and an explicit one
+have it alike, and the free-standing `panic()` is the one of the session in
+force — the same resolution an ambient `play` uses. In order: the environment's
+clocks are emptied (`clear`, not `stop`: they keep their beat and a `play` on
+the next line sounds); the timelines on them, or on a transport of its server,
+are halted, since one whose clock was emptied would otherwise go on reporting
+that it plays; the server is silenced (`Server.panic`: every transport stopped,
+the queue dropped, every node freed — and the curves the handle was sending
+forgotten, since their notes are gone); and the responders are freed.
+
+**Which clocks are an environment's** needed one thing that did not exist. A
+session holds the clocks it adopted, but a clock made with no session ambient
+belongs to the default session, which holds no list of them — a hand-made
+`TempoClock()`, a root timeline's hidden clock. Every clock is now kept in a
+weak registry, and the default session's are those whose session is it or
+nobody.
+
+**Two parts reach beyond the environment, on purpose.** The server is silenced
+whole, another client's sound included: `free_all` already reached every node
+and a bare `/sched_clear` every client's queue, so a panic that stopped only this
+handle's transports would be the one partial part. And the responders are the
+program's, not a session's — a receiver is shared — so every panic frees every
+responder, as `CmdPeriod` does; one that must survive is made `permanent`. The
+web client's own responders (the node recycler, the fault reporter, a
+timeline's follower, the data streams) are permanent, since a panic must not
+break the machinery under the next `play`. The `AppClock` is left alone: what
+runs on it draws, and is not played.
+
+**The editor stays a Python editor.** It does not know clausters, so its
+interrupt key cannot call `panic` by name. A package registers a function under
+the `clausters_editor.interrupt` entry-point group, as it registers its book
+under `clausters_editor.docs`, and the driver calls it after the key has
+interrupted the session's code — on the main thread, once the evaluation has
+stopped, so nothing it ran can start a note after the panic — and only when the
+package is already imported, so the key never imports anything. clausters'
+hook panics every session not closed yet and the default one.

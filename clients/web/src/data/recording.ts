@@ -105,7 +105,7 @@ export class RecordingStream {
         stream.responder = new OscFunc(
             (msg) => stream.take(msg),
             "/buffer_stream.reply",
-            { recv: server.receiver },
+            { recv: server.receiver, permanent: true },
         );
         try {
             await server.streamBuffers(

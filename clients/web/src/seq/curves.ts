@@ -350,6 +350,22 @@ export class CurveEmitter {
         this.server = server;
     }
 
+    /**
+     * Forgets every note and every channel's curve: nothing is sent after
+     * this, and each wake finds nothing left and ends. What a panic does
+     * (`Server.panic`), since the nodes the notes were sent to are freed with
+     * it.
+     */
+    clear(): void {
+        for (const axis of this.#axes.values()) {
+            axis.notes.clear();
+            axis.channels = [];
+        }
+        this.#axes.clear();
+        this.#notes.clear();
+        this.#curves.clear();
+    }
+
     /** Whether the server is a score being written rather than one that sounds. */
     get offline(): boolean {
         return this.server.scoring;

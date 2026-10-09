@@ -32,10 +32,16 @@ import sys
 import threading
 import time
 import traceback
+import weakref
 
 from .. import _native
 from .stream import Stream, StopStream, resume
 from .timebase import LogicalTimebase, MonotonicTimebase, SampleClockTimebase
+
+#: Every clock alive in the process, so that a panic reaches the ones nobody
+#: kept: a clock made with no session ambient belongs to the default session,
+#: which holds no list of them (see `clausters.base.environment.Environment.panic`).
+_ALIVE = weakref.WeakSet()
 
 
 class TempoClock:
@@ -153,6 +159,7 @@ class TempoClock:
         self.session = None
         if ambient is not None:
             ambient.adopt(self)
+        _ALIVE.add(self)
 
     @property
     def timebase(self):

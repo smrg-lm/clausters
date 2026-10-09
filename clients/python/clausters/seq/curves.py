@@ -282,6 +282,19 @@ class CurveEmitter:
         self._curves: dict = {}
         self._ids = itertools.count(1)
 
+    def clear(self) -> None:
+        """Forget every note and every channel's curve: nothing is sent after
+        this, and each wake finds nothing left and ends. What a panic does
+        (`clausters.defs.Server.panic`), since the nodes the notes were sent to
+        are freed with it."""
+        with self._lock:
+            for axis in self._axes.values():
+                axis.notes.clear()
+                axis.channels = []
+            self._axes.clear()
+            self._notes.clear()
+            self._curves.clear()
+
     @property
     def offline(self) -> bool:
         """Whether the server is a score being written rather than one that

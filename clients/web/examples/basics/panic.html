@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: panic</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre; align-self: stretch; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>panic.py</code>: <b>stopping everything at once</b>, and what it leaves
+standing.
+
+Three things sound here, each kept going by something different: a
+<b>drone</b>, a node that plays until it is freed; an <b>arpeggio</b>, a
+routine on the session's clock that makes a new note every quarter beat; and a
+<b>responder</b>, an <code>OscFunc</code> that would answer a message. Freeing
+the nodes alone does not stop that: the routine makes the next note a moment
+later, and a bundle already queued on the server makes one too.
+
+<code>panic</code> is the one verb for all of it -- sclang's
+<code>CmdPeriod</code>. It empties the session's clocks, halts its timelines,
+silences its server (every transport stopped, every queued bundle dropped,
+every node freed) and frees every responder not marked <code>permanent</code>.
+It closes nothing: the clock keeps its beat and goes on running, and the note
+played after it sounds. The free-standing <code>panic()</code> stops the
+session in force, the one an ambient <code>play</code> reaches;
+<code>session.panic()</code> names one.
+
+<b>What is different from the script</b>, and it is only the platform: the
+engine is the tab's own (<code>Session.embed</code> is this client's
+<code>live</code>), a page starts sound only from a gesture, so the three steps
+the script takes on a timer are three buttons here, and the calls that reach
+the engine are awaited. Every other line is the call the script makes, in the
+order it makes it.
+
+Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
+this directory and open the page.</div>
+      <div>
+        <button id="start">start</button>
+        <button id="panic" disabled>panic</button>
+        <button id="again" disabled>play again</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+    <script type="module">
+      import { Event, OscFunc, Routine, Session, panic, play } from "../../dist/index.js";
+      import { sine } from "../../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      let session = null;
+      let ping = null;
+      let fader = null;
+
+      el("start").onclick = async () => {
+        el("start").disabled = true;
+        // The session. `embed` is this client's `live`. Activating it makes it
+        // the session in force: what `play` reaches, and what the free-standing
+        // `panic` stops.
+        session = (await Session.embed({ channels: 2 })).activate();
+
+        // Three things that sound: a drone, which is a node and nothing else;
+        // an arpeggio, a routine making a note every quarter beat; and two
+        // responders -- one ordinary, one `permanent`, the kind a controller
+        // mapping would be.
+        await play(sine(660).mul(0.04));
+
+        function* arpeggio() {
+          while (true) {
+            for (const freq of [880.0, 1100.0, 1320.0, 1760.0]) {
+              new Event({ freq, legato: 0.4, amp: 0.05 }).play();
+              yield 0.25;
+            }
+          }
+        }
+        new Routine(arpeggio).play();
+
+        ping = new OscFunc((msg) => log(`ping ${msg}`), "/ping");
+        fader = new OscFunc((msg) => log(`fader ${msg}`), "/fader", { permanent: true });
+        log("sounding - panic stops it all");
+        el("panic").disabled = false;
+      };
+
+      // Panic. The drone and the arpeggio stop together, and the arpeggio does
+      // not come back: its routine left the clock. The ordinary responder is
+      // freed and the permanent one still answers.
+      el("panic").onclick = async () => {
+        panic();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        log(`after the panic: ${(await session.server.status()).synths} synths, `
+          + `${session.clock.queued} routines queued, `
+          + `/ping answered: ${ping.enabled}, /fader answered: ${fader.enabled}`);
+        el("again").disabled = false;
+      };
+
+      // And it plays again: nothing was closed, so the next note sounds on the
+      // same clock and server.
+      el("again").onclick = () => {
+        new Event({ freq: 1320.0, sustain: 1.0, amp: 0.08 }).play();
+      };
+    </script>
+  </body>
+</html>

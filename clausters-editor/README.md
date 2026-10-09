@@ -117,6 +117,11 @@ paths. The menu entry does not show up in the applications menu, because
   returns a folder of `.md` files (the clausters client registers its book this
   way). Search and help reach them too; they are asked for again each time the
   session starts.
+- **Interrupt hooks**: `Ctrl+.` interrupts the session's code, then calls the
+  function every imported package registers in the `clausters_editor.interrupt`
+  group, so the key also stops what a package is still doing on its own (the
+  clausters client stops every session's sound this way). A package that is not
+  imported is never imported by it.
 - **Startup code** (File → Preferences): runs at the start of every session.
 - Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
@@ -156,7 +161,8 @@ src/
   lib/session.svelte.ts    communication with the Python session
   lib/EnvironmentsDialog.svelte, lib/PreferencesDialog.svelte   configuration dialogs
 src-tauri/
-  python/driver.py         driver: runs the code in a persistent namespace
+  python/driver.py         driver: runs the code in a persistent namespace, and the
+                           interrupt hooks (clausters_editor.interrupt)
   src/session.rs           the Python process: start, send, interrupt, restart
   src/files.rs             the user's files, the docs/ folder and the package books
   src/pkgdocs.rs           the books the session's packages register (clausters_editor.docs)

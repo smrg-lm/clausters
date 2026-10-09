@@ -211,6 +211,11 @@ class Main(Environment):
             self.default_clock.start()
         return self.default_clock
 
+    def _owns(self, clock) -> bool:
+        """The default session's clocks: its `default_clock`, and every clock
+        made with no session ambient, which resolves against it."""
+        return clock.session is None or clock.session is self
+
     # ---- random context (seed / rng inherited from RandomContext) ----
 
     def elapsed_beats(self) -> float:

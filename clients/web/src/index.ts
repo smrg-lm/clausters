@@ -72,6 +72,7 @@ export type { Area, LogSink } from "./base/log.ts";
 export { AbstractObject } from "./base/absobject.ts";
 export type { Composed, Fan } from "./base/absobject.ts";
 export { play } from "./play.ts";
+export { panic } from "./panic.ts";
 export type { Playable, PlayOptions } from "./play.ts";
 export { plot, PatchWindow, PlotWindow } from "./plot.ts";
 export type { PatchViewOptions } from "./plot.ts";

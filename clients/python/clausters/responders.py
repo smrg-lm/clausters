@@ -102,6 +102,20 @@ def _matches_template(template, value) -> bool:
     return template is None or template == value
 
 
+#: Every responder enabled now, OSC and MIDI. An enabled responder is held by
+#: its receiver anyway, so holding it here too keeps nothing alive.
+_ENABLED = set()
+
+
+def _panic() -> None:
+    """Free every responder not marked `permanent` -- a panic's part
+    (`clausters.base.environment.Environment.panic`). Responders are the
+    process's, not a session's: whichever session panics, they go."""
+    for responder in list(_ENABLED):
+        if not responder.permanent:
+            responder.free()
+
+
 # ---- OSC ----
 
 
@@ -124,12 +138,17 @@ class OscFunc:
             is fine -- only the listed positions are checked.
         recv: the `clausters.base.OscReceiver` to register with; defaults to
             `default_osc_receiver`.
+        permanent: survive a panic (`clausters.panic`), which frees every
+            other responder.
 
     The responder is enabled on creation. Call `free` (or `disable`) when done.
     """
 
-    def __init__(self, func, path, *, src=None, arg_template=None, recv=None):
+    def __init__(self, func, path, *, src=None, arg_template=None, recv=None,
+                 permanent=False):
         self.func = func
+        #: Whether a panic leaves it responding; settable at any time.
+        self.permanent = bool(permanent)
         self.path = path if path.startswith("/") else "/" + path
         self.src = src
         self.arg_template = arg_template
@@ -155,6 +174,7 @@ class OscFunc:
         if not self.enabled:
             self.recv.add(self._handler)
             self.enabled = True
+            _ENABLED.add(self)
         return self
 
     def disable(self):
@@ -162,6 +182,7 @@ class OscFunc:
         if self.enabled:
             self.recv.remove(self._handler)
             self.enabled = False
+            _ENABLED.discard(self)
         return self
 
     def free(self):
@@ -204,12 +225,17 @@ class MidiFunc:
             ``None`` (matches anything).
         recv: the `clausters.base.MidiReceiver` to register with; defaults to
             `default_midi_receiver`.
+        permanent: survive a panic (`clausters.panic`), which frees every
+            other responder.
 
     Enabled on creation; `free` (or `disable`) when done.
     """
 
-    def __init__(self, func, midi_msg, *, chan=None, arg_template=None, recv=None):
+    def __init__(self, func, midi_msg, *, chan=None, arg_template=None, recv=None,
+                 permanent=False):
         self.func = func
+        #: Whether a panic leaves it responding; settable at any time.
+        self.permanent = bool(permanent)
         self.types = [midi_msg] if isinstance(midi_msg, str) else list(midi_msg)
         self.chan = chan
         self.arg_template = arg_template
@@ -233,6 +259,7 @@ class MidiFunc:
         if not self.enabled:
             self.recv.add(self._handler)
             self.enabled = True
+            _ENABLED.add(self)
         return self
 
     def disable(self):
@@ -240,6 +267,7 @@ class MidiFunc:
         if self.enabled:
             self.recv.remove(self._handler)
             self.enabled = False
+            _ENABLED.discard(self)
         return self
 
     def free(self):

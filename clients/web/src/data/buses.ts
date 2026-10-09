@@ -80,7 +80,7 @@ export class BusStream {
         stream.responder = new OscFunc(
             (msg) => stream.take(msg),
             "/bus_stream.reply",
-            { recv: server.receiver },
+            { recv: server.receiver, permanent: true },
         );
         try {
             await server.streamBuses(periodMs, indices, timeout);

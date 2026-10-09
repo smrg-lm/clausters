@@ -17,6 +17,19 @@
 
 import { Rng } from "./rand.ts";
 import type { Server } from "../defs/server/index.ts";
+import { aliveClocks } from "./clock.ts";
+import type { TempoClock } from "./clock.ts";
+
+/**
+ * The parts of a panic held by modules this one cannot import without a cycle:
+ * each sets its own when it loads, and one never loaded holds nothing to stop.
+ * `halt` stops the timelines sounding on the emptied clocks or on the server's
+ * transports; `free` frees the responders not marked permanent.
+ */
+export const panicParts: {
+    halt?: (clocks: TempoClock[], server: Server | null) => void;
+    free?: () => void;
+} = {};
 
 /**
  * One seedable RNG root (the shared core generator).
@@ -69,4 +82,36 @@ export class Environment extends RandomContext {
      * around one.
      */
     server: Server | null = null;
+
+    /**
+     * **Stops everything this environment plays**, and leaves it ready to
+     * play again -- sclang's `CmdPeriod`. Returns `this`.
+     *
+     * In order: every clock of this environment is emptied
+     * (`TempoClock.clear`), so no routine, pattern or curve wakes again; every
+     * timeline played on one of them, or on a transport of its server, is
+     * halted; the server is silenced (`Server.panic`: transports stopped,
+     * queued bundles dropped, nodes freed); and every OSC and MIDI responder
+     * not marked `permanent` is freed.
+     *
+     * Nothing is closed: the clocks keep their beat and go on running, the
+     * server keeps its defs and buffers, and a `play` on the next line sounds.
+     * Two things reach beyond this environment, because they are not its own:
+     * the server is silenced whole, another client's sound included, and the
+     * responders are the page's. The `AppClock` is left alone -- what runs on
+     * it draws, and is not played.
+     */
+    panic(): this {
+        const clocks = aliveClocks().filter((clock) => this.owns(clock));
+        for (const clock of clocks) clock.clear();
+        panicParts.halt?.(clocks, this.server);
+        this.server?.panic();
+        panicParts.free?.();
+        return this;
+    }
+
+    /** Whether `clock` plays in this environment: one it adopted. */
+    protected owns(clock: TempoClock): boolean {
+        return clock.session === this;
+    }
 }

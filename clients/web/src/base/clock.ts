@@ -231,6 +231,25 @@ export interface SetTempoOptions {
     at?: number;
 }
 
+/**
+ * Every clock alive in the process, so that a panic reaches the ones nobody
+ * kept: a clock made with no session ambient belongs to the default session,
+ * which holds no list of them (see `Environment.panic`). Weakly: a clock
+ * nobody holds any more is not kept alive by this.
+ */
+const ALIVE = new Set<WeakRef<TempoClock>>();
+const forgetClock = new FinalizationRegistry<WeakRef<TempoClock>>((ref) => ALIVE.delete(ref));
+
+/** The clocks alive now -- the panic's list. */
+export function aliveClocks(): TempoClock[] {
+    const clocks: TempoClock[] = [];
+    for (const ref of ALIVE) {
+        const clock = ref.deref();
+        if (clock !== undefined) clocks.push(clock);
+    }
+    return clocks;
+}
+
 /** A scheduler that keeps musical time in beats and resumes routines on it. */
 export class TempoClock {
     /**
@@ -392,6 +411,9 @@ export class TempoClock {
         this.ticker = ticker ?? defaultTicker();
         if (this.timebaseHeld instanceof LogicalTimebase) this.timebaseHeld.join(this);
         ambient?.adopt?.(this);
+        const ref = new WeakRef(this);
+        ALIVE.add(ref);
+        forgetClock.register(this, ref);
     }
 
     // ---- beat/second math (through the core) ----

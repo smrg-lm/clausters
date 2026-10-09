@@ -200,6 +200,20 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 `use` is synchronous by design: an `await` inside it would let another task run while this session is ambient, and the page's one thread has no way to scope that. Await outside, create inside.
 
+### Stopping everything: `panic`
+
+`panic()` is the stop-everything key — sclang's `CmdPeriod`, and the reference client's `panic`. `s.panic()` stops whatever that session plays, in this order: its clocks are emptied, so no routine, pattern or curve wakes again (they keep their beat and go on running); the timelines on those clocks or on a transport of its server are halted; its server is silenced (`server.panic()`: every transport stopped, every queued bundle dropped, every node freed); and every OSC and MIDI responder not marked `permanent` is freed. Freeing the nodes alone (`freeAll`) is not silence, since a bundle already sent makes a node a moment later.
+
+Nothing is closed, so a `play` on the next line sounds. The server is silenced whole, another client's sound included, and the responders are the page's rather than a session's; one that must outlive a panic is made with `{ permanent: true }`. The free-standing `panic()` stops the session in force — the one an ambient `play` would reach, else the default session, whose clocks are its default clock and every clock made with no session ambient.
+
+```js
+import { Session, defs, panic, play } from "clausters";
+
+const s = (await Session.embed()).activate();
+play(defs.sine(880).mul(0.1));
+panic();                    // the session in force: this one
+```
+
 ### The GUI leg
 
 `s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await new GuiHost({ transport: "ws", url }).attach())` — the way it is given a `Server` it did not open.

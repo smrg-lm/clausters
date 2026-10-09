@@ -118,6 +118,7 @@ from .defs import (
     SynthDef,
 )
 from .gui import GuiHost
+from .panic import panic
 from .play import play
 from .plot import plot
 from .render import read_soundfile, render
@@ -170,6 +171,7 @@ __all__ = [
     "EventSequence",
     # the free verbs
     "play",
+    "panic",
     "render",
     "plot",
     "scope",

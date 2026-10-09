@@ -37,7 +37,8 @@ export { MidiItem, OscItem };
 import type { EventDestination } from "./event.ts";
 import { EventPattern, Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
-import { Transport } from "../defs/server/transport.ts";
+import { Transport, viewedServer } from "../defs/server/transport.ts";
+import { panicParts } from "../base/environment.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { OscFunc } from "../responders.ts";
 import type { ResponderMessage } from "../responders.ts";
@@ -66,6 +67,40 @@ export interface PlayDestination extends EventDestination {
  * One timed item. A stable object, so it can be removed or moved by identity
  * after other edits have shifted positions.
  */
+/**
+ * The players of the timelines played as roots, so that a panic halts them:
+ * one on a clock a panic emptied would otherwise go on saying it plays, with
+ * nothing left to wake it. Weakly: a player nobody holds is not kept by this.
+ */
+const PLAYERS = new Set<WeakRef<TransportPlayer | TimelinePlayer>>();
+const forgetPlayer = new FinalizationRegistry<WeakRef<TransportPlayer | TimelinePlayer>>(
+    (ref) => PLAYERS.delete(ref),
+);
+
+/** Puts `player` in `PLAYERS` once, as it starts. */
+function sounding(player: TransportPlayer | TimelinePlayer): void {
+    for (const ref of PLAYERS) if (ref.deref() === player) return;
+    const ref = new WeakRef(player);
+    PLAYERS.add(ref);
+    forgetPlayer.register(player, ref);
+}
+
+// A panic's part (`Environment.panic`), after the clocks were emptied and
+// before the server is silenced: every timeline that sounds on one of `clocks`
+// or on a transport of `server` is halted.
+panicParts.halt = (clocks, server) => {
+    for (const ref of [...PLAYERS]) {
+        const player = ref.deref();
+        if (player === undefined || !player.running) continue;
+        if (player instanceof TransportPlayer) {
+            if (server === null || player.owner !== server) continue;
+        } else if (player.clock === null || !clocks.includes(player.clock)) {
+            continue;
+        }
+        player.halt();
+    }
+};
+
 export class Entry {
     beat: number;
     readonly item: unknown;
@@ -1021,6 +1056,11 @@ export class TransportPlayer implements TreeDriver {
         return this.reported.playing;
     }
 
+    /** The server whose transport this plays on, through the transport's view. */
+    get owner(): Server {
+        return viewedServer(this.server);
+    }
+
     /**
      * Where the transport is, in this timeline's beats, as this client last heard
      * it -- a wrap inside the transport's loop and a locate some other client
@@ -1067,6 +1107,7 @@ export class TransportPlayer implements TreeDriver {
     resume(quant?: number): void {
         refuseQuant(quant);
         this.reported = { ...this.reported, playing: true };
+        sounding(this);
         this.queue(async () => {
             // Nothing is re-planned: a pause froze the transport's queue with
             // the transport, so what was queued is still queued in its exact
@@ -1078,6 +1119,7 @@ export class TransportPlayer implements TreeDriver {
     play(at: number, quant?: number): void {
         refuseQuant(quant);
         this.reported = { ...this.reported, playing: true };
+        sounding(this);
         this.locate(at, false);
         this.queue(async () => {
             await this.server.transportPlay();
@@ -1236,7 +1278,7 @@ export class TransportPlayer implements TreeDriver {
         this.following = new OscFunc(
             (msg) => this.broadcast(msg),
             "/transport_query.reply",
-            { recv: this.server.receiver },
+            { recv: this.server.receiver, permanent: true },
         );
         return this;
     }
@@ -1390,6 +1432,7 @@ export class TimelinePlayer implements TreeDriver {
         }
         clock.locate(this.rootBeat(this.rootSecs(at) - delay));
         this.running = true;
+        sounding(this);
         this.epoch += 1;
         const epoch = this.epoch;
         const player = this;

@@ -70,3 +70,39 @@ class Environment(RandomContext):
         #: session adopts one via a free-standing ``Server().boot()``; a `Session`
         #: is built around one).
         self.server = None
+
+    def panic(self):
+        """**Stop everything this environment plays**, and leave it ready to
+        play again -- sclang's ``CmdPeriod``. Returns ``self``.
+
+        In order: every clock of this environment is emptied
+        (`clausters.base.clock.TempoClock.clear`), so no routine, pattern or
+        curve wakes again; every timeline played on one of them, or on a
+        transport of its server, is halted; the server is silenced
+        (`clausters.defs.Server.panic`: transports stopped, queued bundles
+        dropped, nodes freed); and every OSC and MIDI responder not marked
+        ``permanent`` is freed.
+
+        Nothing is closed: the clocks keep their beat and go on running, the
+        server keeps its defs and buffers, and a `play` on the next line
+        sounds. Two things reach beyond this environment, because they are
+        not its own: the server is silenced whole, another client's sound
+        included, and the responders are the process's. The
+        `clausters.base.appclock.AppClock` is
+        left alone -- what runs on it draws, and is not played."""
+        from .clock import _ALIVE
+        from ..responders import _panic as free_responders
+        from ..seq.timeline import _panic as halt_timelines
+
+        clocks = [clock for clock in list(_ALIVE) if self._owns(clock)]
+        for clock in clocks:
+            clock.clear()
+        halt_timelines(clocks, self.server)
+        if self.server is not None:
+            self.server.panic()
+        free_responders()
+        return self
+
+    def _owns(self, clock) -> bool:
+        """Whether ``clock`` plays in this environment: one it adopted."""
+        return clock.session is self

@@ -93,6 +93,16 @@ MidiFunc(note_off, "note_off", recv=recv)
 
 That virtual input port is a loose cable until you wire a MIDI source into it (`pw-link`, qpwgraph, or `aconnect`). This is the client-side mirror of the server's own direct MIDI input: a Clausters server can be played by MIDI it receives itself, *or* by a client that listens to MIDI and forwards `/synth_new`. Both coexist.
 
+## A panic frees them, unless they are permanent
+
+A panic (`panic()`, `session.panic()`, `Ctrl+.` in clausters-editor) frees every responder, OSC and MIDI, as sclang's `CmdPeriod` does — whichever session panics, since responders belong to the program and not to a session. One that must survive it — a controller that keeps a fader mapped while everything else is stopped — is made `permanent`:
+
+```python
+OscFunc(on_fader, "/fader", recv=recv, permanent=True)
+```
+
+`permanent` is an attribute too, so a responder can be pinned or released later.
+
 ## Threading: the golden rule
 
 A responder's callback runs on the receiver's background thread (or, if the receiver was given a `clock`, on the clock thread). The [golden rule](routines-and-clocks.md) holds: **never block that thread.** Keep callbacks quick. To *sequence* in response to an incoming message — play a phrase, not a single note — schedule a routine on a clock, which returns immediately:

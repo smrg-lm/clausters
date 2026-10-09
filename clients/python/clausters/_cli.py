@@ -90,7 +90,8 @@ CLIENT_COMMANDS = ("stop", "panic", "status")
 CLIENT_USAGE = """\
 usage: clausters <command> [--port <n>]     acts on a server already running
   stop      stop it (/server_quit)
-  panic     free every node, leaving the server up (/group_deepFree)
+  panic     silence it, leaving it up: transports stopped, queued bundles
+            dropped, every node freed
   status    report whether one answers, and how it is configured
 
 Anything else is passed to the server binary: `clausters --help` for its flags.
@@ -136,8 +137,8 @@ def client_main(argv: "list[str]") -> int:
             server.quit()
             print(f"stopped the server at {server.target.host}:{server.target.port}")
         elif command == "panic":
-            server.free_all()
-            print(f"freed every node on {server.target.host}:{server.target.port}")
+            server.panic()
+            print(f"silenced {server.target.host}:{server.target.port}")
         else:
             info = server.query_info()
             print(f"a server answers at {server.target.host}:{server.target.port}: "

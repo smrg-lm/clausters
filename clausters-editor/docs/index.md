@@ -9,7 +9,7 @@ evaluate stays alive in the session, and its output appears in the *post* window
 |---|---|
 | `Shift+Enter` | Evaluates the selection or the current line |
 | `Ctrl+Enter` | Evaluates the selection or the top-level block under the cursor (a whole `def`, `for`, `class`), then moves to the line after it |
-| `Ctrl+.` | Interrupts the execution (`KeyboardInterrupt`) |
+| `Ctrl+.` | Interrupts the execution (`KeyboardInterrupt`), then stops what the imported packages are playing ([Interrupting](session.md#interrupting)) |
 | `Ctrl+D` | Help on the name under the cursor |
 | `Ctrl+Shift+Space` | Shows the parameters of the call the cursor is in (`Esc` closes it) |
 | `Ctrl+Space` | Completes the name being typed: from the file, and from what the session holds |

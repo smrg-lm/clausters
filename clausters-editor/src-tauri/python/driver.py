@@ -253,6 +253,36 @@ def reader():
     _jobs.put(None)  # stdin closed: ends the main thread
 
 
+# --- The interrupt key: the code stops, then whatever the packages say ---
+
+# A package may give the interrupt key more to stop than the code: an audio
+# library, whatever is still sounding. It registers a function under this
+# entry-point group, and the driver calls it after the key has interrupted the
+# session -- only when the package is already imported here, so the key never
+# imports anything.
+INTERRUPT_GROUP = "clausters_editor.interrupt"
+
+
+def run_interrupt_hooks():
+    """Calls the interrupt hook of every imported package that registers one;
+    a failing hook is reported and does not stop the others."""
+    try:
+        from importlib.metadata import entry_points
+
+        eps = entry_points()
+        eps = (eps.select(group=INTERRUPT_GROUP) if hasattr(eps, "select")
+               else eps.get(INTERRUPT_GROUP, []))
+    except Exception:
+        return
+    for ep in eps:
+        if ep.value.split(":")[0].split(".")[0] not in sys.modules:
+            continue
+        try:
+            ep.load()()
+        except BaseException as e:
+            emit("err", None, f"{ep.name}: the interrupt hook failed: {e!r}\n")
+
+
 def main():
     emit("ready", None, sys.version)
     threading.Thread(target=reader, daemon=True).start()
@@ -260,6 +290,7 @@ def main():
         try:
             req = _jobs.get()
         except KeyboardInterrupt:
+            run_interrupt_hooks()
             continue  # interrupted while idle
         if req is None:
             break
@@ -268,6 +299,7 @@ def main():
             run(req)
         except KeyboardInterrupt:
             emit("err", req.get("id"), "KeyboardInterrupt\n")
+            run_interrupt_hooks()
         except BaseException:
             show_error(req)
         finally:

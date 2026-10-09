@@ -20,6 +20,8 @@ starts.free();
 
 A responder is enabled the moment it is created. `disable()` suspends it and `enable()` puts it back; `free()` is permanent; `oneShot()` frees it after its first match. The callback is `func(msg, time, src)` — `msg` the message as `[addr, ...args]`, `time` the containing bundle's Unix seconds (`null` for an immediate or bare message), `src` the sender. `argTemplate` matches the arguments by position, an entry being a literal, a predicate or `null` for a hole; `oscfunc(path, options)(callback)` is the builder form.
 
+A panic (`panic()`, `session.panic()`) frees every responder, OSC and MIDI, as sclang's `CmdPeriod` does — whichever session panics, since responders are the page's rather than a session's. One that must survive it, a controller that keeps a fader mapped while everything else is stopped, is made with `{ permanent: true }`; `permanent` is a field too, so it can be pinned or released later.
+
 ## The receiver is the carrier, because a page has no port
 
 A responder registers with a **receiver**, the thing that decodes packets and hands them around. In the reference client that is a UDP socket it binds — a port any application on the machine can target. A page can bind nothing and be targeted by nobody: what it has is the connection it already opened, to the in-page engine or to a `--ws` server. So `OscReceiver` wraps a `Connection`, and everything that arrives on it reaches the responders registered there.

@@ -229,6 +229,14 @@ export class Main extends Environment {
         return this.defaultClock;
     }
 
+    /**
+     * The default session's clocks: its `defaultClock`, and every clock made
+     * with no session ambient, which resolves against it.
+     */
+    protected override owns(clock: TempoClock): boolean {
+        return clock.session === null || clock.session === this;
+    }
+
     /** The default clock's beat, or 0 while there is no clock. */
     elapsedBeats(): number {
         return this.defaultClock ? this.defaultClock.beats() : 0.0;

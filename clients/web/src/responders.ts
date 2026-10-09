@@ -48,6 +48,7 @@ import type { OscMessage } from "./base/osc.ts";
 import { MidiReceiver } from "./base/midi.ts";
 import type { MidiMessage } from "./base/midi.ts";
 import { main } from "./base/main.ts";
+import { panicParts } from "./base/environment.ts";
 
 /** One decoded argument, as a callback sees it. */
 export type OscValue = OscMessage["args"][number];
@@ -108,6 +109,21 @@ export function setDefaultOscReceiver(receiver: OscReceiver): OscReceiver {
     return receiver;
 }
 
+/**
+ * Every responder enabled now, OSC and MIDI. An enabled responder is held by
+ * its receiver anyway, so holding it here too keeps nothing alive.
+ */
+const ENABLED = new Set<OscFunc | MidiFunc>();
+
+// A panic's part (`Environment.panic`): every responder not marked
+// `permanent` is freed. Responders are the page's, not a session's: whichever
+// session panics, they go.
+panicParts.free = () => {
+    for (const responder of [...ENABLED]) {
+        if (!responder.permanent) responder.free();
+    }
+};
+
 // ---- OSC ----
 
 /**
@@ -124,6 +140,8 @@ export function setDefaultOscReceiver(receiver: OscReceiver): OscReceiver {
  *   literal (compared equal), a predicate, or `null` (matches anything).
  *   Shorter than the message is fine: only the listed positions are checked.
  * - `recv` -- the `OscReceiver` to register with; the module default otherwise.
+ * - `permanent` -- survive a panic (`panic`), which frees every other
+ *   responder.
  *
  * Enabled on creation. Call `free` (or `disable`) when done.
  */
@@ -140,6 +158,8 @@ export class OscFunc {
     readonly recv: OscReceiver;
     /** Whether it is currently responding. */
     enabled = false;
+    /** Whether a panic leaves it responding; settable at any time. */
+    permanent: boolean;
 
     private readonly handler: OscHandler;
 
@@ -150,13 +170,16 @@ export class OscFunc {
             src = null,
             argTemplate = null,
             recv,
+            permanent = false,
         }: {
             src?: string | null;
             argTemplate?: ArgMatcher[] | null;
             recv?: OscReceiver;
+            permanent?: boolean;
         } = {},
     ) {
         this.func = func;
+        this.permanent = permanent;
         this.path = path.startsWith("/") ? path : `/${path}`;
         this.src = src;
         this.argTemplate = argTemplate;
@@ -180,6 +203,7 @@ export class OscFunc {
         if (!this.enabled) {
             this.recv.add(this.handler);
             this.enabled = true;
+            ENABLED.add(this);
         }
         return this;
     }
@@ -189,6 +213,7 @@ export class OscFunc {
         if (this.enabled) {
             this.recv.remove(this.handler);
             this.enabled = false;
+            ENABLED.delete(this);
         }
         return this;
     }
@@ -229,6 +254,7 @@ export function oscfunc(
         src?: string | null;
         argTemplate?: ArgMatcher[] | null;
         recv?: OscReceiver;
+        permanent?: boolean;
     } = {},
 ): (func: OscCallback) => OscFunc {
     if (typeof path !== "string") {
@@ -299,6 +325,8 @@ export function setDefaultMidiReceiver(receiver: MidiReceiver): MidiReceiver {
  *   fields; a matcher is a literal, a predicate, or `null` (matches anything).
  * - `recv` -- the `MidiReceiver` to register with; the module default
  *   otherwise.
+ * - `permanent` -- survive a panic (`panic`), which frees every other
+ *   responder.
  *
  * Enabled on creation. Call `free` (or `disable`) when done.
  */
@@ -311,6 +339,8 @@ export class MidiFunc {
     readonly argTemplate: Record<string, MidiMatcher> | null;
     readonly recv: MidiReceiver;
     enabled = false;
+    /** Whether a panic leaves it responding; settable at any time. */
+    permanent: boolean;
 
     private readonly handler = (message: MidiMessage, src: string): void => {
         if (!this.types.includes(message.type)) return;
@@ -339,9 +369,11 @@ export class MidiFunc {
             chan?: number | null;
             argTemplate?: Record<string, MidiMatcher> | null;
             recv?: MidiReceiver;
+            permanent?: boolean;
         } = {},
     ) {
         this.func = func;
+        this.permanent = options.permanent ?? false;
         this.types = typeof midiMsg === "string" ? [midiMsg] : [...midiMsg];
         this.chan = options.chan ?? null;
         this.argTemplate = options.argTemplate ?? null;
@@ -354,6 +386,7 @@ export class MidiFunc {
         if (!this.enabled) {
             this.recv.add(this.handler);
             this.enabled = true;
+            ENABLED.add(this);
         }
         return this;
     }
@@ -363,6 +396,7 @@ export class MidiFunc {
         if (this.enabled) {
             this.recv.remove(this.handler);
             this.enabled = false;
+            ENABLED.delete(this);
         }
         return this;
     }
@@ -401,6 +435,7 @@ export function midifunc(
         chan?: number | null;
         argTemplate?: Record<string, MidiMatcher> | null;
         recv?: MidiReceiver;
+        permanent?: boolean;
     } = {},
 ): (func: MidiCallback) => MidiFunc {
     if (typeof midiMsg !== "string" && !Array.isArray(midiMsg)) {

@@ -119,6 +119,11 @@ function addressed(server: Server, id: number): Server {
     });
 }
 
+/** The server a transport's view addresses: the view itself for transport 0. */
+export function viewedServer(server: Server): Server {
+    return ((server as unknown as Record<symbol, Server>)[VIEWED] ?? server) as Server;
+}
+
 /** The shared transport grid. Composed into `Server`; never used alone. */
 export class ServerTransport {
     /**

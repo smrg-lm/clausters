@@ -20,6 +20,7 @@ stats = s.render()                  # drains the clock, renders the score
 ```
 """
 
+import weakref
 from contextlib import contextmanager
 
 from .base import OscDestination, OscEmbedInterface, OscNrtInterface, TempoClock
@@ -138,6 +139,7 @@ class Session(Environment):
         #: external OSC destinations opened by `destination`, closed with the
         #: session.
         self._destinations = []
+        _OPEN.add(self)
 
     # ---- the session's clocks ----
 
@@ -629,6 +631,7 @@ class Session(Environment):
         that host booted it, so an attached host keeps its windows. Done automatically when the session is used as a context manager
         and, for launched processes, on interpreter exit."""
         self.deactivate()      # a closed session is nobody's ambient one
+        _OPEN.discard(self)
         if self._gui is not None:
             self._gui.stop()   # its process too, if that host booted one
                                # (and gives up the ambient registration)
@@ -651,6 +654,11 @@ class Session(Environment):
     def __exit__(self, *exc):
         main._session_context = getattr(self, "_prev_session", (None, None))
         self.close()
+
+
+#: Every session not closed yet, for what stops them all at once: the editor's
+#: interrupt key (`clausters._editor.interrupt`).
+_OPEN = weakref.WeakSet()
 
 
 def _live_timebase(server, clock, timebase):
