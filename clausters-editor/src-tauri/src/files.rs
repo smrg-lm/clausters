@@ -71,15 +71,16 @@ fn roots(app: &AppHandle) -> Result<Vec<Root>, String> {
     }
 }
 
-/// Relative paths of every `.md` in the documentation, sorted: the editor's own
-/// first, then each package's book under its name.
+/// Relative paths of every `.md` in the documentation: the editor's own first, then
+/// each package's book under its name, each folder's `index.md` ahead of the rest.
 #[tauri::command]
 pub fn list_docs(app: AppHandle) -> Result<Vec<String>, String> {
     let mut all = Vec::new();
     for root in roots(&app)? {
         let mut docs = Vec::new();
         collect_md(&root.dir, &root.dir, &mut docs);
-        docs.sort();
+        // Each folder's index first: it is where the folder starts.
+        docs.sort_by_key(|d| (d.to_lowercase() != "index.md", d.clone()));
         all.extend(docs.into_iter().map(|d| format!("{}{d}", root.prefix)));
     }
     Ok(all)

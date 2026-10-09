@@ -2,7 +2,6 @@
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { openUrl } from "@tauri-apps/plugin-opener";
   import { COPIED_ICON, COPY_ICON, renderMarkdown, slugify } from "./markdown";
   import { info, pyHelp, pyInspect } from "./session.svelte";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -194,8 +193,10 @@
     const href = link?.getAttribute("href");
     if (!href) return;
     e.preventDefault();
+    // A link out of the documentation is not followed from here: it is written to
+    // the post window, where it says it leaves the editor and opens the browser.
     if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-      openUrl(href).catch((err) => info(`${err}\n`));
+      info(`External link (opens in the browser): ${href}\n`);
       return;
     }
     const [path, anchor] = href.split("#");
