@@ -49,6 +49,10 @@ pip wheel --no-deps -w dist wheel/   # builds the app and the wheel
 CLAUSTERS_EDITOR_SKIP_BUILD=1 pip wheel --no-deps -w dist wheel/   # with the binary already built
 ```
 
+To try `clausters[editor]` from the repository as it installs from PyPI, the
+repository's `scripts/install-local.sh` builds both wheels and installs them by
+name into `.venv-local/` (`--skip-build` reuses what is already built).
+
 The wheel carries the binary, `docs/` and `licenses/`, about 4 MB; the system's
 web view stays outside it. On Linux that is WebKitGTK 4.1, which no wheel can
 carry, so the command checks for it and, when it is missing, prints how to

@@ -29,3 +29,6 @@ uv.lock
 /.superpowers/
 # Playwright MCP session output (console logs, page snapshots).
 /.playwright-mcp/
+# scripts/install-local.sh: the wheels it builds and the environment it installs them in.
+/dist/
+/.venv-local/
