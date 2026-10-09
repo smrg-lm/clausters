@@ -8,7 +8,7 @@ the hand-written pages of ``docs/src/`` and the API reference that
 are copied as they are -- relative ``.md`` links and the ``<a id>`` anchors of
 the API pages work in any Markdown viewer that follows links -- with one
 change: mdBook's table of contents, ``SUMMARY.md``, becomes ``index.md``, the
-page a viewer opens first.
+page a viewer opens first (`contents_page`).
 
 The API pages need ``pydoc-markdown`` (see ``docs/build.sh``), so building the
 package does too. ``CLAUSTERS_SKIP_DOCS=1`` builds without the book, and
@@ -29,6 +29,23 @@ OUT = os.path.join(HERE, "clausters", "_docs")
 
 # The book's title, from docs/book.toml, heads the staged contents page.
 TITLE = "# clausters -- Python client"
+
+
+def contents_page(summary: str) -> str:
+    """mdBook's ``SUMMARY.md`` as a page to read: the book's title, each part
+    title (``# User Guide``) a section under it, a chapter outside a part
+    (``[Introduction](introduction.md)``) a list item like the rest, and the
+    separators gone. mdBook reads those forms as its sidebar's structure; a
+    reader sees them as a run of top-level headings."""
+    lines = [TITLE]
+    for line in summary.splitlines()[1:]:
+        if line.startswith("# "):
+            lines.append("#" + line)
+        elif line.startswith("["):
+            lines.append("- " + line)
+        elif line.strip() != "---":
+            lines.append(line)
+    return "\n".join(lines) + "\n"
 
 
 def stage() -> bool:
@@ -52,10 +69,8 @@ def stage() -> bool:
     shutil.copytree(SRC, OUT, ignore=shutil.ignore_patterns("SUMMARY.md"))
     with open(os.path.join(SRC, "SUMMARY.md"), encoding="utf-8") as f:
         summary = f.read()
-    if summary.startswith("# Summary"):
-        summary = TITLE + summary[len("# Summary"):]
     with open(os.path.join(OUT, "index.md"), "w", encoding="utf-8") as f:
-        f.write(summary)
+        f.write(contents_page(summary))
     count = sum(len([n for n in files if n.endswith(".md")]) for _, _, files in os.walk(OUT))
     print(f"clausters: staged the offline book ({count} pages) into clausters/_docs/")
     return True
