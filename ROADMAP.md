@@ -121,6 +121,13 @@ a person saw it work.
   the milestone's *code* is done; what is left is somebody watching it fail.
 
 
+- ⬜ **Nobody has listened to `basics/sc_vocabulary`** *(`clients/python/PLAN.md`,
+  `C69`)*. The numeric builtins arc closed with one example in two languages as
+  its manual check; the Python render was run and the web calls draw the same
+  phrase, but what each claims is audible -- the squared-off signed `pow`, the
+  folds coming and going, the Hann pulses, the breath -- has not been heard in
+  either. **Related:** the arc's measurements are in the plan.
+
 ## 3. Milestones left hanging
 
 Numbered milestones whose track is otherwise closed. Each is owned and written in
@@ -202,12 +209,6 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
-
-- ⬜ **The numeric builtins, `C69`** *(`clients/python/PLAN.md`, "The
-  numeric builtins: SuperCollider's vocabulary")*. **Taken first**, opened
-  2026-10-09 by the user: the documentation and the manual check close the
-  arc. (`C63`, one libm for the core, was dropped on its measurement;
-  `C64`-`C68` shipped.)
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

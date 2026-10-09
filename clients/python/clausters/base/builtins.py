@@ -12,6 +12,17 @@ on the audio thread agree exactly.
 Each function accepts a scalar or a list/tuple. With a list it returns a list,
 extending the shorter operand cyclically (sc3 semantics). The boundary stays
 flat: numbers in, numbers (or a list of them) out.
+
+The families, in the order below: the **operators** (the server's op tables,
+``f32``; where C and scsynth disagree on what one means -- a signed ``sqrt``
+and ``pow``, a floored ``mod`` -- it is scsynth's); ``clip``/``wrap``/``fold``
+between **two bounds**; the **perceptual scales** (``cpsmel`` ...); sclang's
+**functions that are not operators** (``degrad``, ``snap``, ``bilin``, ``erf``
+...) and the ones over a **scale** (``degkey``, ``nearestinscale`` ...) and over
+a **whole list** (``blend``, ``normalize``, ``resamp1``, ``asrandomtable`` ...),
+all three in ``f64`` as sclang computes them; and the **range maps**. The draws
+-- ``rand``, ``exprand``, ``choose``, ``tablerand`` ... -- are random values and
+live in `clausters.base.rand`.
 """
 
 import builtins as _py

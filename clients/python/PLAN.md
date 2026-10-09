@@ -2203,11 +2203,20 @@ Measured while opening the arc (2026-10-09):
   name the list functions and the random context draws `tablerand` and
   `scramble`. The name is sclang's `scramble`, not the `shuffle` this entry
   first said: sclang has no `shuffle` (its `perfectShuffle` is a riffle).
-- ⬜ **C69 — Documentation and the manual check.** The builtins page of both
-  clients' books, the operator reference in the server's, and an example in
-  each client that plays what changed in meaning (a signed `sqrt` and `pow`)
-  and what is new.
-
+- ✅ **C69 — Documentation and the manual check** *(done 2026-10-09)*. The
+  builtins pages of both clients' books are their API references, so the
+  modules' own headers now name every family in order; the server's operator
+  reference (`docs/schemas.md`) and both guides carried each milestone as it
+  landed. The manual check is one example in two languages,
+  `basics/sc_vocabulary` (`clients/python/examples/basics/sc_vocabulary.py`,
+  `clients/web/examples/basics/sc-vocabulary.html`): a lead squared off by a
+  signed `pow`, folded between two bounds, pulsed by a Hann window and
+  breathed by a per-sample `rand2`, playing a phrase drawn with `scramble`,
+  `degkey`, `exprand` and `wchoose` from a seeded session. The audit reads the
+  pair as one example (the page's own ending declared, as every offline pair
+  declares it); the Python render was run (no NaN, peak 0.19) and the web
+  calls draw the same six notes. **Waiting on the ear**: the user listens to
+  both.
 Out of the arc: the special functions sclang takes from Boost and no
 established Rust crate carries (elliptic integrals, Legendre and Laguerre
 polynomials, zeta…).
