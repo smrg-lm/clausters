@@ -2120,15 +2120,21 @@ Measured while opening the arc (2026-10-09):
   one `exp2` — the bent envelope 0.83x, the exponential 0.87x and `linexp`
   0.85x of what they cost, and `bench_math` (`examples/bench.rs`) to measure
   the per-sample transcendentals, which nothing timed before.
-- ⬜ **C64 — scsynth's semantics for the operators that exist.** `sqrt` and
-  `pow` signed, `log10` of `abs(x)`, `mod` floored, `cpsoct` as `x/440`.
-  `hypot` and `recip` keep their definitions: their difference is rounding,
-  which is the libm's to decide. Edge cases written down as the core's: an
-  operand outside `i32` for the bitwise operators (a cast that saturates, where
-  x86 gives `0x80000000`), shifts by a negative or `>= 32` count. **Measured**:
-  every golden render and example that crosses one of the four (a `sqrt` or a
-  `pow` of a bipolar signal is a NaN today and a value after) is listed with
-  what it did and what it does.
+- ✅ **C64 — scsynth's semantics for the operators that exist** *(done
+  2026-10-09)*. `sqrt` and `pow` signed, `log10` of `|x|`, `mod` floored
+  (scsynth's `sc_mod`, its two fast paths ported as written; a zero divisor
+  gives 0), `cpsoct` as `x/440`, and `hypot` the libm's (no overflow on the
+  squares) once `C63` was dropped. `recip` stays `1/x`: scsynth's SSE estimate
+  gives different bits on different CPU vendors. The bitwise edge cases are
+  written down as the core's: the `i32` cast saturates (NaN is 0), a shift
+  count wraps modulo 32, the right shift is arithmetic. **Measured**: against
+  scsynth's own definitions compiled from its headers, all six now agree on
+  20 000 of 20 000 arguments (they were 50%, 50%, 75%, 50%, 11% and 17% off).
+  No golden render and no example crosses the change — the one `pow` in a
+  shipped def is the default's `2 ** x`, a positive base — and the parity
+  vectors moved where expected: a `pow` of a negative base that was NaN is a
+  value, and one `cpsoct` an ulp. `docs/schemas.md` says which meaning each
+  operator has.
 - ⬜ **C65 — The operators scsynth has and the core does not.** Unary: `bitnot`,
   `distortneg`, `rectwindow`, `hanwindow`, `welwindow`, `triwindow`, `ramp`,
   `scurve`. Binary: `idiv`, `roundup`, `urshift`, `amclip`, `scaleneg`,

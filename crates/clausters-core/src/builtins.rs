@@ -30,8 +30,12 @@ pub enum BinaryOp {
     Sub = 1,
     Mul = 2,
     Div = 3,
-    /// Floating remainder (truncated, like C `fmod` / Rust `%`).
+    /// Floored modulo, scsynth's `sc_mod`: the result takes the divisor's
+    /// side, so `mod(-1, 3)` is `2` and a phase wraps into `[0, b)` from either
+    /// direction. A zero divisor gives `0`.
     Mod = 4,
+    /// **Signed** power, scsynth's: `-((-a)^b)` for a negative base, so the
+    /// power of a bipolar signal is a bipolar signal rather than NaN.
     Pow = 5,
     Min = 6,
     Max = 7,
@@ -43,13 +47,20 @@ pub enum BinaryOp {
     Eq = 13,
     Ne = 14,
     /// Bitwise ops act on the `i32` casts of the operands, as Faust does.
+    /// The cast **saturates**: an operand past the `i32` range is `i32::MIN`
+    /// or `i32::MAX` and a NaN is `0` (x86's C cast would give `i32::MIN` for
+    /// all three; that is undefined behaviour in C and not reproduced).
     And = 15,
     Or = 16,
     Xor = 17,
-    /// Logical left/right shift by the truncated integer second operand.
+    /// Left/right shift of the first operand's `i32` cast by the second's.
+    /// The count is taken modulo 32, as the instruction does, so a negative or
+    /// `>= 32` count wraps rather than clearing the word; the right shift is
+    /// arithmetic (it keeps the sign).
     Lsh = 18,
     Rsh = 19,
-    /// `sqrt(a*a + b*b)`.
+    /// `sqrt(a*a + b*b)`, as the libm's `hypot` computes it -- without
+    /// overflowing on the squares.
     Hypot = 20,
     /// `a*b + a`.
     Ring1 = 21,
@@ -227,7 +238,11 @@ pub enum UnaryOp {
     Exp = 8,
     Exp10 = 9,
     Log = 10,
+    /// Base-10 logarithm **of `|x|`**, scsynth's, so a negative input gives
+    /// the logarithm of its magnitude rather than NaN.
     Log10 = 11,
+    /// **Signed** square root, scsynth's: `-sqrt(-x)` below zero, so the root
+    /// of a bipolar signal is a bipolar signal rather than NaN.
     Sqrt = 12,
     Floor = 13,
     Ceil = 14,
@@ -414,6 +429,36 @@ fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
     x - range * ((x - lo) / range).floor()
 }
 
+/// Floored modulo into `[0, hi)`, scsynth's `sc_mod`, two fast paths and
+/// all: the result is `in` shifted by one `hi` where one shift lands it, and
+/// the floor division only past that. Ported as written rather than as
+/// `in - hi * floor(in / hi)`, which rounds differently on the shifted paths.
+/// A zero `hi` gives `0`; a negative `hi` follows the same code, as
+/// scsynth's does.
+#[inline]
+fn sc_mod(x: f32, hi: f32) -> f32 {
+    let lo = 0.0;
+    let x = if x >= hi {
+        let shifted = x - hi;
+        if shifted < hi {
+            return shifted;
+        }
+        shifted
+    } else if x < lo {
+        let shifted = x + hi;
+        if shifted >= lo {
+            return shifted;
+        }
+        shifted
+    } else {
+        return x;
+    };
+    if hi == lo {
+        return lo;
+    }
+    x - hi * (x / hi).floor()
+}
+
 /// Folds `x` into `[lo, hi]`, scsynth's `sc_fold` -- reflecting at both ends as
 /// many times as needed. Note the general branch measures from the **original**
 /// `x`, not from the once-reflected value, as scsynth's does.
@@ -484,8 +529,14 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
         Sub => a - b,
         Mul => a * b,
         Div => a / b,
-        Mod => a % b,
-        Pow => a.powf(b),
+        Mod => sc_mod(a, b),
+        Pow => {
+            if a >= 0.0 {
+                a.powf(b)
+            } else {
+                -(-a).powf(b)
+            }
+        }
         // Explicit comparison (Faust's `select2(a<b, ...)`) for a deterministic
         // result independent of platform fmin/fmax NaN handling.
         Min => {
@@ -514,7 +565,9 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
         Xor => ((a as i32) ^ (b as i32)) as f32,
         Lsh => ((a as i32).wrapping_shl(b as i32 as u32)) as f32,
         Rsh => ((a as i32).wrapping_shr(b as i32 as u32)) as f32,
-        Hypot => (a * a + b * b).sqrt(),
+        // The libm's `hypotf`, scsynth's: exact where the naive form loses
+        // the low bits, and it cannot overflow on the squares.
+        Hypot => a.hypot(b),
         Ring1 => a * b + a,
         Ring2 => a * b + a + b,
         Ring3 => a * a * b,
@@ -623,8 +676,14 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
         Exp => x.exp(),
         Exp10 => 10.0f32.powf(x),
         Log => x.ln(),
-        Log10 => x.log10(),
-        Sqrt => x.sqrt(),
+        Log10 => x.abs().log10(),
+        Sqrt => {
+            if x < 0.0 {
+                -(-x).sqrt()
+            } else {
+                x.sqrt()
+            }
+        }
         Floor => x.floor(),
         Ceil => x.ceil(),
         Rint => x.round_ties_even(),
@@ -658,7 +717,7 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
         Dbamp => (10.0f32).powf(x * 0.05),
         Ampdb => x.log10() * 20.0,
         Octcps => 440.0 * (2.0f32).powf(x - 4.75),
-        Cpsoct => (x * (1.0 / 440.0)).log2() + 4.75,
+        Cpsoct => (x / 440.0).log2() + 4.75,
         Distort => x / (1.0 + x.abs()),
         Softclip => {
             let a = x.abs();
@@ -823,6 +882,39 @@ mod tests {
         assert_eq!(apply_binary(BinaryOp::Sub, x, y), x - y);
         assert_eq!(apply_binary(BinaryOp::Mul, x, y), x * y);
         assert_eq!(apply_binary(BinaryOp::Div, x, y), x / y);
+    }
+
+    /// scsynth's meaning for the five operators where C's differs: a
+    /// bipolar signal through `sqrt` or `pow` stays bipolar, `log10` reads the
+    /// magnitude, `mod` is floored.
+    #[test]
+    fn signed_and_floored_operators_are_scsynths() {
+        use BinaryOp::{Mod, Pow};
+        use UnaryOp::{Cpsoct, Log10, Sqrt};
+        assert_eq!(apply_unary(Sqrt, -4.0), -2.0);
+        assert_eq!(apply_unary(Sqrt, 9.0), 3.0);
+        assert_eq!(apply_unary(Log10, -100.0), 2.0);
+        assert_eq!(apply_binary(Pow, -2.0, 2.0), -4.0, "signed, not even");
+        assert_eq!(apply_binary(Pow, -8.0, 3.0), -512.0);
+        assert!(apply_binary(Pow, -2.0, 0.5) < 0.0, "a value, not NaN");
+        assert_eq!(apply_binary(Mod, -1.0, 3.0), 2.0);
+        assert_eq!(apply_binary(Mod, 7.0, 3.0), 1.0);
+        assert_eq!(apply_binary(Mod, -7.5, 2.0), 0.5);
+        assert_eq!(apply_binary(Mod, 5.0, 0.0), 0.0, "a zero divisor is 0");
+        assert_eq!(apply_binary(Mod, 2.5, 4.0), 2.5);
+        assert_eq!(apply_unary(Cpsoct, 440.0), 4.75);
+    }
+
+    /// The bitwise operators' edge cases, which C leaves undefined: the cast
+    /// saturates and a shift count wraps modulo 32.
+    #[test]
+    fn bitwise_edges_are_the_cores() {
+        use BinaryOp::{And, Lsh, Rsh};
+        assert_eq!(apply_binary(And, 3.0e10, -1.0), i32::MAX as f32);
+        assert_eq!(apply_binary(And, f32::NAN, -1.0), 0.0);
+        assert_eq!(apply_binary(Lsh, 1.0, 33.0), 2.0);
+        assert_eq!(apply_binary(Lsh, 1.0, -31.0), 2.0);
+        assert_eq!(apply_binary(Rsh, -8.0, 1.0), -4.0);
     }
 
     #[test]
