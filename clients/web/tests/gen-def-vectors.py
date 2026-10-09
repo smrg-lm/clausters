@@ -120,6 +120,18 @@ def synth_cases():
         ).spec(),
     ))
 
+    # The random draws over a signal: a frequency drawn every sample between a
+    # bound that is itself a signal and a constant, gated by a coin.
+    cases.append((
+        "random_draws",
+        SynthDef(
+            "draws",
+            out(0.0, sine(sine(3.0).abs().exprand(800.0))
+                * sine(0.2).abs().coin()
+                * sine(1.0).rand2() * sine(2.0).rrand(0.25)),
+        ).spec(),
+    ))
+
     # The fused forms and a mix fold (sum4 + sum3 chunking).
     voices = [sine(110.0 * (n + 1)) for n in range(7)]
     cases.append((

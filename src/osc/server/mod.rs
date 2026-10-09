@@ -782,6 +782,7 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
                 Some(OpFamily::Unary) => "unary",
                 Some(OpFamily::Binary) => "binary",
                 Some(OpFamily::Map) => "map",
+                Some(OpFamily::Draw) => "draw",
             }
             .into(),
         ),

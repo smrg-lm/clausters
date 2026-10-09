@@ -596,6 +596,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_rng_next_f64.argtypes = [u64p]
     lib.clausters_rng_next_below.restype = ctypes.c_uint64
     lib.clausters_rng_next_below.argtypes = [u64p, ctypes.c_uint64]
+    lib.clausters_rng_draw.restype = ctypes.c_double
+    lib.clausters_rng_draw.argtypes = [u64p, ctypes.c_uint32, ctypes.c_double, ctypes.c_double]
+    lib.clausters_rng_windex.restype = ctypes.c_uint64
+    lib.clausters_rng_windex.argtypes = [u64p, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
     lib.clausters_rng_next_u64.restype = ctypes.c_uint64
     lib.clausters_rng_next_u64.argtypes = [u64p]
     f64p = ctypes.POINTER(ctypes.c_double)
@@ -3480,11 +3484,34 @@ def rng_seed(seed: int) -> int:
     return lib().clausters_rng_seed(ctypes.c_uint64(seed).value)
 
 
+class Draw(IntEnum):
+    """The random distributions; values match ``clausters_core::rng::Draw``."""
+
+    RAND = 0
+    RAND2 = 1
+    RRAND = 2
+    EXPRAND = 3
+    LINRAND = 4
+    BILINRAND = 5
+    SUM3RAND = 6
+    COIN = 7
+    IRAND = 8
+    IRAND2 = 9
+    IRRAND = 10
+    GAUSS = 11
+
+
 class Rng:
-    """A resumable seeded value stream over the core generator: uniform
-    ``f64`` in [0, 1) and bounded integers. The state is one ``u64`` word (flat
-    data), so the same seed replays the same values in every client language --
-    what the random patterns and the context RNG run on.
+    """A resumable seeded value stream over the core generator, drawing the
+    random distributions sclang names (`rand`, `rrand`, `exprand`, `coin`,
+    `choose` ...). The state is one ``u64`` word (flat data), so the same seed
+    replays the same values in every client language -- what the random
+    patterns and the context RNG run on.
+
+    The integer draws are their own methods (`irand`, `irand2`, `irrand`)
+    rather than the float ones answering an integer when handed one: the web
+    client cannot tell ``10`` from ``10.0``, and the two clients draw the same
+    values by the same calls.
 
     Draws are serialized by a lock (ctypes releases the GIL during the call, so
     a stream shared across threads -- e.g. the ``main.rng`` fallback -- must not
@@ -3495,19 +3522,71 @@ class Rng:
         self._state = ctypes.c_uint64(lib().clausters_rng_seed(ctypes.c_uint64(seed).value))
         self._lock = _threading.Lock()
 
-    def next_f64(self) -> float:
-        """Uniform in [0, 1) with 53-bit resolution."""
+    def _draw(self, draw: Draw, a: float, b: float = 0.0) -> float:
         with self._lock:
-            return lib().clausters_rng_next_f64(ctypes.byref(self._state))
+            return lib().clausters_rng_draw(
+                ctypes.byref(self._state), int(draw), float(a), float(b))
 
-    def uniform(self, lo: float, hi: float) -> float:
-        """Uniform in [lo, hi) (degenerate to ``lo`` when ``hi <= lo``)."""
-        return lo + self.next_f64() * max(hi - lo, 0.0)
+    def rand(self, hi: float = 1.0) -> float:
+        """Uniform in ``[0, hi)``."""
+        return self._draw(Draw.RAND, hi)
 
-    def next_below(self, n: int) -> int:
-        """Uniform integer in [0, n) (0 when ``n`` is 0)."""
+    def rand2(self, x: float = 1.0) -> float:
+        """Uniform in ``[-x, x)``."""
+        return self._draw(Draw.RAND2, x)
+
+    def rrand(self, lo: float, hi: float) -> float:
+        """Uniform between ``lo`` and ``hi``."""
+        return self._draw(Draw.RRAND, lo, hi)
+
+    def exprand(self, lo: float, hi: float) -> float:
+        """Exponentially distributed between ``lo`` and ``hi`` (same sign,
+        nonzero): equal chances per octave."""
+        return self._draw(Draw.EXPRAND, lo, hi)
+
+    def linrand(self, x: float = 1.0) -> float:
+        """In ``[0, x)``, more likely toward 0."""
+        return self._draw(Draw.LINRAND, x)
+
+    def bilinrand(self, x: float = 1.0) -> float:
+        """In ``(-x, x)``, more likely toward 0."""
+        return self._draw(Draw.BILINRAND, x)
+
+    def sum3rand(self, x: float = 1.0) -> float:
+        """In ``(-x, x)``, bell-shaped: three uniforms summed."""
+        return self._draw(Draw.SUM3RAND, x)
+
+    def coin(self, p: float = 0.5) -> bool:
+        """``True`` with probability ``p``."""
+        return self._draw(Draw.COIN, p) != 0.0
+
+    def gauss(self, mean: float = 0.0, dev: float = 1.0) -> float:
+        """Gaussian with ``mean`` and standard deviation ``dev``."""
+        return self._draw(Draw.GAUSS, mean, dev)
+
+    def irand(self, n: int) -> int:
+        """A whole number in ``[0, n)``."""
+        return int(self._draw(Draw.IRAND, n))
+
+    def irand2(self, n: int) -> int:
+        """A whole number in ``[-n, n]``, both ends included."""
+        return int(self._draw(Draw.IRAND2, n))
+
+    def irrand(self, lo: int, hi: int) -> int:
+        """A whole number between ``lo`` and ``hi``, both ends included."""
+        return int(self._draw(Draw.IRRAND, lo, hi))
+
+    def choose(self, items):
+        """A uniformly chosen element of ``items``."""
+        return items[self.irand(len(items))]
+
+    def wchoose(self, items, weights):
+        """An element of ``items`` chosen with the relative ``weights`` (they
+        need not sum to 1)."""
+        w = (ctypes.c_double * len(weights))(*[float(x) for x in weights])
         with self._lock:
-            return lib().clausters_rng_next_below(ctypes.byref(self._state), n)
+            i = lib().clausters_rng_windex(ctypes.byref(self._state), w, len(weights))
+        return items[i]
 
     def _next_u64(self) -> int:
         """The full-width random word (advances the stream one step).
@@ -3517,10 +3596,6 @@ class Rng:
         """
         with self._lock:
             return lib().clausters_rng_next_u64(ctypes.byref(self._state))
-
-    def choice(self, items):
-        """A uniformly chosen element of ``items``."""
-        return items[self.next_below(len(items))]
 
     def spawn(self) -> "Rng":
         """A child stream seeded from this one's next word -- deterministic

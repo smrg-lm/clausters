@@ -25,6 +25,16 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_op("RangeMapUGen", Fixed(6), I_MAP, OpFamily::Map, |c, _| {
         Box::new(RangeMap::from_index(c.op.unwrap_or(0), c.clip.unwrap_or(0)))
     }),
+    // A random draw per sample from `clausters_core::rng::Draw`, by name --
+    // the distribution a client draws a value from. Seeded like every
+    // stochastic UGen.
+    desc_op(
+        "RandOpUGen",
+        Fixed(2),
+        I_RANDOP,
+        OpFamily::Draw,
+        |c, ctx| Box::new(RandOp::new(c.op.unwrap_or(0), ctx.next_seed())),
+    ),
     // An input kept inside `lo..hi`: `clausters_core::builtins::apply_bound`,
     // the function a client clips, wraps or folds a value with.
     desc(

@@ -134,7 +134,8 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_rng_next_f64` | `JsRng.next_f64` | |
 | `clausters_rng_next_below` | `JsRng.next_below` | |
 | `clausters_rng_next_u64` | — | `n/a` — JavaScript has no `u64` to hand back; the float reads are the surface there |
-| — | `JsRng.uniform` | **gap** — a range read the C ABI does not offer |
+| `clausters_rng_draw` | `JsRng.draw` | `idiom` — the distributions (`rand`, `rrand`, `exprand`, `linrand`, `coin`, `irand`, `gauss`, …): C takes the distribution by number, wasm by name |
+| `clausters_rng_windex` | `JsRng.windex` | |
 | — | `JsRng.spawn` | **gap** — a child stream, the reproducible-substream primitive |
 
 ## The beat queue

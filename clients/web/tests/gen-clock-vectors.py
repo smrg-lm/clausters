@@ -115,18 +115,29 @@ def rng_run(seed):
     """The first draws of a seeded stream, and of a stream spawned from it --
     the derivation a routine's own generator is built by."""
     stream = _native.Rng(seed)
-    floats = [stream.next_f64() for _ in range(6)]
-    below = [stream.next_below(n) for n in (2, 7, 16, 1, 0)]
+    floats = [stream.rand() for _ in range(6)]
+    below = [stream.irand(n) for n in (2, 7, 16, 1, 0)]
     child = stream.spawn()
-    child_floats = [child.next_f64() for _ in range(4)]
-    after_spawn = [stream.next_f64() for _ in range(2)]
+    child_floats = [child.rand() for _ in range(4)]
+    after_spawn = [stream.rand() for _ in range(2)]
+    # Every distribution in the table, by the same calls in the same order.
+    draws = [
+        ["rand", stream.rand(3.0)], ["rand2", stream.rand2(2.0)],
+        ["rrand", stream.rrand(-1.0, 1.0)], ["exprand", stream.exprand(20.0, 20000.0)],
+        ["linrand", stream.linrand(4.0)], ["bilinrand", stream.bilinrand(4.0)],
+        ["sum3rand", stream.sum3rand(4.0)], ["coin", stream.coin(0.5)],
+        ["gauss", stream.gauss(1.0, 0.5)], ["irand", stream.irand(10)],
+        ["irand2", stream.irand2(5)], ["irrand", stream.irrand(3, 9)],
+        ["choose", stream.choose(["a", "b", "c"])],
+        ["wchoose", stream.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
+    ]
     return {
         "seed": seed,
         "floats": floats,
         "below": below,
         "childFloats": child_floats,
         "afterSpawn": after_spawn,
-        "uniform": [stream.uniform(-1.0, 1.0) for _ in range(3)],
+        "draws": draws,
     }
 
 

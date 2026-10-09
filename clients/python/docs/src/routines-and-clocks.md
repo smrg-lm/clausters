@@ -117,9 +117,10 @@ A routine that raises is dropped the same way, with its traceback on stderr: it 
 
 ## The random context: one seed per session
 
-Everything random — `Pwhite`, `Prand`, and the module functions
-`clausters.uniform(lo, hi)` / `choice(items)` (with the raw draws `next_f64()`
-and `next_below(n)` under `clausters.base.rand`) — draws from **one seedable context**, the sclang model. The context is the
+Everything random — `Pwhite`, `Prand`, and the draws named as sclang names
+them (`clausters.rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
+`gauss`, `coin`, `choose`, `wchoose`, and the whole-number `irand`, `irand2`,
+`irrand`) — draws from **one seedable context**, the sclang model. The context is the
 **session**: each has its own root, so each reproduces independently.
 
 - `session.seed(n)` seeds *that* session's root. Called before you build and
@@ -144,13 +145,13 @@ generator itself lives in the shared native core, so the same seed replays the
 same values in every Clausters client language.
 
 ```python
-from clausters import Session, uniform
+from clausters import Session, rrand
 from clausters.seq import Pbind, Pwhite
 
 with Session.nrt() as session:
     session.clock.set_tempo(2.0)
     session.seed(2026)               # this session is now reproducible
-    base = uniform(-3.0, 3.0)        # a one-off draw from the session's root
+    base = rrand(-3.0, 3.0)          # a one-off draw from the session's root
     session.play(Pbind(freq=Pwhite(400.0, 800.0), dur=0.25))   # draws when played
     session.render()
 ```

@@ -67,3 +67,48 @@ pub unsafe extern "C" fn clausters_rng_next_u64(state: *mut u64) -> u64 {
     unsafe { *state = rng.state() };
     v
 }
+
+/// Advances `*state` and returns one draw from distribution `draw` (a
+/// `clausters_core::rng::Draw`) with its arguments `a` and `b` -- `rand`,
+/// `rrand`, `exprand`, `linrand`, `coin`, `irand`, `gauss` and the rest, one
+/// door for the whole table. NaN on an unknown distribution or a null `state`.
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_draw(state: *mut u64, draw: u32, a: f64, b: f64) -> f64 {
+    let Some(draw) = clausters_core::rng::Draw::from_u32(draw) else {
+        return f64::NAN;
+    };
+    if state.is_null() {
+        return f64::NAN;
+    }
+    // SAFETY: caller guarantees `state` points to a u64.
+    let mut rng = Rng::from_state(unsafe { *state });
+    let v = rng.draw(draw, a, b);
+    unsafe { *state = rng.state() };
+    v
+}
+
+/// Advances `*state` and returns the index `wchoose` picks from the `n`
+/// relative `weights` (0 when `n` is 0, `weights` is null or `state` is null).
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null), and `weights`
+/// readable for `n` `f64`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_windex(
+    state: *mut u64,
+    weights: *const f64,
+    n: usize,
+) -> u64 {
+    if state.is_null() || weights.is_null() || n == 0 {
+        return 0;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let w = unsafe { std::slice::from_raw_parts(weights, n) };
+    let mut rng = Rng::from_state(unsafe { *state });
+    let i = rng.windex(w);
+    unsafe { *state = rng.state() };
+    i as u64
+}

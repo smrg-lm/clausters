@@ -65,21 +65,80 @@ def spawn_rng():
     return current_rng().spawn()
 
 
-def next_f64() -> float:
-    """Uniform in [0, 1) (53-bit resolution) from the current context."""
-    return current_rng().next_f64()
+# ---- the draws, from the current context ----
+#
+# sclang's names for its distributions. Each draws from `current_rng`, so one
+# root seed reproduces every value. The integer draws are their own functions
+# (`irand`, `irand2`, `irrand`) -- see `Rng` for why.
+
+def rand(hi: float = 1.0) -> float:
+    """Uniform in ``[0, hi)``."""
+    return current_rng().rand(hi)
 
 
-def uniform(lo: float, hi: float) -> float:
-    """Uniform in [lo, hi) from the current context (``lo`` when ``hi <= lo``)."""
-    return current_rng().uniform(lo, hi)
+def rand2(x: float = 1.0) -> float:
+    """Uniform in ``[-x, x)``."""
+    return current_rng().rand2(x)
 
 
-def next_below(n: int) -> int:
-    """Uniform integer in [0, n) from the current context (0 when ``n`` is 0)."""
-    return current_rng().next_below(n)
+def rrand(lo: float, hi: float) -> float:
+    """Uniform between ``lo`` and ``hi``."""
+    return current_rng().rrand(lo, hi)
 
 
-def choice(items):
-    """A uniformly chosen element of ``items`` from the current context."""
-    return current_rng().choice(items)
+def exprand(lo: float, hi: float) -> float:
+    """Exponentially distributed between ``lo`` and ``hi`` (same sign,
+    nonzero): equal chances per octave -- what a frequency or a duration
+    wants."""
+    return current_rng().exprand(lo, hi)
+
+
+def linrand(x: float = 1.0) -> float:
+    """In ``[0, x)``, more likely toward 0."""
+    return current_rng().linrand(x)
+
+
+def bilinrand(x: float = 1.0) -> float:
+    """In ``(-x, x)``, more likely toward 0."""
+    return current_rng().bilinrand(x)
+
+
+def sum3rand(x: float = 1.0) -> float:
+    """In ``(-x, x)``, bell-shaped: three uniforms summed, sclang's loose
+    Gaussian."""
+    return current_rng().sum3rand(x)
+
+
+def coin(p: float = 0.5) -> bool:
+    """``True`` with probability ``p``."""
+    return current_rng().coin(p)
+
+
+def gauss(mean: float = 0.0, dev: float = 1.0) -> float:
+    """Gaussian with ``mean`` and standard deviation ``dev``."""
+    return current_rng().gauss(mean, dev)
+
+
+def irand(n: int) -> int:
+    """A whole number in ``[0, n)``."""
+    return current_rng().irand(n)
+
+
+def irand2(n: int) -> int:
+    """A whole number in ``[-n, n]``, both ends included."""
+    return current_rng().irand2(n)
+
+
+def irrand(lo: int, hi: int) -> int:
+    """A whole number between ``lo`` and ``hi``, both ends included."""
+    return current_rng().irrand(lo, hi)
+
+
+def choose(items):
+    """A uniformly chosen element of ``items``."""
+    return current_rng().choose(items)
+
+
+def wchoose(items, weights):
+    """An element of ``items`` chosen with the relative ``weights``."""
+    return current_rng().wchoose(items, weights)

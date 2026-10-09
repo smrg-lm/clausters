@@ -707,6 +707,12 @@ export class Rng {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * One draw from the distribution named `draw` (`"rand"`, `"rrand"`,
+     * `"exprand"`, `"coin"`, `"irand"`, `"gauss"` ...) with its arguments `a`
+     * and `b` -- `clausters_core::rng::Draw`, by name.
+     */
+    draw(draw: string, a: number, b: number): number;
+    /**
      * The stream for `seed` (splitmix64-mixed, never zero) -- the same seeding
      * as the server's `WhiteNoise`.
      */
@@ -726,9 +732,9 @@ export class Rng {
      */
     spawn(): Rng;
     /**
-     * Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`).
+     * The index `wchoose` picks from the relative `weights`.
      */
-    uniform(lo: number, hi: number): number;
+    windex(weights: Float64Array): number;
 }
 
 /**
@@ -2135,11 +2141,12 @@ export interface InitOutput {
     readonly registry_new: (a: number, b: number) => number;
     readonly registry_release: (a: number, b: number, c: number) => number;
     readonly registry_unbounded: (a: number) => number;
+    readonly rng_draw: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly rng_new: (a: number) => number;
     readonly rng_nextBelow: (a: number, b: number) => number;
     readonly rng_nextF64: (a: number) => number;
     readonly rng_spawn: (a: number) => number;
-    readonly rng_uniform: (a: number, b: number, c: number) => number;
+    readonly rng_windex: (a: number, b: number, c: number) => number;
     readonly sampleclockmodel_addAnchor: (a: number, b: number, c: number, d: number) => void;
     readonly sampleclockmodel_driftPpm: (a: number) => number;
     readonly sampleclockmodel_isEmpty: (a: number) => number;

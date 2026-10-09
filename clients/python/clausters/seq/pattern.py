@@ -168,7 +168,7 @@ class Prand(Pattern):
     def __iter__(self):
         i = 0
         while self.length is INF or i < self.length:
-            yield from _embed(rand.choice(self.items))
+            yield from _embed(rand.choose(self.items))
             i += 1
 
 
@@ -185,7 +185,7 @@ class Pwhite(Pattern):
     def __iter__(self):
         i = 0
         while self.length is INF or i < self.length:
-            yield rand.uniform(self.lo, self.hi)
+            yield rand.rrand(self.lo, self.hi)
             i += 1
 
 

@@ -54,6 +54,7 @@ const NO_BUILDER: Record<string, string> = {
     Clip: "built by the `clip(lo, hi)` method on a graph node",
     Wrap: "built by the `wrap(lo, hi)` method on a graph node",
     Fold: "built by the `fold(lo, hi)` method on a graph node",
+    RandOpUGen: "built by every random-draw method on a graph node",
 };
 
 /**

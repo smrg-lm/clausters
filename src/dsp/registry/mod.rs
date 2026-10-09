@@ -42,6 +42,7 @@ use crate::dsp::noise::{
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, TransportFade, TransportPos};
+use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
@@ -315,6 +316,9 @@ pub enum OpFamily {
     Binary,
     /// The range maps (`clausters_core::warp`), carried by `RangeMapUGen`.
     Map,
+    /// The random distributions (`clausters_core::rng::Draw`), carried by
+    /// `RandOpUGen`.
+    Draw,
 }
 
 /// The audio-bus role a UGen plays, for the dependency analysis
@@ -535,6 +539,10 @@ const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
+/// `RandOpUGen`'s two slots: the signal a draw scales by (or its low bound),
+/// and the high bound only the two-bound draws read -- a declared tail, 0 for
+/// the one-argument ones, which ignore it.
+const I_RANDOP: &[UGenInput] = &[inp("a", 1.0), inp_opt("b", 0.0)];
 /// `Clip`/`Wrap`/`Fold`'s three slots. The unit range is what a client offers
 /// (sclang's defaults), and both bounds stay required: a range nobody gave is
 /// a choice, not an inert value.

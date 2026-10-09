@@ -805,6 +805,7 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
             OpFamily::Unary => builtins::UnaryOp::from_name(name).map(|o| o as u32),
             OpFamily::Binary => builtins::BinaryOp::from_name(name).map(|o| o as u32),
             OpFamily::Map => clausters_core::warp::MapOp::from_name(name).map(|o| o as u32),
+            OpFamily::Draw => clausters_core::rng::Draw::from_name(name).map(|o| o as u32),
         };
         op_index = Some(resolved.ok_or_else(|| {
             format!(

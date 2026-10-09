@@ -2151,15 +2151,27 @@ Measured while opening the arc (2026-10-09):
   wrong below zero and unused by any kernel; the core takes the kernels' form
   (`docs/decisions.md`, "`scaleneg` is the UGen kernels' form"). The example
   is `C69`'s.
-- ⬜ **C66 — Random values, named as sclang names them.** The distributions —
-  `rand`, `rand2`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
-  `coin`, `choose`, `wchoose`, `gauss` — in `clausters_core::rng`, with
-  sclang's formulas over the generator the server and the clients already
-  share. They **replace** the client functions named after the Rust methods
-  (`uniform`, `next_below`, `next_f64`, `choice`) in both clients, and every
-  caller moves. As operators (`rand` … `coin`, `rrand`, `exprand`) a node
-  draws from its own seed off the graph's seed walk, so the stateless
-  operator UGen grows the one case that has state.
+- ✅ **C66 — Random values, named as sclang names them** *(done 2026-10-09)*.
+  A `Draw` table in `clausters_core::rng` — `rand`, `rand2`, `rrand`,
+  `exprand`, `linrand`, `bilinrand`, `sum3rand`, `coin`, `gauss`, and the
+  whole-number `irand`, `irand2`, `irrand` — with `Rng::draw` and
+  `Rng::windex` (`wchoose`'s relative weights), behind one C door
+  (`clausters_rng_draw`, `clausters_rng_windex`) and two wasm methods. Both
+  clients' `Rng` draws by these names, and the module functions draw from the
+  context; `choose`/`wchoose` pick from a list. They **replace** `uniform`,
+  `next_f64`, `next_below` and `choice` (the patterns, the examples and the
+  books moved; a seeded `Pwhite`/`Prand` gives the values it gave). **The
+  integers are their own functions** rather than sclang's dispatch on the
+  receiver's type: a TypeScript number cannot say whether it was written `10`
+  or `10.0`, and the two clients draw by the same calls. In Python
+  `clausters.base` exports every draw but `rand`, which would hide its own
+  module; the function is `clausters.rand`. **On a signal** the eight random
+  operators sclang has (`.rand()`, `.rand2()`, `.linrand()`, `.bilinrand()`,
+  `.sum3rand()`, `.coin()`, `.rrand(hi)`, `.exprand(hi)`) compose a new
+  `RandOpUGen` carrying the distribution by name, a new value every sample
+  from its own stream off the graph's seed walk. The generator is the one the
+  server and the clients already shared; replaying scsynth's Taus88 stream was
+  declined by the user (see the arc's preamble).
 - ⬜ **C67 — The numeric functions that are not operators.** In the core and
   `builtins`, joined lowercase like `midicps`: `degkey`/`keydeg` (scale degree
   to key and back), `nearestinlist`, `nearestinscale`, `bilin`, `biexp`,

@@ -28,9 +28,10 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
   session end to end, sessions reproduce independently, and the generator lives
   in the shared native core, so the same seed replays the same music in every
   Clausters client language. The context is also exposed directly as
-  `clausters.uniform(lo, hi)` / `choice(items)`, with `current_rng()` and
-  `spawn_rng()` for the stream itself (a `clausters.Rng`) and the raw draws
-  (`next_f64()`, `next_below(n)`) under `clausters.base.rand`.
+  the draws sclang names (`clausters.rand`, `rrand`, `exprand`, `coin`,
+  `choose`, `wchoose`, `gauss`, …, with the whole numbers as `irand`, `irand2`,
+  `irrand`), and `current_rng()` and `spawn_rng()` for the stream itself (a
+  `clausters.Rng`, which draws the same by method).
 - `EventStreamPlayer` — `Pbind(...).play(clock, server)` runs live or builds an NRT score depending on which interface the `Server` holds, with yield-exact timing (monotonic pacing, wall-clock timetags).
 
 ## `clausters.defs` — the server side

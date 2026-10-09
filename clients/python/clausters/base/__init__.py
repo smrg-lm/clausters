@@ -38,7 +38,12 @@ from .ids import IdShare, WHOLE as WHOLE_SHARE, share_of
 from .main import Main, main
 from .moment import Moment
 from .netaddr import NetAddr
-from .rand import Rng, choice, current_rng, next_below, next_f64, seed, spawn_rng, uniform
+# Every draw but `rand` itself: binding that name here would hide the module it
+# lives in, which is `clausters.base.rand`. The function is `clausters.rand`.
+from .rand import (
+    Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
+    irrand, linrand, rand2, rrand, seed, spawn_rng, sum3rand, wchoose,
+)
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import (LogicalTimebase, ManualTimebase, MonotonicTimebase,
                        SampleClockTimebase, Timebase)
@@ -86,10 +91,19 @@ __all__ = [
     "seed",
     "current_rng",
     "spawn_rng",
-    "uniform",
-    "choice",
-    "next_f64",
-    "next_below",
+    "rand2",
+    "rrand",
+    "exprand",
+    "linrand",
+    "bilinrand",
+    "sum3rand",
+    "coin",
+    "gauss",
+    "irand",
+    "irand2",
+    "irrand",
+    "choose",
+    "wchoose",
     "Destination",
     "OscDestination",
     "Stream",

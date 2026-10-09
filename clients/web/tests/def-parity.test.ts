@@ -170,6 +170,18 @@ const synthdefs: Record<string, () => SynthDef> = {
             ),
         ),
 
+    random_draws: () =>
+        new SynthDef(
+            "draws",
+            out(
+                0.0,
+                sine(sine(3.0).abs().exprand(800.0))
+                    .mul(sine(0.2).abs().coin())
+                    .mul(sine(1.0).rand2())
+                    .mul(sine(2.0).rrand(0.25)),
+            ),
+        ),
+
     typed_controls_env: () => {
         const gate = control("gate", 1.0, { rate: "tr" });
         const cutoff = control("cutoff", 800.0, { lag: 0.1, lagDown: 0.5 });

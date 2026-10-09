@@ -750,6 +750,159 @@
       }
     },
     {
+      "name": "random_draws",
+      "spec": {
+        "name": "draws",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 3.0
+              }
+            ]
+          },
+          {
+            "kind": "UnaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 0
+              }
+            ],
+            "op": "abs"
+          },
+          {
+            "kind": "RandOpUGen",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "const": 800.0
+              }
+            ],
+            "op": "exprand"
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "ugen": 2
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.2
+              }
+            ]
+          },
+          {
+            "kind": "UnaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 4
+              }
+            ],
+            "op": "abs"
+          },
+          {
+            "kind": "RandOpUGen",
+            "inputs": [
+              {
+                "ugen": 5
+              }
+            ],
+            "op": "coin"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 3
+              },
+              {
+                "ugen": 6
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "RandOpUGen",
+            "inputs": [
+              {
+                "ugen": 8
+              }
+            ],
+            "op": "rand2"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 7
+              },
+              {
+                "ugen": 9
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "RandOpUGen",
+            "inputs": [
+              {
+                "ugen": 11
+              },
+              {
+                "const": 0.25
+              }
+            ],
+            "op": "rrand"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 10
+              },
+              {
+                "ugen": 12
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 13
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "mix_fold",
       "spec": {
         "name": "fold",

@@ -92,7 +92,7 @@ test("each routine draws from its own stream, derived at creation", () => {
         yield 1;
     });
     // Two routines created in order under one seed get different streams...
-    assert.notEqual(first.rng!.nextF64(), second.rng!.nextF64());
+    assert.notEqual(first.rng!.rand(), second.rng!.rand());
 
     // ...and the same seed replays exactly the same pair.
     seed(42);
@@ -101,13 +101,13 @@ test("each routine draws from its own stream, derived at creation", () => {
     });
     seed(42);
     const expected = new Rng(42).spawn();
-    assert.equal(again.rng!.nextF64(), expected.nextF64());
+    assert.equal(again.rng!.rand(), expected.rand());
 });
 
 test("spawning outside a routine derives from the root stream", () => {
     seed(7);
-    const a = spawnRng().nextF64();
+    const a = spawnRng().rand();
     seed(7);
-    const b = spawnRng().nextF64();
+    const b = spawnRng().rand();
     assert.equal(a, b);
 });

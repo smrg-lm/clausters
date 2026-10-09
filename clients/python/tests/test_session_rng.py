@@ -47,10 +47,10 @@ def test_seeding_one_session_does_not_touch_another():
     b.seed(2)
     a.seed(1)  # re-seed a after b exists; a must still reproduce its seed-1 sequence
     with a:
-        first = rand.next_f64()
+        first = rand.rand()
     a.seed(1)
     with a:
-        again = rand.next_f64()
+        again = rand.rand()
     assert first == again
 
 
@@ -60,13 +60,13 @@ def test_current_session_routes_the_root_draw():
     b = Session.nrt()
     b.seed(123)
     with a:
-        da = rand.next_f64()
+        da = rand.rand()
     with b:
-        db = rand.next_f64()
+        db = rand.rand()
     assert da == db                     # same seed, same context routing
     # outside any session, draws come from the default session (main)
     main.seed(123)
-    assert rand.next_f64() == da
+    assert rand.rand() == da
 
 
 def test_context_manager_restores_previous_session():

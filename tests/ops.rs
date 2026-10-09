@@ -376,3 +376,53 @@ fn bound_ugens_keep_a_signal_inside_two_bounds() {
         }
     }
 }
+
+/// `RandOpUGen` draws through `clausters_core::rng::Draw` from a stream seeded
+/// like any other stochastic UGen: the same seed walk gives the same block,
+/// two draws in one graph are two streams, and every value is in its range.
+#[test]
+fn rand_op_ugen_draws_per_sample_from_its_own_stream() {
+    use clausters::clausters_core::rng::{Draw, Rng};
+    let def = |op: &str, inputs: &str| {
+        let spec: SynthDefSpec = serde_json::from_str(&format!(
+            r#"{{"name": "r", "ugens": [
+                {{"kind": "RandOpUGen", "op": "{op}", "inputs": [{inputs}]}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
+        ))
+        .unwrap();
+        Arc::new(compile(spec).unwrap())
+    };
+    let block = |d: &Arc<_>| {
+        let mut synth = UGenSynth::new(Arc::clone(d), SR, SEED_STRIDE);
+        let mut buses = Buses::new(ControlBuses::new(16), 8);
+        buses.clear_audio();
+        let mut ctx = ProcessCtx {
+            sample_rate: SR,
+            full_sample_rate: SR,
+            buses: &buses,
+            buffers: &[],
+            offset: 0,
+            frames: BLOCK_SIZE,
+            transport: Default::default(),
+        };
+        synth.process(&mut ctx);
+        buses.audio(0).to_vec()
+    };
+    let rrand = def("rrand", r#"{"const": 200.0}, {"const": 800.0}"#);
+    let a = block(&rrand);
+    assert_eq!(a, block(&rrand), "the same seed walk replays the block");
+    assert!(a.iter().all(|x| (200.0..=800.0).contains(x)), "{a:?}");
+    assert!(
+        a.windows(2).any(|w| w[0] != w[1]),
+        "a new value every sample"
+    );
+    // The stream is the core's, seeded with the graph's first seed.
+    let mut rng = Rng::from_seed(SEED_STRIDE);
+    let want: Vec<f32> = (0..BLOCK_SIZE)
+        .map(|_| rng.draw(Draw::Rrand, 200.0, 800.0) as f32)
+        .collect();
+    assert_eq!(a, want);
+    // A one-argument draw leaves the declared tail off.
+    let coin = block(&def("coin", r#"{"const": 0.5}"#));
+    assert!(coin.iter().all(|&x| x == 0.0 || x == 1.0));
+}

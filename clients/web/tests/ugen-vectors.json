@@ -2047,6 +2047,20 @@
       ]
     },
     {
+      "name": "RandOpUGen",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "RangeMapUGen",
       "arity": 6,
       "inputs": [

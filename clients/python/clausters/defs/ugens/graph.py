@@ -51,6 +51,13 @@ _UNOP_OPS = frozenset({
 #: (``Clip.ar(in, lo, hi)``) -- the same function `clausters.base.builtins`
 #: clips, wraps or folds a value with.
 _BOUND_UGEN = {"clip": "Clip", "wrap": "Wrap", "fold": "Fold"}
+#: The random draws over a signal, composed as a ``RandOpUGen`` whose ``op`` is
+#: the distribution's name (``clausters_core::rng::Draw``) -- sclang's
+#: ``sig.rand``, ``sig.rrand(hi)`` ... -- one new value every sample.
+_DRAW_OPS = frozenset({
+    "rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand",
+    "exprand",
+})
 
 
 class _RangeMaps:
@@ -120,15 +127,54 @@ class _RangeMaps:
         """This signal folded into ``lo..hi`` -- reflected at the bounds."""
         return self._compose_narop("fold", lo, hi)
 
+    # ---- random draws over a signal, a new value every sample, each node its
+    # own seeded stream (sclang's random operators on a UGen).
+
+    def rand(self):
+        """A uniform draw in ``[0, self)``."""
+        return self._compose_narop("rand")
+
+    def rand2(self):
+        """A uniform draw in ``[-self, self)``."""
+        return self._compose_narop("rand2")
+
+    def linrand(self):
+        """A draw in ``[0, self)``, more likely toward 0."""
+        return self._compose_narop("linrand")
+
+    def bilinrand(self):
+        """A draw in ``(-self, self)``, more likely toward 0."""
+        return self._compose_narop("bilinrand")
+
+    def sum3rand(self):
+        """A bell-shaped draw in ``(-self, self)``."""
+        return self._compose_narop("sum3rand")
+
+    def coin(self):
+        """``1`` with probability ``self``, else ``0``."""
+        return self._compose_narop("coin")
+
+    def rrand(self, hi):
+        """A uniform draw between this signal and ``hi``."""
+        return self._compose_narop("rrand", hi)
+
+    def exprand(self, hi):
+        """An exponential draw between this signal and ``hi``."""
+        return self._compose_narop("exprand", hi)
+
 
 def _map_ugen(node, selector, args, clip):
     """One ``RangeMapUGen`` over ``node``. The clip rides as static config and
     is omitted when it is the wire's own default, so a def that says nothing
     about trimming carries nothing about it. ``clip``/``wrap``/``fold`` are the
-    two-bound UGen of that name instead, which has no clip mode of its own."""
+    two-bound UGen of that name instead, and the random draws a
+    ``RandOpUGen``; neither has a clip mode of its own."""
     kind = _BOUND_UGEN.get(selector)
     if kind is not None:
         return Ugen(kind, [node, *args])
+    if selector in _DRAW_OPS:
+        # One-argument draws leave the declared tail off the wire.
+        return Ugen("RandOpUGen", [node, *args], op=selector)
     if selector not in _MAP_OPS:
         raise TypeError(f"no n-ary UGen for {selector!r}")
     static = None if clip == "minmax" else {"clip": str(clip)}

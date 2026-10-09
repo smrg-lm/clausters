@@ -1090,9 +1090,18 @@ impl JsRng {
         self.0.next_f64()
     }
 
-    /// Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`).
-    pub fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
-        self.0.uniform(lo, hi)
+    /// One draw from the distribution named `draw` (`"rand"`, `"rrand"`,
+    /// `"exprand"`, `"coin"`, `"irand"`, `"gauss"` ...) with its arguments `a`
+    /// and `b` -- `clausters_core::rng::Draw`, by name.
+    pub fn draw(&mut self, draw: &str, a: f64, b: f64) -> Result<f64, JsError> {
+        let d = clausters_core::rng::Draw::from_name(draw)
+            .ok_or_else(|| JsError::new(&format!("unknown distribution '{draw}'")))?;
+        Ok(self.0.draw(d, a, b))
+    }
+
+    /// The index `wchoose` picks from the relative `weights`.
+    pub fn windex(&mut self, weights: &[f64]) -> f64 {
+        self.0.windex(weights) as f64
     }
 
     /// Uniform integer in `[0, n)`; 0 when `n` is 0.

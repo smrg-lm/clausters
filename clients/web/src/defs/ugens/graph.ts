@@ -69,6 +69,14 @@ export const UNOP_OPS = new Set([
 export const BOUND_UGEN: Readonly<Record<string, string>> = {
     clip: "Clip", wrap: "Wrap", fold: "Fold",
 };
+/**
+ * @internal -- the random draws over a signal, composed as a `RandOpUGen` whose
+ * `op` is the distribution's name (`clausters_core::rng::Draw`) -- sclang's
+ * `sig.rand`, `sig.rrand(hi)` ... -- one new value every sample.
+ */
+export const DRAW_OPS = new Set([
+    "rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand", "exprand",
+]);
 
 /**
  * One channel of signal: a leaf node (`Ugen`/`Control`) or a plain number (a
@@ -189,6 +197,49 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
     fold(lo: Channel, hi: Channel): TSelf {
         return this.narop("fold", [lo, hi], "minmax");
     }
+
+    // ---- random draws over a signal, a new value every sample, each node
+    // its own seeded stream (sclang's random operators on a UGen).
+
+    /** A uniform draw in `[0, this)`. */
+    rand(): TSelf {
+        return this.narop("rand", [], "minmax");
+    }
+
+    /** A uniform draw in `[-this, this)`. */
+    rand2(): TSelf {
+        return this.narop("rand2", [], "minmax");
+    }
+
+    /** A draw in `[0, this)`, more likely toward 0. */
+    linrand(): TSelf {
+        return this.narop("linrand", [], "minmax");
+    }
+
+    /** A draw in `(-this, this)`, more likely toward 0. */
+    bilinrand(): TSelf {
+        return this.narop("bilinrand", [], "minmax");
+    }
+
+    /** A bell-shaped draw in `(-this, this)`. */
+    sum3rand(): TSelf {
+        return this.narop("sum3rand", [], "minmax");
+    }
+
+    /** `1` with probability `this`, else `0`. */
+    coin(): TSelf {
+        return this.narop("coin", [], "minmax");
+    }
+
+    /** A uniform draw between this signal and `hi`. */
+    rrand(hi: Channel): TSelf {
+        return this.narop("rrand", [hi], "minmax");
+    }
+
+    /** An exponential draw between this signal and `hi`. */
+    exprand(hi: Channel): TSelf {
+        return this.narop("exprand", [hi], "minmax");
+    }
 }
 
 /**
@@ -268,6 +319,8 @@ function mapUgen(
 ): Ugen {
     const kind = BOUND_UGEN[selector];
     if (kind !== undefined) return new Ugen(kind, [node, ...args]);
+    // One-argument draws leave the declared tail off the wire.
+    if (DRAW_OPS.has(selector)) return new Ugen("RandOpUGen", [node, ...args], { op: selector });
     if (!MAP_OPS.has(selector)) {
         throw new TypeError(`no n-ary UGen for '${selector}'`);
     }

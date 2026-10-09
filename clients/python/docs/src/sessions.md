@@ -49,13 +49,13 @@ take = session.render(sample_rate=48000.0, channels=2)
 print(f"{take.frames} frames; peak {max(take.peak):.3f}; seed {take.seed}")
 ```
 
-Randomness (`Pwhite`, `Prand`, `clausters.uniform`/`choice`/…) always draws
+Randomness (`Pwhite`, `Prand`, `clausters.rrand`/`choose`/…) always draws
 from a **single seedable context** — the running routine's generator, derived
 from the context that created it — never from per-pattern seeds. Each session
 is its **own** such context: `session.seed(n)` reproduces *that* session's
 samples end to end, and two sessions (even both offline) reproduce
 independently — seeding one never perturbs another. Outside any session,
-`clausters.seed(n)` (equivalently `main.seed(n)`) governs the **default session** (`clausters.uniform`/… and
+`clausters.seed(n)` (equivalently `main.seed(n)`) governs the **default session** (`clausters.rrand`/… and
 anything played free-standing). See [Routines and clocks](routines-and-clocks.md).
 
 `Session.live()` is a **real-time** session that sounds on a device over the network. By default it **ensures a server** the way `nrt()` ensures a renderer: if one already answers it attaches to it, and if none does it **launches a separate `clausters` process** — choosing a shared-memory segment for you — and connects to that. So the everyday live case is one line, whether or not a server is already up; a server the session started is stopped when the session is closed or the interpreter exits, and one it merely attached to is left alone.

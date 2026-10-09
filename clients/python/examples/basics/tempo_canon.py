@@ -49,7 +49,7 @@ import time
 from functools import partial
 
 from clausters import Session
-from clausters.base import Routine, TempoClock, TempoMap, uniform
+from clausters.base import Routine, TempoClock, TempoMap, rrand
 from clausters.seq.event import Event
 
 #: How long the fan takes to open, in seconds of wall clock. Every voice
@@ -57,13 +57,13 @@ from clausters.seq.event import Event
 SPREAD = 30.0
 
 #: Where each voice starts: a slow draw, a beat every one to four seconds.
-STARTS = [uniform(0.25, 2.0) for _ in range(10)]
+STARTS = [rrand(0.25, 2.0) for _ in range(10)]
 
 #: Where each voice ends up: a fast draw, between 2 and 10 beats a second.
 #: Both are drawn afresh every run, so the fan is a different shape each time.
-#: `uniform` is the client's own generator rather than Python's, so
+#: `rrand` is the client's own generator rather than Python's, so
 #: ``clausters.base.main.seed`` replays a canon you liked.
-TARGETS = [uniform(8.0, 10.0) for _ in range(10)]
+TARGETS = [rrand(8.0, 10.0) for _ in range(10)]
 
 #: One partial each, so the fan is heard as one instrument coming apart rather
 #: than as ten unrelated players.

@@ -72,6 +72,7 @@ pub mod pan;
 #[cfg(feature = "synth")]
 pub mod phase;
 #[cfg(feature = "synth")]
+pub mod randop;
 pub mod rangemap;
 #[cfg(feature = "synth")]
 pub mod registry;

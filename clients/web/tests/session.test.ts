@@ -390,12 +390,12 @@ test("two sessions are two random contexts", () =>
         const b = await fakeSession();
         a.session.seed(1);
         b.session.seed(2);
-        const first = a.session.use(() => a.session.rng.nextF64());
+        const first = a.session.use(() => a.session.rng.rand());
         // Seeding b again must not move a's stream.
         b.session.seed(2);
         a.session.seed(1);
-        assert.equal(a.session.use(() => a.session.rng.nextF64()), first);
-        assert.notEqual(b.session.use(() => b.session.rng.nextF64()), first);
+        assert.equal(a.session.use(() => a.session.rng.rand()), first);
+        assert.notEqual(b.session.use(() => b.session.rng.rand()), first);
         a.session.close();
         b.session.close();
     }));

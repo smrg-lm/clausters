@@ -171,7 +171,10 @@ export type {
     MidiReceiverOptions,
     MidiServerOptions,
     MidiWriteOptions } from "./base/midi.ts";
-export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
+export {
+    Rng, bilinrand, choose, coin, currentRng, exprand, gauss, irand, irand2, irrand,
+    linrand, rand, rand2, rrand, seed, spawnRng, sum3rand, wchoose,
+} from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
 // The names a script types without a namespace, as the Python facade exports

@@ -170,9 +170,219 @@ impl Rng {
     }
 }
 
+/// The random distributions, named as sclang names them: what a draw reads
+/// off [`Rng::next_f64`] and how. One table so a client crosses its boundary
+/// once per draw with the distribution by number, and the formulas live here
+/// once. The discriminants are the stable C-ABI contract: append only.
+///
+/// Every one takes up to two numbers, `a` and `b`, and returns an `f64`; the
+/// integer draws return a whole number, and [`Draw::Coin`] returns `1.0` or
+/// `0.0`. The generator is this crate's, not scsynth's, so a seed does not
+/// replay sclang's stream -- the **shapes** are sclang's.
+#[repr(u32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Draw {
+    /// Uniform in `[0, a)`.
+    Rand = 0,
+    /// Uniform in `[-a, a)`.
+    Rand2 = 1,
+    /// Uniform between `a` and `b`, either order.
+    Rrand = 2,
+    /// Exponentially distributed between `a` and `b` (same sign, nonzero):
+    /// equal chances per octave rather than per hertz.
+    Exprand = 3,
+    /// Linearly distributed in `[0, a)`, more likely toward 0: the lesser of
+    /// two uniforms.
+    Linrand = 4,
+    /// Bilinear in `(-a, a)`, more likely toward 0: one uniform minus another.
+    Bilinrand = 5,
+    /// The sum of three uniforms, scaled to `(-a, a)`: a bell, sclang's loose
+    /// approximation of a Gaussian.
+    Sum3rand = 6,
+    /// `1.0` with probability `a`, else `0.0`.
+    Coin = 7,
+    /// A whole number in `[0, a)` (`floor(a * u)`).
+    Irand = 8,
+    /// A whole number in `[-a, a]`, both ends included.
+    Irand2 = 9,
+    /// A whole number between `a` and `b`, both ends included.
+    Irrand = 10,
+    /// Gaussian with mean `a` and standard deviation `b` (Box-Muller, as
+    /// sclang's `gauss` is).
+    Gauss = 11,
+}
+
+impl Draw {
+    /// Maps a C-ABI discriminant back to the enum.
+    pub fn from_u32(v: u32) -> Option<Draw> {
+        use Draw::*;
+        Some(match v {
+            0 => Rand,
+            1 => Rand2,
+            2 => Rrand,
+            3 => Exprand,
+            4 => Linrand,
+            5 => Bilinrand,
+            6 => Sum3rand,
+            7 => Coin,
+            8 => Irand,
+            9 => Irand2,
+            10 => Irrand,
+            11 => Gauss,
+            _ => return None,
+        })
+    }
+
+    /// The distribution's name, sclang's selector lowercased.
+    pub fn name(self) -> &'static str {
+        use Draw::*;
+        match self {
+            Rand => "rand",
+            Rand2 => "rand2",
+            Rrand => "rrand",
+            Exprand => "exprand",
+            Linrand => "linrand",
+            Bilinrand => "bilinrand",
+            Sum3rand => "sum3rand",
+            Coin => "coin",
+            Irand => "irand",
+            Irand2 => "irand2",
+            Irrand => "irrand",
+            Gauss => "gauss",
+        }
+    }
+
+    /// Resolves a name to the distribution (the inverse of [`name`](Self::name)).
+    pub fn from_name(name: &str) -> Option<Draw> {
+        (0..).map_while(Draw::from_u32).find(|d| d.name() == name)
+    }
+}
+
+impl Rng {
+    /// One draw from distribution `d` with its arguments `a` and `b` (see
+    /// [`Draw`] for what each reads).
+    pub fn draw(&mut self, d: Draw, a: f64, b: f64) -> f64 {
+        use Draw::*;
+        match d {
+            Rand => self.next_f64() * a,
+            Rand2 => (2.0 * self.next_f64() - 1.0) * a,
+            Rrand => a + self.next_f64() * (b - a),
+            Exprand => a * ((b / a).ln() * self.next_f64()).exp(),
+            Linrand => {
+                let (x, y) = (self.next_f64(), self.next_f64());
+                x.min(y) * a
+            }
+            Bilinrand => {
+                let (x, y) = (self.next_f64(), self.next_f64());
+                (x - y) * a
+            }
+            Sum3rand => {
+                let sum = self.next_f64() + self.next_f64() + self.next_f64();
+                (sum - 1.5) * (2.0 / 3.0) * a
+            }
+            Coin => (self.next_f64() < a) as u8 as f64,
+            Irand => (a * self.next_f64()).floor(),
+            Irand2 => ((2.0 * a + 1.0) * self.next_f64() - a).floor(),
+            Irrand => {
+                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                lo + ((hi - lo + 1.0) * self.next_f64()).floor()
+            }
+            // `1 - u` rather than sclang's `u`: the uniform reaches 0 and
+            // never 1, and `ln(0)` would be an infinity for one draw in 2^53.
+            Gauss => {
+                let (u, v) = (self.next_f64(), self.next_f64());
+                (-2.0 * (1.0 - u).ln()).sqrt() * (core::f64::consts::TAU * v).sin() * b + a
+            }
+        }
+    }
+
+    /// The index `wchoose` picks: `weights` read as relative chances (they
+    /// need not sum to 1), the first index whose running sum reaches a uniform
+    /// draw over the total. An empty or all-zero list answers 0.
+    pub fn windex(&mut self, weights: &[f64]) -> usize {
+        let total: f64 = weights.iter().sum();
+        let r = self.next_f64() * total;
+        let mut sum = 0.0;
+        for (i, &w) in weights.iter().enumerate() {
+            sum += w;
+            if r < sum {
+                return i;
+            }
+        }
+        weights.len().saturating_sub(1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draws_are_in_their_ranges_and_reproducible() {
+        let mut r = Rng::from_seed(7);
+        for _ in 0..2000 {
+            let x = r.draw(Draw::Rand, 3.0, 0.0);
+            assert!((0.0..3.0).contains(&x));
+            let x = r.draw(Draw::Rand2, 2.0, 0.0);
+            assert!((-2.0..2.0).contains(&x));
+            let x = r.draw(Draw::Rrand, 5.0, 1.0);
+            assert!((1.0..=5.0).contains(&x));
+            let x = r.draw(Draw::Exprand, 20.0, 20000.0);
+            assert!((20.0..=20000.0).contains(&x));
+            let x = r.draw(Draw::Linrand, 1.0, 0.0);
+            assert!((0.0..1.0).contains(&x));
+            let x = r.draw(Draw::Bilinrand, 1.0, 0.0);
+            assert!(x > -1.0 && x < 1.0);
+            let x = r.draw(Draw::Sum3rand, 1.0, 0.0);
+            assert!((-1.0..1.0).contains(&x));
+            assert!([0.0, 1.0].contains(&r.draw(Draw::Coin, 0.5, 0.0)));
+            let n = r.draw(Draw::Irand, 4.0, 0.0);
+            assert!([0.0, 1.0, 2.0, 3.0].contains(&n));
+            let n = r.draw(Draw::Irand2, 2.0, 0.0);
+            assert!(n.fract() == 0.0 && (-2.0..=2.0).contains(&n));
+            let n = r.draw(Draw::Irrand, 6.0, 3.0);
+            assert!(n.fract() == 0.0 && (3.0..=6.0).contains(&n));
+            assert!(r.draw(Draw::Gauss, 0.0, 1.0).is_finite());
+        }
+        let (mut a, mut b) = (Rng::from_seed(3), Rng::from_seed(3));
+        for d in (0..).map_while(Draw::from_u32) {
+            assert_eq!(a.draw(d, 2.0, 9.0), b.draw(d, 2.0, 9.0), "{}", d.name());
+            assert_eq!(Draw::from_name(d.name()), Some(d));
+        }
+    }
+
+    /// The shapes: the linear draw's mean is a third, the bilinear's and the
+    /// three-sum's are zero, an even coin lands half the time, and a Gaussian
+    /// has its mean and its deviation.
+    #[test]
+    fn draws_have_sclangs_shapes() {
+        let mut r = Rng::from_seed(11);
+        let n = 200_000;
+        let mean = |r: &mut Rng, d: Draw, a: f64, b: f64| {
+            (0..n).map(|_| r.draw(d, a, b)).sum::<f64>() / n as f64
+        };
+        assert!((mean(&mut r, Draw::Linrand, 1.0, 0.0) - 1.0 / 3.0).abs() < 0.01);
+        assert!(mean(&mut r, Draw::Bilinrand, 1.0, 0.0).abs() < 0.01);
+        assert!(mean(&mut r, Draw::Sum3rand, 1.0, 0.0).abs() < 0.01);
+        assert!((mean(&mut r, Draw::Coin, 0.5, 0.0) - 0.5).abs() < 0.01);
+        let g: Vec<f64> = (0..n).map(|_| r.draw(Draw::Gauss, 3.0, 2.0)).collect();
+        let m = g.iter().sum::<f64>() / n as f64;
+        let sd = (g.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n as f64).sqrt();
+        assert!(
+            (m - 3.0).abs() < 0.02 && (sd - 2.0).abs() < 0.02,
+            "{m} {sd}"
+        );
+        // wchoose reads relative weights.
+        let mut counts = [0usize; 3];
+        for _ in 0..n {
+            counts[r.windex(&[1.0, 2.0, 1.0])] += 1;
+        }
+        assert!(
+            (counts[1] as f64 / n as f64 - 0.5).abs() < 0.01,
+            "{counts:?}"
+        );
+        assert_eq!(r.windex(&[]), 0);
+    }
 
     #[test]
     fn value_rng_is_deterministic_and_in_range() {

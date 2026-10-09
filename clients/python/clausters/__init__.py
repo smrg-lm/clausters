@@ -99,7 +99,10 @@ from .base.time import (
     secs_to_samples,
 )
 from .base.main import default_session, main
-from .base.rand import Rng, choice, current_rng, seed, spawn_rng, uniform
+from .base.rand import (
+    Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
+    irrand, linrand, rand, rand2, rrand, seed, spawn_rng, sum3rand, wchoose,
+)
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
@@ -183,14 +186,25 @@ __all__ = [
     "midifunc",
     # the random context (one seedable source: `seed(n)` on the default
     # session, or `session.seed(n)` on a named one, and these draws from
-    # whichever stream the context says; the raw ones, next_f64 and
-    # next_below, stay in `base.rand`)
+    # whichever stream the context says, named as sclang names them)
     "Rng",
     "seed",
     "current_rng",
     "spawn_rng",
-    "uniform",
-    "choice",
+    "rand",
+    "rand2",
+    "rrand",
+    "exprand",
+    "linrand",
+    "bilinrand",
+    "sum3rand",
+    "coin",
+    "gauss",
+    "irand",
+    "irand2",
+    "irrand",
+    "choose",
+    "wchoose",
     # the root of every error this package raises; the leaves are in `errors`
     "ClaustersError",
 ]

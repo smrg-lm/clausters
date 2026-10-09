@@ -32,8 +32,13 @@ import { currentRoutine } from "./context.ts";
 import { main } from "./main.ts";
 
 /**
- * A resumable seeded value stream over the core generator: uniform doubles in
- * `[0, 1)` and bounded integers. `spawn` derives a child deterministically.
+ * A resumable seeded value stream over the core generator, drawing the random
+ * distributions sclang names (`rand`, `rrand`, `exprand`, `coin`, `choose` ...).
+ * `spawn` derives a child deterministically.
+ *
+ * The integer draws are their own methods (`irand`, `irand2`, `irrand`): a
+ * number here cannot say whether it was written `10` or `10.0`, so the float
+ * draws never answer an integer for one.
  */
 export class Rng {
     private readonly inner: CoreRng;
@@ -56,24 +61,77 @@ export class Rng {
         this.inner = typeof source === "number" ? new CoreRng(source) : source;
     }
 
-    /** Uniform in `[0, 1)` with 53-bit resolution. */
-    nextF64(): number {
-        return this.inner.nextF64();
+    /** Uniform in `[0, hi)`. */
+    rand(hi = 1.0): number {
+        return this.inner.draw("rand", hi, 0);
     }
 
-    /** Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`). */
-    uniform(lo: number, hi: number): number {
-        return this.inner.uniform(lo, hi);
+    /** Uniform in `[-x, x)`. */
+    rand2(x = 1.0): number {
+        return this.inner.draw("rand2", x, 0);
     }
 
-    /** Uniform integer in `[0, n)`; 0 when `n` is 0. */
-    nextBelow(n: number): number {
-        return this.inner.nextBelow(n);
+    /** Uniform between `lo` and `hi`. */
+    rrand(lo: number, hi: number): number {
+        return this.inner.draw("rrand", lo, hi);
+    }
+
+    /**
+     * Exponentially distributed between `lo` and `hi` (same sign, nonzero):
+     * equal chances per octave.
+     */
+    exprand(lo: number, hi: number): number {
+        return this.inner.draw("exprand", lo, hi);
+    }
+
+    /** In `[0, x)`, more likely toward 0. */
+    linrand(x = 1.0): number {
+        return this.inner.draw("linrand", x, 0);
+    }
+
+    /** In `(-x, x)`, more likely toward 0. */
+    bilinrand(x = 1.0): number {
+        return this.inner.draw("bilinrand", x, 0);
+    }
+
+    /** In `(-x, x)`, bell-shaped: three uniforms summed. */
+    sum3rand(x = 1.0): number {
+        return this.inner.draw("sum3rand", x, 0);
+    }
+
+    /** `true` with probability `p`. */
+    coin(p = 0.5): boolean {
+        return this.inner.draw("coin", p, 0) !== 0;
+    }
+
+    /** Gaussian with `mean` and standard deviation `dev`. */
+    gauss(mean = 0.0, dev = 1.0): number {
+        return this.inner.draw("gauss", mean, dev);
+    }
+
+    /** A whole number in `[0, n)`. */
+    irand(n: number): number {
+        return this.inner.draw("irand", n, 0);
+    }
+
+    /** A whole number in `[-n, n]`, both ends included. */
+    irand2(n: number): number {
+        return this.inner.draw("irand2", n, 0);
+    }
+
+    /** A whole number between `lo` and `hi`, both ends included. */
+    irrand(lo: number, hi: number): number {
+        return this.inner.draw("irrand", lo, hi);
     }
 
     /** A uniformly chosen element of `items`. */
-    choice<T>(items: readonly T[]): T {
-        return items[this.nextBelow(items.length)]!;
+    choose<T>(items: readonly T[]): T {
+        return items[this.irand(items.length)]!;
+    }
+
+    /** An element of `items` chosen with the relative `weights` (any sum). */
+    wchoose<T>(items: readonly T[], weights: readonly number[]): T {
+        return items[this.inner.windex(Float64Array.from(weights))]!;
     }
 
     /** A child stream seeded from this one's next word. */
@@ -120,15 +178,53 @@ export function spawnRng(): Rng {
     return currentRng().spawn();
 }
 
-/** Uniform in `[0, 1)` from the current context. */
-export const nextF64 = (): number => currentRng().nextF64();
+// ---- the draws, from the current context ----
+//
+// sclang's names for its distributions. Each draws from `currentRng`, so one
+// root seed reproduces every value.
 
-/** Uniform in `[lo, hi)` from the current context. */
-export const uniform = (lo: number, hi: number): number =>
-    currentRng().uniform(lo, hi);
+/** Uniform in `[0, hi)`. */
+export const rand = (hi = 1.0): number => currentRng().rand(hi);
 
-/** Uniform integer in `[0, n)` from the current context. */
-export const nextBelow = (n: number): number => currentRng().nextBelow(n);
+/** Uniform in `[-x, x)`. */
+export const rand2 = (x = 1.0): number => currentRng().rand2(x);
 
-/** A uniformly chosen element of `items`, from the current context. */
-export const choice = <T>(items: readonly T[]): T => currentRng().choice(items);
+/** Uniform between `lo` and `hi`. */
+export const rrand = (lo: number, hi: number): number => currentRng().rrand(lo, hi);
+
+/**
+ * Exponentially distributed between `lo` and `hi` (same sign, nonzero): equal
+ * chances per octave -- what a frequency or a duration wants.
+ */
+export const exprand = (lo: number, hi: number): number => currentRng().exprand(lo, hi);
+
+/** In `[0, x)`, more likely toward 0. */
+export const linrand = (x = 1.0): number => currentRng().linrand(x);
+
+/** In `(-x, x)`, more likely toward 0. */
+export const bilinrand = (x = 1.0): number => currentRng().bilinrand(x);
+
+/** In `(-x, x)`, bell-shaped: three uniforms summed, sclang's loose Gaussian. */
+export const sum3rand = (x = 1.0): number => currentRng().sum3rand(x);
+
+/** `true` with probability `p`. */
+export const coin = (p = 0.5): boolean => currentRng().coin(p);
+
+/** Gaussian with `mean` and standard deviation `dev`. */
+export const gauss = (mean = 0.0, dev = 1.0): number => currentRng().gauss(mean, dev);
+
+/** A whole number in `[0, n)`. */
+export const irand = (n: number): number => currentRng().irand(n);
+
+/** A whole number in `[-n, n]`, both ends included. */
+export const irand2 = (n: number): number => currentRng().irand2(n);
+
+/** A whole number between `lo` and `hi`, both ends included. */
+export const irrand = (lo: number, hi: number): number => currentRng().irrand(lo, hi);
+
+/** A uniformly chosen element of `items`. */
+export const choose = <T>(items: readonly T[]): T => currentRng().choose(items);
+
+/** An element of `items` chosen with the relative `weights`. */
+export const wchoose = <T>(items: readonly T[], weights: readonly number[]): T =>
+    currentRng().wchoose(items, weights);

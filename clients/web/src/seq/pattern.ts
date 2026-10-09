@@ -195,7 +195,7 @@ export class Prand<T> extends Pattern<T> {
     }
 
     *[Symbol.iterator](): Generator<T, void, undefined> {
-        for (let i = 0; i < this.length; i++) yield* embed(rand.choice(this.items));
+        for (let i = 0; i < this.length; i++) yield* embed(rand.choose(this.items));
     }
 }
 
@@ -216,7 +216,7 @@ export class Pwhite extends Pattern<number> {
     }
 
     *[Symbol.iterator](): Generator<number, void, undefined> {
-        for (let i = 0; i < this.length; i++) yield rand.uniform(this.lo, this.hi);
+        for (let i = 0; i < this.length; i++) yield rand.rrand(this.lo, this.hi);
     }
 }
 

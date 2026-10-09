@@ -56,27 +56,38 @@ def test_random_patterns_replay_under_the_root_seed():
 
 def test_rand_functions_draw_from_the_same_context():
     _embed_or_skip()
-    from clausters import choice, uniform
-    from clausters.base.rand import next_below, next_f64
+    from clausters import (
+        bilinrand, choose, coin, exprand, gauss, irand, irand2, irrand, linrand,
+        rand, rand2, rrand, sum3rand, wchoose)
     from clausters.base.main import main
 
+    def draws():
+        return [rand(), rrand(2.0, 4.0), irand(10), choose("abcd"),
+                rand2(3.0), exprand(20.0, 20000.0), linrand(), bilinrand(),
+                sum3rand(), coin(0.3), gauss(1.0, 0.5), irand2(4),
+                irrand(3, 6), wchoose("xyz", [1.0, 0.0, 2.0])]
+
     main.seed(3)
-    a = [next_f64(), uniform(2.0, 4.0), next_below(10), choice("abcd")]
+    a = draws()
     main.seed(3)
-    assert a == [next_f64(), uniform(2.0, 4.0), next_below(10), choice("abcd")]
-    assert 2.0 <= a[1] < 4.0 and 0 <= a[2] < 10 and a[3] in "abcd"
+    assert a == draws()
+    assert 0.0 <= a[0] < 1.0 and 2.0 <= a[1] < 4.0
+    assert isinstance(a[2], int) and 0 <= a[2] < 10 and a[3] in "abcd"
+    assert -3.0 <= a[4] < 3.0 and 20.0 <= a[5] <= 20000.0
+    assert isinstance(a[9], bool)
+    assert -4 <= a[11] <= 4 and 3 <= a[12] <= 6 and a[13] in "xz"
 
 
 def test_routines_get_their_own_streams_reproducible_per_routine():
     _embed_or_skip()
     from clausters.base import Routine
     from clausters.base.main import main
-    from clausters.base.rand import uniform
+    from clausters.base.rand import rrand
 
     def collect(out, n):
         def gen():
             for _ in range(n):
-                out.append(uniform(0.0, 1.0))
+                out.append(rrand(0.0, 1.0))
                 yield 0.25
         return gen
 

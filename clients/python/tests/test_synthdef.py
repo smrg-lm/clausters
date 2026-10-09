@@ -188,6 +188,21 @@ def test_two_bounds_compose_their_own_ugen():
     assert SynthDef("s", out(0.0, lfo.scaleneg(0.5))).spec()["ugens"][-2]["op"] == "scaleneg"
 
 
+def test_random_draws_compose_a_rand_op_ugen():
+    # sclang's random operators on a signal: one RandOpUGen carrying the
+    # distribution by name; a one-argument draw leaves the tail off.
+    lfo = sine(0.2)
+    spec = SynthDef("r", out(0.0, lfo.rrand(800.0))).spec()
+    assert spec["ugens"][-2] == {
+        "kind": "RandOpUGen", "op": "rrand",
+        "inputs": [{"ugen": 0}, {"const": 800.0}],
+    }
+    coin = SynthDef("c", out(0.0, lfo.coin())).spec()
+    assert coin["ugens"][-2] == {"kind": "RandOpUGen", "op": "coin", "inputs": [{"ugen": 0}]}
+    for name in ("rand", "rand2", "linrand", "bilinrand", "sum3rand"):
+        assert SynthDef("d", out(0.0, getattr(lfo, name)())).spec()["ugens"][-2]["op"] == name
+
+
 def test_unknown_selector_raises():
     # A selector with no UGen (not part of the operator surface) still fails.
     a = sine(100.0)

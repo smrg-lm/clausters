@@ -104,7 +104,7 @@ What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does wit
 
 ## Reproducible randomness
 
-Everything random — `Pwhite`, `Prand`, and the module functions `uniform(lo, hi)`, `nextBelow(n)`, `choice(items)` — draws from **one seedable context**, the sclang model, computed by the same core the other clients use: the same seed replays the same values in every Clausters client language.
+Everything random — `Pwhite`, `Prand`, and the draws named as sclang names them (`rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`, `gauss`, `coin`, `choose`, `wchoose`, and the whole-number `irand`, `irand2`, `irrand`, which are their own functions because a number here cannot say whether it was written `10` or `10.0`) — draws from **one seedable context**, the sclang model, computed by the same core the other clients use: the same seed replays the same values in every Clausters client language.
 
 Each routine gets its **own** generator when it is created, derived from the context that created it. Same root seed plus same creation order gives the same music, and because each routine draws from its own stream, concurrent routines stay reproducible however their wakes interleave. `seed(n)`, called before you build and play, makes a whole page reproducible; there are deliberately no per-pattern seeds. To isolate some samples, play it in its own routine, which is its own derived stream by construction.
 

@@ -84,7 +84,7 @@ interface Vectors {
     bound: { op: string; x: number; lo: number; hi: number; y: number | string }[];
     rng: {
         seed: number; floats: number[]; below: number[]; childFloats: number[];
-        afterSpawn: number[]; uniform: number[];
+        afterSpawn: number[]; draws: [string, number | boolean | string][];
     }[];
 }
 
@@ -264,7 +264,7 @@ const TRANSCENDENTAL = new Set([
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "exp10",
     "log", "log2", "log10", "sinh", "cosh", "tanh", "pow", "hypot",
     "hypotapx", "midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp",
-    "ampdb", "octcps", "cpsoct",
+    "ampdb", "octcps", "cpsoct", "hanwindow", "welwindow",
 ]);
 
 /** One f32 ulp at `x` -- the width of the disagreement libm is allowed. */
@@ -320,14 +320,34 @@ test("a builtin over a list extends the shorter operand cyclically", () => {
 test("the seeded stream replays the Python client's values", () => {
     for (const run of v.rng) {
         const rng = new Rng(run.seed);
-        for (const expected of run.floats) assert.equal(rng.nextF64(), expected);
+        for (const expected of run.floats) assert.equal(rng.rand(), expected);
         const bounds = [2, 7, 16, 1, 0];
         run.below.forEach((expected, i) => {
-            assert.equal(rng.nextBelow(bounds[i]!), expected);
+            assert.equal(rng.irand(bounds[i]!), expected);
         });
         const child = rng.spawn();
-        for (const expected of run.childFloats) assert.equal(child.nextF64(), expected);
-        for (const expected of run.afterSpawn) assert.equal(rng.nextF64(), expected);
-        for (const expected of run.uniform) assert.equal(rng.uniform(-1, 1), expected);
+        for (const expected of run.childFloats) assert.equal(child.rand(), expected);
+        for (const expected of run.afterSpawn) assert.equal(rng.rand(), expected);
+        // The same calls in the same order as the generator made them. The two
+        // that go through `ln`/`exp`/`sin` are held to the shapes' tolerance.
+        const got: [string, number | boolean | string][] = [
+            ["rand", rng.rand(3.0)], ["rand2", rng.rand2(2.0)],
+            ["rrand", rng.rrand(-1.0, 1.0)], ["exprand", rng.exprand(20.0, 20000.0)],
+            ["linrand", rng.linrand(4.0)], ["bilinrand", rng.bilinrand(4.0)],
+            ["sum3rand", rng.sum3rand(4.0)], ["coin", rng.coin(0.5)],
+            ["gauss", rng.gauss(1.0, 0.5)], ["irand", rng.irand(10)],
+            ["irand2", rng.irand2(5)], ["irrand", rng.irrand(3, 9)],
+            ["choose", rng.choose(["a", "b", "c"])],
+            ["wchoose", rng.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
+        ];
+        got.forEach(([name, value], i) => {
+            const [wantName, want] = run.draws[i]!;
+            assert.equal(name, wantName);
+            if (name === "exprand" || name === "gauss") {
+                assertClose(value as number, want as number, name);
+            } else {
+                assert.equal(value, want, name);
+            }
+        });
     }
 });
