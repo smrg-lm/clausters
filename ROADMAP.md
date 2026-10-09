@@ -203,6 +203,14 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **The numeric builtins, `C63`-`C69`** *(`clients/python/PLAN.md`, "The
+  numeric builtins: one libm, SuperCollider's vocabulary")*. **Taken first**,
+  opened 2026-10-09 by the user. `C63` goes before everything else in it: one
+  libm is what makes "the same bits in every client" true, and every later
+  milestone's parity tests assert equality on top of it. `C64` changes what four
+  existing operators return and is measured against the golden renders before
+  it lands; `C65`-`C68` add surface in both clients at once.
+
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening

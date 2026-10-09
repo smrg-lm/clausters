@@ -2050,6 +2050,118 @@ existing examples rewritten rather than new ones:
   is the manual check: an event with a swell and a bend, and a channel's fade
   over a phrase.
 
+### The numeric builtins: one libm, SuperCollider's vocabulary (client arc, phased)
+
+*Opened 2026-10-09 by the user.* `clausters.builtins` is a port of the value
+side of sc3's builtins and has stopped short of it: `blend`, `normalize`, the
+random distributions, `clip`/`wrap`/`fold` with two bounds, the windows of the
+operator table and the scale conversions are missing, and so are a dozen
+operators scsynth's `UnaryOpUGen`/`BinaryOpUGen` have. The arc adds them **in the
+shared core**, so a value a client computes and the same operator on the audio
+thread are one function, and it settles first what "the same value" means.
+
+**The contract, as the user set it**: a builtin gives **the same bits** on the
+real-time server, in an offline render and in both clients, on every platform.
+scsynth is the reference for **semantics** (what `sqrt` of a negative is, what
+`mod` returns for a negative divisor), never for rounding: scsynth itself does
+not agree with itself — its audio-rate kernels for `sin`, `cos`, `tan`, `log`,
+`exp`, `tanh` and their neighbours are SIMD approximations while its
+control-rate ones call the system libm, and that libm differs per platform, so
+the same patch "sounds different" on each. The arc does not copy that. Nor does
+it rewrite what a library already gives: where sclang took a function from the
+C++ libraries, the core takes it from an established Rust one.
+
+**Every change of behaviour is measured before it lands** (the user,
+2026-10-09): what moves, by how much, at what cost — a regression is a defect
+of the milestone, not a side effect of it.
+
+Measured while opening the arc (2026-10-09):
+
+- **The two clients do not agree today.** Python reaches the core natively
+  (the system libm) and the web client through wasm (Rust's own libm). Over
+  200 000 arguments the two differ on 1-2% of `sin`/`cos`/`log`/`log2`/`log10`,
+  4% of `tanh`, 10% of `exp`/`pow`, 13% of `tan`/`hypot` and 25% of `sinh` —
+  so `midicps` or `dbamp` already differs between the clients.
+- **Seven operators disagree with scsynth's definitions**, four of them in
+  meaning rather than rounding: `sqrt` (scsynth's is signed, `-sqrt(-x)`; ours
+  is NaN below zero), `pow` (signed likewise), `log10` (of `abs(x)`), `mod`
+  (floored into `[0, b)`; ours truncates); and three in rounding only:
+  `cpsoct` (`x/440` against our `x*(1/440)`), `hypot` (`hypotf` against
+  `sqrt(a*a+b*b)`) and `recip` (scsynth's SSE reciprocal estimate plus one
+  Newton step, which differs between CPU vendors).
+- **White noise is not where the two servers differ.** scsynth's Taus88 with
+  `frand2` and our xorshift64 measure the same over 4M samples: RMS 0.5773 and
+  0.5775 (1/sqrt(3) = 0.57735), spectral flatness 0.9995 both, every band
+  within 0.03 dB, lag autocorrelation under 0.002. Porting Taus88 to replay
+  scsynth's streams was **declined by the user**: matching a seed adds a second
+  generator to a solved problem and opens divergences elsewhere.
+
+- ⬜ **C63 — One libm for the core.** The core's transcendentals go through the
+  `libm` crate on every target, so native and wasm are one implementation and
+  the bindings' parity tests assert equality again — including the tempo
+  shapes' 4-ulp allowance (`docs/decisions.md`, "The bindings share a formula,
+  not a libm") and, if it then holds, the geometric ramp's `powf`. The server's
+  operator UGens follow, being the same functions; `Sine` and the other UGens
+  that call a transcendental directly are inventoried and moved where the
+  measurement allows. Both records it overturns are rewritten:
+  "Native↔wasm render parity is a tight tolerance" rejected exactly this,
+  because it moved the native stream for nothing audible, and the user has
+  since set the contract above. **Measured before it lands**: the ops' and the
+  engine's cost before and after (`Sine` and `Pow` are where a libm call
+  dominates a block), the native stream's delta, and which golden files move
+  and by how much. **Out of reach, written as a gap**: a native FaustDef is
+  compiled by LLVM and calls the process's libm, so it keeps the system one;
+  in a page its imports are already bound to the engine's.
+- ⬜ **C64 — scsynth's semantics for the operators that exist.** `sqrt` and
+  `pow` signed, `log10` of `abs(x)`, `mod` floored, `cpsoct` as `x/440`.
+  `hypot` and `recip` keep their definitions: their difference is rounding,
+  which the one libm decides. Edge cases written down as the core's: an
+  operand outside `i32` for the bitwise operators (a cast that saturates, where
+  x86 gives `0x80000000`), shifts by a negative or `>= 32` count. **Measured**:
+  every golden render and example that crosses one of the four (a `sqrt` or a
+  `pow` of a bipolar signal is a NaN today and a value after) is listed with
+  what it did and what it does.
+- ⬜ **C65 — The operators scsynth has and the core does not.** Unary: `bitnot`,
+  `distortneg`, `rectwindow`, `hanwindow`, `welwindow`, `triwindow`, `ramp`,
+  `scurve`. Binary: `idiv`, `roundup`, `urshift`, `amclip`, `scaleneg`,
+  `firstarg`. And `Clip`/`Wrap`/`Fold` with two bounds, as UGens, as methods on
+  a graph node and as builtins — today only the symmetric `clip2`/`wrap2`/
+  `fold2` exist. The windows are not `clausters_core::window`: that fills an
+  FFT frame of `n` samples, and these take a phase in `[0, 1]` and are zero
+  outside it. Appended to the op tables (the discriminants are append-only),
+  in `docs/schemas.md`, both clients' graph builders and `builtins`.
+- ⬜ **C66 — Random values, named as sclang names them.** The distributions —
+  `rand`, `rand2`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
+  `coin`, `choose`, `wchoose`, `gauss` — in `clausters_core::rng`, with
+  sclang's formulas over the generator the server and the clients already
+  share. They **replace** the client functions named after the Rust methods
+  (`uniform`, `next_below`, `next_f64`, `choice`) in both clients, and every
+  caller moves. As operators (`rand` … `coin`, `rrand`, `exprand`) a node
+  draws from its own seed off the graph's seed walk, so the stateless
+  operator UGen grows the one case that has state.
+- ⬜ **C67 — The numeric functions that are not operators.** In the core and
+  `builtins`, joined lowercase like `midicps`: `degkey`/`keydeg` (scale degree
+  to key and back), `nearestinlist`, `nearestinscale`, `bilin`, `biexp`,
+  `lcurve`, `gausscurve`, `softround`, `snap`, `moddif`, `wrap1`, `fold1`,
+  `zapgremlins`, `lg3interp`, `calcfeedback`, `degrad`, `raddeg`, `even`,
+  `odd`, `graycode`, `nextpoweroftwo` and its neighbours; and from the libm
+  rather than by hand, `cbrt`, `log1p`, `expm1`, `erf`, `erfc`, `tgamma`,
+  `lgamma` and the Bessel functions it carries. Closes the divergence the
+  survey found: `exp10` and `degreeToMidinote` are in the web client's
+  `builtins` and not in Python's.
+- ⬜ **C68 — Functions over arrays.** `blend` (two numbers or two arrays point
+  by point), `blendat`, `normalize`, `normalizesum`, `resamp0`/`resamp1`,
+  `indexinbetween`, `indexofgreaterthan`, `integrate`, `differentiate`,
+  `asrandomtable`/`tablerand`, `shuffle` — in the core, bound by both clients.
+- ⬜ **C69 — Documentation and the manual check.** The builtins page of both
+  clients' books, the operator reference in the server's, and an example in
+  each client that plays what changed in meaning (a signed `sqrt` and `pow`)
+  and what is new.
+
+Out of the arc: the special functions sclang takes from Boost and no
+established Rust crate carries (elliptic integrals, Legendre and Laguerre
+polynomials, zeta…).
+
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
 Shipped 2026-08-03/04 and taken off `main` on 2026-08-05. The package worked,
