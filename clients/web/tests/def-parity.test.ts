@@ -158,6 +158,18 @@ const synthdefs: Record<string, () => SynthDef> = {
         );
     },
 
+    two_bounds: () =>
+        new SynthDef(
+            "bounds",
+            out(
+                0.0,
+                sine(0.3)
+                    .fold(-0.5, 0.5)
+                    .mul(sine(2.0).wrap(0.0, sine(0.1)).hanwindow())
+                    .mul(sine(5.0).clip(-0.25, 0.75).scaleneg(0.5).roundup(0.125)),
+            ),
+        ),
+
     typed_controls_env: () => {
         const gate = control("gate", 1.0, { rate: "tr" });
         const cutoff = control("cutoff", 800.0, { lag: 0.1, lagDown: 0.5 });

@@ -296,3 +296,83 @@ fn range_map_ugen_follows_a_bound_that_moves() {
     );
     assert!(block[63] > block[0], "a moving bound moves the output");
 }
+
+// ---- the operators added from scsynth's table, and the two-bound kinds ----
+
+/// Every new operator renders through the function a client computes the value
+/// with, by name -- the same contract the older ones keep.
+#[test]
+fn scsynth_operators_render_through_the_shared_table() {
+    use clausters::clausters_core::builtins::{self, BinaryOp, UnaryOp};
+    let unary = |name: &str, x: f32| {
+        render_const(&format!(
+            r#"{{"name": "u", "ugens": [
+                {{"kind": "UnaryOpUGen", "op": "{name}", "inputs": [{{"const": {x}}}]}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
+        ))
+    };
+    for op in [
+        UnaryOp::Bitnot,
+        UnaryOp::Rectwindow,
+        UnaryOp::Hanwindow,
+        UnaryOp::Welwindow,
+        UnaryOp::Triwindow,
+        UnaryOp::Ramp,
+        UnaryOp::Scurve,
+    ] {
+        for x in [-0.5f32, 0.25, 0.5, 0.8, 1.5, 7.0] {
+            assert_eq!(
+                unary(op.name(), x),
+                builtins::apply_unary(op, x),
+                "{}({x})",
+                op.name()
+            );
+        }
+    }
+    for op in [
+        BinaryOp::Idiv,
+        BinaryOp::Roundup,
+        BinaryOp::Urshift,
+        BinaryOp::Amclip,
+        BinaryOp::Scaleneg,
+        BinaryOp::Firstarg,
+    ] {
+        for (a, b) in [(-7.0f32, 2.0f32), (1.1, 0.5), (-1.0, 0.5), (3.0, -2.0)] {
+            assert_eq!(
+                op_value(op.name(), a, b),
+                builtins::apply_binary(op, a, b),
+                "{}",
+                op.name()
+            );
+        }
+    }
+}
+
+fn op_value(name: &str, a: f32, b: f32) -> f32 {
+    render_const(&format!(
+        r#"{{"name": "b", "ugens": [
+            {{"kind": "BinaryOpUGen", "op": "{name}", "inputs": [{{"const": {a}}}, {{"const": {b}}}]}},
+            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
+    ))
+}
+
+/// `Clip`, `Wrap` and `Fold` keep a signal inside two bounds through
+/// `clausters_core::builtins::apply_bound`.
+#[test]
+fn bound_ugens_keep_a_signal_inside_two_bounds() {
+    use clausters::clausters_core::builtins::{BoundOp, apply_bound};
+    for (kind, op) in [
+        ("Clip", BoundOp::Clip),
+        ("Wrap", BoundOp::Wrap),
+        ("Fold", BoundOp::Fold),
+    ] {
+        for x in [-5.0f32, -0.75, 0.3, 1.25, 3.5, 12.3] {
+            let got = render_const(&format!(
+                r#"{{"name": "k", "ugens": [
+                    {{"kind": "{kind}", "inputs": [{{"const": {x}}}, {{"const": -0.5}}, {{"const": 2.0}}]}},
+                    {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
+            ));
+            assert_eq!(got, apply_bound(op, x, -0.5, 2.0), "{kind}({x})");
+        }
+    }
+}

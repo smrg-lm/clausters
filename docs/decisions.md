@@ -9980,3 +9980,21 @@ interrupted the session's code — on the main thread, once the evaluation has
 stopped, so nothing it ran can start a note after the panic — and only when the
 package is already imported, so the key never imports anything. clausters'
 hook panics every session not closed yet and the default one.
+
+## `scaleneg` is the UGen kernels' form, not the header's
+
+*Upstream finding, 2026-10-09.* scsynth defines `scaleneg` twice. Every
+`BinaryOpUGen` kernel computes `a >= 0 ? a : a * b` — scale the negative half,
+which is what the operator is documented to do. The `float` specialization of
+`sc_scaleneg` in `SC_InlineBinaryOp.h` is a branch-free rewrite,
+`b = 0.5*b + 0.5; return (|a| - a)*b + a`, and it is not the same function:
+below zero it gives `-a*b`, so `scaleneg(-1, 0.5)` is `0.5` rather than `-0.5`.
+No kernel calls it, so scsynth's UGens are right and a plugin that reached for
+the header function would not be.
+
+The core takes the kernels' form, measured against them; the other new
+operators from scsynth's table (`roundup`, `amclip`, `bitnot`, the four phase
+windows, `ramp`, `scurve`) agree with scsynth's definitions on every argument
+of a 24 001-point sweep, including the windows' mixed precision — Hann takes
+the phase times `2π` in `f32` and the cosine in `f64`, Welch multiplies by `π`
+in `f64` — which a port in plain `f32` misses on up to a third of arguments.

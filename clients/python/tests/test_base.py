@@ -87,6 +87,35 @@ def test_extended_ops_s3():
     assert B.sumsqr([1.0, 2.0], [2.0, 1.0]) == [pytest.approx(5.0), pytest.approx(5.0)]
 
 
+def test_scsynth_operators_and_two_bounds():
+    # The operators taken from scsynth's table, and clip/wrap/fold between two
+    # bounds -- the general form of clip2/wrap2/fold2.
+    _ffi_or_skip()
+    assert B.idiv(-7.0, 2.0) == -4.0
+    assert B.roundup(1.1, 0.5) == 1.5
+    assert B.urshift(-1.0, 28.0) == 15.0
+    assert B.amclip(3.0, -1.0) == 0.0 and B.amclip(3.0, 2.0) == 6.0
+    assert B.scaleneg(-1.0, 0.5) == -0.5 and B.scaleneg(2.0, 0.5) == 2.0
+    assert B.firstarg(3.0, 9.0) == 3.0
+    assert B.bitnot(5.0) == -6.0
+    assert B.hanwindow([0.0, 0.5, 1.5]) == [0.0, 1.0, 0.0]
+    assert B.welwindow(0.5) == 1.0
+    assert B.triwindow([0.25, 0.75]) == [0.5, 0.5]
+    assert B.rectwindow([-0.1, 0.5]) == [0.0, 1.0]
+    assert B.ramp([-1.0, 0.25, 2.0]) == [0.0, 0.25, 1.0]
+    assert B.scurve(0.5) == 0.5
+    assert B.clip([5.0, -5.0, 2.0], 1.0, 3.0) == [3.0, 1.0, 2.0]
+    assert B.wrap(3.5, 1.0, 3.0) == 1.5
+    assert B.fold(3.5, 1.0, 3.0) == 2.5
+    # A sequence of bounds extends cyclically like any other operand.
+    assert B.clip(2.0, [0.0, 2.5], 3.0) == [2.0, 2.5]
+    # The symmetric operators are the special case -b..b.
+    for x in (-3.3, -0.4, 0.9, 2.7):
+        assert B.wrap(x, -1.25, 1.25) == B.wrap2(x, 1.25)
+        assert B.fold(x, -1.25, 1.25) == B.fold2(x, 1.25)
+        assert B.clip(x, -1.25, 1.25) == B.clip2(x, 1.25)
+
+
 def test_smoothing_windows_s8():
     # S8: the FFT-chain windows are the shared core, exposed for binary parity
     # (same shape the server's FFT/IFFT applies).

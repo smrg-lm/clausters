@@ -15,6 +15,7 @@
 import {
     bark_to_hz as coreBarkToHz,
     binary as coreBinary,
+    bound as coreBound,
     degree_to_midinote as coreDegreeToMidinote,
     hz_to_bark as coreHzToBark,
     hz_to_mel as coreHzToMel,
@@ -117,6 +118,41 @@ export const fold2 = bin("fold2");
 export const wrap2 = bin("wrap2");
 export const gcd = bin("gcd");
 export const lcm = bin("lcm");
+export const idiv = bin("idiv");
+export const roundup = bin("roundup");
+export const urshift = bin("urshift");
+export const amclip = bin("amclip");
+export const scaleneg = bin("scaleneg");
+export const firstarg = bin("firstarg");
+
+// ---- two bounds ----
+//
+// The general form of `clip2`/`wrap2`/`fold2`, whose range is the symmetric
+// `-b..b`: the value kept inside `lo..hi`. The server's `Clip`/`Wrap`/`Fold`
+// UGens are the same function over a signal.
+
+function boundop(op: string, x: Num, lo: Num, hi: Num): Num {
+    const args = [x, lo, hi];
+    const seqs = args.filter(isSeq);
+    if (seqs.length === 0) return coreBound(op, x as number, lo as number, hi as number);
+    const n = Math.max(...seqs.map((v) => v.length));
+    // A sequence extends cyclically (sc3's rule); a number is a constant.
+    const [xs, los, his] = args.map((v) => (isSeq(v) ? extend(v, n) : null));
+    const at = (v: Num, s: number[] | null | undefined, i: number): number =>
+        s ? s[i]! : (v as number);
+    return Array.from({ length: n }, (_, i) =>
+        coreBound(op, at(x, xs, i), at(lo, los, i), at(hi, his, i)),
+    );
+}
+
+/** `x` held inside `lo..hi` at the nearer bound. */
+export const clip = (x: Num, lo: Num, hi: Num): Num => boundop("clip", x, lo, hi);
+
+/** `x` wrapped into `lo..hi` -- taken modulo the range. */
+export const wrap = (x: Num, lo: Num, hi: Num): Num => boundop("wrap", x, lo, hi);
+
+/** `x` folded into `lo..hi` -- reflected at the bounds, as many times as it takes. */
+export const fold = (x: Num, lo: Num, hi: Num): Num => boundop("fold", x, lo, hi);
 
 // ---- unary primitives ----
 
@@ -149,6 +185,19 @@ export const cosh = un("cosh");
 export const tanh = un("tanh");
 export const distort = un("distort");
 export const softclip = un("softclip");
+export const bitnot = un("bitnot");
+export const ramp = un("ramp");
+export const scurve = un("scurve");
+
+// ---- windows over a phase ----
+//
+// A window's shape read at one phase in `0..1`, zero outside it -- the
+// operator, not an FFT frame.
+
+export const rectwindow = un("rectwindow");
+export const hanwindow = un("hanwindow");
+export const welwindow = un("welwindow");
+export const triwindow = un("triwindow");
 
 // ---- music-theory conversions ----
 

@@ -17,6 +17,7 @@ use std::sync::Arc;
 use clausters_core::rng::SEED_STRIDE;
 
 use crate::dsp::binop::{BinOp, BinaryOp};
+use crate::dsp::bound::Bound;
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
@@ -534,6 +535,10 @@ const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
+/// `Clip`/`Wrap`/`Fold`'s three slots. The unit range is what a client offers
+/// (sclang's defaults), and both bounds stay required: a range nobody gave is
+/// a choice, not an inert value.
+const I_BOUND: &[UGenInput] = &[inp("in", 0.0), inp("lo", 0.0), inp("hi", 1.0)];
 /// `RangeMapUGen`'s six slots. The four bounds are required -- a map with a
 /// range it was not given is not "leave it alone" but "pick a number for me" --
 /// while `curve` is the declared tail: 0 is *no bend*, which is the inert value

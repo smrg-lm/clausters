@@ -103,6 +103,20 @@ pub enum BinaryOp {
     /// A cheap approximation of `hypot` (see [`apply_binary`] for the exact
     /// formula and its error bound).
     HypotApx = 39,
+    /// `floor(a / b)`: the quotient rounded toward minus infinity.
+    Idiv = 40,
+    /// Round `a` **up** to a multiple of `b` (`b == 0` passes `a` through).
+    Roundup = 41,
+    /// Unsigned right shift of `a`'s `i32` cast, read as `u32`: the sign bit
+    /// shifts in as zero. The count wraps modulo 32 like the other shifts.
+    Urshift = 42,
+    /// Two-quadrant multiply: `a * b` where `b > 0`, `0` otherwise.
+    Amclip = 43,
+    /// `a` where `a >= 0`, `a * b` below zero: scale the negative half.
+    Scaleneg = 44,
+    /// `a`, ignoring `b` -- the operator that keeps a second input in the
+    /// graph (so it is computed) without letting it reach the output.
+    Firstarg = 45,
 }
 
 impl BinaryOp {
@@ -150,6 +164,12 @@ impl BinaryOp {
             37 => Gcd,
             38 => Lcm,
             39 => HypotApx,
+            40 => Idiv,
+            41 => Roundup,
+            42 => Urshift,
+            43 => Amclip,
+            44 => Scaleneg,
+            45 => Firstarg,
             _ => return None,
         })
     }
@@ -203,6 +223,12 @@ impl BinaryOp {
             // even where sclang's selector is camelCase (`hypotApx`), and like
             // `asint`/`asfloat` for the same reason.
             HypotApx => "hypotapx",
+            Idiv => "idiv",
+            Roundup => "roundup",
+            Urshift => "urshift",
+            Amclip => "amclip",
+            Scaleneg => "scaleneg",
+            Firstarg => "firstarg",
         }
     }
 
@@ -287,6 +313,21 @@ pub enum UnaryOp {
     Distort = 35,
     /// Cubic softclip: linear for `|x| <= 0.5`, saturating beyond.
     Softclip = 36,
+    /// Bitwise complement of the `i32` cast.
+    Bitnot = 37,
+    /// The window shapes over a phase in `[0, 1]`, zero outside it: the
+    /// rectangle (`1` inside) ...
+    Rectwindow = 38,
+    /// ... the Hann window, `0.5 - 0.5*cos(2*pi*x)` ...
+    Hanwindow = 39,
+    /// ... the Welch window, `sin(pi*x)` ...
+    Welwindow = 40,
+    /// ... and the triangle, rising to `1` at `0.5`.
+    Triwindow = 41,
+    /// `x` clamped into `[0, 1]`.
+    Ramp = 42,
+    /// The S-curve `x*x*(3 - 2*x)` over `[0, 1]`, clamped outside it.
+    Scurve = 43,
 }
 
 impl UnaryOp {
@@ -330,6 +371,13 @@ impl UnaryOp {
             34 => Cpsoct,
             35 => Distort,
             36 => Softclip,
+            37 => Bitnot,
+            38 => Rectwindow,
+            39 => Hanwindow,
+            40 => Welwindow,
+            41 => Triwindow,
+            42 => Ramp,
+            43 => Scurve,
             _ => return None,
         })
     }
@@ -375,6 +423,13 @@ impl UnaryOp {
             Cpsoct => "cpsoct",
             Distort => "distort",
             Softclip => "softclip",
+            Bitnot => "bitnot",
+            Rectwindow => "rectwindow",
+            Hanwindow => "hanwindow",
+            Welwindow => "welwindow",
+            Triwindow => "triwindow",
+            Ramp => "ramp",
+            Scurve => "scurve",
         }
     }
 
@@ -406,7 +461,7 @@ const SQRT2_MINUS_1: f32 = (core::f64::consts::SQRT_2 - 1.0) as f32;
 /// branch below runs on the *already shifted* value, so a faithful port has to
 /// keep the same shape.
 #[inline]
-fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
+pub fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
     let range = hi - lo;
     let x = if x >= hi {
         let shifted = x - range;
@@ -489,6 +544,78 @@ pub fn fold(x: f32, lo: f32, hi: f32) -> f32 {
     let range2 = range + range;
     let c = offset - range2 * (offset / range2).floor();
     (if c >= range { range2 - c } else { c }) + lo
+}
+
+/// Clips `x` into `[lo, hi]`, scsynth's `sc_clip`: `max(min(x, hi), lo)` with
+/// the standard library's comparisons, so a NaN passes through and a `lo`
+/// above `hi` gives `lo`.
+#[inline]
+pub fn clip(x: f32, lo: f32, hi: f32) -> f32 {
+    let below = if hi < x { hi } else { x };
+    if below < lo { lo } else { below }
+}
+
+/// The operators with **two bounds**: an input kept inside `lo..hi` by
+/// clipping, wrapping or folding -- the general form of `clip2`/`wrap2`/
+/// `fold2`, whose range is the symmetric `-b..b`. The discriminants are the
+/// stable C-ABI contract: append only, never renumber.
+#[repr(u32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BoundOp {
+    /// [`clip`]: held at the nearer bound.
+    Clip = 0,
+    /// [`wrap`]: taken modulo the range, into `[lo, hi)`.
+    Wrap = 1,
+    /// [`fold`]: reflected at the bounds, as many times as needed.
+    Fold = 2,
+}
+
+impl BoundOp {
+    /// Maps a C-ABI discriminant back to the enum.
+    pub fn from_u32(v: u32) -> Option<BoundOp> {
+        Some(match v {
+            0 => BoundOp::Clip,
+            1 => BoundOp::Wrap,
+            2 => BoundOp::Fold,
+            _ => return None,
+        })
+    }
+
+    /// The operator's name -- what a client calls it and what the server's
+    /// UGen of the same family is (`Clip`, `Wrap`, `Fold`), lowercased.
+    pub fn name(self) -> &'static str {
+        match self {
+            BoundOp::Clip => "clip",
+            BoundOp::Wrap => "wrap",
+            BoundOp::Fold => "fold",
+        }
+    }
+
+    /// Resolves a name to the operator (the inverse of [`name`](Self::name)).
+    pub fn from_name(name: &str) -> Option<BoundOp> {
+        (0..)
+            .map_while(BoundOp::from_u32)
+            .find(|op| op.name() == name)
+    }
+}
+
+/// Applies a two-bound operator to a scalar.
+#[inline]
+pub fn apply_bound(op: BoundOp, x: f32, lo: f32, hi: f32) -> f32 {
+    match op {
+        BoundOp::Clip => clip(x, lo, hi),
+        BoundOp::Wrap => wrap(x, lo, hi),
+        BoundOp::Fold => fold(x, lo, hi),
+    }
+}
+
+/// A two-bound operator over broadcasting inputs into `out` (its length is the
+/// frame count; an input of length 1 is a constant). Allocation-free.
+#[inline]
+pub fn bound_slice(op: BoundOp, x: &[f32], lo: &[f32], hi: &[f32], out: &mut [f32]) {
+    for (i, s) in out.iter_mut().enumerate() {
+        *s = apply_bound(op, at(x, i), at(lo, i), at(hi, i));
+    }
 }
 
 /// Greatest common divisor with scsynth's sign convention: the result is
@@ -657,6 +784,30 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
             let (x, y) = (a.abs(), b.abs());
             x + y - SQRT2_MINUS_1 * x.min(y)
         }
+        Idiv => (a / b).floor(),
+        // scsynth's `sc_roundUp`, the ceiling sibling of `Round`/`Trunc`.
+        Roundup => {
+            if b == 0.0 {
+                a
+            } else {
+                (a / b).ceil() * b
+            }
+        }
+        Urshift => ((a as i32 as u32).wrapping_shr(b as i32 as u32)) as f32,
+        // scsynth's own `float` form, `a * 0.5 * (b + |b|)`, which is `a*b`
+        // for a positive `b` and `0` for any other without a branch.
+        Amclip => a * 0.5 * (b + b.abs()),
+        // The UGen kernels' form. (The `float` specialization of
+        // `sc_scaleneg` in scsynth's header computes `-a*b` below zero; none
+        // of its kernels call it -- see `docs/decisions.md`.)
+        Scaleneg => {
+            if a >= 0.0 {
+                a
+            } else {
+                a * b
+            }
+        }
+        Firstarg => a,
     }
 }
 
@@ -722,6 +873,62 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
         Softclip => {
             let a = x.abs();
             if a <= 0.5 { x } else { (a - 0.25) / x }
+        }
+        Bitnot => !(x as i32) as f32,
+        // The windows are scsynth's as written, comparisons and precision
+        // included: outside `[0, 1]` is zero, but a NaN fails both tests and
+        // goes on through the formula. Hann takes the phase times `2*pi` in
+        // `f32` and the cosine in `f64`; Welch multiplies by `pi` in `f64`.
+        Rectwindow => {
+            if x < 0.0 || x > 1.0 {
+                0.0
+            } else {
+                1.0
+            }
+        }
+        Hanwindow => {
+            if x < 0.0 || x > 1.0 {
+                0.0
+            } else {
+                0.5 - 0.5 * ((x * core::f32::consts::TAU) as f64).cos() as f32
+            }
+        }
+        Welwindow => {
+            if x < 0.0 || x > 1.0 {
+                0.0
+            } else {
+                (x as f64 * core::f64::consts::PI).sin() as f32
+            }
+        }
+        Triwindow => {
+            if x < 0.0 || x > 1.0 {
+                0.0
+            } else if x < 0.5 {
+                2.0 * x
+            } else {
+                -2.0 * x + 2.0
+            }
+        }
+        // Not `clamp`: scsynth answers `x <= 0` with `+0`, so `-0.0` comes out
+        // as `+0.0`, where `clamp` would hand the negative zero back.
+        #[allow(clippy::manual_clamp)]
+        Ramp => {
+            if x <= 0.0 {
+                0.0
+            } else if x >= 1.0 {
+                1.0
+            } else {
+                x
+            }
+        }
+        Scurve => {
+            if x <= 0.0 {
+                0.0
+            } else if x >= 1.0 {
+                1.0
+            } else {
+                x * x * (3.0 - 2.0 * x)
+            }
         }
     }
 }
@@ -858,7 +1065,8 @@ slice_dispatch! {
         Hypot, Ring1, Ring2, Ring3, Ring4,
         Sumsqr, Difsqr, Sqrsum, Sqrdif, Absdif,
         Thresh, Clip2, Excess, Round, Trunc, Fold2, Wrap2,
-        Gcd, Lcm, HypotApx;
+        Gcd, Lcm, HypotApx,
+        Idiv, Roundup, Urshift, Amclip, Scaleneg, Firstarg;
     unary:
         Neg, Abs, Sine, Cos, Tan, Asin, Acos, Atan,
         Exp, Exp10, Log, Log10, Log2, Sqrt,
@@ -868,6 +1076,7 @@ slice_dispatch! {
         Midicps, Cpsmidi, Midiratio, Ratiomidi,
         Dbamp, Ampdb, Octcps, Cpsoct,
         Distort, Softclip,
+        Bitnot, Rectwindow, Hanwindow, Welwindow, Triwindow, Ramp, Scurve,
 }
 
 #[cfg(test)]
@@ -1067,14 +1276,44 @@ mod tests {
     fn enum_discriminants_round_trip() {
         // Contiguous and stable: every discriminant maps back to itself, and
         // one past the end is unknown (guards an accidental gap).
-        for v in 0..=39u32 {
+        for v in 0..=45u32 {
             assert_eq!(BinaryOp::from_u32(v).map(|o| o as u32), Some(v));
         }
-        assert_eq!(BinaryOp::from_u32(40), None);
-        for v in 0..=36u32 {
+        assert_eq!(BinaryOp::from_u32(46), None);
+        for v in 0..=43u32 {
             assert_eq!(UnaryOp::from_u32(v).map(|o| o as u32), Some(v));
         }
-        assert_eq!(UnaryOp::from_u32(37), None);
+        assert_eq!(UnaryOp::from_u32(44), None);
+        for v in 0..=2u32 {
+            assert_eq!(BoundOp::from_u32(v).map(|o| o as u32), Some(v));
+        }
+        assert_eq!(BoundOp::from_u32(3), None);
+    }
+
+    /// The two-bound operators are scsynth's `sc_clip`/`sc_wrap`/`sc_fold`,
+    /// and the symmetric operators are the special case `lo = -b, hi = b`.
+    #[test]
+    fn bound_ops_generalize_the_symmetric_ones() {
+        assert_eq!(apply_bound(BoundOp::Clip, 5.0, 1.0, 3.0), 3.0);
+        assert_eq!(apply_bound(BoundOp::Clip, -5.0, 1.0, 3.0), 1.0);
+        assert!(apply_bound(BoundOp::Clip, f32::NAN, 1.0, 3.0).is_nan());
+        assert_eq!(apply_bound(BoundOp::Wrap, 3.5, 1.0, 3.0), 1.5);
+        assert_eq!(apply_bound(BoundOp::Fold, 3.5, 1.0, 3.0), 2.5);
+        for i in -40..40 {
+            let x = i as f32 * 0.37;
+            let b = 1.25;
+            let pairs = [
+                (BoundOp::Clip, BinaryOp::Clip2),
+                (BoundOp::Wrap, BinaryOp::Wrap2),
+                (BoundOp::Fold, BinaryOp::Fold2),
+            ];
+            for (bound, sym) in pairs {
+                assert_eq!(apply_bound(bound, x, -b, b), apply_binary(sym, x, b), "{x}");
+            }
+        }
+        for name in ["clip", "wrap", "fold"] {
+            assert_eq!(BoundOp::from_name(name).map(|o| o.name()), Some(name));
+        }
     }
 
     #[test]

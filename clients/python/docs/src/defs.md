@@ -406,7 +406,7 @@ Two conventions carry the family. **`repeats=0` is endless** — sclang writes `
 
 ### Maths on a UGen graph
 
-Beyond the four arithmetic operators, the **full unary/binary maths** works on a SynthDef graph: `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()`, `.distort()`, `.clip2(x)` and the rest compose the server's generic **`BinaryOpUGen`/`UnaryOpUGen`**, each carrying the operator by name. It is the same operation set the value side (`clausters.base.builtins`) computes — one shared `clausters-core` implementation — so a value you compute ahead of time and the UGen on the audio thread agree **bit-for-bit** for the native ops.
+Beyond the four arithmetic operators, the **full unary/binary maths** works on a SynthDef graph: `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()`, `.distort()`, `.clip2(x)` and the rest compose the server's generic **`BinaryOpUGen`/`UnaryOpUGen`**, each carrying the operator by name, and `.clip(lo, hi)`, `.wrap(lo, hi)` and `.fold(lo, hi)` compose the `Clip`/`Wrap`/`Fold` UGens. It is the same operation set the value side (`clausters.base.builtins`) computes — one shared `clausters-core` implementation — so a value you compute ahead of time and the UGen on the audio thread agree **bit-for-bit** for the native ops.
 
 ```python
 from clausters.defs import SynthDef, control, sine, out

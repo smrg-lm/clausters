@@ -1,7 +1,7 @@
 //! The numeric builtins: the op tables, noise, smoothing windows, the peak-pyramid caches and the stereo-field measurements.
 
 use super::*;
-use clausters_core::builtins::{self, BinaryOp, UnaryOp};
+use clausters_core::builtins::{self, BinaryOp, BoundOp, UnaryOp};
 use clausters_core::measure;
 use clausters_core::warp;
 
@@ -60,6 +60,49 @@ pub unsafe extern "C" fn clausters_core_binary(
     let bv = unsafe { std::slice::from_raw_parts(b, b_len) };
     let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
     builtins::binary_slice(op, av, bv, o);
+    0
+}
+
+/// Applies two-bound operator `op` (`clip`/`wrap`/`fold`, a `BoundOp`) to `x`
+/// between `lo` and `hi`, each broadcast if its length is 1, into `out`,
+/// writing `n` samples. Same return codes as [`clausters_core_unary`].
+///
+/// # Safety
+/// `x`/`lo`/`hi` must be readable for their lengths in `f32`s, `out` writable
+/// for `n`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn clausters_core_bound(
+    op: u32,
+    x: *const f32,
+    x_len: usize,
+    lo: *const f32,
+    lo_len: usize,
+    hi: *const f32,
+    hi_len: usize,
+    out: *mut f32,
+    n: usize,
+) -> i32 {
+    let Some(op) = BoundOp::from_u32(op) else {
+        return -1;
+    };
+    let ok_len = |l: usize| l == 1 || l == n;
+    if x.is_null()
+        || lo.is_null()
+        || hi.is_null()
+        || out.is_null()
+        || !ok_len(x_len)
+        || !ok_len(lo_len)
+        || !ok_len(hi_len)
+    {
+        return -2;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let xv = unsafe { std::slice::from_raw_parts(x, x_len) };
+    let lv = unsafe { std::slice::from_raw_parts(lo, lo_len) };
+    let hv = unsafe { std::slice::from_raw_parts(hi, hi_len) };
+    let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
+    builtins::bound_slice(op, xv, lv, hv, o);
     0
 }
 

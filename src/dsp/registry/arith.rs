@@ -4,6 +4,7 @@
 //! `super::FAMILIES` concatenates them all.
 
 use super::*;
+use clausters_core::builtins::BoundOp;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
     // --- arithmetic: the generic op UGens, selected by a core opcode
@@ -24,6 +25,41 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_op("RangeMapUGen", Fixed(6), I_MAP, OpFamily::Map, |c, _| {
         Box::new(RangeMap::from_index(c.op.unwrap_or(0), c.clip.unwrap_or(0)))
     }),
+    // An input kept inside `lo..hi`: `clausters_core::builtins::apply_bound`,
+    // the function a client clips, wraps or folds a value with.
+    desc(
+        "Clip",
+        Fixed(3),
+        I_BOUND,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Bound::new(BoundOp::Clip)),
+    ),
+    desc(
+        "Wrap",
+        Fixed(3),
+        I_BOUND,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Bound::new(BoundOp::Wrap)),
+    ),
+    desc(
+        "Fold",
+        Fixed(3),
+        I_BOUND,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Bound::new(BoundOp::Fold)),
+    ),
     // Fused forms scsynth optimizes (fixed kinds, not op-table entries).
     desc(
         "MulAdd",

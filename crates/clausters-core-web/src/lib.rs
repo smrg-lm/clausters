@@ -1130,6 +1130,16 @@ pub fn binary(op: &str, a: f64, b: f64) -> Result<f64, JsError> {
     Ok(builtins::apply_binary(op, a as f32, b as f32) as f64)
 }
 
+/// JS face: one two-bound operator by name (`"clip"`, `"wrap"`, `"fold"`),
+/// keeping `x` inside `lo..hi`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bound(op: &str, x: f64, lo: f64, hi: f64) -> Result<f64, JsError> {
+    let op = builtins::BoundOp::from_name(op)
+        .ok_or_else(|| JsError::new(&format!("unknown bound op '{op}'")))?;
+    Ok(builtins::apply_bound(op, x as f32, lo as f32, hi as f32) as f64)
+}
+
 /// JS face: one range map by name (`"linlin"`, `"linexp"`, `"lincurve"`, ...),
 /// with `clip` naming what an out-of-range input is trimmed to (`"minmax"`,
 /// `"min"`, `"max"`, `"none"`). `curve` is read only by the bent pair and the

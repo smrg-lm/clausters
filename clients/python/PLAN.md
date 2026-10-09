@@ -2135,15 +2135,22 @@ Measured while opening the arc (2026-10-09):
   vectors moved where expected: a `pow` of a negative base that was NaN is a
   value, and one `cpsoct` an ulp. `docs/schemas.md` says which meaning each
   operator has.
-- ⬜ **C65 — The operators scsynth has and the core does not.** Unary: `bitnot`,
-  `distortneg`, `rectwindow`, `hanwindow`, `welwindow`, `triwindow`, `ramp`,
-  `scurve`. Binary: `idiv`, `roundup`, `urshift`, `amclip`, `scaleneg`,
-  `firstarg`. And `Clip`/`Wrap`/`Fold` with two bounds, as UGens, as methods on
-  a graph node and as builtins — today only the symmetric `clip2`/`wrap2`/
-  `fold2` exist. The windows are not `clausters_core::window`: that fills an
-  FFT frame of `n` samples, and these take a phase in `[0, 1]` and are zero
-  outside it. Appended to the op tables (the discriminants are append-only),
-  in `docs/schemas.md`, both clients' graph builders and `builtins`.
+- ✅ **C65 — The operators scsynth has and the core does not** *(done
+  2026-10-09)*. Unary `bitnot`, `rectwindow`, `hanwindow`, `welwindow`,
+  `triwindow`, `ramp`, `scurve`; binary `idiv`, `roundup`, `urshift`,
+  `amclip`, `scaleneg`, `firstarg` — appended to the op tables, reached by both
+  clients' `builtins`, their graph methods and the per-bin programs. And
+  `Clip`/`Wrap`/`Fold(in, lo, hi)`: a `BoundOp` table in the core
+  (`apply_bound`, `bound_slice`), three server kinds, `.clip/.wrap/.fold(lo,
+  hi)` on a graph node and `clip`/`wrap`/`fold` in `builtins`, over a new C
+  door and wasm export (`clausters_core_bound`/`bound`). `distortneg` was left
+  out: scsynth defines it and dispatches nothing to it, and sclang has no such
+  method. **Measured** against scsynth's definitions from its headers: every
+  one agrees on all 24 001 arguments of a sweep, the windows' mixed
+  `f32`/`f64` precision included. The header's own `float` `sc_scaleneg` is
+  wrong below zero and unused by any kernel; the core takes the kernels' form
+  (`docs/decisions.md`, "`scaleneg` is the UGen kernels' form"). The example
+  is `C69`'s.
 - ⬜ **C66 — Random values, named as sclang names them.** The distributions —
   `rand`, `rand2`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
   `coin`, `choose`, `wchoose`, `gauss` — in `clausters_core::rng`, with

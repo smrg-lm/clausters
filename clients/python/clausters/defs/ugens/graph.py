@@ -26,7 +26,8 @@ _BINOP_OPS = frozenset({
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
-    "lcm", "hypotapx",
+    "lcm", "hypotapx", "idiv", "roundup", "urshift", "amclip", "scaleneg",
+    "firstarg",
 })
 #: The range maps (`clausters_core::warp`), composed as a ``RangeMapUGen``
 #: whose ``op`` is the map's name -- the **same** function
@@ -43,8 +44,13 @@ _UNOP_OPS = frozenset({
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
-    "dbamp", "ampdb", "octcps", "cpsoct",
+    "dbamp", "ampdb", "octcps", "cpsoct", "bitnot", "rectwindow",
+    "hanwindow", "welwindow", "triwindow", "ramp", "scurve",
 })
+#: The operators with two bounds, each its own UGen kind as sclang names it
+#: (``Clip.ar(in, lo, hi)``) -- the same function `clausters.base.builtins`
+#: clips, wraps or folds a value with.
+_BOUND_UGEN = {"clip": "Clip", "wrap": "Wrap", "fold": "Fold"}
 
 
 class _RangeMaps:
@@ -99,11 +105,30 @@ class _RangeMaps:
         return self._compose_narop(
             "curvelin", in_lo, in_hi, out_lo, out_hi, curve, clip=clip)
 
+    # ---- two bounds: the general form of clip2/wrap2/fold2, each the
+    # Clip/Wrap/Fold UGen of the same name.
+
+    def clip(self, lo, hi):
+        """This signal held inside ``lo..hi`` at the nearer bound."""
+        return self._compose_narop("clip", lo, hi)
+
+    def wrap(self, lo, hi):
+        """This signal wrapped into ``lo..hi`` -- taken modulo the range."""
+        return self._compose_narop("wrap", lo, hi)
+
+    def fold(self, lo, hi):
+        """This signal folded into ``lo..hi`` -- reflected at the bounds."""
+        return self._compose_narop("fold", lo, hi)
+
 
 def _map_ugen(node, selector, args, clip):
     """One ``RangeMapUGen`` over ``node``. The clip rides as static config and
     is omitted when it is the wire's own default, so a def that says nothing
-    about trimming carries nothing about it."""
+    about trimming carries nothing about it. ``clip``/``wrap``/``fold`` are the
+    two-bound UGen of that name instead, which has no clip mode of its own."""
+    kind = _BOUND_UGEN.get(selector)
+    if kind is not None:
+        return Ugen(kind, [node, *args])
     if selector not in _MAP_OPS:
         raise TypeError(f"no n-ary UGen for {selector!r}")
     static = None if clip == "minmax" else {"clip": str(clip)}

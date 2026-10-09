@@ -172,6 +172,22 @@ def test_range_maps_compose_one_map_ugen():
         sine(1.0)._compose_narop("range", 0.0, 1.0)
 
 
+def test_two_bounds_compose_their_own_ugen():
+    # clip/wrap/fold between two bounds are each the UGen of that name, with
+    # the bounds as ordinary (modulatable) inputs; the operators taken from
+    # scsynth's table compose the generic op UGens like every other.
+    lfo = sine(0.2)
+    for name, kind in (("clip", "Clip"), ("wrap", "Wrap"), ("fold", "Fold")):
+        spec = SynthDef("k", out(0.0, getattr(lfo, name)(-0.5, sine(0.1)))).spec()
+        assert spec["ugens"][-2] == {
+            "kind": kind, "inputs": [{"ugen": 0}, {"const": -0.5}, {"ugen": 1}],
+        }
+    both = SynthDef("l", out(0.0, chans(sine(1.0), sine(2.0)).fold(0.0, 1.0))).spec()
+    assert [u["kind"] for u in both["ugens"]].count("Fold") == 2
+    assert SynthDef("h", out(0.0, lfo.hanwindow())).spec()["ugens"][-2]["op"] == "hanwindow"
+    assert SynthDef("s", out(0.0, lfo.scaleneg(0.5))).spec()["ugens"][-2]["op"] == "scaleneg"
+
+
 def test_unknown_selector_raises():
     # A selector with no UGen (not part of the operator surface) still fails.
     a = sine(100.0)

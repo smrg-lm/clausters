@@ -1159,6 +1159,12 @@ export function beats_to_secs(tempo: number, base_beats: number, base_seconds: n
 export function binary(op: string, a: number, b: number): number;
 
 /**
+ * JS face: one two-bound operator by name (`"clip"`, `"wrap"`, `"fold"`),
+ * keeping `x` inside `lo..hi`.
+ */
+export function bound(op: string, x: number, lo: number, hi: number): number;
+
+/**
  * JS face: what one instance of a bundle needs allocated.
  * `bundle_requirements(requestJson) -> requirementsJson`, the request holding
  * the manifest and -- for a bundle written before the contract, whose widget
@@ -1974,6 +1980,7 @@ export interface InitOutput {
     readonly beat_in_bar: (a: number, b: number) => number;
     readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
     readonly binary: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly bound: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
     readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
     readonly bundle_validate: (a: number, b: number) => [number, number];

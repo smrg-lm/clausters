@@ -69,12 +69,20 @@ DEGREES = [
 
 UNARY = ["midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp", "ampdb",
          "octcps", "cpsoct", "squared", "cubed", "reciprocal", "distort",
-         "softclip", "log2", "tanh", "frac", "sign"]
-UNARY_INPUTS = [60.0, 69.0, 440.0, 0.5, -0.5, 1.5, 3.0, -12.0]
+         "softclip", "log2", "tanh", "frac", "sign", "sqrt", "log10",
+         "bitnot", "rectwindow", "hanwindow", "welwindow", "triwindow",
+         "ramp", "scurve"]
+UNARY_INPUTS = [60.0, 69.0, 440.0, 0.5, -0.5, 1.5, 3.0, -12.0, 0.25, 0.8]
 
 BINARY = ["add", "sub", "mul", "div", "pow", "min", "max", "round", "trunc",
-          "wrap2", "fold2", "clip2", "absdif", "thresh", "hypot"]
-BINARY_INPUTS = [(3.0, 2.0), (-1.5, 0.25), (440.0, 1.5), (0.7, 0.3)]
+          "wrap2", "fold2", "clip2", "absdif", "thresh", "hypot", "mod",
+          "idiv", "roundup", "urshift", "amclip", "scaleneg", "firstarg"]
+BINARY_INPUTS = [(3.0, 2.0), (-1.5, 0.25), (440.0, 1.5), (0.7, 0.3),
+                 (-7.0, 3.0)]
+
+BOUND = ["clip", "wrap", "fold"]
+BOUND_INPUTS = [(5.0, 1.0, 3.0), (-5.0, 1.0, 3.0), (2.0, 1.0, 3.0),
+                (3.5, 1.0, 3.0), (-0.75, -0.5, 0.5), (12.3, 0.0, 1.0)]
 
 # The unix timestamps stamped into bundle timetags, and the /clock_query anchors a
 # sample-locked client schedules through.
@@ -246,6 +254,11 @@ def main():
         "binary": [
             {"op": op, "a": a, "b": b, "y": jnum(getattr(builtins, op)(a, b))}
             for op in BINARY for (a, b) in BINARY_INPUTS
+        ],
+        "bound": [
+            {"op": op, "x": x, "lo": lo, "hi": hi,
+             "y": jnum(getattr(builtins, op)(x, lo, hi))}
+            for op in BOUND for (x, lo, hi) in BOUND_INPUTS
         ],
         "rng": [rng_run(seed) for seed in SEEDS],
     }

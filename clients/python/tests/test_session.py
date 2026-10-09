@@ -389,6 +389,9 @@ _NO_CALLABLE = {
     "BinaryOpUGen": "built by every other binary selector on a graph node",
     "UnaryOpUGen": "built by every unary selector method on a graph node",
     "RangeMapUGen": "built by every range-map method on a graph node",
+    "Clip": "built by the `clip(lo, hi)` method on a graph node",
+    "Wrap": "built by the `wrap(lo, hi)` method on a graph node",
+    "Fold": "built by the `fold(lo, hi)` method on a graph node",
 }
 
 

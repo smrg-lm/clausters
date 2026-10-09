@@ -97,6 +97,12 @@ export abstract class AbstractObject<
     wrap2<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("wrap2", x); }
     gcd<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("gcd", x); }
     lcm<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("lcm", x); }
+    idiv<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("idiv", x); }
+    roundup<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("roundup", x); }
+    urshift<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("urshift", x); }
+    amclip<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("amclip", x); }
+    scaleneg<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("scaleneg", x); }
+    firstarg<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("firstarg", x); }
 
     // --- unary ---
     neg(): TSelf { return this.unop("neg"); }
@@ -137,4 +143,11 @@ export abstract class AbstractObject<
     ampdb(): TSelf { return this.unop("ampdb"); }
     octcps(): TSelf { return this.unop("octcps"); }
     cpsoct(): TSelf { return this.unop("cpsoct"); }
+    bitnot(): TSelf { return this.unop("bitnot"); }
+    rectwindow(): TSelf { return this.unop("rectwindow"); }
+    hanwindow(): TSelf { return this.unop("hanwindow"); }
+    welwindow(): TSelf { return this.unop("welwindow"); }
+    triwindow(): TSelf { return this.unop("triwindow"); }
+    ramp(): TSelf { return this.unop("ramp"); }
+    scurve(): TSelf { return this.unop("scurve"); }
 }

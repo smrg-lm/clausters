@@ -601,6 +601,155 @@
       }
     },
     {
+      "name": "two_bounds",
+      "spec": {
+        "name": "bounds",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.3
+              }
+            ]
+          },
+          {
+            "kind": "Fold",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": -0.5
+              },
+              {
+                "const": 0.5
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.1
+              }
+            ]
+          },
+          {
+            "kind": "Wrap",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          },
+          {
+            "kind": "UnaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 4
+              }
+            ],
+            "op": "hanwindow"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "ugen": 5
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 5.0
+              }
+            ]
+          },
+          {
+            "kind": "Clip",
+            "inputs": [
+              {
+                "ugen": 7
+              },
+              {
+                "const": -0.25
+              },
+              {
+                "const": 0.75
+              }
+            ]
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 8
+              },
+              {
+                "const": 0.5
+              }
+            ],
+            "op": "scaleneg"
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "const": 0.125
+              }
+            ],
+            "op": "roundup"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 6
+              },
+              {
+                "ugen": 10
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 11
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "mix_fold",
       "spec": {
         "name": "fold",

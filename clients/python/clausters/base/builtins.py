@@ -20,6 +20,7 @@ from .. import _native
 
 BinaryOp = _native.BinaryOp
 UnaryOp = _native.UnaryOp
+BoundOp = _native.BoundOp
 MapOp = _native.MapOp
 Clip = _native.Clip
 
@@ -71,6 +72,21 @@ def _binop(op, a, b):
     return list(_native.binary(op, float(a), [float(v) for v in b]))
 
 
+def _boundop(op, x, lo, hi):
+    args = (x, lo, hi)
+    seqs = [_is_seq(v) for v in args]
+    if not _py.any(seqs):
+        return _native.bound(op, float(x), float(lo), float(hi))
+    n = _py.max(len(v) for v, q in zip(args, seqs) if q)
+    # A sequence extends cyclically (sc3's rule); a scalar is a constant the
+    # core broadcasts.
+    x, lo, hi = (
+        [float(e) for e in _extend(v, n)] if q else float(v)
+        for v, q in zip(args, seqs)
+    )
+    return list(_native.bound(op, x, lo, hi))
+
+
 # ---- binary primitives (native, f32) ----
 
 def add(a, b): return _binop(BinaryOp.ADD, a, b)
@@ -113,6 +129,34 @@ def wrap2(a, b): return _binop(BinaryOp.WRAP2, a, b)
 def gcd(a, b): return _binop(BinaryOp.GCD, a, b)
 def lcm(a, b): return _binop(BinaryOp.LCM, a, b)
 def hypotapx(a, b): return _binop(BinaryOp.HYPOT_APX, a, b)
+def idiv(a, b): return _binop(BinaryOp.IDIV, a, b)
+def roundup(a, b): return _binop(BinaryOp.ROUNDUP, a, b)
+def urshift(a, b): return _binop(BinaryOp.URSHIFT, a, b)
+def amclip(a, b): return _binop(BinaryOp.AMCLIP, a, b)
+def scaleneg(a, b): return _binop(BinaryOp.SCALENEG, a, b)
+def firstarg(a, b): return _binop(BinaryOp.FIRSTARG, a, b)
+
+
+# ---- two bounds (native, f32) ----
+#
+# The general form of `clip2`/`wrap2`/`fold2`, whose range is the symmetric
+# ``-b..b``: the value kept inside ``lo..hi``. The server's ``Clip``/``Wrap``/
+# ``Fold`` UGens are the same function over a signal.
+
+def clip(x, lo, hi):
+    """`x` held inside ``lo..hi`` at the nearer bound."""
+    return _boundop(BoundOp.CLIP, x, lo, hi)
+
+
+def wrap(x, lo, hi):
+    """`x` wrapped into ``lo..hi`` -- taken modulo the range."""
+    return _boundop(BoundOp.WRAP, x, lo, hi)
+
+
+def fold(x, lo, hi):
+    """`x` folded into ``lo..hi`` -- reflected at the bounds, as many times
+    as it takes."""
+    return _boundop(BoundOp.FOLD, x, lo, hi)
 
 
 # ---- unary primitives (native, f32) ----
@@ -145,6 +189,20 @@ def cosh(x): return _unop(UnaryOp.COSH, x)
 def tanh(x): return _unop(UnaryOp.TANH, x)
 def distort(x): return _unop(UnaryOp.DISTORT, x)
 def softclip(x): return _unop(UnaryOp.SOFTCLIP, x)
+def bitnot(x): return _unop(UnaryOp.BITNOT, x)
+def ramp(x): return _unop(UnaryOp.RAMP, x)
+def scurve(x): return _unop(UnaryOp.SCURVE, x)
+
+
+# ---- windows over a phase (native, f32) ----
+#
+# A window's shape read at one phase in ``0..1``, zero outside it -- the
+# operator, not an FFT frame (`clausters._native.window` fills one of those).
+
+def rectwindow(x): return _unop(UnaryOp.RECTWINDOW, x)
+def hanwindow(x): return _unop(UnaryOp.HANWINDOW, x)
+def welwindow(x): return _unop(UnaryOp.WELWINDOW, x)
+def triwindow(x): return _unop(UnaryOp.TRIWINDOW, x)
 
 
 # ---- music-theory conversions (native, f32 -- bit-identical to the server) ----
@@ -276,6 +334,9 @@ UNARY = {
     "tanh": tanh, "distort": distort, "softclip": softclip, "midicps": midicps,
     "cpsmidi": cpsmidi, "midiratio": midiratio, "ratiomidi": ratiomidi,
     "dbamp": dbamp, "ampdb": ampdb, "octcps": octcps, "cpsoct": cpsoct,
+    "bitnot": bitnot, "rectwindow": rectwindow, "hanwindow": hanwindow,
+    "welwindow": welwindow, "triwindow": triwindow, "ramp": ramp,
+    "scurve": scurve,
 }
 BINARY = {
     "add": add, "sub": sub, "mul": mul, "div": div, "mod": mod, "pow": pow,
@@ -286,5 +347,8 @@ BINARY = {
     "sumsqr": sumsqr, "difsqr": difsqr, "sqrsum": sqrsum, "sqrdif": sqrdif,
     "absdif": absdif, "thresh": thresh, "clip2": clip2, "excess": excess,
     "round": round, "trunc": trunc, "fold2": fold2, "wrap2": wrap2,
-    "gcd": gcd, "lcm": lcm, "hypotapx": hypotapx,
+    "gcd": gcd, "lcm": lcm, "hypotapx": hypotapx, "idiv": idiv,
+    "roundup": roundup, "urshift": urshift, "amclip": amclip,
+    "scaleneg": scaleneg, "firstarg": firstarg,
 }
+BOUND = {"clip": clip, "wrap": wrap, "fold": fold}

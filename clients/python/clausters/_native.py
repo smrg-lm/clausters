@@ -107,6 +107,12 @@ class BinaryOp(IntEnum):
     GCD = 37
     LCM = 38
     HYPOT_APX = 39
+    IDIV = 40
+    ROUNDUP = 41
+    URSHIFT = 42
+    AMCLIP = 43
+    SCALENEG = 44
+    FIRSTARG = 45
 
 
 class UnaryOp(IntEnum):
@@ -149,6 +155,22 @@ class UnaryOp(IntEnum):
     CPSOCT = 34
     DISTORT = 35
     SOFTCLIP = 36
+    BITNOT = 37
+    RECTWINDOW = 38
+    HANWINDOW = 39
+    WELWINDOW = 40
+    TRIWINDOW = 41
+    RAMP = 42
+    SCURVE = 43
+
+
+class BoundOp(IntEnum):
+    """The operators with two bounds; discriminants match
+    ``clausters_core::builtins::BoundOp``."""
+
+    CLIP = 0
+    WRAP = 1
+    FOLD = 2
 
 
 class MapOp(IntEnum):
@@ -439,6 +461,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
     # per crossing. The map's own numbers are scalars -- one range for the
     # sequence, not a range per element.
+    lib.clausters_core_bound.restype = ctypes.c_int32
+    lib.clausters_core_bound.argtypes = [
+        ctypes.c_uint32, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t,
+        f32p, ctypes.c_size_t, f32p, ctypes.c_size_t,
+    ]
     lib.clausters_core_map.restype = ctypes.c_int32
     lib.clausters_core_map.argtypes = [
         ctypes.c_uint32, ctypes.c_uint32, f32p, ctypes.c_size_t,
@@ -3146,6 +3173,26 @@ def binary(op: int, a, b):
     if rc != 0:
         raise ValueError(f"clausters_core_binary failed ({rc})")
     return out[0] if (a_scalar and b_scalar) else out
+
+
+def bound(op: int, x, lo, hi):
+    """Applies two-bound operator `op` (a `BoundOp`) with the core's broadcast
+    rule (a length-1 operand is a constant). Returns a float when every input
+    is a scalar, else an `array('f')` of the broadcast length."""
+    xv, x_scalar = _as_array(x)
+    lv, lo_scalar = _as_array(lo)
+    hv, hi_scalar = _as_array(hi)
+    n = max(len(xv), len(lv), len(hv))
+    if any(len(v) not in (1, n) for v in (xv, lv, hv)):
+        raise ValueError(f"length mismatch: {len(xv)}, {len(lv)}, {len(hv)}")
+    out = array("f", bytes(4 * n))
+    rc = lib().clausters_core_bound(
+        int(op), _ptr(xv), len(xv), _ptr(lv), len(lv), _ptr(hv), len(hv),
+        _ptr(out), n,
+    )
+    if rc != 0:
+        raise ValueError(f"clausters_core_bound failed ({rc})")
+    return out[0] if (x_scalar and lo_scalar and hi_scalar) else out
 
 
 def map_range(op: int, clip: int, x, in_lo: float, in_hi: float,

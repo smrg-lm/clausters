@@ -21,6 +21,7 @@ pub mod wavetable;
 // directly and only touch the core types above.
 #[cfg(feature = "synth")]
 pub mod binop;
+pub mod bound;
 #[cfg(feature = "synth")]
 pub mod buf;
 // `conv` is listed with the core modules below: its kernel layout is data

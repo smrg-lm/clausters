@@ -81,6 +81,7 @@ interface Vectors {
     }[];
     unary: { op: string; x: number; y: number | string }[];
     binary: { op: string; a: number; b: number; y: number | string }[];
+    bound: { op: string; x: number; lo: number; hi: number; y: number | string }[];
     rng: {
         seed: number; floats: number[]; below: number[]; childFloats: number[];
         afterSpawn: number[]; uniform: number[];
@@ -296,6 +297,14 @@ test("the builtins compute in f32, as the server does", () => {
             b: number,
         ) => number;
         assertSame(c.op, fn(c.a, c.b), expected(c.y), `${c.op}(${c.a}, ${c.b})`);
+    }
+    for (const c of v.bound) {
+        const fn = (builtins as Record<string, unknown>)[c.op] as (
+            x: number,
+            lo: number,
+            hi: number,
+        ) => number;
+        assertSame(c.op, fn(c.x, c.lo, c.hi), expected(c.y), `${c.op}(${c.x}, ${c.lo}, ${c.hi})`);
     }
 });
 

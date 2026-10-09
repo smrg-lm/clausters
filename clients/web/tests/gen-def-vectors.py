@@ -107,6 +107,19 @@ def synth_cases():
         ).spec(),
     ))
 
+    # The two-bound kinds and the operators taken from scsynth's table: a
+    # signal folded, wrapped and clipped between bounds (one of them a signal),
+    # shaped by a window and scaled on its negative half.
+    cases.append((
+        "two_bounds",
+        SynthDef(
+            "bounds",
+            out(0.0, sine(0.3).fold(-0.5, 0.5)
+                * sine(2.0).wrap(0.0, sine(0.1)).hanwindow()
+                * sine(5.0).clip(-0.25, 0.75).scaleneg(0.5).roundup(0.125)),
+        ).spec(),
+    ))
+
     # The fused forms and a mix fold (sum4 + sum3 chunking).
     voices = [sine(110.0 * (n + 1)) for n in range(7)]
     cases.append((

@@ -109,6 +109,13 @@ class AbstractObject:
     def ampdb(self): return self._compose_unop("ampdb")
     def octcps(self): return self._compose_unop("octcps")
     def cpsoct(self): return self._compose_unop("cpsoct")
+    def bitnot(self): return self._compose_unop("bitnot")
+    def rectwindow(self): return self._compose_unop("rectwindow")
+    def hanwindow(self): return self._compose_unop("hanwindow")
+    def welwindow(self): return self._compose_unop("welwindow")
+    def triwindow(self): return self._compose_unop("triwindow")
+    def ramp(self): return self._compose_unop("ramp")
+    def scurve(self): return self._compose_unop("scurve")
 
     # --- named binary methods ---
 
@@ -122,6 +129,12 @@ class AbstractObject:
     def clip2(self, other): return self._compose_binop("clip2", other)
     def fold2(self, other): return self._compose_binop("fold2", other)
     def wrap2(self, other): return self._compose_binop("wrap2", other)
+    def idiv(self, other): return self._compose_binop("idiv", other)
+    def roundup(self, other): return self._compose_binop("roundup", other)
+    def urshift(self, other): return self._compose_binop("urshift", other)
+    def amclip(self, other): return self._compose_binop("amclip", other)
+    def scaleneg(self, other): return self._compose_binop("scaleneg", other)
+    def firstarg(self, other): return self._compose_binop("firstarg", other)
     def gcd(self, other): return self._compose_binop("gcd", other)
     def lcm(self, other): return self._compose_binop("lcm", other)
     def excess(self, other): return self._compose_binop("excess", other)

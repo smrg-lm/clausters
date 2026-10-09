@@ -37,7 +37,8 @@ export const BINOP_OPS = new Set([
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
-    "lcm", "hypotapx",
+    "lcm", "hypotapx", "idiv", "roundup", "urshift", "amclip", "scaleneg",
+    "firstarg",
 ]);
 /**
  * @internal -- the range maps a `RangeMapUGen` may carry (`clausters_core`'s
@@ -57,8 +58,17 @@ export const UNOP_OPS = new Set([
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
-    "dbamp", "ampdb", "octcps", "cpsoct",
+    "dbamp", "ampdb", "octcps", "cpsoct", "bitnot", "rectwindow",
+    "hanwindow", "welwindow", "triwindow", "ramp", "scurve",
 ]);
+/**
+ * @internal -- the operators with two bounds, each its own UGen kind as sclang
+ * names it (`Clip.ar(in, lo, hi)`): the same function `base/builtins` clips,
+ * wraps or folds a value with.
+ */
+export const BOUND_UGEN: Readonly<Record<string, string>> = {
+    clip: "Clip", wrap: "Wrap", fold: "Fold",
+};
 
 /**
  * One channel of signal: a leaf node (`Ugen`/`Control`) or a plain number (a
@@ -161,6 +171,24 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
              curve: Channel = -4.0, clip = "minmax"): TSelf {
         return this.narop("curvelin", [inLo, inHi, outLo, outHi, curve], clip);
     }
+
+    // ---- two bounds: the general form of `clip2`/`wrap2`/`fold2`, each the
+    // `Clip`/`Wrap`/`Fold` UGen of the same name.
+
+    /** This signal held inside `lo..hi` at the nearer bound. */
+    clip(lo: Channel, hi: Channel): TSelf {
+        return this.narop("clip", [lo, hi], "minmax");
+    }
+
+    /** This signal wrapped into `lo..hi` -- taken modulo the range. */
+    wrap(lo: Channel, hi: Channel): TSelf {
+        return this.narop("wrap", [lo, hi], "minmax");
+    }
+
+    /** This signal folded into `lo..hi` -- reflected at the bounds. */
+    fold(lo: Channel, hi: Channel): TSelf {
+        return this.narop("fold", [lo, hi], "minmax");
+    }
 }
 
 /**
@@ -229,7 +257,8 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
 /**
  * One `RangeMapUGen` over `node`. The clip rides as static config and is
  * omitted when it is the wire's own default, so a def that says nothing about
- * trimming carries nothing about it.
+ * trimming carries nothing about it. `clip`/`wrap`/`fold` are the two-bound
+ * UGen of that name instead, which has no clip mode of its own.
  */
 function mapUgen(
     node: Channel,
@@ -237,6 +266,8 @@ function mapUgen(
     args: readonly Channel[],
     clip: string,
 ): Ugen {
+    const kind = BOUND_UGEN[selector];
+    if (kind !== undefined) return new Ugen(kind, [node, ...args]);
     if (!MAP_OPS.has(selector)) {
         throw new TypeError(`no n-ary UGen for '${selector}'`);
     }

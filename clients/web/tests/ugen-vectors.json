@@ -484,6 +484,24 @@
       ]
     },
     {
+      "name": "Clip",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "in",
+          "default": 0.0
+        },
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "ClipCount",
       "arity": 3,
       "inputs": [
@@ -1048,6 +1066,24 @@
         },
         {
           "name": "active",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Fold",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "in",
+          "default": 0.0
+        },
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
           "default": 1.0
         }
       ]
@@ -2602,6 +2638,24 @@
       "name": "WhiteNoise",
       "arity": 0,
       "inputs": []
+    },
+    {
+      "name": "Wrap",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "in",
+          "default": 0.0
+        },
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        }
+      ]
     },
     {
       "name": "XFade2",
