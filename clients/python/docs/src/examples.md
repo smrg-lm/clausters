@@ -45,4 +45,4 @@ including the browser quick-start, is documented in the [Clausters server
 book](https://clausters.readthedocs.io/)'s clients chapter. `editors/edit_multitrack.py` is the one to
 open first for a multitrack placed in time: lanes of audio clips on one shared axis,
 edited and played by the multitrack editor `edit` opens (see
-[The document](composition.md)).
+[The document](document.md)).

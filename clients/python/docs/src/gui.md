@@ -934,7 +934,7 @@ A **multitrack is one widget**, and it is the multitrack editor's.
 `edit(multitrack)` over a `clausters.multitrack.Multitrack` opens it: the shared
 crate draws the document — a row per track, a box per region, the automation
 over both — and every edit a hand makes there lands on the document, in its
-history, rather than in the widget (the [composition](composition.md) chapter
+history, rather than in the widget (the [document](document.md) chapter
 is where that is taught). There is no builder for it on this surface: a
 multitrack drawn with nothing behind it would have nowhere to keep what a hand
 did to it.
@@ -965,7 +965,7 @@ from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
 `curve`, `nodes` and `keys` are the model's names; `bpf`, `nodetree` and
 `piano` are the same builder under the name the catalog used. The `notes`
 element, the piano roll, has no builder: it is the notes editor's, opened over
-an `EventSequence` with `edit` ([the document](composition.md)).
+an `EventSequence` with `edit` ([the document](document.md)).
 
 ## Planes: a workspace and a patcher
 
@@ -1199,7 +1199,7 @@ two phases, several instruments in one document — is the
   properties — is the server guide's
   [GUI protocol chapter](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
 - A multitrack is drawn by one `multitrack` widget, and what it holds is the
-  document's: the [document chapter](composition.md) is the layer above.
+  document's: the [document chapter](document.md) is the layer above.
 - The runnable demos live in `clients/python/examples/`, one capability each;
   `window.py` is the "first pixels" one to start from.
 - Everything above used the shortcuts, which is what a script reaches for.

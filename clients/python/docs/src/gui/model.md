@@ -121,7 +121,7 @@ from clausters.gui import curve, keys, label, meter, nodes, score, signal
 The `notes` element — MIDI notes over a pitch axis, the piano roll — has no
 builder: a roll drawn over no sequence has nowhere to keep an edit, so it is
 the notes editor's, opened over an `EventSequence` with `edit`
-([the document](../composition.md)).
+([the document](../document.md)).
 
 The controls — `knob`, `slider`, `number`, `button`, `toggle`, `text`, `choice` —
 are elements with a value and no axis, and they did not move: a knob names what

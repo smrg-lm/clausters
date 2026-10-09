@@ -13,7 +13,7 @@ designed around it, and it has **no view**: do not extend it, do not project a
 picture out of it, and do not read its shape as the model a multitrack is built
 on. What is fundamental is the data — samples, notes, events, curves — and the
 model an application edits is the **document**
-([The document](composition.md)).
+([The document](document.md)).
 
 ## What happened, and why it is structural
 

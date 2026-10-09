@@ -170,7 +170,7 @@ generated/generator split the arrangement is built on: an element still needs
 its change of state (the flatten/bounce), so its door is `render` —
 `play(element)` raises a `TypeError` that points there. A flat `Timeline`,
 being already generated, *is* playable. The full story is in
-[The document](composition.md); the design record lives in the server book.
+[The document](document.md); the design record lives in the server book.
 
 ## Caveats
 

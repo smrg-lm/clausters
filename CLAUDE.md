@@ -367,7 +367,7 @@ on trust, so that is where drift accumulates:
   designed around it; `clients/python/docs/src/form.md` is its whole
   documentation and says why — the step-by-step tutorial that taught it as *the*
   way to compose was deleted with it (2026-09-08), and
-  `clients/python/docs/src/composition.md` is the document's chapter, not
+  `clients/python/docs/src/document.md` is the document's chapter, not
   `form`'s. Do not extend it, do not project a view out of it,
   and do not treat its shape as the arrangement's.
 
