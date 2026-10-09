@@ -23,8 +23,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             session::py_eval,
-            session::py_help,
-            session::py_inspect,
+            session::py_query,
             session::py_restart,
             session::py_interrupt,
             files::list_docs,

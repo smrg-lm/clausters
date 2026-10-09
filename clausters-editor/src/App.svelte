@@ -307,6 +307,10 @@
       showDocs();
       docs.home();
     },
+    searchDocs: () => {
+      showDocs();
+      docs.searchAll(editor().selectedText());
+    },
     environments: () => environments.show(),
     preferences: () => preferences.show(),
     chooseDocsFolder: () => preferences.chooseDocsDir(),
@@ -333,6 +337,11 @@
       "0": () => zoom(null),
     };
     if (!inEditor) keys["."] = interrupt;
+    // Ctrl+F finds in the documentation when it has the focus (the editor has its own);
+    // Ctrl+Shift+F searches every document from anywhere.
+    const inDocs = !!(e.target as HTMLElement).closest?.("[data-panel='docs']");
+    if (e.shiftKey && e.key.toLowerCase() === "f") keys.f = actions.searchDocs;
+    else if (inDocs) keys.f = () => docs.find();
     const action = keys[e.key.toLowerCase()];
     if (!action) return;
     e.preventDefault();
@@ -505,9 +514,9 @@
         onFocus={() => (activeEditor = id)}
         onDragStart={(e) => startDrag(id, e)}
         openElsewhere={(path) => openElsewhere(id, path)}
-        onHelp={(w) => {
+        onHelp={(subject) => {
           showDocs();
-          docs.help(w);
+          docs.help(subject);
         }}
       />
     </div>

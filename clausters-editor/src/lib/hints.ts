@@ -1,7 +1,8 @@
-// Documentation in the editor from the live session: a tooltip on hover
-// (signature and docstring) and parameter help while typing a call.
+// Documentation in the editor from the live session: a tooltip on hover (signature
+// and docstring) and the parameters of the call being typed. Both are Jedi's answers
+// (see driver.py), which read the text and the session's objects together.
 
-import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
   EditorView,
   ViewPlugin,
@@ -12,43 +13,19 @@ import {
   type Tooltip,
   type ViewUpdate,
 } from "@codemirror/view";
-import { syntaxTree } from "@codemirror/language";
-import type { PyInfo } from "./session.svelte";
+import { codeAt, inStringOrComment, posOf } from "./code";
+import type { CodeAt, PyInfo, PySignature } from "./session.svelte";
 
-type Inspect = (expr: string) => Promise<PyInfo | null>;
-
-const KEYWORDS = new Set(
-  ("False None True and as assert async await break class continue def del elif else except " +
-    "finally for from global if import in is lambda nonlocal not or pass raise return try while with yield")
-    .split(" "),
-);
-const DOTTED = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
+export interface HintSources {
+  inspect(at: CodeAt): Promise<PyInfo | null>;
+  signatures(at: CodeAt): Promise<PySignature[]>;
+}
 
 // The same look as shadcn's popovers; `!` because CodeMirror's theme also styles
 // .cm-tooltip. The size follows the editor's font size (zoom).
 const BOX =
   "max-w-[min(48rem,90vw)] rounded-md! border! border-border! bg-popover! px-3 py-2 " +
   "text-popover-foreground! shadow-md text-[length:calc(var(--code-size)*0.9)]";
-
-/** The dotted name that ends in the word under `pos` (`os.path` over "path"). */
-function dottedNameAt(state: EditorState, pos: number) {
-  const line = state.doc.lineAt(pos);
-  const text = line.text;
-  let start = pos - line.from;
-  let end = start;
-  while (end < text.length && /\w/.test(text[end])) end++;
-  while (start > 0 && /[\w.]/.test(text[start - 1])) start--;
-  const name = text.slice(start, end).replace(/^\.+/, "");
-  if (!name || !DOTTED.test(name)) return null;
-  return { from: line.from + end - name.length, to: line.from + end, name };
-}
-
-function inStringOrComment(state: EditorState, pos: number): boolean {
-  for (let node: { name: string; parent: any } | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
-    if (/String|Comment/.test(node.name)) return true;
-  }
-  return false;
-}
 
 function el(tag: string, cls: string, text?: string) {
   const e = document.createElement(tag);
@@ -63,21 +40,32 @@ function renderInfo(info: PyInfo): HTMLElement {
   head.append(el("code", "font-mono font-medium", info.signature || info.name));
   head.append(el("span", "text-muted-foreground", info.kind));
   dom.append(head);
-  if (info.doc) {
-    const doc = el("div", "mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap text-muted-foreground", info.doc);
-    dom.append(doc);
-  }
+  if (info.doc) dom.append(el("div", "mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap text-muted-foreground", info.doc));
+  return dom;
+}
+
+function renderSignature(sig: PySignature): HTMLElement {
+  const dom = el("div", BOX);
+  const code = el("code", "font-mono");
+  code.append(sig.name + "(");
+  sig.params.forEach((p, i) => {
+    if (i > 0) code.append(", ");
+    code.append(i === sig.index ? el("span", "font-bold text-foreground underline underline-offset-2", p) : p);
+  });
+  code.append(")");
+  dom.append(code);
+  if (sig.doc) dom.append(el("div", "mt-1 line-clamp-3 whitespace-pre-wrap text-muted-foreground", sig.doc));
   return dom;
 }
 
 // --- Tooltip on hover ---
 
-function hover(inspect: Inspect) {
+function hover(src: HintSources) {
   return hoverTooltip(
-    async (view, pos) => {
-      const word = dottedNameAt(view.state, pos);
-      if (!word || KEYWORDS.has(word.name) || inStringOrComment(view.state, pos)) return null;
-      const info = await inspect(word.name);
+    async (view, pos, side) => {
+      const word = view.state.wordAt(pos);
+      if (!word || inStringOrComment(view.state, pos, side < 0 ? -1 : 1)) return null;
+      const info = await src.inspect(codeAt(view.state, word.to));
       if (!info) return null;
       return { pos: word.from, end: word.to, above: true, create: () => ({ dom: renderInfo(info) }) };
     },
@@ -85,78 +73,7 @@ function hover(inspect: Inspect) {
   );
 }
 
-// --- Parameter help ---
-
-interface CallContext {
-  callee: string;
-  open: number; // position of the call's "("
-  argIndex: number;
-  argName: string | null; // if the current argument is `name=...`
-}
-
-/** The call whose parentheses hold `pos`, counting the current level's commas. */
-function callContext(state: EditorState, pos: number): CallContext | null {
-  const start = Math.max(0, pos - 3000);
-  const text = state.sliceDoc(start, pos);
-  let depth = 0;
-  let commas = 0;
-  let lastComma = -1;
-  let i = text.length - 1;
-  for (; i >= 0; i--) {
-    const c = text[i];
-    if (c === ")" || c === "]" || c === "}") depth++;
-    else if (c === "(" || c === "[" || c === "{") {
-      if (depth === 0) {
-        if (c !== "(") return null;
-        break;
-      }
-      depth--;
-    } else if (c === "," && depth === 0) {
-      if (lastComma < 0) lastComma = i;
-      commas++;
-    }
-  }
-  if (i < 0 || inStringOrComment(state, start + i)) return null;
-  const before = text.slice(0, i);
-  const m = /([A-Za-z_][\w.]*)\s*$/.exec(before);
-  if (!m || !DOTTED.test(m[1]) || KEYWORDS.has(m[1])) return null;
-  if (/\b(def|class)\s+$/.test(before.slice(0, m.index))) return null; // a definition, not a call
-  const current = text.slice((lastComma >= 0 ? lastComma : i) + 1);
-  const argName = /^\s*([A-Za-z_]\w*)\s*=(?!=)/.exec(current)?.[1] ?? null;
-  return { callee: m[1], open: start + i, argIndex: commas, argName };
-}
-
-const paramName = (p: string) => p.replace(/^\*+/, "").split(/[:=]/)[0].trim();
-
-function activeParam(params: string[], ctx: CallContext): number {
-  if (ctx.argName) return params.findIndex((p) => paramName(p) === ctx.argName);
-  if (ctx.argIndex < params.length && !params[ctx.argIndex].startsWith("**")) {
-    // Past a *args, every positional goes to it.
-    const star = params.findIndex((p) => p.startsWith("*") && !p.startsWith("**"));
-    return star >= 0 && ctx.argIndex > star ? star : ctx.argIndex;
-  }
-  return params.findIndex((p) => p.startsWith("*") && !p.startsWith("**"));
-}
-
-function renderSignature(info: PyInfo, ctx: CallContext): HTMLElement {
-  const dom = el("div", BOX);
-  const sig = el("code", "font-mono");
-  if (info.params) {
-    const current = activeParam(info.params, ctx);
-    sig.append(info.name.split(".").pop() + "(");
-    info.params.forEach((p, i) => {
-      if (i > 0) sig.append(", ");
-      sig.append(i === current ? el("span", "font-bold text-foreground underline underline-offset-2", p) : p);
-    });
-    sig.append(")");
-  } else {
-    sig.textContent = info.signature;
-  }
-  dom.append(sig);
-  const summary = info.doc.split(/\n\s*\n/)[0];
-  if (summary) dom.append(el("div", "mt-1 line-clamp-3 whitespace-pre-wrap text-muted-foreground", summary));
-  return dom;
-}
+// --- The parameters of the call being typed ---
 
 const setSignature = StateEffect.define<Tooltip | null>();
 
@@ -169,21 +86,19 @@ const signatureField = StateField.define<Tooltip | null>({
   provide: (f) => showTooltip.from(f),
 });
 
-function signaturePlugin(inspect: Inspect) {
+function signaturePlugin(src: HintSources) {
   return ViewPlugin.fromClass(
     class {
+      /** Turned on by typing "(" or ","; it then follows the cursor while it stays in a call. */
       active = false;
-      callee = "";
-      open = -1;
-      info: PyInfo | null = null;
       timer: ReturnType<typeof setTimeout> | undefined;
+      /** Counts the requests, so that a late answer does not replace a newer one. */
+      asked = 0;
 
       constructor(readonly view: EditorView) {}
 
       update(u: ViewUpdate) {
         if (!u.docChanged && !u.selectionSet) return;
-        // Turned on by typing "(" or "," (with auto-closing, "(" arrives as "()");
-        // after that it follows the cursor while it stays inside the call.
         let typed = false;
         u.changes.iterChanges((_a, _b, _c, _d, ins) => {
           if (/[(,]/.test(ins.toString())) typed = true;
@@ -200,35 +115,21 @@ function signaturePlugin(inspect: Inspect) {
       async refresh() {
         const { state } = this.view;
         const sel = state.selection.main;
-        const ctx = sel.empty ? callContext(state, sel.head) : null;
-        if (!ctx) return this.dismiss();
-        if (ctx.callee !== this.callee || ctx.open !== this.open) {
-          this.callee = ctx.callee;
-          this.open = ctx.open;
-          this.info = await inspect(ctx.callee);
-          if (this.callee !== ctx.callee || !this.active) return; // changed while waiting
-        }
-        const info = this.info;
-        if (!info || (!info.params && !info.signature)) return this.dismiss(false);
+        if (!sel.empty || inStringOrComment(state, sel.head, -1)) return this.dismiss();
+        const ask = ++this.asked;
+        const [sig] = await src.signatures(codeAt(state, sel.head));
+        if (ask !== this.asked || !this.active) return;
+        if (!sig) return this.dismiss();
+        const pos = posOf(this.view.state, sig.bracket[0], sig.bracket[1]);
         this.view.dispatch({
-          effects: setSignature.of({
-            pos: ctx.open,
-            above: true,
-            create: () => ({ dom: renderSignature(info, ctx) }),
-          }),
+          effects: setSignature.of({ pos, above: true, create: () => ({ dom: renderSignature(sig) }) }),
         });
       }
 
-      /** Hides the help; with `deactivate` it stops following the cursor until the next "(". */
-      dismiss(deactivate = true) {
-        if (deactivate) {
-          this.active = false;
-          this.callee = "";
-          this.open = -1;
-        }
-        if (this.view.state.field(signatureField, false)) {
-          this.view.dispatch({ effects: setSignature.of(null) });
-        }
+      /** Hides the parameters and stops following the cursor until the next "(". */
+      dismiss() {
+        this.active = false;
+        if (this.view.state.field(signatureField, false)) this.view.dispatch({ effects: setSignature.of(null) });
       }
 
       destroy() {
@@ -238,12 +139,12 @@ function signaturePlugin(inspect: Inspect) {
   );
 }
 
-export function pythonHints(inspect: Inspect): Extension {
-  const plugin = signaturePlugin(inspect);
+export function pythonHints(src: HintSources): Extension {
+  const plugin = signaturePlugin(src);
   return [
     // In the body, not inside the editor: the panel holding it would clip the tooltips.
     tooltips({ parent: document.body }),
-    hover(inspect),
+    hover(src),
     signatureField,
     plugin,
     keymap.of([

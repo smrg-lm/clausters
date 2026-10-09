@@ -6,6 +6,7 @@
   import {
     THEMES,
     fontOptions,
+    setEvalParagraph,
     setFont,
     setShowDocs,
     setTheme,
@@ -28,6 +29,7 @@
     restart(): void;
     clearPost(): void;
     openDocs(): void;
+    searchDocs(): void;
     environments(): void;
     preferences(): void;
     chooseDocsFolder(): void;
@@ -71,6 +73,9 @@
     <Menubar.Content>
       {@render item("Evaluate Line or Selection", a.runLine, "Shift+Enter")}
       {@render item("Evaluate Block", a.runBlock, "Ctrl+Enter")}
+      <Menubar.CheckboxItem checked={settings.evalParagraph} onCheckedChange={(v) => setEvalParagraph(v)}>
+        Evaluate Contiguous Lines as a Block
+      </Menubar.CheckboxItem>
       <Menubar.Separator />
       {@render item("Interrupt", a.interrupt, "Ctrl+.")}
       {@render item("Restart Session", a.restart)}
@@ -120,6 +125,7 @@
     <Menubar.Trigger>Help</Menubar.Trigger>
     <Menubar.Content>
       {@render item("Documentation", a.openDocs, "F1")}
+      {@render item("Search the Documentation", a.searchDocs, "Ctrl+Shift+F")}
       {@render item("Documentation Folder...", a.chooseDocsFolder)}
     </Menubar.Content>
   </Menubar.Menu>

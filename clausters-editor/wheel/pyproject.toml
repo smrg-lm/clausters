@@ -16,7 +16,9 @@ license = "GPL-3.0-or-later"
 # setup.py copies the repository's COPYING here before it builds.
 license-files = ["COPYING"]
 authors = [{ name = "Lucas Samaruga" }]
-dependencies = []
+# Jedi gives the session its completions, signatures and hover help (driver.py).
+# Installed beside the package, it is in the environment the session runs on.
+dependencies = ["jedi>=0.19"]
 
 [project.urls]
 Source = "https://github.com/smrg-lm/clausters/tree/main/clausters-editor"

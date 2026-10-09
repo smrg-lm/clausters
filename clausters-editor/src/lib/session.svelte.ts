@@ -3,7 +3,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-export type MsgType = "out" | "err" | "result" | "sys" | "info" | "ready" | "help" | "inspect" | "done";
+/** The questions about code the driver answers right away, even while code runs. */
+type Query = "help" | "inspect" | "signatures" | "complete";
+
+export type MsgType = "out" | "err" | "result" | "sys" | "info" | "ready" | "done" | Query;
 export interface Msg {
   type: MsgType;
   id: number | null;
@@ -11,15 +14,45 @@ export interface Msg {
   data?: unknown;
 }
 
-/** Description of a name in the session (see `describe` in driver.py). */
+/** A position in the editor's text, as Jedi reads it: the whole text, a 1-based
+ *  line and a 0-based column. */
+export interface CodeAt {
+  source: string;
+  line: number;
+  column: number;
+}
+
+/** What the name at a position is (see `describe` in driver.py). */
 export interface PyInfo {
   name: string;
-  /** The object's `__qualname__` (e.g. "Server.boot"), if it has one. */
-  qualname: string | null;
+  /** Its name within its module, e.g. "Server.boot". */
+  qualname: string;
+  /** Its dotted path, e.g. "clausters.defs.server.Server.boot". */
+  fullname: string;
   kind: string;
   signature: string;
   params: string[] | null;
   doc: string;
+}
+
+/** A signature of the call a position is in (see `signatures` in driver.py). */
+export interface PySignature {
+  name: string;
+  params: string[];
+  /** The parameter the position is at, if any. */
+  index: number | null;
+  /** Where the call's "(" is: a 1-based line and a 0-based column. */
+  bracket: [number, number];
+  doc: string;
+}
+
+/** A completion at a position (see `complete` in driver.py). */
+export interface PyCompletion {
+  name: string;
+  /** Jedi's kind: module, class, function, instance, keyword, param, property, statement, path. */
+  kind: string;
+  /** How many of its characters are already typed. */
+  typed: number;
 }
 
 export const session = $state({
@@ -33,8 +66,8 @@ export const session = $state({
 let nextId = 1;
 let generation = 0;
 const pending = new Set<number>();
-const helpWaiters = new Map<number, (text: string) => void>();
-const inspectWaiters = new Map<number, (info: PyInfo | null) => void>();
+/** The queries waiting for their answer, by id. */
+const waiters = new Map<number, (m: Msg) => void>();
 const listeners = new Set<(m: Msg) => void>();
 
 /** Subscribes to the output messages (out, err, result, sys, info). */
@@ -76,16 +109,10 @@ export async function initSession() {
         setPending();
         return;
       case "help":
-        if (m.id != null) {
-          helpWaiters.get(m.id)?.(m.text);
-          helpWaiters.delete(m.id);
-        }
-        return;
       case "inspect":
-        if (m.id != null) {
-          inspectWaiters.get(m.id)?.((m.data as PyInfo | undefined) ?? null);
-          inspectWaiters.delete(m.id);
-        }
+      case "signatures":
+      case "complete":
+        if (m.id != null) waiters.get(m.id)?.(m);
         return;
       default:
         post(m);
@@ -125,34 +152,38 @@ export async function evaluate(code: string, file: string, line: number) {
   }
 }
 
-/** pydoc's documentation for an expression, evaluated in the live session. */
-export function pyHelp(expr: string): Promise<string> {
+/** Asks the driver `op` and waits for its answer; `fallback` if the session is not
+ *  running, the request fails or no answer comes within `timeoutMs`. */
+function query<T>(op: Query, args: object, read: (m: Msg) => T, fallback: T, timeoutMs: number): Promise<T> {
+  if (!session.alive) return Promise.resolve(fallback);
   const id = nextId++;
-  return new Promise((resolve, reject) => {
-    helpWaiters.set(id, resolve);
-    invoke("py_help", { id, expr }).catch((e) => {
-      helpWaiters.delete(id);
-      reject(e);
-    });
+  return new Promise((resolve) => {
+    const done = (value: T) => {
+      clearTimeout(timer);
+      waiters.delete(id);
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(fallback), timeoutMs);
+    waiters.set(id, (m) => done(read(m)));
+    invoke("py_query", { id, op, args }).catch(() => done(fallback));
   });
 }
 
-/** Signature and docstring of a dotted name, according to the live session. null if it
- *  is unknown or the session does not answer in time. */
-export function pyInspect(expr: string, timeoutMs = 1500): Promise<PyInfo | null> {
-  if (!session.alive) return Promise.resolve(null);
-  const id = nextId++;
-  return new Promise((resolve) => {
-    const done = (info: PyInfo | null) => {
-      clearTimeout(timer);
-      inspectWaiters.delete(id);
-      resolve(info);
-    };
-    const timer = setTimeout(() => done(null), timeoutMs);
-    inspectWaiters.set(id, done);
-    invoke("py_inspect", { id, expr }).catch(() => done(null));
-  });
-}
+/** pydoc's documentation for an expression or a dotted path, in the live session. */
+export const pyHelp = (expr: string) =>
+  query("help", { expr }, (m) => m.text, `No documentation found for '${expr}'.`, 5000);
+
+/** What the name at a position is; null if there is none or no answer in time. */
+export const pyInspect = (at: CodeAt) =>
+  query("inspect", at, (m) => (m.data as PyInfo | null | undefined) ?? null, null, 1500);
+
+/** The signatures of the call a position is in. */
+export const pySignatures = (at: CodeAt) =>
+  query("signatures", at, (m) => (m.data as PySignature[] | undefined) ?? [], [] as PySignature[], 1500);
+
+/** The completions at a position. */
+export const pyComplete = (at: CodeAt) =>
+  query("complete", at, (m) => (m.data as PyCompletion[] | undefined) ?? [], [] as PyCompletion[], 1500);
 
 export async function interrupt() {
   try {

@@ -117,7 +117,7 @@
                 <span class="text-muted-foreground">Python {env.version}</span>
               </div>
               <span class="truncate font-mono text-xs text-muted-foreground" title={env.source}>
-                {env.source || "no packages installed by the app"}
+                {env.source || "only jedi, for the completions"}
               </span>
             </div>
             {#if env.active}
@@ -158,7 +158,8 @@
         <Input id="install-source" class="font-mono" placeholder="-e /path/to/package" bind:value={source} />
         <p class="text-xs text-muted-foreground">
           What goes after <code>pip install</code>. It is kept in the environment for the "Reinstall" button;
-          left empty, the environment is created with no packages.
+          left empty, the environment gets no packages but <code>jedi</code>, which every environment the app
+          creates installs for the completions and the help.
         </p>
       </div>
 

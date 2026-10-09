@@ -39,6 +39,9 @@ interface Stored {
   /** The post window scrolls to the end by itself with each new output. */
   autoscroll: boolean;
   showDocs: boolean;
+  /** Ctrl+Enter takes the contiguous lines around the cursor (no blank line between
+   *  them) as one block, rather than the one top-level statement. */
+  evalParagraph: boolean;
   /** Where each panel is: two columns, each holding up to two panels, top first. */
   layout: Layout;
 }
@@ -73,6 +76,7 @@ function load(): Stored {
     size: DEFAULT_SIZE,
     autoscroll: true,
     showDocs: true,
+    evalParagraph: false,
     layout: DEFAULT_LAYOUT,
   };
   try {
@@ -83,6 +87,7 @@ function load(): Stored {
       size: Number.isFinite(v.size) ? Math.min(MAX_SIZE, Math.max(MIN_SIZE, v.size)) : defaults.size,
       autoscroll: typeof v.autoscroll === "boolean" ? v.autoscroll : defaults.autoscroll,
       showDocs: typeof v.showDocs === "boolean" ? v.showDocs : defaults.showDocs,
+      evalParagraph: typeof v.evalParagraph === "boolean" ? v.evalParagraph : defaults.evalParagraph,
       // The layout replaced a post-window position (right of the editor, or below it).
       layout:
         validLayout(v.layout) ??
@@ -118,8 +123,8 @@ function apply() {
   root.style.setProperty("--mono", `"${settings.font.replace(/["\\]/g, "")}", "${BUNDLED_FONT}", monospace`);
   root.style.setProperty("--code-size", `${settings.size}px`);
   try {
-    const { theme, font, size, autoscroll, showDocs, layout } = settings;
-    localStorage.setItem(KEY, JSON.stringify({ theme, font, size, autoscroll, showDocs, layout }));
+    const { theme, font, size, autoscroll, showDocs, evalParagraph, layout } = settings;
+    localStorage.setItem(KEY, JSON.stringify({ theme, font, size, autoscroll, showDocs, evalParagraph, layout }));
   } catch {}
 }
 
@@ -135,6 +140,11 @@ export function setFont(font: string) {
 
 export function setShowDocs(show: boolean) {
   settings.showDocs = show;
+  apply();
+}
+
+export function setEvalParagraph(on: boolean) {
+  settings.evalParagraph = on;
   apply();
 }
 

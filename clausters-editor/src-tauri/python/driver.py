@@ -6,25 +6,24 @@ no outside output (C, subprocesses) corrupts the protocol.
 
 Requests:  {"id": 1, "op": "eval", "code": "...", "file": "a.py", "line": 10}
            {"id": 2, "op": "help", "expr": "print"}
-           {"id": 3, "op": "inspect", "expr": "obj.method"}
+           {"id": 3, "op": "inspect" | "signatures" | "complete",
+            "source": "the editor's text", "line": 1, "column": 4}
 Messages:  {"type": "out" | "err" | "result" | "help" | "done", "id": 1, "text": "..."}
-           {"type": "inspect", "id": 3, "data": {...} | null}
+           {"type": "inspect" | "signatures" | "complete", "id": 3, "data": ...}
 
-Evaluations run on the main thread, one at a time. "help" and "inspect" are
-answered by the reader thread right away, so the documentation responds even
-while code is running.
+Evaluations run on the main thread, one at a time. "help", "inspect",
+"signatures" and "complete" are answered by the reader thread right away, so the
+documentation and the code intelligence respond even while code is running.
 """
 
 import ast
 import builtins
-import inspect
 import io
 import json
 import linecache
 import os
 import pydoc
 import queue
-import re
 import signal
 import sys
 import textwrap
@@ -118,87 +117,110 @@ def help_text(expr):
     return pydoc.render_doc(obj, title="%s", renderer=pydoc.plaintext)
 
 
-_DOTTED = re.compile(r"[A-Za-z_]\w*(\.[A-Za-z_]\w*)*")
+# --- Code intelligence: Jedi over the editor's text and the session's namespace ---
+#
+# Completions, call signatures and hover help come from Jedi's Interpreter, which
+# reads the source being edited together with the live objects of the session --
+# so it knows what a `from module import *` brought in, and what `Server().boot` or
+# `sine(440).midicps` is. Jedi is a dependency of the clausters-editor package, and
+# the environments the editor creates install it; in an environment without it the
+# editor still runs code, without these.
+
+try:
+    import jedi
+except ImportError:
+    jedi = None
+
 _MAX_DOC = 4000
-# For values of these types the value is shown instead of the type's docstring.
-_PLAIN = (int, float, complex, bool, str, bytes, list, tuple, dict, set, frozenset, type(None))
+_MAX_COMPLETIONS = 500
+_jedi_missing_said = False
 
 
-def resolve(expr):
-    """The object a dotted name refers to, without running arbitrary code: only
-    attribute lookups, and properties are not evaluated."""
-    if not _DOTTED.fullmatch(expr):
-        raise LookupError(expr)
-    first, *rest = expr.split(".")
-    if first in namespace:
-        obj = namespace[first]
-    elif hasattr(builtins, first):
-        obj = getattr(builtins, first)
-    else:
-        raise LookupError(expr)
-    for name in rest:
-        static = inspect.getattr_static(obj, name)
-        obj = static if isinstance(static, property) else getattr(obj, name)
-    return obj
+def _script(req):
+    global _jedi_missing_said
+    if jedi is None:
+        if not _jedi_missing_said:
+            _jedi_missing_said = True
+            emit("info", None, "Completions, signatures and hover help need jedi in this "
+                               "environment: pip install jedi\n")
+        return None
+    return jedi.Interpreter(req.get("source", ""), [namespace])
 
 
-def own_doc(obj):
-    """The docstring to show. For a class only its own (or its __init__'s): one
-    inherited from a base class describes something else. For a method it is
-    inherited, because an override without a docstring does what the original does."""
-    if inspect.isclass(obj):
-        doc = obj.__dict__.get("__doc__")
-        if not (isinstance(doc, str) and doc.strip()):
-            init = obj.__dict__.get("__init__")
-            doc = getattr(init, "__doc__", None) if init else None
-        return inspect.cleandoc(doc) if isinstance(doc, str) and doc.strip() else ""
-    return inspect.getdoc(obj) or ""
+def _at(req):
+    """Jedi's position: a 1-based line and a 0-based column."""
+    return int(req.get("line", 1)), int(req.get("column", 0))
 
 
-def describe(expr):
-    """Signature and docstring for the editor's tooltips, or None if unknown."""
+def describe(req):
+    """What the name at the position is, for the hover tooltip and for help: its
+    names, kind, signature and docstring. None if there is no name there."""
+    script = _script(req)
+    if script is None:
+        return None
     try:
-        obj = resolve(expr)
+        names = script.infer(*_at(req)) or script.help(*_at(req))
     except Exception:
         return None
-    name = expr.rsplit(".", 1)[-1]
-    params = None
-    signature = ""
-    if callable(obj) and not isinstance(obj, property):
-        try:
-            sig = inspect.signature(obj)
-            params = [str(p) for p in sig.parameters.values()]
-            signature = f"{name}{sig}"
-        except (TypeError, ValueError):
-            signature = f"{name}(...)"
-    if inspect.isclass(obj):
-        kind = "class"
-    elif inspect.ismodule(obj):
-        kind = "module"
-    elif isinstance(obj, property):
-        kind = "property"
-    elif callable(obj):
-        kind = "function"
-    else:
-        kind = type(obj).__name__
-    if isinstance(obj, _PLAIN):
-        value = repr(obj)
-        doc = value if len(value) <= 300 else value[:300] + "..."
-    else:
-        doc = own_doc(obj)
-        if len(doc) > _MAX_DOC:
-            doc = doc[:_MAX_DOC] + "\n..."
-    qualname = getattr(obj, "__qualname__", None)
-    if isinstance(obj, property):
-        qualname = getattr(obj.fget, "__qualname__", None)
+    names = [n for n in names if n.type != "keyword"]
+    if not names:
+        return None
+    n = names[0]
+    full = n.full_name or n.name
+    module = n.module_name or ""
+    qualname = full[len(module) + 1:] if module and full.startswith(module + ".") else full
+    try:
+        sigs = n.get_signatures()
+    except Exception:
+        sigs = []
+    doc = n.docstring(raw=True) or ""
     return {
-        "name": expr,
-        "qualname": qualname if isinstance(qualname, str) else None,
-        "kind": kind,
-        "signature": signature,
-        "params": params,
-        "doc": doc,
+        "name": n.name,
+        "qualname": qualname,
+        "fullname": full,
+        "kind": n.type,
+        "signature": sigs[0].to_string() if sigs else "",
+        "params": [p.to_string() for p in sigs[0].params] if sigs else None,
+        "doc": doc if len(doc) <= _MAX_DOC else doc[:_MAX_DOC] + "\n...",
     }
+
+
+def signatures(req):
+    """The signatures of the call the position is in, with the argument it is at."""
+    script = _script(req)
+    if script is None:
+        return []
+    try:
+        sigs = script.get_signatures(*_at(req))
+    except Exception:
+        return []
+    out = []
+    for s in sigs:
+        doc = s.docstring(raw=True) or ""
+        out.append({
+            "name": s.name,
+            "params": [p.to_string() for p in s.params],
+            "index": s.index,
+            "bracket": list(s.bracket_start),
+            "doc": doc.split("\n\n")[0],
+        })
+    return out
+
+
+def complete(req):
+    """The completions at the position: each name, its kind, and how many of its
+    characters are already typed."""
+    script = _script(req)
+    if script is None:
+        return []
+    try:
+        found = script.complete(*_at(req))
+    except Exception:
+        return []
+    return [
+        {"name": c.name, "kind": c.type, "typed": len(c.name) - len(c.complete)}
+        for c in found[:_MAX_COMPLETIONS]
+    ]
 
 
 _jobs = queue.Queue()
@@ -215,7 +237,11 @@ def reader():
             continue
         op = req.get("op")
         if op == "inspect":
-            emit("inspect", req.get("id"), data=describe(req.get("expr", "")))
+            emit("inspect", req.get("id"), data=describe(req))
+        elif op == "signatures":
+            emit("signatures", req.get("id"), data=signatures(req))
+        elif op == "complete":
+            emit("complete", req.get("id"), data=complete(req))
         elif op == "help":
             try:
                 text = help_text(req.get("expr", ""))

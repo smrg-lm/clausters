@@ -7,7 +7,7 @@ import { parser as pythonParser } from "@lezer/python";
 import { buttonVariants } from "$lib/components/ui/button";
 import { syntaxStyle } from "./editorTheme";
 
-const escape = (s: string) =>
+export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function highlightPython(code: string, dark: boolean): string {
@@ -16,7 +16,7 @@ function highlightPython(code: string, dark: boolean): string {
     code,
     pythonParser.parse(code),
     dark ? syntaxStyle.dark : syntaxStyle.light,
-    (text, classes) => (html += classes ? `<span class="${classes}">${escape(text)}</span>` : escape(text)),
+    (text, classes) => (html += classes ? `<span class="${classes}">${escapeHtml(text)}</span>` : escapeHtml(text)),
     () => (html += "\n"),
   );
   return html;
@@ -32,6 +32,11 @@ export const COPY_ICON = icon(
 export const COPIED_ICON = icon('<path d="M20 6 9 17l-5-5"/>');
 
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true });
+
+/** The web addresses in a text, found by markdown-it's linkifier (linkify-it). */
+export function findLinks(text: string): { index: number; lastIndex: number; url: string }[] {
+  return md.linkify.match(text) ?? [];
+}
 
 // GitHub-style ids on headings, for `doc.md#section` links: letters, digits, `_`
 // and `-` stay, as on GitHub and in mdBook, so a book's links land here too.
@@ -59,7 +64,7 @@ md.renderer.rules.fence = (tokens, idx, _opts, env) => {
     `<div class="code-block"><button class="${copyButtonClass}" data-block="${i}" title="Copy" aria-label="Copy">${COPY_ICON}</button>` +
     (python
       ? `<pre><code class="language-python">${highlightPython(code, e.dark)}</code></pre></div>`
-      : `<pre><code>${escape(code)}</code></pre></div>`)
+      : `<pre><code>${escapeHtml(code)}</code></pre></div>`)
   );
 };
 

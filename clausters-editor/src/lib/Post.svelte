@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { info, onMessage, type Msg } from "./session.svelte";
+  import { findLinks } from "./markdown";
   import { settings, setAutoscroll } from "./settings.svelte";
   import Grip from "./Grip.svelte";
   import { Button } from "$lib/components/ui/button";
@@ -22,19 +23,17 @@
     last = null;
   }
 
-  const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/g;
-
   /** The text as DOM nodes, with every web address a link the browser opens. */
   function linked(text: string): DocumentFragment {
     const out = document.createDocumentFragment();
     let at = 0;
-    for (const m of text.matchAll(URL_RE)) {
-      out.append(text.slice(at, m.index));
+    for (const link of findLinks(text)) {
+      out.append(text.slice(at, link.index));
       const a = document.createElement("a");
-      a.href = m[0];
-      a.textContent = m[0];
+      a.href = link.url;
+      a.textContent = text.slice(link.index, link.lastIndex);
       out.append(a);
-      at = m.index! + m[0].length;
+      at = link.lastIndex;
     }
     out.append(text.slice(at));
     return out;

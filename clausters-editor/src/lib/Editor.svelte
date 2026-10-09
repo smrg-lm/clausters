@@ -23,14 +23,17 @@
   import { EditorView, keymap } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
   import { basicSetup } from "codemirror";
-  import { python } from "@codemirror/lang-python";
+  import { pythonLanguage } from "@codemirror/lang-python";
+  import { LanguageSupport } from "@codemirror/language";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { Button } from "$lib/components/ui/button";
   import { confirm } from "./ConfirmDialog.svelte";
   import { editorTheme } from "./editorTheme";
   import { evalBlock, evalLine, evaluation, type EvalHandlers } from "./evaluation";
-  import { evaluate, info, interrupt, pyInspect } from "./session.svelte";
+  import { evaluate, info, interrupt, pyComplete, pyInspect, pySignatures } from "./session.svelte";
+  import type { HelpSubject } from "./Docs.svelte";
+  import { sessionCompletions } from "./completion";
   import { pythonHints } from "./hints";
   import { settings } from "./settings.svelte";
   import X from "@lucide/svelte/icons/x";
@@ -45,7 +48,7 @@
   }: {
     /** The group the menu and the shortcuts act on; its active tab is marked. */
     current?: boolean;
-    onHelp: (word: string) => void;
+    onHelp: (subject: HelpSubject) => void;
     /** This group became the one the menu and the shortcuts act on. */
     onFocus: () => void;
     onDragStart: (e: PointerEvent) => void;
@@ -101,18 +104,24 @@
       const t = tabs[active];
       evaluate(code, t.path ?? `<${t.name}>`, line);
     },
-    help: (word) => onHelp(word),
+    // The name at the cursor as Jedi resolves it, so that help finds its reference entry.
+    help: async ({ text, at }) => {
+      const info = at ? await pyInspect(at) : null;
+      onHelp(info ? { name: info.name, qualname: info.qualname, fullname: info.fullname } : { name: text });
+    },
     interrupt,
   };
 
   const extensions = () => [
     basicSetup,
     keymap.of([indentWithTab]),
-    python(),
+    // Python without its own completions: the session's (Jedi) cover the file's names too.
+    new LanguageSupport(pythonLanguage),
     themeSlot.of([]),
     fontSlot.of([]),
     evaluation(handlers),
-    pythonHints((expr) => pyInspect(expr)),
+    pythonHints({ inspect: pyInspect, signatures: pySignatures }),
+    sessionCompletions(pyComplete),
     EditorView.updateListener.of((u) => {
       const t = tabs[active];
       // Compared with what was saved, so undoing back to it (or retyping it) clears the mark.
@@ -259,6 +268,12 @@
   }
 
   export const runLine = () => evalLine(view, handlers);
+  /** The selected text, if the selection is within one line (what a search would look for). */
+  export function selectedText(): string {
+    const sel = view.state.selection.main;
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    return text.includes("\n") ? "" : text;
+  }
   export const runBlock = () => evalBlock(view, handlers);
 
   onMount(() => {
@@ -303,5 +318,5 @@
       {/each}
     </div>
   </div>
-  <div class="min-h-0 flex-1 [&_.cm-editor]:h-full [&_.cm-focused]:outline-none! [&_.cm-evalFlash]:bg-ring/25!" bind:this={host}></div>
+  <div class="min-h-0 flex-1 [&_.cm-editor]:h-full [&_.cm-focused]:outline-none! [&_.cm-evalFlash]:bg-ring/25! [&_.cm-cellMarker]:border-t [&_.cm-cellMarker]:border-border" bind:this={host}></div>
 </div>

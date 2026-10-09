@@ -121,15 +121,11 @@ fn run(app: &AppHandle, program: &Path, args: &[String]) -> Result<(), String> {
 }
 
 fn pip_install(app: &AppHandle, dir: &Path, source: &str) -> Result<(), String> {
-    if source.is_empty() {
-        log(
-            app,
-            "No install source configured: no package is installed.\n",
-        );
-        return Ok(());
-    }
     let mut args: Vec<String> = ["-m", "pip", "install"].map(String::from).to_vec();
     args.extend(shell_words::split(source).map_err(|e| e.to_string())?);
+    // Jedi, beside whatever the source installs: the session's completions,
+    // signatures and hover help come from it (driver.py).
+    args.push("jedi".into());
     run(app, &python_in(dir), &args)
 }
 

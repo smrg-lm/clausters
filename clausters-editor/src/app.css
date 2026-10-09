@@ -145,3 +145,11 @@
 .prose h3 {
   font-size: 1.1em;
 }
+
+/* The documentation's find matches (Docs.svelte paints them with the CSS Highlight API). */
+::highlight(doc-find) {
+  background-color: color-mix(in oklab, var(--color-yellow-300) 40%, transparent);
+}
+::highlight(doc-find-current) {
+  background-color: color-mix(in oklab, var(--color-orange-400) 70%, transparent);
+}

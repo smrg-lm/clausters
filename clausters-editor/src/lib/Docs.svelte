@@ -1,18 +1,35 @@
+<script lang="ts" module>
+  /** What help is asked about: a name, and where the session says it lives. */
+  export interface HelpSubject {
+    name: string;
+    /** Its name within its module, e.g. "Server.boot". */
+    qualname?: string;
+    /** Its dotted path, e.g. "clausters.defs.server.Server.boot". */
+    fullname?: string;
+  }
+</script>
+
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { COPIED_ICON, COPY_ICON, renderMarkdown, slugify } from "./markdown";
-  import { info, pyHelp, pyInspect } from "./session.svelte";
+  import { COPIED_ICON, COPY_ICON, escapeHtml, renderMarkdown, slugify } from "./markdown";
+  import { info, pyHelp } from "./session.svelte";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
   import House from "@lucide/svelte/icons/house";
+  import Search from "@lucide/svelte/icons/search";
+  import ChevronUp from "@lucide/svelte/icons/chevron-up";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import X from "@lucide/svelte/icons/x";
   import { Button } from "$lib/components/ui/button";
+  import { Input } from "$lib/components/ui/input";
   import * as Select from "$lib/components/ui/select";
   import { settings } from "./settings.svelte";
   import Grip from "./Grip.svelte";
+  import { DocIndex, type DocResult } from "./docIndex";
+  import { PageFind } from "./pageFind.svelte";
 
   let {
     onChooseFolder,
@@ -21,7 +38,11 @@
   }: { onChooseFolder: () => void; onClose: () => void; onDragStart: (e: PointerEvent) => void } = $props();
 
   // `scroll` is where the page was left, so that going back returns there.
-  type Page = ({ kind: "doc"; path: string; anchor?: string } | { kind: "text"; title: string; text: string }) & {
+  type Page = (
+    | { kind: "doc"; path: string; anchor?: string }
+    | { kind: "text"; title: string; text: string }
+    | { kind: "search"; query: string; results: DocResult[] }
+  ) & {
     scroll?: number;
   };
 
@@ -57,10 +78,13 @@
   $effect(() => {
     settings.dark;
     render();
+    tick().then(() => findInPage(false));
   });
 
   const current = $derived(history[pos]);
-  const title = $derived(current ? (current.kind === "doc" ? current.path : current.title) : "");
+  const title = $derived(
+    !current ? "" : current.kind === "doc" ? current.path : current.kind === "text" ? current.title : `"${current.query}"`,
+  );
   const docItems = $derived(docs.map((d) => ({ value: d, label: d.replace(/\.md$/, "") })));
 
   function scrollTo(anchor?: string) {
@@ -88,10 +112,96 @@
       shownPath = null;
       html = "";
       plain = page.text;
+    } else {
+      source = null;
+      shownPath = null;
+      html = "";
+      plain = null;
     }
     await tick();
     if (page.scroll !== undefined) content.scrollTop = page.scroll;
     else scrollTo(page.kind === "doc" ? page.anchor : undefined);
+    findInPage(page.scroll === undefined && !(page.kind === "doc" && page.anchor));
+  }
+
+  // --- Finding text: in the page on screen, and in every document ---
+
+  let findOpen = $state(false);
+  let findTerm = $state("");
+  /** What the find bar searches: the page on screen, or every document. */
+  let findScope = $state<"page" | "all">("page");
+  let findInput = $state<HTMLInputElement | null>(null);
+  const finder = new PageFind();
+  /** The documents' full-text index: built on the first search, again when the list changes. */
+  let index: Promise<DocIndex> | null = null;
+
+  /** Marks the find bar's text in the page on screen (a results page marks its own),
+   *  from the section the page was opened at; `scroll` brings the current one into view. */
+  function findInPage(scroll: boolean) {
+    if (!content || !findOpen || current?.kind === "search") return finder.clear();
+    const anchor = current?.kind === "doc" ? current.anchor : undefined;
+    const after = anchor ? content.querySelector(`#${CSS.escape(anchor)}`) : null;
+    finder.run(content, findTerm, { after, scroll });
+  }
+
+  /** Opens the find bar on the page on screen (Ctrl+F in the documentation). */
+  export async function find() {
+    findOpen = true;
+    findScope = "page";
+    await tick();
+    findInput?.select();
+    findInPage(true);
+  }
+
+  function closeFind() {
+    findOpen = false;
+    finder.clear();
+  }
+
+  /** Searches every document (Ctrl+Shift+F): for `query` when given, else the find bar's text. */
+  export async function searchAll(query = "") {
+    if (query.trim()) findTerm = query.trim();
+    findOpen = true;
+    findScope = "all";
+    await tick();
+    findInput?.focus();
+    const q = findTerm.trim();
+    if (!q) return;
+    index ??= DocIndex.build(docs, (path) => invoke<string>("read_doc", { path }));
+    go({ kind: "search", query: q, results: (await index).search(q) });
+  }
+
+  function onFindKey(e: KeyboardEvent) {
+    if (e.key === "Escape") closeFind();
+    else if (e.key === "Enter" && findScope === "all") searchAll();
+    else if (e.key === "Enter") finder.step(e.shiftKey ? -1 : 1);
+    else return;
+    e.preventDefault();
+  }
+
+  function setScope(scope: "page" | "all") {
+    findScope = scope;
+    if (scope === "all") searchAll();
+    else findInPage(true);
+    findInput?.focus();
+  }
+
+  /** A result's line, escaped, with the words that matched marked. */
+  function marked(line: string, terms: string[]): string {
+    const lower = line.toLowerCase();
+    const spans: [number, number][] = [];
+    for (const t of terms) {
+      for (let at = lower.indexOf(t); at >= 0; at = lower.indexOf(t, at + t.length)) spans.push([at, at + t.length]);
+    }
+    spans.sort((a, b) => a[0] - b[0]);
+    let out = "";
+    let last = 0;
+    for (const [from, to] of spans) {
+      if (from < last) continue;
+      out += escapeHtml(line.slice(last, from)) + `<mark class="doc-hit">${escapeHtml(line.slice(from, to))}</mark>`;
+      last = to;
+    }
+    return out + escapeHtml(line.slice(last));
   }
 
   /** Remembers where the current page was left before moving away from it. */
@@ -135,34 +245,25 @@
     named: boolean;
   }
 
-  /** Help for a name: the section whose heading is that name (an API reference's
-   *  entry); otherwise a .md with that name; otherwise the section that talks
-   *  about it most; otherwise pydoc from the session. */
-  export async function help(word: string) {
-    const last = word.split(".").pop()!;
-    // First the full name of the object in the session (s.boot -> "Server.boot"),
-    // which tells apart methods with the same name; then the bare word.
-    const qualname = (await pyInspect(word))?.qualname;
-    const terms = [...new Set([qualname, word, last].filter((t): t is string => !!t))];
+  /** Help on a name: the section whose heading is it (its reference entry); else a
+   *  document named after it; else the section that talks about it most; else
+   *  pydoc's page for it, from the session. */
+  export async function help({ name, qualname, fullname }: HelpSubject) {
+    const terms = [...new Set([qualname, name].filter((t): t is string => !!t))];
     const searches = await Promise.all(
       terms.map((term) => invoke<DocHit[]>("search_docs", { term }).catch(() => [] as DocHit[])),
     );
     const openHit = (hit: DocHit) => openDoc(hit.path, hit.heading ? slugify(hit.heading) : undefined);
 
-    const named = searches.find((hits) => hits.length && hits[0].named);
+    const named = searches.find((hits) => hits[0]?.named);
     if (named) return openHit(named[0]);
-
-    const byName = (name: string) => docs.find((d) => d.toLowerCase().split("/").pop() === name);
-    const match = byName(`${word.toLowerCase()}.md`) ?? byName(`${last.toLowerCase()}.md`);
-    if (match) return openDoc(match);
-
+    const file = `${name.split(".").pop()!.toLowerCase()}.md`;
+    const byName = docs.find((d) => d.toLowerCase().split("/").pop() === file);
+    if (byName) return openDoc(byName);
     const found = searches.find((hits) => hits.length);
     if (found) return openHit(found[0]);
-    try {
-      go({ kind: "text", title: word, text: await pyHelp(word) });
-    } catch (e) {
-      info(`${e}\n`);
-    }
+    const expr = fullname ?? name;
+    go({ kind: "text", title: expr, text: await pyHelp(expr) });
   }
 
   function resolve(from: string, rel: string): string {
@@ -190,6 +291,13 @@
       return;
     }
     const link = target.closest("a");
+    // A search result: the document, at its section, with the word that matched found.
+    if (link?.dataset.path) {
+      e.preventDefault();
+      if (link.dataset.term) findTerm = link.dataset.term;
+      const heading = link.dataset.heading;
+      return openDoc(link.dataset.path, heading ? slugify(heading) : undefined);
+    }
     const href = link?.getAttribute("href");
     if (!href) return;
     e.preventDefault();
@@ -213,6 +321,7 @@
     shownPath = null;
     try {
       docs = await invoke<string[]>("list_docs");
+      index = null;
     } catch (e) {
       docs = [];
       source = null;
@@ -234,6 +343,7 @@
   async function relist() {
     const before = docs.length;
     docs = await invoke<string[]>("list_docs").catch(() => docs);
+    index = null;
     if (before === 0 && docs.length > 0) home();
   }
 
@@ -246,7 +356,7 @@
   });
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col" data-panel="docs">
   <div class="flex h-9 shrink-0 items-center gap-0.5 border-b bg-secondary px-1">
     <Grip label="documentation" {onDragStart} />
     <Button variant="ghost" size="icon-sm" onclick={back} disabled={pos <= 0} title="Back" aria-label="Back">
@@ -281,10 +391,12 @@
         {/each}
       </Select.Content>
     </Select.Root>
+    <Button variant="ghost" size="icon-sm" class="ml-0.5" onclick={find} title="Find (Ctrl+F in this page, Ctrl+Shift+F in every document)" aria-label="Find">
+      <Search />
+    </Button>
     <Button
       variant="ghost"
       size="icon-sm"
-      class="ml-0.5"
       onclick={onChooseFolder}
       title="Choose the documentation folder"
       aria-label="Choose the documentation folder"
@@ -295,17 +407,82 @@
       <X />
     </Button>
   </div>
+  {#if findOpen}
+    <div class="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+      <Input
+        bind:ref={findInput}
+        bind:value={findTerm}
+        class="h-7 min-w-0 flex-1 text-sm"
+        placeholder={findScope === "page" ? "Find in this page" : "Search every document (Enter)"}
+        spellcheck={false}
+        oninput={() => findScope === "page" && findInPage(true)}
+        onkeydown={onFindKey}
+      />
+      {#if findScope === "page"}
+        <span class="w-14 shrink-0 text-center text-xs text-muted-foreground tabular-nums">
+          {finder.count ? `${finder.index + 1}/${finder.count}` : findTerm.trim() ? "0/0" : ""}
+        </span>
+        <Button variant="ghost" size="icon-sm" onclick={() => finder.step(-1)} disabled={!finder.count} title="Previous (Shift+Enter)" aria-label="Previous">
+          <ChevronUp />
+        </Button>
+        <Button variant="ghost" size="icon-sm" onclick={() => finder.step(1)} disabled={!finder.count} title="Next (Enter)" aria-label="Next">
+          <ChevronDown />
+        </Button>
+      {/if}
+      <div class="flex shrink-0 rounded-md border p-0.5" role="radiogroup" aria-label="Where to search">
+        {#each [["page", "Page"], ["all", "All documents"]] as const as [scope, label] (scope)}
+          <Button
+            variant={findScope === scope ? "secondary" : "ghost"}
+            size="sm"
+            class="h-6 px-2"
+            role="radio"
+            aria-checked={findScope === scope}
+            onclick={() => setScope(scope)}
+          >
+            {label}
+          </Button>
+        {/each}
+      </div>
+      <Button variant="ghost" size="icon-sm" onclick={closeFind} title="Close (Esc)" aria-label="Close the find bar">
+        <X />
+      </Button>
+    </div>
+  {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <article
     class="prose prose-sm max-w-none min-h-0 flex-1 overflow-auto px-5 pt-4 pb-5
       prose-code:before:content-none prose-code:after:content-none
+      [&_mark.doc-hit]:bg-yellow-300/40 [&_mark.doc-hit]:text-inherit
       [&_.code-block]:relative [&_.copy-block]:absolute [&_.copy-block]:top-1.5 [&_.copy-block]:right-1.5
       [&_pre]:font-mono [&_pre]:text-(length:--code-size) [&_pre_code]:[font-size:inherit]"
     style:font-size="var(--code-size)"
     bind:this={content}
+    tabindex="-1"
     onclick={onClick}
   >
-    {#if plain !== null}
+    {#if current?.kind === "search"}
+      <p class="text-muted-foreground">
+        {current.results.length === 0
+          ? `Nothing in the documentation matches "${current.query}".`
+          : `"${current.query}": ${current.results.length} ${current.results.length === 1 ? "section" : "sections"}${current.results.length >= 200 ? " (the first 200)" : ""}, the most relevant first.`}
+      </p>
+      <ul class="pl-0">
+        {#each current.results as r, i (i)}
+          <li class="list-none pl-0">
+            <a
+              href={`#${r.path}`}
+              data-path={r.path}
+              data-heading={r.heading ?? ""}
+              data-term={r.terms[0] ?? ""}
+              class="no-underline"
+            >
+              <span class="font-medium">{r.path.replace(/\.md$/, "")}{r.heading ? ` > ${r.heading}` : ""}</span>
+            </a>
+            {#if r.line}<div class="text-muted-foreground">{@html marked(r.line, r.terms)}</div>{/if}
+          </li>
+        {/each}
+      </ul>
+    {:else if plain !== null}
       <pre class="whitespace-pre-wrap">{plain}</pre>
     {:else}
       {@html html}

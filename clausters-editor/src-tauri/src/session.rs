@@ -165,26 +165,30 @@ pub fn py_eval(
     )
 }
 
-#[tauri::command]
-pub fn py_help(
-    app: AppHandle,
-    session: State<Session>,
-    id: u64,
-    expr: String,
-) -> Result<(), String> {
-    session.send(&app, json!({ "id": id, "op": "help", "expr": expr }))
-}
+/// The requests the driver answers on its reader thread, even while code is running:
+/// pydoc's help, and Jedi's description, signatures and completions at a position.
+const QUERIES: [&str; 4] = ["help", "inspect", "signatures", "complete"];
 
-/// Signature and docstring of a name in the session (for the editor's tooltips).
-/// The driver answers it even while code is running.
+/// A question about code to the session (see `QUERIES`); `args` are the request's
+/// own fields -- an expression for help, the editor's text and a position for the rest.
 #[tauri::command]
-pub fn py_inspect(
+pub fn py_query(
     app: AppHandle,
     session: State<Session>,
     id: u64,
-    expr: String,
+    op: String,
+    args: Value,
 ) -> Result<(), String> {
-    session.send(&app, json!({ "id": id, "op": "inspect", "expr": expr }))
+    if !QUERIES.contains(&op.as_str()) {
+        return Err(format!("Unknown query: {op}"));
+    }
+    let mut request = match args {
+        Value::Object(map) => map,
+        _ => return Err("A query's arguments are an object".into()),
+    };
+    request.insert("id".into(), json!(id));
+    request.insert("op".into(), json!(op));
+    session.send(&app, Value::Object(request))
 }
 
 /// Ends the current session and starts a new one (with whichever interpreter applies now).

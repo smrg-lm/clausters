@@ -8,10 +8,13 @@ evaluate stays alive in the session, and its output appears in the *post* window
 | Shortcut | Action |
 |---|---|
 | `Shift+Enter` | Evaluates the selection or the current line |
-| `Ctrl+Enter` | Evaluates the selection or the top-level block under the cursor (a whole `def`, `for`, `class`) |
+| `Ctrl+Enter` | Evaluates the selection or the top-level block under the cursor (a whole `def`, `for`, `class`), then moves to the line after it |
 | `Ctrl+.` | Interrupts the execution (`KeyboardInterrupt`) |
 | `Ctrl+D` | Help on the name under the cursor |
 | `Ctrl+Shift+Space` | Shows the parameters of the call the cursor is in (`Esc` closes it) |
+| `Ctrl+Space` | Completes the name being typed: from the file, and from what the session holds |
+| `Ctrl+F` | In the documentation: finds text in the page (`Enter` / `Shift+Enter`: next / previous) |
+| `Ctrl+Shift+F` | Searches every document for a text (the selection, if there is one); the find bar's *Page* / *All documents* switches between the two |
 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save (`Ctrl+Shift+S`: save as) |
 | `Ctrl+W` | Close tab |
 
@@ -30,9 +33,36 @@ greeting("world")
 After evaluating it, `greeting` stays defined in the session: type
 `greeting("again")` in the editor and press `Shift+Enter`.
 
+Session → Evaluate Contiguous Lines as a Block makes `Ctrl+Enter` take the lines
+around the cursor that no blank line separates, as one block:
+
+```python
+a = 1
+b = 2
+print(a + b)
+```
+
+A file with **cells** -- lines starting with `# %%`, as VS Code and Jupyter write
+them -- is evaluated a cell at a time: `Ctrl+Enter` evaluates the cell the cursor
+is in and moves to the next one.
+
+```python
+# %% Setup
+x = 10
+
+# %% Use it
+x * 2
+```
+
 Hovering over a name already defined in the session (a variable, a function, a
 method) shows its signature and its documentation; typing `(` or `,` inside a
-call shows its parameters, with the current one highlighted.
+call shows its parameters, with the current one highlighted. While typing, the
+suggestions include what the session holds -- the names a `from module import *`
+brought in, an object's attributes after its `.`, what a call returns
+(`Server().boot(` shows `boot`'s parameters). All of it comes from
+[Jedi](https://jedi.readthedocs.io/), which reads the file and the session together:
+it is installed with the editor's package and in every environment the editor
+creates; in another environment, `pip install jedi` turns it on.
 
 The documentation is hidden with the x on its bar (or View → Documentation) and
 comes back with `F1` or `Ctrl+D`.

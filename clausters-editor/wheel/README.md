@@ -11,7 +11,9 @@ clausters-editor
 ```
 
 The session runs on the interpreter the package is installed in, until an
-environment is chosen in Session -> Python Environments.
+environment is chosen in Session -> Python Environments. The package installs
+[Jedi](https://jedi.readthedocs.io/) beside it: the editor's completions,
+signatures and hover help come from it.
 
 ## Requirements
 

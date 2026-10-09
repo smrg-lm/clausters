@@ -121,6 +121,11 @@ paths. The menu entry does not show up in the applications menu, because
 - Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
+- **Completions, signatures and hover help** come from
+  [Jedi](https://jedi.readthedocs.io/) running in the session (`python/driver.py`),
+  which reads the file and the session's objects together. The Python package
+  depends on it and every environment the app creates installs it; elsewhere the
+  session still runs code, and says once that `pip install jedi` adds them.
 - `CLAUSTERS_EDITOR_DEFAULT_PYTHON=/path/python` is the interpreter used when no
   environment is active, and the one new environments are created from (`python3`
   when unset). The Python package's command sets it.
@@ -137,8 +142,12 @@ src/
   lib/Editor.svelte        an editor: tabs + CodeMirror, open/save (one or two of them)
   lib/Grip.svelte          the handle every panel is dragged by
   lib/editorTheme.ts       editor theme: shadcn variables + VS Code syntax colors
-  lib/evaluation.ts        what each shortcut evaluates (line, selection, block)
-  lib/hints.ts             documentation tooltips and parameter help (from the session)
+  lib/evaluation.ts        what each shortcut evaluates (line, selection, block, cell)
+  lib/hints.ts             documentation tooltips and parameter help (Jedi, from the session)
+  lib/completion.ts        completions (Jedi, from the session)
+  lib/code.ts              the editor's text and a position, as the session reads them
+  lib/docIndex.ts          the documentation's full-text index (MiniSearch)
+  lib/pageFind.svelte.ts   finding text in the page on screen (CSS Highlight API)
   lib/ui/tooltip.ts        themed tooltips for every `title` attribute on the page
   lib/Post.svelte          output window
   lib/Docs.svelte          documentation viewer, history, help (Ctrl+D)
@@ -149,7 +158,8 @@ src/
 src-tauri/
   python/driver.py         driver: runs the code in a persistent namespace
   src/session.rs           the Python process: start, send, interrupt, restart
-  src/files.rs             the user's files and the docs/ folder
+  src/files.rs             the user's files, the docs/ folder and the package books
+  src/pkgdocs.rs           the books the session's packages register (clausters_editor.docs)
   src/fonts.rs             installed monospaced fonts
   src/config.rs            persistent configuration
   about.toml, about.hbs    the licenses `cargo about` accepts, and how it writes the crates' notices
