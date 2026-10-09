@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { onMessage, type Msg } from "./session.svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { info, onMessage, type Msg } from "./session.svelte";
   import { settings, setAutoscroll } from "./settings.svelte";
   import Grip from "./Grip.svelte";
   import { Button } from "$lib/components/ui/button";
@@ -21,6 +22,31 @@
     last = null;
   }
 
+  const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/g;
+
+  /** The text as DOM nodes, with every web address a link the browser opens. */
+  function linked(text: string): DocumentFragment {
+    const out = document.createDocumentFragment();
+    let at = 0;
+    for (const m of text.matchAll(URL_RE)) {
+      out.append(text.slice(at, m.index));
+      const a = document.createElement("a");
+      a.href = m[0];
+      a.textContent = m[0];
+      out.append(a);
+      at = m.index! + m[0].length;
+    }
+    out.append(text.slice(at));
+    return out;
+  }
+
+  function onClick(e: MouseEvent) {
+    const a = (e.target as HTMLElement).closest("a");
+    if (!a) return;
+    e.preventDefault();
+    openUrl(a.href).catch((err) => info(`${err}\n`));
+  }
+
   // Written straight into the DOM: the output only grows and can be large.
   function append(m: Msg) {
     let text = m.type === "result" ? `-> ${m.text}\n` : m.text;
@@ -29,12 +55,12 @@
     const merge =
       last && last.dataset.type === m.type && m.type !== "result" && last.textContent!.length < MAX_CHUNK_LEN;
     if (merge) {
-      last!.append(text);
+      last!.append(linked(text));
     } else {
       last = document.createElement("span");
       last.className = m.type;
       last.dataset.type = m.type;
-      last.textContent = text;
+      last.append(linked(text));
       el.appendChild(last);
       while (el.childElementCount > MAX_CHUNKS) el.firstElementChild!.remove();
     }
@@ -64,10 +90,12 @@
       <ArrowDownToLine />
     </Toggle>
   </div>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <pre
     class="m-0 min-h-0 flex-1 overflow-auto px-3 py-2 font-mono break-words whitespace-pre-wrap
-      [&_.err]:text-destructive [&_.info]:text-muted-foreground [&_.result]:text-success [&_.sys]:text-muted-foreground"
+      [&_a]:underline [&_a]:underline-offset-2 [&_.err]:text-destructive [&_.info]:text-muted-foreground [&_.result]:text-success [&_.sys]:text-muted-foreground"
     style:font-size="var(--code-size)"
     bind:this={el}
+    onclick={onClick}
   ></pre>
 </div>
