@@ -278,6 +278,10 @@ group is pytest (pip's `--group` reads `./pyproject.toml` unless given a path,
 and this one lives in `clients/python/`); drop it, or the editor's two
 arguments, for a lighter install.
 
+`scripts/install-venv.sh` does this step in one command: it creates `.venv` when
+it is missing, updates pip (`--group` takes 25.1) and runs the install above
+(`--no-editor` and `--no-dev` drop those pieces).
+
 (To evaluate the examples cell by cell, open the `.py` in VS Code with the Python
 + Jupyter extensions, or a Jupyter notebook, and run its `# %%` cells — nothing
 else needed in the venv.)
@@ -318,6 +322,9 @@ works there from the first line.
   `clausters-editor/`), `CLAUSTERS_SKIP_NATIVE_BUILD=1
   CLAUSTERS_EDITOR_SKIP_BUILD=1` in front of it stages them without rebuilding
   anything.
+
+`scripts/install-venv.sh --refresh` does all three on an existing `.venv`:
+the binaries, the book and the editor, without resolving any dependency.
 
 Step 3 builds the GUI binary (wgpu, a minute or two the first time); set
 `CLAUSTERS_SKIP_GUI_BUILD=1` to skip it for a faster, server-only install (a
