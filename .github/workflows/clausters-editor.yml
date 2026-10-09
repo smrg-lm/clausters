@@ -91,8 +91,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: clausters-editor/src-tauri
-      - run: pip wheel --no-deps -w dist clausters-editor/wheel
+      - name: Build the wheel
+        working-directory: clausters-editor
+        run: |
+          npm ci
+          pip install build
+          python -m build --wheel wheel
       - uses: actions/upload-artifact@v6
         with:
           name: clausters-editor-wheel
-          path: dist/*.whl
+          path: clausters-editor/wheel/dist/*.whl

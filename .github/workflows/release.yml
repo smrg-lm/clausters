@@ -1,9 +1,15 @@
 # Release: on a version tag (v*), build the self-contained Python wheel
-# (client + embedded server + standalone server binary, see clients/python/
-# setup.py) and the standalone server binary, publish the wheel to PyPI and
-# the web client to npm, and attach the wheel and the binary to a GitHub
-# release. The three artifacts carry ONE version -- the repository's SemVer --
-# so they are cut by the same tag rather than each on its own schedule.
+# (client + embedded server + standalone server binary + the offline book, see
+# clients/python/setup.py) and the standalone server binary, publish the wheel
+# to PyPI and the web client to npm, and attach the wheel and the binary to a
+# GitHub release. The three artifacts carry ONE version -- the repository's
+# SemVer -- so they are cut by the same tag rather than each on its own
+# schedule.
+#
+# The same tag builds clausters-editor's wheel, which the client's `editor`
+# extra installs. The editor keeps its own version (clausters-editor/src-tauri/
+# tauri.conf.json), so its PyPI upload skips a version already there: a release
+# publishes the editor only when its version moved.
 #
 # PyPI auth is Trusted Publishing (OIDC): the PyPI project `clausters` must
 # list this repository/workflow as a trusted publisher and the repo must have
@@ -179,8 +185,11 @@ jobs:
         # No sdist: the package builds cdylibs from the Rust workspace, which
         # an sdist of clients/python would not contain.
         working-directory: clients/python
+        # pydoc-markdown generates the API pages of the book the wheel carries
+        # (build_docs.py); it runs from this Python, outside the build's
+        # isolated environment, through its command on the PATH.
         run: |
-          pip install build
+          pip install build pydoc-markdown
           python -m build --wheel
       - name: Package the standalone server binary
         run: |
@@ -211,6 +220,8 @@ jobs:
                   print(f"    {mib(i.file_size):>10}  {n.split('/')[-1]}")
           n = sum(1 for i in z.infolist() if "_libs/verovio/" in i.filename)
           print(f"    {n} verovio resource files")
+          docs = [i for i in z.infolist() if "/_docs/" in i.filename]
+          print(f"    {len(docs)} book pages, {mib(sum(i.compress_size for i in docs))} packed")
           EOF
       - uses: actions/upload-artifact@v6
         with:
@@ -241,6 +252,65 @@ jobs:
           name: wheel
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  build-editor:
+    name: clausters-editor wheel (manylinux_2_35)
+    # No event guard, as `build` has none. Built on the oldest Ubuntu with
+    # WebKitGTK 4.1, which the binary links from the system: the wheel's tag is
+    # the build machine's glibc, so a wheel built here runs on every
+    # distribution that has the library.
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clausters-editor/src-tauri
+      - name: Build the wheel
+        working-directory: clausters-editor
+        run: |
+          npm ci
+          pip install build
+          python -m build --wheel wheel
+      - uses: actions/upload-artifact@v6
+        with:
+          name: editor-wheel
+          path: clausters-editor/wheel/dist/*.whl
+
+  publish-pypi-editor:
+    name: publish clausters-editor to PyPI (trusted publishing)
+    # After the client's upload, for the reason the client's waits on npm: one
+    # way, and in order. `skip-existing` because the editor's version is its
+    # own -- a tag that did not move it finds it already on PyPI, which is not
+    # a failure. The PyPI project `clausters-editor` lists this workflow and
+    # the `pypi` environment as a trusted publisher, as `clausters` does.
+    needs: [build-editor, publish-pypi]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: editor-wheel
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   build-web:
     name: web package (npm tarball)
@@ -330,16 +400,20 @@ jobs:
     # Behind both registries, for the reason publish-pypi is behind npm: the
     # release page is the announcement, and announcing a release whose
     # packages are not installable is worse than announcing it late.
-    needs: [build, publish-npm, publish-pypi]
+    needs: [build, build-editor, publish-npm, publish-pypi, publish-pypi-editor]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      # The wheel and the server binary; the npm tarball is the registry's.
+      # The two wheels and the server binary; the npm tarball is the registry's.
       - uses: actions/download-artifact@v7
         with:
           name: wheel
+          path: assets
+      - uses: actions/download-artifact@v7
+        with:
+          name: editor-wheel
           path: assets
       - uses: actions/download-artifact@v7
         with:

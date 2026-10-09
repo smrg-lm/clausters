@@ -186,7 +186,16 @@ is reproducible with the same line:
   `release.yml` and environment `pypi` as a trusted publisher, and the
   repository needs a `pypi` environment. There is deliberately **no sdist**:
   the package compiles cdylibs from the Rust workspace, which an sdist of
-  `clients/python` would not contain.
+  `clients/python` would not contain. The wheel carries the client's book as
+  Markdown, so its build needs `pydoc-markdown` for the API pages.
+- **clausters-editor rides the same tag with its own version.** The `v*` tag
+  also builds the editor's wheel (on Ubuntu 22.04, the oldest release with
+  WebKitGTK 4.1) and uploads it after the client's, skipping a version PyPI
+  already has: the editor is published when `tauri.conf.json`'s version moved,
+  and not otherwise. Its PyPI project, `clausters-editor`, needs the same
+  trusted publisher as `clausters` (workflow `release.yml`, environment
+  `pypi`); before its first upload that is a *pending* publisher, set up on
+  PyPI under the project's name.
 - **The web pages run in every browser before a release, by hand.**
   `clients/web/test.sh` runs its acceptance pages under headless Chrome alone
   -- they are the slow half of the suite, and a feature is tested many times a
