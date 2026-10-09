@@ -4,7 +4,7 @@
 
 The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: three cdylibs — `libclausters_ffi` (the numeric/timing core), `libclausters` (built with `embed,realtime` for the in-process server and offline render) and `libclausters_midi` (built with `live`, the MIDI file writers and the virtual MIDI ports) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
-The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~45 MB packed, the largest part of it LLVM, since the Faust compiler *is* an LLVM JIT). It bundles **libverovio** the same way, so the `score` widget engraves with nothing installed. Nothing to enable and nothing to install: this is the default install.
+The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~47 MB packed, the largest part of it LLVM, since the Faust compiler *is* an LLVM JIT). It bundles **libverovio** the same way, so the `score` widget engraves with nothing installed. Nothing to enable and nothing to install: this is the default install.
 
 The simplest setup, in a fresh virtualenv, run from the repository so the build hook can find the cargo workspace:
 
@@ -22,8 +22,12 @@ Building from the repository needs the system dependencies, Rust, and libfaust a
 `pip install` triggers `setup.py`, which runs `cargo build` for the three cdylibs and stages them in `clausters/_libs/` before packaging. To build a redistributable wheel explicitly:
 
 ```sh
+pip install build                                # once: the PEP 517 front end
+rm -rf clients/python/dist clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
 pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
+python -m build --wheel clausters-editor/wheel   # the editor's (the editor extra)
+pip install clients/python/dist/clausters-*.whl clausters-editor/wheel/dist/*.whl
 ```
 
 In a plain source checkout (no install), the loaders fall back to the workspace `target/{release,debug}/`, so the historic build-and-run workflow still works:

@@ -177,7 +177,7 @@ no `target/` directory, no separate build step at import time.
 Self-contained includes **Faust**: both def families are on by default in the
 server, so the wheel also carries `libfaust` (in `clausters/_libs/`, found
 through the artifacts' `$ORIGIN` rpath). A `FaustDef` therefore compiles on a
-machine without it installed. That is what makes the wheel heavy — ~45 MB
+machine without it installed. That is what makes the wheel heavy — ~47 MB
 packed, the largest part of it LLVM, which is linked into libfaust because the
 Faust compiler *is* an LLVM JIT. It carries **libverovio** the same way, with
 its SMuFL glyph data, so the `score` widget engraves with nothing installed.
@@ -205,8 +205,12 @@ self-contained wheel (`pip install patchelf`). Building a redistributable wheel
 explicitly:
 
 ```sh
+pip install build                                # once: the PEP 517 front end
+rm -rf clients/python/dist clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
 pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
+python -m build --wheel clausters-editor/wheel   # the editor's (the editor extra)
+pip install clients/python/dist/clausters-*.whl clausters-editor/wheel/dist/*.whl
 ```
 
 The wheel also bundles the **visual server** (the `clausters-gui` host binary),

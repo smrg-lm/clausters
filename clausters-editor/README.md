@@ -47,9 +47,14 @@ the interpreter the package is installed in as the session's default, so the
 session imports what that environment has until another one is chosen.
 
 ```sh
-pip wheel --no-deps -w dist wheel/   # builds the app and the wheel
-CLAUSTERS_EDITOR_SKIP_BUILD=1 pip wheel --no-deps -w dist wheel/   # with the binary already built
+pip install build                     # once: the PEP 517 front end
+python -m build --wheel wheel         # builds the app and the wheel -> wheel/dist/*.whl
+CLAUSTERS_EDITOR_SKIP_BUILD=1 python -m build --wheel wheel   # with the binary already built
 ```
+
+The same command builds the client's wheel (`python -m build --wheel
+clients/python` from the repository root), and the two install together with
+`pip install` on both files.
 
 From the repository root, `clausters[editor]` installs with both paths in one
 command; pip takes the second as the `clausters-editor` the extra names, as it
