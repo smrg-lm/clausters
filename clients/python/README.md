@@ -28,14 +28,20 @@ self-contained (client + server + GUI host + libfaust; Linux x86_64 for now):
 
 ```sh
 pip install clausters
+pip install "clausters[editor]"   # also clausters-editor, the Python editor
 ```
+
+The `editor` extra adds **clausters-editor**, a Python editor with an
+interactive session that opens on the environment it is installed in. On Linux
+it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`), which no wheel
+carries; its command says how to install it when it is missing.
 
 The client is driven **interactively** — from a REPL, or cell by cell in an
 editor. No globals to set up, no build context to open: every line stands alone.
 
 ```python
 from clausters import Session
-from clausters.defs import SynthDef, control, sine, out
+from clausters.defs import SynthDef, Synth, control, sine, out
 
 session = Session.live(latency=0.1)   # attaches to a server, or boots one
 server = session.server
@@ -136,6 +142,9 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   both binaries, so `pip install` puts both commands on `PATH`, each behaving
   exactly like its cargo-built binary (`clausters --tcp`, `clausters --nrt
   score.osc out.wav`, `clausters-gui --standalone`, …).
+- The **`editor` extra** (`clausters[editor]`) — installs `clausters-editor`, a
+  separate package with its own command, whose session runs on the environment
+  it is installed in.
 - `clausters.launch` — launching and owning the server and GUI as child
   processes. `Session.live()` connects to a running server or starts one if none
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
@@ -168,10 +177,12 @@ no `target/` directory, no separate build step at import time.
 Self-contained includes **Faust**: both def families are on by default in the
 server, so the wheel also carries `libfaust` (in `clausters/_libs/`, found
 through the artifacts' `$ORIGIN` rpath). A `FaustDef` therefore compiles on a
-machine without it installed. That is what makes the wheel heavy — ~33 MB
-packed, most of it LLVM, which is linked into libfaust because the Faust
-compiler *is* an LLVM JIT. Building the client from this repo needs libfaust present (see
-[`BUILD.md`](../../BUILD.md)); a `pip install` of a built wheel needs nothing.
+machine without it installed. That is what makes the wheel heavy — ~45 MB
+packed, the largest part of it LLVM, which is linked into libfaust because the
+Faust compiler *is* an LLVM JIT. It carries **libverovio** the same way, with
+its SMuFL glyph data, so the `score` widget engraves with nothing installed.
+Building the client from this repo needs both libraries present (see the steps
+below); a `pip install` of a built wheel needs nothing.
 
 The simplest, standard, self-contained setup in a fresh venv (run from the repo,
 so the build hook can find the cargo workspace):
@@ -185,7 +196,7 @@ pip install -e ./clients/python --group ./clients/python/pyproject.toml:dev
 pip install ./clients/python
 ```
 
-`pip install` triggers `setup.py`, which runs `cargo build` for both cdylibs and
+`pip install` triggers `setup.py`, which runs `cargo build` for the three cdylibs and
 stages them in `clausters/_libs/` before packaging them into the wheel (the
 system build dependencies are listed in [`BUILD.md`](../../BUILD.md)). On Linux
 that staging also needs **patchelf** — it rewrites each vendored library's run
@@ -205,37 +216,71 @@ launch them for you (see the guide); nothing else to install. For a lighter,
 server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when building (a source-checkout
 `clients/gui/target` binary is still used at runtime if present).
 
-### Everything at once, in a clean venv
+### From the repository, step by step
 
-To exercise the whole thing the way a user gets it — installed, with the server
-and GUI launched from Python — set up a fresh venv. **Run every command from the
-repo root** so the build hook can find the cargo workspace:
+The whole thing the way a user gets it — installed, with the server, the GUI and
+the editor launched from Python — in a fresh venv. **Run every command from the
+repo root**, so the build hooks find the cargo workspace and the editor.
+
+**1. System dependencies** (once). On Ubuntu/Debian:
 
 ```sh
-# 1) a clean venv
-python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-
-# 2) the client, editable (builds the cdylibs and the server + clausters-gui
-#    binaries with cargo, then packages them into the one self-contained package):
-pip install -e ./clients/python
-
-# 3) for the test suite -- pytest is the whole dev group (`dependency-groups`
-#    in clients/python/pyproject.toml); the package itself has no dependencies:
-pip install --group ./clients/python/pyproject.toml:dev
+# the server, the client's native libraries and their staging
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev \
+  clang libdbus-1-dev patchelf python3-venv
+# to build libfaust
+sudo apt install cmake make g++ llvm-18-dev zlib1g-dev
+# to build the editor (Tauri over WebKitGTK)
+sudo apt install libwebkit2gtk-4.1-dev file libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev
 ```
+
+Plus Rust ([rustup](https://rustup.rs), the stable toolchain) and Node 22 with
+npm, which builds the editor's interface. [`BUILD.md`](../../BUILD.md) has the
+optional features' dependencies.
+
+**2. libfaust and libverovio** (once). Both are built from a pinned source into
+`~/.local`, where the build finds them (`FAUST_PREFIX` / `VEROVIO_PREFIX` point
+elsewhere):
+
+```sh
+third_party/build-faust.sh     # libfaust with LLVM linked in
+third_party/build-verovio.sh   # the score widget's engraver
+```
+
+A build that does not find one stops and names the script. To work on something
+else without it, `CLAUSTERS_SKIP_FAUST=1` or `CLAUSTERS_SKIP_VEROVIO=1` builds
+without that piece.
+
+**3. The venv and the install:**
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -e "./clients/python[editor]" ./clausters-editor/wheel \
+  --group ./clients/python/pyproject.toml:dev
+```
+
+This builds, in release, the three cdylibs, the server, the GUI host and the
+editor, and stages each into its package — several minutes the first time.
+`clausters` is installed editable; `clausters-editor` is a plain wheel, which pip
+takes as the one the `editor` extra names, as it would take PyPI's. The `dev`
+group is pytest (pip's `--group` reads `./pyproject.toml` unless given a path,
+and this one lives in `clients/python/`); drop it, or the editor's two
+arguments, for a lighter install.
 
 (To evaluate the examples cell by cell, open the `.py` in VS Code with the Python
 + Jupyter extensions, or a Jupyter notebook, and run its `# %%` cells — nothing
 else needed in the venv.)
 
-Then verify, in order:
+**4. Verify**, in order:
 
 ```sh
-pytest -q clients/python                          # a) the client suite (~146 green)
-clausters --help | head -1                        # b) server binary on PATH
-clausters-gui --help | head -1                    #    visual server on PATH
+pytest -q clients/python                             # a) the client suite
+clausters --help | head -1                           # b) server binary on PATH
+clausters-gui --help | head -1                       #    visual server on PATH
 python clients/python/examples/io/embedded.py        # c) sound with nothing to start
-python clients/python/examples/views/editor.py      # d) client launches server + GUI
+python clients/python/examples/views/editor.py       # d) client launches server + GUI
+clausters-editor                                     # e) the editor, on this venv
 ```
 
 In (d) `Session.live` starts a server if none is running (choosing a
@@ -246,8 +291,23 @@ a script it follows the playhead for a while, then tears everything down. To wor
 `gui.close(win)`) — open the file's `# %%` cells in VS Code / Jupyter. Either
 way, everything the session started **stops** when it finishes or is closed, so
 nothing is left running (check with `pgrep -laf 'clausters($| )|clausters-gui'`).
+In (e) the editor's session runs on this venv's Python, so `import clausters`
+works there from the first line.
 
-Step 2 builds the GUI binary (wgpu, a minute or two the first time); set
+**5. After changing code:**
+
+- **Python in `clients/python`** — nothing: the install is editable.
+- **Rust (server, core, GUI host)** — `scripts/refresh-bin.sh`. The package
+  loads the binaries **staged inside it** before the workspace `target/`, so a
+  rebuilt crate is not what runs until it is staged again; a manual test would
+  silently exercise the old one.
+- **The editor** — repeat step 3's `pip install`: it is not editable. With the
+  binaries already built (`npm run tauri build -- --no-bundle` in
+  `clausters-editor/`), `CLAUSTERS_SKIP_NATIVE_BUILD=1
+  CLAUSTERS_EDITOR_SKIP_BUILD=1` in front of it stages them without rebuilding
+  anything.
+
+Step 3 builds the GUI binary (wgpu, a minute or two the first time); set
 `CLAUSTERS_SKIP_GUI_BUILD=1` to skip it for a faster, server-only install (a
 `clients/gui/target` binary built with `cargo build --release --bin
 clausters-gui` is still used at runtime if present).
@@ -266,6 +326,10 @@ Knobs (env vars), all optional:
   `clausters/_libs/` without rebuilding.
 - `CLAUSTERS_SKIP_GUI_BUILD` — don't build/bundle the heavy `clausters-gui`
   binary (a lighter, server-only wheel).
+- `CLAUSTERS_SKIP_FAUST` / `CLAUSTERS_SKIP_VEROVIO` — build without libfaust (no
+  `FaustDef`) or without libverovio (the `score` widget does not engrave).
+- `CLAUSTERS_EDITOR_SKIP_BUILD` — for `./clausters-editor/wheel`: stage the
+  editor binary already built instead of building it.
 - `CLAUSTERS_GUI_FEATURES` — extra cargo features for the GUI binary (e.g.
   `standalone`); default none.
 - `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` — at runtime, point a loader directly at

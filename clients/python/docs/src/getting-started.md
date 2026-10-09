@@ -4,7 +4,7 @@
 
 The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: three cdylibs — `libclausters_ffi` (the numeric/timing core), `libclausters` (built with `embed,realtime` for the in-process server and offline render) and `libclausters_midi` (built with `live`, the MIDI file writers and the virtual MIDI ports) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
-The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~33 MB packed, most of it LLVM, since the Faust compiler *is* an LLVM JIT). Nothing to enable and nothing to install: this is the default install.
+The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~45 MB packed, the largest part of it LLVM, since the Faust compiler *is* an LLVM JIT). It bundles **libverovio** the same way, so the `score` widget engraves with nothing installed. Nothing to enable and nothing to install: this is the default install.
 
 The simplest setup, in a fresh virtualenv, run from the repository so the build hook can find the cargo workspace:
 
@@ -17,7 +17,9 @@ pip install -e ./clients/python --group ./clients/python/pyproject.toml:dev
 pip install ./clients/python
 ```
 
-`pip install` triggers `setup.py`, which runs `cargo build` for both cdylibs and stages them in `clausters/_libs/` before packaging. To build a redistributable wheel explicitly:
+Building from the repository needs the system dependencies, Rust, and libfaust and libverovio built first; the package's README walks through all of it, step by step, including what to run after changing code ([From the repository, step by step](https://github.com/smrg-lm/clausters/tree/main/clients/python#from-the-repository-step-by-step)). The short version of the last part: Python changes need nothing, since the install is editable, but after rebuilding a crate run `scripts/refresh-bin.sh`, because the package loads the binaries staged inside it before the workspace `target/`.
+
+`pip install` triggers `setup.py`, which runs `cargo build` for the three cdylibs and stages them in `clausters/_libs/` before packaging. To build a redistributable wheel explicitly:
 
 ```sh
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
@@ -91,7 +93,7 @@ server = session.server               # the handle you send commands to
 An instrument is a **def** — a named graph the server compiles once and instantiates many times. Build one as a UGen graph and send it:
 
 ```python
-from clausters.defs import SynthDef, control, sine, out
+from clausters.defs import SynthDef, Synth, control, sine, out
 
 sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 sdef.send(server)             # sends /def_send synth and waits for the server's /done
