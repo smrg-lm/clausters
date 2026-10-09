@@ -147,6 +147,22 @@ fn word_matches<'a>(text: &'a str, term: &'a str) -> impl Iterator<Item = usize>
     })
 }
 
+/// `text` without Markdown's backslash escapes (`free\_all` -> `free_all`).
+fn unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match chars.peek() {
+            Some(&next) if c == '\\' && next.is_ascii_punctuation() => {
+                out.push(next);
+                chars.next();
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Is the occurrence at `i` inside an `inline code` span?
 fn in_code_span(line: &str, i: usize) -> bool {
     line[..i].matches('`').count() % 2 == 1
@@ -202,10 +218,11 @@ fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
                 let title = trimmed.trim_start_matches('#').trim().to_string();
                 // A heading that *is* the name (`## Routine`, `# clausters.play`) weighs
                 // more than one that only contains it (`#### Routine.run`).
-                let plain = title.replace('`', "");
+                // As it reads: `Server.free\_all` is the name `Server.free_all`.
+                let plain = unescape(&title.replace('`', ""));
                 let score = if plain == term || plain.ends_with(&format!(".{term}")) {
                     300
-                } else if word_matches(&title, term).next().is_some() {
+                } else if word_matches(&plain, term).next().is_some() {
                     100
                 } else {
                     0
@@ -264,6 +281,24 @@ mod tests {
         assert_eq!(hits[0].path, "a.md");
         assert_eq!(hits[0].heading.as_deref(), Some("The `Server`"));
         assert_eq!(hits[1].score, 1); // `ServerOptions` does not count
+    }
+
+    #[test]
+    fn escaped_heading_is_the_name() {
+        let dir = std::env::temp_dir().join(format!(
+            "clausters-editor-test-escaped-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("server.md"),
+            "# server\n* [free\\_all](#server.Server.free_all)\n\n#### Server.free\\_all\nFrees.\n",
+        )
+        .unwrap();
+        let hits = search_in(&dir, "Server.free_all");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(hits[0].named);
+        assert_eq!(hits[0].heading.as_deref(), Some("Server.free\\_all"));
     }
 
     /// Prints results over a real folder: DOCS=/path cargo test -- --ignored --nocapture

@@ -95,7 +95,9 @@
 
   async function show(page: Page) {
     // A document already on screen is not read again: only the anchor changes.
-    if (page.kind === "doc" && (page.path !== shownPath || source === null)) {
+    if (page.kind === "doc" && page.path === shownPath && source !== null) {
+      // Nothing to draw: the scroll below moves to the anchor.
+    } else if (page.kind === "doc") {
       try {
         source = await invoke<string>("read_doc", { path: page.path });
         shownPath = page.path;
