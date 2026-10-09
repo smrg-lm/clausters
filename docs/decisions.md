@@ -9886,3 +9886,33 @@ other beat as it is: 960 is divided by every common division of a beat
 quantized note lands exactly and a note played off the grid is not moved by
 the trip. The notes axis applies it to every beat it reads back.
 
+
+## A package hands its book to the editor through an entry point
+
+*(2026-10-08.)* The wheel carries the client's book as Markdown in
+`clausters/_docs/` — the same pages Read the Docs publishes, the generated API
+reference included — so it reads offline, and the place it is read is
+clausters-editor's documentation viewer. The editor is an application of its
+own that works with any Python, so it may not know where clausters keeps
+anything, and it may not import clausters itself: the packages that matter are
+the ones the *session's* interpreter imports, which change with the environment.
+
+So the editor asks that interpreter. A package registers its book under the
+`clausters_editor.docs` entry-point group, named after the package, as a
+callable that returns the folder or `None` (`clausters = "clausters._book:folder"`).
+Entry points are the packaging standard's own way for one distribution to offer
+something to another it does not depend on; the editor reads the group through
+`importlib.metadata` and lists each book under the package's name beside its own
+documentation, and its search and its help reach all of them. The answer is kept
+until the session starts again, the moment an install or another environment can
+change it.
+
+**The book is copied as it is.** Its links are relative `.md` paths and the API
+pages anchor their members with `<a id>`, both of which a Markdown viewer that
+follows links resolves with no rewriting; the one change is that mdBook's
+`SUMMARY.md` becomes `index.md`, the page a viewer opens first. A heading's id
+keeps `_`, as mdBook and GitHub keep it, so a link written for the published
+book lands on the same heading in the editor. And because the API pages are
+part of the book, building the wheel needs `pydoc-markdown`:
+`CLAUSTERS_SKIP_DOCS` leaves the book out of a development build, and a release
+refuses that skip as it refuses the others.

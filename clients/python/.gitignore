@@ -2,6 +2,8 @@
 # build_native.py / setup.py.
 clausters/_libs/
 clausters/_bin/
+# The offline book, staged by build_docs.py.
+clausters/_docs/
 
 # Packaging / build artifacts.
 build/

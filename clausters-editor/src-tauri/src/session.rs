@@ -42,7 +42,7 @@ pub fn default_python() -> String {
 
 /// The session's interpreter and environment name: `CLAUSTERS_EDITOR_PYTHON`, else the active
 /// environment, else the default Python.
-fn python_exe(app: &AppHandle) -> (String, Option<String>) {
+pub fn python_exe(app: &AppHandle) -> (String, Option<String>) {
     if let Ok(exe) = std::env::var("CLAUSTERS_EDITOR_PYTHON") {
         return (exe, None);
     }
@@ -54,6 +54,8 @@ fn python_exe(app: &AppHandle) -> (String, Option<String>) {
 
 impl Session {
     fn spawn(&self, app: &AppHandle) -> Result<Proc, String> {
+        // A new session may import other packages: their books are asked again.
+        crate::pkgdocs::forget();
         let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let driver = dir.join("driver.py");

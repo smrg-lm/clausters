@@ -45,6 +45,12 @@ clausters-gui = "clausters._cli:gui_main"
 [project.optional-dependencies]
 editor = ["clausters-editor>=0.1"]
 
+# The offline book (`clausters/_docs/`, staged by build_docs.py), named for
+# clausters-editor: its documentation viewer lists the books every package of
+# the session's environment registers under this group.
+[project.entry-points."clausters_editor.docs"]
+clausters = "clausters._book:folder"
+
 # Development-only dependencies (PEP 735): the test runner. Not part of the
 # published package -- install with `pip install --group dev` (or `uv sync`).
 [dependency-groups]
@@ -70,9 +76,12 @@ include = ["clausters", "clausters.*"]
 # verovio bakes its resource path in at build time, so a staged copy is told
 # where its data is at runtime. Thousands of one-glyph files, hence the
 # recursive glob.
+#
+# `_docs/**` is the client's book as Markdown, the API reference included
+# (build_docs.py), so the documentation reads offline.
 [tool.setuptools.package-data]
 clausters = ["_libs/*.so", "_libs/*.so.*", "_libs/*.dylib", "_libs/*.dll", "_bin/*",
-             "_libs/verovio/**"]
+             "_libs/verovio/**", "_docs/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

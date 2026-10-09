@@ -37,25 +37,76 @@ fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
     }
 }
 
-/// Relative paths of every `.md` in the documentation, sorted.
-#[tauri::command]
-pub fn list_docs(app: AppHandle) -> Result<Vec<String>, String> {
-    let root = docs_dir(&app)?;
-    let mut docs = Vec::new();
-    collect_md(&root, &root, &mut docs);
-    docs.sort();
-    Ok(docs)
+/// A folder of documentation and the prefix its documents are listed under: none
+/// for the editor's own, the package's name and a slash for a package's book.
+struct Root {
+    prefix: String,
+    dir: PathBuf,
 }
 
-/// A document's contents; rejects paths outside the documentation folder.
+/// The editor's documentation, then the book of every package of the session's
+/// environment that registers one (see `pkgdocs`).
+fn roots(app: &AppHandle) -> Result<Vec<Root>, String> {
+    let own = docs_dir(app);
+    let mut roots: Vec<Root> = own
+        .as_ref()
+        .ok()
+        .map(|dir| Root {
+            prefix: String::new(),
+            dir: dir.clone(),
+        })
+        .into_iter()
+        .collect();
+    for (name, dir) in crate::pkgdocs::books(app) {
+        if let Ok(dir) = dir.canonicalize() {
+            roots.push(Root {
+                prefix: format!("{name}/"),
+                dir,
+            });
+        }
+    }
+    match own {
+        Err(e) if roots.is_empty() => Err(e),
+        _ => Ok(roots),
+    }
+}
+
+/// Relative paths of every `.md` in the documentation, sorted: the editor's own
+/// first, then each package's book under its name.
+#[tauri::command]
+pub fn list_docs(app: AppHandle) -> Result<Vec<String>, String> {
+    let mut all = Vec::new();
+    for root in roots(&app)? {
+        let mut docs = Vec::new();
+        collect_md(&root.dir, &root.dir, &mut docs);
+        docs.sort();
+        all.extend(docs.into_iter().map(|d| format!("{}{d}", root.prefix)));
+    }
+    Ok(all)
+}
+
+/// A document's contents; rejects paths outside the documentation folders.
 #[tauri::command]
 pub fn read_doc(app: AppHandle, path: String) -> Result<String, String> {
-    let root = docs_dir(&app)?;
+    let roots = roots(&app)?;
+    // A package's prefix wins over a folder of the same name in the editor's own.
+    let (root, rel) = roots
+        .iter()
+        .filter(|r| !r.prefix.is_empty())
+        .find_map(|r| path.strip_prefix(&r.prefix).map(|rel| (r, rel)))
+        .or_else(|| {
+            roots
+                .iter()
+                .find(|r| r.prefix.is_empty())
+                .map(|r| (r, path.as_str()))
+        })
+        .ok_or_else(|| format!("Document not found: {path}"))?;
     let full = root
-        .join(&path)
+        .dir
+        .join(rel)
         .canonicalize()
         .map_err(|_| format!("Document not found: {path}"))?;
-    if !full.starts_with(&root) {
+    if !full.starts_with(&root.dir) {
         return Err("Path outside the documentation".into());
     }
     std::fs::read_to_string(full).map_err(|e| e.to_string())
@@ -77,6 +128,9 @@ pub struct DocHit {
     /// Heading of the section where the term appears most (None = before the first one).
     heading: Option<String>,
     score: u32,
+    /// Whether that heading *is* the name (`## Server`, `#### Server.boot`): an API
+    /// reference's entry for it, which help prefers to any page that only talks about it.
+    named: bool,
 }
 
 fn is_word(c: char) -> bool {
@@ -98,10 +152,28 @@ fn in_code_span(line: &str, i: usize) -> bool {
 }
 
 /// Sections of the documentation that talk about `term`, most relevant first:
-/// a heading that names it weighs more than code, and code more than prose.
+/// a heading that is the name first, then by score -- a heading that names it
+/// weighs more than code, and code more than prose.
 #[tauri::command]
 pub fn search_docs(app: AppHandle, term: String) -> Result<Vec<DocHit>, String> {
-    Ok(search_in(&docs_dir(&app)?, term.trim()))
+    let mut hits = Vec::new();
+    for root in roots(&app)? {
+        hits.extend(
+            search_in(&root.dir, term.trim())
+                .into_iter()
+                .map(|mut hit| {
+                    hit.path = format!("{}{}", root.prefix, hit.path);
+                    hit
+                }),
+        );
+    }
+    hits.sort_by(|a, b| rank(b).cmp(&rank(a)).then_with(|| a.path.cmp(&b.path)));
+    hits.truncate(10);
+    Ok(hits)
+}
+
+fn rank(hit: &DocHit) -> (bool, u32) {
+    (hit.named, hit.score)
 }
 
 fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
@@ -117,7 +189,7 @@ fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
             continue;
         };
         // Score per section (heading -> points).
-        let mut sections: Vec<(Option<String>, u32)> = vec![(None, 0)];
+        let mut sections: Vec<(Option<String>, u32, bool)> = vec![(None, 0, false)];
         let mut in_fence = false;
         for line in text.lines() {
             let trimmed = line.trim_start();
@@ -137,7 +209,7 @@ fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
                 } else {
                     0
                 };
-                sections.push((Some(title), score));
+                sections.push((Some(title), score, score >= 300));
                 continue;
             }
             let section = sections.last_mut().unwrap();
@@ -149,18 +221,23 @@ fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
                 };
             }
         }
-        // `rev` so that, on equal scores, the first section wins.
-        if let Some((heading, score)) = sections.into_iter().rev().max_by_key(|(_, s)| *s) {
+        // `rev` so that, on equal ranks, the first section wins.
+        if let Some((heading, score, named)) = sections
+            .into_iter()
+            .rev()
+            .max_by_key(|(_, score, named)| (*named, *score))
+        {
             if score > 0 {
                 hits.push(DocHit {
                     path: rel,
                     heading,
                     score,
+                    named,
                 });
             }
         }
     }
-    hits.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.path.cmp(&b.path)));
+    hits.sort_by(|a, b| rank(b).cmp(&rank(a)).then_with(|| a.path.cmp(&b.path)));
     hits.truncate(10);
     hits
 }

@@ -28,6 +28,7 @@ from setuptools.command.build_py import build_py
 
 # The PEP 517 backend may exec this file without its directory on sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import build_docs
 import build_native
 
 try:  # modern setuptools ships its own bdist_wheel; older defers to `wheel`.
@@ -47,6 +48,7 @@ class _BuildPy(build_py):
         # allow_skip: an isolated/copied build that cannot see the workspace
         # falls back to pre-staged artifacts instead of failing.
         build_native.build_and_stage(allow_skip=True)
+        build_docs.stage()
         super().run()
 
 

@@ -145,6 +145,9 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
 - The **`editor` extra** (`clausters[editor]`) — installs `clausters-editor`, a
   separate package with its own command, whose session runs on the environment
   it is installed in.
+- **The book, offline** — `clausters/_docs/` is this documentation as Markdown,
+  the API reference included. clausters-editor lists it in its documentation
+  viewer, where its search and its help (`Ctrl+D`) reach it.
 - `clausters.launch` — launching and owning the server and GUI as child
   processes. `Session.live()` connects to a running server or starts one if none
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
@@ -244,18 +247,20 @@ npm, which builds the editor's interface. [`BUILD.md`](../../BUILD.md) has the
 optional features' dependencies, and the editor's are those of its own
 [README](../../clausters-editor/README.md).
 
-**2. libfaust and libverovio** (once). Both are built from a pinned source into
-`~/.local`, where the build finds them (`FAUST_PREFIX` / `VEROVIO_PREFIX` point
-elsewhere):
+**2. libfaust, libverovio and pydoc-markdown** (once). The two libraries are
+built from a pinned source into `~/.local`, where the build finds them
+(`FAUST_PREFIX` / `VEROVIO_PREFIX` point elsewhere); pydoc-markdown generates
+the API pages of the book the package carries:
 
 ```sh
 third_party/build-faust.sh     # libfaust with LLVM linked in
 third_party/build-verovio.sh   # the score widget's engraver
+uv tool install --python 3.12 pydoc-markdown   # or pip install pydoc-markdown
 ```
 
-A build that does not find one stops and names the script. To work on something
-else without it, `CLAUSTERS_SKIP_FAUST=1` or `CLAUSTERS_SKIP_VEROVIO=1` builds
-without that piece.
+A build that does not find one stops and names what to install. To work on
+something else without it, `CLAUSTERS_SKIP_FAUST=1`, `CLAUSTERS_SKIP_VEROVIO=1`
+or `CLAUSTERS_SKIP_DOCS=1` builds without that piece.
 
 **3. The venv and the install:**
 
@@ -301,7 +306,9 @@ works there from the first line.
 
 **5. After changing code:**
 
-- **Python in `clients/python`** — nothing: the install is editable.
+- **Python in `clients/python`** — nothing: the install is editable. The
+  offline book is a copy, though: after a docstring or a book page changes,
+  `python clients/python/build_docs.py` stages it again.
 - **Rust (server, core, GUI host)** — `scripts/refresh-bin.sh`. The package
   loads the binaries **staged inside it** before the workspace `target/`, so a
   rebuilt crate is not what runs until it is staged again; a manual test would
@@ -333,6 +340,8 @@ Knobs (env vars), all optional:
   binary (a lighter, server-only wheel).
 - `CLAUSTERS_SKIP_FAUST` / `CLAUSTERS_SKIP_VEROVIO` — build without libfaust (no
   `FaustDef`) or without libverovio (the `score` widget does not engrave).
+- `CLAUSTERS_SKIP_DOCS` — build without the offline book (no pydoc-markdown
+  needed).
 - `CLAUSTERS_EDITOR_SKIP_BUILD` — for `./clausters-editor/wheel`: stage the
   editor binary already built instead of building it.
 - `CLAUSTERS_GUI_FEATURES` — extra cargo features for the GUI binary (e.g.

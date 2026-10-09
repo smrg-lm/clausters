@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { COPIED_ICON, COPY_ICON, renderMarkdown, slugify } from "./markdown";
   import { info, pyHelp, pyInspect } from "./session.svelte";
@@ -131,26 +132,33 @@
     path: string;
     heading: string | null;
     score: number;
+    /** The heading *is* the name: an API reference's entry for it. */
+    named: boolean;
   }
 
-  /** Help for a name: a .md with that name; otherwise the documentation section that
-   *  talks about it most; otherwise pydoc from the session. */
+  /** Help for a name: the section whose heading is that name (an API reference's
+   *  entry); otherwise a .md with that name; otherwise the section that talks
+   *  about it most; otherwise pydoc from the session. */
   export async function help(word: string) {
     const last = word.split(".").pop()!;
+    // First the full name of the object in the session (s.boot -> "Server.boot"),
+    // which tells apart methods with the same name; then the bare word.
+    const qualname = (await pyInspect(word))?.qualname;
+    const terms = [...new Set([qualname, word, last].filter((t): t is string => !!t))];
+    const searches = await Promise.all(
+      terms.map((term) => invoke<DocHit[]>("search_docs", { term }).catch(() => [] as DocHit[])),
+    );
+    const openHit = (hit: DocHit) => openDoc(hit.path, hit.heading ? slugify(hit.heading) : undefined);
+
+    const named = searches.find((hits) => hits.length && hits[0].named);
+    if (named) return openHit(named[0]);
+
     const byName = (name: string) => docs.find((d) => d.toLowerCase().split("/").pop() === name);
     const match = byName(`${word.toLowerCase()}.md`) ?? byName(`${last.toLowerCase()}.md`);
     if (match) return openDoc(match);
 
-    // First the full name of the object in the session (s.boot -> "Server.boot"),
-    // which tells apart methods with the same name; then the bare word.
-    const qualname = (await pyInspect(word))?.qualname;
-    for (const term of new Set([qualname, word, last].filter((t): t is string => !!t))) {
-      const hits = await invoke<DocHit[]>("search_docs", { term }).catch(() => [] as DocHit[]);
-      if (hits.length) {
-        const [best] = hits;
-        return openDoc(best.path, best.heading ? slugify(best.heading) : undefined);
-      }
-    }
+    const found = searches.find((hits) => hits.length);
+    if (found) return openHit(found[0]);
     try {
       go({ kind: "text", title: word, text: await pyHelp(word) });
     } catch (e) {
@@ -220,7 +228,21 @@
     home();
   }
 
-  onMount(reload);
+  /** Lists the documents again, keeping the page on screen: a new session may run on
+   *  another environment, whose packages carry other books. */
+  async function relist() {
+    const before = docs.length;
+    docs = await invoke<string[]>("list_docs").catch(() => docs);
+    if (before === 0 && docs.length > 0) home();
+  }
+
+  onMount(() => {
+    reload();
+    const unlisten = listen("py-start", relist);
+    return () => {
+      unlisten.then((f) => f());
+    };
+  });
 </script>
 
 <div class="flex h-full flex-col">

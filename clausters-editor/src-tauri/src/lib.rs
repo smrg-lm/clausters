@@ -2,6 +2,7 @@ mod config;
 mod envs;
 mod files;
 mod fonts;
+mod pkgdocs;
 mod session;
 
 use tauri::{Manager, RunEvent};

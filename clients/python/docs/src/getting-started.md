@@ -45,7 +45,7 @@ Building it adds a wgpu compile (a minute or two the first time). For a lighter,
 
 ### The editor
 
-`pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line. On Linux it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, in every desktop distribution since 2022), which no wheel carries; the command says how to install it when it is missing.
+`pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line, and its documentation viewer carries this book: the wheel holds it as Markdown, the API reference included, so the editor's search and its help on a name (`Ctrl+D`) reach it offline. On Linux it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, in every desktop distribution since 2022), which no wheel carries; the command says how to install it when it is missing.
 
 From a checkout, both paths go in one command, and pip takes the second as the `clausters-editor` the extra names, as it would take PyPI's:
 
@@ -64,6 +64,7 @@ The bundled artifacts that touch an audio device — the in-process embedded ser
 - `CLAUSTERS_SKIP_NATIVE_BUILD` — package the libs already staged in `clausters/_libs/` without rebuilding.
 - `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` — at runtime, point a loader directly at a cdylib (overrides the bundled copy and the workspace `target/`).
 - `CLAUSTERS_SKIP_GUI_BUILD` — at build time, skip building/bundling the `clausters-gui` binary (a lighter, server-only wheel).
+- `CLAUSTERS_SKIP_DOCS` — at build time, leave out the offline book, whose API pages need `pydoc-markdown`.
 - `CLAUSTERS_GUI_BIN` — at runtime, point the launcher directly at a `clausters-gui` host binary (overrides the bundled copy and the workspace `target/`).
 
 ## Your first sound, line by line

@@ -33,9 +33,10 @@ export const COPIED_ICON = icon('<path d="M20 6 9 17l-5-5"/>');
 
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true });
 
-// GitHub-style ids on headings, for `doc.md#section` links.
+// GitHub-style ids on headings, for `doc.md#section` links: letters, digits, `_`
+// and `-` stay, as on GitHub and in mdBook, so a book's links land here too.
 export const slugify = (s: string) =>
-  s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");
+  s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s+/g, "-");
 
 md.core.ruler.push("heading_ids", (state) => {
   const tokens = state.tokens;

@@ -111,6 +111,12 @@ paths. The menu entry does not show up in the applications menu, because
 - **Documentation folder** (File → Preferences, or the folder button on the
   documentation panel): any folder with `.md` files; by default, the one bundled
   with the app.
+- **Package books**: beside that folder the viewer lists, under each package's
+  name, the book of every package of the session's environment that registers
+  one -- an entry point in the `clausters_editor.docs` group, a callable that
+  returns a folder of `.md` files (the clausters client registers its book this
+  way). Search and help reach them too; they are asked for again each time the
+  session starts.
 - **Startup code** (File → Preferences): runs at the start of every session.
 - Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
