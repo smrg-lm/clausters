@@ -298,6 +298,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <article
     class="prose prose-sm max-w-none min-h-0 flex-1 overflow-auto px-5 pt-4 pb-5
+      prose-code:before:content-none prose-code:after:content-none
       [&_.code-block]:relative [&_.copy-block]:absolute [&_.copy-block]:top-1.5 [&_.copy-block]:right-1.5
       [&_pre]:font-mono [&_pre]:text-(length:--code-size) [&_pre_code]:[font-size:inherit]"
     style:font-size="var(--code-size)"
