@@ -52,7 +52,11 @@ def reexec_with_pydoc_markdown() -> None:
     if not shebang.startswith("#!"):
         sys.exit(f"gen_api.py: cannot find the Python that runs {command}")
     interpreter = shebang[2:].split()
-    os.execv(interpreter[0], [*interpreter, os.path.abspath(__file__), *sys.argv[1:]])
+    # The search path set for this Python is not that one's: under pip's isolated
+    # build, PYTHONPATH carries the build environment's sitecustomize, which breaks
+    # another version's startup (its standard library is not found).
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME")}
+    os.execve(interpreter[0], [*interpreter, os.path.abspath(__file__), *sys.argv[1:]], env)
 
 
 def discover() -> list:
