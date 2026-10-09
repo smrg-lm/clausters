@@ -11,6 +11,8 @@ root.
 
 ## Requirements (Ubuntu/Debian)
 
+Rust ([rustup](https://rustup.rs), the stable toolchain), Node 22 with npm, and:
+
 ```sh
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
@@ -57,6 +59,13 @@ would take PyPI's:
 pip install -e "./clients/python[editor]" ./clausters-editor/wheel
 ```
 
+The editor is not installed editable, so a change to it takes the same command
+again. With the binaries already built (`npm run tauri build -- --no-bundle`
+here), `CLAUSTERS_SKIP_NATIVE_BUILD=1 CLAUSTERS_EDITOR_SKIP_BUILD=1` in front of
+it stages them without rebuilding anything. The whole setup from a fresh
+checkout -- the client's dependencies, libfaust and libverovio included -- is in
+`clients/python/README.md`, "From the repository, step by step".
+
 The wheel carries the binary, `docs/` and `licenses/`, about 4 MB; the system's
 web view stays outside it. On Linux that is WebKitGTK 4.1, which no wheel can
 carry, so the command checks for it and, when it is missing, prints how to
@@ -89,7 +98,8 @@ paths. The menu entry does not show up in the applications menu, because
 ## Environments and configuration
 
 - **Virtual environments** (Session → Python Environments): created in
-  `~/.local/share/io.github.smrg-lm.clausters.editor/venvs/<name>` with `python3 -m venv`, and
+  `~/.local/share/io.github.smrg-lm.clausters.editor/venvs/<name>` with the default
+  Python's `-m venv` (see `CLAUSTERS_EDITOR_DEFAULT_PYTHON` below), and
   the *install source* (the arguments of `pip install`, e.g. `/path/to/package`
   or `-e /path/to/package`) is installed into them. The session uses the last
   environment chosen, also after reopening the app.

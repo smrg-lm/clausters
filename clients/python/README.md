@@ -231,13 +231,14 @@ sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev \
 # to build libfaust
 sudo apt install cmake make g++ llvm-18-dev zlib1g-dev
 # to build the editor (Tauri over WebKitGTK)
-sudo apt install libwebkit2gtk-4.1-dev file libxdo-dev libssl-dev \
-  libayatana-appindicator3-dev librsvg2-dev
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
 Plus Rust ([rustup](https://rustup.rs), the stable toolchain) and Node 22 with
 npm, which builds the editor's interface. [`BUILD.md`](../../BUILD.md) has the
-optional features' dependencies.
+optional features' dependencies, and the editor's are those of its own
+[README](../../clausters-editor/README.md).
 
 **2. libfaust and libverovio** (once). Both are built from a pinned source into
 `~/.local`, where the build finds them (`FAUST_PREFIX` / `VEROVIO_PREFIX` point
