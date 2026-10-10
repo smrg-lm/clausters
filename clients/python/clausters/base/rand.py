@@ -119,6 +119,36 @@ def gauss(mean: float = 0.0, dev: float = 1.0) -> float:
     return current_rng().gauss(mean, dev)
 
 
+def lprand(lo: float, hi: float) -> float:
+    """The lower of two uniform draws between ``lo`` and ``hi``: more likely
+    toward ``lo``."""
+    return current_rng().lprand(lo, hi)
+
+def hprand(lo: float, hi: float) -> float:
+    """The higher of two uniform draws between ``lo`` and ``hi``: more likely
+    toward ``hi``."""
+    return current_rng().hprand(lo, hi)
+
+def meanrand(lo: float, hi: float) -> float:
+    """The mean of two uniform draws between ``lo`` and ``hi``: more likely
+    toward the middle."""
+    return current_rng().meanrand(lo, hi)
+
+def betarand(prob1: float, prob2: float) -> float:
+    """The beta distribution in ``[0, 1]``: ``prob1`` and ``prob2`` weigh its
+    two ends (below 1 pulls toward an end, above 1 away from it)."""
+    return current_rng().betarand(prob1, prob2)
+
+def cauchy(mean: float = 0.0, spread: float = 1.0) -> float:
+    """Cauchy around ``mean``, ``spread`` wide: a bell with tails that reach
+    far."""
+    return current_rng().cauchy(mean, spread)
+
+def poisson(mean: float = 1.0) -> int:
+    """A whole number of events, ``mean`` of them on average (Poisson)."""
+    return current_rng().poisson(mean)
+
+
 def irand(n: int) -> int:
     """A whole number in ``[0, n)``."""
     return current_rng().irand(n)

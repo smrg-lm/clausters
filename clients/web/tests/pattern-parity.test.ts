@@ -19,6 +19,18 @@ import { seed } from "../src/base/rand.ts";
 import * as b from "../src/base/builtins.ts";
 import {
     INF,
+    pbeta,
+    pbrown,
+    pcauchy,
+    pexprand,
+    pgauss,
+    pgbrown,
+    phprand,
+    plprand,
+    pmeanrand,
+    ppoisson,
+    pprob,
+    pvalue,
     pconst,
     pfunc,
     pgeom,
@@ -69,9 +81,29 @@ const CASES: Record<string, () => Pattern<unknown>> = {
     builtin_midicps: () => b.midicps(pseq([60, 72])),
     builtin_reflected: () => b.sub(100, pseq([1, 2, 3])),
     builtin_by_name: () => b.degkey(pseq([0, 3, 7, -1]), [0, 2, 4, 5, 7, 9, 11]),
+    pvalue: () => pseq<number>([pvalue(pseq([1, 2])), pvalue(3)]),
+    pseries_stepped: () => pseries(0, pseq([1, 2, 3])),
+    pgeom_grown: () => pgeom(1, pseq([2, 3]), 3),
+    pwhite_bounds: () => pwhite(pseq([0, 10, 20]), pseq([1, 11, 21])),
+    pexprand: () => pexprand(100, 1000, 6),
+    plprand: () => plprand(0, 10, 6),
+    phprand: () => phprand(0, 10, 6),
+    pmeanrand: () => pmeanrand(0, 10, 6),
+    pbeta: () => pbeta(-1, 1, 0.5, 2, 6),
+    pcauchy: () => pcauchy(5, 0.5, 6),
+    pgauss: () => pgauss(60, 3, 6),
+    ppoisson: () => ppoisson(2.5, 6),
+    pbrown: () => pbrown(0, 1, 0.25, 8),
+    pgbrown: () => pgbrown(100, 400, 0.2, 8),
+    pprob: () => pprob([0, 1, 4, 1, 0], 48, 72, null, 8),
 };
 
-const TRANSCENDENTAL = new Set(["midicps", "builtin_midicps", "lincurve_method"]);
+// The draws that go through `exp`, `ln`, `pow`, `tan` or `sin` are libm's, and
+// wasm's differs from the native one in the last bits.
+const TRANSCENDENTAL = new Set([
+    "midicps", "builtin_midicps", "lincurve_method", "pexprand", "pbeta", "pcauchy",
+    "pgauss", "ppoisson",
+]);
 
 const vectors: Record<string, { seed: number | null; values: number[] }> = JSON.parse(
     await readFile(new URL("./pattern-vectors.json", import.meta.url), "utf8"),

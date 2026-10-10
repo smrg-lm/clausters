@@ -12,6 +12,18 @@ import { Ugen, sine } from "../src/defs/ugens/index.ts";
 import { seed } from "../src/base/rand.ts";
 import { Routine, StopStream } from "../src/base/stream.ts";
 import {
+    pbeta,
+    pbrown,
+    pcauchy,
+    pexprand,
+    pgauss,
+    pgeom,
+    phprand,
+    plprand,
+    pmeanrand,
+    ppoisson,
+    pprob,
+    pvalue,
     EventPattern,
     Pattern,
     embed,
@@ -208,4 +220,45 @@ test("a list function reshapes any items and refuses a pattern", () => {
     assert.deepEqual(b.pyramidg([1, 2, 3], 5), [[1], [1, 2], [1, 2, 3], [1, 2], [1]]);
     assert.deepEqual([...pseq(b.pyramid([60, 62, 64]))], [60, 60, 62, 60, 62, 64]);
     assert.throws(() => b.pyramid(pseq([1]) as never), /whole list/);
+});
+
+// ---- value and random patterns ----
+
+const mean = (xs: Iterable<number>): number => {
+    const a = [...xs];
+    return a.reduce((s, x) => s + x, 0) / a.length;
+};
+const median = (xs: Iterable<number>): number => {
+    const a = [...xs].sort((x, y) => x - y);
+    return a[a.length >> 1]!;
+};
+
+test("an argument may be a pattern read per step", () => {
+    assert.deepEqual([...pseries(0, pseq([1, 2, 3]))], [0, 1, 3]);
+    assert.deepEqual([...pgeom(1, pseq([2, 3]), 3)], [1, 2]);
+    assert.deepEqual([...pseq<number>([pvalue(pseq([1, 2])), pvalue(3)])], [1, 2, 3]);
+    const lows = [...pwhite(pseq([0, 10, 20]), pseq([1, 11, 21]))];
+    assert.ok(lows.length === 3 && lows.every((x, i) => x >= i * 10 && x < i * 10 + 1));
+});
+
+test("the distributions have their shapes", () => {
+    const n = 4000;
+    assert.ok(Math.abs(mean(plprand(0, 1, n)) - 1 / 3) < 0.03);
+    assert.ok(Math.abs(mean(phprand(0, 1, n)) - 2 / 3) < 0.03);
+    assert.ok(Math.abs(mean(pmeanrand(0, 1, n)) - 0.5) < 0.03);
+    assert.ok(Math.abs(mean(pbeta(0, 1, 2, 6, n)) - 0.25) < 0.03);
+    assert.ok(Math.abs(mean(pgauss(60, 3, n)) - 60) < 0.3);
+    assert.ok(Math.abs(mean(ppoisson(3, n)) - 3) < 0.15);
+    assert.ok([...ppoisson(3, 50)].every(Number.isInteger));
+    assert.ok(Math.abs(median(pcauchy(5, 0.5, n)) - 5) < 0.1);
+    const xs = [...pexprand(100, 1000, n)];
+    assert.ok(xs.every((x) => x >= 100 && x <= 1000));
+    assert.ok(Math.abs(median(xs) - 316.2) < 25);
+    assert.ok(Math.abs(mean(pprob([0, 1, 0], 0, 10, null, n)) - 5) < 0.2);
+});
+
+test("a random walk stays inside its bounds", () => {
+    const walk = [...pbrown(0, 1, 0.1, 2000)];
+    assert.ok(walk.every((x) => x >= 0 && x <= 1));
+    assert.ok(walk.slice(1).every((x, i) => Math.abs(x - walk[i]!) <= 0.2));
 });

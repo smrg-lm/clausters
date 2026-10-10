@@ -2379,10 +2379,17 @@ by the loop (`islice`, a `break`), never read whole.
   description and its kind (value, event, or resolved when built), in its
   family's module. The lists below cite sclang's names; each is written
   lowercase (`Pexprand` is `pexprand`):
-  - ⬜ **C73a — value and random patterns**: `Pexprand`, `Pbrown`, `Pgbrown`,
-    `Plprand`, `Phprand`, `Pmeanrand`, `Pbeta`, `Pcauchy`, `Pgauss`,
-    `Ppoisson`, `Pprob`, `Pvalue`. A distribution the core's `Draw` table
-    lacks (beta, Cauchy, Poisson, the low/high/mean pairs) is added there.
+  - ✅ **C73a — value and random patterns** *(done 2026-10-10)*: `pexprand`,
+    `pbrown`, `pgbrown`, `plprand`, `phprand`, `pmeanrand`, `pbeta`,
+    `pcauchy`, `pgauss`, `ppoisson`, `pprob`, `pvalue`. The core's `Draw`
+    table grew `lprand`, `hprand`, `meanrand`, `betarand` (sclang's `Pbeta`
+    rejection loop), `cauchy` and `poisson`, drawn by both random contexts
+    under those names; `pprob` reads the table `asrandomtable` builds. Every
+    bound, step and parameter may be a pattern, read one value per step as
+    sclang reads them, and `pwhite`, `pseries` and `pgeom` gained that too.
+    The walks step with `rand2`, which is what sclang's `xrand2` is on a
+    float. Parity: each pattern's seeded walk in both clients, the libm draws
+    to the shapes' tolerance.
   - ⬜ **C73b — list patterns**: `Pxrand`, `Pwrand`, `Pshuffle`, `Pslide`,
     `Pwalk`, `Place`, `Placep`, `Ptuple`, `Pswitch`, `Pswitch1`, `Pfsm`,
     `Pdfsm`.

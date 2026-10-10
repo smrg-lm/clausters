@@ -27,8 +27,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.base import builtins as b  # noqa: E402
 from clausters.base.main import main  # noqa: E402
-from clausters.seq import (pconst, pfunc, pgeom, pn, pnarop, prand,  # noqa: E402
-                           pseq, pser, pseries, pwhite)
+from clausters.seq import (pbeta, pbrown, pcauchy, pconst,  # noqa: E402
+                           pexprand, pfunc, pgauss, pgbrown, pgeom, phprand,
+                           plprand, pmeanrand, pn, pnarop, ppoisson, pprob,
+                           prand, pseq, pser, pseries, pvalue, pwhite)
 
 #: How many values an endless case is read for.
 TAKE = 8
@@ -66,6 +68,21 @@ CASES = {
     "builtin_midicps": (None, lambda: b.midicps(pseq([60, 72]))),
     "builtin_reflected": (None, lambda: b.sub(100, pseq([1, 2, 3]))),
     "builtin_by_name": (None, lambda: b.degkey(pseq([0, 3, 7, -1]), [0, 2, 4, 5, 7, 9, 11])),
+    "pvalue": (None, lambda: pseq([pvalue(pseq([1, 2])), pvalue(3)])),
+    "pseries_stepped": (None, lambda: pseries(0, pseq([1, 2, 3]))),
+    "pgeom_grown": (None, lambda: pgeom(1, pseq([2, 3]), 3)),
+    "pwhite_bounds": (17, lambda: pwhite(pseq([0, 10, 20]), pseq([1, 11, 21]))),
+    "pexprand": (17, lambda: pexprand(100, 1000, 6)),
+    "plprand": (17, lambda: plprand(0, 10, 6)),
+    "phprand": (17, lambda: phprand(0, 10, 6)),
+    "pmeanrand": (17, lambda: pmeanrand(0, 10, 6)),
+    "pbeta": (17, lambda: pbeta(-1, 1, 0.5, 2, 6)),
+    "pcauchy": (17, lambda: pcauchy(5, 0.5, 6)),
+    "pgauss": (17, lambda: pgauss(60, 3, 6)),
+    "ppoisson": (17, lambda: ppoisson(2.5, 6)),
+    "pbrown": (17, lambda: pbrown(0, 1, 0.25, 8)),
+    "pgbrown": (17, lambda: pgbrown(100, 400, 0.2, 8)),
+    "pprob": (17, lambda: pprob([0, 1, 4, 1, 0], 48, 72, None, 8)),
 }
 
 

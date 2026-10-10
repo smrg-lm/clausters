@@ -3629,6 +3629,12 @@ class Draw(IntEnum):
     IRAND2 = 9
     IRRAND = 10
     GAUSS = 11
+    LPRAND = 12
+    HPRAND = 13
+    MEANRAND = 14
+    BETARAND = 15
+    CAUCHY = 16
+    POISSON = 17
 
 
 class Rng:
@@ -3693,6 +3699,35 @@ class Rng:
     def gauss(self, mean: float = 0.0, dev: float = 1.0) -> float:
         """Gaussian with ``mean`` and standard deviation ``dev``."""
         return self._draw(Draw.GAUSS, mean, dev)
+
+    def lprand(self, lo: float, hi: float) -> float:
+        """The lower of two uniform draws between ``lo`` and ``hi``: more
+        likely toward ``lo``."""
+        return self._draw(Draw.LPRAND, lo, hi)
+
+    def hprand(self, lo: float, hi: float) -> float:
+        """The higher of two uniform draws between ``lo`` and ``hi``: more
+        likely toward ``hi``."""
+        return self._draw(Draw.HPRAND, lo, hi)
+
+    def meanrand(self, lo: float, hi: float) -> float:
+        """The mean of two uniform draws between ``lo`` and ``hi``: more likely
+        toward the middle."""
+        return self._draw(Draw.MEANRAND, lo, hi)
+
+    def betarand(self, prob1: float, prob2: float) -> float:
+        """The beta distribution in ``[0, 1]``: ``prob1`` and ``prob2`` weigh
+        its two ends (below 1 pulls toward an end, above 1 away from it)."""
+        return self._draw(Draw.BETARAND, prob1, prob2)
+
+    def cauchy(self, mean: float = 0.0, spread: float = 1.0) -> float:
+        """Cauchy around ``mean``, ``spread`` wide: a bell with tails that
+        reach far."""
+        return self._draw(Draw.CAUCHY, mean, spread)
+
+    def poisson(self, mean: float = 1.0) -> int:
+        """A whole number of events, ``mean`` of them on average (Poisson)."""
+        return int(self._draw(Draw.POISSON, mean))
 
     def irand(self, n: int) -> int:
         """A whole number in ``[0, n)``."""

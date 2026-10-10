@@ -116,12 +116,16 @@ The patterns live in `clausters.seq.patterns`, one module per family, and are al
 
 | Family | What it yields | Patterns |
 |---|---|---|
-| `valuepatterns` | values computed from the arguments | `pconst`, `pseries`, `pgeom` |
-| `randompatterns` | random values, from the random context | `pwhite` |
+| `valuepatterns` | values computed from the arguments | `pconst`, `pvalue`, `pseries`, `pgeom` |
+| `randompatterns` | random values, from the random context | `pwhite`, `pexprand`, `plprand`, `phprand`, `pmeanrand`, `pbeta`, `pcauchy`, `pgauss`, `ppoisson`, `pbrown`, `pgbrown`, `pprob` |
 | `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
 | `filterpatterns` | another pattern, transformed | `pn` |
 | `funcpatterns` | values a function computes when asked | `pfunc` |
 | `eventpatterns` | events | `pbind` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
+
+**An argument may itself be a pattern.** A bound, a step or a parameter is read one value per step, as sclang reads it: `pwhite(pseq([0, 12]), pseq([7, 19]))` draws from two ranges in turn, and `pseries(0, pseq([2, 2, 1]))` steps by a pattern and ends when the steps do.
+
+**Choosing a distribution** is choosing where the values gather. `pwhite` spreads them evenly; `pexprand` evenly per octave, which is what a frequency or a duration wants; `plprand`, `phprand` and `pmeanrand` lean toward the low end, the high end or the middle; `pgauss` and `pcauchy` gather around a centre, Cauchy with tails that reach far now and then; `pbeta` gathers at both ends or in the middle, by its two weights; `ppoisson` counts events. `pbrown` and `pgbrown` are not independent draws but a **walk**: each value moves from the last, so a line wanders instead of jumping. And `pprob` takes the shape itself, drawn as a list of relative chances: `pprob([0, 1, 4, 1, 0], 48, 72)` is a range of notes most likely in its middle.
 
 The random patterns draw from the **random context**, so one seed reproduces them with everything else in a script — see [Routines and clocks](routines-and-clocks.md#the-random-context-one-seed-per-session).

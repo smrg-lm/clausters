@@ -210,6 +210,23 @@ pub enum Draw {
     /// Gaussian with mean `a` and standard deviation `b` (Box-Muller, as
     /// sclang's `gauss` is).
     Gauss = 11,
+    /// The lower of two uniform draws between `a` and `b`: more likely toward
+    /// `a` (sclang's `Plprand`).
+    Lprand = 12,
+    /// The higher of two uniform draws between `a` and `b`: more likely
+    /// toward `b` (sclang's `Phprand`).
+    Hprand = 13,
+    /// The mean of two uniform draws between `a` and `b`: more likely toward
+    /// the middle (sclang's `Pmeanrand`).
+    Meanrand = 14,
+    /// The beta distribution in `[0, 1]` with the probabilities `a` and `b`
+    /// of its two ends, by sclang's rejection loop (`Pbeta`).
+    Betarand = 15,
+    /// Cauchy with median `a` and spread `b` (sclang's `Pcauchy`).
+    Cauchy = 16,
+    /// Poisson with mean `a`: a whole number of events (sclang's
+    /// `Ppoisson`).
+    Poisson = 17,
 }
 
 impl Draw {
@@ -229,6 +246,12 @@ impl Draw {
             9 => Irand2,
             10 => Irrand,
             11 => Gauss,
+            12 => Lprand,
+            13 => Hprand,
+            14 => Meanrand,
+            15 => Betarand,
+            16 => Cauchy,
+            17 => Poisson,
             _ => return None,
         })
     }
@@ -249,6 +272,12 @@ impl Draw {
             Irand2 => "irand2",
             Irrand => "irrand",
             Gauss => "gauss",
+            Lprand => "lprand",
+            Hprand => "hprand",
+            Meanrand => "meanrand",
+            Betarand => "betarand",
+            Cauchy => "cauchy",
+            Poisson => "poisson",
         }
     }
 
@@ -292,6 +321,44 @@ impl Rng {
             Gauss => {
                 let (u, v) = (self.next_f64(), self.next_f64());
                 (-2.0 * (1.0 - u).ln()).sqrt() * (core::f64::consts::TAU * v).sin() * b + a
+            }
+            Lprand | Hprand | Meanrand => {
+                let x = a + self.next_f64() * (b - a);
+                let y = a + self.next_f64() * (b - a);
+                match d {
+                    Lprand => x.min(y),
+                    Hprand => x.max(y),
+                    _ => (x + y) * 0.5,
+                }
+            }
+            Betarand => {
+                let (ra, rb) = (1.0 / a, 1.0 / b);
+                // sclang's loop: draw until the two powers sum to at most 1.
+                loop {
+                    let x = self.next_f64().powf(ra);
+                    let sum = x + self.next_f64().powf(rb);
+                    if sum <= 1.0 {
+                        break if sum > 0.0 { x / sum } else { 0.0 };
+                    }
+                }
+            }
+            Cauchy => {
+                // A uniform of exactly one half would be the pole of tan.
+                let mut u = 0.5;
+                while u == 0.5 {
+                    u = self.next_f64();
+                }
+                b * (u * core::f64::consts::PI).tan() + a
+            }
+            Poisson => {
+                let limit = (-a).exp();
+                let mut count = 0.0;
+                let mut test = self.next_f64();
+                while test > limit {
+                    count += 1.0;
+                    test *= self.next_f64();
+                }
+                count
             }
         }
     }
@@ -438,6 +505,29 @@ mod tests {
         assert_eq!(r.sputter(4, 0.0, 100), [0, 1, 2, 3]);
         assert_eq!(r.sputter(4, 1.0, 5), [0, 0, 0, 0, 0]);
         assert!(r.sputter(0, 0.5, 10).is_empty());
+    }
+
+    #[test]
+    fn the_pattern_distributions_have_sclangs_shapes() {
+        let mut r = Rng::from_seed(23);
+        let n = 100_000;
+        let mut mean =
+            |d: Draw, a: f64, b: f64| (0..n).map(|_| r.draw(d, a, b)).sum::<f64>() / n as f64;
+        // Two draws: the expected min, max and mean of two uniforms on 0..1.
+        assert!((mean(Draw::Lprand, 0.0, 1.0) - 1.0 / 3.0).abs() < 0.01);
+        assert!((mean(Draw::Hprand, 0.0, 1.0) - 2.0 / 3.0).abs() < 0.01);
+        assert!((mean(Draw::Meanrand, 0.0, 1.0) - 0.5).abs() < 0.01);
+        // Beta(1, 1) is uniform; beta(a, b) has mean a / (a + b).
+        assert!((mean(Draw::Betarand, 1.0, 1.0) - 0.5).abs() < 0.01);
+        assert!((mean(Draw::Betarand, 2.0, 6.0) - 0.25).abs() < 0.01);
+        // Poisson's mean is its parameter.
+        assert!((mean(Draw::Poisson, 3.0, 0.0) - 3.0).abs() < 0.05);
+        // Cauchy has no mean; its median is the parameter.
+        let mut c: Vec<f64> = (0..n).map(|_| r.draw(Draw::Cauchy, 10.0, 2.0)).collect();
+        c.sort_by(f64::total_cmp);
+        assert!((c[n / 2] - 10.0).abs() < 0.05);
+        assert!((0..1000).all(|_| (0.0..=1.0).contains(&r.draw(Draw::Betarand, 0.5, 0.5))));
+        assert!((0..1000).all(|_| r.draw(Draw::Poisson, 1.0, 0.0).fract() == 0.0));
     }
 
     #[test]

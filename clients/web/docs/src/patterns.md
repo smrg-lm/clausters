@@ -77,12 +77,14 @@ One module per family under `seq/patterns/`, all re-exported from `seq`, each pa
 
 | Family | What it yields | Patterns |
 |---|---|---|
-| `valuepatterns` | values computed from the arguments | `pconst`, `pseries`, `pgeom` |
-| `randompatterns` | random values, from the random context | `pwhite` |
+| `valuepatterns` | values computed from the arguments | `pconst`, `pvalue`, `pseries`, `pgeom` |
+| `randompatterns` | random values, from the random context | `pwhite`, `pexprand`, `plprand`, `phprand`, `pmeanrand`, `pbeta`, `pcauchy`, `pgauss`, `ppoisson`, `pbrown`, `pgbrown`, `pprob` |
 | `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
 | `filterpatterns` | another pattern, transformed | `pn` |
 | `funcpatterns` | values a function computes when asked | `pfunc` |
 | `eventpatterns` | events | `pbind` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
+
+An argument may itself be a pattern, read one value per step: `seq.pwhite(seq.pseq([0, 12]), seq.pseq([7, 19]))` draws from two ranges in turn. The distributions say where values gather: `pwhite` evenly, `pexprand` evenly per octave, `plprand`/`phprand`/`pmeanrand` toward an end or the middle, `pgauss`/`pcauchy` around a centre, `pbeta` by two weights, `ppoisson` counting events, `pbrown`/`pgbrown` as a walk from the last value, and `pprob` by a shape you draw as a list of chances.
 
 The random patterns draw from the random context — see [Routines and clocks](routines-and-clocks.md#reproducible-randomness).

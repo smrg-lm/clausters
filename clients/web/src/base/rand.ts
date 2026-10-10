@@ -109,6 +109,36 @@ export class Rng {
         return this.inner.draw("gauss", mean, dev);
     }
 
+    /** The lower of two uniform draws between `lo` and `hi`: more likely toward `lo`. */
+    lprand(lo: number, hi: number): number {
+        return this.inner.draw("lprand", lo, hi);
+    }
+
+    /** The higher of two uniform draws between `lo` and `hi`: more likely toward `hi`. */
+    hprand(lo: number, hi: number): number {
+        return this.inner.draw("hprand", lo, hi);
+    }
+
+    /** The mean of two uniform draws between `lo` and `hi`: more likely toward the middle. */
+    meanrand(lo: number, hi: number): number {
+        return this.inner.draw("meanrand", lo, hi);
+    }
+
+    /** The beta distribution in `[0, 1]`: `prob1` and `prob2` weigh its two ends (below 1 pulls toward an end, above 1 away from it). */
+    betarand(prob1: number, prob2: number): number {
+        return this.inner.draw("betarand", prob1, prob2);
+    }
+
+    /** Cauchy around `mean`, `spread` wide: a bell with tails that reach far. */
+    cauchy(mean = 0.0, spread = 1.0): number {
+        return this.inner.draw("cauchy", mean, spread);
+    }
+
+    /** A whole number of events, `mean` of them on average (Poisson). */
+    poisson(mean = 1.0): number {
+        return this.inner.draw("poisson", mean, 0);
+    }
+
     /** A whole number in `[0, n)`. */
     irand(n: number): number {
         return this.inner.draw("irand", n, 0);
@@ -227,6 +257,24 @@ export const bilinrand = (x = 1.0): number => currentRng().bilinrand(x);
 
 /** In `(-x, x)`, bell-shaped: three uniforms summed, sclang's loose Gaussian. */
 export const sum3rand = (x = 1.0): number => currentRng().sum3rand(x);
+
+/** The lower of two uniform draws between `lo` and `hi`: more likely toward `lo`. */
+export const lprand = (lo: number, hi: number): number => currentRng().lprand(lo, hi);
+
+/** The higher of two uniform draws between `lo` and `hi`: more likely toward `hi`. */
+export const hprand = (lo: number, hi: number): number => currentRng().hprand(lo, hi);
+
+/** The mean of two uniform draws between `lo` and `hi`: more likely toward the middle. */
+export const meanrand = (lo: number, hi: number): number => currentRng().meanrand(lo, hi);
+
+/** The beta distribution in `[0, 1]`: `prob1` and `prob2` weigh its two ends (below 1 pulls toward an end, above 1 away from it). */
+export const betarand = (prob1: number, prob2: number): number => currentRng().betarand(prob1, prob2);
+
+/** Cauchy around `mean`, `spread` wide: a bell with tails that reach far. */
+export const cauchy = (mean = 0.0, spread = 1.0): number => currentRng().cauchy(mean, spread);
+
+/** A whole number of events, `mean` of them on average (Poisson). */
+export const poisson = (mean = 1.0): number => currentRng().poisson(mean);
 
 /** `true` with probability `p`. */
 export const coin = (p = 0.5): boolean => currentRng().coin(p);

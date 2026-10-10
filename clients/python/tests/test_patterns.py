@@ -221,3 +221,50 @@ def test_a_graph_composes_the_value_functions_it_can_and_refuses_the_rest():
             bad()
     with pytest.raises(TypeError, match="has no 'linlin'"):
         signal(1.0).linlin(0, 1, 0, 2)
+
+
+# ---- value and random patterns ----
+
+def test_an_argument_may_be_a_pattern_read_per_step():
+    _core_or_skip()
+    from clausters.seq import pgeom, pvalue
+
+    assert list(pseries(0, pseq([1, 2, 3]))) == [0, 1, 3]       # ends with step
+    assert list(pgeom(1, pseq([2, 3]), 3)) == [1, 2]             # ends with grow
+    assert list(pseq([pvalue(pseq([1, 2])), pvalue(3)])) == [1, 2, 3]
+    lows = list(pwhite(pseq([0, 10, 20]), pseq([1, 11, 21])))
+    assert len(lows) == 3 and all(lo <= x < lo + 1 for x, lo in zip(lows, (0, 10, 20)))
+
+
+def test_the_distributions_have_their_shapes():
+    _core_or_skip()
+    import statistics as st
+
+    from clausters.seq import (pbeta, pcauchy, pexprand, pgauss, phprand,
+                               plprand, pmeanrand, ppoisson, pprob)
+
+    n = 4000
+    mean = lambda p: st.mean(p)                                  # noqa: E731
+    assert abs(mean(plprand(0, 1, n)) - 1 / 3) < 0.03
+    assert abs(mean(phprand(0, 1, n)) - 2 / 3) < 0.03
+    assert abs(mean(pmeanrand(0, 1, n)) - 0.5) < 0.03
+    assert abs(mean(pbeta(0, 1, 2, 6, n)) - 0.25) < 0.03
+    assert abs(mean(pgauss(60, 3, n)) - 60) < 0.3
+    assert abs(mean(ppoisson(3, n)) - 3) < 0.15
+    assert all(float(x).is_integer() for x in ppoisson(3, 50))
+    assert abs(st.median(pcauchy(5, 0.5, n)) - 5) < 0.1
+    xs = list(pexprand(100, 1000, n))
+    assert all(100 <= x <= 1000 for x in xs)
+    assert abs(st.median(xs) - 316.2) < 25                       # the geometric mean
+    tri = list(pprob([0, 1, 0], 0, 10, None, n))
+    assert abs(mean(tri) - 5) < 0.2 and 1.8 < st.pstdev(tri) < 2.3
+
+
+def test_a_random_walk_stays_inside_its_bounds():
+    _core_or_skip()
+    from clausters.seq import pbrown, pgbrown
+
+    walk = list(pbrown(0, 1, 0.1, 2000))
+    assert all(0 <= x <= 1 for x in walk)
+    assert max(abs(b - a) for a, b in zip(walk, walk[1:])) <= 0.2   # a fold may turn it
+    assert all(100 <= x <= 400 for x in pgbrown(100, 400, 0.2, 500))

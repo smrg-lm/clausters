@@ -6,10 +6,12 @@ it is -- a **value pattern** (its stream yields values) or an **event pattern**
 filter pattern, how it decides when it is built (an event pattern when what it
 holds is):
 
-- `valuepatterns` -- values computed from the arguments: a constant, an
-  arithmetic or geometric series.
+- `valuepatterns` -- values computed from the arguments: a constant, a value
+  once, an arithmetic or geometric series.
 - `randompatterns` -- random values, drawn from the random context, so one
-  seed reproduces them with everything else in the script.
+  seed reproduces them with everything else in the script: uniform,
+  exponential, toward an end or the middle, beta, Cauchy, Gaussian, Poisson,
+  a random walk, a drawn probability shape.
 - `listpatterns` -- values read from a list: in order, cycled, chosen at
   random.
 - `filterpatterns` -- a pattern made of another: repeated.
@@ -25,10 +27,14 @@ from .filterpatterns import pn
 from .funcpatterns import pfunc
 from .listpatterns import prand, pseq, pser
 from .oppatterns import pbinop, pnarop, punop
-from .randompatterns import pwhite
-from .valuepatterns import pconst, pgeom, pseries
+from .randompatterns import (pbeta, pbrown, pcauchy, pexprand, pgauss,
+                             pgbrown, phprand, plprand, pmeanrand, ppoisson,
+                             pprob, pwhite)
+from .valuepatterns import pconst, pgeom, pseries, pvalue
 
 __all__ = [
-    "pbind", "pbinop", "pconst", "pfunc", "pgeom", "pn", "pnarop", "prand",
-    "pseq", "pser", "pseries", "punop", "pwhite",
+    "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pexprand",
+    "pfunc", "pgauss", "pgbrown", "pgeom", "phprand", "plprand", "pmeanrand",
+    "pn", "pnarop", "ppoisson", "pprob", "prand", "pseq", "pser", "pseries",
+    "punop", "pvalue", "pwhite",
 ]

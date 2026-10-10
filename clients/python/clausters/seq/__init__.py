@@ -33,8 +33,8 @@ from .timeline import (MidiItem, OscItem, Timeline, item_data,
 from .sequence import EventSequence, SeqAutomation, SeqEvent, SeqEvents
 from .pattern import (INF, EventPattern, Pattern, PatternStream, embed,
                       pattern)
-from .patterns import (pbind, pbinop, pconst, pfunc, pgeom, pn, pnarop, prand,
-                       pseq, pser, pseries, punop, pwhite)
+from .patterns import *  # noqa: F401,F403 -- the patterns, by family
+from .patterns import __all__ as _patterns
 
 __all__ = [
     "CurveEmitter",
@@ -55,18 +55,6 @@ __all__ = [
     "PatternStream",
     "embed",
     "pattern",
-    "pbind",
-    "pbinop",
-    "pconst",
-    "pfunc",
-    "pgeom",
-    "pn",
-    "pnarop",
-    "prand",
-    "pseq",
-    "pser",
-    "pseries",
-    "punop",
-    "pwhite",
+    *_patterns,
     "INF",
 ]

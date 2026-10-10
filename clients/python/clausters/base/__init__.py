@@ -41,9 +41,9 @@ from .netaddr import NetAddr
 # Every draw but `rand` itself: binding that name here would hide the module it
 # lives in, which is `clausters.base.rand`. The function is `clausters.rand`.
 from .rand import (
-    Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
-    irrand, linrand, rand2, rrand, scramble, seed, spawn_rng, sputter, sum3rand,
-    tablerand, wchoose,
+    Rng, betarand, bilinrand, cauchy, choose, coin, current_rng, exprand, gauss,
+    hprand, irand, irand2, irrand, linrand, lprand, meanrand, poisson, rand2,
+    rrand, scramble, seed, spawn_rng, sputter, sum3rand, tablerand, wchoose,
 )
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import (LogicalTimebase, ManualTimebase, MonotonicTimebase,
@@ -108,6 +108,12 @@ __all__ = [
     "tablerand",
     "scramble",
     "sputter",
+    "lprand",
+    "hprand",
+    "meanrand",
+    "betarand",
+    "cauchy",
+    "poisson",
     "Destination",
     "OscDestination",
     "Stream",

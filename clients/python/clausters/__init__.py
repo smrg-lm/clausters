@@ -100,9 +100,10 @@ from .base.time import (
 )
 from .base.main import default_session, main
 from .base.rand import (
-    Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
-    irrand, linrand, rand, rand2, rrand, scramble, seed, spawn_rng, sputter, sum3rand,
-    tablerand, wchoose,
+    Rng, betarand, bilinrand, cauchy, choose, coin, current_rng, exprand, gauss,
+    hprand, irand, irand2, irrand, linrand, lprand, meanrand, poisson, rand,
+    rand2, rrand, scramble, seed, spawn_rng, sputter, sum3rand, tablerand,
+    wchoose,
 )
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
@@ -209,6 +210,12 @@ __all__ = [
     "tablerand",
     "scramble",
     "sputter",
+    "lprand",
+    "hprand",
+    "meanrand",
+    "betarand",
+    "cauchy",
+    "poisson",
     # the root of every error this package raises; the leaves are in `errors`
     "ClaustersError",
 ]
