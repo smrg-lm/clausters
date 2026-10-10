@@ -118,13 +118,15 @@ The patterns live in `clausters.seq.patterns`, one module per family, and are al
 |---|---|---|
 | `valuepatterns` | values computed from the arguments | `pconst`, `pvalue`, `pseries`, `pgeom` |
 | `randompatterns` | random values, from the random context | `pwhite`, `pexprand`, `plprand`, `phprand`, `pmeanrand`, `pbeta`, `pcauchy`, `pgauss`, `ppoisson`, `pbrown`, `pgbrown`, `pprob` |
-| `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
+| `listpatterns` | values read from a list | `pseq`, `pser`, `prand`, `pxrand`, `pwrand`, `pshuffle`, `pslide`, `pwalk`, `place`, `placep`, `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm` |
 | `filterpatterns` | another pattern, transformed | `pn` |
 | `funcpatterns` | values a function computes when asked | `pfunc` |
 | `eventpatterns` | events | `pbind` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
 
 **An argument may itself be a pattern.** A bound, a step or a parameter is read one value per step, as sclang reads it: `pwhite(pseq([0, 12]), pseq([7, 19]))` draws from two ranges in turn, and `pseries(0, pseq([2, 2, 1]))` steps by a pattern and ends when the steps do.
+
+**A list can be read many ways.** `pseq` in order and `pser` cycling to a count, both from an `offset`; `prand` at random, `pxrand` never the same item twice in a row, `pwrand` by weights; `pshuffle` in one random order, kept; `pslide` as a window sliding along it (`pslide([1, 2, 3, 4, 5], 3, 3, 1)` is `1 2 3  2 3 4  3 4 5`); `pwalk` stepping back and forth across it; `place` lacing lists into a line (`place([1, [2, 3]], 4)` is `1 2 1 3 1 2 1 3`) and `placep` interlacing patterns; `ptuple` reading several side by side into one list per step; `pswitch` and `pswitch1` choosing an item by an index pattern; and `pfsm`/`pdfsm` letting a state machine choose what comes next. Each of them is an event pattern when its items are.
 
 **Choosing a distribution** is choosing where the values gather. `pwhite` spreads them evenly; `pexprand` evenly per octave, which is what a frequency or a duration wants; `plprand`, `phprand` and `pmeanrand` lean toward the low end, the high end or the middle; `pgauss` and `pcauchy` gather around a centre, Cauchy with tails that reach far now and then; `pbeta` gathers at both ends or in the middle, by its two weights; `ppoisson` counts events. `pbrown` and `pgbrown` are not independent draws but a **walk**: each value moves from the last, so a line wanders instead of jumping. And `pprob` takes the shape itself, drawn as a list of relative chances: `pprob([0, 1, 4, 1, 0], 48, 72)` is a range of notes most likely in its middle.
 

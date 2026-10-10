@@ -268,3 +268,38 @@ def test_a_random_walk_stays_inside_its_bounds():
     assert all(0 <= x <= 1 for x in walk)
     assert max(abs(b - a) for a, b in zip(walk, walk[1:])) <= 0.2   # a fold may turn it
     assert all(100 <= x <= 400 for x in pgbrown(100, 400, 0.2, 500))
+
+
+# ---- list patterns ----
+
+def test_the_list_patterns_read_their_list():
+    _core_or_skip()
+    from clausters.seq import (INF, pdfsm, place, placep, pshuffle, pslide,
+                               pswitch, pswitch1, ptuple, pwalk, pxrand)
+
+    assert list(pseq([1, 2, 3], 2, 1)) == [2, 3, 1, 2, 3, 1]
+    assert list(pslide([1, 2, 3, 4, 5], 3, 3, 1)) == [1, 2, 3, 2, 3, 4, 3, 4, 5]
+    assert list(place([1, [2, 3]], 4)) == [1, 2, 1, 3, 1, 2, 1, 3]
+    assert list(placep([pseq([1, 2]), pseq([10, 20, 30])], 5)) == [1, 10, 2, 20, 30]
+    assert list(ptuple([pseq([1, 2]), pseq([10, 20, 30])])) == [[1, 10], [2, 20]]
+    assert list(pswitch([pseq([1, 2]), 9], pseq([0, 1, 0]))) == [1, 2, 9, 1, 2]
+    assert list(pswitch1([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0]))) == [1, 10, 2]
+    bounce = pwalk([1, 2, 3, 4], pseq([1], 8), pseq([1, -1], INF))
+    assert list(bounce) == [1, 2, 3, 4, 3, 2, 1, 2]
+    xs = list(pxrand([1, 2, 3], 200))
+    assert all(a != b for a, b in zip(xs, xs[1:]))
+    order = list(pshuffle([1, 2, 3, 4], 3))
+    assert sorted(order[:4]) == [1, 2, 3, 4] and order[:4] == order[4:8] == order[8:]
+    machine = pdfsm([pseq([0, 1, 1, 0]),
+                     {0: (0, "x"), 1: (1, "y"), "default": (0, "z")},
+                     {0: (0, "p"), "default": (1, "q")}])
+    assert list(machine) == ["x", "y", "q", "p"]
+
+
+def test_a_list_of_event_patterns_plays():
+    from clausters.seq import pshuffle, pslide, pwalk, pxrand
+
+    phrase = pbind(degree=pseq([0, 1]))
+    for p in (pxrand([phrase, phrase]), pshuffle([phrase]), pslide([phrase]),
+              pwalk([phrase])):
+        assert isinstance(p, EventPattern)

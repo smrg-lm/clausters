@@ -79,11 +79,13 @@ One module per family under `seq/patterns/`, all re-exported from `seq`, each pa
 |---|---|---|
 | `valuepatterns` | values computed from the arguments | `pconst`, `pvalue`, `pseries`, `pgeom` |
 | `randompatterns` | random values, from the random context | `pwhite`, `pexprand`, `plprand`, `phprand`, `pmeanrand`, `pbeta`, `pcauchy`, `pgauss`, `ppoisson`, `pbrown`, `pgbrown`, `pprob` |
-| `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
+| `listpatterns` | values read from a list | `pseq`, `pser`, `prand`, `pxrand`, `pwrand`, `pshuffle`, `pslide`, `pwalk`, `place`, `placep`, `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm` |
 | `filterpatterns` | another pattern, transformed | `pn` |
 | `funcpatterns` | values a function computes when asked | `pfunc` |
 | `eventpatterns` | events | `pbind` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
+
+A list is read in many ways: `pseq`/`pser` in order from an offset, `prand`/`pxrand`/`pwrand` at random (never twice in a row, by weights), `pshuffle` in one kept random order, `pslide` as a sliding window, `pwalk` stepping across it, `place`/`placep` lacing, `ptuple` side by side, `pswitch`/`pswitch1` by an index pattern, and `pfsm`/`pdfsm` by a state machine; each is an event pattern when its items are.
 
 An argument may itself be a pattern, read one value per step: `seq.pwhite(seq.pseq([0, 12]), seq.pseq([7, 19]))` draws from two ranges in turn. The distributions say where values gather: `pwhite` evenly, `pexprand` evenly per octave, `plprand`/`phprand`/`pmeanrand` toward an end or the middle, `pgauss`/`pcauchy` around a centre, `pbeta` by two weights, `ppoisson` counting events, `pbrown`/`pgbrown` as a walk from the last value, and `pprob` by a shape you draw as a list of chances.
 

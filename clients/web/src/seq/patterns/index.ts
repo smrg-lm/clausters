@@ -13,7 +13,8 @@
 //   exponential, toward an end or the middle, beta, Cauchy, Gaussian, Poisson,
 //   a random walk, a drawn probability shape.
 // - `listpatterns` -- values read from a list: in order, cycled, chosen at
-//   random.
+//   random (never twice in a row, or weighted), shuffled, a sliding window, a
+//   walk, laced, switched by an index, or driven by a state machine.
 // - `filterpatterns` -- a pattern made of another: repeated.
 // - `funcpatterns` -- values a function computes when the walk asks.
 // - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
@@ -26,8 +27,11 @@ export type { Bindings } from "./eventpatterns.ts";
 export { pn } from "./filterpatterns.ts";
 export type { FilterPattern } from "./filterpatterns.ts";
 export { pfunc } from "./funcpatterns.ts";
-export { prand, pseq, pser } from "./listpatterns.ts";
-export type { ListPattern } from "./listpatterns.ts";
+export {
+    pdfsm, pfsm, place, placep, prand, pseq, pser, pshuffle, pslide, pswitch, pswitch1, ptuple,
+    pwalk, pwrand, pxrand,
+} from "./listpatterns.ts";
+export type { DfsmState, ListItems, ListPattern } from "./listpatterns.ts";
 export { pbinop, pnarop, punop } from "./oppatterns.ts";
 export {
     pbeta, pbrown, pcauchy, pexprand, pgauss, pgbrown, phprand, plprand, pmeanrand, ppoisson,

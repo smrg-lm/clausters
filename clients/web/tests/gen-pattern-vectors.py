@@ -27,6 +27,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.base import builtins as b  # noqa: E402
 from clausters.base.main import main  # noqa: E402
+from clausters.seq import (pdfsm, pfsm, place, placep, pshuffle,  # noqa: E402
+                           pslide, pswitch, pswitch1, ptuple, pwalk, pwrand,
+                           pxrand)
 from clausters.seq import (pbeta, pbrown, pcauchy, pconst,  # noqa: E402
                            pexprand, pfunc, pgauss, pgbrown, pgeom, phprand,
                            plprand, pmeanrand, pn, pnarop, ppoisson, pprob,
@@ -83,13 +86,35 @@ CASES = {
     "pbrown": (17, lambda: pbrown(0, 1, 0.25, 8)),
     "pgbrown": (17, lambda: pgbrown(100, 400, 0.2, 8)),
     "pprob": (17, lambda: pprob([0, 1, 4, 1, 0], 48, 72, None, 8)),
+    "pseq_offset": (None, lambda: pseq([1, 2, 3], 2, 1)),
+    "pser_offset": (None, lambda: pser([1, 2, 3], 5, 2)),
+    "pxrand": (19, lambda: pxrand([1, 2, 3], 8)),
+    "pwrand": (19, lambda: pwrand([1, 2, 3], [1, 0, 3], 8)),
+    "pshuffle": (19, lambda: pshuffle([1, 2, 3, 4], 2)),
+    "pslide": (None, lambda: pslide([1, 2, 3, 4, 5], 3, 3, 1)),
+    "pslide_nowrap": (None, lambda: pslide([1, 2, 3], 4, 2, 1, 0, False)),
+    "pwalk": (None, lambda: pwalk([1, 2, 3, 4], pseq([1], 8), pseq([1, -1], float("inf")))),
+    "pwalk_random": (19, lambda: pwalk([1, 2, 3, 4, 5])),
+    "place": (None, lambda: place([1, [2, 3], [4, 5, 6]], 3)),
+    "placep": (None, lambda: placep([pseq([1, 2]), pseq([10, 20, 30])], 5)),
+    "ptuple": (None, lambda: ptuple([pseq([1, 2]), pseq([10, 20, 30])], 2)),
+    "pswitch": (None, lambda: pswitch([pseq([1, 2]), 9], pseq([0, 1, 0]))),
+    "pswitch1": (None, lambda: pswitch1([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0, 1]))),
+    "pfsm": (19, lambda: pfsm([[0], 1, [1], 2, [0, 2], 3, [1, 3], None, None], 2)),
+    "pdfsm": (None, lambda: pdfsm([pseq([0, 1, 1, 0]),
+                                   {0: (0, 1), 1: (1, 2), "default": (0, 3)},
+                                   {0: (0, 4), "default": (1, 5)}])),
 }
 
 
 def values(seed, build):
     if seed is not None:
         main.seed(seed)
-    return [float(v) for v in itertools.islice(build(), TAKE)]
+    # A value that is a list (`ptuple`) is written flat, its elements in order.
+    out = []
+    for v in itertools.islice(build(), TAKE):
+        out.extend(float(x) for x in (v if isinstance(v, list) else [v]))
+    return out
 
 
 def main_():

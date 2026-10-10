@@ -12,6 +12,17 @@ import { Ugen, sine } from "../src/defs/ugens/index.ts";
 import { seed } from "../src/base/rand.ts";
 import { Routine, StopStream } from "../src/base/stream.ts";
 import {
+    INF,
+    pdfsm,
+    place,
+    placep,
+    pshuffle,
+    pslide,
+    pswitch,
+    pswitch1,
+    ptuple,
+    pwalk,
+    pxrand,
     pbeta,
     pbrown,
     pcauchy,
@@ -261,4 +272,35 @@ test("a random walk stays inside its bounds", () => {
     const walk = [...pbrown(0, 1, 0.1, 2000)];
     assert.ok(walk.every((x) => x >= 0 && x <= 1));
     assert.ok(walk.slice(1).every((x, i) => Math.abs(x - walk[i]!) <= 0.2));
+});
+
+// ---- list patterns ----
+
+test("the list patterns read their list", () => {
+    assert.deepEqual([...pseq([1, 2, 3], 2, 1)], [2, 3, 1, 2, 3, 1]);
+    assert.deepEqual([...pslide([1, 2, 3, 4, 5], 3, 3, 1)], [1, 2, 3, 2, 3, 4, 3, 4, 5]);
+    assert.deepEqual([...place([1, [2, 3]], 4)], [1, 2, 1, 3, 1, 2, 1, 3]);
+    assert.deepEqual([...placep<number>([pseq([1, 2]), pseq([10, 20, 30])], 5)], [1, 10, 2, 20, 30]);
+    assert.deepEqual([...ptuple<number>([pseq([1, 2]), pseq([10, 20, 30])])], [[1, 10], [2, 20]]);
+    assert.deepEqual([...pswitch<number>([pseq([1, 2]), 9], pseq([0, 1, 0]))], [1, 2, 9, 1, 2]);
+    assert.deepEqual([...pswitch1<number>([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0]))], [1, 10, 2]);
+    assert.deepEqual([...pwalk([1, 2, 3, 4], pseq([1], 8), pseq([1, -1], INF))], [1, 2, 3, 4, 3, 2, 1, 2]);
+    const xs = [...pxrand([1, 2, 3], 200)];
+    assert.ok(xs.slice(1).every((x, i) => x !== xs[i]));
+    const order = [...pshuffle([1, 2, 3, 4], 3)];
+    assert.deepEqual([...order.slice(0, 4)].sort(), [1, 2, 3, 4]);
+    assert.deepEqual(order.slice(4, 8), order.slice(0, 4));
+    const machine = pdfsm([
+        pseq([0, 1, 1, 0]),
+        { 0: [0, "x"], 1: [1, "y"], default: [0, "z"] },
+        { 0: [0, "p"], default: [1, "q"] },
+    ]);
+    assert.deepEqual([...machine], ["x", "y", "q", "p"]);
+});
+
+test("a list of event patterns plays", () => {
+    const phrase = pbind({ degree: pseq([0, 1]) });
+    for (const p of [pxrand([phrase, phrase]), pshuffle([phrase]), pslide([phrase]), pwalk([phrase])]) {
+        assert.ok(p instanceof EventPattern);
+    }
 });

@@ -18,6 +18,18 @@ import { loadCore } from "../src/base/core.ts";
 import { seed } from "../src/base/rand.ts";
 import * as b from "../src/base/builtins.ts";
 import {
+    pdfsm,
+    pfsm,
+    place,
+    placep,
+    pshuffle,
+    pslide,
+    pswitch,
+    pswitch1,
+    ptuple,
+    pwalk,
+    pwrand,
+    pxrand,
     INF,
     pbeta,
     pbrown,
@@ -96,6 +108,26 @@ const CASES: Record<string, () => Pattern<unknown>> = {
     pbrown: () => pbrown(0, 1, 0.25, 8),
     pgbrown: () => pgbrown(100, 400, 0.2, 8),
     pprob: () => pprob([0, 1, 4, 1, 0], 48, 72, null, 8),
+    pseq_offset: () => pseq([1, 2, 3], 2, 1),
+    pser_offset: () => pser([1, 2, 3], 5, 2),
+    pxrand: () => pxrand([1, 2, 3], 8),
+    pwrand: () => pwrand([1, 2, 3], [1, 0, 3], 8),
+    pshuffle: () => pshuffle([1, 2, 3, 4], 2),
+    pslide: () => pslide([1, 2, 3, 4, 5], 3, 3, 1),
+    pslide_nowrap: () => pslide([1, 2, 3], 4, 2, 1, 0, false),
+    pwalk: () => pwalk([1, 2, 3, 4], pseq([1], 8), pseq([1, -1], INF)),
+    pwalk_random: () => pwalk([1, 2, 3, 4, 5]),
+    place: () => place([1, [2, 3], [4, 5, 6]], 3),
+    placep: () => placep<number>([pseq([1, 2]), pseq([10, 20, 30])], 5),
+    ptuple: () => ptuple<number>([pseq([1, 2]), pseq([10, 20, 30])], 2),
+    pswitch: () => pswitch<number>([pseq([1, 2]), 9], pseq([0, 1, 0])),
+    pswitch1: () => pswitch1<number>([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0, 1])),
+    pfsm: () => pfsm([[0], 1, [1], 2, [0, 2], 3, [1, 3], null, null], 2),
+    pdfsm: () => pdfsm([
+        pseq([0, 1, 1, 0]),
+        { 0: [0, 1], 1: [1, 2], default: [0, 3] },
+        { 0: [0, 4], default: [1, 5] },
+    ]),
 };
 
 // The draws that go through `exp`, `ln`, `pow`, `tan` or `sin` are libm's, and
@@ -111,9 +143,11 @@ const vectors: Record<string, { seed: number | null; values: number[] }> = JSON.
 
 const take = (p: Pattern<unknown>): number[] => {
     const out: number[] = [];
+    let taken = 0;
     for (const x of p) {
-        if (out.length === TAKE) break;
-        out.push(Number(x));
+        if (taken++ === TAKE) break;
+        // A value that is an array (`ptuple`) is written flat.
+        for (const v of Array.isArray(x) ? x : [x]) out.push(Number(v));
     }
     return out;
 };

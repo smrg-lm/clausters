@@ -2390,9 +2390,15 @@ by the loop (`islice`, a `break`), never read whole.
     The walks step with `rand2`, which is what sclang's `xrand2` is on a
     float. Parity: each pattern's seeded walk in both clients, the libm draws
     to the shapes' tolerance.
-  - ⬜ **C73b — list patterns**: `Pxrand`, `Pwrand`, `Pshuffle`, `Pslide`,
-    `Pwalk`, `Place`, `Placep`, `Ptuple`, `Pswitch`, `Pswitch1`, `Pfsm`,
-    `Pdfsm`.
+  - ✅ **C73b — list patterns** *(done 2026-10-10)*: `pxrand`, `pwrand`,
+    `pshuffle`, `pslide`, `pwalk`, `place`, `placep` (sc3's name for sclang's
+    `Ppatlace`), `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm`, each an
+    event pattern when its items are (`place`, `ptuple`, `pswitch1` and the
+    state machines yield values). `pseq` and `pser` gained sclang's `offset`,
+    and `pser` now embeds an item that is a pattern, as sclang's does. A
+    `pdfsm` state is a mapping from a signal (or `"default"`) to the next
+    state and the item, a dict in Python and an object in TypeScript. The
+    parity vectors walk every one, seeded where it draws.
   - ⬜ **C73c — filter patterns**: `Pcollect`, `Pselect`, `Preject`, `Pdrop`,
     `Plen`, `Pstutter`, `Platch`, `Pwhile`, `Pwrap`, `Pclump`, `Pflatten`,
     `Pdiff`, `Pdelta`, `Pdur`, `Pgate`, `Pprorate`, `Pavaroh`, `Pseed`,

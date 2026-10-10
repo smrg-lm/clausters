@@ -13,7 +13,8 @@ holds is):
   exponential, toward an end or the middle, beta, Cauchy, Gaussian, Poisson,
   a random walk, a drawn probability shape.
 - `listpatterns` -- values read from a list: in order, cycled, chosen at
-  random.
+  random (never twice in a row, or weighted), shuffled, a sliding window, a
+  walk, laced, switched by an index, or driven by a state machine.
 - `filterpatterns` -- a pattern made of another: repeated.
 - `funcpatterns` -- values a function computes when the walk asks.
 - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
@@ -25,7 +26,9 @@ What a pattern is, and how one is written, is `clausters.seq.pattern`.
 from .eventpatterns import pbind
 from .filterpatterns import pn
 from .funcpatterns import pfunc
-from .listpatterns import prand, pseq, pser
+from .listpatterns import (pdfsm, pfsm, place, placep, prand, pseq, pser,
+                           pshuffle, pslide, pswitch, pswitch1, ptuple, pwalk,
+                           pwrand, pxrand)
 from .oppatterns import pbinop, pnarop, punop
 from .randompatterns import (pbeta, pbrown, pcauchy, pexprand, pgauss,
                              pgbrown, phprand, plprand, pmeanrand, ppoisson,
@@ -33,8 +36,10 @@ from .randompatterns import (pbeta, pbrown, pcauchy, pexprand, pgauss,
 from .valuepatterns import pconst, pgeom, pseries, pvalue
 
 __all__ = [
-    "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pexprand",
-    "pfunc", "pgauss", "pgbrown", "pgeom", "phprand", "plprand", "pmeanrand",
-    "pn", "pnarop", "ppoisson", "pprob", "prand", "pseq", "pser", "pseries",
-    "punop", "pvalue", "pwhite",
+    "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pdfsm",
+    "pexprand", "pfsm", "pfunc", "pgauss", "pgbrown", "pgeom", "phprand",
+    "place", "placep", "plprand", "pmeanrand", "pn", "pnarop", "ppoisson",
+    "pprob", "prand", "pseq", "pser", "pseries", "pshuffle", "pslide",
+    "pswitch", "pswitch1", "ptuple", "punop", "pvalue", "pwalk", "pwhite",
+    "pwrand", "pxrand",
 ]
