@@ -23,7 +23,7 @@ import type { TempoClock } from "./clock.ts";
 import type { AppClock } from "./appclock.ts";
 import { AbstractObject } from "./absobject.ts";
 import type { Composed, Fan } from "./absobject.ts";
-import { valueOp } from "./builtins.ts";
+import { TRIMMED, valueOp } from "./builtins.ts";
 
 /** Thrown (and caught by the clock) to end a stream normally. */
 export class StopStream extends Error {
@@ -108,6 +108,14 @@ export abstract class Stream extends AbstractObject<Stream, unknown> {
 
     protected unop(selector: string): Stream {
         return new OpStream(selector, [this]);
+    }
+
+    protected rbinop(selector: string, other: unknown): Stream {
+        return new OpStream(selector, [other, this]);
+    }
+
+    protected narop(selector: string, args: readonly unknown[], clip: string): Stream {
+        return new OpStream(selector, [this, ...args, ...(TRIMMED.has(selector) ? [clip] : [])]);
     }
 
     /**

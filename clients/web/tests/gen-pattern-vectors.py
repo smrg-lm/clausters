@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
+from clausters.base import builtins as b  # noqa: E402
 from clausters.base.main import main  # noqa: E402
 from clausters.seq import (pconst, pfunc, pgeom, pn, pnarop, prand,  # noqa: E402
                            pseq, pser, pseries, pwhite)
@@ -52,6 +53,19 @@ CASES = {
     "linlin": (None, lambda: pnarop("linlin", pseq([0, 0.25, 1, 2]), 0, 1, 10, 20)),
     "clip": (None, lambda: pnarop("clip", pseq([-2, 0.5, 3]), 0, 1)),
     "random_ops": (7, lambda: (pwhite(0, 1, 6) * 100).floor()),
+    "linlin_method": (None, lambda: pseq([0, 0.5, 1, 2]).linlin(0, 1, 200, 800, clip="max")),
+    "lincurve_method": (None, lambda: pseq([0, 0.25, 0.5, 1]).lincurve(0, 1, 0, 10, -4)),
+    "fold_method": (None, lambda: pseq([-0.5, 1.5, 2.25]).fold(0, 1)),
+    "blend": (None, lambda: pseq([0, 10, 20]).blend(pseq([100, 50, 0]), 0.25)),
+    "angles": (None, lambda: pseq([0, 90, 270]).degrad().raddeg()),
+    "moddif": (None, lambda: pseq([0.1, 0.9, 0.5]).moddif(0.2)),
+    "bilin": (None, lambda: pseq([0, 0.25, 0.5, 0.75, 1]).bilin(0.5, 0, 1, 10, 0, 100)),
+    "bit_ops": (None, lambda: (~pseq([0, 5]) // 2).bitand(7)),
+    "not": (None, lambda: pseq([-1, 0, 1]).not_()),
+    "draws": (13, lambda: pseq([10, 10, 10]).rand() + pseq([1, 1, 1]).exprand(2)),
+    "builtin_midicps": (None, lambda: b.midicps(pseq([60, 72]))),
+    "builtin_reflected": (None, lambda: b.sub(100, pseq([1, 2, 3]))),
+    "builtin_by_name": (None, lambda: b.degkey(pseq([0, 3, 7, -1]), [0, 2, 4, 5, 7, 9, 11])),
 }
 
 

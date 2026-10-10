@@ -61,7 +61,7 @@ class PvExpr(AbstractObject):
             raise TypeError(f"no per-bin operator {selector!r}")
         return _UnNode(selector, self)
 
-    def _compose_narop(self, selector, *args):
+    def _compose_narop(self, selector, *args, **static):
         raise TypeError(f"no n-ary per-bin operator {selector!r}")
 
 

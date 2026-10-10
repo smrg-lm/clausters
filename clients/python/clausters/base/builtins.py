@@ -26,8 +26,11 @@ live in `clausters.base.rand`.
 """
 
 import builtins as _py
+import functools as _functools
+import types as _types
 
 from .. import _native
+from .absobject import AbstractObject as _AbstractObject
 
 BinaryOp = _native.BinaryOp
 UnaryOp = _native.UnaryOp
@@ -43,7 +46,8 @@ def _is_seq(x):
     spellings all work -- `midicps(range(0, 120))`, a generator, a `Buffer`'s
     samples -- rather than only the two types a first pass happened to name.
     """
-    return not isinstance(x, (str, bytes)) and hasattr(x, "__iter__")
+    return (not isinstance(x, (str, bytes, _AbstractObject))
+            and hasattr(x, "__iter__"))
 
 
 def _extend(seq, n):
@@ -675,18 +679,108 @@ BINARY = {
 }
 BOUND = {"clip": clip, "wrap": wrap, "fold": fold}
 #: The n-ary operators by name: the range maps, which take the input ends and
-#: the output ends after the value.
+#: the output ends after the value, and sclang's value functions over a value
+#: and its arguments.
 NARY = {
     "linlin": linlin, "linexp": linexp, "explin": explin, "expexp": expexp,
-    "lincurve": lincurve, "curvelin": curvelin,
+    "lincurve": lincurve, "curvelin": curvelin, "blend": blend,
+    "bilin": bilin, "biexp": biexp, "moddif": moddif,
 }
+
+#: The random draws a pattern or a stream composes by name (``.rand()``,
+#: ``.rrand(hi)``), each from the random context, one per value.
+DRAW = ("rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand",
+        "exprand")
+
+#: The functions that read a **whole list**. A pattern does not have them: a
+#: stream may not end, and these need its end (a minimum, a sum).
+LIST_FUNCTIONS = frozenset({
+    "blendat", "normalize", "normalizesum", "integrate", "differentiate",
+    "resamp0", "resamp1", "asrandomtable", "indexinbetween",
+    "indexofgreaterthan",
+})
 
 
 def value_op(selector):
-    """The value function an operator selector names, in any of the tables:
-    how something that composes values (a pattern, a stream) computes the
-    operator it was composed with."""
+    """The value function an operator selector names, in any of the tables,
+    else the builtin of that name: how something that composes values (a
+    pattern, a stream) computes the operator or the function it was composed
+    with."""
     for table in (UNARY, BINARY, BOUND, NARY):
         if selector in table:
             return table[selector]
+    if selector in DRAW:
+        from . import rand
+
+        return getattr(rand, selector)
+    fn = _ELEMENTWISE.get(selector)
+    if fn is not None:
+        return fn
     raise ValueError(f"no value operator {selector!r}")
+
+
+# ---- a builtin given a pattern, a stream or a signal ----
+#
+# An element-wise builtin given something that composes (an `AbstractObject`)
+# answers what that thing's own method does: ``midicps(pseq([60, 72]))`` is
+# ``pseq([60, 72]).midicps()``, ``add(2, p)`` is ``2 + p``, and a function that
+# is not an operator (``cbrt``, ``degkey``) is composed by name, which a
+# pattern or a stream computes value by value and a signal refuses. It
+# composes over its first argument, as a method does, except a binary operator,
+# which reflects. A list function refuses a pattern by name.
+
+#: The function names that differ from the operator's selector.
+_SELECTOR = {"asinteger": "asint", "reciprocal": "recip",
+             "leftshift": "lshift", "rightshift": "rshift"}
+
+
+def _composed(name, args, kwargs):
+    selector = _SELECTOR.get(name, name)
+    first = args[0] if args else None
+    if selector in UNARY and isinstance(first, _AbstractObject):
+        return first._compose_unop(selector)
+    if selector in BINARY and len(args) == 2:
+        a, b = args
+        if isinstance(a, _AbstractObject):
+            return a._compose_binop(selector, b)
+        return b._rcompose_binop(selector, a)
+    if isinstance(first, _AbstractObject):
+        return first._compose_narop(selector, *args[1:], **kwargs)
+    raise TypeError(
+        f"{name} composes over its first argument, as the method does: write "
+        f"{name}(x, ...) with the pattern, stream or signal as x")
+
+
+def _refuse_streams(name, args, kwargs):
+    for value in (*args, *kwargs.values()):
+        if isinstance(value, _AbstractObject):
+            raise TypeError(
+                f"{name} reads a whole list, and a pattern or a stream is a "
+                f"sequence that may not end: apply it to the list before the "
+                f"list becomes a pattern -- pseq({name}([...]))")
+
+
+def _lifted(fn):
+    name = fn.__name__
+    guard = _refuse_streams if name in LIST_FUNCTIONS else _composed
+
+    @_functools.wraps(fn)
+    def builtin(*args, **kwargs):
+        for value in args:
+            if isinstance(value, _AbstractObject):
+                return guard(name, args, kwargs)
+        return fn(*args, **kwargs)
+
+    return builtin
+
+
+#: Every public function of the module, unwrapped: what `value_op` computes a
+#: function composed by name with.
+_ELEMENTWISE = {
+    _name: _fn for _name, _fn in list(globals().items())
+    if isinstance(_fn, _types.FunctionType) and _fn.__module__ == __name__
+    and not _name.startswith("_") and _name != "value_op"
+}
+for _name, _fn in _ELEMENTWISE.items():
+    globals()[_name] = _lifted(_fn)
+del _name, _fn

@@ -55,6 +55,32 @@ export abstract class AbstractObject<
     ): Composed<TSelf, T, F>;
     protected abstract unop(selector: string): TSelf;
 
+    /**
+     * The n-ary hook: `selector` names a range map, a bound, a draw or one of
+     * sclang's value functions, `args` its arguments after this one and `clip`
+     * a range map's trim. A subclass with no such operator refuses it by name,
+     * which is what the base does.
+     */
+    protected narop(selector: string, _args: readonly unknown[], _clip: string): TSelf {
+        throw new TypeError(`a ${this.constructor.name} has no '${selector}'`);
+    }
+
+    /**
+     * The reflected binary hook, `other <op> this`: what a builtin given this
+     * as its second operand composes (`builtins.add(2, p)`). The base refuses.
+     */
+    protected rbinop(selector: string, _other: unknown): TSelf {
+        throw new TypeError(`a ${this.constructor.name} cannot be the right operand of '${selector}'`);
+    }
+
+    /** @internal -- the hooks, for `base/builtins`, which lifts a builtin over this. */
+    composeOp(kind: "unary" | "binary" | "rbinary" | "nary", selector: string, args: readonly unknown[] = [], clip = "minmax"): TSelf {
+        if (kind === "unary") return this.unop(selector);
+        if (kind === "binary") return this.binop(selector, args[0] as TOperand) as TSelf;
+        if (kind === "rbinary") return this.rbinop(selector, args[0]);
+        return this.narop(selector, args, clip);
+    }
+
     // --- binary ---
     add<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("add", x); }
     sub<T extends TOperand>(x: T): Composed<TSelf, T, F> { return this.binop("sub", x); }
@@ -151,4 +177,158 @@ export abstract class AbstractObject<
     triwindow(): TSelf { return this.unop("triwindow"); }
     ramp(): TSelf { return this.unop("ramp"); }
     scurve(): TSelf { return this.unop("scurve"); }
+    /** `1` where this is not above zero, else `0` -- sclang's `not`. */
+    not(): Composed<TSelf, number, F> { return this.binop("le", 0 as TOperand & number); }
+
+    // ---- the range maps: sclang's own, the signal half of the value
+    // functions in `base/builtins`. `clip` says what an out-of-range input is
+    // trimmed to before it is mapped -- `"minmax"` (the default, both ends),
+    // `"min"`, `"max"` or `"none"` (extrapolate) -- the same argument, spelled
+    // the same way, as on the value side.
+
+    /** This off a linear range onto a linear one. */
+    linlin(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+           clip = "minmax"): TSelf {
+        return this.narop("linlin", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /**
+     * Off a linear range onto an exponential one -- an LFO onto a frequency.
+     * The output ends must not straddle zero; one *at* zero is nudged to the
+     * smallest same-signed value rather than giving a NaN.
+     */
+    linexp(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+           clip = "minmax"): TSelf {
+        return this.narop("linexp", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /** Off an exponential range onto a linear one -- a frequency onto a fader
+     * position. */
+    explin(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+           clip = "minmax"): TSelf {
+        return this.narop("explin", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /** Off an exponential range onto another. */
+    expexp(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+           clip = "minmax"): TSelf {
+        return this.narop("expexp", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /**
+     * Off a linear range onto one **bent** by `curve`: 0 is linear, negative
+     * builds fast then slow -- most of the output spent on the first half of
+     * the input -- and positive the reverse, which is the fine-at-the-bottom
+     * feel a frequency or an amplitude control wants. Unlike `linexp` the bend
+     * spans zero freely.
+     */
+    lincurve(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+             curve: TOperand | number = -4.0, clip = "minmax"): TSelf {
+        return this.narop("lincurve", [inLo, inHi, outLo, outHi, curve], clip);
+    }
+
+    /** The inverse of `lincurve`: off a bent range onto a linear one. */
+    curvelin(inLo: TOperand, inHi: TOperand, outLo: TOperand, outHi: TOperand,
+             curve: TOperand | number = -4.0, clip = "minmax"): TSelf {
+        return this.narop("curvelin", [inLo, inHi, outLo, outHi, curve], clip);
+    }
+
+    // ---- two bounds: the general form of `clip2`/`wrap2`/`fold2` (on a
+    // signal, the `Clip`/`Wrap`/`Fold` UGen of the same name).
+
+    /** This held inside `lo..hi` at the nearer bound. */
+    clip(lo: TOperand, hi: TOperand): TSelf {
+        return this.narop("clip", [lo, hi], "minmax");
+    }
+
+    /** This wrapped into `lo..hi` -- taken modulo the range. */
+    wrap(lo: TOperand, hi: TOperand): TSelf {
+        return this.narop("wrap", [lo, hi], "minmax");
+    }
+
+    /** This folded into `lo..hi` -- reflected at the bounds. */
+    fold(lo: TOperand, hi: TOperand): TSelf {
+        return this.narop("fold", [lo, hi], "minmax");
+    }
+
+    // ---- random draws: on a value or a pattern, one per value from the
+    // random context; on a signal, a new value every sample, each node its own
+    // seeded stream (sclang's random operators).
+
+    /** A uniform draw in `[0, this)`. */
+    rand(): TSelf {
+        return this.narop("rand", [], "minmax");
+    }
+
+    /** A uniform draw in `[-this, this)`. */
+    rand2(): TSelf {
+        return this.narop("rand2", [], "minmax");
+    }
+
+    /** A draw in `[0, this)`, more likely toward 0. */
+    linrand(): TSelf {
+        return this.narop("linrand", [], "minmax");
+    }
+
+    /** A draw in `(-this, this)`, more likely toward 0. */
+    bilinrand(): TSelf {
+        return this.narop("bilinrand", [], "minmax");
+    }
+
+    /** A bell-shaped draw in `(-this, this)`. */
+    sum3rand(): TSelf {
+        return this.narop("sum3rand", [], "minmax");
+    }
+
+    /** `1` with probability `this`, else `0`. */
+    coin(): TSelf {
+        return this.narop("coin", [], "minmax");
+    }
+
+    /** A uniform draw between this and `hi`. */
+    rrand(hi: TOperand): TSelf {
+        return this.narop("rrand", [hi], "minmax");
+    }
+
+    /** An exponential draw between this and `hi`. */
+    exprand(hi: TOperand): TSelf {
+        return this.narop("exprand", [hi], "minmax");
+    }
+
+    // ---- the value functions sclang's AbstractFunction has beside them.
+
+    /** `frac` of the way from this to `other`. */
+    blend(other: TOperand, frac: TOperand | number = 0.5): TSelf {
+        return this.narop("blend", [other, frac], "minmax");
+    }
+
+    /** Degrees to radians. */
+    degrad(): TSelf {
+        return this.narop("degrad", [], "minmax");
+    }
+
+    /** Radians to degrees. */
+    raddeg(): TSelf {
+        return this.narop("raddeg", [], "minmax");
+    }
+
+    /** The smaller distance between this and `other` around a circle of `mod`. */
+    moddif(other: TOperand | number = 0, mod: TOperand | number = 1): TSelf {
+        return this.narop("moddif", [other, mod], "minmax");
+    }
+
+    /**
+     * Off a range split at `inCenter` onto one split at `outCenter`, each half
+     * mapped linearly.
+     */
+    bilin(inCenter: TOperand, inLo: TOperand, inHi: TOperand, outCenter: TOperand,
+          outLo: TOperand, outHi: TOperand, clip = "minmax"): TSelf {
+        return this.narop("bilin", [inCenter, inLo, inHi, outCenter, outLo, outHi], clip);
+    }
+
+    /** As `bilin`, with each half read exponentially. */
+    biexp(inCenter: TOperand, inLo: TOperand, inHi: TOperand, outCenter: TOperand,
+          outLo: TOperand, outHi: TOperand, clip = "minmax"): TSelf {
+        return this.narop("biexp", [inCenter, inLo, inHi, outCenter, outLo, outHi], clip);
+    }
 }

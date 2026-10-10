@@ -16,6 +16,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { seed } from "../src/base/rand.ts";
+import * as b from "../src/base/builtins.ts";
 import {
     INF,
     pconst,
@@ -55,9 +56,22 @@ const CASES: Record<string, () => Pattern<unknown>> = {
     linlin: () => pnarop("linlin", pseq([0, 0.25, 1, 2]), 0, 1, 10, 20),
     clip: () => pnarop("clip", pseq([-2, 0.5, 3]), 0, 1),
     random_ops: () => pwhite(0, 1, 6).mul(100).floor(),
+    linlin_method: () => pseq([0, 0.5, 1, 2]).linlin(0, 1, 200, 800, "max"),
+    lincurve_method: () => pseq([0, 0.25, 0.5, 1]).lincurve(0, 1, 0, 10, -4),
+    fold_method: () => pseq([-0.5, 1.5, 2.25]).fold(0, 1),
+    blend: () => pseq([0, 10, 20]).blend(pseq([100, 50, 0]), 0.25),
+    angles: () => pseq([0, 90, 270]).degrad().raddeg(),
+    moddif: () => pseq([0.1, 0.9, 0.5]).moddif(0.2),
+    bilin: () => pseq([0, 0.25, 0.5, 0.75, 1]).bilin(0.5, 0, 1, 10, 0, 100),
+    bit_ops: () => pseq([0, 5]).bitnot().idiv(2).bitand(7),
+    not: () => pseq([-1, 0, 1]).not(),
+    draws: () => pseq([10, 10, 10]).rand().add(pseq([1, 1, 1]).exprand(2)),
+    builtin_midicps: () => b.midicps(pseq([60, 72])),
+    builtin_reflected: () => b.sub(100, pseq([1, 2, 3])),
+    builtin_by_name: () => b.degkey(pseq([0, 3, 7, -1]), [0, 2, 4, 5, 7, 9, 11]),
 };
 
-const TRANSCENDENTAL = new Set(["midicps"]);
+const TRANSCENDENTAL = new Set(["midicps", "builtin_midicps", "lincurve_method"]);
 
 const vectors: Record<string, { seed: number | null; values: number[] }> = JSON.parse(
     await readFile(new URL("./pattern-vectors.json", import.meta.url), "utf8"),

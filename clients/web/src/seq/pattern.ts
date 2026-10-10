@@ -45,7 +45,7 @@
 import { AbstractObject } from "../base/absobject.ts";
 import type { Composed, Fan } from "../base/absobject.ts";
 import { Stream, StopStream } from "../base/stream.ts";
-import { valueOp } from "../base/builtins.ts";
+import { TRIMMED, valueOp } from "../base/builtins.ts";
 import { main } from "../base/main.ts";
 import type { Event, EventDestination } from "./event.ts";
 import { EventStreamPlayer } from "./eventstream.ts";
@@ -224,6 +224,16 @@ export class Pattern<T = unknown> extends AbstractObject<Pattern<number>, unknow
     protected unop(selector: string): Pattern<number> {
         refuseEvents(this);
         return opPattern("punop", selector, [this]);
+    }
+
+    protected rbinop(selector: string, other: unknown): Pattern<number> {
+        refuseEvents(this, other);
+        return opPattern("pbinop", selector, [other, this]);
+    }
+
+    protected narop(selector: string, args: readonly unknown[], clip: string): Pattern<number> {
+        refuseEvents(this, ...args);
+        return opPattern("pnarop", selector, [this, ...args, ...(TRIMMED.has(selector) ? [clip] : [])]);
     }
 }
 

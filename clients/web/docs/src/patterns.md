@@ -45,9 +45,15 @@ A pattern composes with the operators a UGen does, by the same names. TypeScript
 seq.pseq([74, 60, 46]).add(2);                    // 76, 62, 48
 seq.pseries(0, 7).mod(12).add(60).midicps();      // a cycle of fifths
 seq.pseq([1, 2, 3]).mul(seq.pseq([10, 20]));      // 10, 40 -- ends with the shorter
+seq.pwhite(0, 1).linlin(0, 1, 200, 800);          // random, between 200 and 800
+seq.pseq([60, 64]).blend(72, 0.5);                // 66, 68
 ```
 
+The whole vocabulary is there: the operators by name (`add`, `mod`, `idiv`, `bitnot`, `lt`, `eq` ...), the math methods, the range maps, the bounds (`clip(lo, hi)`, `wrap`, `fold`), sclang's value functions (`blend`, `moddif`, `bilin`, `degrad`, `not` ...) and the random operators (`rand()`, `rrand(hi)`, `coin()` ...), one draw per step from the random context.
+
 Each value is computed by the `builtins` function of the operator's name — the one a list and a signal are computed by — so the three answer an operator with one rule. **An operator applies to each value a stream yields**; a function that reads a whole list (`builtins.normalize`) is not an operator, and is applied to the array before it becomes a pattern: `seq.pseq(builtins.normalize([3, 7, 5]))`. **An event pattern refuses an operator**: an event has no arithmetic. A stream composes the same way (`pattern.stream().add(1)`).
+
+**A builtin given a pattern answers what the method does**: `builtins.midicps(seq.pseq([60, 72]))` is `seq.pseq([60, 72]).midicps()`, `builtins.add(2, p)` puts `p` on the right, and a function that is not an operator (`cbrt`, `degkey`) composes by name, value by value, over its first argument. A signal takes the same calls as far as a UGen has the operator; a value function no UGen computes (`cbrt`, `moddif`) is refused by name.
 
 ## Writing a pattern
 

@@ -37,21 +37,91 @@ import {
     mel_to_hz as coreMelToHz,
     unary as coreUnary,
 } from "../core/clausters_core_web.js";
+import { AbstractObject } from "./absobject.ts";
+import * as rand from "./rand.ts";
+import * as builtins from "./builtins.ts";
 
 /** A number or an array of them -- what every builtin accepts and returns. */
 export type Num = number | readonly number[];
 
-/** A unary builtin: array in, array out. */
+/**
+ * Something that composes rather than computes: a pattern, a stream, a graph
+ * node. A builtin given one answers what its own method does.
+ */
+// The base's own type parameters are what differ between the kinds; any of
+// them composes.
+export type Lifts = AbstractObject<any, any, any>;
+
+/** What a builtin given `X` answers: what `X`'s own methods answer. */
+export type Lifted<X> = X extends AbstractObject<infer S, any, any> ? S : never;
+
+/** A unary builtin: array in, array out; a pattern in, a pattern out. */
 export interface UnaryFn {
     (x: number): number;
     (x: readonly number[]): number[];
     (x: Num): Num;
+    <X extends Lifts>(x: X): Lifted<X>;
 }
 
-/** A binary builtin: an array on either side (or both) gives an array. */
+/**
+ * A binary builtin: an array on either side (or both) gives an array, and a
+ * pattern on either side a pattern.
+ */
 export interface BinaryFn {
     (a: number, b: number): number;
     (a: Num, b: Num): Num;
+    <X extends Lifts>(a: X, b: unknown): Lifted<X>;
+    <X extends Lifts>(a: Num, b: X): Lifted<X>;
+}
+
+// ---- a builtin given a pattern, a stream or a signal ----
+//
+// An element-wise builtin given something that composes answers what that
+// thing's own method does: `midicps(pseq([60, 72]))` is `pseq([60,
+// 72]).midicps()`, `add(2, p)` is `p` on the right of `add`, and a function
+// that is not an operator (`cbrt`, `degkey`) is composed by name, which a
+// pattern or a stream computes value by value and a signal refuses. It
+// composes over its first argument, as a method does, except a binary
+// operator, which reflects. A list function refuses a pattern by name (mirrors
+// `clausters/base/builtins.py`).
+
+const composes = (x: unknown): x is Lifts => x instanceof AbstractObject;
+
+type Fn = (...args: any[]) => any;
+type LiftedFn<F> = F extends (x: any, ...rest: infer R) => any
+    ? <X extends Lifts>(x: X, ...rest: R) => Lifted<X>
+    : never;
+
+function lifted<F extends Fn>(name: string, fn: F): F & LiftedFn<F> {
+    const builtin = (...args: unknown[]): unknown => {
+        if (!args.some(composes)) return fn(...args);
+        const [x, ...rest] = args;
+        if (!composes(x)) {
+            throw new TypeError(
+                `${name} composes over its first argument, as the method does: write ` +
+                    `${name}(x, ...) with the pattern, stream or signal as x`,
+            );
+        }
+        const clip = typeof rest[rest.length - 1] === "string" ? (rest.pop() as string) : "minmax";
+        return x.composeOp("nary", name, rest, clip);
+    };
+    Object.defineProperty(builtin, "name", { value: name });
+    return builtin as F & LiftedFn<F>;
+}
+
+function whole<F extends Fn>(name: string, fn: F): F {
+    const builtin = (...args: unknown[]): unknown => {
+        if (args.some(composes)) {
+            throw new TypeError(
+                `${name} reads a whole list, and a pattern or a stream is a sequence that ` +
+                    "may not end: apply it to the list before the list becomes a pattern -- " +
+                    `pseq(${name}([...]))`,
+            );
+        }
+        return fn(...args);
+    };
+    Object.defineProperty(builtin, "name", { value: name });
+    return builtin as F;
 }
 
 const isSeq = (x: Num): x is readonly number[] => Array.isArray(x);
@@ -87,8 +157,13 @@ export const unary = (op: string, x: Num): Num => unop(op, x);
 /** One binary builtin by its core name (`binary("clip2", 1.5, 1)`). */
 export const binary = (op: string, a: Num, b: Num): Num => binop(op, a, b);
 
-const un = (op: string): UnaryFn => ((x: Num) => unop(op, x)) as UnaryFn;
-const bin = (op: string): BinaryFn => ((a: Num, b: Num) => binop(op, a, b)) as BinaryFn;
+const un = (op: string): UnaryFn =>
+    ((x: unknown) => (composes(x) ? x.composeOp("unary", op) : unop(op, x as Num))) as UnaryFn;
+const bin = (op: string): BinaryFn =>
+    ((a: unknown, b: unknown) =>
+        composes(a) ? a.composeOp("binary", op, [b])
+            : composes(b) ? b.composeOp("rbinary", op, [a])
+                : binop(op, a as Num, b as Num)) as BinaryFn;
 
 // ---- binary primitives ----
 
@@ -160,13 +235,13 @@ function boundop(op: string, x: Num, lo: Num, hi: Num): Num {
 }
 
 /** `x` held inside `lo..hi` at the nearer bound. */
-export const clip = (x: Num, lo: Num, hi: Num): Num => boundop("clip", x, lo, hi);
+export const clip = lifted("clip", (x: Num, lo: Num, hi: Num): Num => boundop("clip", x, lo, hi));
 
 /** `x` wrapped into `lo..hi` -- taken modulo the range. */
-export const wrap = (x: Num, lo: Num, hi: Num): Num => boundop("wrap", x, lo, hi);
+export const wrap = lifted("wrap", (x: Num, lo: Num, hi: Num): Num => boundop("wrap", x, lo, hi));
 
 /** `x` folded into `lo..hi` -- reflected at the bounds, as many times as it takes. */
-export const fold = (x: Num, lo: Num, hi: Num): Num => boundop("fold", x, lo, hi);
+export const fold = lifted("fold", (x: Num, lo: Num, hi: Num): Num => boundop("fold", x, lo, hi));
 
 // ---- unary primitives ----
 
@@ -235,27 +310,27 @@ export const cpsoct = un("cpsoct");
 // is drawing.
 
 const scaleFn =
-    (fn: (v: number) => number): UnaryFn =>
-    ((x: Num) => (isSeq(x) ? x.map(fn) : fn(x))) as UnaryFn;
+    (name: string, fn: (v: number) => number): UnaryFn =>
+    lifted(name, (x: Num) => (isSeq(x) ? x.map(fn) : fn(x))) as unknown as UnaryFn;
 
 /**
  * Hertz to **mel** (O'Shaughnessy): the perceptual pitch scale, ~1000 mel at
  * 1 kHz by construction and increasingly compressed above it.
  */
-export const cpsmel = scaleFn(coreHzToMel);
+export const cpsmel = scaleFn("cpsmel", coreHzToMel);
 
 /** Mel to hertz, the exact inverse of {@link cpsmel}. Negative input maps to 0. */
-export const melcps = scaleFn(coreMelToHz);
+export const melcps = scaleFn("melcps", coreMelToHz);
 
 /**
  * Hertz to **bark** (Traunmuller): the critical-band scale, ~8.5 bark at 1 kHz.
  * Zero hertz sits at `-0.53`, which is the formula and not an error -- the
  * scale is invertible across it.
  */
-export const cpsbark = scaleFn(coreHzToBark);
+export const cpsbark = scaleFn("cpsbark", coreHzToBark);
 
 /** Bark to hertz, the analytic inverse of {@link cpsbark}. */
-export const barkcps = scaleFn(coreBarkToHz);
+export const barkcps = scaleFn("barkcps", coreBarkToHz);
 
 // ---- the numeric functions that are not operators ----
 //
@@ -267,7 +342,7 @@ export const barkcps = scaleFn(coreBarkToHz);
 const calcOp = (op: string, x: Num, ...args: number[]): Num =>
     isSeq(x) ? x.map((v) => coreCalc(op, Float64Array.from([v, ...args]))) :
         coreCalc(op, Float64Array.from([x, ...args]));
-const calc1 = (op: string): UnaryFn => ((x: Num) => calcOp(op, x)) as UnaryFn;
+const calc1 = (op: string): UnaryFn => lifted(op, (x: Num) => calcOp(op, x)) as unknown as UnaryFn;
 const asBool = (r: Num): boolean | boolean[] =>
     Array.isArray(r) ? r.map((v) => v !== 0) : r !== 0;
 
@@ -299,55 +374,55 @@ export const wrap1 = calc1("wrap1");
 /** `x` folded into `-1..1` by one reflection. */
 export const fold1 = calc1("fold1");
 /** Whether the whole part of `x` is even. */
-export const even = (x: Num): boolean | boolean[] => asBool(calcOp("even", x));
+export const even = lifted("even", (x: Num): boolean | boolean[] => asBool(calcOp("even", x)));
 /** Whether the whole part of `x` is odd. */
-export const odd = (x: Num): boolean | boolean[] => asBool(calcOp("odd", x));
+export const odd = lifted("odd", (x: Num): boolean | boolean[] => asBool(calcOp("odd", x)));
 /** The Gray code of the whole part of `x`: `x ^ (x >> 1)`. */
 export const graycode = calc1("graycode");
 /** The least power of `base` at or above `x` (a power maps to itself). */
-export const nextpowerof = (x: Num, base: number): Num => calcOp("nextpowerof", x, base);
+export const nextpowerof = lifted("nextpowerof", (x: Num, base: number): Num => calcOp("nextpowerof", x, base));
 /** The least power of two at or above `x`. */
-export const nextpoweroftwo = (x: Num): Num => nextpowerof(x, 2);
+export const nextpoweroftwo = lifted("nextpoweroftwo", (x: Num): Num => nextpowerof(x, 2));
 /** The least power of three at or above `x`. */
-export const nextpowerofthree = (x: Num): Num => nextpowerof(x, 3);
+export const nextpowerofthree = lifted("nextpowerofthree", (x: Num): Num => nextpowerof(x, 3));
 /** The power of `base` below the one `nextpowerof` gives. */
-export const previouspowerof = (x: Num, base: number): Num =>
-    calcOp("previouspowerof", x, base);
+export const previouspowerof = lifted("previouspowerof", (x: Num, base: number): Num =>
+    calcOp("previouspowerof", x, base));
 /**
  * The distance from `x` to `b` on a circle of circumference `mod`: 0.9 and
  * 0.1 are 0.2 apart on the unit circle, not 0.8.
  */
-export const moddif = (x: Num, b = 0.0, mod = 1.0): Num => calcOp("moddif", x, b, mod);
+export const moddif = lifted("moddif", (x: Num, b = 0.0, mod = 1.0): Num => calcOp("moddif", x, b, mod));
 /**
  * `x` pulled toward its nearest multiple of `resolution` by `strength` when it
  * is **farther** than `margin` from it.
  */
-export const softround = (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
-    calcOp("softround", x, resolution, margin, strength);
+export const softround = lifted("softround", (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
+    calcOp("softround", x, resolution, margin, strength));
 /**
  * `x` pulled toward its nearest multiple of `resolution` by `strength` when it
  * is **within** `margin` of it -- a magnet for the grid.
  */
-export const snap = (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
-    calcOp("snap", x, resolution, margin, strength);
+export const snap = lifted("snap", (x: Num, resolution = 1.0, margin = 0.05, strength = 1.0): Num =>
+    calcOp("snap", x, resolution, margin, strength));
 /** The logistic curve `a * (m*e^-x + 1) / (n*e^-x + 1)`. */
-export const lcurve = (x: Num, a = 1.0, m = 0.0, n = 1.0, tau = 1.0): Num =>
-    calcOp("lcurve", x, a, m, n, tau);
+export const lcurve = lifted("lcurve", (x: Num, a = 1.0, m = 0.0, n = 1.0, tau = 1.0): Num =>
+    calcOp("lcurve", x, a, m, n, tau));
 /** The Gaussian bell `a * exp(-(x - b)^2 / (2 c^2))`. */
-export const gausscurve = (x: Num, a = 1.0, b = 0.0, c = 1.0): Num =>
-    calcOp("gausscurve", x, a, b, c);
+export const gausscurve = lifted("gausscurve", (x: Num, a = 1.0, b = 0.0, c = 1.0): Num =>
+    calcOp("gausscurve", x, a, b, c));
 /**
  * Lagrange cubic interpolation at `x1` in `0..1` between `b` and `c`, with
  * `a` and `d` their outer neighbours.
  */
-export const lg3interp = (x1: Num, a: number, b: number, c: number, d: number): Num =>
-    calcOp("lg3interp", x1, a, b, c, d);
+export const lg3interp = lifted("lg3interp", (x1: Num, a: number, b: number, c: number, d: number): Num =>
+    calcOp("lg3interp", x1, a, b, c, d));
 /**
  * The feedback coefficient that decays a delay of `delaytime` by 60 dB in
  * `decaytime` (a negative `decaytime` inverts it).
  */
-export const calcfeedback = (delaytime: Num, decaytime: number): Num =>
-    calcOp("calcfeedback", delaytime, decaytime);
+export const calcfeedback = lifted("calcfeedback", (delaytime: Num, decaytime: number): Num =>
+    calcOp("calcfeedback", delaytime, decaytime));
 
 const CLIP_NUMBER: Record<string, number> = { minmax: 0, min: 1, max: 2, none: 3 };
 
@@ -355,32 +430,32 @@ const CLIP_NUMBER: Record<string, number> = { minmax: 0, min: 1, max: 2, none: 3
  * A linear map with a centre: `x` read off `inLo..inCenter..inHi`, each half
  * mapped linearly onto its half of the output.
  */
-export const bilin = (
+export const bilin = lifted("bilin", (
     x: Num, inCenter: number, inLo: number, inHi: number,
     outCenter: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => calcOp("bilin", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!);
+): Num => calcOp("bilin", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!));
 
 /** {@link bilin} read off an exponential input. */
-export const biexp = (
+export const biexp = lifted("biexp", (
     x: Num, inCenter: number, inLo: number, inHi: number,
     outCenter: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => calcOp("biexp", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!);
+): Num => calcOp("biexp", x, inCenter, inLo, inHi, outCenter, outLo, outHi, CLIP_NUMBER[clip]!));
 
 /** The Bessel function of the first kind, integer order `n`, at `x`. */
-export const besselj = (n: number, x: Num): Num =>
+export const besselj = lifted("besselj", (n: number, x: Num): Num =>
     isSeq(x) ? x.map((v) => coreCalc("besselj", Float64Array.from([n, v]))) :
-        coreCalc("besselj", Float64Array.from([n, x]));
+        coreCalc("besselj", Float64Array.from([n, x])));
 
 /** The Bessel function of the second kind, integer order `n`, at `x`. */
-export const bessely = (n: number, x: Num): Num =>
+export const bessely = lifted("bessely", (n: number, x: Num): Num =>
     isSeq(x) ? x.map((v) => coreCalc("bessely", Float64Array.from([n, v]))) :
-        coreCalc("bessely", Float64Array.from([n, x]));
+        coreCalc("bessely", Float64Array.from([n, x])));
 
 /**
  * `frac` of the way from `a` to `b`. Any of the three may be an array, and two
  * arrays blend point by point (the shorter extended cyclically).
  */
-export const blend = (a: Num, b: Num, frac: Num = 0.5): Num => {
+export const blend = lifted("blend", (a: Num, b: Num, frac: Num = 0.5): Num => {
     const args = [a, b, frac];
     const seqs = args.filter(isSeq);
     if (seqs.length === 0) return coreCalc("blend", Float64Array.from(args as number[]));
@@ -389,7 +464,7 @@ export const blend = (a: Num, b: Num, frac: Num = 0.5): Num => {
     return Array.from({ length: n }, (_, i) =>
         coreCalc("blend", Float64Array.from([cols[0]![i]!, cols[1]![i]!, cols[2]![i]!])),
     );
-};
+});
 
 // ---- scales and sorted lists ----
 
@@ -404,23 +479,23 @@ const scaleOp = (op: string, x: Num, values: readonly number[], steps: number): 
  * `steps`) with octave carry, and a fraction is an alteration as SuperCollider
  * writes it -- `1.1` is degree 1 raised a semitone.
  */
-export const degkey = (degree: Num, scale: readonly number[], steps = 12): Num =>
-    scaleOp("degkey", degree, scale, steps);
+export const degkey = lifted("degkey", (degree: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("degkey", degree, scale, steps));
 
 /**
  * Key to scale degree, the inverse of {@link degkey}: a key between two
  * degrees is a fractional degree, linearly between them.
  */
-export const keydeg = (key: Num, scale: readonly number[], steps = 12): Num =>
-    scaleOp("keydeg", key, scale, steps);
+export const keydeg = lifted("keydeg", (key: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("keydeg", key, scale, steps));
 
 /** The key of `scale` nearest to `x`, in `x`'s own octave of `steps`. */
-export const nearestinscale = (x: Num, scale: readonly number[], steps = 12): Num =>
-    scaleOp("nearestinscale", x, scale, steps);
+export const nearestinscale = lifted("nearestinscale", (x: Num, scale: readonly number[], steps = 12): Num =>
+    scaleOp("nearestinscale", x, scale, steps));
 
 /** The value of the sorted list `values` nearest to `x`. */
-export const nearestinlist = (x: Num, values: readonly number[]): Num =>
-    scaleOp("nearestinlist", x, values, 0);
+export const nearestinlist = lifted("nearestinlist", (x: Num, values: readonly number[]): Num =>
+    scaleOp("nearestinlist", x, values, 0));
 
 // ---- lists ----
 //
@@ -436,60 +511,60 @@ export type BlendMethod = "clip" | "wrap" | "fold";
  * around it. `method` says what an index past either end reads: `"clip"`
  * (held at the end), `"wrap"` or `"fold"`.
  */
-export const blendat = (values: readonly number[], index: Num, method: BlendMethod = "clip"): Num => {
+export const blendat = whole("blendat", (values: readonly number[], index: Num, method: BlendMethod = "clip"): Num => {
     const list = Float64Array.from(values);
     return isSeq(index) ? index.map((i) => coreBlendAt(list, i, method)) :
         coreBlendAt(list, index, method);
-};
+});
 
 const listOp = (op: string, values: readonly number[], a = 0, b = 0): number[] =>
     Array.from(coreList(op, Float64Array.from(values), a, b));
 
 /** `values` mapped linearly from their own range onto `lo..hi`. */
-export const normalize = (values: readonly number[], lo = 0.0, hi = 1.0): number[] =>
-    listOp("normalize", values, lo, hi);
+export const normalize = whole("normalize", (values: readonly number[], lo = 0.0, hi = 1.0): number[] =>
+    listOp("normalize", values, lo, hi));
 
 /**
  * `values` divided by their sum, so they sum to 1 -- the weights `wchoose`
  * reads, made explicit.
  */
-export const normalizesum = (values: readonly number[]): number[] => listOp("normalizesum", values);
+export const normalizesum = whole("normalizesum", (values: readonly number[]): number[] => listOp("normalizesum", values));
 
 /** The running sum of `values`. */
-export const integrate = (values: readonly number[]): number[] => listOp("integrate", values);
+export const integrate = whole("integrate", (values: readonly number[]): number[] => listOp("integrate", values));
 
 /** Each value less the one before it (the first less 0). */
-export const differentiate = (values: readonly number[]): number[] =>
-    listOp("differentiate", values);
+export const differentiate = whole("differentiate", (values: readonly number[]): number[] =>
+    listOp("differentiate", values));
 
 /** `values` resampled to `size` values by taking the nearest. */
-export const resamp0 = (values: readonly number[], size: number): number[] =>
-    listOp("resamp0", values, size);
+export const resamp0 = whole("resamp0", (values: readonly number[], size: number): number[] =>
+    listOp("resamp0", values, size));
 
 /** `values` resampled to `size` values by linear interpolation. */
-export const resamp1 = (values: readonly number[], size: number): number[] =>
-    listOp("resamp1", values, size);
+export const resamp1 = whole("resamp1", (values: readonly number[], size: number): number[] =>
+    listOp("resamp1", values, size));
 
 /**
  * The table `tablerand` draws from, with `values` as the probability shape
  * (higher is likelier), `size` entries long (the shape's own length unless
  * given).
  */
-export const asrandomtable = (values: readonly number[], size?: number): number[] =>
-    listOp("asrandomtable", values, size ?? values.length);
+export const asrandomtable = whole("asrandomtable", (values: readonly number[], size?: number): number[] =>
+    listOp("asrandomtable", values, size ?? values.length));
 
 /** The fractional index of `x` in the sorted list `values`. */
-export const indexinbetween = (values: readonly number[], x: Num): Num =>
-    scaleOp("indexinbetween", x, values, 0);
+export const indexinbetween = whole("indexinbetween", (values: readonly number[], x: Num): Num =>
+    scaleOp("indexinbetween", x, values, 0));
 
 /**
  * The first index of the sorted list `values` greater than `x`, or `undefined`
  * where none is.
  */
-export const indexofgreaterthan = (values: readonly number[], x: number): number | undefined => {
+export const indexofgreaterthan = whole("indexofgreaterthan", (values: readonly number[], x: number): number | undefined => {
     const i = coreScaleCalc("indexofgreaterthan", x, Float64Array.from(values), 0);
     return i < 0 ? undefined : i;
-};
+});
 
 // ---- range maps (SuperCollider's warp family) ----
 //
@@ -516,28 +591,28 @@ const mapOp = (
         : coreMap(op, clip, x, inLo, inHi, outLo, outHi, curve);
 
 /** `x` off a linear range onto a linear one. */
-export const linlin = (
+export const linlin = lifted("linlin", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => mapOp("linlin", x, inLo, inHi, outLo, outHi, 0, clip);
+): Num => mapOp("linlin", x, inLo, inHi, outLo, outHi, 0, clip));
 
 /**
  * `x` off a linear range onto an exponential one -- a fader position to a
  * frequency. The output ends must not straddle zero; one *at* zero is nudged to
  * the smallest same-signed value rather than giving a NaN.
  */
-export const linexp = (
+export const linexp = lifted("linexp", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => mapOp("linexp", x, inLo, inHi, outLo, outHi, 0, clip);
+): Num => mapOp("linexp", x, inLo, inHi, outLo, outHi, 0, clip));
 
 /** `x` off an exponential range onto a linear one -- a frequency to a fader position. */
-export const explin = (
+export const explin = lifted("explin", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => mapOp("explin", x, inLo, inHi, outLo, outHi, 0, clip);
+): Num => mapOp("explin", x, inLo, inHi, outLo, outHi, 0, clip));
 
 /** `x` off an exponential range onto another. */
-export const expexp = (
+export const expexp = lifted("expexp", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
-): Num => mapOp("expexp", x, inLo, inHi, outLo, outHi, 0, clip);
+): Num => mapOp("expexp", x, inLo, inHi, outLo, outHi, 0, clip));
 
 /**
  * `x` off a linear range onto one **bent** by `curve`: 0 is linear, negative
@@ -546,16 +621,16 @@ export const expexp = (
  * frequency or an amplitude control wants. Unlike {@link linexp} the bend spans
  * zero freely.
  */
-export const lincurve = (
+export const lincurve = lifted("lincurve", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number,
     curve = -4, clip: Clip = "minmax",
-): Num => mapOp("lincurve", x, inLo, inHi, outLo, outHi, curve, clip);
+): Num => mapOp("lincurve", x, inLo, inHi, outLo, outHi, curve, clip));
 
 /** The inverse of {@link lincurve}: off a bent range onto a linear one. */
-export const curvelin = (
+export const curvelin = lifted("curvelin", (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number,
     curve = -4, clip: Clip = "minmax",
-): Num => mapOp("curvelin", x, inLo, inHi, outLo, outHi, curve, clip);
+): Num => mapOp("curvelin", x, inLo, inHi, outLo, outHi, curve, clip));
 
 /**
  * A **bipolar** value (-1..1) onto `lo`..`hi`, linearly.
@@ -564,12 +639,12 @@ export const curvelin = (
  * not, so an input past -1..1 overshoots the output by the same proportion
  * instead of being clipped to an assumption.
  */
-export const range = (x: Num, lo = 0, hi = 1): Num =>
-    mapOp("range", x, -1, 1, lo, hi, 0, "none");
+export const range = lifted("range", (x: Num, lo = 0, hi = 1): Num =>
+    mapOp("range", x, -1, 1, lo, hi, 0, "none"));
 
 /** A **bipolar** value onto `lo`..`hi` exponentially. Untrimmed, for the reason {@link range} gives. */
-export const exprange = (x: Num, lo = 0.01, hi = 1): Num =>
-    mapOp("exprange", x, -1, 1, lo, hi, 0, "none");
+export const exprange = lifted("exprange", (x: Num, lo = 0.01, hi = 1): Num =>
+    mapOp("exprange", x, -1, 1, lo, hi, 0, "none"));
 
 /**
  * Scale degree -> MIDI note number in the pitch space `octave`/`root`, with
@@ -578,14 +653,14 @@ export const exprange = (x: Num, lo = 0.01, hi = 1): Num =>
  * `scale` yields middle C. The rule is the core's, so every client resolves a
  * degree identically.
  */
-export const degreeToMidinote = (
+export const degreeToMidinote = lifted("degreeToMidinote", (
     degree: number,
     alter: number,
     octave: number,
     root: number,
     scale: readonly number[],
 ): number =>
-    coreDegreeToMidinote(degree, alter, octave, root, Float32Array.from(scale));
+    coreDegreeToMidinote(degree, alter, octave, root, Float32Array.from(scale)));
 
 // ---- the operators by name ----
 //
@@ -628,21 +703,40 @@ export const BOUND: Readonly<Record<string, (x: Num, lo: Num, hi: Num) => Num>> 
 
 /**
  * The n-ary operators by name: the range maps, which take the input ends and
- * the output ends after the value.
+ * the output ends after the value, and sclang's value functions over a value
+ * and its arguments.
  */
-export const NARY: Readonly<Record<string, (x: Num, ...args: never[]) => Num>> = {
-    linlin, linexp, explin, expexp, lincurve, curvelin,
+export const NARY: Readonly<Record<string, (x: Num, ...args: never[]) => unknown>> = {
+    linlin, linexp, explin, expexp, lincurve, curvelin, blend, bilin, biexp, moddif,
 };
 
+/** The n-ary operators whose last argument is a trim (`clip`). @internal */
+export const TRIMMED: ReadonlySet<string> = new Set([
+    "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin", "bilin", "biexp",
+]);
+
 /**
- * The value function an operator selector names, in any of the tables: how
- * something that composes values (a pattern, a stream) computes the operator
- * it was composed with.
+ * The random draws a pattern or a stream composes by name (`.rand()`,
+ * `.rrand(hi)`), each from the random context, one per value.
+ */
+export const DRAW: readonly string[] = [
+    "rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand", "exprand",
+];
+
+/**
+ * The value function an operator selector names, in any of the tables, else
+ * the builtin of that name: how something that composes values (a pattern, a
+ * stream) computes the operator or the function it was composed with.
  */
 export function valueOp(selector: string): (...values: never[]) => unknown {
     for (const table of [UNARY, BINARY, BOUND, NARY] as const) {
         const fn = (table as Record<string, unknown>)[selector];
         if (fn !== undefined) return fn as (...values: never[]) => unknown;
     }
+    if (DRAW.includes(selector)) {
+        return (rand as unknown as Record<string, (...values: never[]) => unknown>)[selector]!;
+    }
+    const fn = (builtins as unknown as Record<string, unknown>)[selector];
+    if (typeof fn === "function") return fn as (...values: never[]) => unknown;
     throw new Error(`no value operator '${selector}'`);
 }

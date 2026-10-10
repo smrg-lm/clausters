@@ -117,131 +117,11 @@ export const isList = (x: unknown): x is ChannelList | readonly Channel[] =>
  * The operator surface it inherits is `base/absobject`'s and is about the
  * shared builtins vocabulary rather than about UGens -- `defs/pv_expr` composes
  * the same names into a per-bin tree from the same base. What this branch adds
- * is the half that only a UGen graph has: the **range maps**, which compose a
- * `RangeMapUGen`.
+ * is how the n-ary operators are written as UGens: a range map is a
+ * `RangeMapUGen`, a bound its `Clip`/`Wrap`/`Fold`, a draw a `RandOpUGen`.
  */
 export abstract class SynthExpr<TSelf, TOperand = OpOperand>
-    extends AbstractObject<TSelf, TOperand, ChannelFan> {
-    protected abstract narop(
-        selector: string,
-        args: readonly Channel[],
-        clip: string,
-    ): TSelf;
-
-    // ---- the range maps: sclang's own, the signal half of the value
-    // functions in `base/builtins`. `clip` says what an out-of-range input is
-    // trimmed to before it is mapped -- `"minmax"` (the default, both ends),
-    // `"min"`, `"max"` or `"none"` (extrapolate) -- the same argument, spelled
-    // the same way, as on the value side.
-
-    /** This signal off a linear range onto a linear one. */
-    linlin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-           clip = "minmax"): TSelf {
-        return this.narop("linlin", [inLo, inHi, outLo, outHi], clip);
-    }
-
-    /**
-     * Off a linear range onto an exponential one -- an LFO onto a frequency.
-     * The output ends must not straddle zero; one *at* zero is nudged to the
-     * smallest same-signed value rather than giving a NaN.
-     */
-    linexp(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-           clip = "minmax"): TSelf {
-        return this.narop("linexp", [inLo, inHi, outLo, outHi], clip);
-    }
-
-    /** Off an exponential range onto a linear one -- a frequency onto a fader
-     * position. */
-    explin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-           clip = "minmax"): TSelf {
-        return this.narop("explin", [inLo, inHi, outLo, outHi], clip);
-    }
-
-    /** Off an exponential range onto another. */
-    expexp(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-           clip = "minmax"): TSelf {
-        return this.narop("expexp", [inLo, inHi, outLo, outHi], clip);
-    }
-
-    /**
-     * Off a linear range onto one **bent** by `curve`: 0 is linear, negative
-     * builds fast then slow -- most of the output spent on the first half of
-     * the input -- and positive the reverse, which is the fine-at-the-bottom
-     * feel a frequency or an amplitude control wants. Unlike `linexp` the bend
-     * spans zero freely.
-     */
-    lincurve(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-             curve: Channel = -4.0, clip = "minmax"): TSelf {
-        return this.narop("lincurve", [inLo, inHi, outLo, outHi, curve], clip);
-    }
-
-    /** The inverse of `lincurve`: off a bent range onto a linear one. */
-    curvelin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
-             curve: Channel = -4.0, clip = "minmax"): TSelf {
-        return this.narop("curvelin", [inLo, inHi, outLo, outHi, curve], clip);
-    }
-
-    // ---- two bounds: the general form of `clip2`/`wrap2`/`fold2`, each the
-    // `Clip`/`Wrap`/`Fold` UGen of the same name.
-
-    /** This signal held inside `lo..hi` at the nearer bound. */
-    clip(lo: Channel, hi: Channel): TSelf {
-        return this.narop("clip", [lo, hi], "minmax");
-    }
-
-    /** This signal wrapped into `lo..hi` -- taken modulo the range. */
-    wrap(lo: Channel, hi: Channel): TSelf {
-        return this.narop("wrap", [lo, hi], "minmax");
-    }
-
-    /** This signal folded into `lo..hi` -- reflected at the bounds. */
-    fold(lo: Channel, hi: Channel): TSelf {
-        return this.narop("fold", [lo, hi], "minmax");
-    }
-
-    // ---- random draws over a signal, a new value every sample, each node
-    // its own seeded stream (sclang's random operators on a UGen).
-
-    /** A uniform draw in `[0, this)`. */
-    rand(): TSelf {
-        return this.narop("rand", [], "minmax");
-    }
-
-    /** A uniform draw in `[-this, this)`. */
-    rand2(): TSelf {
-        return this.narop("rand2", [], "minmax");
-    }
-
-    /** A draw in `[0, this)`, more likely toward 0. */
-    linrand(): TSelf {
-        return this.narop("linrand", [], "minmax");
-    }
-
-    /** A draw in `(-this, this)`, more likely toward 0. */
-    bilinrand(): TSelf {
-        return this.narop("bilinrand", [], "minmax");
-    }
-
-    /** A bell-shaped draw in `(-this, this)`. */
-    sum3rand(): TSelf {
-        return this.narop("sum3rand", [], "minmax");
-    }
-
-    /** `1` with probability `this`, else `0`. */
-    coin(): TSelf {
-        return this.narop("coin", [], "minmax");
-    }
-
-    /** A uniform draw between this signal and `hi`. */
-    rrand(hi: Channel): TSelf {
-        return this.narop("rrand", [hi], "minmax");
-    }
-
-    /** An exponential draw between this signal and `hi`. */
-    exprand(hi: Channel): TSelf {
-        return this.narop("exprand", [hi], "minmax");
-    }
-}
+    extends AbstractObject<TSelf, TOperand, ChannelFan> {}
 
 /**
  * A single-channel expression: the leaves of the graph (`Ugen`, `Control`),
@@ -267,6 +147,13 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
 
     protected unop(selector: string): Ugen {
         return this.unopWith(selector);
+    }
+
+    protected rbinop(selector: string, other: unknown): Ugen {
+        if (isList(other)) {
+            return new ChannelList(other).composeWith(selector, this) as unknown as Ugen;
+        }
+        return this.rcomposeWith(selector, other as Channel);
     }
 
     protected narop(
@@ -312,18 +199,33 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
  * trimming carries nothing about it. `clip`/`wrap`/`fold` are the two-bound
  * UGen of that name instead, which has no clip mode of its own.
  */
+/**
+ * The value functions a graph writes with the operators it has: an angle's
+ * unit is a product, a blend the line between two signals.
+ */
+const COMPOSED: Readonly<Record<string, (node: Channel, ...args: Channel[]) => Ugen>> = {
+    degrad: (x) => leafOp("mul", x, Math.PI / 180),
+    raddeg: (x) => leafOp("mul", x, 180 / Math.PI),
+    blend: (x, other, frac = 0.5) => leafOp("add", x, leafOp("mul", leafOp("sub", other!, x), frac)),
+};
+
 function mapUgen(
     node: Channel,
     selector: string,
     args: readonly Channel[],
     clip: string,
 ): Ugen {
+    const composed = COMPOSED[selector];
+    if (composed !== undefined) return composed(node, ...args);
     const kind = BOUND_UGEN[selector];
     if (kind !== undefined) return new Ugen(kind, [node, ...args]);
     // One-argument draws leave the declared tail off the wire.
     if (DRAW_OPS.has(selector)) return new Ugen("RandOpUGen", [node, ...args], { op: selector });
     if (!MAP_OPS.has(selector)) {
-        throw new TypeError(`no n-ary UGen for '${selector}'`);
+        throw new TypeError(
+            `no UGen computes '${selector}': it is a value function, which a pattern ` +
+                "or a stream composes and a signal does not",
+        );
     }
     return new Ugen("RangeMapUGen", [node, ...args], {
         op: selector,
@@ -601,6 +503,10 @@ export class ChannelList extends SynthExpr<ChannelList> {
         return new ChannelList(
             this.pairs(other).map(([a, b]) => channelBinop(b, selector, a)),
         );
+    }
+
+    protected rbinop(selector: string, other: unknown): ChannelList {
+        return this.rcomposeWith(selector, other as OpOperand);
     }
 
     protected binop<T extends OpOperand>(

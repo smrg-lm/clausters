@@ -6,6 +6,8 @@ explicit container, never implicit expansion) -- plus the fused arithmetic the
 server has dedicated kinds for.
 """
 
+import math as _math
+
 from ...base import builtins as _builtins
 from ...base.absobject import AbstractObject
 from ..expr import SynthExpr
@@ -61,107 +63,13 @@ _DRAW_OPS = frozenset({
 })
 
 
-class _RangeMaps:
-    """The six range maps as methods on a graph node -- sclang's own, and the
-    signal half of `clausters.base.builtins`'s value functions.
-
-    ``clip`` says what an out-of-range input is trimmed to before it is mapped:
-    ``"minmax"`` (the default, both ends), ``"min"``, ``"max"`` or ``"none"``
-    (extrapolate). It is the same argument, spelled the same way, as on the
-    value side.
-    """
-
-    def _compose_narop(self, selector, *args, **static):
-        raise NotImplementedError
-
-    def linlin(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """This signal off a linear range onto a linear one."""
-        return self._compose_narop(
-            "linlin", in_lo, in_hi, out_lo, out_hi, clip=clip)
-
-    def linexp(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """Off a linear range onto an exponential one -- an LFO onto a
-        frequency. The output ends must not straddle zero; one *at* zero is
-        nudged to the smallest same-signed value rather than giving a NaN."""
-        return self._compose_narop(
-            "linexp", in_lo, in_hi, out_lo, out_hi, clip=clip)
-
-    def explin(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """Off an exponential range onto a linear one -- a frequency onto a
-        fader position."""
-        return self._compose_narop(
-            "explin", in_lo, in_hi, out_lo, out_hi, clip=clip)
-
-    def expexp(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """Off an exponential range onto another."""
-        return self._compose_narop(
-            "expexp", in_lo, in_hi, out_lo, out_hi, clip=clip)
-
-    def lincurve(self, in_lo, in_hi, out_lo, out_hi, curve=-4.0,
-                 clip="minmax"):
-        """Off a linear range onto one **bent** by ``curve``: 0 is linear,
-        negative builds fast then slow -- most of the output spent on the first
-        half of the input -- and positive the reverse, which is the
-        fine-at-the-bottom feel a frequency or an amplitude control wants.
-        Unlike `linexp` the bend spans zero freely."""
-        return self._compose_narop(
-            "lincurve", in_lo, in_hi, out_lo, out_hi, curve, clip=clip)
-
-    def curvelin(self, in_lo, in_hi, out_lo, out_hi, curve=-4.0,
-                 clip="minmax"):
-        """The inverse of `lincurve`: off a bent range onto a linear one."""
-        return self._compose_narop(
-            "curvelin", in_lo, in_hi, out_lo, out_hi, curve, clip=clip)
-
-    # ---- two bounds: the general form of clip2/wrap2/fold2, each the
-    # Clip/Wrap/Fold UGen of the same name.
-
-    def clip(self, lo, hi):
-        """This signal held inside ``lo..hi`` at the nearer bound."""
-        return self._compose_narop("clip", lo, hi)
-
-    def wrap(self, lo, hi):
-        """This signal wrapped into ``lo..hi`` -- taken modulo the range."""
-        return self._compose_narop("wrap", lo, hi)
-
-    def fold(self, lo, hi):
-        """This signal folded into ``lo..hi`` -- reflected at the bounds."""
-        return self._compose_narop("fold", lo, hi)
-
-    # ---- random draws over a signal, a new value every sample, each node its
-    # own seeded stream (sclang's random operators on a UGen).
-
-    def rand(self):
-        """A uniform draw in ``[0, self)``."""
-        return self._compose_narop("rand")
-
-    def rand2(self):
-        """A uniform draw in ``[-self, self)``."""
-        return self._compose_narop("rand2")
-
-    def linrand(self):
-        """A draw in ``[0, self)``, more likely toward 0."""
-        return self._compose_narop("linrand")
-
-    def bilinrand(self):
-        """A draw in ``(-self, self)``, more likely toward 0."""
-        return self._compose_narop("bilinrand")
-
-    def sum3rand(self):
-        """A bell-shaped draw in ``(-self, self)``."""
-        return self._compose_narop("sum3rand")
-
-    def coin(self):
-        """``1`` with probability ``self``, else ``0``."""
-        return self._compose_narop("coin")
-
-    def rrand(self, hi):
-        """A uniform draw between this signal and ``hi``."""
-        return self._compose_narop("rrand", hi)
-
-    def exprand(self, hi):
-        """An exponential draw between this signal and ``hi``."""
-        return self._compose_narop("exprand", hi)
+#: The value functions a graph writes with the operators it has: an angle's
+#: unit is a product, a blend the line between two signals.
+_COMPOSED = {
+    "degrad": lambda x: x * (_math.pi / 180.0),
+    "raddeg": lambda x: x * (180.0 / _math.pi),
+    "blend": lambda x, other, frac=0.5: x + (other - x) * frac,
+}
 
 
 def _map_ugen(node, selector, args, clip):
@@ -173,16 +81,21 @@ def _map_ugen(node, selector, args, clip):
     kind = _BOUND_UGEN.get(selector)
     if kind is not None:
         return Ugen(kind, [node, *args])
+    composed = _COMPOSED.get(selector)
+    if composed is not None:
+        return composed(node, *args)
     if selector in _DRAW_OPS:
         # One-argument draws leave the declared tail off the wire.
         return Ugen("RandOpUGen", [node, *args], op=selector)
     if selector not in _MAP_OPS:
-        raise TypeError(f"no n-ary UGen for {selector!r}")
+        raise TypeError(
+            f"no UGen computes {selector!r}: it is a value function, which a "
+            f"pattern or a stream composes and a signal does not")
     static = None if clip == "minmax" else {"clip": str(clip)}
     return Ugen("RangeMapUGen", [node, *args], op=selector, static=static)
 
 
-class _Node(_RangeMaps, SynthExpr):
+class _Node(SynthExpr):
     """Shared operator dispatch for graph leaves (`Ugen`, `Control`): `+ - * /`
     compose the dedicated alias kinds; every other operator and math method
     (`%`, `min`, comparisons, `.sin()`, `.midicps()`, ...) composes a generic
@@ -339,7 +252,7 @@ def _channel_binop(a, selector, b):
     return _builtins.BINARY[selector](a, b)
 
 
-class ChannelList(_RangeMaps, SynthExpr):
+class ChannelList(SynthExpr):
     """An ordered list of channels -- the client's multichannel container.
 
     Members are graph leaves (`Ugen`/`Control`) or plain numbers. Operators

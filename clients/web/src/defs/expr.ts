@@ -45,6 +45,10 @@ export abstract class FaustExpr<TSelf, TOperand>
         swap: boolean,
     ): TSelf;
 
+    protected rbinop(selector: string, other: unknown): TSelf {
+        return this.composeBinop(selector, other as TOperand, true);
+    }
+
     protected binop<T extends TOperand>(
         selector: string,
         other: T,

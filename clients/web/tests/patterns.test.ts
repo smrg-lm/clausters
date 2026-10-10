@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import * as b from "../src/base/builtins.ts";
+import { signal } from "../src/defs/signals.ts";
+import { Ugen, sine } from "../src/defs/ugens/index.ts";
 import { seed } from "../src/base/rand.ts";
 import { Routine, StopStream } from "../src/base/stream.ts";
 import {
@@ -142,4 +145,60 @@ test("a stream composes by operators", () => {
     assert.deepEqual([s.next(), s.next(), s.next()], [1, 11, 21]);
     assert.throws(() => s.next(), StopStream);
     assert.deepEqual([...pseq([1, 2]).stream().add(1)], [2, 3]);
+});
+
+// ---- the whole AbstractObject surface, and the builtins over a pattern ----
+
+test("a pattern has the n-ary operators a signal has", () => {
+    assert.deepEqual([...pseq([0, 0.5, 1]).linlin(0, 1, 200, 800)], [200, 500, 800]);
+    assert.deepEqual([...pseq([-2, 0.5, 3]).clip(0, 1)], [0, 0.5, 1]);
+    assert.deepEqual([...pseq([0, 10]).blend(20, 0.5)], [10, 15]);
+    assert.deepEqual([...pseq([0, 180]).raddeg().degrad()], [0, 180]);
+    assert.ok(Math.abs([...pseq([0.9]).moddif(0.1)][0]! - 0.2) < 1e-12);
+    assert.deepEqual([...pseq([0.25]).bilin(0.5, 0, 1, 10, 0, 100)], [5]);
+});
+
+test("the operators sc3 had and this one did not", () => {
+    assert.deepEqual([...pseq([0]).bitnot()], [-1]);
+    assert.deepEqual([...pseq([7]).idiv(2)], [3]);
+    assert.deepEqual([...pseq([0, 1]).not()], [1, 0]);
+    assert.deepEqual([...pseq([3, 4]).eq(3)], [1, 0]);
+    assert.deepEqual([...pseq([3]).ne(3)], [0]);
+    assert.deepEqual([...pseq([6]).bitand(3)], [2]);
+    assert.deepEqual([...pseq([1]).leftshift(3)], [8]);
+    assert.deepEqual([...pseq([2.5]).rint()], [2]);
+});
+
+test("the random operators draw per value under the seed", () => {
+    seed(3);
+    const a = [...pseq([10, 10]).rand(), ...pseq([1]).rrand(2)];
+    seed(3);
+    assert.deepEqual([...pseq([10, 10]).rand(), ...pseq([1]).rrand(2)], a);
+    assert.ok(a[0]! >= 0 && a[0]! < 10 && a[2]! >= 1 && a[2]! <= 2);
+});
+
+test("a builtin given a pattern answers what its method does", () => {
+    assert.deepEqual([...b.midicps(pseq([69, 81]))], [...pseq([69, 81]).midicps()]);
+    assert.deepEqual([...b.add(2, pseq([1, 2]))], [3, 4]);
+    assert.deepEqual([...b.clip(pseq([-1, 2]), 0, 1)], [0, 1]);
+    assert.deepEqual([...b.cbrt(pseq([8, 27]))], [2, 3]);
+    assert.deepEqual([...b.degkey(pseq([0, 1, 2]), [0, 2, 4, 5, 7, 9, 11])], [0, 2, 4]);
+    assert.ok(b.midicps(pseq([60])) instanceof Pattern);
+    assert.throws(() => b.clip(0.5, pseq([0]) as never, 1), /first argument/);
+});
+
+test("a list function refuses a pattern by name", () => {
+    for (const fn of [b.normalize, b.integrate, b.normalizesum]) {
+        assert.throws(() => (fn as (x: unknown) => unknown)(pseq([1, 2, 3])), /whole list/);
+    }
+});
+
+test("a graph composes the value functions it can and refuses the rest", () => {
+    assert.deepEqual(JSON.stringify(sine(1).degrad()), JSON.stringify(sine(1).mul(Math.PI / 180)));
+    assert.ok(sine(1).blend(sine(2), 0.25) instanceof Ugen);
+    assert.ok(b.midicps(sine(1)) instanceof Ugen);
+    for (const bad of [() => sine(1).moddif(0), () => b.cbrt(sine(1))]) {
+        assert.throws(bad, /no UGen computes/);
+    }
+    assert.throws(() => signal(1).linlin(0, 1, 0, 2), /has no 'linlin'/);
 });

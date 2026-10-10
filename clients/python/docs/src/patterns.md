@@ -57,8 +57,13 @@ A pattern composes with **the same operators a UGen does**, by the same names, a
 ```python
 pseq([74, 60, 46]) + 2                 # 76, 62, 48
 (pseries(0, 7) % 12 + 60).midicps()    # a cycle of fifths, as frequencies
+pwhite(0, 1).linlin(0, 1, 200, 800)    # random, between 200 and 800
+pseq([0, 0.5, 1.5]).fold(0, 1)         # 0, 0.5, 0.5
+pseq([60, 64]).blend(72, 0.5)          # 66, 68
 pseq([1, 2, 3]) * pseq([10, 20])       # 10, 40 -- ends with the shorter
 ```
+
+The whole vocabulary is there: the arithmetic, comparison and bitwise operators (`+`, `%`, `//`, `~`, `<`, and `eq`/`ne` by name, since `==` stays Python's equality), the math methods (`.sqrt()`, `.midicps()`, `.round(0.5)` ...), the range maps (`.linlin`, `.lincurve` ...), the bounds (`.clip(lo, hi)`, `.wrap`, `.fold`), sclang's value functions (`.blend`, `.moddif`, `.bilin`, `.degrad` ...) and the random operators (`.rand()`, `.rrand(hi)`, `.coin()` ...), which draw one value per step from the random context.
 
 Each value is computed by the `clausters.base.builtins` function of the operator's name — the same function a list is computed by, and the same the server runs for a UGen — so `pseq([69]).midicps()`, `midicps([69])` and `sine(...).midicps()` answer with one rule. An operand that is not a pattern is the same value at every step; two patterns are walked together, one value from each per step, and the composition ends when either does. A composed pattern is a pattern like any other: it iterates, embeds, repeats under `pn`.
 
@@ -73,6 +78,8 @@ pseq(normalize([3, 7, 5]))             # 0.0, 1.0, 0.5
 **An event pattern refuses an operator.** It yields events, and an event has no arithmetic; `pbind(...) + 2` raises and says so. What composes is the value patterns inside it.
 
 A **stream** composes the same way: `pseq([1, 2]).stream() + 1` is a stream of 2, 3, and so is a `Routine` times a number.
+
+**A builtin given a pattern answers what the method does.** `midicps(pseq([60, 72]))` is `pseq([60, 72]).midicps()`, `add(2, p)` is `2 + p`, and a function of `clausters.base.builtins` that is not an operator — `cbrt`, `degkey`, `snap` — composes by name, value by value: `degkey(pseq([0, 2, 4]), major)` is a pattern of keys. It composes over its first argument, as a method does. The same holds for a signal, as far as a signal has the operator: `midicps(sine(1))` is a `UnaryOpUGen`, `sine(1).degrad()` a product, and a value function no UGen computes (`cbrt`, `moddif`) is refused by name rather than missing.
 
 ## Writing a pattern
 

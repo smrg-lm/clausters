@@ -2338,22 +2338,27 @@ by the loop (`islice`, a `break`), never read whole.
   included, and `pattern-parity.test.ts` builds the same cases. Both books have
   a "Patterns" chapter: the walk, the two kinds, the operators against the list
   functions, writing one.
-- ⬜ **C71 — `AbstractObject` carries sc3's whole surface, and the builtins
-  take a pattern.** The methods sc3's `AbstractObject` has and this one does
-  not move into the base, so a pattern gets them without a graph: the range
-  maps (`linlin`, `linexp`, `explin`, `expexp`, `lincurve`, `curvelin`),
-  `clip`/`wrap`/`fold` and the eight random operators (`rand`, `rand2`,
-  `linrand`, `bilinrand`, `sum3rand`, `coin`, `rrand`, `exprand`), today only on
-  the UGen graph; and `blend`, `bilin`, `biexp`, `moddif`, `degrad`, `raddeg`,
-  `not_`, `//` (`idiv`), `~` (`bitnot`) and the named `bitand`/`bitor`/
-  `bitxor`/`lshift`/`rshift`, which no class has. Each subclass that cannot
-  compose one (a Faust `Signal`, a `PvExpr`) refuses it by name rather than by
-  a missing attribute. **Equality stays out of the operators**: sc3 composes
-  `==`/`!=`, which breaks hashing and `in` for every subclass; the composed form
-  is the named `eq`/`ne`, on every subclass. **The builtins**: an element-wise
-  builtin given a pattern returns the composed pattern (the method's own
-  answer) instead of reading it, and a list function given one refuses it with
-  the idiom in the message; `_is_seq` stops taking every iterable for a list.
+- ✅ **C71 — `AbstractObject` carries sc3's whole surface, and the builtins
+  take a pattern** *(done 2026-10-10)*. The range maps, `clip`/`wrap`/`fold`
+  and the eight random operators moved from the UGen graph into the base, and
+  the base grew `blend`, `bilin`, `biexp`, `moddif`, `degrad`, `raddeg`,
+  `not_` (`not()` in TypeScript), `//` and `~` (`idiv`, `bitnot`), `rint`, the
+  named `eq`/`ne` and `bitand`/`bitor`/`bitxor`/`leftshift`/`rightshift`
+  (the builtins' names, not the `lshift`/`rshift` this entry first said). A
+  pattern and a stream compute each by `value_op`, which now finds the draws
+  and any builtin by name. A graph writes `degrad`, `raddeg` and `blend` with
+  the operators it has and refuses a value function no UGen computes
+  (`moddif`, `cbrt`) by name; a Faust signal or box refuses what it lacks
+  through the base's hook (`a Signal has no 'linlin'`). The TypeScript base
+  gained the n-ary and reflected hooks (`narop`, `rbinop`) and an internal
+  `composeOp` door. **The builtins**: every element-wise builtin given a
+  pattern, a stream or a signal answers what that object's method does, over
+  its first argument (a binary operator reflects), so `midicps(pseq(...))`,
+  `add(2, p)` and `degkey(pseq(...), scale)` are patterns; a list function
+  refuses one with the idiom in the message, and `_is_seq` no longer reads a
+  composable as a list. **Equality stays out of the operators.** The parity
+  vectors gained the new methods, the seeded draws and the builtins over a
+  pattern; both books' "Patterns" chapters name the whole vocabulary.
 - ⬜ **C72 — sclang's list functions left out of `C68`**, in the core's
   `ListOp` table and both clients' `builtins`: `pyramid` and `pyramidg` (with
   sclang's ten `patternType`s), `mirror`, `mirror1`, `mirror2`, `stutter`,
