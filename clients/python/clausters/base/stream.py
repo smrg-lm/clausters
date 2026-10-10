@@ -10,6 +10,8 @@ Python control flow and never moves to Rust.
 
 import inspect
 
+from .absobject import AbstractObject
+
 
 class StopStream(StopIteration):
     """Raised (and caught) to end a stream normally."""
@@ -24,8 +26,12 @@ class YieldAndReset(Exception):
         self.value = value
 
 
-class Stream:
+class Stream(AbstractObject):
     """A lazy sequence: implements the iterator protocol over `next`.
+
+    A stream composes with the operators a pattern does: ``stream + 2`` is a
+    stream whose every value is this one's plus 2, computed by the
+    `clausters.base.builtins` function of the operator's name.
 
     Concrete streams carry their own random generator (`rng`), derived from the
     creating context at construction (see `clausters.base.rand`): random values
@@ -55,6 +61,45 @@ class Stream:
         """Return the stream to its initial state so iteration restarts. A no-op
         on the base; stateful subclasses override it."""
         pass
+
+    # ---- AbstractObject: an operator composes a stream ----
+
+    def _compose_unop(self, selector):
+        return _OpStream(selector, (self,))
+
+    def _compose_binop(self, selector, other):
+        return _OpStream(selector, (self, other))
+
+    def _rcompose_binop(self, selector, other):
+        return _OpStream(selector, (other, self))
+
+    def _compose_narop(self, selector, *args, **static):
+        return _OpStream(selector, (self, *args), static)
+
+
+class _OpStream(Stream):
+    """Streams composed by an operator: each `next` takes one value from every
+    operand stream (a bare operand is the same value every time) and applies
+    the operator; it ends when any operand ends. sc3's ``UnopStream``,
+    ``BinopStream`` and ``NaropStream`` in one."""
+
+    def __init__(self, selector, operands, static=None):
+        from .builtins import value_op
+
+        self.selector = selector
+        self._fn = value_op(selector)
+        self._operands = operands
+        self._static = dict(static or {})
+
+    def next(self, inval=None):
+        values = [x.next(inval) if isinstance(x, Stream) else x
+                  for x in self._operands]
+        return self._fn(*values, **self._static)
+
+    def reset(self):
+        for x in self._operands:
+            if isinstance(x, Stream):
+                x.reset()
 
 
 class FunctionStream(Stream):

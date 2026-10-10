@@ -18,14 +18,14 @@ The default session and a named `Session` are literally *the same kind of thing*
 
 ```python
 from clausters import Server, Event, play
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 Server().boot()               # -> clausters.default_session.server (first-wins)
 play(Event(degree=0))         # one note now, no clock — resolves the default server
-play(Pbind(degree=Pseq([0, 2, 4]), dur=0.5))   # on the default session's clock
+play(pbind(degree=pseq([0, 2, 4]), dur=0.5))   # on the default session's clock
 ```
 
-The free-standing `play` plays anything against this ambient context — an `Event` (immediate outside a clock, timetagged inside one), an event `Pbind`, or a `Routine` — resolving the server and clock for you. Each playable also has the same ambient `.play()`. A note or pattern played from *inside* a running session (its routine's clock) resolves *that* session instead — unless a `with` block has put another session in force — so isolation holds even for the ambient verb. An explicit `Session` never adopts the default: `Session.live()` and friends keep their server to themselves.
+The free-standing `play` plays anything against this ambient context — an `Event` (immediate outside a clock, timetagged inside one), an event `pbind`, or a `Routine` — resolving the server and clock for you. Each playable also has the same ambient `.play()`. A note or pattern played from *inside* a running session (its routine's clock) resolves *that* session instead — unless a `with` block has put another session in force — so isolation holds even for the ambient verb. An explicit `Session` never adopts the default: `Session.live()` and friends keep their server to themselves.
 
 ## Kinds of session
 
@@ -35,21 +35,21 @@ You almost always build a session with one of the factories rather than the cons
 
 ```python
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 session = Session.nrt()
 session.clock.set_tempo(2.0)
 session.seed(1)   # this session's root seed reproduces its every random draw
-session.play(Pbind(
-    degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+session.play(pbind(
+    degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
     dur=0.25,
-    amp=Pwhite(0.1, 0.2),
+    amp=pwhite(0.1, 0.2),
 ))
 take = session.render(sample_rate=48000.0, channels=2)
 print(f"{take.frames} frames; peak {max(take.peak):.3f}; seed {take.seed}")
 ```
 
-Randomness (`Pwhite`, `Prand`, `clausters.rrand`/`choose`/…) always draws
+Randomness (`pwhite`, `prand`, `clausters.rrand`/`choose`/…) always draws
 from a **single seedable context** — the running routine's generator, derived
 from the context that created it — never from per-pattern seeds. Each session
 is its **own** such context: `session.seed(n)` reproduces *that* session's
@@ -64,15 +64,15 @@ The two protocols have two roles: **UDP finds the server, TCP talks to it**. The
 
 ```python
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 with Session.live(latency=0.1) as session:   # attaches, or boots one
     session.clock.set_tempo(2.0)
-    session.play(Pbind(
+    session.play(pbind(
         instrument="default",
-        degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+        degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2),
+        amp=pwhite(0.1, 0.2),
     ))
     session.run(3.5)   # advance the clock in real time, then stop
 ```
@@ -88,15 +88,15 @@ Arguments worth knowing on `live()`:
 
 ```python
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 with Session.embed(latency=0.1) as session:
     session.clock.set_tempo(2.0)
-    session.play(Pbind(
+    session.play(pbind(
         instrument="default",
-        degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+        degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2),
+        amp=pwhite(0.1, 0.2),
     ))
     session.run(3.5)
 ```
@@ -119,7 +119,7 @@ Once you have a session, a small set of methods drives it. Some are offline-only
 
 | Call | Kind | What it does |
 | --- | --- | --- |
-| `play(pattern, quant=None)` | all | Plays an event pattern (e.g. a `Pbind`) on this session's clock and server. Returns the `EventStreamPlayer`. `quant` is the beat grid to start on; `None` starts immediately. |
+| `play(pattern, quant=None)` | all | Plays an event pattern (e.g. a `pbind`) on this session's clock and server. Returns the `EventStreamPlayer`. `quant` is the beat grid to start on; `None` starts immediately. |
 | `render(sample_rate, channels, path=None, seed=None)` | offline | Drains the clock logically (no waiting), then renders the score. Returns a [`RenderStats`](verbs.md#what-a-render-gives-back): frame/channel/event counts, per-channel `peak` and `rms`, the `seed` it used, and `samples` (interleaved float32 in a stdlib `array('f')`) unless `path` sent the audio to a file. |
 | `run(seconds)` | real-time | Starts the clock, advances it in real time for `seconds`, then stops. Returns `self`. (`live` and `embed`.) |
 | `start()` / `stop()` | real-time | Start or stop the real-time clock yourself when `run` (which does both) is not enough. Both return `self`. |
@@ -176,14 +176,14 @@ So the only thing that changes between a live take and an offline render is **wh
 
 ```python
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 def phrase():
-    return Pbind(
+    return pbind(
         instrument="default",
-        degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+        degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2),
+        amp=pwhite(0.1, 0.2),
     )
 
 # Offline: capture it to samples.
@@ -261,7 +261,7 @@ The `with` block is how a session is switched, on the same thread and even insid
 live = Session.live().activate()
 
 with Session.nrt() as offline:          # in force for the block, closed after it
-    offline.play(Pbind(degree=Pseq([0, 2, 4]), dur=0.25))
+    offline.play(pbind(degree=pseq([0, 2, 4]), dur=0.25))
     take = offline.render()             # every clock made here is on logical time
 ```
 
@@ -362,13 +362,13 @@ audio server is involved unless the object itself needs one).
 ```python
 from clausters import plot
 from clausters.defs import Env
-from clausters.seq import Pwhite
+from clausters.seq import pwhite
 
 plot(my_synthdef, dur=2.0)            # a def's output, rendered offline
 plot(my_graphdef, defs=[member_def])  # a GraphDef (members ride along)
 plot(Env.adsr())                      # an envelope, played by the engine's EnvGen
 plot(some_buffer)                     # a buffer's contents, fetched live
-plot(Pwhite(40.0, 4700.0), n=200)     # a sequence: the value axis auto-fits
+plot(pwhite(40.0, 4700.0), n=200)     # a sequence: the value axis auto-fits
 ```
 
 Dispatch is by kind. A **def** (`SynthDef`, `FaustDef`, `GraphDef`) is rendered
@@ -378,8 +378,8 @@ eyeball what a def actually produces, with no server and no audio device. An
 **`Env`** is rendered through the server's own `EnvGen` (gate-released at its
 sustain point when it has one), so the curve you see is what the engine plays.
 A **`Buffer`** is fetched from the ambient live server, with its channel count
-and sample rate. Anything else **iterable of numbers** — a list, a `Pseq`, a
-`Pwhite`, any stream — is read (up to `n` values for the endless ones)
+and sample rate. Anything else **iterable of numbers** — a list, a `pseq`, a
+`pwhite`, any stream — is read (up to `n` values for the endless ones)
 and plotted as a sequence, index counts on the x axis and the value axis
 fitted to the data, whatever its range.
 

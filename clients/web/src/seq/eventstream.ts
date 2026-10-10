@@ -1,6 +1,6 @@
 // The event-pattern player (mirrors `clausters/seq/eventstream.py`).
 //
-// Plays an **event pattern** (a `Pbind`) on a clock: it is a routine that, for
+// Plays an **event pattern** (a `pbind`) on a clock: it is a routine that, for
 // each event, plays it against the destination (emitting at the routine's
 // exact logical beat) and yields the event's `delta` to advance.
 

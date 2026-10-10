@@ -30,7 +30,7 @@
       `MidiInputPort` are named as shapes and a real `MIDIOutput` is one.
 
       ?smoke=1 auto-runs and asserts that
-        - a `Pbind` played to a `MidiServer` puts its note-ons on the same
+        - a `pbind` played to a `MidiServer` puts its note-ons on the same
           beats the same pattern hands an OSC destination, and releases each
           note at its own sustain;
         - a live output is sent the note now and the note-off with a
@@ -49,7 +49,7 @@
         Synth, SynthDef, loadCore, opfs,
       } from "../dist/index.js";
       import { out, sine } from "../dist/defs/index.js";
-      import { Pbind, Pseq } from "../dist/seq/index.js";
+      import { pbind, pseq } from "../dist/seq/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -86,9 +86,9 @@
         const clock = session.clock.start();
 
         // ---- one pattern, two destinations, one grid ----
-        const bind = () => new Pbind({
-          midinote: new Pseq([60, 62, 64, 67]),
-          dur: new Pseq([0.5, 0.5, 1, 1]),
+        const bind = () => pbind({
+          midinote: pseq([60, 62, 64, 67]),
+          dur: pseq([0.5, 0.5, 1, 1]),
           amp: 0.4,
         });
 

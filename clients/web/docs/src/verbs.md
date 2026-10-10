@@ -29,7 +29,7 @@ The three carry one semantic each, and the split is deliberate:
 | You hand it | It does | Returns |
 |---|---|---|
 | an `Event`, or a plain object of event keys | sounds one note | the completed event |
-| an event `Pattern` (a `Pbind`) | schedules it on a clock | the `EventStreamPlayer` |
+| an event `Pattern` (a `pbind`) | schedules it on a clock | the `EventStreamPlayer` |
 | a `Routine`/`Stream`, or a bare generator | schedules it on a clock | the routine |
 | a def, or a bare expression (`Ugen` / `ChannelList` / `Signal`) | sends it and instances it | the node handle |
 | an `Automation` | plays it as a **channel's curve**: it sets its control on the notes of its channel, on the clock it is played on | the curve |
@@ -103,7 +103,7 @@ own position, and one inside a def (`envGen`) by the node itself.
 | a binary **score** (`Uint8Array`) | the score, as is |
 | a def, or a bare expression | instances it offline for `dur` seconds — the audible sibling of `plot(def)` |
 | a `Timeline`, an `EventPattern`, a `Routine` or a generator | **bounces** it in an offline session |
-| a value pattern (`Pseq`, `Pwhite`, …) | the values it generates, as an array (an endless one needs `count`) |
+| a value pattern (`pseq`, `pwhite`, …) | the values it generates, as an array (an endless one needs `count`) |
 
 **The tempo is the clock's.** Neither verb takes one: `play` and `render` both take an optional `clock`, and use a default one when none is given. A render bounces in an **offline session** — the one its `clock` belongs to, which has to be a clock of `Session.nrt()`, or, with no `clock`, a session of the render's own at tempo 1.0. A value pattern is not a playable at all: `play` refuses it by name, and `render` generates its values.
 
@@ -119,7 +119,7 @@ Under `render` sits a third `Server` carrier, beside the in-page engine and the 
 const session = await Session.nrt();
 session.clock.setTempo(2.0);
 await def.send(session.server);
-session.play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 }));
+session.play(pbind({ degree: pseq([0, 2, 4]), dur: 0.5 }));
 const stats = await session.render({ channels: 2 });
 ```
 
@@ -138,7 +138,7 @@ const stats = await render(myPattern, { defs: [myInstrument], channels: 2 });
 
 `peak` and `rms` are **per channel**, measured by the shared core, so they are the same numbers the server and the Python client report for the same audio. `events` is how many score events the render ran. `samples` is interleaved `Float32Array` — or `null`, when a `path` sent the audio to a file.
 
-`seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy score in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
+`seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy score in a browser would be the same take.) A pattern's own jitter — a `pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
 
 Every offline path with no `clock` starts from an **empty** session of its own, so whatever the samples names has to ride along in `defs`.
 

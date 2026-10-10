@@ -1,0 +1,82 @@
+# Patterns
+
+A **pattern** is a description of a sequence of values: `pseq([60, 62, 64])` describes three numbers, `pwhite(0, 1)` an endless run of random ones. It computes nothing until something walks it, and it can be walked as many times as you like. The model is the [Python client's](https://clausters-python.readthedocs.io/) — the same patterns under the same names, yielding the same values from the same core — and this page says it in this client's spelling.
+
+## A description and its walks
+
+Iterating a pattern starts a **stream** — one walk over it — and the stream yields the values:
+
+```js
+import { seq } from "clausters";
+
+const melody = seq.pseq([60, 62, 64]);
+for (const note of melody) console.log(note);   // 60, 62, 64
+[...melody];                                    // [60, 62, 64] -- a new walk
+```
+
+**A pattern holds no state of its own.** Whatever a walk has to remember — where it is in a list, the value a random walk has reached — lives in that walk, so two loops over one pattern never disturb each other. Building one stores its arguments (an array it is given is copied) and starts nothing.
+
+An **endless pattern** is bounded by whoever walks it — a `break` in the loop — and never spread whole.
+
+## Value patterns and event patterns
+
+There are two kinds of pattern, and **they differ in what their stream yields**:
+
+- A **value pattern** yields values — numbers, arrays, anything a key of an event takes. `pseq`, `pwhite`, `pseries` are value patterns, and a value pattern does not play.
+- An **event pattern** yields `Event`s, and it is the only kind that plays. `pbind` builds them: it binds each key to a value pattern and yields one event per step.
+
+```js
+const phrase = seq.pbind({
+  degree: seq.pseq([0, 2, 4, 7]),
+  amp: seq.pwhite(0.1, 0.2),
+  dur: 0.25,
+});
+for (const event of phrase) console.log(event.get("degree"));
+phrase.play(server);
+```
+
+A `pbind` ends when any key's pattern ends, holds a bare value for every event, and hands each value pattern **the event being built** as its incoming value. **Which kind a pattern is, is decided when it is built**: a list pattern over event patterns only (`seq.pseq([intro, verse])`) is an event pattern and plays; a filter pattern takes the kind of what it filters. `instanceof seq.EventPattern` answers.
+
+## Patterns compose by operators
+
+A pattern composes with the operators a UGen does, by the same names. TypeScript has no operator overloading, so composition is by method, as it is for a graph:
+
+```js
+seq.pseq([74, 60, 46]).add(2);                    // 76, 62, 48
+seq.pseries(0, 7).mod(12).add(60).midicps();      // a cycle of fifths
+seq.pseq([1, 2, 3]).mul(seq.pseq([10, 20]));      // 10, 40 -- ends with the shorter
+```
+
+Each value is computed by the `builtins` function of the operator's name — the one a list and a signal are computed by — so the three answer an operator with one rule. **An operator applies to each value a stream yields**; a function that reads a whole list (`builtins.normalize`) is not an operator, and is applied to the array before it becomes a pattern: `seq.pseq(builtins.normalize([3, 7, 5]))`. **An event pattern refuses an operator**: an event has no arithmetic. A stream composes the same way (`pattern.stream().add(1)`).
+
+## Writing a pattern
+
+A pattern is written as a **generator function** under `seq.pattern`; the result is the function that builds it:
+
+```ts
+const pcount = seq.pattern(function* pcount(inval: unknown, n: number) {
+  for (let i = 0; i < n; i++) inval = yield i;
+  return inval;
+});
+
+[...pcount(3)];                     // [0, 1, 2]
+pcount(4).mul(10);                  // composed like any pattern
+```
+
+The generator receives the **incoming value** first — `inval`, the event a `pbind` is building when the pattern is one of its keys, else `undefined` — and then its arguments; each `yield` gives a value and receives the next incoming one, and the generator returns the last. To put another pattern's values in place, embed it: `inval = yield* seq.embed(item, inval)`. `seq.pattern(fn, { events: true })` builds an event pattern.
+
+## The families
+
+One module per family under `seq/patterns/`, all re-exported from `seq`, each pattern's description saying what it yields and which kind it is:
+
+| Family | What it yields | Patterns |
+|---|---|---|
+| `valuepatterns` | values computed from the arguments | `pconst`, `pseries`, `pgeom` |
+| `randompatterns` | random values, from the random context | `pwhite` |
+| `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
+| `filterpatterns` | another pattern, transformed | `pn` |
+| `funcpatterns` | values a function computes when asked | `pfunc` |
+| `eventpatterns` | events | `pbind` |
+| `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
+
+The random patterns draw from the random context — see [Routines and clocks](routines-and-clocks.md#reproducible-randomness).

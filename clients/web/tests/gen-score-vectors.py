@@ -41,7 +41,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.base import Routine  # noqa: E402
 from clausters.defs import Synth  # noqa: E402
-from clausters.seq import Event, Pbind, Pseq  # noqa: E402
+from clausters.seq import Event, pbind, pseq  # noqa: E402
 from clausters.session import Session  # noqa: E402
 
 
@@ -70,7 +70,7 @@ def a_pattern(session):
     """An event pattern, which is the same thing through the pattern layer --
     and the case where the client's own event defaults (sustain, the release
     message) reach the score."""
-    Pbind(degree=Pseq([0, 2, 4]), dur=0.25, amp=0.15).play(
+    pbind(degree=pseq([0, 2, 4]), dur=0.25, amp=0.15).play(
         session.clock, session.server)
 
 

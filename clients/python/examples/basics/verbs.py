@@ -34,7 +34,7 @@ import time
 from clausters import Event, play, render
 from clausters.defs import SynthDef, boxes as box, control, out, sine
 from clausters.defs.ugens import Env, env_gen
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.seq.timeline import Timeline
 
 from clausters import Session
@@ -128,7 +128,7 @@ time.sleep(2.0 + PAUSE)
 # nothing about their level; the curve fades the channel in across them.
 print("a channel's curve over a phrase: a fade in across four notes")
 fade = play(Automation({"control": "amp", "channel": 0}, [(0.0, 0.02), (1.6, 0.3)]))
-play(Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.4))
+play(pbind(instrument="default", degree=pseq([0, 2, 4, 7]), dur=0.4))
 time.sleep(PAUSE + 1.0)
 fade.stop()
 
@@ -151,7 +151,7 @@ transport.wait()                # back when the last note ends
 # with path=, to a WAV -- with no server involved (an ephemeral one renders).
 print("rendering a phrase to a WAV (offline, no audio device)")
 wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
-render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
+render(pbind(instrument="default", degree=pseq([0, 4, 7, 12]), dur=0.25),
        path=wav)
 
 # %% A session can be offline, too. The `render` above bounces *one* playable
@@ -162,7 +162,7 @@ render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
 print("a session that never sounds: the same verbs, rendered")
 offline = Session.nrt()
 offline.clock.set_tempo(2.0)
-offline.play(Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25))
+offline.play(pbind(instrument="default", degree=pseq([0, 4, 7]), dur=0.25))
 stats = offline.render(channels=1)
 print(f"  offline session -> {stats.frames} frames, {stats.duration:.2f} s, "
       f"peak {max(stats.peak, default=0.0):.3f}")

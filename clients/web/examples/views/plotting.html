@@ -100,13 +100,13 @@ names the exact sample under the cursor.</div>
         await wait(PAUSE);
         winEnv.close();
 
-        log("3/5 sequence (Pseq): stepped values over an index axis");
-        const winSeq = await plot(new seq.Pseq([0, 2, 4, 7, 4, 2], 4));
+        log("3/5 sequence (pseq): stepped values over an index axis");
+        const winSeq = await plot(seq.pseq([0, 2, 4, 7, 4, 2], 4));
         await wait(PAUSE);
         winSeq.close();
 
-        log("4/5 sequence (Pwhite 40..4700): the value axis auto-fits the range");
-        const winRand = await plot(new seq.Pwhite(40.0, 4700.0), { n: 200 });
+        log("4/5 sequence (pwhite 40..4700): the value axis auto-fits the range");
+        const winRand = await plot(seq.pwhite(40.0, 4700.0), { n: 200 });
         await wait(PAUSE);
         log("    min -> -4700 (pin far below the data: traces squash up)");
         winRand.set({ min: -4700.0 });

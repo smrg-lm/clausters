@@ -32,7 +32,7 @@ from clausters.defs.ugens import (
     DoneAction, Env, brown_noise, clip_noise, crackle, decay2, dust, env_gen,
     hpf, impulse, leak_dc, lf_noise1, out, pink_noise, rlpf, white_noise,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.defs import Synth
 
 SR = 48000.0
@@ -110,7 +110,7 @@ def render(path=None):
     ):
         sdef.send(server)
     # One event per section, sequenced by a pattern: `instrument` is a pattern
-    # like any other key, so a `Pseq` of def names plays them in turn.
+    # like any other key, so a `pseq` of def names plays them in turn.
     #
     # Note that this is *not* `Synth(server=server)` in a loop. That call is an
     # **immediate** send, which offline means the start of the score -- where
@@ -118,9 +118,9 @@ def render(path=None):
     # yields in between said. Placing something in time is what a pattern (or
     # `send_bundle`) is for.
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(
-        instrument=Pseq(["white", "pink", "brown", "grit", "kit"]),
-        dur=Pseq([SECTION, SECTION, SECTION, SECTION, 2.4]),
+    pbind(
+        instrument=pseq(["white", "pink", "brown", "grit", "kit"]),
+        dur=pseq([SECTION, SECTION, SECTION, SECTION, 2.4]),
         amp=0.45,
     ).play(clock, server)
     clock.render()

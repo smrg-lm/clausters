@@ -4,10 +4,12 @@ This layer ships:
 
 - `event` -- `Event` (a note plays a synth and
   schedules its release at the exact logical beat).
-- `pattern` -- `Pattern` (the definition of a generator) and the value
-  patterns (``Pseq``, ``Pser``, ``Prand``, ``Pwhite``, ``Pseries``, ``Pgeom``,
-  ``Pfunc``, ``Pn``, ``Pconst``), plus `EventPattern`, what plays: `Pbind`, and
-  a ``Pseq``/``Prand``/``Pn`` over event patterns only.
+- `pattern` -- `Pattern` (the definition of a generator), `EventPattern` (a
+  pattern whose stream yields events, and what plays) and `pattern`, which
+  makes one out of a generator function.
+- `patterns` -- the patterns, by family: ``pseq``, ``pser``, ``prand``,
+  ``pwhite``, ``pseries``, ``pgeom``, ``pfunc``, ``pn``, ``pconst`` and the
+  event pattern ``pbind``.
 - `eventstream` -- `EventStreamPlayer`.
 - `timeline` -- `Timeline` (a static, editable, random-access sequence) and
   its own transport (play/pause/stop/locate/loop) and its own tempo map, plus `OscItem` /
@@ -19,7 +21,7 @@ This layer ships:
 - `curves` -- `CurveEmitter`: what sends the curves of the events a server
   plays, a stretch at a time.
 
-A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
+A ``pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 ``server.render()`` purely by which interface the Server holds -- the seam.
 """
 
@@ -29,21 +31,10 @@ from .eventstream import EventStreamPlayer
 from .timeline import (MidiItem, OscItem, Timeline, item_data,
                        item_from_data)
 from .sequence import EventSequence, SeqAutomation, SeqEvent, SeqEvents
-from .pattern import (
-    INF,
-    EventPattern,
-    Pattern,
-    Pbind,
-    Pconst,
-    Pfunc,
-    Pgeom,
-    Pn,
-    Prand,
-    Pseq,
-    Pser,
-    Pseries,
-    Pwhite,
-)
+from .pattern import (INF, EventPattern, Pattern, PatternStream, embed,
+                      pattern)
+from .patterns import (pbind, pbinop, pconst, pfunc, pgeom, pn, pnarop, prand,
+                       pseq, pser, pseries, punop, pwhite)
 
 __all__ = [
     "CurveEmitter",
@@ -61,15 +52,21 @@ __all__ = [
     "item_data",
     "item_from_data",
     "Pattern",
-    "Pbind",
-    "Pconst",
-    "Pfunc",
-    "Pgeom",
-    "Pn",
-    "Prand",
-    "Pseq",
-    "Pser",
-    "Pseries",
-    "Pwhite",
+    "PatternStream",
+    "embed",
+    "pattern",
+    "pbind",
+    "pbinop",
+    "pconst",
+    "pfunc",
+    "pgeom",
+    "pn",
+    "pnarop",
+    "prand",
+    "pseq",
+    "pser",
+    "pseries",
+    "punop",
+    "pwhite",
     "INF",
 ]

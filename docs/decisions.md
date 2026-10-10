@@ -9998,3 +9998,36 @@ windows, `ramp`, `scurve`) agree with scsynth's definitions on every argument
 of a 24 001-point sweep, including the windows' mixed precision — Hann takes
 the phase times `2π` in `f32` and the cosine in `f64`, Welch multiplies by `π`
 in `f64` — which a port in plain `f32` misses on up to a third of arguments.
+
+## A pattern is a function, as a UGen is
+
+*Decided with the user, 2026-10-10.* The patterns were one class each, named
+as sclang names them (`Pseq`, `Pbind`), and composed with nothing: sc3 made a
+pattern an `AbstractObject`, so `Pseq([74, 60, 46]) + 2` was a pattern, and the
+port had left that out. A pattern is now a **lowercase function** —
+`pseq([1, 2, 3]) + 60` — built from a generator function under `pattern`, sc3's
+decorator, over one generic `Pattern` (and `EventPattern` beside it, which the
+decorator chooses). The UGens had already made the same break with sclang's
+spelling (`sine`, not `SinOsc`), and the user's reason is the reader's: the
+call reads as what it is, a function that describes a generator.
+
+It is possible because **no pattern holds state**: a survey of sc3's 73
+pattern classes and both clients' 10 found none that assigns to itself after
+it is built. What a walk remembers — a position, a random walk's value, a seed
+— is the walk's, in the generator's frame, so a pattern is its function and its
+arguments and nothing else. A class per pattern added a constructor and an
+`__iter__` around what is a generator, and gave nothing: nothing outside the
+tests asked `isinstance` of a concrete pattern class. What an event pattern
+adds is not state either but the **incoming value** — the event a `pbind` is
+building, which a key's pattern reads — so the generator receives it first,
+in both languages (`inval = yield value`, sc3's protocol), rather than through
+a convention a later pattern would have to retrofit.
+
+**An event pattern refuses an operator**, where sc3 propagated the event kind
+through `Pbinop`: an operator applies to each value, an event has no
+arithmetic, and the composition sc3 allowed could only fail later, at the first
+value. A function over a whole list (`normalize`) is not an operator either —
+a stream may not end — and is applied to the list before it becomes a pattern,
+as in sclang, where it belongs to `ArrayedCollection` and not to
+`AbstractFunction`.
+

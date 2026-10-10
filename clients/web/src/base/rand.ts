@@ -1,8 +1,8 @@
 // The random context: one seedable source for a whole script (mirrors
 // `clausters/base/rand.py`).
 //
-// Everything random in a Clausters script -- the random patterns (`Pwhite`,
-// `Prand`), these functions, anything sequenced -- draws from **one context**,
+// Everything random in a Clausters script -- the random patterns (`pwhite`,
+// `prand`), these functions, anything sequenced -- draws from **one context**,
 // the sclang model, so a single root seed reproduces a take from beginning to
 // end:
 //

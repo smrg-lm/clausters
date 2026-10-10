@@ -19,14 +19,14 @@ import {
     Event,
     EventPattern,
     INF,
-    Pbind,
-    Pgeom,
-    Pn,
-    Prand,
-    Pseq,
-    Pser,
-    Pseries,
-    Pwhite,
+    pbind,
+    pgeom,
+    pn,
+    prand,
+    pseq,
+    pser,
+    pseries,
+    pwhite,
     OscItem,
     Timeline,
     rest,
@@ -95,26 +95,26 @@ const values = <T>(pattern: Iterable<T>, n = 8): T[] => {
 // ---- the value patterns ----
 
 test("the ordered patterns yield what they say", () => {
-    assert.deepEqual(values(new Pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
-    assert.deepEqual(values(new Pser([1, 2, 3], 5)), [1, 2, 3, 1, 2]);
-    assert.deepEqual(values(new Pseries(0, 2, 4)), [0, 2, 4, 6]);
-    assert.deepEqual(values(new Pgeom(1, 3, 4)), [1, 3, 9, 27]);
-    assert.deepEqual(values(new Pn(new Pseq([1, 2]), 2)), [1, 2, 1, 2]);
+    assert.deepEqual(values(pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
+    assert.deepEqual(values(pser([1, 2, 3], 5)), [1, 2, 3, 1, 2]);
+    assert.deepEqual(values(pseries(0, 2, 4)), [0, 2, 4, 6]);
+    assert.deepEqual(values(pgeom(1, 3, 4)), [1, 3, 9, 27]);
+    assert.deepEqual(values(pn(pseq([1, 2]), 2)), [1, 2, 1, 2]);
 });
 
 test("a sub-pattern used as a value is embedded in place", () => {
-    assert.deepEqual(values(new Pseq([1, new Pseq([8, 9]), 2])), [1, 8, 9, 2]);
+    assert.deepEqual(values(pseq([1, pseq([8, 9]), 2])), [1, 8, 9, 2]);
 });
 
 test("an endless pattern keeps going", () => {
-    assert.deepEqual(values(new Pseq([1, 2], INF), 5), [1, 2, 1, 2, 1]);
+    assert.deepEqual(values(pseq([1, 2], INF), 5), [1, 2, 1, 2, 1]);
 });
 
 test("the random patterns are reproduced by the root seed", () => {
     seed(99);
-    const first = values(new Pwhite(0, 1, 4)).concat(values(new Prand([10, 20, 30], 4)));
+    const first = values(pwhite(0, 1, 4)).concat(values(prand([10, 20, 30], 4)));
     seed(99);
-    const second = values(new Pwhite(0, 1, 4)).concat(values(new Prand([10, 20, 30], 4)));
+    const second = values(pwhite(0, 1, 4)).concat(values(prand([10, 20, 30], 4)));
     assert.deepEqual(first, second);
     assert.ok(first.slice(0, 4).every((v) => v >= 0 && v < 1));
 });
@@ -156,9 +156,9 @@ test("a pattern plays its events at the beats its deltas add up to", async () =>
     const destination = recorder();
     const { clock, run } = harness(1.0);
     clock.start();
-    new Pbind({
-        degree: new Pseq([0, 2, 4]),
-        dur: new Pseq([0.5, 0.25, 1]),
+    pbind({
+        degree: pseq([0, 2, 4]),
+        dur: pseq([0.5, 0.25, 1]),
     }).play(destination, { clock });
     await run(4);
 
@@ -172,11 +172,11 @@ test("a pattern plays its events at the beats its deltas add up to", async () =>
     );
 });
 
-test("a Pbind stops when any of its keys runs out", async () => {
+test("a pbind stops when any of its keys runs out", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
-    new Pbind({ degree: new Pseq([0, 1, 2, 3]), amp: new Pseq([0.1, 0.2]) }).play(
+    pbind({ degree: pseq([0, 1, 2, 3]), amp: pseq([0.1, 0.2]) }).play(
         destination,
         { clock },
     );
@@ -188,7 +188,7 @@ test("stopping a player leaves the clock alone", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
-    const player = new Pbind({ degree: new Pseq([0], INF), dur: 1 }).play(destination, {
+    const player = pbind({ degree: pseq([0], INF), dur: 1 }).play(destination, {
         clock,
     });
     await run(2.5);
@@ -273,29 +273,27 @@ test("a timeline refuses a value pattern", () => {
     // A value pattern is the definition of a generator and does not play, so it
     // is not an item; an event pattern is.
     const timeline = new Timeline();
-    timeline.add(0, new Pbind({ freq: new Pseq([440, 550]), dur: 0.5 }));
-    assert.throws(() => timeline.add(1, new Pseq([1, 2, 3])), /does not play/);
+    timeline.add(0, pbind({ freq: pseq([440, 550]), dur: 0.5 }));
+    assert.throws(() => timeline.add(1, pseq([1, 2, 3])), /does not play/);
     assert.equal(timeline.length, 1);
 });
 
 test("a value pattern does not play", () => {
     // A pattern is the definition of a generator: what plays is an event
     // pattern, and a value pattern is refused by name.
-    assert.throws(() => play(new Pwhite(0, 1)), /does not play/);
-    assert.throws(() => play(new Pseq<unknown>([new Pbind({ degree: 0 }), 1])), /does not play/);
+    assert.throws(() => play(pwhite(0, 1)), /does not play/);
+    assert.throws(() => play(pseq<unknown>([pbind({ degree: 0 }), 1])), /does not play/);
 });
 
 test("a list pattern over events is an event pattern", () => {
     // A list pattern resolves what it is when it is built: over event patterns
     // only it plays; a list that mixes events and values is a value pattern.
-    const phrase = new Pbind({ freq: new Pseq([440, 550]), dur: 0.5 });
-    assert.ok(new Pseq([phrase, phrase]) instanceof EventPattern);
-    assert.ok(new Prand([phrase]) instanceof EventPattern);
-    assert.ok(new Pn(phrase, 2) instanceof EventPattern);
-    assert.ok(new Pseq([phrase, phrase]) instanceof Pseq);
-    assert.ok(!(new Pseq<unknown>([phrase, 1]) instanceof EventPattern));
-    assert.ok(!(new Pseq([1, 2]) instanceof EventPattern));
-    assert.ok(!("play" in new Pseq([1, 2])));
-    assert.ok(!(phrase instanceof Pseq), "a Pbind is not a list pattern");
-    assert.deepEqual([...new Pseq([phrase], 2)].map((e) => e.get("freq")), [440, 550, 440, 550]);
+    const phrase = pbind({ freq: pseq([440, 550]), dur: 0.5 });
+    assert.ok(pseq([phrase, phrase]) instanceof EventPattern);
+    assert.ok(prand([phrase]) instanceof EventPattern);
+    assert.ok(pn(phrase, 2) instanceof EventPattern);
+    assert.ok(!(pseq<unknown>([phrase, 1]) instanceof EventPattern));
+    assert.ok(!(pseq([1, 2]) instanceof EventPattern));
+    assert.ok(!("play" in pseq([1, 2])));
+    assert.deepEqual([...pseq([phrase], 2)].map((e) => e.get("freq")), [440, 550, 440, 550]);
 });

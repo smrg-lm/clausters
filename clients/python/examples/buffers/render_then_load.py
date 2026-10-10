@@ -45,7 +45,7 @@ from clausters.base import Routine
 from clausters.defs import SynthDef, control, out
 from clausters.defs.ugens import play_buf
 from clausters.render import channels, read_soundfile
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 from clausters.defs import Synth
 from clausters.defs import Buffer
 
@@ -58,9 +58,9 @@ SR = 48_000.0
 
 # %%
 def phrase():
-    return Pbind(instrument="default", dur=0.25, legato=0.9, amp=0.22,
-                 freq=Pseq([220.0, 277.2, 330.0, 440.0, 330.0, 277.2], 2),
-                 pan=Pwhite(-0.6, 0.6))
+    return pbind(instrument="default", dur=0.25, legato=0.9, amp=0.22,
+                 freq=pseq([220.0, 277.2, 330.0, 440.0, 330.0, 277.2], 2),
+                 pan=pwhite(-0.6, 0.6))
 
 
 # %% [markdown]

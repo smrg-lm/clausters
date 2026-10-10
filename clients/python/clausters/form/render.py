@@ -20,7 +20,7 @@ Scope of this phase (the concrete path):
   any nested aggregate's) accumulates into the child's absolute beat.
 - `Track` -- its `Timeline`'s items are shifted by the placement beat.
 - `Clang` -- placed as a single item at its beat.
-- `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) -- *bounced*
+- `Sequence`/`Generator` wrapping an **event pattern** (a `pbind`) -- *bounced*
   in the same pass (its change of state); a `Sequence` of elements is laid out
   successively by their durations.
 - An **abstract** element (no onset/duration, no content) contributes context,

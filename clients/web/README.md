@@ -119,7 +119,7 @@ The sequencing layer (`src/base/clock.ts` + `src/seq/`, mirroring the Python cli
 - The **wake-up** sits behind a `Ticker`: a shared worker in the browser (the page's own timers are throttled to about a second in a background tab), `setTimeout` elsewhere. Tests fill the same seam by hand, along with the timebase, and so drive the real driver deterministically.
 - `server.sampleTimebase()` — the **Server** anchors the sample clock, because the Server is what knows the carrier: in-page it pairs the engine's counter with the AudioContext's in one round trip (the same clock, so the offset is exact and there is no drift); over a socket it feeds `/clock_query` anchors into the core's sample-clock model. Hand the result to a clock; the clock never talks to a server.
 - Emission is the **bundle path**: `server.sendBundle(...)` stamps at the running routine's exact logical beat — a wall-clock timetag under the monotonic timebase, `/sched_at` at an absolute sample under a sample one — and `Event.play(server)` is a note's `/synth_new` plus the release that follows it.
-- `seq` — `Event`/`rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) and `Pbind`, plus the seekable counterpart: `Timeline` (a static, editable, beat-sorted list, `Timeline.fromPattern` to bounce one), which plays itself and is its own transport: `play`, `pause`, `stop`, `locate`, `loop`. Random values come from the context stream a routine derives at creation, so `seed(n)` replays a whole run.
+- `seq` — `Event`/`rest`, the value patterns (`pseq`, `pser`, `prand`, `pwhite`, `pseries`, `pgeom`, `pfunc`, `pn`, `pconst`) and `pbind`, plus the seekable counterpart: `Timeline` (a static, editable, beat-sorted list, `Timeline.fromPattern` to bounce one), which plays itself and is its own transport: `play`, `pause`, `stop`, `locate`, `loop`. Random values come from the context stream a routine derives at creation, so `seed(n)` replays a whole run.
 
 ```js
 import { Server, TempoClock, seq } from "./dist/index.js";
@@ -127,10 +127,10 @@ import { Server, TempoClock, seq } from "./dist/index.js";
 const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
 clock.start();
 
-new seq.Pbind({
+seq.pbind({
   instrument: "beep",
-  degree: new seq.Pseq([0, 2, 4, 7], seq.INF),
-  dur: new seq.Pseq([0.5, 0.25, 0.25]),
+  degree: seq.pseq([0, 2, 4, 7], seq.INF),
+  dur: seq.pseq([0.5, 0.25, 0.25]),
 }).play(server, { clock });
 ```
 

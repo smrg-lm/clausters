@@ -32,7 +32,7 @@ not. `clausters.form.render.flatten` is where the two meet.
 - `Track`     -- *Set*: mixed placement of elements, a DAW track. Wraps
   `clausters.seq.Timeline`.
 - `Generator` -- *Function*: a generator element -- server DSP (a def) or a
-  sequence generator (`Pbind`/`Routine`).
+  sequence generator (`pbind`/`Routine`).
 
 Grouping and rendering live in `clausters.form.aggregate` and
 `clausters.form.render`. This module is pure and transport-agnostic (factorable
@@ -690,7 +690,7 @@ class Generator(FormElement):
     """*Function*: a generator element.
 
     Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
-    or a sequence generator (a `Pbind`/`Routine`). Its *change of state* --
+    or a sequence generator (a `pbind`/`Routine`). Its *change of state* --
     evaluating the generator into a generated element -- happens at rendering: a
     contained event pattern is bounced to a timeline; a def member of a
     logical `Aggregate` becomes a wired GraphDef member.

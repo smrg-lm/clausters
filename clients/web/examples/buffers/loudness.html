@@ -68,10 +68,10 @@ over HTTP (<code>python3 -m http.server</code>) and open
       // ---- the take ----
       // One arpeggio, a verse at `amp` 0.03 and a chorus at 0.3: 64 notes each,
       // a quarter beat apart, so eight seconds apiece at two beats a second.
-      const arpeggio = new seq.Pbind({
-        freq: new seq.Pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], 22),
+      const arpeggio = seq.pbind({
+        freq: seq.pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], 22),
         dur: 0.25,
-        amp: new seq.Pseq([new seq.Pn(0.03, 64), new seq.Pn(0.3, 64)], 1),
+        amp: seq.pseq([seq.pn(0.03, 64), seq.pn(0.3, 64)], 1),
       });
 
       const SEQUENCE_BEATS = 128 * 0.25; // two sections of 64 notes, a quarter beat each

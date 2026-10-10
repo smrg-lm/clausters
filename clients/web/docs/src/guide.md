@@ -181,7 +181,7 @@ import { Session, Synth, play, Event, seq } from "clausters";
 const s = (await Session.embed()).activate();
 
 play(new Event({ degree: 0, dur: 0.5 }));   // a note, now
-play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
+play(seq.pbind({ degree: seq.pseq([0, 2, 4]), dur: 0.5 }));
 new Synth("beep", { freq: 440 });           // and the bare constructor too
 ```
 
@@ -268,10 +268,10 @@ A page that sizes a canvas itself does the same two things: `canvasBox(element)`
 const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
 clock.start();
 
-new seq.Pbind({
+seq.pbind({
   instrument: "voice",
-  degree: new seq.Pseq([0, 2, 4, 7], seq.INF),
-  dur: new seq.Pseq([0.5, 0.25, 0.25]),
+  degree: seq.pseq([0, 2, 4, 7], seq.INF),
+  dur: seq.pseq([0.5, 0.25, 0.25]),
 }).play(server, { clock });
 ```
 
@@ -284,7 +284,7 @@ Two things around it are the browser's:
 
 [Routines and clocks](routines-and-clocks.md) is this layer written out, from a melody by hand to the patterns above it.
 
-Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`), `Pbind` — an `EventPattern`: a pattern is the definition of a generator, and only one whose values are events plays — and the seekable counterpart: `Timeline`, a beat-sorted plan with its own tempo map that holds event patterns as items, and that plays itself with play/pause/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole take. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
+Above that sit `Event` and `rest`, the value patterns (`pseq`, `pser`, `prand`, `pwhite`, `pseries`, `pgeom`, `pfunc`, `pn`, `pconst`), `pbind` — an `EventPattern`: a pattern is the definition of a generator, and only one whose values are events plays — and the seekable counterpart: `Timeline`, a beat-sorted plan with its own tempo map that holds event patterns as items, and that plays itself with play/pause/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole take. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
 
 ## What the browser changes
 

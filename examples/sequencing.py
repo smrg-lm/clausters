@@ -2,7 +2,7 @@
 """The high-level client: pattern sequencing with one seam for NRT and live.
 
 A guided tour of the Python client's sequencing layer -- the part a musician
-actually touches. The idea ported from sc3: a `Pbind` combines per-key value
+actually touches. The idea ported from sc3: a `pbind` combines per-key value
 patterns into a stream of note `Event`s, and an `EventStreamPlayer` plays them
 on a `TempoClock`, emitting each at its exact logical beat. The **seam**: the
 *same* pattern runs offline (NRT, accumulating a score the embed renderer turns
@@ -30,24 +30,24 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import EventPattern, pbind, pseq, pwhite
 
 SR = 48000.0
 
 
-def melody() -> Pbind:
-    """A two-bar phrase. Each key is its own value pattern; `Pbind` zips them
+def melody() -> EventPattern:
+    """A two-bar phrase. Each key is its own value pattern; `pbind` zips them
     into `Event`s and stops when the shortest finite one is exhausted.
 
     - `degree` walks a scale (Event maps degree -> a major-scale midinote ->
       freq, all in the shared native core, so it matches the server);
     - `dur` is the beats between notes (also the note length before release);
-    - `amp` jitters a little via `Pwhite` for life.
+    - `amp` jitters a little via `pwhite` for life.
     """
-    return Pbind(
-        degree=Pseq([0, 1, 2, 3, 4, 3, 2, 1], repeats=1),   # finite -> the Pbind ends
+    return pbind(
+        degree=pseq([0, 1, 2, 3, 4, 3, 2, 1], repeats=1),   # finite -> the pbind ends
         dur=0.25,
-        amp=Pwhite(0.08, 0.18),
+        amp=pwhite(0.08, 0.18),
     )
 
 

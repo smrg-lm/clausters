@@ -43,7 +43,7 @@ from clausters.base._midiinterface import (  # noqa: E402
 )
 from clausters.base import TempoClock  # noqa: E402
 from clausters.base.timebase import LogicalTimebase  # noqa: E402
-from clausters.seq import Pbind, Pseq  # noqa: E402
+from clausters.seq import pbind, pseq  # noqa: E402
 from clausters.seq.event import Event  # noqa: E402
 
 PPQ = 480
@@ -132,8 +132,8 @@ def zone_cases():
         figure = {**ZONE_FIGURE, **more}
         server = MidiServer(MidiNrtInterface(), **options)
         clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-        Pbind(**{
-            key: Pseq(value) if isinstance(value, list) else value
+        pbind(**{
+            key: pseq(value) if isinstance(value, list) else value
             for key, value in figure.items()
         }).play(clock, server)
         clock.render()

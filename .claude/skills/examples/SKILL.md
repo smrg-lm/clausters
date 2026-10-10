@@ -162,8 +162,8 @@ the clients do. So the second one is **ported, not re-invented**:
   from a two-beat note is bounced offline from a two-beat note, not filled with
   a wavetable because that was quicker to write.
 - **Same API calls, in the same order.** Both clients have the same surface, so
-  the port is a transliteration: `Sequence(Pbind(...), name="bassline")`
-  becomes `new form.Sequence(new seq.Pbind(...), null, null, { name: "bassline" })`
+  the port is a transliteration: `Sequence(pbind(...), name="bassline")`
+  becomes `new form.Sequence(seq.pbind(...), null, null, { name: "bassline" })`
   and nothing else changes. Where the two genuinely differ — a page has no
   filesystem, a script has no `<canvas>`, one awaits what the other calls — the
   difference is **named in the prose**, and it is the only difference there is.

@@ -15,7 +15,7 @@ environment that never touches the default one.
 
 ```python
 s = Session.nrt()
-s.play(Pbind(instrument="default", freq=Pseq([440, 550, 660]), dur=0.5))
+s.play(pbind(instrument="default", freq=pseq([440, 550, 660]), dur=0.5))
 stats = s.render()                  # drains the clock, renders the score
 ```
 """
@@ -81,7 +81,7 @@ class Session(Environment):
 
     ```python
     with Session.live(latency=0.1) as s:
-        s.play(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5))
+        s.play(pbind(instrument="default", degree=pseq([0, 2, 4]), dur=0.5))
         s.run(3.0)
     ```
     """
@@ -509,7 +509,7 @@ class Session(Environment):
         """Play an event pattern on this session's clock and server.
 
         Args:
-            pattern: an `EventPattern`, e.g. a `Pbind`. A value pattern does
+            pattern: an `EventPattern`, e.g. a `pbind`. A value pattern does
                 not play, and is refused.
             quant: optional quantization handed to the player -- the beat grid
                 the routine starts on; ``None`` starts immediately.

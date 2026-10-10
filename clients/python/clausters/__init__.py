@@ -11,7 +11,7 @@ timing types, the handful of grid and unit conversions beside them (``bar``,
 ``beat_in_bar``, ``quant_delay``, ``secs_to_samples``, ``samples_to_secs``),
 and the layer modules themselves. Everything enumerative -- the UGen and
 signal callables, the value patterns, the GUI widgets, the sixty-odd numeric
-builtins -- is named through its module (``defs.sine``, ``seq.Pbind``,
+builtins -- is named through its module (``defs.sine``, ``seq.pbind``,
 ``gui.knob``, ``builtins.midicps``): there are too many of them for a flat
 namespace to stay readable. ``builtins`` is one of those modules and is named
 at the top level for that reason -- it is `clausters.builtins`, which shadows
@@ -38,7 +38,7 @@ The layers:
 - `clausters.base` -- the server-agnostic base layer: builtins, absobject,
   stream, clock, netaddr, the OSC/MIDI destination interfaces and the OSC wire
   encoder.
-- `clausters.seq` -- the sequencing layer: events, value patterns and ``Pbind``,
+- `clausters.seq` -- the sequencing layer: events, value patterns and ``pbind``,
   the event-stream player, and timelines that play themselves. `Event`,
   `rest`, `Timeline` and `EventSequence` are re-exported here; the ``P*`` patterns
   are not, and stay under `clausters.seq`.

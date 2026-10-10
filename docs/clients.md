@@ -396,6 +396,13 @@ monotonic clock and the Web Audio sample-clock — and the driver stays on the
 page: only the wake-up moves to a shared tick worker, which is how a page reaches
 the wake-up a background thread gives Python.
 
+A pattern is written the same way in both: a lowercase function built from a
+generator function (`@pattern` in Python, `seq.pattern(function* ...)` here),
+receiving the incoming value first. It composes by method as the graph does
+(`pseq([1, 2, 3]).add(60)` for Python's `pseq([1, 2, 3]) + 60`), and the
+patterns' parity is asserted on what each yields, against vectors frozen from
+the Python client's walks.
+
 **The input path.** `OscFunc`, mirroring `clausters.responders` — the same
 constructor, the same `(msg, time, src)` callback, the same `argTemplate` and
 `oneShot`. What differs is the **receiver** under it: the reference client binds

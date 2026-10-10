@@ -45,7 +45,7 @@ import time
 
 from clausters import Session
 from clausters.gui import choice, panel, samples_to_file, spectrogram, toggle, view, waveform
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 SR = 48_000.0
 TEMPO = 2.0  # beats per second (120 BPM), the grid the beats ruler shows
@@ -59,8 +59,8 @@ QUANT = 4.0  # beats per bar
 # %%
 nrt = Session.nrt()
 nrt.clock.set_tempo(TEMPO)
-nrt.play(Pbind(degree=Pseq([0, 2, 4, 7], repeats=8), dur=0.5,
-               amp=Pwhite(0.3, 0.7)))
+nrt.play(pbind(degree=pseq([0, 2, 4, 7], repeats=8), dur=0.5,
+               amp=pwhite(0.3, 0.7)))
 take = nrt.render(sample_rate=SR, channels=2)
 inter, frames = take.samples, take.frames
 print(f"rendered {frames} frames ({frames / SR:.2f} s, "

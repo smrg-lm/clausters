@@ -29,7 +29,7 @@
 // hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
 // the timing types and the verbs. Everything enumerative -- the UGen and signal
 // callables, the value patterns, the GUI builders -- is named through its
-// namespace (`defs.sine`, `seq.Pbind`, `gui.knob`), the same criterion the
+// namespace (`defs.sine`, `seq.pbind`, `gui.knob`), the same criterion the
 // Python client applies: there are too many of them for a flat namespace to
 // stay readable.
 //

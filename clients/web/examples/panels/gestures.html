@@ -87,10 +87,10 @@ right one is switched live by the chooser under it.</div>
         // ---- the take, bounced offline ----
         const nrt = await Session.nrt();
         nrt.clock.setTempo(TEMPO);
-        nrt.play(new seq.Pbind({
-          degree: new seq.Pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
+        nrt.play(seq.pbind({
+          degree: seq.pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
           dur: 0.25,
-          amp: new seq.Pwhite(0.3, 0.7),
+          amp: seq.pwhite(0.3, 0.7),
         }));
         const take = await nrt.render({ sampleRate: SR, channels: 1 });
         const frames = take.frames;

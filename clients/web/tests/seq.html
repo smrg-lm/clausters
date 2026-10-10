@@ -83,9 +83,9 @@
 
         const clock = new TempoClock(1.0, { timebase });
         clock.start();
-        new seq.Pbind({
+        seq.pbind({
           instrument: "web_seq_beep",
-          degree: new seq.Pseq([0, 2, 4, 7]),
+          degree: seq.pseq([0, 2, 4, 7]),
           dur: 0.25,
           legato: 4.0, // sustain 1 beat: the four notes overlap
         }).play(server, { clock });

@@ -113,9 +113,9 @@
 
         // The free verb, with nothing wired: the default session's server, and
         // its clock, created and started right here on first use.
-        const player = play(new seq.Pbind({
+        const player = play(seq.pbind({
           instrument: "session_voice",
-          freq: new seq.Pseq([440, 550, 660], 4),
+          freq: seq.pseq([440, 550, 660], 4),
           dur: 0.25,
           amp: 0.2,
         }));

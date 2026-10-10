@@ -32,7 +32,7 @@ and hands that score to the engine's own renderer, the same wasm that makes
 this page's sound, running as fast as the machine manages.
 
 The session is its own random context, so its <code>seed</code> reproduces
-every random draw (the <code>Pwhite</code> here) end to end, independently of
+every random draw (the <code>pwhite</code> here) end to end, independently of
 any other session. The <i>server's</i> seed is a separate one, reported as
 <code>stats.seed</code>: hand it to the next render and the take repeats sample
 for sample.
@@ -68,10 +68,10 @@ over HTTP (<code>python3 -m http.server</code>) and open
       // ---- the phrase ----
       // A one-bar arpeggio. `degree` walks a major scale (Event maps it to a
       // midinote then a frequency in the shared native core); `amp` jitters.
-      const phrase = new seq.Pbind({
-        degree: new seq.Pseq([0, 2, 4, 7, 4, 2], 2),
+      const phrase = seq.pbind({
+        degree: seq.pseq([0, 2, 4, 7, 4, 2], 2),
         dur: 0.25,
-        amp: new seq.Pwhite(0.1, 0.2),
+        amp: seq.pwhite(0.1, 0.2),
       });
 
       // A render ends at the score's **last event**, and the last one the
@@ -85,7 +85,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
       let take = null;
 
       // ---- the offline session ----
-      // Same `Pbind` API as live, but the clock drives a score the engine's own
+      // Same `pbind` API as live, but the clock drives a score the engine's own
       // renderer turns into samples -- no server, no audio device.
       async function renderPhrase() {
         const session = (await Session.nrt()).activate();

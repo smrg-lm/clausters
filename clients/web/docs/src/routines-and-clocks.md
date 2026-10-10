@@ -1,6 +1,6 @@
 # Routines and clocks
 
-`Pbind` and the timeline are convenience layers over three plain objects you can also drive yourself:
+`pbind` and the timeline are convenience layers over three plain objects you can also drive yourself:
 
 - a **`Routine`** — *what* happens over time, written as a generator function that `yield`s how long to wait;
 - a **`TempoClock`** — *when* it happens: it schedules the routine and keeps musical time in beats;
@@ -89,22 +89,22 @@ The seam is also what makes the layer testable: a test supplies its own ticker a
 
 ## Patterns, and the seekable form
 
-The routine is the forward-only form. Above it sit the same two layers as in the reference client — `Pbind` over the value patterns for the generative form, `Timeline`, which plays itself, for the static, editable, seekable one:
+The routine is the forward-only form. Above it sit the same two layers as in the reference client — `pbind` over the value patterns for the generative form, `Timeline`, which plays itself, for the static, editable, seekable one:
 
 ```js
-new seq.Pbind({
-  degree: new seq.Pseq([0, 2, 4, 7], seq.INF),
-  dur: new seq.Pseq([0.5, 0.25, 0.25]),
+seq.pbind({
+  degree: seq.pseq([0, 2, 4, 7], seq.INF),
+  dur: seq.pseq([0.5, 0.25, 0.25]),
 }).play(server, { clock });
 ```
 
 Beside them, an `EventSequence` holds events as concrete data — each with an id, in beats, with the tempo map that times them — as a handle to the document's own structure, which is what a notes editor edits. A timeline or an event pattern becomes one by rendering it, `await timeline.renderEvents()` (asynchronous here, since the offline session it plays in is), and a sequence goes to a MIDI file and back with `toSmf()` and `EventSequence.fromSmf(bytes)`. What a page reads of one is objects: `seq.events` is a live collection of `SeqEvent`s in beat order (`for (const event of seq.events)`, `seq.events.item(0)`, `seq.events.at(beat)`, `seq.events.range(t0, t1)`), each a view of one event the sequence holds, read with `event.at`, `event.get("midinote")` and `event.automation` where Python indexes the event as a mapping; the same event read twice is the same object, and `seq.automation` holds the curves over the whole sequence as `Automation` views. A change is made through the object it changes: `event.at = 2.0` moves it, `event.set("midinote", 62)` writes one key (Python assigns an item), `event.remove()` takes it out, `seq.events.add(beat, event)` answers the `SeqEvent` it made, and a collection of curves takes `add(target, { points, name })` and answers the curve, with `toEvents(curve)` and `fromEvents(target)` on the sequence's own. No call takes or answers an id. `seq.history` is the sequence's `UndoHistory`, which a notes editor open on it shares: each change a page makes through the objects is an entry the windows redraw and one Ctrl+Z takes back, and `seq.history.entry("humanize", () => { ... })` — Python's `with seq.history("humanize"):` — makes everything inside one entry; `undo()`, `redo()`, `canUndo` and `undoLabel` walk the same order.
 
-What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns, why only an event pattern plays and a value pattern renders to its values — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters, the sequence included.
+What an event's keys mean, how `dur` and `sustain` differ, what `pbind` does with a pattern of patterns, why only an event pattern plays and a value pattern renders to its values — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters, the sequence included.
 
 ## Reproducible randomness
 
-Everything random — `Pwhite`, `Prand`, and the draws named as sclang names them (`rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`, `gauss`, `coin`, `choose`, `wchoose`, `tablerand`, `scramble`, and the whole-number `irand`, `irand2`, `irrand`, which are their own functions because a number here cannot say whether it was written `10` or `10.0`) — draws from **one seedable context**, the sclang model, computed by the same core the other clients use: the same seed replays the same values in every Clausters client language.
+Everything random — `pwhite`, `prand`, and the draws named as sclang names them (`rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`, `gauss`, `coin`, `choose`, `wchoose`, `tablerand`, `scramble`, and the whole-number `irand`, `irand2`, `irrand`, which are their own functions because a number here cannot say whether it was written `10` or `10.0`) — draws from **one seedable context**, the sclang model, computed by the same core the other clients use: the same seed replays the same values in every Clausters client language.
 
 Each routine gets its **own** generator when it is created, derived from the context that created it. Same root seed plus same creation order gives the same music, and because each routine draws from its own stream, concurrent routines stay reproducible however their wakes interleave. `seed(n)`, called before you build and play, makes a whole page reproducible; there are deliberately no per-pattern seeds. To isolate some samples, play it in its own routine, which is its own derived stream by construction.
 

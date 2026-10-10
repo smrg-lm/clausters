@@ -38,7 +38,7 @@ import tempfile
 
 from clausters import Session
 from clausters.gui import samples_to_file, spectrogram, view, waveform
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 SR = 48_000.0
 
@@ -49,8 +49,8 @@ SR = 48_000.0
 # %%
 nrt = Session.nrt()
 nrt.clock.set_tempo(2.0)
-nrt.play(Pbind(degree=Pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
-               amp=Pwhite(0.1, 0.25)))
+nrt.play(pbind(degree=pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
+               amp=pwhite(0.1, 0.25)))
 take = nrt.render(sample_rate=SR, channels=2)
 inter, frames = take.samples, take.frames
 print(f"rendered {frames} frames ({frames / SR:.2f} s) offline")

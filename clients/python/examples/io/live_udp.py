@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Play live over UDP from the *installed* package.
 
-The live counterpart of ``buffers/offline_render.py``: the same ``Session`` / ``Pbind``
+The live counterpart of ``buffers/offline_render.py``: the same ``Session`` / ``pbind``
 API, but a live RT session sends OSC over UDP to a running Clausters server. The
 only thing that changes between offline and live is the session factory -- the
 pattern and the clock are identical.
@@ -21,7 +21,7 @@ The synths free themselves after each note's sustain, so nothing is left behind.
 import sys
 
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 # %% [markdown]
 # ## The phrase
@@ -29,11 +29,11 @@ from clausters.seq import Pbind, Pseq, Pwhite
 # rendered offline.
 
 # %%
-phrase = Pbind(
+phrase = pbind(
     instrument="default",
-    degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+    degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
     dur=0.25,
-    amp=Pwhite(0.1, 0.2),
+    amp=pwhite(0.1, 0.2),
 )
 
 # %% [markdown]

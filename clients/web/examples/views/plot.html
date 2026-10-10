@@ -58,10 +58,10 @@ this brings up only the GUI host.</div>
 
       const SR = 48000.0;
 
-      const phrase = () => new seq.Pbind({
-        degree: new seq.Pseq([0, 2, 4, 7, 4, 2], 2),
+      const phrase = () => seq.pbind({
+        degree: seq.pseq([0, 2, 4, 7, 4, 2], 2),
         dur: 0.25,
-        amp: new seq.Pwhite(0.1, 0.2),
+        amp: seq.pwhite(0.1, 0.2),
       });
 
       async function run() {

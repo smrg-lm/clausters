@@ -27,7 +27,7 @@ from clausters.defs import (
 )
 from clausters.defs import Server
 from clausters.defs.ugens import pan2, rlpf, saw
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
 
@@ -650,15 +650,15 @@ def test_custom_synthdef_renders_like_builtin_default():
     # The built-in "default" path (gate-released, as the player does for it).
     s0 = Server(interface=OscNrtInterface())
     c0 = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument="default", freq=Pseq(FREQS), dur=0.5, amp=0.2).play(c0, s0)
+    pbind(instrument="default", freq=pseq(FREQS), dur=0.5, amp=0.2).play(c0, s0)
     c0.render()
 
     # The client-defined equivalent (same graph, incl. the gated envelope): add
-    # it to the score, then the same Pbind -- released by gate too (has_gate).
+    # it to the score, then the same pbind -- released by gate too (has_gate).
     s1 = Server(interface=OscNrtInterface())
     _py_default_env().send(s1)              # /def_send synth at time 0 in the score
     c1 = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument="py_default_env", freq=Pseq(FREQS), dur=0.5, amp=0.2,
+    pbind(instrument="py_default_env", freq=pseq(FREQS), dur=0.5, amp=0.2,
           has_gate=True).play(c1, s1)
     c1.render()
 

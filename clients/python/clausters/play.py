@@ -6,7 +6,7 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
 
 - an `clausters.seq.event.Event` -- or a plain **dict** of event keys -- -> a
   note (immediate outside a clock, timetagged inside one);
-- an event `clausters.seq.pattern.Pattern` (a ``Pbind``) -> an
+- an event `clausters.seq.pattern.Pattern` (a ``pbind``) -> an
   `clausters.seq.eventstream.EventStreamPlayer` on a clock;
 - a `clausters.base.stream.Routine` / `clausters.base.stream.Stream` -- or a
   bare **generator** (object or function) -> scheduled on a clock;
@@ -48,7 +48,7 @@ from clausters import play
 from clausters.seq.event import Event
 
 play(Event(degree=0))                       # one note, now
-play(Pbind(degree=Pseq([0, 2, 4]), dur=.5)) # a phrase, on the default clock
+play(pbind(degree=pseq([0, 2, 4]), dur=.5)) # a phrase, on the default clock
 ```
 
 Each playable also carries the same ambient ``.play()``; the free function is
@@ -126,9 +126,9 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return playable.play(clock, main.resolve_server(server), quant)
     if isinstance(playable, Pattern):
         raise TypeError(
-            f"a {type(playable).__name__} of values does not play: a pattern is "
+            f"{playable!r} is a pattern of values and does not play: a pattern is "
             f"the definition of a generator, and it plays when its values are "
-            f"events (a Pbind, or a Pseq/Prand/Pn over event patterns only). "
+            f"events (a pbind, or a pseq/prand/pn over event patterns only). "
             f"render() generates a value pattern's values"
         )
     if isinstance(playable, (Expr, SynthDef, FaustDef, GraphDef)):
@@ -154,7 +154,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return playable.play(main.resolve_server(server))
     raise TypeError(
         f"don't know how to play {type(playable).__name__}; expected an Event "
-        "or event dict, an EventPattern (Pbind), a Routine/Stream or "
+        "or event dict, an EventPattern (pbind), a Routine/Stream or "
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
         "a Timeline, an EventSequence, "
         "a Buffer, or anything with play(destination). A "

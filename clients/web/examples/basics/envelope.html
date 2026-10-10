@@ -105,10 +105,10 @@ a chosen attack, decay, sustain and release.</div>
         // (`gate 0`) after `sustain` rather than being freed outright;
         // `sustain` < `dur` leaves a gap so the release tail is audible before
         // the next note.
-        const phrase = new seq.Pbind({
+        const phrase = seq.pbind({
           instrument: "adsr_pad",
           hasGate: true,
-          degree: new seq.Pseq([0, 2, 4, 7], 2),
+          degree: seq.pseq([0, 2, 4, 7], 2),
           dur: 0.5,
           sustain: 0.35,
           amp: 0.2,

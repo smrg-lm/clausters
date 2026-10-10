@@ -45,7 +45,7 @@ from clausters.defs.ugens import (
     out, pan2, pan_az, pink_noise, pulse, rlpf, saw, select_x, sine, splay,
     stereo_width, xfade2,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 SR = 48000.0
 SECTION = 2.0  # seconds per section
@@ -207,7 +207,7 @@ def render(path=None):
 
     names = ["sweep", "bank", "width", "midside", "morph", "ring", *CLAIMS]
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument=Pseq(names), dur=SECTION, amp=0.5).play(clock, server)
+    pbind(instrument=pseq(names), dur=SECTION, amp=0.5).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)
     # The claims below measure individual sections, not a summary, so the

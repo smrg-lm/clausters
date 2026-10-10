@@ -45,7 +45,7 @@ import sys
 
 from clausters import Session
 from clausters.defs import Buffer, format_load
-from clausters.seq import INF, Pbind, Pseq, Pwhite
+from clausters.seq import INF, pbind, pseq, pwhite
 
 # %% [markdown]
 # ## The session
@@ -68,11 +68,11 @@ server = session.server
 # Nothing here is about the meter -- it is an ordinary pattern.
 
 # %%
-phrase = Pbind(
+phrase = pbind(
     instrument="default",
-    degree=Pseq([0, 2, 4, 7, 9, 7, 4, 2], repeats=INF),
+    degree=pseq([0, 2, 4, 7, 9, 7, 4, 2], repeats=INF),
     dur=0.125,
-    amp=Pwhite(0.05, 0.12),
+    amp=pwhite(0.05, 0.12),
 )
 
 # %% [markdown]

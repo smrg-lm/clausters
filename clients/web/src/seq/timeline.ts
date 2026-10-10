@@ -1,7 +1,7 @@
 // Timelines: a plan in logical time, played by itself (mirrors
 // `clausters/seq/timeline.py`).
 //
-// The counterpart to the generative layer (`Routine`, `Pbind`). A routine is a
+// The counterpart to the generative layer (`Routine`, `pbind`). A routine is a
 // forward-only generator: its musical state lives in the generator's locals,
 // so it cannot be *seeked*. A `Timeline` is the opposite -- an **editable list
 // of timed items kept sorted by beat**, with its own tempo map and random
@@ -235,8 +235,8 @@ export class Timeline {
     add(beat: number, item: unknown): Entry {
         if (item instanceof Pattern && !(item instanceof EventPattern)) {
             throw new TypeError(
-                `a ${item.constructor.name} of values does not play, so it is not a timeline `
-                + "item: a pattern plays when its values are events (a Pbind, or a list "
+                `${item} is a pattern of values: it does not play, so it is not a timeline `
+                + "item: a pattern plays when its values are events (a pbind, or a list "
                 + "pattern of event patterns only)",
             );
         }
@@ -1194,7 +1194,7 @@ export class TransportPlayer implements TreeDriver {
     render(node: TimelineNode, beat: number, item: unknown): void {
         if (item instanceof Routine || item instanceof Pattern) {
             throw new Error(
-                `${(item as object).constructor.name} at beat ${beat}: a routine or a `
+                `${item instanceof Pattern ? String(item) : (item as object).constructor.name} at beat ${beat}: a routine or a `
                     + "pattern cannot be planned from a position",
             );
         }

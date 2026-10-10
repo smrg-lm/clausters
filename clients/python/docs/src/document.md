@@ -1268,7 +1268,7 @@ automation carry a name of their own and need nothing; a pattern does not, so
 name the **element**:
 
 ```python
-bass = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=1.0), name="bassline")
+bass = Sequence(pbind(midinote=pseq([48, 55], 2), dur=1.0), name="bassline")
 ```
 
 A name is a label, not an identity: nothing addresses an element by it, and two

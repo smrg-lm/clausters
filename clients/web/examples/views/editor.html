@@ -83,10 +83,10 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
       const SR = 48_000.0;
 
-      const phrase = () => new seq.Pbind({
-        degree: new seq.Pseq([0, 4, 7, 11, 7, 4], 4),
+      const phrase = () => seq.pbind({
+        degree: seq.pseq([0, 4, 7, 11, 7, 4], 4),
         dur: 0.25,
-        amp: new seq.Pwhite(0.1, 0.25),
+        amp: seq.pwhite(0.1, 0.25),
       });
 
       /**

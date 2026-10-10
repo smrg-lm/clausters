@@ -29,7 +29,7 @@
 // - `Track`     -- *Set*: mixed placement of elements, a DAW track. Wraps
 //   `seq.Timeline`.
 // - `Generator` -- *Function*: a generator element -- server DSP (a def) or a
-//   sequence generator (`Pbind`/`Routine`).
+//   sequence generator (`pbind`/`Routine`).
 //
 // Grouping and rendering live in `./aggregate.ts` and `./render.ts`. This module
 // is pure and transport-agnostic.
@@ -882,7 +882,7 @@ export interface GeneratorOptions extends ElementOptions {
  * *Function*: a generator element.
  *
  * Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name) or
- * a sequence generator (a `Pbind`/`Routine`). Its *change of state* -- evaluating
+ * a sequence generator (a `pbind`/`Routine`). Its *change of state* -- evaluating
  * the generator into a generated element -- happens at rendering: a contained
  * event pattern is bounced to a timeline; a def member of a logical
  * {@link Aggregate} becomes a wired GraphDef member.

@@ -1,6 +1,6 @@
 # Routines and clocks
 
-`Session` and `Pbind` are convenience layers over three plain objects you can also drive yourself:
+`Session` and `pbind` are convenience layers over three plain objects you can also drive yourself:
 
 - a **`Routine`** — *what* happens over time, written as a Python generator that `yield`s how long to wait;
 - a **`TempoClock`** — *when* it happens: it schedules the routine and keeps musical time in beats;
@@ -117,7 +117,7 @@ A routine that raises is dropped the same way, with its traceback on stderr: it 
 
 ## The random context: one seed per session
 
-Everything random — `Pwhite`, `Prand`, and the draws named as sclang names
+Everything random — `pwhite`, `prand`, and the draws named as sclang names
 them (`clausters.rand`, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
 `gauss`, `coin`, `choose`, `wchoose`, `tablerand`, `scramble`, and the
 whole-number `irand`, `irand2`, `irrand`) — draws from **one seedable context**, the sclang model. The context is the
@@ -146,13 +146,13 @@ same values in every Clausters client language.
 
 ```python
 from clausters import Session, rrand
-from clausters.seq import Pbind, Pwhite
+from clausters.seq import pbind, pwhite
 
 with Session.nrt() as session:
     session.clock.set_tempo(2.0)
     session.seed(2026)               # this session is now reproducible
     base = rrand(-3.0, 3.0)          # a one-off draw from the session's root
-    session.play(Pbind(freq=Pwhite(400.0, 800.0), dur=0.25))   # draws when played
+    session.play(pbind(freq=pwhite(400.0, 800.0), dur=0.25))   # draws when played
     session.render()
 ```
 

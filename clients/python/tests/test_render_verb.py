@@ -9,7 +9,7 @@ import struct
 import pytest
 
 from clausters import Event, render
-from clausters.seq.pattern import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 from clausters.seq.timeline import Timeline
 from clausters.defs import Synth
 
@@ -90,7 +90,7 @@ def test_render_bounces_an_event_pattern():
     # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last gate closes
     # at 1.0 + 0.5 * 0.8 = 1.4 s, and the default tail runs one second past it.
     _st1 = render(
-        Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
+        pbind(instrument="default", degree=pseq([0, 2, 4]), dur=0.5),
         sample_rate=SR)
     samples, frames = _st1.samples, _st1.frames
     assert abs(frames - 2.4 * SR) <= 4096
@@ -99,7 +99,7 @@ def test_render_bounces_an_event_pattern():
 
 def test_a_bounce_renders_the_last_notes_release():
     _embed_or_skip()
-    pattern = Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25)
+    pattern = pbind(instrument="default", degree=pseq([0, 4, 7]), dur=0.25)
     cut = render(pattern, tail=0, sample_rate=SR)
     # With no tail the take stops on the gate closing on the last note, mid
     # release: the take ends sounding, not in silence.
@@ -113,13 +113,13 @@ def test_a_bounce_renders_the_last_notes_release():
 
 def test_a_tail_is_a_duration():
     with pytest.raises(ValueError, match="negative"):
-        render(Pbind(instrument="default", degree=Pseq([0]), dur=0.25), tail=-1)
+        render(pbind(instrument="default", degree=pseq([0]), dur=0.25), tail=-1)
 
 
 def test_render_needs_until_for_an_endless_pattern():
     _embed_or_skip()
     _st2 = render(
-        Pbind(instrument="default", freq=Pwhite(200.0, 800.0), dur=0.25),
+        pbind(instrument="default", freq=pwhite(200.0, 800.0), dur=0.25),
         until=2.0, sample_rate=SR)
     samples, frames = _st2.samples, _st2.frames
     # Drained at beat 2.0: the last event starts by then, and the take ends a
@@ -135,7 +135,7 @@ def test_render_plays_on_the_clock_it_is_given():
 
     session = Session.nrt()
     session.clock.set_tempo(2.0)                 # two beats a second
-    stats = render(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=1.0),
+    stats = render(pbind(instrument="default", degree=pseq([0, 2, 4]), dur=1.0),
                    clock=session.clock, sample_rate=SR)
     # The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
     # later; the tail is seconds, whatever the tempo.
@@ -146,7 +146,7 @@ def test_render_refuses_a_clock_not_on_logical_time():
     from clausters.base import TempoClock
 
     with pytest.raises(ValueError, match="fixed when it is made"):
-        render(Pbind(degree=0, dur=0.5), clock=TempoClock(2.0))
+        render(pbind(degree=0, dur=0.5), clock=TempoClock(2.0))
 
 
 def test_render_refuses_an_endless_event_pattern_with_no_bound(monkeypatch):
@@ -158,7 +158,7 @@ def test_render_refuses_an_endless_event_pattern_with_no_bound(monkeypatch):
     render_module = sys.modules["clausters.render"]
 
     monkeypatch.setattr(render_module, "MAX_BOUNCED_EVENTS", 32)
-    endless = Pbind(degree=Pseq([0, 2], float("inf")), dur=0.25)
+    endless = pbind(degree=pseq([0, 2], float("inf")), dur=0.25)
     with pytest.raises(RuntimeError, match="until="):
         render(endless, sample_rate=SR)
 
@@ -169,11 +169,11 @@ def test_render_generates_a_value_patterns_values(monkeypatch):
 
     render_module = sys.modules["clausters.render"]
 
-    assert render(Pseq([1, 2, 3], 2)) == [1, 2, 3, 1, 2, 3]
-    assert render(Pseq([1, 2], float("inf")), count=5) == [1, 2, 1, 2, 1]
+    assert render(pseq([1, 2, 3], 2)) == [1, 2, 3, 1, 2, 3]
+    assert render(pseq([1, 2], float("inf")), count=5) == [1, 2, 1, 2, 1]
     monkeypatch.setattr(render_module, "MAX_BOUNCED_EVENTS", 16)
     with pytest.raises(RuntimeError, match="count="):
-        render(Pseq([1, 2], float("inf")))
+        render(pseq([1, 2], float("inf")))
 
 
 def test_render_bounces_a_timeline():
@@ -210,7 +210,7 @@ def test_render_bounces_a_generator():
 
 def test_render_rejects_a_live_destination_for_a_pattern():
     with pytest.raises(ValueError, match="play"):
-        render(Pbind(degree=0), destination=object())
+        render(pbind(degree=0), destination=object())
 
 
 def test_render_rejects_unrenderable():

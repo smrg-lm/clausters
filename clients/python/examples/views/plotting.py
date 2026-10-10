@@ -33,7 +33,7 @@ from clausters.defs import (
     out,
     sine,
 )
-from clausters.seq import Pseq, Pwhite
+from clausters.seq import pseq, pwhite
 
 #: Seconds each visual step stays on screen.
 PAUSE = 3.0
@@ -75,15 +75,15 @@ win_env.close()
 
 # %% 3/5 -- a finite pattern: any iterable of numbers plots as a sequence,
 # index counts on the x ruler.
-print("3/5 sequence (Pseq): stepped values over an index axis")
-win_seq = plot(Pseq([0, 2, 4, 7, 4, 2], repeats=4))
+print("3/5 sequence (pseq): stepped values over an index axis")
+win_seq = plot(pseq([0, 2, 4, 7, 4, 2], repeats=4))
 time.sleep(PAUSE)
 win_seq.close()
 
 # %% 4/5 -- an arbitrary-range sequence: the value axis auto-fits, whatever
 # the range; a pinned side is released live with "auto".
-print("4/5 sequence (Pwhite 40..4700): the value axis auto-fits the range")
-win_rand = plot(Pwhite(40.0, 4700.0), n=200)
+print("4/5 sequence (pwhite 40..4700): the value axis auto-fits the range")
+win_rand = plot(pwhite(40.0, 4700.0), n=200)
 time.sleep(PAUSE)
 print("    min -> -4700 (pin far below the data: traces squash up)")
 win_rand.set(min=-4700.0)

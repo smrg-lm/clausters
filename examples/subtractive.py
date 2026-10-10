@@ -25,7 +25,7 @@ from clausters.defs.ugens import (
     DoneAction, Env, allpass_c, comb_c, env_gen, in_, lf_tri, lpf, out, pulse,
     rlpf, saw, svf, svf_morph,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.defs import Synth
 
 SR = 48000.0
@@ -105,13 +105,13 @@ def render(path=None):
 
     clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
     degrees = [0, 3, 5, 7, 10, 12, 10, 7]
-    Pbind(
+    pbind(
         instrument="sub_voice",
-        freq=Pseq([110.0 * 2 ** (d / 12) for d in degrees]),
+        freq=pseq([110.0 * 2 ** (d / 12) for d in degrees]),
         dur=0.5,
         amp=0.18,
     ).play(clock, server)
-    Pbind(instrument="sub_morph", freq=Pseq([82.5, 110.0]), dur=2.0, amp=0.12).play(
+    pbind(instrument="sub_morph", freq=pseq([82.5, 110.0]), dur=2.0, amp=0.12).play(
         clock, server
     )
     clock.render()

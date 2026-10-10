@@ -19,7 +19,7 @@ import sys
 import time
 
 from clausters import Server, Event, play
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 # %% [markdown]
 # ## Boot
@@ -43,7 +43,7 @@ time.sleep(1.0)
 # started for you.
 
 # %%
-play(Pbind(instrument="default", degree=Pseq([0, 2, 4, 7]), dur=0.4))
+play(pbind(instrument="default", degree=pseq([0, 2, 4, 7]), dur=0.4))
 time.sleep(2.0)
 print("played; synths freed themselves after their sustain")
 

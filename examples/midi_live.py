@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Play an event pattern **live** out a virtual MIDI port.
 
-The same `Pbind` that renders to a `.mid` can instead drive a live MIDI output
+The same `pbind` that renders to a `.mid` can instead drive a live MIDI output
 port: `MidiServer(interface=MidiRtInterface(...))`. Each note goes out the port
 in real time (note-on at its beat, note-off scheduled after the sustain) -- no
 timetags, best-effort, the way live MIDI works. Connect the port to a synth or
@@ -35,7 +35,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import MidiRtInterface, MidiServer, TempoClock
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 
 def main() -> None:
@@ -46,11 +46,11 @@ def main() -> None:
     print(f'MIDI output on virtual port "{port}" (connect with aconnect); playing...')
     midi = MidiServer(interface=interface, channel=0)
     clock = TempoClock(tempo=2.0)
-    Pbind(
+    pbind(
         instrument="default",
-        degree=Pseq([0, 2, 4, 2, 0, 4, 7, 4], repeats=8),
+        degree=pseq([0, 2, 4, 2, 0, 4, 7, 4], repeats=8),
         dur=0.5,
-        amp=Pwhite(0.5, 0.9),
+        amp=pwhite(0.5, 0.9),
         legato=0.9,
     ).play(clock, midi)
     try:

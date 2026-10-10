@@ -12,10 +12,10 @@ from clausters.seq import (
     EventPattern,
     MidiItem,
     OscItem,
-    Pbind,
-    Pn,
-    Prand,
-    Pseq,
+    pbind,
+    pn,
+    prand,
+    pseq,
     Timeline,
 )
 
@@ -68,9 +68,9 @@ def test_a_timeline_refuses_a_value_pattern():
     """A value pattern is the definition of a generator and does not play, so
     it is not an item; an event pattern is."""
     tl = Timeline()
-    tl.add(0.0, Pbind(freq=Pseq([440, 550]), dur=0.5))
+    tl.add(0.0, pbind(freq=pseq([440, 550]), dur=0.5))
     try:
-        tl.add(1.0, Pseq([1, 2, 3]))
+        tl.add(1.0, pseq([1, 2, 3]))
     except TypeError as e:
         assert "does not play" in str(e)
     else:
@@ -81,12 +81,11 @@ def test_a_timeline_refuses_a_value_pattern():
 def test_a_list_pattern_over_events_is_an_event_pattern():
     """A list pattern resolves its class when it is built: over event patterns
     only it plays; a list that mixes events and values is a value pattern."""
-    phrase = Pbind(freq=Pseq([440, 550]), dur=0.5)
-    assert isinstance(Pseq([phrase, phrase]), EventPattern)
-    assert isinstance(Prand([phrase]), EventPattern)
-    assert isinstance(Pn(phrase, 2), EventPattern)
-    assert isinstance(Pseq([phrase, phrase]), Pseq)
-    assert not isinstance(Pseq([phrase, 1]), EventPattern)
-    assert not isinstance(Pseq([1, 2]), EventPattern)
-    assert not hasattr(Pseq([1, 2]), "play")
-    assert [e["freq"] for e in Pseq([phrase], 2)] == [440, 550, 440, 550]
+    phrase = pbind(freq=pseq([440, 550]), dur=0.5)
+    assert isinstance(pseq([phrase, phrase]), EventPattern)
+    assert isinstance(prand([phrase]), EventPattern)
+    assert isinstance(pn(phrase, 2), EventPattern)
+    assert not isinstance(pseq([phrase, 1]), EventPattern)
+    assert not isinstance(pseq([1, 2]), EventPattern)
+    assert not hasattr(pseq([1, 2]), "play")
+    assert [e["freq"] for e in pseq([phrase], 2)] == [440, 550, 440, 550]

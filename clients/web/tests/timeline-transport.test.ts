@@ -18,7 +18,7 @@ import { OscNrtInterface } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Event } from "../src/seq/event.ts";
-import { Pbind } from "../src/seq/pattern.ts";
+import { pbind } from "../src/seq/index.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 
 await loadCore();
@@ -214,10 +214,10 @@ test("what the mode refuses", async () => {
     forward.play({ at: 0, destination: server });
     await assert.rejects(() => forward.refresh(), /Routine/);
 
-    const generated = new Timeline([[0, new Pbind({ degree: 0 })]], { tempo: RATE });
+    const generated = new Timeline([[0, pbind({ degree: 0 })]], { tempo: RATE });
     generated.transport = server;
     generated.play({ at: 0, destination: server });
-    await assert.rejects(() => generated.refresh(), /Pbind/);
+    await assert.rejects(() => generated.refresh(), /pbind/);
 });
 
 test("a child is planned in its own units", async () => {

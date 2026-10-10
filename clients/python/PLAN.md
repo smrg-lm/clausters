@@ -2316,25 +2316,28 @@ the arc adds keeps this, a composed one included, and the books show the loop
 as the first way to see what a pattern yields — with an endless one bounded
 by the loop (`islice`, a `break`), never read whole.
 
-- ⬜ **C70 — A pattern is a function, and composes by operators.** First the
-  form: `@pattern` (and `pattern(function*)`) carrying the incoming event, the
-  ten existing patterns rewritten as lowercase generator functions
-  (`pseq`, `pser`, `prand`, `pwhite`, `pseries`, `pgeom`, `pfunc`, `pn`,
-  `pconst`, `pbind`) in both clients, and every example, test and book page
-  moved to them in the same commit. Then the operators: `Pattern` and
-  `Stream` implement the four `AbstractObject` hooks with `punop`, `pbinop`
-  and `pnarop` (sc3's `Punop`/`Pbinop`/`Pnarop`, sclang's `Pnaryop`),
-  generators like the rest, in both clients: each step pulls one value from every operand
-  stream and calls the builtin by the selector (`builtins.UNARY`, `BINARY`,
-  `BOUND` and the calc tables), and the composed pattern ends when any operand
-  ends. A composition over an `EventPattern` is an `EventPattern` (sc3's
-  `is_event_pattern` propagation), so `pbind(...) * 2`-style composition plays.
-  The reflected forms (`2 + pseq(...)`) and a pattern operand on either side of
-  a pattern are covered. In TypeScript composition is by method, as it already
-  is for a graph (`pseq([74, 60, 46]).add(2)`), through the same `binop`/`unop`
-  hooks. A composed pattern iterates like any other (`for x in pseq(...) + 2`).
-  The ten existing classes move into family modules and get their brief
-  descriptions, each saying whether it is a value or an event pattern.
+- ✅ **C70 — A pattern is a function, and composes by operators** *(done
+  2026-10-10)*. `pattern` (`seq.pattern(function*)` in TypeScript) builds a
+  pattern from a generator function that receives the incoming value first;
+  the ten patterns are lowercase functions (`pseq`, `pser`, `prand`, `pwhite`,
+  `pseries`, `pgeom`, `pfunc`, `pn`, `pconst`, `pbind`) over one generic
+  `Pattern` and `EventPattern`, in family modules (`seq/patterns/`:
+  `valuepatterns`, `randompatterns`, `listpatterns`, `filterpatterns`,
+  `funcpatterns`, `eventpatterns`, `oppatterns`), each with its description;
+  every example, test and book page moved in the same commit. A `pbind` hands
+  each key's pattern the event being built. `Pattern` and `Stream` implement
+  the `AbstractObject` hooks: `punop`/`pbinop`/`pnarop` and a composed stream
+  take one value from each operand per step, compute it with
+  `builtins.value_op` (the `UNARY`, `BINARY`, `BOUND` and new `NARY` tables,
+  mirrored in TypeScript as `valueOp`) and end with the shortest operand. **An
+  event pattern refuses an operator**, where this entry first said it would
+  propagate as sc3's did: an event has no arithmetic, so the composition could
+  only fail later (`docs/decisions.md`, "A pattern is a function, as a UGen
+  is"). A list or dict argument is copied when the pattern is built. Parity:
+  `gen-pattern-vectors.py` freezes what each pattern yields, seeded draws
+  included, and `pattern-parity.test.ts` builds the same cases. Both books have
+  a "Patterns" chapter: the walk, the two kinds, the operators against the list
+  functions, writing one.
 - ⬜ **C71 — `AbstractObject` carries sc3's whole surface, and the builtins
   take a pattern.** The methods sc3's `AbstractObject` has and this one does
   not move into the base, so a pattern gets them without a graph: the range

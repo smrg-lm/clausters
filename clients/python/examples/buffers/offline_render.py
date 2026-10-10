@@ -26,7 +26,7 @@ import sys
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
 #: git-ignored directory every generator in this tree writes to -- beside the
@@ -43,17 +43,17 @@ SR = 48000.0
 # then a frequency in the shared native core); ``amp`` jitters.
 
 # %%
-phrase = Pbind(
-    degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+phrase = pbind(
+    degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
     dur=0.25,
-    amp=Pwhite(0.1, 0.2),
+    amp=pwhite(0.1, 0.2),
 )
 
 # %% [markdown]
 # ## The offline session
-# Same `Pbind` API as live, but the clock drives a score the bundled embed
+# Same `pbind` API as live, but the clock drives a score the bundled embed
 # renderer turns into samples -- no server, no audio device. The session is its
-# own random context, so its seed reproduces every random draw (the `Pwhite`
+# own random context, so its seed reproduces every random draw (the `pwhite`
 # here) end to end, independently of any other session.
 
 # %%

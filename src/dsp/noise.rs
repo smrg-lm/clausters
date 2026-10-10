@@ -2,7 +2,7 @@
 //! seeded stream.
 //!
 //! **Every generator here takes its randomness from `clausters_core::rng`**,
-//! the xorshift the sequencing layer and the client's `Pwhite` already use, and
+//! the xorshift the sequencing layer and the client's `pwhite` already use, and
 //! every one of them is built from an explicit seed -- there is no seedless
 //! constructor, and no process-global counter behind one. The seed comes from
 //! the instance's [`crate::dsp::registry::BuildCtx`], which reserves a

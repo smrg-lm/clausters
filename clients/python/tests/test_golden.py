@@ -10,7 +10,7 @@ from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.base import _osclib as osc
 from clausters.defs import Server
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
 
@@ -24,7 +24,7 @@ def _embed_or_skip():
 
 
 def _handrolled_score(freqs, dur=0.5, amp=0.2, legato=0.8) -> bytes:
-    """The same notes a Pbind would play, written out as raw OSC bundles --
+    """The same notes a pbind would play, written out as raw OSC bundles --
     `/synth_new` at the beat, then a gate release after the sustain (dur*legato):
     the built-in ``default`` carries a gated envelope, so the player closes its
     gate (`/node_set gate 0`) rather than freeing the node. Node ids from 1000 like
@@ -46,7 +46,7 @@ def test_pbind_render_matches_handrolled_osc():
 
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument="default", freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
+    pbind(instrument="default", freq=pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
     clock.render()
 
     try:

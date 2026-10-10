@@ -31,7 +31,7 @@ import tempfile
 
 from clausters import Session
 from clausters.gui import GuiHost, plot, samples_to_file, view
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import EventPattern, pbind, pseq, pwhite
 
 SR = 48_000.0
 
@@ -41,9 +41,9 @@ SR = 48_000.0
 # channel 0 is de-interleaved and written to a raw f32 file the host will map.
 
 # %%
-def phrase() -> Pbind:
-    return Pbind(degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2), dur=0.25,
-                 amp=Pwhite(0.1, 0.2))
+def phrase() -> EventPattern:
+    return pbind(degree=pseq([0, 2, 4, 7, 4, 2], repeats=2), dur=0.25,
+                 amp=pwhite(0.1, 0.2))
 
 
 nrt = Session.nrt()

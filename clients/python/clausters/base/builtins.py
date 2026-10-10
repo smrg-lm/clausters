@@ -674,3 +674,19 @@ BINARY = {
     "scaleneg": scaleneg, "firstarg": firstarg,
 }
 BOUND = {"clip": clip, "wrap": wrap, "fold": fold}
+#: The n-ary operators by name: the range maps, which take the input ends and
+#: the output ends after the value.
+NARY = {
+    "linlin": linlin, "linexp": linexp, "explin": explin, "expexp": expexp,
+    "lincurve": lincurve, "curvelin": curvelin,
+}
+
+
+def value_op(selector):
+    """The value function an operator selector names, in any of the tables:
+    how something that composes values (a pattern, a stream) computes the
+    operator it was composed with."""
+    for table in (UNARY, BINARY, BOUND, NARY):
+        if selector in table:
+            return table[selector]
+    raise ValueError(f"no value operator {selector!r}")

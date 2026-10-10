@@ -27,7 +27,7 @@ involved unless the object itself needs one). It dispatches by kind:
   **live** server (`clausters.base.main.Main.resolve_server`) with its shape
   and sample rate, and plotted -- the way to check a buffer's contents.
 - any other **iterable of numbers** -- a list, a stdlib ``array``, a
-  `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, ...) or any stream -- is
+  `clausters.seq.pattern.Pattern` (``pseq``, ``pwhite``, ...) or any stream -- is
   read (up to ``n`` values for the endless ones) and plotted as a
   sequence: index counts on the x axis and the value axis **auto-fitted** to
   the data, whatever its range. A list of per-channel lists plots multichannel.
@@ -40,11 +40,11 @@ reads out the exact sample or bin under the cursor.
 
 ```python
 from clausters import plot
-from clausters.seq import Pseq, Pwhite
+from clausters.seq import pseq, pwhite
 
 plot(my_synthdef, dur=2.0)                  # a def's rendered output
 plot(Env.adsr(), label="adsr")              # an envelope, engine-evaluated
-plot(Pwhite(40.0, 4700.0), n=200)           # a sequence, range auto-fitted
+plot(pwhite(40.0, 4700.0), n=200)           # a sequence, range auto-fitted
 plot(my_graphdef, view="spectrum")          # its averaged spectrum
 ```
 """
@@ -136,7 +136,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         defs: extra defs the render needs first -- a `GraphDef`'s **member
             defs** (the ephemeral offline session starts empty, so they must
             ride along), or any def ``obj``'s graph references.
-        n: how many values to take from an endless sequence (`Pwhite` and
+        n: how many values to take from an endless sequence (`pwhite` and
             friends).
         sample_rate: the offline render's rate; also places a fetched buffer's
             time axis when the server reports none.

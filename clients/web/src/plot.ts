@@ -35,7 +35,7 @@
 // ```ts
 // await plot(sine(440.0).mul(0.2), { dur: 0.02 });
 // await plot(Env.adsr(), { label: "adsr" });
-// await plot(new seq.Pwhite(40.0, 4700.0), { n: 200 });
+// await plot(seq.pwhite(40.0, 4700.0), { n: 200 });
 // ```
 
 import { main } from "./base/main.ts";

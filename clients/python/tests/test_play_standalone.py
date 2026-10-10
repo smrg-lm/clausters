@@ -17,7 +17,7 @@ from clausters.defs.ugens import (
 from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
 from clausters.base import LogicalTimebase, TempoClock
-from clausters.seq.pattern import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.seq.timeline import Timeline
 from clausters.defs import Buffer
 
@@ -535,7 +535,7 @@ def test_free_play_pattern_resolves_server_and_clock(clean_default):
     server = _nrt_server()
     main.server = server
     # NRT: drive the default clock's render rather than real time.
-    player = play(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
+    player = play(pbind(instrument="default", degree=pseq([0, 2, 4]), dur=0.5),
                   clock=_offline_default_clock())
     main.default_clock.render()
     # three notes, each an /synth_new + release bundle
@@ -546,9 +546,9 @@ def test_free_play_pattern_resolves_server_and_clock(clean_default):
 def test_a_value_pattern_does_not_play(clean_default):
     """A pattern is the definition of a generator: what plays is an event
     pattern, and a value pattern is refused by name."""
-    from clausters.seq import Pwhite
+    from clausters.seq import pwhite
 
     with pytest.raises(TypeError, match="does not play"):
-        play(Pwhite(0.0, 1.0), clock=_offline_default_clock())
+        play(pwhite(0.0, 1.0), clock=_offline_default_clock())
     with pytest.raises(TypeError, match="does not play"):
-        play(Pseq([Pbind(degree=0), 1]), clock=_offline_default_clock())
+        play(pseq([pbind(degree=0), 1]), clock=_offline_default_clock())

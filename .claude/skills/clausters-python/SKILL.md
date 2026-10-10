@@ -91,14 +91,14 @@ sdef.send(srv, wait=...)         # same shape for UGen defs
 
 Two idioms — pick by the shape of the logic, not by habit.
 
-**Event patterns** — for streams of notes. A `Pbind` zips value patterns into
+**Event patterns** — for streams of notes. A `pbind` zips value patterns into
 `Event`s; each event plays itself (`/synth_new` with controls, then a scheduled
 `/node_free`), so you never hand-write a bundle:
 
 ```python
-from clausters.seq import Pbind, Pseq, Pwhite
-pat = Pbind(instrument="rlpf", freq=110.0, cutoff=Pseq([400,900,1600]),  # finite -> ends
-            amp=Pwhite(0.08, 0.18), dur=0.25, legato=1.0)
+from clausters.seq import pbind, pseq, pwhite
+pat = pbind(instrument="rlpf", freq=110.0, cutoff=pseq([400,900,1600]),  # finite -> ends
+            amp=pwhite(0.08, 0.18), dur=0.25, legato=1.0)
 pat.play(clock, server)                # EventStreamPlayer: a Routine yielding event.delta()
 # or: Session.nrt(tempo=2).play(pat)
 ```

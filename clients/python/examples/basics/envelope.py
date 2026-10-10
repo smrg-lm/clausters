@@ -12,7 +12,7 @@ The point of interest is the SynthDef: a sine shaped by an ``EnvGen`` playing an
 ``FREE_SELF``, so the synth stays alive exactly as long as its sound and then
 frees itself -- no ``/node_free`` bookkeeping from the client.
 
-``Pbind(..., has_gate=True)`` is what closes the gate: for each note the player
+``pbind(..., has_gate=True)`` is what closes the gate: for each note the player
 sends ``gate 0`` after the note's ``sustain`` instead of freeing the node
 outright, which starts the release segment; the synth disappears when that
 release finishes. The built-in ``default`` instrument carries a gated envelope
@@ -40,7 +40,7 @@ from clausters.defs import (
     out,
     sine,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
 #: git-ignored directory every generator in this tree writes to -- beside the
@@ -77,10 +77,10 @@ def adsr_pad(name: str = "adsr_pad") -> SynthDef:
 # release tail is audible before the next note.
 
 # %%
-phrase = Pbind(
+phrase = pbind(
     instrument="adsr_pad",
     has_gate=True,
-    degree=Pseq([0, 2, 4, 7], repeats=2),
+    degree=pseq([0, 2, 4, 7], repeats=2),
     dur=0.5,
     sustain=0.35,
     amp=0.2,

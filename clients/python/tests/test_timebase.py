@@ -19,7 +19,7 @@ from clausters.base import (
 from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.defs import Server
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.defs import Synth
 
 

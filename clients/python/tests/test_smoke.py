@@ -39,14 +39,14 @@ def test_enumerative_and_plumbing_names_stay_in_their_module():
     # Too many to spell out flat: the UGen callables, the value patterns, the
     # widgets. Reached through the layer above, not instantiated: the
     # transports and the process launchers.
-    for name in ("sine", "Pbind", "knob",
+    for name in ("sine", "pbind", "knob",
                  "Clausters", "ShmClient", "ServerProcess", "GuiProcess",
                  "default_shm_path", "CommandError",
                  # a base nobody constructs: Synth.set already carries
                  # Node.set's docstring by inheritance
                  "Node", "Expr", "NodeInfo", "Tree"):
         assert name not in clausters.__all__, name
-    assert clausters.defs.sine and clausters.seq.Pbind and clausters.gui.knob
+    assert clausters.defs.sine and clausters.seq.pbind and clausters.gui.knob
     assert clausters.ipc.Clausters and clausters.ipc.ShmClient
     assert clausters.launch.ServerProcess and clausters.launch.GuiProcess
     assert clausters.errors.CommandError

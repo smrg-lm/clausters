@@ -18,10 +18,10 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 ## `clausters.seq` — sequencing
 
 - `Event` — a note plays a synth and frees it after its sustain.
-- The value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`, an
+- The value patterns (`pseq`, `pwhite`, `pseries`, ...) and `pbind`, an
   `EventPattern` — a pattern is the definition of a generator, and only one
   whose values are events plays. The random
-  patterns (`Pwhite`, `Prand`) draw from the **random context** — the running
+  patterns (`pwhite`, `prand`) draw from the **random context** — the running
   routine's generator, derived at creation from the context that created it,
   seeded per session (`session.seed(n)`, or `clausters.seed(n)` for the
   default session; sclang's model, no per-pattern seeds). One seed reproduces that
@@ -32,7 +32,7 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
   `choose`, `wchoose`, `gauss`, …, with the whole numbers as `irand`, `irand2`,
   `irrand`), and `current_rng()` and `spawn_rng()` for the stream itself (a
   `clausters.Rng`, which draws the same by method).
-- `EventStreamPlayer` — `Pbind(...).play(clock, server)` runs live or builds an NRT score depending on which interface the `Server` holds, with yield-exact timing (monotonic pacing, wall-clock timetags).
+- `EventStreamPlayer` — `pbind(...).play(clock, server)` runs live or builds an NRT score depending on which interface the `Server` holds, with yield-exact timing (monotonic pacing, wall-clock timetags).
 
 ## `clausters.defs` — the server side
 
@@ -65,7 +65,7 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 
 The names that make up this layer's core — `Server`, `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`, `GraphDef`, `Bus`, `Buffer` — are re-exported at the top level, so `from clausters import Server, Group, SynthDef, Bus` reads like the sequencing and timing imports beside it. The UGen and signal callables are not: they are a vocabulary of hundreds of names, and they stay under `clausters.defs`.
 
-That is the whole rule for the top level, and it holds for every layer: **what you name while playing is flat, what is enumerative is named through its module.** So `seq.Pbind` and `gui.knob`, like `defs.sine` — and, for the same reason from the other side, the transports and process launchers (`ipc.Clausters`, `ipc.ShmClient`, `launch.ServerProcess`, `launch.GuiProcess`) stay under theirs: you reach those as a property or an argument of the layer above, never by instantiating them. The layer modules themselves *are* re-exported, so `from clausters import *` gives you `defs`, `seq`, `gui`, `form`, `base`, `ipc`, `launch` and `errors` to reach through.
+That is the whole rule for the top level, and it holds for every layer: **what you name while playing is flat, what is enumerative is named through its module.** So `seq.pbind` and `gui.knob`, like `defs.sine` — and, for the same reason from the other side, the transports and process launchers (`ipc.Clausters`, `ipc.ShmClient`, `launch.ServerProcess`, `launch.GuiProcess`) stay under theirs: you reach those as a property or an argument of the layer above, never by instantiating them. The layer modules themselves *are* re-exported, so `from clausters import *` gives you `defs`, `seq`, `gui`, `form`, `base`, `ipc`, `launch` and `errors` to reach through.
 
 See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/server_sync` barrier.
 

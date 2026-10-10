@@ -1,0 +1,116 @@
+# Patterns
+
+A **pattern** is a description of a sequence of values: `pseq([60, 62, 64])` describes three numbers, `pwhite(0, 1)` an endless run of random ones. It computes nothing until something walks it, and it can be walked as many times as you like. This page is about what a pattern is, the two kinds there are, how they compose, and how to write one of your own; the patterns themselves are listed by family at the end and documented in the API reference (`clausters.seq.patterns`).
+
+## A description and its walks
+
+Iterating a pattern starts a **stream** — one walk over it — and the stream yields the values:
+
+```python
+from clausters.seq import pseq, pseries
+
+melody = pseq([60, 62, 64])
+for note in melody:
+    print(note)            # 60, 62, 64
+list(melody)               # [60, 62, 64] -- a second walk starts again
+```
+
+**A pattern holds no state of its own.** Whatever a walk has to remember — where it is in a list, the value a random walk has reached, a seed — lives in that walk, so two loops over the same pattern never disturb each other, and a pattern can be handed to two players at once. That is also why building one is cheap: it stores its arguments (a list it is given is copied, so editing the list afterwards does not change the pattern) and starts nothing.
+
+An **endless pattern** is bounded by whoever walks it, never read whole:
+
+```python
+from itertools import islice
+
+list(islice(pseries(0, 2), 4))   # [0, 2, 4, 6]
+for x in pseries(0, 2):
+    if x > 10:
+        break
+```
+
+The loop is the first way to see what a pattern yields, and the quickest: no clock, no server.
+
+## Value patterns and event patterns
+
+There are two kinds of pattern, and **they differ in what their stream yields**:
+
+- A **value pattern** yields values — numbers, lists, anything a key of an event takes. `pseq`, `pwhite`, `pseries` are value patterns. A value pattern does not play: there is nothing in a number to sound.
+- An **event pattern** yields `Event`s, and it is the only kind that plays. `pbind` is the one that builds events: it binds each key to a value pattern and yields one event per step, each key's value the next of its pattern.
+
+```python
+from clausters.seq import pbind, pseq, pwhite
+
+phrase = pbind(degree=pseq([0, 2, 4, 7]), amp=pwhite(0.1, 0.2), dur=0.25)
+for event in phrase:
+    print(event["degree"], event["amp"])
+phrase.play()              # a value pattern has no play
+```
+
+A `pbind` ends when any of its keys' patterns ends, and a bare value (`dur=0.25`) is held for every event. Each value pattern given to it receives **the event being built** as it is asked for its value — the incoming value, below — so a key can read what the keys before it chose.
+
+**Which kind a pattern is, is decided when it is built.** A list pattern over event patterns only is an event pattern: `pseq([intro, verse, verse])`, where each is a `pbind`, is a phrase of phrases and plays. Over values, or a mix, it is a value pattern. A filter pattern takes the kind of what it filters (`pn(phrase, 4)` plays). `isinstance(p, EventPattern)` answers.
+
+## Patterns compose by operators
+
+A pattern composes with **the same operators a UGen does**, by the same names, and the result is a pattern:
+
+```python
+pseq([74, 60, 46]) + 2                 # 76, 62, 48
+(pseries(0, 7) % 12 + 60).midicps()    # a cycle of fifths, as frequencies
+pseq([1, 2, 3]) * pseq([10, 20])       # 10, 40 -- ends with the shorter
+```
+
+Each value is computed by the `clausters.base.builtins` function of the operator's name — the same function a list is computed by, and the same the server runs for a UGen — so `pseq([69]).midicps()`, `midicps([69])` and `sine(...).midicps()` answer with one rule. An operand that is not a pattern is the same value at every step; two patterns are walked together, one value from each per step, and the composition ends when either does. A composed pattern is a pattern like any other: it iterates, embeds, repeats under `pn`.
+
+**An operator applies to each value a stream yields.** That is what makes it a pattern's: a stream may never end, and an operator never needs to see more than the value in hand. A function that reads a **whole list** — `normalize` needs the minimum and the maximum, `normalizesum` the sum — is not an operator and a pattern does not have it; apply it to the list before the list becomes a pattern:
+
+```python
+from clausters.base.builtins import normalize
+
+pseq(normalize([3, 7, 5]))             # 0.0, 1.0, 0.5
+```
+
+**An event pattern refuses an operator.** It yields events, and an event has no arithmetic; `pbind(...) + 2` raises and says so. What composes is the value patterns inside it.
+
+A **stream** composes the same way: `pseq([1, 2]).stream() + 1` is a stream of 2, 3, and so is a `Routine` times a number.
+
+## Writing a pattern
+
+A pattern is written as a **generator function** under `pattern`, as a UGen is a function returning a graph node. The name becomes a function that builds the pattern; the generator runs once per walk:
+
+```python
+from clausters.seq import embed, pattern, pseq
+
+@pattern
+def pcount(inval, n):
+    "0, 1, ... n - 1."
+    for i in range(n):
+        inval = yield i
+    return inval
+
+list(pcount(3))                  # [0, 1, 2]
+list(pseq([pcount(2), 9]))       # [0, 1, 9] -- embedded like any pattern
+pcount(4) * 10                   # and composed like one
+```
+
+The generator receives the **incoming value** first — `inval` — and then the arguments the pattern was built with. The incoming value is what whoever walks the pattern hands it at each step: for a key of a `pbind`, the event being built; for a plain loop, `None`. Each `yield` gives a value and receives the next incoming value, and the generator returns the last one when it ends. A pattern that does not need it passes it along unread, as `pcount` does.
+
+To put another pattern's values in place, **embed** it: `inval = yield from embed(item, inval)` yields every value of `item` (or `item` itself, if it is a plain value) and hands back the incoming value where it stopped — which is how `pseq` walks its items.
+
+`pattern(events=True)` builds an event pattern, whose generator yields events; `events` may also be a function of the arguments, which is how a list pattern decides when it is built.
+
+## The families
+
+The patterns live in `clausters.seq.patterns`, one module per family, and are all re-exported from `clausters.seq`. Each pattern's description says what it yields and which kind it is.
+
+| Family | What it yields | Patterns |
+|---|---|---|
+| `valuepatterns` | values computed from the arguments | `pconst`, `pseries`, `pgeom` |
+| `randompatterns` | random values, from the random context | `pwhite` |
+| `listpatterns` | values read from a list | `pseq`, `pser`, `prand` |
+| `filterpatterns` | another pattern, transformed | `pn` |
+| `funcpatterns` | values a function computes when asked | `pfunc` |
+| `eventpatterns` | events | `pbind` |
+| `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
+
+The random patterns draw from the **random context**, so one seed reproduces them with everything else in a script — see [Routines and clocks](routines-and-clocks.md#the-random-context-one-seed-per-session).

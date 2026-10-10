@@ -76,10 +76,10 @@ Or hand a **pattern** to the session; its clock runs in its own thread, so the
 REPL stays yours:
 
 ```python
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
-session.play(Pbind(instrument="beep", freq=Pseq([330, 440, 550, 660], repeats=8),
-                   dur=0.25, amp=Pwhite(0.1, 0.2)))
+session.play(pbind(instrument="beep", freq=pseq([330, 440, 550, 660], repeats=8),
+                   dur=0.25, amp=pwhite(0.1, 0.2)))
 session.start()      # keep typing while it plays
 session.stop()
 session.close()      # stops everything the session started (server, GUI)
@@ -117,8 +117,8 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   server's sample clock over UDP (`Server.sample_clock()`) for drift-free
   `/sched_at` timing without shared memory.
 - `clausters.seq` — sequencing: `Event` (a note plays a synth and frees it
-  after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
-  `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
+  after its sustain), the value patterns (`pseq`, `pwhite`, `pseries`, …) and
+  `pbind`, and `EventStreamPlayer`. `pbind(...).play(clock, server)` runs live
   or builds an NRT score by which interface the `Server` holds — with
   **yield-exact** timing (monotonic pacing, wall-clock timetags). `timeline`
   adds **static timelines with a random-access playhead** and a

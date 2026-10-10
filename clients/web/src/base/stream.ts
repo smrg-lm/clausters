@@ -21,6 +21,9 @@ import { spawnRng } from "./rand.ts";
 import type { Rng } from "./rand.ts";
 import type { TempoClock } from "./clock.ts";
 import type { AppClock } from "./appclock.ts";
+import { AbstractObject } from "./absobject.ts";
+import type { Composed, Fan } from "./absobject.ts";
+import { valueOp } from "./builtins.ts";
 
 /** Thrown (and caught by the clock) to end a stream normally. */
 export class StopStream extends Error {
@@ -53,12 +56,16 @@ export class YieldAndReset extends Error {
 /**
  * A lazy sequence: `next()` produces values until it throws `StopStream`.
  *
+ * A stream composes with the operators a pattern does: `stream.add(2)` is a
+ * stream whose every value is this one's plus 2, computed by the `builtins`
+ * function of the operator's name.
+ *
  * Concrete streams carry their own random generator (`rng`), derived from the
  * creating context at construction (see `base/rand.ts`): random values drawn
  * while a stream runs come from *its* stream, so one root seed reproduces a
  * whole script and concurrent routines stay reproducible per routine.
  */
-export abstract class Stream {
+export abstract class Stream extends AbstractObject<Stream, unknown> {
     /** The stream's own random generator. */
     rng: Rng | null = null;
     /**
@@ -93,6 +100,16 @@ export abstract class Stream {
      */
     reset(): void {}
 
+    // ---- AbstractObject: an operator composes a stream ----
+
+    protected binop<T>(selector: string, other: T): Composed<Stream, T, Fan<never, never>> {
+        return new OpStream(selector, [this, other]) as unknown as Composed<Stream, T, Fan<never, never>>;
+    }
+
+    protected unop(selector: string): Stream {
+        return new OpStream(selector, [this]);
+    }
+
     /**
      * Schedules this stream to start on `clock`; returns itself.
      *
@@ -120,6 +137,32 @@ export abstract class Stream {
             }
             yield value;
         }
+    }
+}
+
+/**
+ * Streams composed by an operator: each `next` takes one value from every
+ * operand stream (a bare operand is the same value every time) and applies the
+ * operator; it ends when any operand ends.
+ */
+export class OpStream extends Stream {
+    readonly selector: string;
+    private readonly fn: (...values: unknown[]) => unknown;
+    private readonly operands: readonly unknown[];
+
+    constructor(selector: string, operands: readonly unknown[]) {
+        super();
+        this.selector = selector;
+        this.fn = valueOp(selector) as (...values: unknown[]) => unknown;
+        this.operands = operands;
+    }
+
+    next(inval?: unknown): unknown {
+        return this.fn(...this.operands.map((x) => (x instanceof Stream ? x.next(inval) : x)));
+    }
+
+    reset(): void {
+        for (const x of this.operands) if (x instanceof Stream) x.reset();
     }
 }
 

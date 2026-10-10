@@ -4,7 +4,7 @@
     use `Linker`
 
 A page names what it talks about in backticks -- `boot`, `Server`,
-`clausters.seq.Pbind`, `TempoClock.unlock` -- and the reference has an anchor
+`clausters.seq.pbind`, `TempoClock.unlock` -- and the reference has an anchor
 for every documented object, so the name can be a link. `gen_api.py` writes the
 table of those objects (`api-names.json`, beside this file) when it generates
 the reference, links the reference's own pages with it, and this module links

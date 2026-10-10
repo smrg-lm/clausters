@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render an event pattern to a Standard MIDI File.
 
-The same `Pbind` you would play live or render to audio can target a **MIDI
+The same `pbind` you would play live or render to audio can target a **MIDI
 destination** instead: `MidiServer` is the double-dispatch counterpart of the
 OSC `Server`. A pattern played on a `TempoClock` with a `MidiServer` renders
 each note `Event` as a note on/off pair into a `MidiScore` (in beats), and
@@ -23,7 +23,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import LogicalTimebase, MidiServer, TempoClock
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import EventPattern, pbind, pseq, pwhite
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
 #: git-ignored directory every generator in this tree writes to -- beside the
@@ -32,13 +32,13 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 os.makedirs(OUT, exist_ok=True)
 
 
-def phrase() -> Pbind:
+def phrase() -> EventPattern:
     """A short phrase: a walking scale degree, varied dynamics and durations."""
-    return Pbind(
+    return pbind(
         instrument="default",  # only the name matters for MIDI (no synth is made)
-        degree=Pseq([0, 1, 2, 3, 4, 3, 2, 1, 0], repeats=2),
-        dur=Pseq([0.5, 0.5, 0.25, 0.25, 1.0], repeats=4),
-        amp=Pwhite(0.4, 0.9),
+        degree=pseq([0, 1, 2, 3, 4, 3, 2, 1, 0], repeats=2),
+        dur=pseq([0.5, 0.5, 0.25, 0.25, 1.0], repeats=4),
+        amp=pwhite(0.4, 0.9),
         legato=0.9,
     )
 

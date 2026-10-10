@@ -36,7 +36,7 @@ import { OscNrtInterface } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
 import type { EventDestination } from "../src/seq/event.ts";
-import { Pbind, Pseq } from "../src/seq/pattern.ts";
+import { pbind, pseq } from "../src/seq/index.ts";
 import { Moment } from "../src/base/moment.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { ManualTimebase } from "../src/base/timebase.ts";
@@ -314,16 +314,16 @@ test("the module default is pinned, never opened behind the page's back", async 
 // ---- the milestone's own acceptance ----
 
 test("a pattern plays to MIDI on the beat grid it plays to a server", async () => {
-    // The same `Pbind`, twice: once into a MidiServer, once into a stand-in
+    // The same `pbind`, twice: once into a MidiServer, once into a stand-in
     // that records what an OSC destination would have been asked for. What has
     // to agree is not the messages -- they are different protocols -- but
     // *when*: MIDI carries no timetags, so its only timing is the beat the
     // clock was on when the event was rendered, and that beat has to be the
     // one the OSC leg stamped its bundle with.
     const pattern = () =>
-        new Pbind({
-            midinote: new Pseq([60, 62, 64, 65]),
-            dur: new Pseq([0.5, 0.5, 1, 1]),
+        pbind({
+            midinote: pseq([60, 62, 64, 65]),
+            dur: pseq([0.5, 0.5, 1, 1]),
             amp: 0.5,
         });
 
@@ -379,8 +379,8 @@ test("a zone puts each note on the member the reference client puts it on", asyn
         const ticker = manualTicker();
         const clock = new TempoClock(1.0, { timebase, ticker }).start();
         const run = runner(clock, timebase, ticker);
-        new Pbind(Object.fromEntries(Object.entries(figure).map(
-            ([key, value]) => [key, Array.isArray(value) ? new Pseq(value) : value],
+        pbind(Object.fromEntries(Object.entries(figure).map(
+            ([key, value]) => [key, Array.isArray(value) ? pseq(value) : value],
         ))).play(midi, { clock });
         await run(4.0);
         assert.deepEqual(

@@ -84,7 +84,7 @@ node = play(sine(440.0) * 0.2)   # a bare signal, sounding now...
 node.free()                         # ...until you free it
 ```
 
-`Server().boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
+`Server().boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
 
 Start a session. `Session.live()` attaches to a running server, or starts one for you if none is up:
 
@@ -134,19 +134,19 @@ Both defs are now installed on the server and play the same way — a `Synth` is
 Instead of starting nodes by hand, hand a **pattern** to the session. It plays on the session's clock, which runs in its own thread, so the REPL stays yours:
 
 ```python
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
-session.play(Pbind(instrument="beep",
-                   freq=Pseq([330, 440, 550, 660], repeats=8),
+session.play(pbind(instrument="beep",
+                   freq=pseq([330, 440, 550, 660], repeats=8),
                    dur=0.25,
-                   amp=Pwhite(0.1, 0.2)))
+                   amp=pwhite(0.1, 0.2)))
 session.start()      # the clock runs; keep typing while it plays
 session.stop()       # ...and stop it whenever
 ```
 
-`Pbind` (like `Event`) constructs exactly as a `dict` does: the keyword form
+`pbind` (like `Event`) constructs exactly as a `dict` does: the keyword form
 above is a shorthand, and a plain mapping —
-`Pbind({"instrument": "beep", "dur": 0.25})` — works the same, matching how
+`pbind({"instrument": "beep", "dur": 0.25})` — works the same, matching how
 `Synth` takes its controls.
 
 When you are done, close the session. Everything it started — the server it booted, a GUI it opened — stops with it:

@@ -32,7 +32,7 @@ import { Group } from "../src/defs/node.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { SampleClockTimebase } from "../src/base/timebase.ts";
-import { Event, Pbind, Pseq, Timeline } from "../src/seq/index.ts";
+import { Event, pbind, pseq, Timeline } from "../src/seq/index.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Synth } from "../src/defs/node.ts";
 
@@ -144,9 +144,9 @@ test("a pattern played over WebSocket starts and ends its notes on time", {
 
         const clock = new TempoClock(1.0);
         clock.start();
-        new Pbind({
+        pbind({
             instrument: "ts_seq_beep",
-            degree: new Pseq([0, 2, 4, 7]),
+            degree: pseq([0, 2, 4, 7]),
             dur: 0.25, // 250 ms apart
             legato: 4.0, // sustain 1 beat: the four overlap
         }).play(server, { clock });
@@ -189,9 +189,9 @@ test("the sample timebase anchors on the server's own clock", {
         const log = noteLog(server);
         const clock = new TempoClock(1.0, { timebase });
         clock.start();
-        new Pbind({
+        pbind({
             instrument: "ts_seq_beep",
-            degree: new Pseq([0, 4]),
+            degree: pseq([0, 4]),
             dur: 0.5,
             legato: 2.0, // sustain 1 beat
         }).play(server, { clock });
@@ -245,11 +245,11 @@ test("two clocks join one grid and land on the same bar", {
         // Started a beat apart, both land on the same bar line of the grid.
         const log = noteLog(server);
         wall.start();
-        new Pbind({ instrument: "ts_seq_beep", degree: new Pseq([0]), dur: 1 })
+        pbind({ instrument: "ts_seq_beep", degree: pseq([0]), dur: 1 })
             .play(server, { clock: wall, quant: 4 });
         await sleep(500);
         locked.start();
-        new Pbind({ instrument: "ts_seq_beep", degree: new Pseq([7]), dur: 1 })
+        pbind({ instrument: "ts_seq_beep", degree: pseq([7]), dur: 1 })
             .play(server, { clock: locked, quant: 4 });
 
         await sleep(2600);

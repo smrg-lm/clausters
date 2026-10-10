@@ -145,7 +145,7 @@ change. The tour ends on all three.
         const fade = play(new Automation({
           target: { control: "amp", channel: 0 }, points: [[0.0, 0.02], [1.6, 0.3]],
         }));
-        play(new seq.Pbind({ instrument: "default", degree: new seq.Pseq([0, 2, 4, 7]), dur: 0.4 }));
+        play(seq.pbind({ instrument: "default", degree: seq.pseq([0, 2, 4, 7]), dur: 0.4 }));
         await wait(PAUSE + 1000);
         fade.stop();
 
@@ -166,18 +166,18 @@ change. The tour ends on all three.
         // in the page's own storage -- with no engine involved.
         log("rendering a phrase to a WAV (offline, no audio device)");
         const wav = "out/verbs.wav";
-        await render(new seq.Pbind({
+        await render(seq.pbind({
           instrument: "default",
-          degree: new seq.Pseq([0, 4, 7, 12]),
+          degree: seq.pseq([0, 4, 7, 12]),
           dur: 0.25,
         }), { path: wav });
 
         log("a session that never sounds: the same verbs, rendered");
         const offline = await Session.nrt();
         offline.clock.setTempo(2.0);
-        offline.play(new seq.Pbind({
+        offline.play(seq.pbind({
           instrument: "default",
-          degree: new seq.Pseq([0, 4, 7]),
+          degree: seq.pseq([0, 4, 7]),
           dur: 0.25,
         }));
         const stats = await offline.render({ channels: 1 });

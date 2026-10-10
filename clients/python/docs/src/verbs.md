@@ -39,7 +39,7 @@ function is the uniform entry that picks the right one.
 | You hand it | It does | Returns |
 |---|---|---|
 | an `Event`, or a plain **dict** of event keys | one note, now (timetagged at the logical beat inside a routine) | the **completed event** — the derived keys (`freq`, `sustain`, …) plus `node`/`server` written in; `.free()` cuts it, `.release()` ends it musically (gate 0 when it releases by gate) |
-| an event pattern (`EventPattern`: a `Pbind`, or a `Pseq`/`Prand`/`Pn` over event patterns only) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
+| an event pattern (`EventPattern`: a `pbind`, or a `pseq`/`prand`/`pn` over event patterns only) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
 | a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
@@ -49,7 +49,7 @@ function is the uniform entry that picks the right one.
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
 
-A **value pattern** (`Pseq([1, 2, 3])`, `Pwhite`, …) is not a playable: a
+A **value pattern** (`pseq([1, 2, 3])`, `pwhite`, …) is not a playable: a
 `Pattern` is the definition of a generator, and what plays is a pattern whose
 values are events. `play` refuses one by name; `render` generates its values.
 
@@ -113,7 +113,7 @@ ranges):
 | an `Env` | the curve as the engine's own `EnvGen` plays it (gate-released at its sustain point) |
 | a `Bpf` | the same curve in absolute coordinates, evaluated the same way, labelled with the curve's own name |
 | a `Buffer` (or buffer number) | its contents, fetched from the live server |
-| any iterable of numbers — a list, a value pattern (`Pseq`, `Pwhite`, …), a stream | the sequence, index on the x axis (endless ones cap at `n`) |
+| any iterable of numbers — a list, a value pattern (`pseq`, `pwhite`, …), a stream | the sequence, index on the x axis (endless ones cap at `n`) |
 
 **Renderables** — every offline path but a value pattern's returns a
 `RenderStats` (see [What a render gives back](#what-a-render-gives-back)):
@@ -125,7 +125,7 @@ ranges):
 | a `FormElement` | with a `destination`, delegates to the arrangement's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
 | a `Timeline` | the same dual path |
 | an event pattern, a `Routine`/`Stream`, a generator | offline bounce only — they are forward-only; sounding them live is `play`'s job |
-| a value pattern (`Pseq`, `Pwhite`, …) | the values it generates, as a list (an endless one needs `count`) |
+| a value pattern (`pseq`, `pwhite`, …) | the values it generates, as a list (an endless one needs `count`) |
 
 **The tempo is the clock's.** Neither verb takes one: `play` and `render` both
 take an optional `clock`, and use a default one when none is given. A render
@@ -136,7 +136,7 @@ session of the render's own at tempo 1.0:
 ```python
 offline = Session.nrt()
 offline.clock.set_tempo(2.0)                      # two beats a second
-render(Pbind(degree=Pseq([0, 2, 4]), dur=1.0), clock=offline.clock)
+render(pbind(degree=pseq([0, 2, 4]), dur=1.0), clock=offline.clock)
 ```
 
 ## How it works
@@ -174,7 +174,7 @@ being already generated, *is* playable. The full story is in
 
 ## Caveats
 
-- **An endless source needs `until`.** `render(Pbind(...))` with an infinite
+- **An endless source needs `until`.** `render(pbind(...))` with an infinite
   pattern would never drain; pass `until=beats` to bounce a fixed length. With
   none, an event pattern is refused after a million events rather than rendered
   forever, and a value pattern is bounded the same way by `count`.
@@ -338,7 +338,7 @@ The seed sequence belongs to the render, so a fixed seed reproduces in any
 process, at any worker count, in memory or through a file.
 
 This is the same rule the client's own random context has always followed: a
-`Pwhite` draws unpredictably until `main.seed(n)` or `session.seed(n)` pins it
+`pwhite` draws unpredictably until `main.seed(n)` or `session.seed(n)` pins it
 (see [Routines and clocks](routines-and-clocks.md)). The two seeds are
 independent — one is the server's noise UGens, the other is the client's
 patterns — but they answer to the same idea, so a take that has to repeat

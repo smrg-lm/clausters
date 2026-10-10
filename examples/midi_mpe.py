@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters import Session  # noqa: E402
 from clausters.base import MidiRtInterface, MidiServer, TempoClock  # noqa: E402
-from clausters.seq import Pbind, Pseq  # noqa: E402
+from clausters.seq import pbind, pseq  # noqa: E402
 
 SERVER_PORT = "clausters-in"
 OUR_PORT = "clausters-mpe"
@@ -87,7 +87,7 @@ def main():
                 # with its own value of every key in `per_note`.
                 for i, key in enumerate(chord):
                     keys = {name: values[i] for name, values in per_note.items()}
-                    Pbind(instrument="default", midinote=Pseq([key]), dur=2.0,
+                    pbind(instrument="default", midinote=pseq([key]), dur=2.0,
                           legato=0.9, **keys).play(clock, midi)
 
             print("a chord bent apart: a quarter tone up, one down, none")

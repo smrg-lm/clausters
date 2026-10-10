@@ -586,3 +586,63 @@ export const degreeToMidinote = (
     scale: readonly number[],
 ): number =>
     coreDegreeToMidinote(degree, alter, octave, root, Float32Array.from(scale));
+
+// ---- the operators by name ----
+//
+// What something that composes values (a pattern, a stream) computes the
+// operator it was composed with by: the wire selector names the function, in
+// the same four tables as `clausters/base/builtins.py`.
+
+const UNARY_SELECTORS = [
+    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "exp10",
+    "log", "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
+    "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
+    "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
+    "dbamp", "ampdb", "octcps", "cpsoct", "bitnot", "rectwindow", "hanwindow",
+    "welwindow", "triwindow", "ramp", "scurve",
+] as const;
+
+const BINARY_SELECTORS = [
+    "add", "sub", "mul", "div", "mod", "pow", "min", "max", "atan2", "gt", "lt",
+    "ge", "le", "eq", "ne", "bitand", "bitor", "bitxor", "lshift", "rshift",
+    "hypot", "ring1", "ring2", "ring3", "ring4", "sumsqr", "difsqr", "sqrsum",
+    "sqrdif", "absdif", "thresh", "clip2", "excess", "round", "trunc", "fold2",
+    "wrap2", "gcd", "lcm", "hypotapx", "idiv", "roundup", "urshift", "amclip",
+    "scaleneg", "firstarg",
+] as const;
+
+/** The unary operators by wire selector. */
+export const UNARY: Readonly<Record<string, UnaryFn>> = Object.fromEntries(
+    UNARY_SELECTORS.map((s) => [s, un(s)]),
+);
+
+/** The binary operators by wire selector. */
+export const BINARY: Readonly<Record<string, BinaryFn>> = Object.fromEntries(
+    BINARY_SELECTORS.map((s) => [s, bin(s)]),
+);
+
+/** The operators between two bounds. */
+export const BOUND: Readonly<Record<string, (x: Num, lo: Num, hi: Num) => Num>> = {
+    clip, wrap, fold,
+};
+
+/**
+ * The n-ary operators by name: the range maps, which take the input ends and
+ * the output ends after the value.
+ */
+export const NARY: Readonly<Record<string, (x: Num, ...args: never[]) => Num>> = {
+    linlin, linexp, explin, expexp, lincurve, curvelin,
+};
+
+/**
+ * The value function an operator selector names, in any of the tables: how
+ * something that composes values (a pattern, a stream) computes the operator
+ * it was composed with.
+ */
+export function valueOp(selector: string): (...values: never[]) => unknown {
+    for (const table of [UNARY, BINARY, BOUND, NARY] as const) {
+        const fn = (table as Record<string, unknown>)[selector];
+        if (fn !== undefined) return fn as (...values: never[]) => unknown;
+    }
+    throw new Error(`no value operator '${selector}'`);
+}

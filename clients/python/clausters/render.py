@@ -60,8 +60,8 @@ from clausters import render
 from clausters.defs import sine
 
 stats = render(sine(440.0) * 0.2, dur=2.0)
-render(Pbind(degree=Pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
-render(Pseq([1, 2, 3], 2))                          # [1, 2, 3, 1, 2, 3]
+render(pbind(degree=pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
+render(pseq([1, 2, 3], 2))                          # [1, 2, 3, 1, 2, 3]
 render(multitrack, until=64.0, path="take.wav")    # an arrangement, bounced
 ```
 """
@@ -341,7 +341,7 @@ def _values(pattern, count):
         if len(values) == limit:
             if count is None:
                 raise RuntimeError(
-                    f"render: the {type(pattern).__name__} did not end after "
+                    f"render: {pattern!r} did not end after "
                     f"{MAX_BOUNCED_EVENTS} values -- pass count= to take a number "
                     f"of them"
                 )

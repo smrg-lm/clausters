@@ -67,17 +67,17 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         Buffer, Routine, Session, Synth, channels, readSoundfile,
       } from "../../dist/index.js";
       import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
-      import { Pbind, Pseq, Pwhite } from "../../dist/seq/index.js";
+      import { pbind, pseq, pwhite } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
       const SR = 48_000.0;
 
-      const phrase = () => new Pbind({
+      const phrase = () => pbind({
         instrument: "default", dur: 0.25, legato: 0.9, amp: 0.22,
-        freq: new Pseq([220.0, 277.2, 330.0, 440.0, 330.0, 277.2], 2),
-        pan: new Pwhite(-0.6, 0.6),
+        freq: pseq([220.0, 277.2, 330.0, 440.0, 330.0, 277.2], 2),
+        pan: pwhite(-0.6, 0.6),
       });
 
       /**

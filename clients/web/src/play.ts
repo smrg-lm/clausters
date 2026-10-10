@@ -8,7 +8,7 @@
 //
 // - an `Event` -- or a plain **object** of event keys -- -> a note (immediate
 //   outside a clock, timetagged inside one);
-// - an `EventPattern` (a `Pbind`) -> an `EventStreamPlayer` on a clock;
+// - an `EventPattern` (a `pbind`) -> an `EventStreamPlayer` on a clock;
 // - a `Routine`/`Stream`, or a bare **generator** (object or function) ->
 //   scheduled on a clock;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) -> sent and instanced on
@@ -39,7 +39,7 @@
 // ```ts
 // const s = (await Session.embed()).activate();
 // play(new Event({ degree: 0 }));                          // one note, now
-// play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 })); // a phrase
+// play(pbind({ degree: pseq([0, 2, 4]), dur: 0.5 })); // a phrase
 // ```
 
 import { main } from "./base/main.ts";
@@ -126,9 +126,9 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     }
     if (playable instanceof Pattern) {
         throw new TypeError(
-            `a ${playable.constructor.name} of values does not play: a pattern is the definition `
-            + "of a generator, and it plays when its values are events (a Pbind, or a "
-            + "Pseq/Prand/Pn over event patterns only). render() generates a value pattern's values",
+            `${playable} is a pattern of values and does not play: a pattern is the definition `
+            + "of a generator, and it plays when its values are events (a pbind, or a "
+            + "pseq/prand/pn over event patterns only). render() generates a value pattern's values",
         );
     }
     if (isGenerator(playable) || isGeneratorFunction(playable)) {
@@ -173,7 +173,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     }
     throw new TypeError(
         `don't know how to play ${String(playable)}; expected an Event or event ` +
-            "object, an EventPattern (Pbind), a Routine/Stream or generator, a " +
+            "object, an EventPattern (pbind), a Routine/Stream or generator, a " +
             "def (SynthDef/FaustDef/GraphDef) or a bare expression, a Timeline, an " +
             "EventSequence, a " +
             "Buffer, or anything with play(destination)",

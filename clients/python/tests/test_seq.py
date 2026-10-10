@@ -1,5 +1,5 @@
 """C5 tests: patterns, events, and the event stream -- including the headline
-that a Pbind plays through the seam (NRT score -> render) with **yield-exact**
+that a pbind plays through the seam (NRT score -> render) with **yield-exact**
 timing."""
 
 import struct
@@ -11,7 +11,7 @@ from clausters.base import TempoClock, OscNrtInterface
 from clausters.base import _osclib as osc
 from clausters.base.builtins import midicps
 from clausters.defs import Server
-from clausters.seq import Event, Pbind, Pn, Pgeom, Pser, Pseq, Pseries, Pwhite, rest
+from clausters.seq import Event, pbind, pn, pgeom, pser, pseq, pseries, pwhite, rest
 
 
 def _embed_or_skip():
@@ -25,14 +25,14 @@ def _embed_or_skip():
 # ---- value patterns ----
 
 def test_value_patterns():
-    assert list(Pseq([1, 2, 3], 2)) == [1, 2, 3, 1, 2, 3]
-    assert list(Pser([1, 2, 3], 4)) == [1, 2, 3, 1]
-    assert list(Pseries(0, 2, 4)) == [0, 2, 4, 6]
-    assert list(Pgeom(1, 2, 4)) == [1, 2, 4, 8]
-    assert list(Pn(Pseq([0, 1]), 2)) == [0, 1, 0, 1]
+    assert list(pseq([1, 2, 3], 2)) == [1, 2, 3, 1, 2, 3]
+    assert list(pser([1, 2, 3], 4)) == [1, 2, 3, 1]
+    assert list(pseries(0, 2, 4)) == [0, 2, 4, 6]
+    assert list(pgeom(1, 2, 4)) == [1, 2, 4, 8]
+    assert list(pn(pseq([0, 1]), 2)) == [0, 1, 0, 1]
     # nesting: a sub-pattern is embedded in place
-    assert list(Pseq([0, Pseq([1, 2]), 3])) == [0, 1, 2, 3]
-    xs = list(Pwhite(0.0, 1.0, 100))
+    assert list(pseq([0, pseq([1, 2]), 3])) == [0, 1, 2, 3]
+    xs = list(pwhite(0.0, 1.0, 100))
     assert len(xs) == 100 and all(0.0 <= x <= 1.0 for x in xs)
 
 
@@ -41,17 +41,17 @@ def test_value_patterns():
 def test_random_patterns_replay_under_the_root_seed():
     _embed_or_skip()
     from clausters.base.main import main
-    from clausters.seq import Prand
+    from clausters.seq import prand
 
     # No per-pattern seeds: seeding the root context reproduces every draw,
     # in order, across pattern kinds.
     main.seed(11)
-    a = list(Pwhite(0.0, 1.0, 8)) + list(Prand([1, 2, 3], 8))
+    a = list(pwhite(0.0, 1.0, 8)) + list(prand([1, 2, 3], 8))
     main.seed(11)
-    b = list(Pwhite(0.0, 1.0, 8)) + list(Prand([1, 2, 3], 8))
+    b = list(pwhite(0.0, 1.0, 8)) + list(prand([1, 2, 3], 8))
     assert a == b
     main.seed(12)
-    assert list(Pwhite(0.0, 1.0, 8)) != a[:8]
+    assert list(pwhite(0.0, 1.0, 8)) != a[:8]
 
 
 def test_rand_functions_draw_from_the_same_context():
@@ -180,15 +180,15 @@ def test_event_and_pbind_accept_a_dict_like_kwargs():
     assert Event({"freq": 440.0, "amp": 0.3}) == Event(freq=440.0, amp=0.3)
     assert Event({"freq": 440.0}, freq=220.0)["freq"] == 220.0
 
-    d = Pbind({"instrument": "default", "freq": Pseq([100.0, 200.0]), "dur": 0.5})
-    k = Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5)
+    d = pbind({"instrument": "default", "freq": pseq([100.0, 200.0]), "dur": 0.5})
+    k = pbind(instrument="default", freq=pseq([100.0, 200.0]), dur=0.5)
     assert list(d) == list(k)
-    merged = Pbind({"dur": 0.5}, dur=0.25, freq=Pseq([100.0]))
+    merged = pbind({"dur": 0.5}, dur=0.25, freq=pseq([100.0]))
     assert list(merged)[0]["dur"] == 0.25
 
 
 def test_pbind_yields_events_and_stops_with_finite_key():
-    p = Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5)
+    p = pbind(instrument="default", freq=pseq([100.0, 200.0]), dur=0.5)
     events = list(p)
     assert len(events) == 2                      # stops when freq runs out
     assert all(isinstance(e, Event) for e in events)
@@ -208,7 +208,7 @@ def test_pbind_timing_is_yield_exact_in_nrt():
     _embed_or_skip()
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())               # 1 beat = 1 second
-    Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
+    pbind(instrument="default", freq=pseq([262.0, 330.0, 392.0, 523.0]),
           dur=0.5, amp=0.2).play(clock, server)
     clock.render()
 
@@ -222,7 +222,7 @@ def test_pbind_renders_to_audio():
     _embed_or_skip()
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=2.0, timebase=LogicalTimebase())
-    Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0, 659.0]),
+    pbind(instrument="default", freq=pseq([262.0, 330.0, 392.0, 523.0, 659.0]),
           dur=0.5, amp=0.2).play(clock, server)
     clock.render()
     try:

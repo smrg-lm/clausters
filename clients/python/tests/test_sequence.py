@@ -161,11 +161,11 @@ def test_a_sequence_goes_to_a_midi_file_and_back():
 
 
 def test_a_timeline_renders_into_the_events_it_plays():
-    from clausters.seq import OscItem, Pbind, Pseq, Timeline
+    from clausters.seq import OscItem, pbind, pseq, Timeline
 
     child = Timeline([(0.0, Event(midinote=72, dur=1.0, legato=1.0))], tempo=4.0)
     tl = Timeline([(0.0, Event(degree=0, dur=1.0, legato=0.5)),
-                   (1.0, Pbind(midinote=Pseq([62, 64]), dur=0.5)),
+                   (1.0, pbind(midinote=pseq([62, 64]), dur=0.5)),
                    (2.0, OscItem("/cue", 1)),
                    (3.0, child)], tempo=2.0)
     seq = tl.render_events()
@@ -180,11 +180,11 @@ def test_a_timeline_renders_into_the_events_it_plays():
 
 
 def test_a_pattern_renders_into_the_events_it_plays():
-    from clausters.seq import Pbind, Pn, Pseq
+    from clausters.seq import pbind, pn, pseq
 
-    seq = Pbind(degree=Pseq([0, 2, 4]), dur=0.5).render_events()
+    seq = pbind(degree=pseq([0, 2, 4]), dur=0.5).render_events()
     assert [(beat, e["degree"]) for beat, e in seq] == [(0.0, 0), (0.5, 2), (1.0, 4)]
-    assert len(Pbind(degree=Pn(0)).render_events(until=3.5)) == 4
+    assert len(pbind(degree=pn(0)).render_events(until=3.5)) == 4
 
 
 def test_a_score_reads_into_a_sequence_and_a_sequence_engraves():

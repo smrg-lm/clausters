@@ -31,7 +31,7 @@ The synths free themselves after each note's sustain, so nothing is left behind.
 import sys
 
 from clausters import Session
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 # %% [markdown]
 # ## The phrase
@@ -39,11 +39,11 @@ from clausters.seq import Pbind, Pseq, Pwhite
 # never knows which server flavour will play it.
 
 # %%
-phrase = Pbind(
+phrase = pbind(
     instrument="default",
-    degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+    degree=pseq([0, 2, 4, 7, 4, 2], repeats=2),
     dur=0.25,
-    amp=Pwhite(0.1, 0.2),
+    amp=pwhite(0.1, 0.2),
 )
 
 # %% [markdown]

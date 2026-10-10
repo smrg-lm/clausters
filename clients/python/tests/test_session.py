@@ -7,7 +7,7 @@ from pathlib import Path
 from clausters import Session
 from clausters.base import LogicalTimebase, MonotonicTimebase, TempoClock
 from clausters.defs import Server
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 from clausters.defs import Group, Synth
 
 
@@ -36,7 +36,7 @@ def test_nrt_session_plays_and_renders():
     _embed_or_skip()
     s = Session.nrt()
     s.clock.set_tempo(2.0)
-    s.play(Pbind(instrument="default", freq=Pseq([262.0, 330.0, 392.0, 523.0]),
+    s.play(pbind(instrument="default", freq=pseq([262.0, 330.0, 392.0, 523.0]),
                  dur=0.5, amp=0.2))
     try:
         _st0 = s.render()
@@ -134,14 +134,14 @@ def _embed_session_or_skip():
 
 def test_embed_session_drives_in_process_server():
     # The embedded server is just another OSC destination: the same Session /
-    # Pbind API drives it, request/reply works through the embed interface, and
+    # pbind API drives it, request/reply works through the embed interface, and
     # the in-process engine actually advances.
     s = _embed_session_or_skip()
     try:
         embed = s.server.interface.server          # the Clausters handle
         assert s.server.status().groups >= 1       # request/reply over embed
 
-        s.play(Pbind(instrument="default", freq=Pseq([440.0, 550.0, 660.0]),
+        s.play(pbind(instrument="default", freq=pseq([440.0, 550.0, 660.0]),
                      dur=0.25, amp=0.2))
         c0 = embed.clock
         s.run(0.6)
@@ -190,8 +190,8 @@ def test_two_sessions_are_independent():
     _embed_or_skip()
     a = Session.nrt()
     b = Session.nrt()
-    a.play(Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5))
-    b.play(Pbind(instrument="default", freq=Pseq([1000.0, 2000.0, 3000.0]), dur=0.5))
+    a.play(pbind(instrument="default", freq=pseq([100.0, 200.0]), dur=0.5))
+    b.play(pbind(instrument="default", freq=pseq([1000.0, 2000.0, 3000.0]), dur=0.5))
     a.clock.render()
     b.clock.render()
 

@@ -1,6 +1,6 @@
 # Timelines
 
-The sequencing you have seen so far is **generative**: a `Routine` is a Python generator, a `Pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
+The sequencing you have seen so far is **generative**: a `Routine` is a Python generator, a `pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
 
 A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback reads it forward from a position.
 
@@ -176,7 +176,7 @@ seq.history.undo()                        # the whole block back, as Ctrl+Z woul
 
 `seq.history(label)` makes everything inside the `with` one entry, labelled with the text an undo names, and one turn, so the windows redraw once at the end; blocks nest. `undo()`, `redo()`, `can_undo` and `undo_label` walk the same order a window's Ctrl+Z walks. An event or a curve a step takes away is detached, and the step that brings it back brings back the same object.
 
-**A timeline becomes a sequence by rendering it.** `timeline.render_events()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until=` bounds a timeline that does not end on its own. An event pattern renders the same way, `Pbind(...).render_events()`.
+**A timeline becomes a sequence by rendering it.** `timeline.render_events()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until=` bounds a timeline that does not end on its own. An event pattern renders the same way, `pbind(...).render_events()`.
 
 ```python
 seq = timeline.render_events(until=16)      # what the timeline played, as data

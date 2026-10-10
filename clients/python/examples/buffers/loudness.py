@@ -39,7 +39,7 @@ import sys
 
 from clausters import Session, ipc
 from clausters.base import Routine
-from clausters.seq import Pbind, Pn, Pseq
+from clausters.seq import pbind, pn, pseq
 
 SR = 48000.0
 
@@ -53,10 +53,10 @@ CEILING_DBTP = -1.0
 # quarter beat apart, so eight seconds apiece at two beats a second.
 
 # %%
-arpeggio = Pbind(
-    freq=Pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], repeats=22),
+arpeggio = pbind(
+    freq=pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], repeats=22),
     dur=0.25,
-    amp=Pseq([Pn(0.03, 64), Pn(0.3, 64)], repeats=1),
+    amp=pseq([pn(0.03, 64), pn(0.3, 64)], repeats=1),
 )
 
 # %% [markdown]

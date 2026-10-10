@@ -210,11 +210,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **Patterns: SuperCollider's operators and library, `C70`-`C74`**
+- ⬜ **Patterns: SuperCollider's operators and library, `C71`-`C74`**
   *(`clients/python/PLAN.md`, "Patterns: SuperCollider's operators and
   library"; the port's shape in `clients/web/PLAN.md`, "Parity gaps carried
-  from the Python client")*. **Taken first**, opened 2026-10-10 by the user:
-  `C70` makes a pattern compose by operators, so it comes before the rest.
+  from the Python client")*. **Taken first**, opened 2026-10-10 by the user;
+  `C70` shipped (a pattern is a function and composes by operators).
   **Related:** `C73e` is where `Ppar` and `pvoice` (sclang's `Pmono`) land, the pattern-side question
   of "The mapping exists and is private to the `Editor`" below.
 

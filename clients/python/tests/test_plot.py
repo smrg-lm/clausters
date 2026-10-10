@@ -8,7 +8,7 @@ import pytest
 
 from clausters.gui import guidef
 from clausters.plot import PlotWindow, _sequence, plot
-from clausters.seq import Pseq, Pwhite
+from clausters.seq import pseq, pwhite
 
 SR = 48_000.0
 
@@ -80,9 +80,9 @@ def test_sequence_reads_lists_patterns_and_channels():
     assert (samples, channels, rate) == ([1.0, 2.0, 3.0], 1, 0.0)
     assert label == "sequence"
     # A finite pattern is read to its end; an endless one caps at n.
-    seq, _, _, _ = _sequence(Pseq([1.0, 2.0], repeats=2), n=100)
+    seq, _, _, _ = _sequence(pseq([1.0, 2.0], repeats=2), n=100)
     assert seq == [1.0, 2.0, 1.0, 2.0]
-    capped, _, _, _ = _sequence(Pwhite(0.0, 1.0), n=50)
+    capped, _, _, _ = _sequence(pwhite(0.0, 1.0), n=50)
     assert len(capped) == 50
     assert all(0.0 <= v <= 1.0 for v in capped)
     # A list of per-channel rows interleaves (truncated to the shortest).

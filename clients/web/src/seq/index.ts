@@ -1,10 +1,11 @@
 // The sequencing layer (mirrors `clausters/seq/__init__.py`).
 //
 // - `event` -- `Event` (a note plays a synth and schedules its release).
-// - `pattern` -- `Pattern` (the definition of a generator) and the value
-//   patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`,
-//   `Pn`, `Pconst`), plus `EventPattern`, what plays: `Pbind`, and a
-//   `Pseq`/`Prand`/`Pn` over event patterns only.
+// - `pattern` -- `Pattern` (the definition of a generator), `EventPattern` (a
+//   pattern whose stream yields events, and what plays) and `pattern`, which
+//   makes one out of a generator function.
+// - `patterns` -- the patterns, by family: `pseq`, `pser`, `prand`, `pwhite`,
+//   `pseries`, `pgeom`, `pfunc`, `pn`, `pconst` and the event pattern `pbind`.
 // - `eventstream` -- `EventStreamPlayer`.
 // - `timeline` -- `Timeline` (a static, editable, random-access sequence) and
 //   its own transport (play/pause/stop/locate/loop) and its own tempo map.
@@ -23,19 +24,12 @@ export {
     EventPattern,
     INF,
     Pattern,
-    Pbind,
-    Pconst,
-    Pfunc,
-    Pgeom,
-    Pn,
-    Prand,
-    Pser,
-    Pseq,
-    Pseries,
-    Pwhite,
-    asPattern,
+    PatternStream,
+    embed,
+    pattern,
 } from "./pattern.ts";
-export type { Bindings } from "./pattern.ts";
+export type { PatternGenerator, PatternOptions } from "./pattern.ts";
+export * from "./patterns/index.ts";
 export { Entry, Timeline, itemData, itemFromData } from "./timeline.ts";
 export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./sequence.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

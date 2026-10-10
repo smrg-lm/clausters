@@ -182,11 +182,11 @@ test("a sequence goes to a MIDI file and back", () => {
 
 test("a timeline renders into the events it plays", async () => {
     const { OscItem, Timeline } = await import("../src/seq/timeline.ts");
-    const { Pbind, Pseq } = await import("../src/seq/pattern.ts");
+    const { pbind, pseq } = await import("../src/seq/index.ts");
     const child = new Timeline([[0.0, new Event({ midinote: 72, dur: 1.0, legato: 1.0 })]], { tempo: 4.0 });
     const tl = new Timeline([
         [0.0, new Event({ degree: 0, dur: 1.0, legato: 0.5 })],
-        [1.0, new Pbind({ midinote: new Pseq([62, 64]), dur: 0.5 })],
+        [1.0, pbind({ midinote: pseq([62, 64]), dur: 0.5 })],
         [2.0, OscItem("/cue", 1)],
         [3.0, child],
     ], { tempo: 2.0 });
@@ -203,10 +203,10 @@ test("a timeline renders into the events it plays", async () => {
 });
 
 test("a pattern renders into the events it plays", async () => {
-    const { Pbind, Pn, Pseq } = await import("../src/seq/pattern.ts");
-    const seq = await new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 }).renderEvents();
+    const { pbind, pn, pseq } = await import("../src/seq/index.ts");
+    const seq = await pbind({ degree: pseq([0, 2, 4]), dur: 0.5 }).renderEvents();
     assert.deepEqual([...seq].map(([beat, e]) => [beat, e.get("degree")]), [[0, 0], [0.5, 2], [1, 4]]);
-    assert.equal((await new Pbind({ degree: new Pn(0) }).renderEvents(3.5)).length, 4);
+    assert.equal((await pbind({ degree: pn(0) }).renderEvents(3.5)).length, 4);
 });
 
 test("a score reads into a sequence and a sequence engraves", async () => {

@@ -31,7 +31,7 @@ import { OscNrtInterface } from "../src/base/connection.ts";
 import { Synth } from "../src/defs/node.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { Env, control, out, sine } from "../src/defs/ugens/index.ts";
-import { Event, Pbind, Pseq } from "../src/seq/index.ts";
+import { Event, pbind, pseq } from "../src/seq/index.ts";
 import { loadRenderer } from "../src/engine/render.ts";
 import { render } from "../src/render.ts";
 
@@ -79,8 +79,8 @@ const pieces: Record<string, (session: Session) => void> = {
         }).play(session.clock);
     },
     pattern(session) {
-        new Pbind({
-            degree: new Pseq([0, 2, 4]),
+        pbind({
+            degree: pseq([0, 2, 4]),
             dur: 0.25,
             amp: 0.15,
         }).play(session.server, { clock: session.clock });
@@ -177,9 +177,9 @@ test("an expression wider than the render's outputs is refused", async () => {
 
 test("a pattern bounces offline, and `until` is what bounds an endless one", async () => {
     const bounced = await render(
-        new Pbind({
+        pbind({
             instrument: "default",
-            degree: new Pseq([0, 2, 4]),
+            degree: pseq([0, 2, 4]),
             dur: 0.25,
             amp: 0.2,
         }),
@@ -192,7 +192,7 @@ test("a pattern bounces offline, and `until` is what bounds an endless one", asy
     // it this call would never return, which is why the option is the
     // caller's responsibility rather than a guess the verb makes.
     const endless = await render(
-        new Pbind({ instrument: "default", degree: new Pseq([0, 2], Infinity), dur: 0.25 }),
+        pbind({ instrument: "default", degree: pseq([0, 2], Infinity), dur: 0.25 }),
         { channels: 1, until: 2.0 },
     );
     assert.ok(endless.frames > 0);
@@ -205,7 +205,7 @@ test("a pattern bounces offline, and `until` is what bounds an endless one", asy
 });
 
 test("a bounce renders the last note's release", async () => {
-    const pattern = () => new Pbind({ instrument: "default", degree: new Pseq([0, 4, 7]), dur: 0.25 });
+    const pattern = () => pbind({ instrument: "default", degree: pseq([0, 4, 7]), dur: 0.25 });
     const cut = await render(pattern(), { tail: 0 });
     // With no tail the take stops on the gate closing on the last note, mid
     // release: the take ends sounding, not in silence.
@@ -221,7 +221,7 @@ test("a bounce renders the last note's release", async () => {
 
 test("a tail is a duration", async () => {
     await assert.rejects(
-        render(new Pbind({ instrument: "default", degree: new Pseq([0]), dur: 0.25 }), { tail: -1 }),
+        render(pbind({ instrument: "default", degree: pseq([0]), dur: 0.25 }), { tail: -1 }),
         /negative/,
     );
 });
@@ -259,7 +259,7 @@ test("a render plays on the clock it is given", async () => {
     const session = await Session.nrt();
     session.clock.setTempo(2.0); // two beats a second
     const stats = await render(
-        new Pbind({ instrument: "default", degree: new Pseq([0, 2, 4]), dur: 1.0 }),
+        pbind({ instrument: "default", degree: pseq([0, 2, 4]), dur: 1.0 }),
         { clock: session.clock },
     );
     // The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
@@ -269,16 +269,16 @@ test("a render plays on the clock it is given", async () => {
 
 test("a render refuses a clock not on logical time", async () => {
     await assert.rejects(
-        render(new Pbind({ degree: 0, dur: 0.5 }), { clock: new TempoClock(2) }),
+        render(pbind({ degree: 0, dur: 0.5 }), { clock: new TempoClock(2) }),
         /fixed when it is made/,
     );
 });
 
 test("a render of a value pattern is the values it generates", async () => {
     // A value pattern does not play; its render is the values it generates.
-    assert.deepEqual(await render(new Pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
-    assert.deepEqual(await render(new Pseq([1, 2], Infinity), { count: 5 }), [1, 2, 1, 2, 1]);
-    await assert.rejects(render(new Pseq([1, 2], Infinity)), /count/);
+    assert.deepEqual(await render(pseq([1, 2, 3], 2)), [1, 2, 3, 1, 2, 3]);
+    assert.deepEqual(await render(pseq([1, 2], Infinity), { count: 5 }), [1, 2, 1, 2, 1]);
+    await assert.rejects(render(pseq([1, 2], Infinity)), /count/);
 });
 
 test("a render with a path writes the take, and readSoundfile reads it back", async () => {

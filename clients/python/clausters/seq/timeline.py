@@ -1,7 +1,7 @@
 """Timelines: a plan in logical time, played by itself (random-access sequencing).
 
 The counterpart to the generative layer (`clausters.base.stream.Routine`,
-`clausters.seq.pattern.Pbind`). A `Routine` is a forward-only generator: its
+`clausters.seq.pattern.pbind`). A `Routine` is a forward-only generator: its
 musical state lives in the generator's locals, so it cannot be *seeked*. A
 `Timeline` is the opposite -- an **editable list of timed items kept sorted by
 beat**, with its own tempo map and random access by time (`index_at`, `range`).
@@ -182,9 +182,9 @@ class Timeline:
 
         if isinstance(item, Pattern) and not isinstance(item, EventPattern):
             raise TypeError(
-                f"a {type(item).__name__} of values does not play, so it is not a "
+                f"{item!r} is a pattern of values: it does not play, so it is not a "
                 f"timeline item: a pattern plays when its values are events (a "
-                f"Pbind, or a list pattern of event patterns only)"
+                f"pbind, or a list pattern of event patterns only)"
             )
         if isinstance(item, Timeline):
             self._check_child(item)
@@ -1001,7 +1001,8 @@ class _TransportPlayer:
         from .pattern import Pattern
 
         if isinstance(item, (Routine, Pattern)):
-            raise ValueError(f"{type(item).__name__} at beat {beat}: {self._unplayable}")
+            named = repr(item) if isinstance(item, Pattern) else type(item).__name__
+            raise ValueError(f"{named} at beat {beat}: {self._unplayable}")
         # The transport's own server when nothing else was named: a plan a
         # broadcast writes runs on the receiver's thread, where no session is
         # ambient, and the server whose transport this is is the one place the

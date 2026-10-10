@@ -25,7 +25,7 @@ from clausters.defs.ugens import (
     DoneAction, Env, env_gen, free_self, free_self_when_done, line, lpf, out,
     saw, x_line,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 SR = 48000.0
 
@@ -99,9 +99,9 @@ def render(path=None):
         sdef.send(server)
 
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument="zap", dur=Pseq([0.5, 0.5, 0.5, 1.5]), amp=0.2).play(clock, server)
-    Pbind(instrument="sweep", dur=Pseq([3.0]), amp=0.12).play(clock, server)
-    Pbind(instrument="fade", dur=Pseq([1.0]), delta=3.0, amp=0.15).play(clock, server)
+    pbind(instrument="zap", dur=pseq([0.5, 0.5, 0.5, 1.5]), amp=0.2).play(clock, server)
+    pbind(instrument="sweep", dur=pseq([3.0]), amp=0.12).play(clock, server)
+    pbind(instrument="fade", dur=pseq([1.0]), delta=3.0, amp=0.15).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)
 

@@ -2,7 +2,7 @@
 //
 // The same RT/NRT seam as the OSC side, for MIDI. A `MidiServer` is the
 // double-dispatch counterpart of the OSC `Server`: a clock + routine plays the
-// *same* `Pbind` through it, and which **interface** it holds decides the
+// *same* `pbind` through it, and which **interface** it holds decides the
 // rendering -- `MidiNrtInterface` accumulates a `MidiScore` (in beats) whose
 // bytes are a `.mid` or a MIDI 2.0 clip, `MidiRtInterface` sends the notes out
 // a MIDI port live.
@@ -339,7 +339,7 @@ function threes(flat: Uint8Array): Uint8Array[] {
  * A MIDI destination for event patterns -- the double-dispatch counterpart of
  * the OSC `Server`.
  *
- * A `Pbind` played on a clock with this as the destination renders each `Event`
+ * A `pbind` played on a clock with this as the destination renders each `Event`
  * as a note on/off pair, handed to the held interface (an NRT score or a live
  * port), and a `"midi"` event as the message its `midicmd` names. Note number
  * from `event.midinote()`, velocity from `event.velocity()` -- an explicit

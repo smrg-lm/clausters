@@ -30,7 +30,7 @@ def from_notes(notes, **how) -> str:
     ``notes`` is any iterable of `clausters.seq.event.Event` (a
     `clausters.seq.event.rest` is a silence); each occupies its written
     ``dur`` beats back to back, so this is the notation of a melody the way a
-    ``Pbind``/``Routine`` sequence reads it. ``how`` is the transcription, as
+    ``pbind``/``Routine`` sequence reads it. ``how`` is the transcription, as
     `sheet_from_events` takes it. Returns the MEI to hand to `engrave` or
     `Score`.
     """

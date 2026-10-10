@@ -30,7 +30,7 @@ logical beat advances only by those yields, so the music never drifts with the
 browser's timers -- the wake-up only has to arrive within the emission
 headroom, and the exact time rides on the bundle's timetag.
 
-A <b>pattern</b> (<code>Pbind</code>) is the generative form: forward-only,
+A <b>pattern</b> (<code>pbind</code>) is the generative form: forward-only,
 like the routine underneath it. A <b>timeline</b> is the seekable form -- an
 editable list of items with <b>its own tempo map</b> -- and its transport is its
 own: play, pause, stop, locate, loop.
@@ -156,12 +156,12 @@ and a new tempo written there, which pins that instant for the same reason.</div
         // Every key is a pattern or a held constant. `degree` walks a scale,
         // `dur` is the beats to the next event, and `legato` stretches the
         // sounding time past it.
-        player = new seq.Pbind({
+        player = seq.pbind({
           instrument: "web_seq_voice",
           hasGate: true,
-          degree: new seq.Pseq([0, 2, 4, 7, 4, 2], seq.INF),
-          dur: new seq.Pseq([0.5, 0.25, 0.25]),
-          cutoff: new seq.Pwhite(600, 3000),
+          degree: seq.pseq([0, 2, 4, 7, 4, 2], seq.INF),
+          dur: seq.pseq([0.5, 0.25, 0.25]),
+          cutoff: seq.pwhite(600, 3000),
           amp: 0.15,
         }).play(server, { clock });
         log("pattern playing");

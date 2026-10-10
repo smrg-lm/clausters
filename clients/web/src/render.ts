@@ -52,8 +52,8 @@
 //
 // ```ts
 // const stats = await render(sine(440).mul(0.2), { dur: 2.0 });
-// const bounced = await render(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 }));
-// const values = await render(new Pseq([1, 2, 3], 2));   // [1, 2, 3, 1, 2, 3]
+// const bounced = await render(pbind({ degree: pseq([0, 2, 4]), dur: 0.5 }));
+// const values = await render(pseq([1, 2, 3], 2));   // [1, 2, 3, 1, 2, 3]
 // ```
 
 import { Routine, Stream } from "./base/stream.ts";
@@ -386,7 +386,7 @@ function values<T>(pattern: Pattern<T>, count: number | undefined): T[] {
         if (out.length === limit) {
             if (count === undefined) {
                 throw new Error(
-                    `render: the ${pattern.constructor.name} did not end after `
+                    `render: ${pattern} did not end after `
                     + `${MAX_BOUNCED_EVENTS} values -- pass count to take a number of them`,
                 );
             }

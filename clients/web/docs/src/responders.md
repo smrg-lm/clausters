@@ -79,7 +79,7 @@ Two things follow from the grant being asynchronous and user-facing:
 
 ## Playing *to* MIDI
 
-The other direction is the same object the reference client has: a `MidiServer` is a destination an event pattern plays to, so the same `Pbind` sounds through the audio engine or out a MIDI port depending only on what it is handed.
+The other direction is the same object the reference client has: a `MidiServer` is a destination an event pattern plays to, so the same `pbind` sounds through the audio engine or out a MIDI port depending only on what it is handed.
 
 ```js
 import { MidiRtInterface, MidiServer, requestMidiPorts, seq } from "clausters";
@@ -88,7 +88,7 @@ const midi = new MidiServer({
     interface: await MidiRtInterface.open({ access: await requestMidiPorts() }),
     channel: 0,
 });
-new seq.Pbind({ midinote: new seq.Pseq([60, 64, 67]), dur: 0.5 }).play(midi);
+seq.pbind({ midinote: seq.pseq([60, 64, 67]), dur: 0.5 }).play(midi);
 ```
 
 Each `Event` becomes a note on/off pair — the note from `midinote()`, the velocity from `velocity()`, the release at `sustain()` — and `MidiItem` makes an event of raw bytes for a `Timeline` the way `OscItem` makes one of a raw message (types `"midi"` and `"osc"`). **Timing is best-effort by design**, as it is there, but the browser gives some of it back: `MIDIOutput.send` takes a `performance.now()` deadline, so a note-off two beats out is handed its deadline rather than slept to.

@@ -72,7 +72,7 @@ export type ReadOptions = Transcription & { interp?: Interpretation };
  *
  * `notes` is any iterable of `seq.Event` (a `rest` is a silence); each occupies
  * its written `dur` beats back to back, so this is the notation of a melody
- * the way a `Pbind`/`Routine` sequence reads it. `how` is the transcription,
+ * the way a `pbind`/`Routine` sequence reads it. `how` is the transcription,
  * as {@link sheetFromEvents} takes it. Returns the MEI to hand to `engrave` or
  * to `Score`.
  */

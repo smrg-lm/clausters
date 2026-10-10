@@ -47,7 +47,7 @@ from clausters.defs.ugens import (
     dswitch1, dwhite, dxrand, duty, env_gen, line, lpf, out, pan2, rlpf, saw,
     sine, tduty,
 )
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 SR = 48000.0
 SECTION = 2.5    # seconds per section of the sequence
@@ -219,7 +219,7 @@ def run_bench(path=None):
     for sdef, _ in rows:
         sdef.send(server)
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument=Pseq([s.name for s, _ in rows]), dur=BENCH).play(clock, server)
+    pbind(instrument=pseq([s.name for s, _ in rows]), dur=BENCH).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=1, path=path)
     # The claims below read individual slots, not a summary, so the samples
@@ -290,7 +290,7 @@ def drift_check():
         line(0.0, 1.0, 1.0, DoneAction.FREE_SELF),
     ).send(server)
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument=Pseq(["drift"]), dur=1.2).play(clock, server)
+    pbind(instrument=pseq(["drift"]), dur=1.2).play(clock, server)
     clock.render()
     samples = server.render(sample_rate=SR, channels=1).samples
 
@@ -316,7 +316,7 @@ def render_sequence(path=None):
     for sdef in parts:
         sdef.send(server)
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
-    Pbind(instrument=Pseq([s.name for s in parts]), dur=SECTION).play(clock, server)
+    pbind(instrument=pseq([s.name for s in parts]), dur=SECTION).play(clock, server)
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)
     # Per-section RMS below needs the samples, not the whole-render summary.

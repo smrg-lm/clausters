@@ -107,10 +107,10 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
 
         const nrt = await Session.nrt();
         nrt.clock.setTempo(TEMPO);
-        nrt.play(new seq.Pbind({
-          degree: new seq.Pseq([0, 2, 4, 7], 8),
+        nrt.play(seq.pbind({
+          degree: seq.pseq([0, 2, 4, 7], 8),
           dur: 0.5,
-          amp: new seq.Pwhite(0.3, 0.7),
+          amp: seq.pwhite(0.3, 0.7),
         }));
         const take = await nrt.render({ sampleRate: SR, channels: 2 });
         log(`rendered ${take.frames} frames (${(take.frames / SR).toFixed(2)} s, `

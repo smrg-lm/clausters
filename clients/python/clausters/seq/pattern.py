@@ -1,69 +1,214 @@
-"""Patterns (port of ``sc3/seq/pattern.py`` + ``patterns/``).
+"""Patterns: what a pattern is, and how one is written (port of ``sc3/seq/pattern.py``).
 
-A `Pattern` is a reusable, lazy description of a value sequence -- the
-definition of a generator: iterating it yields the values (a fresh stream each
-time), and it does not play. Value patterns (``Pseq``, ``Pwhite``, ...) feed
-`Pbind`, which combines per-key value patterns into a stream of `Event`
-objects. An `EventPattern` -- `Pbind`, and a list pattern whose every element
-is an event pattern -- is what plays, on a clock, with `EventPattern.play` (see
-`EventStreamPlayer`).
+A **pattern** is a reusable, lazy description of a sequence of values -- the
+definition of a generator. Iterating it starts a fresh **stream**, which yields
+the values: ``for x in pseq([1, 2, 3])`` loops over 1, 2, 3, and a second loop
+starts again from 1. A pattern holds no state of its own; whatever a walk needs
+to remember (a position, a random walk's value, a seed) lives in that walk.
 
-Patterns are plain Python generators under the hood, so nesting and composition
-are natural; a sub-pattern used as a value is embedded (iterated) in place.
+**Value patterns and event patterns** are the two kinds, and they differ in
+what their stream yields. A value pattern yields values -- numbers, lists,
+anything a key takes. An event pattern yields `Event`s, and it is the only kind
+that plays: `EventPattern.play` runs it on a clock and `render_events` renders
+it into an `clausters.seq.EventSequence`. `pbind` is the event pattern that
+builds events out of value patterns, one per key. A list pattern (`pseq`,
+`prand`, `pn`) whose every element is an event pattern is one too; which kind a
+pattern is, is decided when it is built.
+
+**A pattern is written as a generator function** under `pattern`, as a UGen is
+a function returning a graph node. The function receives the **incoming value**
+first -- ``inval``, the event a `pbind` is building when the pattern is one of
+its keys, else ``None`` -- and then its own arguments; each ``yield`` gives a
+value and receives the next incoming one::
+
+    @pattern
+    def pcount(inval, n):
+        "0, 1, ... n - 1."
+        for i in range(n):
+            inval = yield i
+        return inval
+
+A sub-pattern is embedded with ``inval = yield from embed(item, inval)``, which
+passes the incoming values through and hands back the last one.
+
+**A pattern composes with the operators** a UGen does, by the same names:
+``pseq([1, 2, 3]) + 60`` is a pattern of 61, 62, 63, and ``.midicps()``,
+``.min(x)`` or ``% 12`` compose the same way. Each value is computed by the
+`clausters.base.builtins` function of that name, so a pattern, a list and a
+signal answer an operator with one function. An operator applies to each value
+a stream yields; a function over a whole list (``normalize``) is not an
+operator, and is applied to the list before it becomes a pattern. An event
+pattern yields events, which have no arithmetic, and refuses an operator.
+
+The patterns themselves are in `clausters.seq.patterns`, by family.
 """
 
+import functools
 import math
+from typing import Any, Callable, Generator, overload
 
-from ..base import rand
-from .event import Event
+from ..base.absobject import AbstractObject
+from ..base.stream import Stream, StopStream
 
 INF = math.inf
 
 
-def _embed(value):
-    """Yields a value, or iterates it if it is itself a pattern."""
+# ---- streams over a pattern ----
+
+class PatternStream(Stream):
+    """A walk over a pattern: one generator, started on the first `next`.
+
+    `next` takes the incoming value (``inval``) and returns the pattern's next
+    value, or raises `clausters.base.stream.StopStream` at its end. `reset`
+    starts the walk again.
+    """
+
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self._gen = None
+        self._done = False
+
+    def next(self, inval=None):
+        if self._done:
+            raise StopStream
+        try:
+            if self._gen is None:
+                self._gen = self.pattern.embed(inval)
+                return next(self._gen)
+            return self._gen.send(inval)
+        except StopIteration:
+            self._done = True
+            raise StopStream from None
+
+    def reset(self):
+        self._gen = None
+        self._done = False
+
+
+class _ConstStream(Stream):
+    """A bare value as a stream: the value, forever."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def next(self, inval=None):
+        return self.value
+
+
+def embed(value, inval=None):
+    """Yields ``value``, or every value of it if it is a pattern; returns the
+    last incoming value. Inside a pattern: ``inval = yield from embed(x, inval)``."""
     if isinstance(value, Pattern):
-        yield from iter(value)
-    else:
-        yield value
+        return (yield from value.embed(inval))
+    return (yield value)
 
 
-def as_pattern(value):
-    return value if isinstance(value, Pattern) else Pconst(value)
+def as_stream(value) -> Stream:
+    """A stream over ``value``: a fresh walk of a pattern, the stream itself,
+    or a bare value repeated forever -- how an argument that may be either is
+    read one value at a time."""
+    if isinstance(value, Pattern):
+        return value.stream()
+    if isinstance(value, Stream):
+        return value
+    return _ConstStream(value)
 
 
-def _made(cls, base, event_cls, events):
-    """An instance of ``event_cls`` when ``base`` itself is being built over
-    event patterns only, else of ``cls``: how a list pattern resolves whether
-    it is an `EventPattern` when it is made."""
-    return object.__new__(event_cls if cls is base and events else cls)
+def as_pattern(value) -> "Pattern":
+    """``value`` if it is a pattern, else a `pconst` of it."""
+    if isinstance(value, Pattern):
+        return value
+    from .patterns.valuepatterns import pconst
+
+    return pconst(value)
 
 
-def _all_events(items) -> bool:
-    return bool(items) and all(isinstance(item, EventPattern) for item in items)
+# ---- the pattern ----
+
+def _held(value):
+    """An argument as a pattern keeps it: a list, a dict or any other iterable
+    is copied when the pattern is built, so editing the list afterwards does
+    not change the pattern, and a one-shot iterable (a generator) is read
+    once rather than consumed by the first walk."""
+    if isinstance(value, (Pattern, Stream, str, bytes)) or callable(value):
+        return value
+    if type(value) is dict:
+        return dict(value)
+    if hasattr(value, "__iter__") and not isinstance(value, dict):
+        return list(value)
+    return value
 
 
-class Pattern:
-    """The definition of a generator: iterating it yields its values. It has no
-    `play` -- what plays is an `EventPattern`. `clausters.render` of a value
-    pattern generates its values."""
+def _refuse_events(*operands):
+    for operand in operands:
+        if isinstance(operand, EventPattern):
+            raise TypeError(
+                f"{operand!r} is an event pattern: it yields events, which have "
+                "no arithmetic -- an operator composes a value pattern")
+
+
+class Pattern(AbstractObject):
+    """The definition of a generator: iterating it starts a fresh walk that
+    yields its values. It has no ``play`` -- what plays is an `EventPattern`;
+    `clausters.render` of a value pattern generates its values.
+
+    Made by a function written under `pattern`; ``Pattern(gfunc, args,
+    kwargs)`` is what that builds."""
+
+    def __init__(self, gfunc, args=(), kwargs=None, name=None):
+        self._gfunc = gfunc
+        self._args = tuple(args)
+        self._kwargs = dict(kwargs or {})
+        self._name = name or getattr(gfunc, "__name__", type(self).__name__)
+
+    def embed(self, inval=None):
+        """The generator that walks this pattern, fed ``inval`` first."""
+        return self._gfunc(inval, *self._args, **self._kwargs)
 
     def __iter__(self):
-        raise NotImplementedError(f"{type(self).__name__}.__iter__")
+        return self.stream()
 
-    def stream(self):
-        """A `Stream` over this pattern."""
-        from ..base.stream import FunctionStream
+    def stream(self) -> PatternStream:
+        """A fresh `PatternStream` over this pattern."""
+        return PatternStream(self)
 
-        it = iter(self)
-        return FunctionStream(lambda _=None: next(it))
+    def __repr__(self):
+        parts = [repr(a) for a in self._args]
+        parts += [f"{k}={v!r}" for k, v in self._kwargs.items()]
+        return f"{self._name}({', '.join(parts)})"
+
+    # ---- AbstractObject: an operator composes a pattern ----
+
+    def _compose_unop(self, selector):
+        _refuse_events(self)
+        from .patterns.oppatterns import punop
+
+        return punop(selector, self)
+
+    def _compose_binop(self, selector, other):
+        _refuse_events(self, other)
+        from .patterns.oppatterns import pbinop
+
+        return pbinop(selector, self, other)
+
+    def _rcompose_binop(self, selector, other):
+        _refuse_events(self, other)
+        from .patterns.oppatterns import pbinop
+
+        return pbinop(selector, other, self)
+
+    def _compose_narop(self, selector, *args, **static):
+        _refuse_events(self, *args)
+        from .patterns.oppatterns import pnarop
+
+        return pnarop(selector, self, *args, **static)
 
 
 class EventPattern(Pattern):
     """A pattern whose values are events, and so a pattern that plays.
 
-    `Pbind` is one, and so is a list pattern (`Pseq`, `Prand`, `Pn`) whose
-    every element is one: it resolves its class when it is built.
+    `pbind` is one, and so is a list pattern (`pseq`, `prand`, `pn`) whose every
+    element is one: which kind a pattern is, is decided when it is built.
     """
 
     def render_events(self, until: "float | None" = None):
@@ -88,7 +233,7 @@ class EventPattern(Pattern):
         session, else the default session): ``server=None`` takes the booted
         default server, and ``clock=None`` takes the running routine's clock or,
         outside one, the default session's clock -- created and started on first
-        use. So ``Pbind(...).play()`` sounds with only a ``Server().boot()`` and no
+        use. So ``pbind(...).play()`` sounds with only a ``Server().boot()`` and no
         `Session`."""
         from ..base.main import main
         from .eventstream import EventStreamPlayer
@@ -99,198 +244,61 @@ class EventPattern(Pattern):
         return EventStreamPlayer(self, server).play(clock, quant)
 
 
-# ---- value patterns ----
-
-class Pconst(Pattern):
-    """A constant value, ``length`` times (infinite by default)."""
-
-    def __init__(self, value, length=INF):
-        self.value = value
-        self.length = length
-
-    def __iter__(self):
-        i = 0
-        while self.length is INF or i < self.length:
-            yield self.value
-            i += 1
+_Gfunc = Callable[..., Generator[Any, Any, Any]]
+_Build = Callable[..., Pattern]
 
 
-class Pseq(Pattern):
-    """The items in order, ``repeats`` times (sub-patterns are embedded). Over
-    event patterns only, it is an `EventPattern`."""
-
-    def __new__(cls, items=(), repeats=1):
-        items = list(items)
-        self = _made(cls, Pseq, _EventPseq, _all_events(items))
-        self.items = items
-        return self
-
-    def __init__(self, items=(), repeats=1):
-        self.repeats = repeats
-
-    def __iter__(self):
-        i = 0
-        while self.repeats is INF or i < self.repeats:
-            for item in self.items:
-                yield from _embed(item)
-            i += 1
+@overload
+def pattern(gfunc: _Gfunc, *, events: "bool | Callable[..., bool]" = False) -> _Build: ...
+@overload
+def pattern(gfunc: None = None, *,
+            events: "bool | Callable[..., bool]" = False) -> Callable[[_Gfunc], _Build]: ...
 
 
-class Pser(Pattern):
-    """The items in order, yielding exactly ``length`` values (cycling)."""
+def pattern(gfunc=None, *, events=False):
+    """**Make a pattern out of a generator function**: the decorated name
+    becomes a function that builds the pattern, as ``sine`` builds a UGen.
 
-    def __init__(self, items, length):
-        self.items = list(items)
-        self.length = length
+    The generator receives the incoming value first (``inval``) and then the
+    arguments the pattern was built with; it yields values and receives the
+    next incoming value from each ``yield``, and returns the last one. Every
+    walk calls it afresh, so a pattern is reusable: building one stores the
+    function and its arguments (a list or dict argument is copied), and starts
+    nothing.
 
-    def __iter__(self):
-        for i in range(int(self.length)):
-            yield self.items[i % len(self.items)]
+    Args:
+        events: what kind of pattern it builds -- ``False`` a value pattern,
+            ``True`` an `EventPattern`, or a function of the arguments that
+            decides when the pattern is built (a list pattern is an event
+            pattern when every element is one).
 
+    ::
 
-class Prand(Pattern):
-    """Random items, ``length`` values, drawn from the **random context** (the
-    running routine's generator, or the root outside one -- see
-    `clausters.base.rand`): ``main.seed(n)`` reproduces the choices along with
-    everything else in the script. There is no per-pattern seed -- independent
-    seeds would break whole-script consistency. Over event patterns only, it is
-    an `EventPattern`."""
+        @pattern
+        def pcount(inval, n):
+            "0, 1, ... n - 1."
+            for i in range(n):
+                inval = yield i
+            return inval
 
-    def __new__(cls, items=(), length=INF):
-        items = list(items)
-        self = _made(cls, Prand, _EventPrand, _all_events(items))
-        self.items = items
-        return self
+        list(pcount(3))   # [0, 1, 2]
+    """
+    def decorate(gfunc):
+        @functools.wraps(gfunc)
+        def build(*args, **kwargs):
+            args = tuple(_held(a) for a in args)
+            kwargs = {k: _held(v) for k, v in kwargs.items()}
+            is_events = events(*args, **kwargs) if callable(events) else events
+            cls = EventPattern if is_events else Pattern
+            return cls(gfunc, args, kwargs)
 
-    def __init__(self, items=(), length=INF):
-        self.length = length
+        build.generator = gfunc
+        return build
 
-    def __iter__(self):
-        i = 0
-        while self.length is INF or i < self.length:
-            yield from _embed(rand.choose(self.items))
-            i += 1
-
-
-class Pwhite(Pattern):
-    """Uniform random numbers in ``[lo, hi)``, ``length`` values, drawn from
-    the **random context** (the running routine's generator, or the root
-    outside one -- see `clausters.base.rand`): ``main.seed(n)`` reproduces the
-    sequence along with everything else in the script. There is no per-pattern
-    seed -- independent seeds would break whole-script consistency."""
-
-    def __init__(self, lo=0.0, hi=1.0, length=INF):
-        self.lo, self.hi, self.length = lo, hi, length
-
-    def __iter__(self):
-        i = 0
-        while self.length is INF or i < self.length:
-            yield rand.rrand(self.lo, self.hi)
-            i += 1
+    return decorate if gfunc is None else decorate(gfunc)
 
 
-class Pseries(Pattern):
-    """Arithmetic series ``start, start+step, ...`` (``length`` values)."""
-
-    def __init__(self, start=0.0, step=1.0, length=INF):
-        self.start, self.step, self.length = start, step, length
-
-    def __iter__(self):
-        value = self.start
-        i = 0
-        while self.length is INF or i < self.length:
-            yield value
-            value += self.step
-            i += 1
-
-
-class Pgeom(Pattern):
-    """Geometric series ``start, start*grow, ...`` (``length`` values)."""
-
-    def __init__(self, start=1.0, grow=2.0, length=INF):
-        self.start, self.grow, self.length = start, grow, length
-
-    def __iter__(self):
-        value = self.start
-        i = 0
-        while self.length is INF or i < self.length:
-            yield value
-            value *= self.grow
-            i += 1
-
-
-class Pfunc(Pattern):
-    """Calls ``func()`` for each value (``length`` values)."""
-
-    def __init__(self, func, length=INF):
-        self.func = func
-        self.length = length
-
-    def __iter__(self):
-        i = 0
-        while self.length is INF or i < self.length:
-            yield self.func()
-            i += 1
-
-
-class Pn(Pattern):
-    """Repeats ``pattern`` ``n`` times. Over an event pattern, it is an
-    `EventPattern`."""
-
-    def __new__(cls, pattern=None, n=INF):
-        return _made(cls, Pn, _EventPn, isinstance(pattern, EventPattern))
-
-    def __init__(self, pattern=None, n=INF):
-        self.pattern = pattern
-        self.n = n
-
-    def __iter__(self):
-        i = 0
-        while self.n is INF or i < self.n:
-            yield from _embed(self.pattern)
-            i += 1
-
-
-# ---- event pattern ----
-
-class Pbind(EventPattern):
-    """Binds keys to value patterns; yields an `Event` per step, stopping
-    when any key's stream stops. Constant values are held; sub-patterns advance
-    one value per event.
-
-    Constructs exactly like a ``dict`` -- keyword arguments
-    (``Pbind(freq=Pseq([440, 880]), dur=0.5)``), a mapping
-    (``Pbind({"freq": Pseq([440, 880]), "dur": 0.5})``), or both merged, with
-    keywords winning. The dict form also admits keys that are not valid Python
-    identifiers."""
-
-    def __init__(self, *args, **patterns):
-        self.patterns = dict(*args, **patterns)
-
-    def __iter__(self):
-        streams = {key: iter(as_pattern(value)) for key, value in self.patterns.items()}
-        while True:
-            event = {}
-            for key, stream in streams.items():
-                try:
-                    event[key] = next(stream)
-                except StopIteration:
-                    return
-            yield Event(event)
-
-
-# ---- list patterns over events ----
-#
-# What a list pattern is made as when every element is an event pattern: the
-# same pattern, and playable. `Pseq([Pbind(...), Pbind(...)])` is one.
-
-class _EventPseq(Pseq, EventPattern):
-    pass
-
-
-class _EventPrand(Prand, EventPattern):
-    pass
-
-
-class _EventPn(Pn, EventPattern):
-    pass
+def all_events(items) -> bool:
+    """Whether every one of ``items`` is an event pattern (and there is one):
+    the rule a list pattern is resolved by."""
+    return bool(items) and all(isinstance(item, EventPattern) for item in items)

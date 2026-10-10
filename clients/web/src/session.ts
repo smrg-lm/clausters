@@ -21,7 +21,7 @@
 // ```ts
 // const s = await Session.embed();
 // s.clock.setTempo(2.0);
-// s.play(new Pbind({ instrument: "default", freq: Pseq([440, 550]), dur: 0.5 }));
+// s.play(pbind({ instrument: "default", freq: pseq([440, 550]), dur: 0.5 }));
 // ```
 //
 // **What the Python client has here and this one does not, yet.** Its `nrt`

@@ -6,13 +6,13 @@ session (`main`) is just the fallback context when none is named.
 
 from clausters import Session, main
 from clausters.base import rand
-from clausters.seq import Pbind, Pwhite
+from clausters.seq import pbind, pwhite
 
 
 def _score(seed):
     s = Session.nrt()
     s.seed(seed)
-    s.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
+    s.play(pbind(instrument="default", freq=pwhite(100.0, 200.0, length=4), dur=0.5))
     s.clock.render()
     return s.server.interface.score.bytes()
 
@@ -33,8 +33,8 @@ def test_sessions_are_order_independent():
     a.seed(7)
     b = Session.nrt()
     b.seed(99)
-    b.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
-    a.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
+    b.play(pbind(instrument="default", freq=pwhite(100.0, 200.0, length=4), dur=0.5))
+    a.play(pbind(instrument="default", freq=pwhite(100.0, 200.0, length=4), dur=0.5))
     a.clock.render()
     assert a.server.interface.score.bytes() == _score(7)
     b.clock.clear()  # b was played and deliberately never rendered

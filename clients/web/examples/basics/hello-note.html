@@ -89,9 +89,9 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       // With no clock in context, `play` uses the default session's clock,
       // created and started for you.
       async function phrase() {
-        play(new seq.Pbind({
+        play(seq.pbind({
           instrument: "default",
-          degree: new seq.Pseq([0, 2, 4, 7]),
+          degree: seq.pseq([0, 2, 4, 7]),
           dur: 0.4,
         }));
         await sleep(2000);

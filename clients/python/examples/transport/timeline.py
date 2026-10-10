@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DAW-style transport over a timeline: play, locate, loop, pause, position.
 
-A `Pbind` is a forward-only generator -- you cannot seek it. A `Timeline` is the
+A `pbind` is a forward-only generator -- you cannot seek it. A `Timeline` is the
 opposite: an editable plan of timed items with random access by beat, and it
 plays itself -- `play(at=...)`, `locate(beat)`, `loop(start, end)`, `pause()`,
 `stop()` -- reporting a song `position`. No clock and no playhead are handled:

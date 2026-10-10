@@ -14,7 +14,7 @@ generic `BinaryOpUGen`/`UnaryOpUGen` -- see
 `clients/python/examples/basics/graph_maths.py`.
 
 To prove the graph emits exactly what the server expects, this renders a
-`Pbind` twice -- once on the server's built-in `default` def, once on a
+`pbind` twice -- once on the server's built-in `default` def, once on a
 client-defined graph equivalent to it -- and checks the two renders are
 **byte-identical**. Build the embed library once:
 
@@ -45,7 +45,7 @@ from clausters.defs import (
     out,
 )
 from clausters.defs.ugens import pan2, rlpf, saw
-from clausters.seq import Pbind, Pseq
+from clausters.seq import pbind, pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
 SR = 48000.0
@@ -55,7 +55,7 @@ def py_default(name="py_default") -> SynthDef:
     """The client-side twin of the server's built-in `default`: a subtractive
     voice with a control for each dimension an MPE zone plays.
     `freq`/`amp`/`gate`/`pan`/`press`/`slide`/`out` are named controls (the
-    `/synth_new`/`/node_set` parameters a `Pbind` drives).
+    `/synth_new`/`/node_set` parameters a `pbind` drives).
 
     The tone is two saws detuned by +/-0.4 %, through a resonant lowpass whose cutoff sits half an octave above the
     note and opens with `slide` (the timbre), `press` (the pressure, which
@@ -99,8 +99,8 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
     # `has_gate` releases each note with `gate 0` instead of freeing the node
     # outright, which is what the player does for `default` on its own -- the
     # twin needs it stated so both renders end their notes the same way.
-    Pbind(instrument=instrument, has_gate=True,
-          freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
+    pbind(instrument=instrument, has_gate=True,
+          freq=pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
     clock.render()                     # drain the clock logically
     return server.render(sample_rate=SR, channels=2)
 

@@ -12,7 +12,7 @@ import pytest
 
 from clausters.base import OscNrtInterface, Routine
 from clausters.defs import Server
-from clausters.seq import Event, Pbind, Timeline
+from clausters.seq import Event, pbind, Timeline
 from clausters.seq.timeline import OscItem
 
 SR = 48_000.0
@@ -179,9 +179,9 @@ def test_what_the_mode_refuses():
     with pytest.raises(ValueError, match="Routine"):
         forward.play(at=0.0, destination=server)
 
-    generated = Timeline([(0.0, Pbind(degree=0))], tempo=RATE)
+    generated = Timeline([(0.0, pbind(degree=0))], tempo=RATE)
     generated.transport = server
-    with pytest.raises(ValueError, match="Pbind"):
+    with pytest.raises(ValueError, match="pbind"):
         generated.play(at=0.0, destination=server)
 
 

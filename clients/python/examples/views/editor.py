@@ -94,7 +94,7 @@ from clausters import Session
 from clausters.render import read_soundfile
 from clausters.defs import Buffer, Synth, SynthDef, control, out, play_buf
 from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, view, waveform
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import EventPattern, pbind, pseq, pwhite
 
 SR = 48_000.0
 
@@ -105,9 +105,9 @@ SR = 48_000.0
 # device), then written as one interleaved f32 file the views map directly.
 
 # %%
-def phrase() -> Pbind:
-    return Pbind(degree=Pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
-                 amp=Pwhite(0.1, 0.25))
+def phrase() -> EventPattern:
+    return pbind(degree=pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
+                 amp=pwhite(0.1, 0.25))
 
 
 def render_stereo(path: str) -> list:

@@ -52,7 +52,7 @@ import tempfile
 from clausters import Session
 from clausters.gui import (choice, label, panel, samples_to_file, timeruler,
                            view, waveform)
-from clausters.seq import Pbind, Pseq, Pwhite
+from clausters.seq import pbind, pseq, pwhite
 
 SR = 48_000.0
 TEMPO = 2.0  # beats per second (120 BPM)
@@ -65,8 +65,8 @@ TEMPO = 2.0  # beats per second (120 BPM)
 # %%
 nrt = Session.nrt()
 nrt.clock.set_tempo(TEMPO)
-nrt.play(Pbind(degree=Pseq([0, 2, 4, 7, 5, 4, 2, 0], repeats=4), dur=0.25,
-               amp=Pwhite(0.3, 0.7)))
+nrt.play(pbind(degree=pseq([0, 2, 4, 7, 5, 4, 2, 0], repeats=4), dur=0.25,
+               amp=pwhite(0.3, 0.7)))
 take = nrt.render(sample_rate=SR, channels=1)
 frames = take.frames
 _tmp = tempfile.mkdtemp(prefix="clausters_gestures_")
