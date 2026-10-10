@@ -736,6 +736,11 @@ export class Rng {
      */
     spawn(): Rng;
     /**
+     * sclang's `sputter` of a list of `n` values: its indices, each repeated
+     * while a `probability` coin lands, at most `maxlen` of them.
+     */
+    sputter(n: number, probability: number, maxlen: number): Uint32Array;
+    /**
      * One draw shaped by a table `asrandomtable` built.
      */
     tablerand(table: Float64Array): number;
@@ -2184,6 +2189,7 @@ export interface InitOutput {
     readonly rng_nextF64: (a: number) => number;
     readonly rng_scramble: (a: number, b: number) => [number, number];
     readonly rng_spawn: (a: number) => number;
+    readonly rng_sputter: (a: number, b: number, c: number, d: number) => [number, number];
     readonly rng_tablerand: (a: number, b: number, c: number) => number;
     readonly rng_windex: (a: number, b: number, c: number) => number;
     readonly sampleclockmodel_addAnchor: (a: number, b: number, c: number, d: number) => void;

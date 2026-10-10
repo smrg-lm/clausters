@@ -42,7 +42,8 @@ from .netaddr import NetAddr
 # lives in, which is `clausters.base.rand`. The function is `clausters.rand`.
 from .rand import (
     Rng, bilinrand, choose, coin, current_rng, exprand, gauss, irand, irand2,
-    irrand, linrand, rand2, rrand, scramble, seed, spawn_rng, sum3rand, tablerand, wchoose,
+    irrand, linrand, rand2, rrand, scramble, seed, spawn_rng, sputter, sum3rand,
+    tablerand, wchoose,
 )
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import (LogicalTimebase, ManualTimebase, MonotonicTimebase,
@@ -106,6 +107,7 @@ __all__ = [
     "wchoose",
     "tablerand",
     "scramble",
+    "sputter",
     "Destination",
     "OscDestination",
     "Stream",

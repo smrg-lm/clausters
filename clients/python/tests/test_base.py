@@ -167,6 +167,35 @@ def test_list_functions():
     assert len(table) == 16 and all(0.0 <= v <= 1.0 for v in table)
 
 
+def test_the_reshaping_functions_take_any_items():
+    # sclang's Array functions that reorder, repeat or unfold a list; the order
+    # is the core's over the indices, so the items need not be numbers.
+    _ffi_or_skip()
+    assert B.mirror([1, 2, 3]) == [1, 2, 3, 2, 1]
+    assert B.mirror1(["a", "b", "c"]) == ["a", "b", "c", "b"]
+    assert B.mirror2("ab") == ["a", "b", "b", "a"]
+    assert B.stutter([1, 2], 3) == [1, 1, 1, 2, 2, 2]
+    assert B.rotate([1, 2, 3]) == [3, 1, 2] and B.rotate([1, 2, 3], -1) == [2, 3, 1]
+    assert B.pyramid([1, 2, 3]) == [1, 1, 2, 1, 2, 3]
+    assert B.pyramid([1, 2, 3], 2) == [3, 2, 3, 1, 2, 3]
+    assert B.pyramidg([1, 2, 3], 5) == [[1], [1, 2], [1, 2, 3], [1, 2], [1]]
+    assert B.mirror([]) == [] and B.pyramidg([]) == []
+
+
+def test_sputter_stammers_under_the_seed():
+    _ffi_or_skip()
+    from clausters import sputter
+    from clausters.base.main import main
+
+    main.seed(9)
+    a = sputter(["a", "b", "c", "d"], 0.5, 20)
+    main.seed(9)
+    assert sputter(["a", "b", "c", "d"], 0.5, 20) == a
+    assert a[0] == "a" and a[-1] == "d" and sorted(set(a)) == ["a", "b", "c", "d"]
+    assert sputter([1, 2, 3], 0.0) == [1, 2, 3]
+    assert sputter([1, 2, 3], 1.0, 4) == [1, 1, 1, 1]
+
+
 def test_table_draws_and_scramble_come_from_the_context():
     _ffi_or_skip()
     from clausters import scramble, tablerand

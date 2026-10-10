@@ -313,6 +313,15 @@ test("the builtins compute in f32, as the server does", () => {
     }
 });
 
+/** A list, or a list of lists (`pyramidg`), held value by value. */
+function assertListClose(got: unknown[], want: unknown[], what: string): void {
+    assert.equal(got.length, want.length, what);
+    want.forEach((y, i) => {
+        if (Array.isArray(y)) assertListClose(got[i] as unknown[], y, `${what}[${i}]`);
+        else assertClose(got[i] as number, expected(y as never), `${what}[${i}]`);
+    });
+}
+
 test("the numeric functions answer what the Python client's do", () => {
     // f64 throughout, and several go through `exp`, `ln` or `cbrt` -- held to
     // the shapes' few-ulp tolerance for the reason `ulpsApart` gives.
@@ -324,11 +333,8 @@ test("the numeric functions answer what the Python client's do", () => {
         const what = `${c.fn}(${JSON.stringify(c.args)})`;
         if (typeof c.y === "boolean") assert.equal(got, c.y, what);
         else if (c.y === null) assert.equal(got, undefined, what);
-        else if (Array.isArray(c.y)) {
-            const list = got as number[];
-            assert.equal(list.length, c.y.length, what);
-            c.y.forEach((y, i) => assertClose(list[i]!, expected(y), `${what}[${i}]`));
-        } else assertClose(got as number, expected(c.y), what);
+        else if (Array.isArray(c.y)) assertListClose(got as unknown[], c.y as unknown[], what);
+        else assertClose(got as number, expected(c.y), what);
     }
 });
 
@@ -365,6 +371,7 @@ test("the seeded stream replays the Python client's values", () => {
             ["wchoose", rng.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
             ["tablerand", rng.tablerand([0.0, 0.1, 0.5, 1.0])],
             ["scramble", rng.scramble(["a", "b", "c", "d", "e"])],
+            ["sputter", rng.sputter(["a", "b", "c", "d"], 0.4, 12)],
         ];
         got.forEach(([name, value], i) => {
             const [wantName, want] = run.draws[i]!;

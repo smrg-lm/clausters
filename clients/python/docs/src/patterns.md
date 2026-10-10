@@ -70,10 +70,14 @@ Each value is computed by the `clausters.base.builtins` function of the operator
 **An operator applies to each value a stream yields.** That is what makes it a pattern's: a stream may never end, and an operator never needs to see more than the value in hand. A function that reads a **whole list** — `normalize` needs the minimum and the maximum, `normalizesum` the sum — is not an operator and a pattern does not have it; apply it to the list before the list becomes a pattern:
 
 ```python
-from clausters.base.builtins import normalize
+from clausters.base.builtins import mirror1, normalize, pyramid
 
 pseq(normalize([3, 7, 5]))             # 0.0, 1.0, 0.5
+pseq(pyramid([60, 62, 64]))            # 60, 60 62, 60 62 64
+pseq(mirror1([60, 64, 67, 72]), 4)     # up and down, looping without a seam
 ```
+
+The functions that **reshape** a list — `mirror`, `mirror1`, `mirror2`, `stutter`, `rotate`, `pyramid` and `pyramidg` (its runs as separate lists), sclang's ten pyramid types among them — take any items, not only numbers: `pyramid([phrase_a, phrase_b])` is a list of patterns, and `pseq` of it plays them in that order. `sputter` (in the random context, beside `scramble`) stammers over a list, repeating an item while a coin lands.
 
 **An event pattern refuses an operator.** It yields events, and an event has no arithmetic; `pbind(...) + 2` raises and says so. What composes is the value patterns inside it.
 

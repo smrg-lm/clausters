@@ -153,3 +153,10 @@ def tablerand(table):
 def scramble(items):
     """``items`` in a uniformly random order (a new list)."""
     return current_rng().scramble(items)
+
+
+def sputter(items, probability=0.25, maxlen=100):
+    """``items`` read in order, each one repeated while a ``probability`` coin
+    lands, until they are read through or ``maxlen`` values are out --
+    sclang's ``sputter``: a stammer over a list."""
+    return current_rng().sputter(items, probability, maxlen)

@@ -103,6 +103,17 @@ pub unsafe extern "C" fn clausters_core_list(
     0
 }
 
+/// How long [`clausters_core_list`]'s result is for list function `op` over `n`
+/// values with first argument `a` -- what the caller sizes `out` by; -1 for an
+/// unknown `op`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_list_len(op: u32, n: usize, a: f64) -> isize {
+    match clausters_core::numeric::ListOp::from_u32(op) {
+        Some(op) => op.output_len(n, a) as isize,
+        None => -1,
+    }
+}
+
 /// The `n` values at `list` read at the fractional `index`, blended between
 /// the two around it; `method` (a `BoundOp`) says what an index past either
 /// end reads. NaN on an unknown method or an empty or null list.

@@ -75,7 +75,8 @@ In wasm neither applies: a call returns the bytes or the string.
 |---|---|---|
 | `clausters_core_unary` | `unary` | |
 | `clausters_core_binary` | `binary` | |
-| `clausters_core_list` | `list` | `idiom` — the list functions (`normalize`, `integrate`, `resamp1`, `asrandomtable`, …): C writes into a buffer the caller sized from the op's output length, wasm returns the list |
+| `clausters_core_list` | `list` | `idiom` — the list functions (`normalize`, `integrate`, `resamp1`, `asrandomtable`, `mirror`, `stutter`, `pyramid`, …): C writes into a buffer the caller sized from the op's output length, wasm returns the list |
+| `clausters_core_list_len` | — | `n/a` — how long a list function's result is, which C needs to size the buffer it hands `clausters_core_list`; wasm returns the list, whose length is its own |
 | `clausters_core_blendat` | `blend_at` | `idiom` — the read method is a `BoundOp` number in C and its name in wasm |
 | `clausters_core_calc` | `calc` | `idiom` — the numeric functions that are not operators (`degrad`, `erf`, `snap`, `bilin`, …), in `f64`; C takes the function by number, wasm by name |
 | `clausters_core_scale_calc` | `scale_calc` | `idiom` — the same for the four that read a scale or a sorted list (`degkey`, `keydeg`, `nearestinscale`, `nearestinlist`) |
@@ -142,6 +143,7 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_rng_windex` | `JsRng.windex` | |
 | `clausters_rng_tablerand` | `JsRng.tablerand` | |
 | `clausters_rng_scramble` | `JsRng.scramble` | `idiom` — C writes the permutation through an out pointer, wasm returns it |
+| `clausters_rng_sputter` | `JsRng.sputter` | `idiom` — C writes the indices into a buffer of `maxlen` and returns how many, wasm returns them |
 | — | `JsRng.spawn` | **gap** — a child stream, the reproducible-substream primitive |
 
 ## The beat queue

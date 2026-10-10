@@ -18,9 +18,15 @@
 // bounds; the perceptual scales; sclang's functions that are not operators
 // (`degrad`, `snap`, `bilin`, `erf` ...) and the ones over a scale (`degkey`,
 // `nearestinscale` ...) and over a whole list (`blend`, `normalize`, `resamp1`,
-// `asrandomtable` ...), all three in f64 as sclang computes them; and the range
-// maps. The draws -- `rand`, `exprand`, `choose`, `tablerand` ... -- are random
+// `asrandomtable` ...), all three in f64 as sclang computes them; the lists
+// reshaped (`mirror`, `stutter`, `rotate`, `pyramid` ...), whose order the core
+// computes over the indices so any items are reshaped; and the range maps. The
+// draws -- `rand`, `exprand`, `choose`, `tablerand`, `sputter` ... -- are random
 // values and live in `base/rand`.
+//
+// A builtin given a pattern, a stream or a signal answers what that object's
+// method does (`midicps(pseq([60, 72]))` is `pseq([60, 72]).midicps()`); a
+// function over a whole list refuses one, since a stream may not end.
 
 import {
     bark_to_hz as coreBarkToHz,
@@ -564,6 +570,52 @@ export const indexinbetween = whole("indexinbetween", (values: readonly number[]
 export const indexofgreaterthan = whole("indexofgreaterthan", (values: readonly number[], x: number): number | undefined => {
     const i = coreScaleCalc("indexofgreaterthan", x, Float64Array.from(values), 0);
     return i < 0 ? undefined : i;
+});
+
+// ---- lists reshaped: sclang's `Array` functions that reorder, repeat or
+// unfold a list. The order is the core's, over the indices, so any items are
+// reshaped -- numbers, notes, patterns -- not only numbers.
+
+const reshape = <T>(op: string, items: readonly T[], a = 0): T[] =>
+    Array.from(coreList(op, Float64Array.from(items, (_, i) => i), a, 0), (i) => items[i]!);
+
+/** The list and then back again, the last item once: `1 2 3 2 1`. */
+export const mirror = whole("mirror", <T>(items: readonly T[]): T[] => reshape("mirror", items));
+
+/** The list and then back again, neither end repeated: `1 2 3 2` -- the form that loops. */
+export const mirror1 = whole("mirror1", <T>(items: readonly T[]): T[] => reshape("mirror1", items));
+
+/** The list and then reversed, both ends twice: `1 2 3 3 2 1`. */
+export const mirror2 = whole("mirror2", <T>(items: readonly T[]): T[] => reshape("mirror2", items));
+
+/** Every item `n` times in a row. */
+export const stutter = whole("stutter", <T>(items: readonly T[], n = 2): T[] =>
+    reshape("stutter", items, n));
+
+/** The list rotated `n` places to the right (negative to the left), wrapping. */
+export const rotate = whole("rotate", <T>(items: readonly T[], n = 1): T[] =>
+    reshape("rotate", items, n));
+
+/**
+ * The list unfolded into growing and shrinking runs, one after another: type 1
+ * is every prefix (`1  1 2  1 2 3`), 2 every suffix, 3 and 4 the same
+ * shrinking, and 5 to 10 a run up and back down in their combinations --
+ * sclang's ten pattern types.
+ */
+export const pyramid = whole("pyramid", <T>(items: readonly T[], patternType = 1): T[] =>
+    reshape("pyramid", items, patternType));
+
+/** {@link pyramid} with each run its own array: `[[1], [1, 2], [1, 2, 3]]`. */
+export const pyramidg = whole("pyramidg", <T>(items: readonly T[], patternType = 1): T[][] => {
+    const flat = reshape("pyramid", items, patternType);
+    const sizes = coreList("pyramidsizes", new Float64Array(items.length), patternType, 0);
+    const groups: T[][] = [];
+    let at = 0;
+    for (const size of sizes) {
+        groups.push(flat.slice(at, at + size));
+        at += size;
+    }
+    return groups;
 });
 
 // ---- range maps (SuperCollider's warp family) ----

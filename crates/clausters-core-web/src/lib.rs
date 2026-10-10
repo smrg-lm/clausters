@@ -1116,6 +1116,12 @@ impl JsRng {
         out
     }
 
+    /// sclang's `sputter` of a list of `n` values: its indices, each repeated
+    /// while a `probability` coin lands, at most `maxlen` of them.
+    pub fn sputter(&mut self, n: usize, probability: f64, maxlen: usize) -> Vec<u32> {
+        self.0.sputter(n, probability, maxlen)
+    }
+
     /// Uniform integer in `[0, n)`; 0 when `n` is 0.
     #[wasm_bindgen(js_name = nextBelow)]
     pub fn next_below(&mut self, n: f64) -> f64 {

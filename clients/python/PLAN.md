@@ -2359,13 +2359,21 @@ by the loop (`islice`, a `break`), never read whole.
   composable as a list. **Equality stays out of the operators.** The parity
   vectors gained the new methods, the seeded draws and the builtins over a
   pattern; both books' "Patterns" chapters name the whole vocabulary.
-- ⬜ **C72 — sclang's list functions left out of `C68`**, in the core's
-  `ListOp` table and both clients' `builtins`: `pyramid` and `pyramidg` (with
-  sclang's ten `patternType`s), `mirror`, `mirror1`, `mirror2`, `stutter`,
-  `rotate`, and `sputter` (a draw, in `clausters_core::rng`, reproduced by the
-  seed). Each is measured against sclang's own output over the same lists.
-  They change a list's length, which `ListOp` does not do today; the door's
-  shape is the milestone's to settle.
+- ✅ **C72 — sclang's list functions left out of `C68`** *(done 2026-10-10)*.
+  The core's `ListOp` table grows `mirror`, `mirror1`, `mirror2`, `stutter`,
+  `rotate`, `pyramid` and `pyramidsizes`; the length change the entry left open
+  is `ListOp::output_len`, which the table already had, now read by a new C
+  door, `clausters_core_list_len`, so the Python binding stops computing it
+  itself. `pyramid` follows sclang's `_ArrayPyramid` primitive (its ten types
+  as runs, `numeric::pyramid_runs`, checked against the primitive's loops run
+  by hand), and `pyramidg` splits it by `pyramidsizes` in the clients, which
+  is what sclang's own `pyramidg` method builds. **They reshape any items**: the
+  clients hand the core the indices and map them back, so `pyramid([pat_a,
+  pat_b])` is a list of patterns. `sputter` is `Rng::sputter` in the core (the
+  indices, each repeated while a coin of `probability` lands), behind
+  `clausters_rng_sputter` and `JsRng.sputter`, and both random contexts draw
+  it. All are list functions, and refuse a pattern. The clock parity vectors
+  call each function and draw `sputter` from the same stream in both clients.
 - ⬜ **C73 — The pattern library.** sc3's patterns, phased by family, each one
   a `@pattern` function in both clients with its parity vector, its brief
   description and its kind (value, event, or resolved when built), in its

@@ -202,3 +202,10 @@ test("a graph composes the value functions it can and refuses the rest", () => {
     }
     assert.throws(() => signal(1).linlin(0, 1, 0, 2), /has no 'linlin'/);
 });
+
+test("a list function reshapes any items and refuses a pattern", () => {
+    assert.deepEqual(b.mirror(["a", "b", "c"]), ["a", "b", "c", "b", "a"]);
+    assert.deepEqual(b.pyramidg([1, 2, 3], 5), [[1], [1, 2], [1, 2, 3], [1, 2], [1]]);
+    assert.deepEqual([...pseq(b.pyramid([60, 62, 64]))], [60, 60, 62, 60, 62, 64]);
+    assert.throws(() => b.pyramid(pseq([1]) as never), /whole list/);
+});

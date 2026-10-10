@@ -546,6 +546,23 @@ pub enum ListOp {
     /// The table [`Rng::tablerand`](crate::rng::Rng::tablerand) reads to
     /// draw with the list as a probability shape, `a` values long.
     Asrandomtable = 6,
+    /// The list and then back again, the last value once: `1 2 3 2 1`.
+    Mirror = 7,
+    /// The list and then back again, neither end repeated: `1 2 3 2`.
+    Mirror1 = 8,
+    /// The list and then reversed, both ends twice: `1 2 3 3 2 1`.
+    Mirror2 = 9,
+    /// Every value `a` times in a row (sclang's `stutter`, its `dupEach`).
+    Stutter = 10,
+    /// The list rotated `a` places to the right, wrapping.
+    Rotate = 11,
+    /// The list unfolded into growing and shrinking runs, by sclang's pattern
+    /// type `a` (1 to 10, clipped): type 1 is every prefix, `1  1 2  1 2 3`.
+    Pyramid = 12,
+    /// How long each run of [`Pyramid`](Self::Pyramid) is, for the same type
+    /// `a` -- the groups sclang's `pyramidg` splits it into. The values are
+    /// not read, only how many there are.
+    Pyramidsizes = 13,
 }
 
 impl ListOp {
@@ -560,6 +577,13 @@ impl ListOp {
             4 => Resamp0,
             5 => Resamp1,
             6 => Asrandomtable,
+            7 => Mirror,
+            8 => Mirror1,
+            9 => Mirror2,
+            10 => Stutter,
+            11 => Rotate,
+            12 => Pyramid,
+            13 => Pyramidsizes,
             _ => return None,
         })
     }
@@ -575,6 +599,13 @@ impl ListOp {
             Resamp0 => "resamp0",
             Resamp1 => "resamp1",
             Asrandomtable => "asrandomtable",
+            Mirror => "mirror",
+            Mirror1 => "mirror1",
+            Mirror2 => "mirror2",
+            Stutter => "stutter",
+            Rotate => "rotate",
+            Pyramid => "pyramid",
+            Pyramidsizes => "pyramidsizes",
         }
     }
 
@@ -585,11 +616,49 @@ impl ListOp {
 
     /// How long the result is for an input of `n` values with argument `a`.
     pub fn output_len(self, n: usize, a: f64) -> usize {
+        use ListOp::*;
         match self {
-            ListOp::Resamp0 | ListOp::Resamp1 | ListOp::Asrandomtable => a.max(0.0) as usize,
+            Resamp0 | Resamp1 | Asrandomtable => a.max(0.0) as usize,
+            Mirror => (2 * n).saturating_sub(1),
+            Mirror1 => (2 * n).saturating_sub(2).max(n),
+            Mirror2 => 2 * n,
+            Stutter => n * a.max(0.0) as usize,
+            Pyramid => pyramid_runs(n, a).iter().map(|&(lo, hi)| hi - lo).sum(),
+            Pyramidsizes => pyramid_runs(n, a).len(),
             _ => n,
         }
     }
+}
+
+/// The runs of [`ListOp::Pyramid`] over a list of `n` values, as half-open
+/// index ranges in order: sclang's `_ArrayPyramid` primitive, whose ten pattern
+/// types (`kind`, clipped to 1..10) are its growing and shrinking prefixes and
+/// suffixes and their combinations. sclang's `pyramidg` builds the same runs
+/// as groups.
+pub fn pyramid_runs(n: usize, kind: f64) -> Vec<(usize, usize)> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let prefix = |len: usize| (0, len);
+    let suffix = |len: usize| (n - len, n);
+    let up = 1..=n;
+    let down = (1..n).rev();
+    let mut runs = Vec::new();
+    // Each type is one or two passes; the second never repeats the run the
+    // first ended on.
+    match (kind as i64).clamp(1, 10) {
+        1 => runs.extend(up.map(prefix)),
+        2 => runs.extend(up.map(suffix)),
+        3 => runs.extend((1..=n).rev().map(prefix)),
+        4 => runs.extend((1..=n).rev().map(suffix)),
+        5 => runs.extend(up.map(prefix).chain(down.map(prefix))),
+        6 => runs.extend(up.map(suffix).chain(down.map(suffix))),
+        7 => runs.extend((1..=n).rev().map(prefix).chain((2..=n).map(prefix))),
+        8 => runs.extend((1..=n).rev().map(suffix).chain((2..=n).map(suffix))),
+        9 => runs.extend(up.map(prefix).chain(down.map(suffix))),
+        _ => runs.extend(up.map(suffix).chain(down.map(prefix))),
+    }
+    runs
 }
 
 /// Applies a [`ListOp`] to `list` with its arguments `a` and `b`, writing
@@ -661,6 +730,49 @@ pub fn apply_list(op: ListOp, list: &[f64], a: f64, b: f64, out: &mut [f64]) {
             apply_list(Normalize, &running, 0.0, (size - 1) as f64, &mut scaled);
             for (i, o) in out.iter_mut().enumerate() {
                 *o = index_in_between(&scaled, i as f64) / size as f64;
+            }
+        }
+        Mirror | Mirror1 | Mirror2 => {
+            // Forward, then back from where each variant turns.
+            let back: Box<dyn Iterator<Item = &f64>> = match op {
+                Mirror => Box::new(list.iter().rev().skip(1)),
+                Mirror1 => Box::new(list.iter().rev().skip(1).take(list.len().saturating_sub(2))),
+                _ => Box::new(list.iter().rev()),
+            };
+            for (o, &x) in out.iter_mut().zip(list.iter().chain(back)) {
+                *o = x;
+            }
+        }
+        Stutter => {
+            let times = a.max(0.0) as usize;
+            for (o, &x) in out
+                .iter_mut()
+                .zip(list.iter().flat_map(|x| std::iter::repeat_n(x, times)))
+            {
+                *o = x;
+            }
+        }
+        Rotate => {
+            let n = list.len();
+            if n == 0 {
+                return;
+            }
+            let shift = (a as i64).rem_euclid(n as i64) as usize;
+            for (i, &x) in list.iter().enumerate() {
+                out[(i + shift) % n] = x;
+            }
+        }
+        Pyramid => {
+            let values = pyramid_runs(list.len(), a)
+                .into_iter()
+                .flat_map(|(lo, hi)| &list[lo..hi]);
+            for (o, &x) in out.iter_mut().zip(values) {
+                *o = x;
+            }
+        }
+        Pyramidsizes => {
+            for (o, (lo, hi)) in out.iter_mut().zip(pyramid_runs(list.len(), a)) {
+                *o = (hi - lo) as f64;
             }
         }
     }
@@ -803,8 +915,91 @@ mod tests {
         let table = run(ListOp::Asrandomtable, &[1.0, 1.0, 1.0, 1.0], 4.0, 0.0);
         assert_eq!(table.len(), 4);
         assert!(table.windows(2).all(|w| w[0] <= w[1]), "{table:?}");
-        for name in ["normalize", "resamp1", "asrandomtable"] {
+        for name in [
+            "normalize",
+            "resamp1",
+            "asrandomtable",
+            "mirror",
+            "pyramidsizes",
+        ] {
             assert_eq!(ListOp::from_name(name).map(|o| o.name()), Some(name));
         }
+    }
+
+    fn reshape(op: ListOp, list: &[f64], a: f64) -> Vec<f64> {
+        let mut out = vec![0.0; op.output_len(list.len(), a)];
+        apply_list(op, list, a, 0.0, &mut out);
+        out
+    }
+
+    #[test]
+    fn the_reshaping_functions_are_sclangs() {
+        let l = [1.0, 2.0, 3.0];
+        assert_eq!(reshape(ListOp::Mirror, &l, 0.0), [1.0, 2.0, 3.0, 2.0, 1.0]);
+        assert_eq!(reshape(ListOp::Mirror1, &l, 0.0), [1.0, 2.0, 3.0, 2.0]);
+        assert_eq!(
+            reshape(ListOp::Mirror2, &l, 0.0),
+            [1.0, 2.0, 3.0, 3.0, 2.0, 1.0]
+        );
+        assert_eq!(reshape(ListOp::Mirror1, &[1.0, 2.0], 0.0), [1.0, 2.0]);
+        assert_eq!(reshape(ListOp::Mirror1, &[7.0], 0.0), [7.0]);
+        assert!(reshape(ListOp::Mirror, &[], 0.0).is_empty());
+        assert_eq!(
+            reshape(ListOp::Stutter, &[1.0, 2.0], 3.0),
+            [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+        );
+        assert!(reshape(ListOp::Stutter, &l, 0.0).is_empty());
+        assert_eq!(reshape(ListOp::Rotate, &l, 1.0), [3.0, 1.0, 2.0]);
+        assert_eq!(reshape(ListOp::Rotate, &l, -1.0), [2.0, 3.0, 1.0]);
+        assert_eq!(reshape(ListOp::Rotate, &l, 4.0), [3.0, 1.0, 2.0]);
+    }
+
+    /// sclang's `_ArrayPyramid` over `[0, 1, 2, 3]`, per pattern type -- the
+    /// primitive's own loops, run by hand.
+    #[test]
+    fn the_pyramid_runs_are_the_primitives() {
+        let l = [0.0, 1.0, 2.0, 3.0];
+        let expected: [&[f64]; 10] = [
+            &[0., 0., 1., 0., 1., 2., 0., 1., 2., 3.],
+            &[3., 2., 3., 1., 2., 3., 0., 1., 2., 3.],
+            &[0., 1., 2., 3., 0., 1., 2., 0., 1., 0.],
+            &[0., 1., 2., 3., 1., 2., 3., 2., 3., 3.],
+            &[
+                0., 0., 1., 0., 1., 2., 0., 1., 2., 3., 0., 1., 2., 0., 1., 0.,
+            ],
+            &[
+                3., 2., 3., 1., 2., 3., 0., 1., 2., 3., 1., 2., 3., 2., 3., 3.,
+            ],
+            &[
+                0., 1., 2., 3., 0., 1., 2., 0., 1., 0., 0., 1., 0., 1., 2., 0., 1., 2., 3.,
+            ],
+            &[
+                0., 1., 2., 3., 1., 2., 3., 2., 3., 3., 2., 3., 1., 2., 3., 0., 1., 2., 3.,
+            ],
+            &[
+                0., 0., 1., 0., 1., 2., 0., 1., 2., 3., 1., 2., 3., 2., 3., 3.,
+            ],
+            &[
+                3., 2., 3., 1., 2., 3., 0., 1., 2., 3., 0., 1., 2., 0., 1., 0.,
+            ],
+        ];
+        for (kind, want) in expected.iter().enumerate() {
+            let got = reshape(ListOp::Pyramid, &l, kind as f64 + 1.0);
+            assert_eq!(&got[..], *want, "type {}", kind + 1);
+        }
+        // Out-of-range types clip, as the primitive does.
+        assert_eq!(
+            reshape(ListOp::Pyramid, &l, 0.0),
+            reshape(ListOp::Pyramid, &l, 1.0)
+        );
+        assert_eq!(
+            reshape(ListOp::Pyramid, &l, 99.0),
+            reshape(ListOp::Pyramid, &l, 10.0)
+        );
+        assert_eq!(
+            reshape(ListOp::Pyramidsizes, &l, 5.0),
+            [1.0, 2.0, 3.0, 4.0, 3.0, 2.0, 1.0]
+        );
+        assert!(reshape(ListOp::Pyramid, &[], 3.0).is_empty());
     }
 }

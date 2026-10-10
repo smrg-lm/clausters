@@ -173,7 +173,7 @@ export type {
     MidiWriteOptions } from "./base/midi.ts";
 export {
     Rng, bilinrand, choose, coin, currentRng, exprand, gauss, irand, irand2, irrand,
-    linrand, rand, rand2, rrand, scramble, seed, spawnRng, sum3rand, tablerand, wchoose,
+    linrand, rand, rand2, rrand, scramble, seed, spawnRng, sputter, sum3rand, tablerand, wchoose,
 } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";

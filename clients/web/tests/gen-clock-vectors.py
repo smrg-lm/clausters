@@ -107,6 +107,11 @@ CALC = [
     ("resamp0", [[0.0, 10.0, 20.0], 5]), ("resamp1", [[0.0, 10.0, 20.0], 6]),
     ("asrandomtable", [[1.0, 2.0, 4.0, 2.0, 1.0], 8]),
     ("indexinbetween", [[1.0, 3.0, 7.0], 5.0]), ("indexofgreaterthan", [[1.0, 3.0, 7.0], 2.0]),
+    ("mirror", [[1.0, 2.0, 3.0]]), ("mirror1", [[1.0, 2.0, 3.0, 4.0]]),
+    ("mirror2", [[1.0, 2.0]]), ("stutter", [[1.0, 2.0, 3.0], 3]),
+    ("rotate", [[1.0, 2.0, 3.0, 4.0], -1]), ("rotate", [[1.0, 2.0, 3.0], 5]),
+    ("pyramid", [[1.0, 2.0, 3.0], 1]), ("pyramid", [[1.0, 2.0, 3.0, 4.0], 7]),
+    ("pyramid", [[1.0, 2.0, 3.0], 10]), ("pyramidg", [[1.0, 2.0, 3.0], 6]),
 ]
 
 BOUND = ["clip", "wrap", "fold"]
@@ -166,6 +171,7 @@ def rng_run(seed):
         ["wchoose", stream.wchoose(["a", "b", "c"], [1.0, 0.0, 3.0])],
         ["tablerand", stream.tablerand([0.0, 0.1, 0.5, 1.0])],
         ["scramble", stream.scramble(["a", "b", "c", "d", "e"])],
+        ["sputter", stream.sputter(["a", "b", "c", "d"], 0.4, 12)],
     ]
     return {
         "seed": seed,

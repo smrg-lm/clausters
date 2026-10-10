@@ -20,9 +20,15 @@ between **two bounds**; the **perceptual scales** (``cpsmel`` ...); sclang's
 **functions that are not operators** (``degrad``, ``snap``, ``bilin``, ``erf``
 ...) and the ones over a **scale** (``degkey``, ``nearestinscale`` ...) and over
 a **whole list** (``blend``, ``normalize``, ``resamp1``, ``asrandomtable`` ...),
-all three in ``f64`` as sclang computes them; and the **range maps**. The draws
--- ``rand``, ``exprand``, ``choose``, ``tablerand`` ... -- are random values and
-live in `clausters.base.rand`.
+all three in ``f64`` as sclang computes them; the lists **reshaped**
+(``mirror``, ``stutter``, ``rotate``, ``pyramid`` ...), whose order the core
+computes over the indices so any items are reshaped; and the **range maps**.
+The draws -- ``rand``, ``exprand``, ``choose``, ``tablerand``, ``sputter`` ...
+-- are random values and live in `clausters.base.rand`.
+
+A builtin given a pattern, a stream or a signal answers what that object's
+method does (``midicps(pseq([60, 72]))`` is ``pseq([60, 72]).midicps()``); a
+function over a whole list refuses one, since a stream may not end.
 """
 
 import builtins as _py
@@ -576,6 +582,63 @@ def indexofgreaterthan(values, x):
     return None if i < 0 else int(i)
 
 
+# ---- lists reshaped: sclang's `Array` functions that reorder, repeat or
+# unfold a list. The order is the core's, over the indices, so any items are
+# reshaped -- numbers, notes, patterns -- not only numbers.
+
+def _reshape(op, values, a=0.0):
+    items = list(values)
+    order = _native.list_op(op, [float(i) for i in _py.range(len(items))], a)
+    return [items[int(i)] for i in order]
+
+
+def mirror(values):
+    """The list and then back again, the last item once: ``1 2 3 2 1``."""
+    return _reshape(ListOp.MIRROR, values)
+
+
+def mirror1(values):
+    """The list and then back again, neither end repeated: ``1 2 3 2`` -- the
+    form that loops."""
+    return _reshape(ListOp.MIRROR1, values)
+
+
+def mirror2(values):
+    """The list and then reversed, both ends twice: ``1 2 3 3 2 1``."""
+    return _reshape(ListOp.MIRROR2, values)
+
+
+def stutter(values, n=2):
+    """Every item ``n`` times in a row."""
+    return _reshape(ListOp.STUTTER, values, n)
+
+
+def rotate(values, n=1):
+    """The list rotated ``n`` places to the right (negative to the left),
+    wrapping."""
+    return _reshape(ListOp.ROTATE, values, n)
+
+
+def pyramid(values, pattern_type=1):
+    """The list unfolded into growing and shrinking runs, one after another:
+    type 1 is every prefix (``1  1 2  1 2 3``), 2 every suffix, 3 and 4 the
+    same shrinking, and 5 to 10 a run up and back down in their combinations
+    -- sclang's ten pattern types."""
+    return _reshape(ListOp.PYRAMID, values, pattern_type)
+
+
+def pyramidg(values, pattern_type=1):
+    """`pyramid` with each run its own list: ``[[1], [1, 2], [1, 2, 3]]``."""
+    items = list(values)
+    flat = pyramid(items, pattern_type)
+    sizes = _native.list_op(ListOp.PYRAMIDSIZES, [0.0] * len(items), pattern_type)
+    groups, at = [], 0
+    for size in sizes:
+        groups.append(flat[at:at + int(size)])
+        at += int(size)
+    return groups
+
+
 # ---- range maps (native, f32 -- SuperCollider's warp family) ----
 #
 # Reading a value out of one range and writing it into another, which is what a
@@ -697,7 +760,8 @@ DRAW = ("rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand",
 LIST_FUNCTIONS = frozenset({
     "blendat", "normalize", "normalizesum", "integrate", "differentiate",
     "resamp0", "resamp1", "asrandomtable", "indexinbetween",
-    "indexofgreaterthan",
+    "indexofgreaterthan", "mirror", "mirror1", "mirror2", "stutter", "rotate",
+    "pyramid", "pyramidg",
 })
 
 

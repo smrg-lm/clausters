@@ -316,6 +316,23 @@ impl Rng {
         }
     }
 
+    /// sclang's `sputter`: the indices of a list of `n` values read in order,
+    /// each one repeated while a `probability` coin keeps landing, until the
+    /// list is read through or `maxlen` indices are out. A probability of 0
+    /// reads the list once; one of 1 repeats its first value `maxlen` times.
+    pub fn sputter(&mut self, n: usize, probability: f64, maxlen: usize) -> Vec<u32> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < n && out.len() < maxlen {
+            out.push(i as u32);
+            // sclang advances on a coin of the complement.
+            if self.draw(Draw::Coin, 1.0 - probability, 0.0) != 0.0 {
+                i += 1;
+            }
+        }
+        out
+    }
+
     /// The index `wchoose` picks: `weights` read as relative chances (they
     /// need not sum to 1), the first index whose running sum reaches a uniform
     /// draw over the total. An empty or all-zero list answers 0.
@@ -410,6 +427,17 @@ mod tests {
         assert_eq!(sorted, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
         let t = [0.0, 0.25, 0.5, 1.0];
         assert!((0..100).all(|_| (0.0..=1.0).contains(&r.tablerand(&t))));
+        // sputter reads in order and only ever repeats; its two ends.
+        let s = r.sputter(8, 0.5, 100);
+        assert!(
+            s.windows(2).all(|w| w[1] == w[0] || w[1] == w[0] + 1),
+            "{s:?}"
+        );
+        assert_eq!(s.first(), Some(&0));
+        assert_eq!(s.last(), Some(&7));
+        assert_eq!(r.sputter(4, 0.0, 100), [0, 1, 2, 3]);
+        assert_eq!(r.sputter(4, 1.0, 5), [0, 0, 0, 0, 0]);
+        assert!(r.sputter(0, 0.5, 10).is_empty());
     }
 
     #[test]

@@ -461,6 +461,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
     # per crossing. The map's own numbers are scalars -- one range for the
     # sequence, not a range per element.
+    lib.clausters_core_list_len.restype = ctypes.c_ssize_t
+    lib.clausters_core_list_len.argtypes = [ctypes.c_uint32, ctypes.c_size_t, ctypes.c_double]
     lib.clausters_core_list.restype = ctypes.c_int32
     lib.clausters_core_list.argtypes = [
         ctypes.c_uint32, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t,
@@ -620,6 +622,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_rng_tablerand.argtypes = [u64p, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t]
     lib.clausters_rng_scramble.restype = None
     lib.clausters_rng_scramble.argtypes = [u64p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t]
+    lib.clausters_rng_sputter.restype = ctypes.c_size_t
+    lib.clausters_rng_sputter.argtypes = [
+        u64p, ctypes.c_size_t, ctypes.c_double, ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
     lib.clausters_rng_next_u64.restype = ctypes.c_uint64
     lib.clausters_rng_next_u64.argtypes = [u64p]
     f64p = ctypes.POINTER(ctypes.c_double)
@@ -3256,6 +3263,13 @@ class ListOp(IntEnum):
     RESAMP0 = 4
     RESAMP1 = 5
     ASRANDOMTABLE = 6
+    MIRROR = 7
+    MIRROR1 = 8
+    MIRROR2 = 9
+    STUTTER = 10
+    ROTATE = 11
+    PYRAMID = 12
+    PYRAMIDSIZES = 13
 
 
 def _doubles(values):
@@ -3266,7 +3280,9 @@ def list_op(op: int, values, a: float = 0.0, b: float = 0.0) -> list:
     """Applies list function `op` (a `ListOp`) to `values` with its arguments
     `a` and `b`; returns the resulting list."""
     n = len(values)
-    out_n = int(max(a, 0.0)) if op in (ListOp.RESAMP0, ListOp.RESAMP1, ListOp.ASRANDOMTABLE) else n
+    out_n = lib().clausters_core_list_len(int(op), n, float(a))
+    if out_n < 0:
+        raise ValueError(f"unknown list function {op!r}")
     out = (ctypes.c_double * out_n)()
     rc = lib().clausters_core_list(int(op), _doubles(values), n, float(a), float(b), out, out_n)
     if rc != 0:
@@ -3716,6 +3732,17 @@ class Rng:
             with self._lock:
                 lib().clausters_rng_scramble(ctypes.byref(self._state), order, len(items))
         return [items[i] for i in order]
+
+    def sputter(self, items, probability: float = 0.25, maxlen: int = 100) -> list:
+        """``items`` read in order, each one repeated while a ``probability``
+        coin lands, at most ``maxlen`` values (sclang's ``sputter``)."""
+        items = list(items)
+        maxlen = max(int(maxlen), 0)
+        out = (ctypes.c_uint32 * maxlen)()
+        with self._lock:
+            n = lib().clausters_rng_sputter(
+                ctypes.byref(self._state), len(items), float(probability), maxlen, out)
+        return [items[out[i]] for i in range(n)]
 
     def _next_u64(self) -> int:
         """The full-width random word (advances the stream one step).

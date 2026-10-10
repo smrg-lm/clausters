@@ -136,6 +136,37 @@ pub unsafe extern "C" fn clausters_rng_tablerand(
     v
 }
 
+/// Advances `*state` and writes sclang's `sputter` of a list of `n` values --
+/// its indices, each repeated while a `probability` coin lands -- into `out`,
+/// at most `maxlen` of them; returns how many it wrote (0 when a pointer is
+/// null).
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null), and `out` writable
+/// for `maxlen` `u32`s (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_sputter(
+    state: *mut u64,
+    n: usize,
+    probability: f64,
+    maxlen: usize,
+    out: *mut u32,
+) -> usize {
+    if state.is_null() || (out.is_null() && maxlen > 0) {
+        return 0;
+    }
+    let mut rng = Rng::from_state(unsafe { *state });
+    let indices = rng.sputter(n, probability, maxlen);
+    unsafe { *state = rng.state() };
+    if !indices.is_empty() {
+        // SAFETY: caller guarantees `out` holds `maxlen`, and sputter never
+        // writes more.
+        let o = unsafe { std::slice::from_raw_parts_mut(out, indices.len()) };
+        o.copy_from_slice(&indices);
+    }
+    indices.len()
+}
+
 /// Advances `*state` and writes a uniformly random permutation of `0..n`
 /// into `out` (nothing when `n` is 0 or a pointer is null).
 ///

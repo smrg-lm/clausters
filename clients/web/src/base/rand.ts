@@ -144,6 +144,17 @@ export class Rng {
         return Array.from(this.inner.scramble(items.length), (i) => items[i]!);
     }
 
+    /**
+     * `items` read in order, each one repeated while a `probability` coin
+     * lands, at most `maxlen` values (sclang's `sputter`).
+     */
+    sputter<T>(items: readonly T[], probability = 0.25, maxlen = 100): T[] {
+        return Array.from(
+            this.inner.sputter(items.length, probability, Math.max(Math.trunc(maxlen), 0)),
+            (i) => items[i]!,
+        );
+    }
+
     /** A child stream seeded from this one's next word. */
     spawn(): Rng {
         return new Rng(this.inner.spawn());
@@ -247,3 +258,11 @@ export const tablerand = (table: readonly number[]): number => currentRng().tabl
 
 /** `items` in a uniformly random order (a new array). */
 export const scramble = <T>(items: readonly T[]): T[] => currentRng().scramble(items);
+
+/**
+ * `items` read in order, each one repeated while a `probability` coin lands,
+ * until they are read through or `maxlen` values are out -- sclang's
+ * `sputter`: a stammer over a list.
+ */
+export const sputter = <T>(items: readonly T[], probability = 0.25, maxlen = 100): T[] =>
+    currentRng().sputter(items, probability, maxlen);
