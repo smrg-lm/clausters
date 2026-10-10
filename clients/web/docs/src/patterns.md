@@ -112,3 +112,5 @@ A function stands in for a list: `pfunc` computes a value per step (with the eve
 An argument may itself be a pattern, read one value per step: `seq.pwhite(seq.pseq([0, 12]), seq.pseq([7, 19]))` draws from two ranges in turn. The distributions say where values gather: `pwhite` evenly, `pexprand` evenly per octave, `plprand`/`phprand`/`pmeanrand` toward an end or the middle, `pgauss`/`pcauchy` around a centre, `pbeta` by two weights, `ppoisson` counting events, `pbrown`/`pgbrown` as a walk from the last value, and `pprob` by a shape you draw as a list of chances.
 
 The random patterns draw from the random context — see [Routines and clocks](routines-and-clocks.md#reproducible-randomness).
+
+`examples/basics/patterns.html` puts this page together: a `pyramid` fed to a `pseq`, an operator over it, a `pvoice` whose joins glide on the server and come back as ties and slurs, and a counter-line beside it under `ppar`, rendered offline.

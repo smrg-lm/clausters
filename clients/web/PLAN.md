@@ -2151,8 +2151,8 @@ went, what stayed and why no case was left for it.
   carries the area registry and `watch`, the environment list arms areas by
   name, and `gui/editing/trace.ts` is the `gui.editing` area.
 
-- ⬜ **Patterns compose by operators, and the library is sc3's** *(opened
-  2026-10-10; the arc is `clients/python/PLAN.md`, "Patterns: SuperCollider's
+- ✅ **Patterns compose by operators, and the library is sc3's** *(opened
+  2026-10-10, ported with each milestone and closed with `C74` the same day; the arc is `clients/python/PLAN.md`, "Patterns: SuperCollider's
   operators and library", `C70`-`C74`)*. Neither client has it today, so it is
   ported milestone by milestone rather than after the arc. The shape this port
   follows: a pattern is a lowercase function written as `pattern(function*)`

@@ -121,6 +121,15 @@ a person saw it work.
   the milestone's *code* is done; what is left is somebody watching it fail.
 
 
+- ⬜ **Nobody has listened to `basics/patterns`** *(`clients/python/PLAN.md`,
+  `C74`)*. The patterns arc closed with one example in two languages as its
+  manual check; the Python render was run and the page's patterns, ties and
+  slurs match the script's, but what it claims is audible -- the voice gliding
+  where its notes are joined and re-attacking where they are not, the
+  counter-line beside it -- has not been heard in either. **Related:** "An
+  edit to a voice's legato or slur does not rewrite the other" is the arc's
+  one open entry, in the same plan's Found by use.
+
 - ⬜ **Nobody has listened to `basics/sc_vocabulary`** *(`clients/python/PLAN.md`,
   `C69`)*. The numeric builtins arc closed with one example in two languages as
   its manual check; the Python render was run and the web calls draw the same
@@ -210,16 +219,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **Patterns: SuperCollider's operators and library, `C74`**
-  *(`clients/python/PLAN.md`, "Patterns: SuperCollider's operators and
-  library"; the port's shape in `clients/web/PLAN.md`, "Parity gaps carried
-  from the Python client")*. **Taken first**, opened 2026-10-10 by the user;
-  `C70`-`C73` shipped (a pattern is a function with the whole operator
-  vocabulary, the list functions are in the core, and the library is
-  sclang's); `C74` closes the arc with its example.
-  **Related:** `C73e` is where `Ppar` and `pvoice` (sclang's `Pmono`) land, the pattern-side question
-  of "The mapping exists and is private to the `Editor`" below.
-
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
@@ -277,9 +276,9 @@ its plan; the plan is where its acceptance is read.
 - ⬜ **The mapping exists and is private to the `Editor`, so every example that
   plays writes a worse one** *(`clients/python/PLAN.md`, Future directions)*. A
   design, not a fix. The public verb it asked for is answered — a `Timeline`
-  plays itself and seeks — and two things stand: the roll's notes → timeline
-  conversion is private to the notes editor, and `Ppar`/`Pmono` are a separate
-  pattern-side question.
+  plays itself and seeks — and one thing stands: the roll's notes → timeline
+  conversion is private to the notes editor (`ppar` and `pvoice`, the
+  pattern-side question, shipped with `C73e`).
 
 - ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
   *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven

@@ -332,6 +332,16 @@ in the middle of an example.
 | web | `read` | the other half of the row above |
 | web | `play` | the other half of the row above |
 
+### `basics/patterns`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `deactivate` | the page's ending: it gives up the ambient session when the render is done, where the script's process exit does it |
+| web | `Server` | the page's `pw-play`. The script renders to a path and prints `listen with: pw-play out.wav`; a page has no shell, so hearing the take is booting an engine, reading the file into a buffer and playing that |
+| web | `boot` | the other half of the row above |
+| web | `read` | the other half of the row above |
+| web | `play` | the other half of the row above |
+
 ### `basics/multichannel`
 
 | Only in | Call | Why |

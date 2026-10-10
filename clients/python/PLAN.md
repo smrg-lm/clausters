@@ -2500,11 +2500,21 @@ by the loop (`islice`, a `break`), never read whole.
     Where the spanner lives in the document (the apps plan names the
     sequence's list of spanners over event ids for the symbolic score) and its
     shape are the milestone's; the example's spelling is illustrative.
-- ⬜ **C74 — Documentation and the manual check.** The patterns pages of both
-  books open with the two kinds and the loop over a pattern, then name the
-  operators and the families; the manual check is one example
-  in two languages, a phrase built by composing patterns with operators and
-  the new library, with a list function's output (`pyramid`) fed to a `Pseq`.
+- ✅ **C74 — Documentation and the manual check** *(done 2026-10-10)*. Both
+  books have a "Patterns" chapter, written as the arc went: the walk and the
+  loop over a pattern, the two kinds, the operators against the list
+  functions, the families, writing a pattern with `pattern`, and the
+  articulation and inflection a voice is designed by. The manual check is one
+  example in two languages, `basics/patterns`
+  (`clients/python/examples/basics/patterns.py`,
+  `clients/web/examples/basics/patterns.html`): a `pyramid` fed to a `pseq`
+  with an operator over it, printed by a plain loop; a `pvoice` whose joined
+  notes glide on one synth (a lagged `freq`) and render as ties and slurs; and
+  a `pbind` counter-line of `pxrand`, `pstutter` and `pmeanrand` beside it
+  under `ppar`, seeded. The audit reads the pair as one (the page's ending
+  declared as every offline pair declares it); the Python render was run
+  (3.9 s, peak 0.22) and the page's patterns, ties and slurs were run under
+  node and are the script's. **Waiting on the ear**: the user listens to both.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
@@ -6259,6 +6269,10 @@ than being ticked here.
   back. What stands is the other two points -- the roll's notes to a
   `Timeline` are still `NotesEditor`'s and private, and `Ppar`/`Pmono` still do
   not exist -- and `editors/pianoroll` still plays a monophonic `Pbind`.
+
+  *Re-read 2026-10-10, after the patterns arc.* `ppar` and `pvoice` (sclang's
+  `Pmono`) exist (`C73e`), so the pattern-side half is answered; the roll's
+  notes to a `Timeline` are still `NotesEditor`'s and private.
 
 - ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: patterns</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>patterns.py</code>: <b>patterns are descriptions you walk, compose with
+operators, and play together</b> -- and a voice whose notes go on into one
+another.
+
+<b>A pattern is a description, walked by a loop.</b>
+<code>pseq(steps).add(67)</code> is a pattern of MIDI notes made from a pattern
+of steps and an operator, and a plain <code>for</code> loop over it prints its
+values -- no clock, no server. The steps come from <code>pyramid</code>, a list
+function: it reshapes the whole list before it becomes a pattern (a list
+function reads a whole list, an operator one value at a time).
+
+<b>A voice is articulated by its legato.</b> The melody is a
+<code>pvoice</code>: each note's <code>legato</code> says how it goes on to the
+next. Where it is 1 the note is joined to the next -- the server keeps one
+synth and sets its <code>freq</code>, which has a lag, so the line glides --
+and where it is less the next note re-attacks. Rendered into an event
+sequence, the same joins are a page's ties and slurs, printed below.
+
+<b>Patterns play together.</b> A counter-line from a <code>pbind</code> --
+<code>pxrand</code> never repeating a note, <code>pstutter</code> doubling its
+durations, <code>pmeanrand</code> keeping its level near the middle -- runs
+beside the voice under <code>ppar</code>, merged in time. The session is
+seeded, so the draws are the same on every run and in both clients.</div>
+
+      <div class="row">
+        <button id="render">render the phrase</button>
+        <button id="hear" disabled>hear it</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/basics/patterns.py, call for
+      call: the same def, the same patterns built in the same order, the same
+      loop over the notes, the same seeded draws, rendered offline.
+
+      Two spellings differ by the language and not by the example: TypeScript
+      has no operator overloading, so `pseq(steps) + 67` is
+      `pseq(steps).add(67)`, and a `pvoice` and a `pbind` take their keys as
+      an object (`pvoice("glider", { ... }, { artic: true })`) where Python
+      takes keyword arguments.
+
+      The take is written to out/patterns.wav in the page's own storage (the
+      origin private file system), where the script writes it to
+      clients/python/examples/out/. The one line that differs is the last: the
+      script tells the reader to play the file with `pw-play`, and a page has
+      no shell, so `hear` reads the file into the engine's buffer pool and
+      plays it there.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/patterns.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Server, Session, SynthDef, builtins, play, seq }
+        from "../../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, sine }
+        from "../../dist/defs/index.js";
+
+      const { INF, pbind, pmeanrand, ppar, pseq, pstutter, pvoice, pxrand } = seq;
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+
+      // ---- the def: a gated tone whose `freq` has a lag, so a joined note
+      // of a voice glides to its pitch instead of jumping ----
+      function glider(name = "glider") {
+        const freq = control("freq", 440.0, { lag: 0.08 });
+        const amp = control("amp", 0.1);
+        const gate = control("gate", 1.0);
+        const fade = envGen(Env.asr(0.01, 1.0, 0.2),
+          { gate, doneAction: DoneAction.FREE_SELF });
+        const tone = sine(freq).add(sine(freq.mul(2.0)).mul(0.25));
+        const sig = tone.mul(fade).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      // ---- the patterns: a list function first, then patterns made of it
+      // -- and a loop to see them ----
+      const steps = builtins.pyramid([0, 2, 4, 7], 1);   // 0  0 2  0 2 4  0 2 4 7
+      const notes = pseq(steps).add(67);                  // an operator: one value at a time
+      log(`melody ${JSON.stringify([...notes].map(Math.trunc))}`);
+
+      const melody = pvoice("glider", {
+        freq: notes.midicps(),
+        dur: 0.5,
+        legato: pseq([1.0, 1.0, 0.6], INF),
+        amp: 0.12,
+      }, { artic: true });
+
+      const counter = pbind({
+        instrument: "glider",
+        freq: pxrand([0, 3, 5, 7], 10).add(62).midicps(),
+        dur: pstutter(pseq([1.0, 0.5], INF), 2),
+        amp: pmeanrand(0.04, 0.08),
+        has_gate: true,
+      });
+
+      let take = null;
+
+      async function renderPhrase() {
+        // ---- the page: the voice's joins written as ties and slurs, the
+        // same data the server played ----
+        const written = (await melody.renderEvents()).data();
+        const ties = written.events.filter((e) => e.data.tie).map((e) => e.id);
+        log(`ties on notes ${JSON.stringify(ties)}`);
+        log(`slurs ${JSON.stringify(written.notation?.spanners ?? [])}`);
+
+        // ---- the score: both lines together, rendered offline ----
+        const session = (await Session.nrt()).activate();
+        session.clock.setTempo(2.0);
+        session.seed(70);
+        await glider().send();
+        ppar([melody, counter]).play();
+
+        const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/patterns.wav" });
+
+        log(`wrote ${stats.path}`);
+        session.deactivate();
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
+      }
+
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderPhrase();
+        $("hear").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        const server = await new Server().boot();
+        const buffer = await Buffer.read(take.path, { server });
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        play(buffer);
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
